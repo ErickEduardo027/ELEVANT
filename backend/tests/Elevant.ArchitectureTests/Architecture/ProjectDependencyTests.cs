@@ -78,7 +78,7 @@ public sealed class ProjectDependencyTests
             .Where(element => element.Name.LocalName == "ProjectReference")
             .Select(element => element.Attribute("Include")?.Value)
             .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => Path.GetFileNameWithoutExtension(value!))
+            .Select(value => Path.GetFileNameWithoutExtension(value!.Replace('\\', '/')))
             .ToHashSet(StringComparer.Ordinal);
     }
 
