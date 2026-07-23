@@ -1,0 +1,37 @@
+# Renombrar a web-ci.yml solamente cuando frontend/web tenga framework, scripts y lockfile reales.
+name: Web CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "frontend/web/**"
+      - "packages/api-client/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "frontend/web/**"
+      - "packages/api-client/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @elevant/web lint
+      - run: pnpm --filter @elevant/web build

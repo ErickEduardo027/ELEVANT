@@ -1,0 +1,13 @@
+{
+  "name": "elevant",
+  "version": "0.0.0-private",
+  "private": true,
+  "description": "Monorepositorio privado de la plataforma Elevant.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repository/check-secrets.ps1",
+    "tree": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repository/show-tree.ps1"
+  }
+}

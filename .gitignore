@@ -1,0 +1,75 @@
+# .NET
+**/bin/
+**/obj/
+artifacts/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Node, web and mobile
+node_modules/
+.pnpm-store/
+.next/
+.astro/
+.expo/
+dist/
+build/
+coverage/
+*.apk
+*.aab
+*.ipa
+frontend/mobile-agent/android/
+frontend/mobile-agent/ios/
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+!**/.env.example
+appsettings.*.local.json
+secrets.json
+secrets.*
+
+# Tests and diagnostics
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.log
+logs/
+
+# Database, uploads and backups
+*.bak
+*.bacpac
+*.trn
+*.mdf
+*.ldf
+uploads/
+backups/
+
+# Certificates and private keys
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.key
+*.pem
+
+# Temporary and OS files
+*.tmp
+*.temp
+*.swp
+*.orig
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# El versionado de packages/api-client/generated se decidirá en el ADR 0007.
