@@ -3,7 +3,7 @@
 Esqueleto de la aplicación web. El framework todavía no está decidido: puede inicializarse con Next.js o Astro cuando exista una historia de usuario que permita evaluar renderizado, autenticación y despliegue. Hasta entonces este directorio no simula una aplicación ejecutable.
 
 Laisha es responsable de `frontend/web`. Su destino predeterminado durante el
-desarrollo será `https://api-test.elevant.example`; no necesita ejecutar el backend
+desarrollo será `https://api-dev.elevant.com`; no necesita ejecutar el backend
 ni instalar SQL Server localmente.
 
 ## Inicialización futura

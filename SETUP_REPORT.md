@@ -13,7 +13,7 @@
 
 Se creó la base completa del monorepositorio privado Elevant con una única solución .NET, API centralizada, límites de arquitectura, proyectos de pruebas, espacios neutrales para web y móvil, infraestructura Docker/Dokploy documentada, automatización de CI y documentación operativa en español.
 
-El backend usa `net10.0` y compila en Release sin advertencias. Las nueve pruebas pasan. No se detectaron secretos y los tres archivos Compose son sintácticamente válidos. Web y móvil quedan preparados para consumir la API remota de Testing sin ejecutar el backend ni SQL Server localmente.
+El backend usa `net10.0` y compila en Release sin advertencias. Las pruebas pasan. No se detectaron secretos y los archivos Compose son sintácticamente válidos. Web y móvil quedan preparados para consumir la API remota de Development sin ejecutar el backend ni SQL Server localmente.
 
 La carpeta maestra se denomina `ELEVANT`. El backend es autónomo bajo `backend/`: allí se encuentran la solución, proyectos, pruebas, configuración .NET, base de datos, infraestructura, Docker y scripts operativos. Las aplicaciones consumidoras están agrupadas bajo `frontend/web` y `frontend/mobile-agent`. La raíz conserva únicamente elementos compartidos como CI, documentación global, paquetes y herramientas del repositorio.
 
@@ -111,7 +111,7 @@ Los comandos .NET de esta tabla se ejecutaron desde `ELEVANT/backend`.
 | `scripts/setup/verify-prerequisites.ps1` | Correcto para Git, .NET, Docker Compose, Node y Corepack. |
 | Parseo de los seis scripts PowerShell | Correcto en Windows PowerShell 5.1. |
 | `docker compose ... compose.local.yml config --quiet` | Correcto. |
-| `docker compose ... compose.testing.yml.example config --quiet` | Correcto; SQL Server no publica puerto. |
+| `docker compose ... compose.development.yml config --quiet` | Correcto; SQL Server no publica puerto. |
 | `docker compose ... compose.production.yml.example config --quiet` | Correcto; SQL Server no publica puerto. |
 | `scripts/repository/check-secrets.ps1` | Correcto; sin hallazgos. |
 | actionlint 1.7.12 | Workflow activo y dos plantillas YAML válidos. |
@@ -132,7 +132,7 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 
 - `backend/Dockerfile` usa `backend/` como contexto, restaura con locks, publica Release, usa SDK/runtime .NET 10, escucha en 8080 y ejecuta con el usuario no root de la imagen.
 - Compose local contiene API, SQL Server, volumen persistente, health check, red interna y liga SQL a `127.0.0.1`.
-- Testing y Production reciben una cadena de conexión de aplicación de mínimo privilegio y nunca publican el puerto 1433.
+- Development y Production reciben una cadena de conexión propia y nunca publican el puerto 1433. Development puede usar `sa` temporalmente hasta provisionar una identidad de mínimo privilegio.
 - Las migraciones deben ejecutarse explícitamente mediante scripts y proceso controlado; no se aplican al inicio de producción.
 
 ## Seguridad y secretos
@@ -140,8 +140,8 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 - No hay claves reales de FlightAware, contraseñas reales, claves JWT, certificados ni archivos `.env` versionables.
 - FlightAware solo existe tras la abstracción del backend y su `ApiKey` permanece vacía en configuración.
 - Las variables públicas web/móvil contienen únicamente URLs placeholder y se documenta que son extraíbles.
-- Testing y Production no comparten bases, credenciales, claves, volúmenes, uploads ni backups.
-- Testing admite exclusivamente datos sintéticos o controlados; no se restauran backups de Production.
+- Development y Production no comparten bases, credenciales, claves, volúmenes, uploads ni backups.
+- Development admite exclusivamente datos sintéticos o controlados; no se restauran backups de Production.
 - SQL Server solo puede ser consumido por la API.
 
 ## Advertencias y tareas no ejecutadas
@@ -157,7 +157,7 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 - `.github/CODEOWNERS.template`: sustituir `@REPLACE_ERICK`, `@REPLACE_LAISHA` y `@REPLACE_ELIEZER`, luego renombrar a `CODEOWNERS`.
 - `backend/.env.example` y `backend/src/Elevant.Api/.env.example`: contraseña local, cadenas de conexión, CORS, autenticación y FlightAware desde almacenes seguros.
 - `frontend/web/.env.example` y `frontend/mobile-agent/.env.example`: cambiar dominios `.example` por los endpoints reales del ambiente.
-- Plantillas Testing/Production y documentación Dokploy: nombres de proyectos, dominios, redes, volúmenes y secretos reales.
+- Compose Development, plantilla Production y documentación Dokploy: nombres de proyectos, dominios, redes, volúmenes y secretos reales.
 - `Authentication__Issuer`, `Authentication__Audience` y `Authentication__SigningKey`: definir únicamente al implementar autenticación.
 - `FlightAware__ApiKey`: secreto exclusivo del backend, separado por ambiente.
 - `LICENSE.md`: definir licencia propietaria/condiciones internas antes de distribuir; el repositorio se declara privado.
@@ -170,15 +170,15 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 - SQL Server pertenece exclusivamente a la API.
 - OpenAPI será el contrato oficial compartido.
 - Acceso externo, incluida FlightAware, centralizado en el backend.
-- Testing en `develop` y Production en `main`, con aislamiento total.
+- Development en `Development` y Production en `main`, con aislamiento total.
 - Cliente TypeScript generado pendiente de ADR; Kiota, NSwag y Orval continúan como alternativas.
 - Pruebas de arquitectura implementadas sin incorporar una dependencia adicional innecesaria.
 
 ## Próximos pasos recomendados
 
-1. Reemplazar CODEOWNERS y configurar protecciones de `main` y `develop` con CI obligatorio.
+1. Reemplazar CODEOWNERS y configurar protecciones de `main` y `Development` con CI obligatorio.
 2. Encender Docker Desktop y ejecutar un build y smoke test del stack local.
-3. Crear secretos independientes de Testing en Dokploy y desplegar primero desde `develop`.
+3. Crear secretos independientes de Development en Dokploy y desplegar primero desde `Development`.
 4. Exportar y revisar `openapi.json` del endpoint técnico antes de elegir el generador del cliente.
 5. Permitir que Laisha inicialice el framework web elegido en una PR independiente.
 6. Permitir que Eliezer inicialice Expo/Expo Router en una PR independiente.

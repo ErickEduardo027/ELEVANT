@@ -1,16 +1,18 @@
 # Ambientes
 
-Elevant separa Local, Testing y Production. Separar no significa cambiar solo una variable: cada ambiente conserva identidad, red, datos, credenciales y almacenamiento propios.
+Elevant separa Local, Development y Production. Separar no significa cambiar solo una variable: cada ambiente conserva identidad, red, datos, credenciales y almacenamiento propios.
 
-## Testing
+## Development
 
-- Rama: `develop`.
-- API: `https://api-test.elevant.example`.
-- Web: `https://test.elevant.example`.
-- Base: `ElevantTestingDb`.
-- Usa datos ficticios o controlados, logs más detallados y Swagger habilitable.
+- Rama: `Development`.
+- API: `https://api-dev.elevant.com`.
+- Web futura: `https://web-dev.elevant.example`.
+- Base: `ElevantDevelopmentDb`.
+- Usa datos sintéticos o controlados, logs operativos y Swagger habilitado.
 - La APK de pruebas y el frontend local o desplegado consumen este ambiente.
 - Mantiene secretos, volumen, uploads y backups exclusivos.
+- El stack se llama Development, pero la API usa internamente
+  `ASPNETCORE_ENVIRONMENT=Testing` para no activar el modo local permisivo.
 
 ## Production
 
@@ -23,27 +25,27 @@ Elevant separa Local, Testing y Production. Separar no significa cambiar solo un
 - Mantiene backups, secretos y volúmenes exclusivos.
 - Solo Erick puede aprobar y ejecutar despliegues de Production.
 
-| Aspecto | Local | Testing | Production |
+| Aspecto | Local | Development | Production |
 | --- | --- | --- | --- |
 | Propósito | Desarrollo individual | Integración y aceptación | Operación real |
-| API | Equipo o Compose local | Dominio de pruebas | Dominio productivo |
+| API | Equipo o Compose local | Dominio de desarrollo remoto | Dominio productivo |
 | SQL Server | Contenedor/instancia local | Base y usuario exclusivos | Base y usuario exclusivos |
 | Datos | Sintéticos | Sintéticos | Reales autorizados |
-| Swagger | Habilitado en Development | Solo por configuración | Deshabilitado |
+| Swagger | Habilitado | Habilitado por configuración | Deshabilitado |
 | Secretos | Almacén local ignorado | Gestor de plataforma | Gestor de plataforma |
 | Backups | Opcionales/desechables | Independientes | Externos, cifrados y verificados |
 
 ## Promoción
 
-Se promueve el mismo artefacto inmutable entre ambientes. La configuración entra en despliegue y no se reconstruye la imagen para cambiar un endpoint o secreto. Antes de Production se validan migraciones, compatibilidad de clientes, salud, logs, rollback y backup cuando corresponda.
+Development se construye actualmente desde la rama `Development`. Antes de habilitar Production se publicará una imagen versionada e inmutable para promover exactamente el artefacto validado, sin reconstruirlo para cambiar configuración o secretos. También se validarán migraciones, compatibilidad de clientes, salud, logs, rollback y backups.
 
 ## Aislamiento obligatorio
 
 - No compartir base de datos, contraseñas, claves JWT ni API key de FlightAware.
 - No montar el mismo volumen entre ambientes.
-- No restaurar datos reales en Testing.
+- No restaurar datos reales en Development.
 - No compartir directorios de uploads ni backups.
-- No permitir que una aplicación de Testing llame accidentalmente a Production.
+- No permitir que una aplicación de Development llame accidentalmente a Production.
 - Etiquetar observabilidad y alertas con el ambiente real.
 
 Los placeholders `*.elevant.example` son ejemplos reservados para documentación; deben reemplazarse por dominios controlados antes de desplegar.

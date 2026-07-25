@@ -6,6 +6,30 @@ namespace Elevant.IntegrationTests.Api;
 public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClassFixture<ElevantApiFactory>
 {
     [Fact]
+    public async Task CorsAllowsConfiguredOriginAndRejectsUnknownOrigin()
+    {
+        using var client = factory.CreateClient();
+        using var allowedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/system/ping");
+        allowedRequest.Headers.Add("Origin", "http://localhost");
+
+        using var allowedResponse = await client.SendAsync(
+            allowedRequest,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("http://localhost", allowedResponse.Headers.GetValues(
+            "Access-Control-Allow-Origin").Single());
+
+        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/system/ping");
+        rejectedRequest.Headers.Add("Origin", "https://untrusted.example");
+
+        using var rejectedResponse = await client.SendAsync(
+            rejectedRequest,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(rejectedResponse.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
+    [Fact]
     public async Task LivenessDoesNotConnectToSqlServer()
     {
         using var client = factory.CreateClient();

@@ -21,15 +21,15 @@ contenedor escucha en el puerto 8080 y se ejecuta con usuario no root. Dokploy
 publica HTTPS mediante el proxy y sondea `GET /health`; no hace falta instalar
 `curl` dentro de la imagen solo para un `HEALTHCHECK`.
 
-Configurar, como mínimo, ambiente ASP.NET, cadena de conexión, orígenes CORS explícitos, política de HTTPS/forwarded headers y cualquier opción de proveedor habilitada. La cadena y las claves se crean como secretos de plataforma, no como variables en un archivo versionado.
+Configurar, como mínimo, ambiente ASP.NET, cadena de conexión, orígenes CORS explícitos, red externa del proxy, CIDR confiable para forwarded headers y cualquier opción de proveedor habilitada. La cadena y las claves se crean como secretos de plataforma, no como variables en un archivo versionado. Dokploy Development usa `ASPNETCORE_ENVIRONMENT=Testing` y `Swagger__Enabled=true`.
 
 `/health/ready` sirve para verificar dependencias durante promoción o diagnóstico. No debe usarse como liveness si una caída temporal de SQL provocaría reinicios en bucle.
 
 ## SQL Server
 
-SQL Server vive en una red privada y no publica 1433 en Internet. Utiliza volumen persistente exclusivo, contraseña de ambiente y una imagen/edición cuya licencia y recursos estén confirmados. La API accede con una identidad de permisos mínimos; la cuenta administrativa se reserva para operación.
+SQL Server vive en una red privada y no publica 1433 en Internet. Utiliza volumen persistente exclusivo, contraseña de ambiente y una imagen/edición cuya licencia y recursos estén confirmados. Development puede usar `sa` temporalmente para el arranque inicial; antes de Production la API debe usar una identidad de permisos mínimos y la cuenta administrativa debe reservarse para operación.
 
-Compose local no es una plantilla de Production. En Testing y Production se crean servicios, volúmenes, secretos y backups separados.
+Compose local no es una plantilla remota. Development y Production tienen servicios, volúmenes, secretos y backups separados. Comparten migraciones y esquema, nunca datos ni almacenamiento.
 
 ## Migraciones y liberación
 
@@ -44,3 +44,26 @@ La API nunca migra al arrancar. Si falla, detener la promoción y seguir el roll
 ## Proxy y seguridad
 
 Aceptar forwarded headers únicamente desde proxies/redes conocidos. Forzar HTTPS en el borde, mantener certificados renovados y limitar el panel Dokploy por red o autenticación fuerte. Swagger permanece deshabilitado en Production y SQL Server no recibe un dominio público.
+
+## Development
+
+1. Conectar el repositorio y seleccionar exactamente la rama `Development`.
+2. Usar `backend/infrastructure/docker/compose.development.yml`.
+3. Crear las variables descritas en `backend/.env.example` en el almacén de Dokploy.
+4. Obtener el nombre y CIDR reales de la red del proxy; no confiar en rangos amplios por conveniencia.
+5. Enrutar el dominio al servicio `api`, puerto interno `8080`, con sonda `/health`.
+6. Desplegar y confirmar que `db-init` finaliza con código cero.
+7. Validar `/health/ready`, `/api/v1/system/ping`, `/swagger` y el origen CORS del frontend.
+
+Variables mínimas del stack:
+
+| Variable | Valor esperado |
+|---|---|
+| `MSSQL_SA_PASSWORD` | Secreto fuerte y exclusivo de Development. |
+| `ELEVANT_DATABASE_CONNECTION_STRING` | Conexión a `sqlserver:1433/ElevantDevelopmentDb`. |
+| `CORS_ALLOWED_ORIGIN_0..3` | Orígenes web explícitos; no incluir el dominio de la API por defecto. |
+| `DOKPLOY_NETWORK_NAME` | Nombre real de la red compartida con el proxy. |
+| `FORWARDED_HEADERS_KNOWN_NETWORK_0` | CIDR real y confiable de esa red. |
+
+La URL esperada es `https://api-dev.elevant.com`. Web y móvil consumen `/api/v1`; Swagger queda en
+`/swagger`. La aplicación móvil nativa normalmente no está sujeta a CORS.

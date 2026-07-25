@@ -68,6 +68,11 @@ public static class ServiceCollectionExtensions
             .GetSection("Cors:AllowedOrigins")
             .Get<string[]>() ?? [];
 
+        allowedOrigins = allowedOrigins
+            .Where(origin => !string.IsNullOrWhiteSpace(origin))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         services.AddCors(options => options.AddPolicy(ApiConfiguration.CorsPolicy, policy =>
         {
             if (allowedOrigins.Length > 0)

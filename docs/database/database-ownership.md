@@ -17,7 +17,6 @@ SSMS puede usarse desde una red y cuenta administrativas controladas. No forma p
 
 ## Separación
 
-Local, Testing y Production tienen bases, usuarios, credenciales, volúmenes, backups y uploads independientes. Un backup de Production no se restaura en Testing para obtener datos de prueba; se emplean datos sintéticos.
+Local, Development y Production tienen bases, usuarios, credenciales, volúmenes, backups y uploads independientes. Development y Production aplican las mismas migraciones para conservar el esquema, pero un backup de Production no se restaura en Development; se emplean datos sintéticos.
 
 El puerto 1433 local se liga a loopback cuando sea necesario. En servidores no se publica a Internet y el acceso administrativo se restringe por red, firewall y credencial separada.
-

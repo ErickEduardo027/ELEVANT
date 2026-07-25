@@ -11,7 +11,7 @@
 ## Flujo de ramas
 
 - `main`: producción.
-- `develop`: testing e integración.
+- `Development`: desarrollo remoto e integración.
 - `feature/*`: funcionalidades.
 - `fix/*`: correcciones.
 - `hotfix/*`: correcciones urgentes originadas desde producción.
@@ -30,6 +30,6 @@ No se crean ramas permanentes por persona. Ejemplos válidos:
    aplicables.
 5. Obtener las revisiones de CODEOWNERS y esperar CI antes de hacer merge.
 
-Web y móvil consumen normalmente la API remota de Testing y no necesitan levantar
+Web y móvil consumen normalmente la API remota de Development y no necesitan levantar
 el backend ni SQL Server. Los cambios que requieren endpoints se acuerdan primero
 con Erick y se validan en Swagger o con un cliente HTTP.

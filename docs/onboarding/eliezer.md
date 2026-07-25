@@ -15,7 +15,7 @@ Mobile Agent es un esqueleto para una futura aplicación Expo instalada en table
 - fijar versión de Node, pnpm, Expo y Expo Router;
 - probar desde una tablet y una red representativas;
 - encapsular capacidades nativas para poder simularlas;
-- separar identificador, endpoint, firma y almacenamiento de Testing/Production;
+- separar identificador, endpoint, firma y almacenamiento de Development/Production;
 - no guardar tokens en configuración pública ni logs.
 
 ## Verificación

@@ -33,7 +33,7 @@ La API puede arrancar sin migrar la base. El endpoint `/health` comprueba vida d
 Para infraestructura local, copiar `backend/.env.example` a `backend/.env`,
 establecer una contraseña local fuerte y levantar los servicios con
 `backend/infrastructure/docker/compose.local.yml`. Nunca reutilizar credenciales
-de Testing o Production.
+de Development o Production.
 
 ## Antes de terminar una sesión
 

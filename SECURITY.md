@@ -10,10 +10,10 @@ de explotación en Issues, Pull Requests o canales públicos.
 
 - Nunca subir claves de FlightAware, JWT, contraseñas, connection strings reales,
   tokens, certificados o archivos `.env`.
-- No compartir credenciales entre Testing y Production; deben rotarse después de
+- No compartir credenciales entre Development y Production; deben rotarse después de
   una exposición o cambio de personal autorizado.
 - SQL Server solo será accesible por Elevant API. El puerto 1433 no se publicará en
-  Testing ni Production.
+  Development ni Production.
 - El acceso a Production, Dokploy, backups y secretos queda restringido a Erick y a
   personal expresamente autorizado.
 - Web y móvil solo pueden incluir URLs y configuración pública; cualquier valor

@@ -7,7 +7,7 @@ Laisha o Eliezer definen la necesidad
                 ↓
 Erick define el contrato REST
                 ↓
-Erick implementa y despliega en Testing
+Erick implementa y despliega en Development
                 ↓
 El equipo valida con Swagger, Postman o cliente HTTP
                 ↓
@@ -32,6 +32,6 @@ Backend propone método, ruta versionada, códigos, Problem Details, paginación
 
 ## Entrega
 
-Se implementan pruebas y se actualiza OpenAPI. Tras una revisión de compatibilidad se regenera el cliente compartido. Web y móvil integran primero contra Testing. La versión anterior se retira únicamente cuando no haya consumidores activos o exista una migración acordada.
+Se implementan pruebas y se actualiza OpenAPI. Tras una revisión de compatibilidad se regenera el cliente compartido. Web y móvil integran primero contra Development. La versión anterior se retira únicamente cuando no haya consumidores activos o exista una migración acordada.
 
 Una solicitud urgente no autoriza exponer SQL Server, compartir una clave o agregar campos sensibles sin revisión.

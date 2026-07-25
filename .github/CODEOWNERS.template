@@ -13,6 +13,6 @@
 # Activación:
 # 1. Sustituir @REPLACE_* por usuarios o equipos reales de GitHub.
 # 2. Renombrar este archivo a `.github/CODEOWNERS`.
-# 3. Proteger `main` y `develop`, exigir revisiones de CODEOWNERS y CI exitoso.
+# 3. Proteger `main` y `Development`, exigir revisiones de CODEOWNERS y CI exitoso.
 # 4. Permitir merges únicamente después de las comprobaciones obligatorias.
 # 5. Reservar la aprobación y ejecución de despliegues de Production para Erick.

@@ -55,7 +55,7 @@ Copy-Item .env.example .env
 docker compose --env-file .env -f infrastructure/docker/compose.local.yml up --build
 ```
 
-SQL Server se publica únicamente en `127.0.0.1` para desarrollo local. Testing y Production no publican el puerto 1433. Las migraciones se crean y aplican mediante los scripts controlados de esta carpeta; nunca se ejecutan automáticamente durante el arranque de producción.
+SQL Server se publica únicamente en `127.0.0.1` para desarrollo local. Development y Production no publican el puerto 1433. Dokploy Development usa internamente `ASPNETCORE_ENVIRONMENT=Testing` para evitar el comportamiento permisivo del ambiente local. Las migraciones se crean y aplican mediante los scripts controlados de esta carpeta; nunca se ejecutan automáticamente durante el arranque de producción.
 
 ## Límites actuales
 

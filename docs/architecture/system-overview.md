@@ -25,7 +25,7 @@ ausencia es deliberada: evita convertir supuestos en contratos.
 
 ## Calidad crítica
 
-- separación de Testing y Production;
+- separación de Development y Production;
 - operaciones de esquema explícitas y reversibles;
 - contratos públicos versionados;
 - secretos fuera de Git e imágenes;

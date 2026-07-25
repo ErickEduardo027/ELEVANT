@@ -19,7 +19,7 @@ Indique las áreas principales, por ejemplo `backend/src`, `frontend/web` o
 ## Evidencia
 
 Adjunte capturas, respuestas HTTP, logs sanitizados o enlaces a evidencia de
-Testing. No incluya secretos, PII ni información interna de Production.
+Development. No incluya secretos, PII ni información interna de Production.
 
 ## Pruebas realizadas
 
