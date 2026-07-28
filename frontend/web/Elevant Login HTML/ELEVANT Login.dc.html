@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #F4F7FC; }
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  a { color: #1B4FA0; text-decoration: none; }
+  a:hover { color: #0E2A5C; }
+  input::placeholder { color: #9AA7BD; }
+  @keyframes elv-rise { from { opacity: 0; transform: translateY(22px) scale(0.985); } to { opacity: 1; transform: none; } }
+  @keyframes elv-fade { from { opacity: 0; } to { opacity: 1; } }
+  @media (max-width: 1080px) {
+    [data-elv-shell] { grid-template-columns: 1fr !important; }
+    [data-elv-aside] { display: none !important; }
+  }
+  @media (max-width: 520px) {
+    [data-elv-right] { padding: 32px 18px !important; }
+    [data-elv-card] { padding: 34px 24px 28px !important; }
+  }
+</style>
+</helmet>
+<div data-elv-shell="" style="min-height: 100vh; display: grid; grid-template-columns: 55fr 45fr; font-family: Geist, 'SF Pro Display', system-ui, sans-serif; color: #0E2A5C; background: #F4F7FC;">
+
+  <div data-elv-aside="" style="position: relative; overflow: hidden; background: radial-gradient(120% 100% at 12% 8%, #12326E 0%, #0B1E44 55%, #081736 100%); padding: 56px 64px; display: flex; flex-direction: column; justify-content: space-between; min-height: 100vh;">
+    {{ ambient }}
+    <div style="position: relative; display: flex; align-items: center; gap: 14px; animation: elv-fade 900ms ease both;">
+      <div style="width: 88px; height: 66px; overflow: hidden; position: relative; filter: brightness(1.9) saturate(1.15);">
+        <img src="uploads/LogoPrincipal%20-%20Editado.png" alt="ELEVANT" style="position: absolute; left: -63px; top: -53px; width: 210px;" />
+      </div>
+      <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.18);"></div>
+      <div style="font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.62); font-weight: 500;">Control de Operaciones</div>
+    </div>
+
+    <div style="position: relative; max-width: 560px; animation: elv-rise 1000ms cubic-bezier(0.16,1,0.3,1) both;">
+      <div style="font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: #FF6A1F; font-weight: 600; margin-bottom: 26px;">Operaciones de Handling en Tierra</div>
+      <h1 style="margin: 0; font-size: 58px; line-height: 1.04; font-weight: 500; letter-spacing: -0.035em; color: #FFFFFF; text-wrap: balance;">Precisión en tierra,<br />en cada rotación.</h1>
+      <p style="margin: 26px 0 0; font-size: 17px; line-height: 1.65; color: rgba(255,255,255,0.60); max-width: 440px; font-weight: 300; text-wrap: pretty;">Una plataforma operativa unificada para la coordinación de rotaciones, contratos, personal y control financiero en cada estación.</p>
+    </div>
+
+    <div style="position: relative; display: flex; gap: 56px; animation: elv-fade 1200ms ease both;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 26px; font-weight: 400; color: #FFFFFF; letter-spacing: -0.02em;">99.98%</div>
+        <div style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.42);">Disponibilidad de la plataforma</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 26px; font-weight: 400; color: #FFFFFF; letter-spacing: -0.02em;">24 / 7</div>
+        <div style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.42);">Cobertura OCC</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="font-size: 26px; font-weight: 400; color: #FFFFFF; letter-spacing: -0.02em;">ISO 27001</div>
+        <div style="font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.42);">Controles certificados</div>
+      </div>
+    </div>
+  </div>
+
+  <div data-elv-right="" style="position: relative; display: flex; align-items: center; justify-content: center; padding: 48px 40px; background: radial-gradient(90% 70% at 85% 0%, #E6EEFB 0%, #F4F7FC 60%, #FAFBFE 100%); min-height: 100vh;">
+    <div style="position: absolute; width: 420px; height: 420px; right: -140px; top: 12%; border-radius: 50%; background: radial-gradient(circle, rgba(43,101,196,0.16), rgba(43,101,196,0) 70%); filter: blur(20px);"></div>
+    <div style="position: absolute; width: 340px; height: 340px; left: -120px; bottom: 6%; border-radius: 50%; background: radial-gradient(circle, rgba(255,106,31,0.10), rgba(255,106,31,0) 70%); filter: blur(24px);"></div>
+
+    <div style="position: relative; width: 100%; max-width: 460px; animation: elv-rise 800ms 120ms cubic-bezier(0.16,1,0.3,1) both;">
+      <div data-elv-card="" style="border-radius: 24px; padding: 44px 40px 36px; background: rgba(255,255,255,0.72); backdrop-filter: blur(28px) saturate(1.6); -webkit-backdrop-filter: blur(28px) saturate(1.6); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset, 0 24px 60px -24px rgba(14,42,92,0.28), 0 2px 8px rgba(14,42,92,0.06);">
+
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 18px; margin-bottom: 30px;">
+          <div style="width: 88px; height: 66px; overflow: hidden; position: relative;">
+            <img src="uploads/LogoPrincipal%20-%20Editado.png" alt="ELEVANT" style="position: absolute; left: -63px; top: -53px; width: 210px;" />
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px;">
+            <div style="font-size: 27px; font-weight: 600; letter-spacing: 0.14em; color: #0E2A5C;">ELEVANT</div>
+            <div style="font-size: 11.5px; letter-spacing: 0.13em; text-transform: uppercase; color: #6B7C99; font-weight: 500;">Plataforma de Operaciones de Handling en Tierra</div>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: linear-gradient(90deg, rgba(14,42,92,0), rgba(14,42,92,0.10), rgba(14,42,92,0)); margin-bottom: 28px;"></div>
+
+        <div style="margin-bottom: 26px;">
+          <div style="font-size: 20px; font-weight: 500; letter-spacing: -0.02em; color: #0E2A5C; margin-bottom: 6px;">Bienvenido de nuevo</div>
+          <div style="font-size: 14px; line-height: 1.55; color: #6B7C99; font-weight: 300;">Inicia sesión para continuar en la plataforma operativa.</div>
+        </div>
+
+        <form onSubmit="{{ onSubmit }}" style="display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label for="elv-email" style="font-size: 12.5px; font-weight: 500; letter-spacing: 0.01em; color: #33456B;">Correo corporativo</label>
+            <div style="position: relative; display: flex;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8C9AB4" stroke-width="1.6" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; pointer-events: none;"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
+              <input id="elv-email" type="email" name="email" autocomplete="username" placeholder="name@elevant.aero" required="" style="width: 100%; height: 50px; padding: 0 16px 0 44px; border-radius: 13px; border: 1px solid rgba(14,42,92,0.13); background: rgba(255,255,255,0.85); font-family: inherit; font-size: 14.5px; color: #0E2A5C; outline: none; transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;" style-focus="border-color: #2B65C4; box-shadow: 0 0 0 4px rgba(43,101,196,0.14); background: #FFFFFF;" style-hover="border-color: rgba(14,42,92,0.24);" />
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label for="elv-pass" style="font-size: 12.5px; font-weight: 500; letter-spacing: 0.01em; color: #33456B;">Contraseña</label>
+            <div style="position: relative; display: flex;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#8C9AB4" stroke-width="1.6" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; pointer-events: none;"><rect x="4" y="10.5" width="16" height="10" rx="2.5" /><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7" /></svg>
+              <input id="elv-pass" type="{{ passType }}" name="password" autocomplete="current-password" placeholder="••••••••••••" required="" style="width: 100%; height: 50px; padding: 0 52px 0 44px; border-radius: 13px; border: 1px solid rgba(14,42,92,0.13); background: rgba(255,255,255,0.85); font-family: inherit; font-size: 14.5px; color: #0E2A5C; outline: none; transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;" style-focus="border-color: #2B65C4; box-shadow: 0 0 0 4px rgba(43,101,196,0.14); background: #FFFFFF;" style-hover="border-color: rgba(14,42,92,0.24);" />
+              <button type="button" onClick="{{ togglePass }}" aria-label="{{ passLabel }}" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; display: grid; place-items: center; border: none; border-radius: 10px; background: transparent; cursor: pointer; color: #6B7C99; transition: background 180ms ease, color 180ms ease;" style-hover="background: rgba(14,42,92,0.06); color: #0E2A5C;">
+                {{ eyeIcon }}
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 2px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 0; font-size: 13.5px; color: #33456B; font-weight: 400;">
+              <input type="checkbox" checked="{{ remember }}" onChange="{{ toggleRemember }}" style="width: 17px; height: 17px; accent-color: #1B4FA0; cursor: pointer; margin: 0;" />
+              Recordarme
+            </label>
+            <a href="#" style="font-size: 13.5px; font-weight: 500;">¿Olvidaste tu contraseña?</a>
+          </div>
+
+          <button type="submit" disabled="{{ busy }}" style="position: relative; overflow: hidden; margin-top: 8px; height: 52px; width: 100%; border: none; border-radius: 14px; background: linear-gradient(180deg, #2B65C4 0%, #16418C 100%); color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 500; letter-spacing: 0.01em; cursor: pointer; box-shadow: 0 10px 24px -10px rgba(22,65,140,0.65), 0 1px 0 rgba(255,255,255,0.25) inset; transition: transform 200ms cubic-bezier(0.16,1,0.3,1), box-shadow 200ms ease, filter 200ms ease;" style-hover="transform: translateY(-1.5px); box-shadow: 0 16px 30px -12px rgba(22,65,140,0.7), 0 1px 0 rgba(255,255,255,0.25) inset;" style-active="transform: translateY(0); filter: brightness(0.96);">
+            {{ buttonInner }}
+          </button>
+        </form>
+
+        <div style="display: flex; align-items: center; gap: 14px; margin: 28px 0 18px;">
+          <div style="flex: 1; height: 1px; background: rgba(14,42,92,0.10);"></div>
+          <div style="font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #97A3B8; font-weight: 500;">Acceso exclusivo interno</div>
+          <div style="flex: 1; height: 1px; background: rgba(14,42,92,0.10);"></div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 12.5px; color: #6B7C99; font-weight: 300;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#2B65C4" stroke-width="1.6" style="width: 15px; height: 15px; flex: none;"><path d="M12 3.2 5 6v5.4c0 4.3 2.9 8 7 9.4 4.1-1.4 7-5.1 7-9.4V6l-7-2.8Z" /><path d="m9.2 12.1 2 2 3.6-3.9" /></svg>
+          Autenticación empresarial segura
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 24px; font-size: 11.5px; color: #97A3B8; font-weight: 300;">
+        <span>Versión 1.0</span>
+        <span style="width: 3px; height: 3px; border-radius: 50%; background: #C3CCDC;"></span>
+        <span>© 2026 ELEVANT</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+class Component extends DCLogic {
+  state = { show: false, remember: true, status: 'idle' };
+
+  eye(open) {
+    const p = open
+      ? [React.createElement('path', { key: 'a', d: 'M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z' }), React.createElement('circle', { key: 'b', cx: 12, cy: 12, r: 3.1 })]
+      : [React.createElement('path', { key: 'a', d: 'M4 4.5 20 20.5' }), React.createElement('path', { key: 'b', d: 'M9.9 6.2A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.4 4.1M6.4 8A17 17 0 0 0 2.5 12s3.5 6 9.5 6a9.4 9.4 0 0 0 3.3-.6' }), React.createElement('path', { key: 'c', d: 'M10 10a3 3 0 0 0 4.1 4.2' })];
+    return React.createElement('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', style: { width: 18, height: 18 } }, p);
+  }
+
+  ambient() {
+    const blob = (s, d) => React.createElement('div', { key: s.key, style: Object.assign({ position: 'absolute', borderRadius: '50%', filter: 'blur(70px)', animation: `elv-float${d} ${s.dur}s ease-in-out infinite alternate` }, s.css) });
+    const shards = [
+      { key: 'b1', dur: 16, css: { width: 620, height: 620, left: '-14%', top: '-18%', background: 'radial-gradient(circle, rgba(60,124,224,0.42), rgba(60,124,224,0) 68%)' } },
+      { key: 'b2', dur: 22, css: { width: 520, height: 520, right: '-12%', bottom: '-10%', background: 'radial-gradient(circle, rgba(255,106,31,0.20), rgba(255,106,31,0) 66%)' } },
+      { key: 'b3', dur: 19, css: { width: 460, height: 460, left: '38%', top: '32%', background: 'radial-gradient(circle, rgba(24,80,180,0.45), rgba(24,80,180,0) 70%)' } }
+    ];
+    const wings = [
+      { k: 'w1', w: 780, h: 190, l: '-8%', t: '16%', rot: -18, o: 0.10, dur: 26 },
+      { k: 'w2', w: 640, h: 160, l: '18%', t: '42%', rot: -18, o: 0.075, dur: 32 },
+      { k: 'w3', w: 520, h: 130, l: '4%', t: '66%', rot: -18, o: 0.055, dur: 29 }
+    ].map(w => React.createElement('div', {
+      key: w.k,
+      style: {
+        position: 'absolute', width: w.w, height: w.h, left: w.l, top: w.t,
+        transform: `rotate(${w.rot}deg) skewX(-24deg)`, borderRadius: 28,
+        background: `linear-gradient(105deg, rgba(255,255,255,${w.o + 0.06}) 0%, rgba(255,255,255,${w.o * 0.35}) 46%, rgba(255,255,255,0) 100%)`,
+        border: '1px solid rgba(255,255,255,0.10)',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        boxShadow: '0 30px 80px -40px rgba(0,0,0,0.6)',
+        animation: `elv-drift ${w.dur}s ease-in-out infinite alternate`
+      }
+    }));
+    const particles = Array.from({ length: 22 }, (_, i) => {
+      const seed = (i * 37) % 100;
+      return React.createElement('div', {
+        key: 'p' + i,
+        style: {
+          position: 'absolute', width: i % 5 === 0 ? 3 : 2, height: i % 5 === 0 ? 3 : 2, borderRadius: '50%',
+          left: `${(seed * 1.01) % 96 + 2}%`, top: `${((i * 53) % 92) + 4}%`,
+          background: i % 7 === 0 ? 'rgba(255,138,74,0.75)' : 'rgba(255,255,255,0.7)',
+          animation: `elv-particle ${14 + (i % 7) * 3}s linear ${i * 0.6}s infinite`
+        }
+      });
+    });
+    const sheen = React.createElement('div', {
+      key: 'sheen',
+      style: {
+        position: 'absolute', inset: '-40% -60%', pointerEvents: 'none',
+        background: 'linear-gradient(100deg, rgba(255,255,255,0) 42%, rgba(255,255,255,0.055) 50%, rgba(255,255,255,0) 58%)',
+        animation: 'elv-sheen 14s ease-in-out infinite'
+      }
+    });
+    const style = React.createElement('style', { key: 'kf' }, `
+      @keyframes elv-float16 { to { transform: translate3d(40px,30px,0) scale(1.08); } }
+      @keyframes elv-float22 { to { transform: translate3d(-50px,-26px,0) scale(1.1); } }
+      @keyframes elv-float19 { to { transform: translate3d(28px,-40px,0) scale(0.94); } }
+      @keyframes elv-drift { to { transform: rotate(-18deg) skewX(-24deg) translate3d(46px,-18px,0); } }
+      @keyframes elv-particle { 0% { opacity: 0; transform: translate3d(0,10px,0); } 20% { opacity: .85; } 80% { opacity: .5; } 100% { opacity: 0; transform: translate3d(70px,-60px,0); } }
+      @keyframes elv-sheen { 0%,100% { transform: translateX(-14%); } 50% { transform: translateX(14%); } }
+      @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+    `);
+    return React.createElement('div', { style: { position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' } },
+      [style, shards.map((s, i) => blob(s, [16, 22, 19][i])), wings, particles, sheen]);
+  }
+
+  buttonInner() {
+    const s = this.state.status;
+    const label = s === 'busy' ? 'Autenticando' : s === 'done' ? 'Acceso concedido' : 'Iniciar sesión';
+    const kids = [React.createElement('span', { key: 'l' }, label)];
+    if (s === 'busy') {
+      kids.unshift(React.createElement('span', { key: 's', style: { width: 15, height: 15, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', animation: 'elv-spin .7s linear infinite' } }));
+    } else if (s === 'done') {
+      kids.unshift(React.createElement('svg', { key: 'c', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round', style: { width: 16, height: 16 } }, React.createElement('path', { d: 'm5 12.5 4.4 4.5L19 7' })));
+    } else {
+      kids.push(React.createElement('svg', { key: 'a', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', style: { width: 16, height: 16, opacity: 0.9 } }, React.createElement('path', { d: 'M4 12h14m-5.5-5.5L18.5 12l-6 5.5' })));
+    }
+    return React.createElement(React.Fragment, null, [
+      React.createElement('style', { key: 'k' }, '@keyframes elv-spin { to { transform: rotate(360deg); } } @keyframes elv-ripple { to { transform: scale(2.6); opacity: 0; } }'),
+      s === 'done' ? React.createElement('span', { key: 'ok', style: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, #17A06A 0%, #0E7A50 100%)', animation: 'elv-fade 260ms ease both' } }) : null,
+      this.state.ripple ? React.createElement('span', { key: this.state.ripple.id, style: { position: 'absolute', left: this.state.ripple.x - 60, top: this.state.ripple.y - 60, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.28)', transform: 'scale(0)', animation: 'elv-ripple 620ms ease-out forwards', pointerEvents: 'none' } }) : null,
+      React.createElement('span', { key: 'w', style: { position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9 } }, kids)
+    ]);
+  }
+
+  renderVals() {
+    return {
+      ambient: this.ambient(),
+      passType: this.state.show ? 'text' : 'password',
+      passLabel: this.state.show ? 'Ocultar contraseña' : 'Mostrar contraseña',
+      eyeIcon: this.eye(this.state.show),
+      remember: this.state.remember,
+      busy: this.state.status !== 'idle',
+      buttonInner: this.buttonInner(),
+      togglePass: () => this.setState(s => ({ show: !s.show })),
+      toggleRemember: e => this.setState({ remember: e.target.checked }),
+      onSubmit: e => {
+        e.preventDefault();
+        if (this.state.status !== 'idle') return;
+        const b = e.target.querySelector('button[type=submit]');
+        const r = b.getBoundingClientRect();
+        this.setState({ status: 'busy', ripple: { id: Date.now(), x: r.width / 2, y: r.height / 2 } });
+        setTimeout(() => this.setState({ status: 'done' }), 1500);
+        setTimeout(() => this.setState({ status: 'idle', ripple: null }), 3400);
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
