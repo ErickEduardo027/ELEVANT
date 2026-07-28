@@ -8,7 +8,6 @@ La aplicación móvil se inicializará con Expo cuando se confirme la primera fe
 4. Encapsular cámara, almacenamiento seguro y conectividad detrás de adaptadores.
 5. Probar permisos rechazados, falta de espacio, reconexión, duplicados y cierre de la aplicación.
 6. Validar en una tablet representativa, no solo en navegador o emulador.
-7. Generar builds de Testing con identificadores y endpoints separados de Production.
+7. Generar builds de Development con identificadores y endpoints separados de Production.
 
 Las claves de firma y tokens se custodian fuera del repositorio. Una evidencia no se elimina localmente hasta recibir confirmación persistente, y tampoco se conserva indefinidamente sin una política aprobada.
-

@@ -9,7 +9,7 @@ SQL Server no se expone a Internet. La API accede desde una red privada con una 
 - Administración: cuenta personal o controlada, con auditoría.
 - Backup: permisos limitados al proceso y destino correspondiente.
 
-No se comparten identidades entre Local, Testing y Production. La cadena de conexión se entrega como secreto y nunca se imprime completa.
+No se comparten identidades entre Local, Development y Production. La cadena de conexión se entrega como secreto y nunca se imprime completa.
 
 ## Red
 
@@ -21,9 +21,8 @@ En desarrollo, un puerto publicado se liga a `127.0.0.1`. En servidores, la base
 - revisar permisos y cuentas inactivas;
 - cifrar transporte y backups según el entorno;
 - limitar y auditar consultas administrativas;
-- no exportar datos reales a dispositivos o Testing;
+- no exportar datos reales a dispositivos o Development;
 - probar recuperación sin sobrescribir el origen;
 - registrar metadatos de operación, no contenido sensible.
 
 Un problema de conectividad no se resuelve deshabilitando firewall, cifrado o validación de certificado de forma permanente.
-

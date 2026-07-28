@@ -20,6 +20,8 @@
 |   |   |   |   `-- README.md
 |   |   |   |-- backup
 |   |   |   |   `-- README.md
+|   |   |   |-- bootstrap
+|   |   |   |   `-- initialize-development.sql
 |   |   |   |-- diagnostics
 |   |   |   |   `-- README.md
 |   |   |   |-- recovery
@@ -36,9 +38,9 @@
 |   |   |-- database
 |   |   |   `-- README.md
 |   |   |-- docker
+|   |   |   |-- compose.development.yml
 |   |   |   |-- compose.local.yml
 |   |   |   |-- compose.production.yml.example
-|   |   |   |-- compose.testing.yml.example
 |   |   |   `-- README.md
 |   |   |-- dokploy
 |   |   |   `-- README.md
@@ -283,8 +285,8 @@
 |   |   |-- 0002-use-dotnet-10.md
 |   |   |-- 0003-use-modular-monolith.md
 |   |   |-- 0004-centralize-external-api-access.md
-|   |   |-- 0005-use-remote-testing-api.md
-|   |   |-- 0006-separate-testing-and-production.md
+|   |   |-- 0005-use-remote-development-api.md
+|   |   |-- 0006-separate-development-and-production.md
 |   |   `-- 0007-api-client-generation-pending.md
 |   |-- api
 |   |   |-- consumer-guidelines.md

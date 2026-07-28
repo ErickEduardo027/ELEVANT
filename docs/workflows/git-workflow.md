@@ -1,6 +1,6 @@
 # Flujo de Git
 
-`main` representa Production y `develop` Testing e integración. El repositorio
+`main` representa Production y `Development` el desarrollo remoto e integración. El repositorio
 inicial no crea ramas remotas ni configura protecciones por sí solo.
 
 ## Ramas de trabajo
@@ -22,4 +22,4 @@ Cada commit debe ser coherente, compilable cuando sea posible y libre de secreto
 
 ## Protección recomendada
 
-En el proveedor Git, proteger `main` y, si existe, `develop` con pull request obligatorio, al menos una aprobación, CI requerido, conversaciones resueltas y prohibición de force-push/eliminación. CODEOWNERS se activa únicamente con usuarios o equipos reales confirmados.
+En el proveedor Git, proteger `main` y `Development` con pull request obligatorio, al menos una aprobación, CI requerido, conversaciones resueltas y prohibición de force-push/eliminación. CODEOWNERS se activa únicamente con usuarios o equipos reales confirmados.

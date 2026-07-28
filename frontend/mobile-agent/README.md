@@ -3,7 +3,7 @@
 Esqueleto de la aplicación móvil para agentes. Se prevé Expo y Expo Router, pero `create-expo-app` no se ejecuta todavía para evitar fijar versiones y decisiones antes de contar con una feature móvil implementable.
 
 Eliezer es responsable de `frontend/mobile-agent`. La aplicación consumirá normalmente
-`https://api-test.elevant.example` y no necesita que él ejecute el backend ni
+`https://api-dev.elevant.com` y no necesita que él ejecute el backend ni
 instale SQL Server localmente.
 
 ## Límite de la aplicación
@@ -55,7 +55,7 @@ SignalR sirve para avisos servidor-cliente y actualización de interfaz; no reem
 
 ## Entrega a tablet
 
-Antes de generar una APK se deben definir identificador de aplicación, canales de firma, ambientes, estrategia de actualización y custodia de claves. Una APK de Testing nunca comparte URL, credenciales ni almacenamiento con Production.
+Antes de generar una APK se deben definir identificador de aplicación, canales de firma, ambientes, estrategia de actualización y custodia de claves. Una APK de Development nunca comparte URL, credenciales ni almacenamiento con Production.
 
 Mobile Agent no se aloja como una aplicación web en el VPS. La APK se compila, se
 instala en la tablet y consume mediante HTTPS la API que está alojada en el KVM.

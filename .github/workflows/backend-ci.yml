@@ -4,14 +4,14 @@ on:
   push:
     branches:
       - main
-      - develop
+      - Development
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches:
       - main
-      - develop
+      - Development
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
@@ -57,6 +57,15 @@ jobs:
 
       - name: Test
         run: dotnet test Elevant.sln --configuration Release --no-build --logger trx --results-directory TestResults
+
+      - name: Validate Development Compose
+        env:
+          MSSQL_SA_PASSWORD: REPLACE_ME_CI_StrongPassword123!
+          ELEVANT_DATABASE_CONNECTION_STRING: Server=sqlserver,1433;Database=ElevantDevelopmentDb;User Id=sa;Password=REPLACE_ME_CI_StrongPassword123!;Encrypt=True;TrustServerCertificate=True
+          CORS_ALLOWED_ORIGIN_0: http://localhost:3000
+          DOKPLOY_NETWORK_NAME: ci-proxy
+          FORWARDED_HEADERS_KNOWN_NETWORK_0: 172.30.0.0/16
+        run: docker compose -f infrastructure/docker/compose.development.yml config --quiet
 
       - name: Upload test results
         if: always()

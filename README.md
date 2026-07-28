@@ -106,14 +106,14 @@ futuras migraciones se aplican mediante el proceso controlado documentado en
 
 Laisha debe leer `frontend/web/README.md`, elegir posteriormente Next.js, Astro u otra
 tecnología en una PR independiente y consumir
-`https://api-test.elevant.example`. Puede trabajar con mocks sin ejecutar API ni
+`https://api-dev.elevant.com`. Puede trabajar con mocks sin ejecutar API ni
 SQL Server localmente.
 
 ## Trabajo de Eliezer
 
 Eliezer debe leer `frontend/mobile-agent/README.md` e inicializar Expo en una PR
 independiente. La APK se instalará en la tablet y consumirá la API remota de
-Testing; no se aloja como una aplicación web en el VPS.
+Development; no se aloja como una aplicación web en el VPS.
 
 ## Variables y secretos
 
@@ -126,8 +126,8 @@ Git.
 
 ## Ambientes
 
-- Testing (`develop`): `https://api-test.elevant.example`, datos controlados,
-  Swagger habilitable y base `ElevantTestingDb`.
+- Development (`Development`): `https://api-dev.elevant.com`, datos sintéticos,
+  Swagger habilitado y base `ElevantDevelopmentDb`.
 - Production (`main`): `https://api.elevant.example`, datos reales, Swagger no
   expuesto y base `ElevantProductionDb`.
 
@@ -136,7 +136,7 @@ uploads ni backups. Solo Erick aprueba despliegues a Production.
 
 ## Flujo de trabajo
 
-Las ramas son `main`, `develop`, `feature/*`, `fix/*` y `hotfix/*`. OpenAPI es el
+Las ramas son `main`, `Development`, `feature/*`, `fix/*` y `hotfix/*`. OpenAPI es el
 contrato oficial entre backend, web y móvil. Consulte `CONTRIBUTING.md` y
 `docs/workflows/team-collaboration.md` antes de abrir una PR.
 
@@ -158,8 +158,8 @@ generado, aplicación web, proyecto Expo ni despliegue en Dokploy.
 
 ## Próximos pasos
 
-1. Configurar usuarios reales en CODEOWNERS y proteger `main` y `develop`.
-2. Publicar la API técnica en Testing.
+1. Configurar usuarios reales en CODEOWNERS y proteger `main` y `Development`.
+2. Publicar la API técnica en Development.
 3. Acordar el primer contrato mediante OpenAPI.
 4. Inicializar web y móvil en Pull Requests independientes.
 5. Diseñar el primer módulo y su modelo de datos con un ADR específico.

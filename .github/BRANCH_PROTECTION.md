@@ -12,7 +12,7 @@ Estas reglas deben activarse manualmente cuando exista el remoto y se conozcan l
 - Bloquear force-push y eliminación.
 - Restringir excepciones a administradores designados y auditables.
 
-## `develop`
+## `Development`
 
 - Requerir pull request y el check correspondiente al área modificada.
 - Bloquear force-push y eliminación.

@@ -3,7 +3,7 @@ name: Web CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, Development]
     paths:
       - "frontend/web/**"
       - "packages/api-client/**"
@@ -11,7 +11,7 @@ on:
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
   pull_request:
-    branches: [main, develop]
+    branches: [main, Development]
     paths:
       - "frontend/web/**"
       - "packages/api-client/**"

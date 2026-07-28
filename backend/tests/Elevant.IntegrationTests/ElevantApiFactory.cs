@@ -18,6 +18,7 @@ public sealed class ElevantApiFactory : WebApplicationFactory<Program>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:ElevantDatabase"] = TestConnectionString,
+                ["Cors:AllowedOrigins:1"] = "",
                 ["ForwardedHeaders:Enabled"] = "false",
                 ["HttpsRedirection:Enabled"] = "false",
                 ["Swagger:Enabled"] = "true",

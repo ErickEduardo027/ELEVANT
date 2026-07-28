@@ -5,7 +5,7 @@ Un secreto es cualquier valor que permite acceso o firma: contraseñas, cadenas 
 ## Por ambiente
 
 - Local: user-secrets de .NET o archivo local ignorado y protegido.
-- Testing: gestor de secretos/variables protegidas de la plataforma.
+- Development: gestor de secretos/variables protegidas de la plataforma.
 - Production: secretos de plataforma con acceso mínimo y auditoría.
 - CI: secretos del proveedor, limitados a jobs y ramas requeridos.
 
@@ -27,4 +27,3 @@ Si un secreto aparece en un commit, log o mensaje:
 6. documentar causa y control preventivo sin repetir el valor.
 
 Ocultar el texto en Git no vuelve segura una credencial que ya fue publicada.
-

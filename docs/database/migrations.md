@@ -2,6 +2,8 @@
 
 Las migraciones de EF Core residen en Elevant.Infrastructure y se crean con la herramienta local fijada por el repositorio. La API no ejecuta `Database.Migrate()` al arrancar.
 
+`ElevantDevelopmentDb` y la futura `ElevantProductionDb` aplican la misma secuencia de migraciones para conservar el esquema. Sus datos, credenciales, instancias y volúmenes permanecen separados.
+
 ## Crear una migración
 
 1. Confirmar que el cambio de modelo corresponde a un requisito aprobado.

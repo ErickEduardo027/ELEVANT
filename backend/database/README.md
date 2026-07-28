@@ -10,7 +10,7 @@ Las migraciones de Entity Framework pertenecen al proyecto Infrastructure del ba
 - No guardar cadenas de conexión, contraseñas o tokens en scripts.
 - Toda modificación de esquema normal debe ser una migración EF revisable.
 - Un script SQL manual requiere objetivo, ambiente, precondiciones, consulta de verificación y estrategia de reversión.
-- Testing y Production usan instancias, bases, usuarios, volúmenes y copias independientes.
+- Development y Production comparten el esquema mediante migraciones revisadas, pero usan instancias, bases, usuarios, datos, volúmenes y copias independientes. Las bases activas viven en volúmenes de SQL Server, no en este directorio.
 - SSMS es una herramienta de administración, no una dependencia de la aplicación.
 
 Consulte `docs/database/migrations.md` para migraciones y
