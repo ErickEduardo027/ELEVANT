@@ -73,3 +73,5 @@ Thumbs.db
 Desktop.ini
 
 # El versionado de packages/api-client/generated se decidirá en el ADR 0007.
+
+.fake
