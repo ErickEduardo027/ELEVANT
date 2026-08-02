@@ -2,7 +2,7 @@ import { STATUS_COLORS, getStatusMeta } from './statusMeta';
 
 export function formatClockTime(isoString) {
   const date = new Date(isoString);
-  return date.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export function mapApprovalToStrip(approval) {

@@ -5,6 +5,18 @@ describe('formatClockTime', () => {
   it('formats an ISO string as HH:MM', () => {
     expect(formatClockTime('2026-08-01T13:50:00-04:00')).toMatch(/^\d{1,2}:\d{2}/);
   });
+
+  it('renders 24-hour time with no AM/PM suffix', () => {
+    const isoString = '2026-08-01T13:50:00-04:00';
+    const date = new Date(isoString);
+    const expected = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+    const result = formatClockTime(isoString);
+
+    expect(result).toBe(expected);
+    expect(result).toMatch(/^\d{2}:\d{2}$/);
+    expect(result).not.toMatch(/[ap]\.?\s?m\.?/i);
+  });
 });
 
 describe('mapApprovalToStrip', () => {
