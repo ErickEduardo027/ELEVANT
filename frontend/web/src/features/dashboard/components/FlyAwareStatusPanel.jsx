@@ -18,8 +18,14 @@ const STATUS_META = {
   },
 };
 
+const DEFAULT_META = {
+  title: 'FlyAware sin conexión',
+  colorClass: 'text-status-danger',
+  dotClass: 'bg-status-danger',
+};
+
 export default function FlyAwareStatusPanel({ status, lastSyncMinutesAgo }) {
-  const meta = STATUS_META[status];
+  const meta = STATUS_META[status] || DEFAULT_META;
   const Icon = status === 'error' ? AlertTriangleIcon : RefreshCwIcon;
 
   return (

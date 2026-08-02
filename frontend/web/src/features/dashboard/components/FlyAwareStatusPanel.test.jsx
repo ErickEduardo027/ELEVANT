@@ -24,4 +24,10 @@ describe('FlyAwareStatusPanel', () => {
     render(<FlyAwareStatusPanel status="error" lastSyncMinutesAgo={40} />);
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
+
+  it('handles unrecognized status gracefully with fallback treatment', () => {
+    render(<FlyAwareStatusPanel status="unknown" lastSyncMinutesAgo={15} />);
+    expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
+    expect(screen.getByText(/hace 15 min/i)).toBeInTheDocument();
+  });
 });
