@@ -8,8 +8,11 @@ export const STATUS_COLORS = {
 
 export const FLIGHT_STATUS_META = {
   scheduled: { label: 'Programado', color: 'info' },
+  boarding: { label: 'Abordando', color: 'active' },
+  taxiing: { label: 'Rodaje', color: 'active' },
   enRoute: { label: 'En ruta', color: 'active' },
   landed: { label: 'Aterrizado', color: 'success' },
+  arrived: { label: 'En posición', color: 'success' },
   delayed: { label: 'Retrasado', color: 'warning' },
   diverted: { label: 'Desviado', color: 'danger' },
   cancelled: { label: 'Cancelado', color: 'danger' },

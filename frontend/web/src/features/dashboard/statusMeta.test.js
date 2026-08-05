@@ -8,6 +8,12 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('flight', 'cancelled')).toEqual({ label: 'Cancelado', color: 'danger' });
   });
 
+  it('maps the Planning-module flight statuses to label and color', () => {
+    expect(getStatusMeta('flight', 'boarding')).toEqual({ label: 'Abordando', color: 'active' });
+    expect(getStatusMeta('flight', 'taxiing')).toEqual({ label: 'Rodaje', color: 'active' });
+    expect(getStatusMeta('flight', 'arrived')).toEqual({ label: 'En posición', color: 'success' });
+  });
+
   it('maps known service statuses to label and color', () => {
     expect(getStatusMeta('service', 'pendingReview')).toEqual({
       label: 'Pendiente de revisión',
