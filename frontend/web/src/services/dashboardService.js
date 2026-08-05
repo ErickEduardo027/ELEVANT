@@ -82,7 +82,6 @@ const BASE_SNAPSHOT = {
       occurredAt: '2026-08-01T13:22:00-04:00',
     },
   ],
-  positionsPreviewUrl: '/positions-map-preview.png',
 };
 
 export async function getDashboardSnapshot(stationCode = 'PUJ') {

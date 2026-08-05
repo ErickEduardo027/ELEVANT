@@ -15,6 +15,14 @@ function Icon({ className, children }) {
   );
 }
 
+export function MenuIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </Icon>
+  );
+}
+
 export function BellIcon(props) {
   return (
     <Icon {...props}>
@@ -90,6 +98,17 @@ export function RefreshCwIcon(props) {
     <Icon {...props}>
       <path d="M20 8a8 8 0 0 0-14.6-4.3M4 16a8 8 0 0 0 14.6 4.3" />
       <path d="M20 3.5V8h-4.5M4 20.5V16h4.5" />
+    </Icon>
+  );
+}
+
+export function UsersIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="8.5" cy="8.2" r="2.7" />
+      <path d="M3.2 18c.5-2.9 2.6-4.6 5.3-4.6s4.8 1.7 5.3 4.6" />
+      <path d="M15.5 6.3a2.6 2.6 0 0 1 0 5" />
+      <path d="M17 13.6c2.2.4 3.6 1.9 4 4.3" />
     </Icon>
   );
 }

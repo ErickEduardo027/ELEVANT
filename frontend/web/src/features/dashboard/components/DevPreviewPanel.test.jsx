@@ -1,0 +1,38 @@
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import DevPreviewPanel from './DevPreviewPanel';
+
+describe('DevPreviewPanel', () => {
+  it('is labeled clearly as a development-only tool', () => {
+    render(<DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={() => {}} />);
+    expect(screen.getByText(/vista previa.*solo desarrollo/i)).toBeInTheDocument();
+  });
+
+  it('calls onToggleTheme when the theme button is clicked', async () => {
+    const onToggleTheme = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={onToggleTheme} onSetForceState={() => {}} />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /tema/i }));
+    expect(onToggleTheme).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onSetForceState with the matching state per button', async () => {
+    const onSetForceState = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /carga/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('loading');
+
+    await userEvent.click(screen.getByRole('button', { name: /flyaware caído/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('flyAwareError');
+
+    await userEvent.click(screen.getByRole('button', { name: /sin aprobaciones/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('emptyApprovals');
+
+    await userEvent.click(screen.getByRole('button', { name: /^normal$/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('default');
+  });
+});

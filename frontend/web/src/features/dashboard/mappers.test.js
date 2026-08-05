@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatClockTime, mapApprovalToStrip, mapAlertToStrip } from './mappers';
+import { formatClockTime, formatUtcClockTime, mapApprovalToStrip, mapAlertToStrip } from './mappers';
 
 describe('formatClockTime', () => {
   it('formats an ISO string as HH:MM', () => {
@@ -14,6 +14,18 @@ describe('formatClockTime', () => {
     const result = formatClockTime(isoString);
 
     expect(result).toBe(expected);
+    expect(result).toMatch(/^\d{2}:\d{2}$/);
+    expect(result).not.toMatch(/[ap]\.?\s?m\.?/i);
+  });
+});
+
+describe('formatUtcClockTime', () => {
+  it('converts an ISO string with an offset into 24-hour UTC time', () => {
+    expect(formatUtcClockTime('2026-08-01T13:50:00-04:00')).toBe('17:50');
+  });
+
+  it('renders 24-hour time with no AM/PM suffix', () => {
+    const result = formatUtcClockTime('2026-08-01T13:50:00-04:00');
     expect(result).toMatch(/^\d{2}:\d{2}$/);
     expect(result).not.toMatch(/[ap]\.?\s?m\.?/i);
   });

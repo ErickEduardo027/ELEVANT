@@ -21,7 +21,6 @@ describe('getDashboardSnapshot', () => {
         flightStatusDistribution: expect.any(Array),
         pendingApprovals: expect.any(Array),
         alerts: expect.any(Array),
-        positionsPreviewUrl: expect.any(String),
       })
     );
   });

@@ -11,6 +11,8 @@ import {
   AlertTriangleIcon,
   RefreshCwIcon,
   ChecklistIcon,
+  UsersIcon,
+  MenuIcon,
 } from './index';
 
 const ICONS = {
@@ -24,6 +26,8 @@ const ICONS = {
   AlertTriangleIcon,
   RefreshCwIcon,
   ChecklistIcon,
+  UsersIcon,
+  MenuIcon,
 };
 
 describe('icon set', () => {

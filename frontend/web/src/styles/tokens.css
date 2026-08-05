@@ -12,3 +12,12 @@ body {
   @apply bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark;
   -webkit-font-smoothing: antialiased;
 }
+
+@keyframes elevant-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

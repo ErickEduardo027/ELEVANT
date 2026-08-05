@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getDashboardSnapshot } from '../../services/dashboardService';
 
-export function useDashboardData(stationCode = 'PUJ') {
+export function useDashboardData(stationCode = 'PUJ', refreshToken = 0) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
 
   useEffect(() => {
@@ -19,7 +19,7 @@ export function useDashboardData(stationCode = 'PUJ') {
     return () => {
       cancelled = true;
     };
-  }, [stationCode]);
+  }, [stationCode, refreshToken]);
 
   return state;
 }
