@@ -61,4 +61,10 @@ describe('getPlanningSnapshot', () => {
     const pending = snapshot.flights.filter(flight => !flight.position || flight.agents.length === 0);
     expect(pending.length).toBe(9);
   });
+
+  it('threads the dateISO parameter through to flight timestamps', async () => {
+    const snapshot = await getPlanningSnapshot('PUJ', '2026-09-01');
+    expect(snapshot.date).toBe('2026-09-01');
+    expect(snapshot.flights[0].scheduledTime).toMatch(/^2026-09-01T/);
+  });
 });

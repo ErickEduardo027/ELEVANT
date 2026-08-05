@@ -33,8 +33,8 @@ function addMinutesIso(iso, minutes) {
   return date.toISOString();
 }
 
-function buildFlight(template, stationCode) {
-  const scheduledTime = `${OPERATION_DATE}T${pad(template.hour)}:${pad(template.minute)}:00-04:00`;
+function buildFlight(template, stationCode, dateISO) {
+  const scheduledTime = `${dateISO}T${pad(template.hour)}:${pad(template.minute)}:00-04:00`;
   const estimatedTime = template.delayMinutes ? addMinutesIso(scheduledTime, template.delayMinutes) : scheduledTime;
 
   return {
@@ -64,6 +64,6 @@ export async function getPlanningSnapshot(stationCode = 'PUJ', dateISO = OPERATI
   return {
     station: { code: stationCode, localAbbr: 'AST' },
     date: dateISO,
-    flights: FLIGHT_TEMPLATES.map(template => buildFlight(template, stationCode)),
+    flights: FLIGHT_TEMPLATES.map(template => buildFlight(template, stationCode, dateISO)),
   };
 }
