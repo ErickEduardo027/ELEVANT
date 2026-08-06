@@ -35,4 +35,20 @@ describe('DevPreviewPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /^normal$/i }));
     expect(onSetForceState).toHaveBeenCalledWith('default');
   });
+
+  it('exposes the Planning-module forced states', async () => {
+    const onSetForceState = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /planificación: sin vuelos/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('planningEmpty');
+
+    await userEvent.click(screen.getByRole('button', { name: /planificación: sin resultados/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('planningNoResults');
+
+    await userEvent.click(screen.getByRole('button', { name: /planificación: error/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('planningError');
+  });
 });

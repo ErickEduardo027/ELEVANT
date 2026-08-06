@@ -3,6 +3,9 @@ const STATE_BUTTONS = [
   { state: 'loading', label: 'Carga' },
   { state: 'flyAwareError', label: 'FlyAware caído' },
   { state: 'emptyApprovals', label: 'Sin aprobaciones' },
+  { state: 'planningEmpty', label: 'Planificación: sin vuelos' },
+  { state: 'planningNoResults', label: 'Planificación: sin resultados' },
+  { state: 'planningError', label: 'Planificación: error' },
 ];
 
 export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSetForceState }) {
