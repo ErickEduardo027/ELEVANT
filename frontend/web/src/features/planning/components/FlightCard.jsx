@@ -25,7 +25,10 @@ export default function FlightCard({ flight, now, onSelect }) {
       tabIndex={0}
       onClick={() => onSelect(flight.id)}
       onKeyDown={event => {
-        if (event.key === 'Enter' || event.key === ' ') onSelect(flight.id);
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(flight.id);
+        }
       }}
       style={{ borderLeftWidth: 4, borderLeftColor: accentColor }}
       className="cursor-pointer rounded-xl border border-black/5 bg-white/70 p-3 shadow-sm backdrop-blur-md transition-shadow hover:shadow-md dark:border-white/5 dark:bg-surface-dark-card"
