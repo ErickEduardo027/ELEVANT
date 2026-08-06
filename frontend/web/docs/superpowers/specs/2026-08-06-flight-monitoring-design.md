@@ -254,9 +254,11 @@ lista de nombres) tal como lo especifica el brief — el popover muestra
 sincronizando, hora de última actualización, botón "Actualizar" que dispara
 `refreshToken`, mismo patrón que Dashboard/Planning) + filtros (fecha —
 compara contra la porción de fecha de `eta`/`etd`, ya que el mock no tiene un
-campo de fecha separado —, aerolínea, estado, origen, destino), `FlightSearch`,
-switch "Solo vuelos relacionados con PUJ" (filtra
-`origin === 'PUJ' || destination === 'PUJ'`).
+campo de fecha separado —, aerolínea, estado, origen, destino) + switch "Solo
+vuelos relacionados con PUJ" (filtra `origin === 'PUJ' || destination ===
+'PUJ'`). `FlightSearch` y `FlightFilterChips` **no** están aquí — viven dentro
+de `FlightListPanel` (ver abajo), tal como los describe el brief en "Panel
+izquierdo", evitando dos buscadores redundantes en la misma pantalla.
 
 **`useFlightMonitoringFilters`**: mismo patrón que `usePlanningFilters`,
 deriva `filteredFlights` en cliente. Los chips de `FlightFilterChips` agrupan
