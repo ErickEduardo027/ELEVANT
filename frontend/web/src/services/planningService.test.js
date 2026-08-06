@@ -42,9 +42,10 @@ describe('getPlanningSnapshot', () => {
     expect(snapshot.flights.every(flight => flight.station === 'MDT')).toBe(true);
   });
 
-  it('defaults the operation date when none is requested', async () => {
+  it('defaults the operation date to today when none is requested', async () => {
     const snapshot = await getPlanningSnapshot();
-    expect(snapshot.date).toBe('2026-08-05');
+    const today = new Date().toISOString().slice(0, 10);
+    expect(snapshot.date).toBe(today);
   });
 
   it('includes two flights sharing position B21 with linked conflict reasons', async () => {
