@@ -112,4 +112,11 @@ describe('PlanningPage', () => {
     expect(screen.getByText('Vista de tabla')).toBeInTheDocument();
     expect(screen.queryByTestId('flight-timeline')).not.toBeInTheDocument();
   });
+
+  it('shows the error panel when forceState is planningError even though status is success', () => {
+    render(
+      <PlanningPage status="success" data={SNAPSHOT} error={null} onRetry={() => {}} forceState="planningError" />
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
 });
