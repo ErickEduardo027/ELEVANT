@@ -1,16 +1,5 @@
 import { SearchIcon } from './icons';
-
-const STATUS_LABELS = {
-  scheduled: 'Programado',
-  boarding: 'Abordando',
-  taxiing: 'Rodaje',
-  enRoute: 'En ruta',
-  landed: 'Aterrizado',
-  arrived: 'En posición',
-  delayed: 'Retrasado',
-  diverted: 'Desviado',
-  cancelled: 'Cancelado',
-};
+import { getStatusMeta } from '../../dashboard/statusMeta';
 
 const QUICK_FILTERS = [
   { id: 'today', label: 'Hoy' },
@@ -20,7 +9,7 @@ const QUICK_FILTERS = [
   { id: 'pending', label: 'Pendientes' },
 ];
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ label, value, onChange, options, formatOption = option => option }) {
   return (
     <label className="flex min-w-[140px] flex-col gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
       {label}
@@ -32,7 +21,7 @@ function FilterSelect({ label, value, onChange, options }) {
         <option value="">Todos</option>
         {options.map(option => (
           <option key={option} value={option}>
-            {STATUS_LABELS[option] ?? option}
+            {formatOption(option)}
           </option>
         ))}
       </select>
@@ -60,7 +49,13 @@ export default function PlanningFilters({ filters, onFilterChange, quickFilter, 
         <FilterSelect label="Fecha" value={filters.date} onChange={value => onFilterChange('date', value)} options={options.dates} />
         <FilterSelect label="Aeropuerto" value={filters.airportCode} onChange={value => onFilterChange('airportCode', value)} options={options.airports} />
         <FilterSelect label="Aerolínea" value={filters.airlineIata} onChange={value => onFilterChange('airlineIata', value)} options={options.airlines} />
-        <FilterSelect label="Estado" value={filters.status} onChange={value => onFilterChange('status', value)} options={options.statuses} />
+        <FilterSelect
+          label="Estado"
+          value={filters.status}
+          onChange={value => onFilterChange('status', value)}
+          options={options.statuses}
+          formatOption={option => getStatusMeta('flight', option).label}
+        />
         <FilterSelect label="Aeronave" value={filters.aircraftType} onChange={value => onFilterChange('aircraftType', value)} options={options.aircraftTypes} />
         <FilterSelect label="Posición" value={filters.position} onChange={value => onFilterChange('position', value)} options={options.positions} />
         <FilterSelect label="Supervisor" value={filters.supervisor} onChange={value => onFilterChange('supervisor', value)} options={options.supervisors} />
