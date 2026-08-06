@@ -29,15 +29,19 @@ function pad(value) {
   return String(value).padStart(2, '0');
 }
 
-function addMinutesIso(iso, minutes) {
-  const date = new Date(iso);
-  date.setMinutes(date.getMinutes() + minutes);
-  return date.toISOString();
+function addMinutesToClock(hour, minute, delayMinutes) {
+  const totalMinutes = hour * 60 + minute + delayMinutes;
+  return { hour: Math.floor(totalMinutes / 60) % 24, minute: totalMinutes % 60 };
 }
 
 function buildFlight(template, stationCode, dateISO) {
   const scheduledTime = `${dateISO}T${pad(template.hour)}:${pad(template.minute)}:00-04:00`;
-  const estimatedTime = template.delayMinutes ? addMinutesIso(scheduledTime, template.delayMinutes) : scheduledTime;
+  const estimatedTime = template.delayMinutes
+    ? (() => {
+        const delayed = addMinutesToClock(template.hour, template.minute, template.delayMinutes);
+        return `${dateISO}T${pad(delayed.hour)}:${pad(delayed.minute)}:00-04:00`;
+      })()
+    : scheduledTime;
 
   return {
     id: template.id,
