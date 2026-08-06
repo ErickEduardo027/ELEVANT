@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AppShell from './AppShell';
 import * as dashboardService from '../../services/dashboardService';
+import * as planningService from '../../services/planningService';
 
 const SNAPSHOT = {
   station: { code: 'PUJ', localAbbr: 'AST', localTime: '2026-08-01T14:32:00-04:00', utcTime: '2026-08-01T18:32:00Z' },
@@ -76,5 +77,25 @@ describe('AppShell', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /carga/i }));
     expect(screen.getAllByTestId('kpi-skeleton').length).toBeGreaterThan(0);
+  });
+
+  it('switches to the Planning module and renders the real planning screen', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockResolvedValue({
+      station: { code: 'PUJ' },
+      date: '2026-08-05',
+      flights: [],
+    });
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Planificación operativa'));
+
+    expect(await screen.findByRole('heading', { name: 'Planificación Operativa' })).toBeInTheDocument();
+    expect(within(nav).getByText('Planificación operativa').closest('button')).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 });

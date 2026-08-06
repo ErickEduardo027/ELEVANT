@@ -8,6 +8,8 @@ import DevPreviewPanel from '../dashboard/components/DevPreviewPanel';
 import DashboardPage from '../dashboard/DashboardPage';
 import { useDashboardData } from '../dashboard/useDashboardData';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
+import PlanningPage from '../planning/PlanningPage';
+import { usePlanningData } from '../planning/usePlanningData';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -21,6 +23,8 @@ export default function AppShell() {
   const [retryToken, setRetryToken] = useState(0);
 
   const { status, data, error } = useDashboardData('PUJ', retryToken);
+  const [planningRetryToken, setPlanningRetryToken] = useState(0);
+  const planning = usePlanningData('PUJ', undefined, planningRetryToken);
   const { theme, toggleTheme, forceState, setForceState } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
@@ -68,6 +72,14 @@ export default function AppShell() {
               data={data}
               error={error}
               onRetry={() => setRetryToken(token => token + 1)}
+              forceState={forceState}
+            />
+          ) : activeModule.id === MODULE_IDS.PLANNING ? (
+            <PlanningPage
+              status={planning.status}
+              data={planning.data}
+              error={planning.error}
+              onRetry={() => setPlanningRetryToken(token => token + 1)}
               forceState={forceState}
             />
           ) : (
