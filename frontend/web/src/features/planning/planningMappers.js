@@ -1,5 +1,5 @@
 export function isPendingAssignment(flight) {
-  return !flight.position || flight.agents.length === 0;
+  return !flight.position || !flight.agents || flight.agents.length === 0;
 }
 
 export function computeKpis(flights) {

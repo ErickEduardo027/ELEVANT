@@ -45,6 +45,11 @@ describe('isPendingAssignment', () => {
   it('is false when both position and agents are present', () => {
     expect(isPendingAssignment(flight({ position: 'A5', agents: ['M. Castillo'] }))).toBe(false);
   });
+
+  it('is true when agents is null or undefined', () => {
+    expect(isPendingAssignment(flight({ agents: null }))).toBe(true);
+    expect(isPendingAssignment(flight({ agents: undefined }))).toBe(true);
+  });
 });
 
 describe('computeKpis', () => {
