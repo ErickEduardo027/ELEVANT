@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { XIcon } from './icons';
 import StatusBadge from '../../dashboard/components/StatusBadge';
 import { formatClockTime } from '../../dashboard/mappers';
@@ -23,6 +24,15 @@ function ListOrEmpty({ items, emptyLabel }) {
 const DISABLED_ACTIONS = ['Editar planificación', 'Asignar recursos', 'Crear Work Order'];
 
 export default function PlanningDrawer({ flight, onClose }) {
+  useEffect(() => {
+    if (!flight) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [flight, onClose]);
+
   if (!flight) return null;
 
   return (
@@ -33,11 +43,14 @@ export default function PlanningDrawer({ flight, onClose }) {
       />
       <aside
         data-testid="planning-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="planning-drawer-title"
         className="fixed inset-y-0 right-0 z-50 w-full max-w-md overflow-y-auto border-l border-black/5 bg-white/95 p-5 shadow-lg backdrop-blur-md transition-transform duration-200 dark:border-white/5 dark:bg-surface-dark-card"
       >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <p className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
+            <p id="planning-drawer-title" className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
               {flight.flightNumber} · {flight.airlineName}
             </p>
             <StatusBadge domain="flight" status={flight.status} />
@@ -62,7 +75,11 @@ export default function PlanningDrawer({ flight, onClose }) {
             </p>
           </Section>
 
-          <Section title="Aeronave">{flight.aircraftType}</Section>
+          <Section title="Aeronave">
+            {flight.aircraftType || (
+              <span className="text-text-secondary-light dark:text-text-secondary-dark">Sin información de aeronave</span>
+            )}
+          </Section>
 
           <Section title="Tripulación">
             <ListOrEmpty items={flight.supervisor ? [flight.supervisor] : []} emptyLabel="Sin supervisor asignado" />

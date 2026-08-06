@@ -61,4 +61,23 @@ describe('PlanningDrawer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cerrar detalle' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('closes when the Escape key is pressed', async () => {
+    const onClose = vi.fn();
+    render(<PlanningDrawer flight={FLIGHT} onClose={onClose} />);
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes dialog semantics for assistive tech', () => {
+    render(<PlanningDrawer flight={FLIGHT} onClose={() => {}} />);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'planning-drawer-title');
+  });
+
+  it('shows a fallback message when aircraft type is missing', () => {
+    render(<PlanningDrawer flight={{ ...FLIGHT, aircraftType: null }} onClose={() => {}} />);
+    expect(screen.getByText('Sin información de aeronave')).toBeInTheDocument();
+  });
 });
