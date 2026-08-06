@@ -3529,3 +3529,463 @@ git commit -m "feat: wire FlightMonitoringPage into AppShell's module switcher"
 ```
 
 ---
+
+## Task 22: Tablet Drawer for the flight list
+
+**Files:**
+- Create: `src/features/flight-monitoring/useIsTabletBreakpoint.js`
+- Create: `src/features/flight-monitoring/useIsTabletBreakpoint.test.js`
+- Create: `src/features/flight-monitoring/components/FlightListDrawer.jsx`
+- Create: `src/features/flight-monitoring/components/FlightListDrawer.test.jsx`
+- Modify: `src/features/flight-monitoring/FlightMonitoringPage.jsx`
+- Modify: `src/features/flight-monitoring/FlightMonitoringPage.test.jsx`
+
+**Interfaces:**
+- Produces: `useIsTabletBreakpoint() => boolean` (mirrors the same `(max-width: 1024px)` breakpoint already used by `src/features/shell/useResponsiveSidebar.js`'s `TABLET_QUERY`, duplicated locally rather than shared cross-feature, matching this codebase's existing convention of not importing one feature's internals into another). `<FlightListDrawer open={boolean} onClose={() => void}>{children}</FlightListDrawer>` — an overlay+backdrop wrapper, visually modeled on `PlanningDrawer.jsx`'s existing glass treatment, but sliding in from the left (the list panel's natural side) rather than the right.
+- `FlightMonitoringPage` (Task 19) is modified to: render the desktop 30/70 split when `!isTablet` (unchanged from Task 19); render `FlightMap`/`FlightLegend`/`FlightDetailPopover` full-width plus a "Ver vuelos" toggle button when `isTablet`, opening `FlightListPanel` inside `FlightListDrawer`; auto-close the drawer if the viewport grows back past the tablet breakpoint while it's open. A `MonitoringMapArea` helper (private to this file, not exported) factors out the `FlightMap`+`FlightLegend`+`FlightDetailPopover` trio so it isn't duplicated between the two layout branches.
+
+- [ ] **Step 1: Write the failing test for the breakpoint hook**
+
+Create `src/features/flight-monitoring/useIsTabletBreakpoint.test.js`:
+
+```js
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
+
+function mockMatchMedia(matchingQueries) {
+  window.matchMedia = vi.fn().mockImplementation(query => ({
+    matches: matchingQueries.includes(query),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+}
+
+describe('useIsTabletBreakpoint', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('is false when the tablet media query does not match', () => {
+    mockMatchMedia([]);
+    const { result } = renderHook(() => useIsTabletBreakpoint());
+    expect(result.current).toBe(false);
+  });
+
+  it('is true when the tablet media query matches', () => {
+    mockMatchMedia(['(max-width: 1024px)']);
+    const { result } = renderHook(() => useIsTabletBreakpoint());
+    expect(result.current).toBe(true);
+  });
+
+  it('defaults to false when matchMedia is unavailable', () => {
+    window.matchMedia = undefined;
+    const { result } = renderHook(() => useIsTabletBreakpoint());
+    expect(result.current).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npm test -- useIsTabletBreakpoint`
+Expected: FAIL — module does not exist.
+
+- [ ] **Step 3: Implement `useIsTabletBreakpoint.js`**
+
+Create `src/features/flight-monitoring/useIsTabletBreakpoint.js`:
+
+```js
+import { useEffect, useState } from 'react';
+
+// Matches TABLET_QUERY in src/features/shell/useResponsiveSidebar.js — same
+// breakpoint the Sidebar itself switches to its tablet/overlay behavior at.
+const TABLET_QUERY = '(max-width: 1024px)';
+
+function matchesTablet() {
+  return typeof window !== 'undefined' && Boolean(window.matchMedia?.(TABLET_QUERY).matches);
+}
+
+export function useIsTabletBreakpoint() {
+  const [isTablet, setIsTablet] = useState(matchesTablet);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const mql = window.matchMedia(TABLET_QUERY);
+    const onChange = event => setIsTablet(event.matches);
+    mql.addEventListener('change', onChange);
+    setIsTablet(mql.matches);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  return isTablet;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npm test -- useIsTabletBreakpoint`
+Expected: PASS.
+
+- [ ] **Step 5: Commit the hook**
+
+```bash
+git add src/features/flight-monitoring/useIsTabletBreakpoint.js src/features/flight-monitoring/useIsTabletBreakpoint.test.js
+git commit -m "feat: add useIsTabletBreakpoint hook"
+```
+
+- [ ] **Step 6: Write the failing test for the drawer component**
+
+Create `src/features/flight-monitoring/components/FlightListDrawer.test.jsx`:
+
+```jsx
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import FlightListDrawer from './FlightListDrawer';
+
+describe('FlightListDrawer', () => {
+  it('renders nothing when closed', () => {
+    const { container } = render(
+      <FlightListDrawer open={false} onClose={() => {}}>
+        <p>contenido</p>
+      </FlightListDrawer>
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders its children and a backdrop when open', () => {
+    render(
+      <FlightListDrawer open onClose={() => {}}>
+        <p>contenido</p>
+      </FlightListDrawer>
+    );
+    expect(screen.getByText('contenido')).toBeInTheDocument();
+    expect(screen.getByTestId('flight-list-drawer-backdrop')).toBeInTheDocument();
+  });
+
+  it('calls onClose when the backdrop is clicked', async () => {
+    const onClose = vi.fn();
+    render(
+      <FlightListDrawer open onClose={onClose}>
+        <p>contenido</p>
+      </FlightListDrawer>
+    );
+    await userEvent.click(screen.getByTestId('flight-list-drawer-backdrop'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+- [ ] **Step 7: Run test to verify it fails**
+
+Run: `npm test -- FlightListDrawer`
+Expected: FAIL — module does not exist.
+
+- [ ] **Step 8: Implement `FlightListDrawer.jsx`**
+
+Create `src/features/flight-monitoring/components/FlightListDrawer.jsx`:
+
+```jsx
+export default function FlightListDrawer({ open, onClose, children }) {
+  if (!open) return null;
+
+  return (
+    <>
+      <div
+        data-testid="flight-list-drawer-backdrop"
+        className="fixed inset-0 z-40 bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200"
+        onClick={onClose}
+      />
+      <aside
+        data-testid="flight-list-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Lista de vuelos"
+        className="fixed inset-y-0 left-0 z-50 w-full max-w-sm overflow-y-auto border-r border-black/5 bg-white/95 p-3 shadow-lg backdrop-blur-md transition-transform duration-200 dark:border-white/5 dark:bg-surface-dark-card"
+      >
+        {children}
+      </aside>
+    </>
+  );
+}
+```
+
+- [ ] **Step 9: Run test to verify it passes**
+
+Run: `npm test -- FlightListDrawer`
+Expected: PASS.
+
+- [ ] **Step 10: Commit the drawer**
+
+```bash
+git add src/features/flight-monitoring/components/FlightListDrawer.jsx src/features/flight-monitoring/components/FlightListDrawer.test.jsx
+git commit -m "feat: add FlightListDrawer overlay component"
+```
+
+- [ ] **Step 11: Write the failing tests for the tablet layout in `FlightMonitoringPage`**
+
+Add to `src/features/flight-monitoring/FlightMonitoringPage.test.jsx`, as a new `describe` block after the existing one (it needs its own `mockMatchMedia` helper, same shape as the one in `useResponsiveSidebar.test.js`):
+
+```jsx
+function mockMatchMedia(matchingQueries) {
+  window.matchMedia = vi.fn().mockImplementation(query => ({
+    matches: matchingQueries.includes(query),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+}
+
+describe('FlightMonitoringPage — tablet layout', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders the full inline split with no toggle on desktop', () => {
+    mockMatchMedia([]);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.getByTestId('flight-list-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver vuelos' })).not.toBeInTheDocument();
+  });
+
+  it('hides the inline list panel and shows a "Ver vuelos" toggle on tablet', () => {
+    mockMatchMedia(['(max-width: 1024px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.queryByTestId('flight-list-panel')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver vuelos' })).toBeInTheDocument();
+  });
+
+  it('opens the list drawer when the toggle is clicked, and closes it via the backdrop', async () => {
+    mockMatchMedia(['(max-width: 1024px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ver vuelos' }));
+    expect(screen.getByTestId('flight-list-drawer')).toBeInTheDocument();
+    expect(screen.getByText('DM161')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('flight-list-drawer-backdrop'));
+    expect(screen.queryByTestId('flight-list-drawer')).not.toBeInTheDocument();
+  });
+});
+```
+
+You will also need to import `afterEach` from `vitest` at the top of this test file if it isn't already imported.
+
+- [ ] **Step 12: Run test to verify it fails**
+
+Run: `npm test -- FlightMonitoringPage`
+Expected: FAIL — `FlightMonitoringPage` always renders the desktop split today; there is no "Ver vuelos" button and no drawer.
+
+- [ ] **Step 13: Wire the tablet layout into `FlightMonitoringPage.jsx`**
+
+Replace the full contents of `src/features/flight-monitoring/FlightMonitoringPage.jsx` with:
+
+```jsx
+import { useEffect, useState } from 'react';
+import FlightToolbar from './components/FlightToolbar';
+import FlightListPanel from './components/FlightListPanel';
+import FlightListDrawer from './components/FlightListDrawer';
+import FlightMap from './components/FlightMap';
+import FlightLegend from './components/FlightLegend';
+import FlightDetailPopover from './components/FlightDetailPopover';
+import FlightToastStack from './components/FlightToast';
+import FlightMonitoringSkeleton from './components/FlightMonitoringSkeleton';
+import { useFlightMonitoringFilters } from './useFlightMonitoringFilters';
+import { useFlightAlerts } from './useFlightAlerts';
+import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
+import { getFilterOptions } from './flightMonitoringMappers';
+
+function MonitoringMapArea({
+  flights,
+  selectedFlightId,
+  onSelectFlight,
+  theme,
+  onPopoverPosition,
+  popoverPosition,
+  selectedFlight,
+  now,
+  onClosePopover,
+}) {
+  return (
+    <div className="relative min-h-[420px] flex-1">
+      <FlightMap
+        flights={flights}
+        selectedFlightId={selectedFlightId}
+        onSelectFlight={onSelectFlight}
+        theme={theme}
+        onPopoverPosition={onPopoverPosition}
+      />
+      <FlightLegend />
+      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} />
+    </div>
+  );
+}
+
+export default function FlightMonitoringPage({
+  status,
+  data,
+  error,
+  connection,
+  lastUpdatedAt,
+  onRetry,
+  forceState = 'default',
+  theme = 'light',
+}) {
+  const [selectedFlightId, setSelectedFlightId] = useState(null);
+  const [popoverPosition, setPopoverPosition] = useState(null);
+  const [now, setNow] = useState(() => new Date().toISOString());
+  const [listDrawerOpen, setListDrawerOpen] = useState(false);
+  const isTablet = useIsTabletBreakpoint();
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date().toISOString()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!isTablet) setListDrawerOpen(false);
+  }, [isTablet]);
+
+  const isLoading = status === 'loading' || forceState === 'loading';
+  const isError = (status === 'error' && forceState === 'default') || forceState === 'monitoringError';
+
+  const flights = forceState === 'monitoringEmpty' ? [] : data?.flights ?? [];
+  const displayConnection = forceState === 'monitoringDisconnected' ? 'disconnected' : connection;
+
+  const {
+    filters,
+    setFilter,
+    activeChip,
+    setActiveChip,
+    onlyStationRelated,
+    setOnlyStationRelated,
+    filteredFlights,
+  } = useFlightMonitoringFilters(flights);
+  const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
+
+  const options = getFilterOptions(flights);
+  const selectedFlight = flights.find(flight => flight.id === selectedFlightId) ?? null;
+  const emptyReason = flights.length === 0 ? 'no-flights' : filteredFlights.length === 0 ? 'no-results' : null;
+
+  if (isError) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
+      >
+        <p className="text-sm font-semibold text-status-danger">
+          No se pudo cargar el monitoreo de vuelos de la estación.
+        </p>
+        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+          {error?.message ?? 'Verifique la conexión e intente nuevamente.'}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  const listPanel = (
+    <FlightListPanel
+      flights={filteredFlights}
+      emptyReason={emptyReason}
+      search={filters.search}
+      onSearchChange={value => setFilter('search', value)}
+      activeChip={activeChip}
+      onChipChange={setActiveChip}
+      selectedFlightId={selectedFlightId}
+      onSelectFlight={setSelectedFlightId}
+    />
+  );
+
+  const mapArea = (
+    <MonitoringMapArea
+      flights={filteredFlights}
+      selectedFlightId={selectedFlightId}
+      onSelectFlight={setSelectedFlightId}
+      theme={theme}
+      onPopoverPosition={setPopoverPosition}
+      popoverPosition={popoverPosition}
+      selectedFlight={selectedFlight}
+      now={now}
+      onClosePopover={() => setSelectedFlightId(null)}
+    />
+  );
+
+  return (
+    <div className="mx-auto flex h-full max-w-[1440px] flex-col gap-4">
+      <FlightToolbar
+        connection={displayConnection}
+        lastUpdatedAt={lastUpdatedAt}
+        onRefresh={onRetry}
+        filters={filters}
+        onFilterChange={setFilter}
+        options={options}
+        onlyStationRelated={onlyStationRelated}
+        onToggleStationRelated={setOnlyStationRelated}
+      />
+
+      {isLoading ? (
+        <FlightMonitoringSkeleton />
+      ) : isTablet ? (
+        <div className="relative flex flex-1 flex-col">
+          {mapArea}
+          <button
+            type="button"
+            onClick={() => setListDrawerOpen(true)}
+            className="absolute left-3 top-3 z-10 rounded-lg border border-black/10 bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink-900 shadow-md backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+          >
+            Ver vuelos
+          </button>
+          <FlightListDrawer open={listDrawerOpen} onClose={() => setListDrawerOpen(false)}>
+            {listPanel}
+          </FlightListDrawer>
+        </div>
+      ) : (
+        <div className="grid flex-1 grid-cols-1 gap-4 xl:grid-cols-[3fr_7fr]">
+          {listPanel}
+          {mapArea}
+        </div>
+      )}
+
+      <FlightToastStack toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+```
+
+- [ ] **Step 14: Run test to verify it passes**
+
+Run: `npm test -- FlightMonitoringPage`
+Expected: PASS — including every test from Task 19 (they don't mock `matchMedia`, so `useIsTabletBreakpoint` defaults to `false` and the desktop split still renders exactly as before).
+
+- [ ] **Step 15: Run the full test suite**
+
+Run: `npm test`
+Expected: PASS — every test across Dashboard, Planning, and Flight Monitoring passes together.
+
+- [ ] **Step 16: Commit**
+
+```bash
+git add src/features/flight-monitoring/FlightMonitoringPage.jsx src/features/flight-monitoring/FlightMonitoringPage.test.jsx
+git commit -m "feat: add tablet Drawer layout for the flight list panel"
+```
+
+---
