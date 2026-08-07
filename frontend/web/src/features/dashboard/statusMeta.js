@@ -10,12 +10,16 @@ export const FLIGHT_STATUS_META = {
   scheduled: { label: 'Programado', color: 'info' },
   boarding: { label: 'Abordando', color: 'active' },
   taxiing: { label: 'Rodaje', color: 'active' },
+  leftGate: { label: 'Salió de puerta', color: 'active' },
   enRoute: { label: 'En ruta', color: 'active' },
+  approaching: { label: 'Aproximando', color: 'active' },
   landed: { label: 'Aterrizado', color: 'success' },
+  taxiingToGate: { label: 'Rodaje a puerta', color: 'active' },
   arrived: { label: 'En posición', color: 'success' },
   delayed: { label: 'Retrasado', color: 'warning' },
   diverted: { label: 'Desviado', color: 'danger' },
   cancelled: { label: 'Cancelado', color: 'danger' },
+  unknown: { label: 'Desconocido', color: 'info' },
 };
 
 export const SERVICE_STATUS_META = {

@@ -34,4 +34,11 @@ describe('getStatusMeta', () => {
       danger: '#C4453C',
     });
   });
+
+  it('maps the Flight Monitoring statuses to label and color', () => {
+    expect(getStatusMeta('flight', 'leftGate')).toEqual({ label: 'Salió de puerta', color: 'active' });
+    expect(getStatusMeta('flight', 'approaching')).toEqual({ label: 'Aproximando', color: 'active' });
+    expect(getStatusMeta('flight', 'taxiingToGate')).toEqual({ label: 'Rodaje a puerta', color: 'active' });
+    expect(getStatusMeta('flight', 'unknown')).toEqual({ label: 'Desconocido', color: 'info' });
+  });
 });
