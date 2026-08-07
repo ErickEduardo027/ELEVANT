@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FlightMonitoringPage from './FlightMonitoringPage';
@@ -126,5 +126,54 @@ describe('FlightMonitoringPage', () => {
       />
     );
     expect(screen.getByText('FlyAware desconectado')).toBeInTheDocument();
+  });
+});
+
+function mockMatchMedia(matchingQueries) {
+  window.matchMedia = vi.fn().mockImplementation(query => ({
+    matches: matchingQueries.includes(query),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+}
+
+describe('FlightMonitoringPage — tablet layout', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders the full inline split with no toggle on desktop', () => {
+    mockMatchMedia([]);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.getByTestId('flight-list-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver vuelos' })).not.toBeInTheDocument();
+  });
+
+  it('hides the inline list panel and shows a "Ver vuelos" toggle on tablet', () => {
+    mockMatchMedia(['(max-width: 1024px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.queryByTestId('flight-list-panel')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver vuelos' })).toBeInTheDocument();
+  });
+
+  it('opens the list drawer when the toggle is clicked, and closes it via the backdrop', async () => {
+    mockMatchMedia(['(max-width: 1024px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ver vuelos' }));
+    expect(screen.getByTestId('flight-list-drawer')).toBeInTheDocument();
+    expect(screen.getByText('DM161')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('flight-list-drawer-backdrop'));
+    expect(screen.queryByTestId('flight-list-drawer')).not.toBeInTheDocument();
   });
 });
