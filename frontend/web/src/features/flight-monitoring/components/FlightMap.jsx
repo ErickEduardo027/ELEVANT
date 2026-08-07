@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import { Map as MaplibreMap, Marker, NavigationControl, LngLatBounds } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PUJ_COORDINATES } from '../flightMonitoringMappers';
 import { createAircraftMarkerElement, updateAircraftMarkerElement } from './AircraftMarker';
@@ -31,15 +31,15 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   const recomputePopoverPositionRef = useRef(() => {});
 
   useEffect(() => {
-    const map = new maplibregl.Map({
+    const map = new MaplibreMap({
       container: containerRef.current,
       style: STYLE_URLS[theme] ?? STYLE_URLS.light,
       center: [PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude],
       zoom: INITIAL_ZOOM,
     });
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.addControl(new NavigationControl(), 'top-right');
 
-    const airportMarker = new maplibregl.Marker({ element: createAirportMarkerElement() })
+    const airportMarker = new Marker({ element: createAirportMarkerElement() })
       .setLngLat([PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude])
       .addTo(map);
 
@@ -103,7 +103,7 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
       } else {
         const element = createAircraftMarkerElement(flight, { selected });
         element.addEventListener('click', () => onSelectFlightRef.current(flight.id));
-        const marker = new maplibregl.Marker({ element }).setLngLat([flight.longitude, flight.latitude]).addTo(map);
+        const marker = new Marker({ element }).setLngLat([flight.longitude, flight.latitude]).addTo(map);
         markers.set(flight.id, { marker, element });
       }
     });
@@ -131,7 +131,7 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   function handleResetView() {
     const map = mapRef.current;
     if (!map) return;
-    const bounds = new maplibregl.LngLatBounds();
+    const bounds = new LngLatBounds();
     bounds.extend([PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude]);
     flights.forEach(flight => bounds.extend([flight.longitude, flight.latitude]));
     map.fitBounds(bounds, { padding: 60 });

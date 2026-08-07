@@ -93,7 +93,10 @@ vi.mock('maplibre-gl', () => {
   }
 
   return {
-    default: { Map: FakeMap, Marker: FakeMarker, NavigationControl: FakeNavigationControl, LngLatBounds: FakeLngLatBounds },
+    Map: FakeMap,
+    Marker: FakeMarker,
+    NavigationControl: FakeNavigationControl,
+    LngLatBounds: FakeLngLatBounds,
     __state: state,
   };
 });
