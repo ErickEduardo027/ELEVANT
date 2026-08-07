@@ -21,3 +21,17 @@ body {
     opacity: 1;
   }
 }
+
+.flight-monitoring-aircraft-marker__rotor {
+  transform-origin: center center;
+}
+
+/* Hover feedback for aircraft markers on the flight-monitoring map. Uses !important because
+   AircraftMarker.js sets the rotor's transform/transition inline (on every heading/selection
+   change) — this rule only needs to win while :hover is active, recomputing the same rotation
+   from the mirrored --marker-heading custom property so heading isn't lost while scaled up.
+   150ms is intentionally snappier than the 3.8s inline position-transition rule. */
+.flight-monitoring-aircraft-marker:hover .flight-monitoring-aircraft-marker__rotor {
+  transform: rotate(var(--marker-heading, 0deg)) scale(1.15) !important;
+  transition: transform 150ms ease-out !important;
+}

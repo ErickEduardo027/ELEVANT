@@ -65,6 +65,8 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
     return () => {
       map.off('move', recomputePopoverPosition);
       map.off('zoom', recomputePopoverPosition);
+      markersRef.current.forEach(({ marker }) => marker.remove());
+      markersRef.current.clear();
       airportMarker.remove();
       map.remove();
       mapRef.current = null;
@@ -116,10 +118,10 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
 
   useEffect(() => {
     const map = mapRef.current;
-    const selectedFlight = flights.find(flight => flight.id === selectedFlightId);
+    const selectedFlight = flightsRef.current.find(flight => flight.id === selectedFlightId);
     if (!map || !selectedFlight) return;
     map.flyTo({ center: [selectedFlight.longitude, selectedFlight.latitude] });
-  }, [selectedFlightId, flights]);
+  }, [selectedFlightId]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -127,7 +129,12 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   }, [flights, selectedFlightId]);
 
   function handleResetView() {
-    mapRef.current?.flyTo({ center: [PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude], zoom: INITIAL_ZOOM });
+    const map = mapRef.current;
+    if (!map) return;
+    const bounds = new maplibregl.LngLatBounds();
+    bounds.extend([PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude]);
+    flights.forEach(flight => bounds.extend([flight.longitude, flight.latitude]));
+    map.fitBounds(bounds, { padding: 60 });
   }
 
   function handleCenterPuj() {

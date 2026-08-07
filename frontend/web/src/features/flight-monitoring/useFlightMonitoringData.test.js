@@ -55,6 +55,43 @@ describe('useFlightMonitoringData', () => {
     expect(result.current.data.flights[1]).toEqual(snapshot.flights[1]);
   });
 
+  it('does not subscribe to updates while forceDisconnected is true, and subscribes once it flips back to false', async () => {
+    const snapshot = { station: { code: 'PUJ' }, flights: [{ id: 1, latitude: 18, longitude: -68 }] };
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot').mockResolvedValue(snapshot);
+    const unsubscribe = vi.fn();
+    const subscribeSpy = vi
+      .spyOn(flightMonitoringService, 'subscribeToFlightUpdates')
+      .mockReturnValue(unsubscribe);
+
+    const { result, rerender } = renderHook(
+      ({ forceDisconnected }) => useFlightMonitoringData('PUJ', 0, forceDisconnected),
+      { initialProps: { forceDisconnected: true } }
+    );
+    await waitFor(() => expect(result.current.status).toBe('success'));
+
+    expect(subscribeSpy).not.toHaveBeenCalled();
+
+    rerender({ forceDisconnected: false });
+    await waitFor(() => expect(subscribeSpy).toHaveBeenCalledTimes(1));
+  });
+
+  it('unsubscribes from updates when forceDisconnected flips from false to true', async () => {
+    const snapshot = { station: { code: 'PUJ' }, flights: [{ id: 1, latitude: 18, longitude: -68 }] };
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot').mockResolvedValue(snapshot);
+    const unsubscribe = vi.fn();
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates').mockReturnValue(unsubscribe);
+
+    const { result, rerender } = renderHook(
+      ({ forceDisconnected }) => useFlightMonitoringData('PUJ', 0, forceDisconnected),
+      { initialProps: { forceDisconnected: false } }
+    );
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    expect(unsubscribe).not.toHaveBeenCalled();
+
+    rerender({ forceDisconnected: true });
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('re-fetches when refreshToken changes', async () => {
     const spy = vi
       .spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')

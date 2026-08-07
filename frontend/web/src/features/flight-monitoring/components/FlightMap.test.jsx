@@ -35,6 +35,7 @@ vi.mock('maplibre-gl', () => {
       this.controls = [];
       this.styleCalls = [];
       this.flyToCalls = [];
+      this.fitBoundsCalls = [];
       this.listeners = {};
       state.maps.push(this);
     }
@@ -46,6 +47,9 @@ vi.mock('maplibre-gl', () => {
     }
     flyTo(options) {
       this.flyToCalls.push(options);
+    }
+    fitBounds(bounds, options) {
+      this.fitBoundsCalls.push({ bounds: bounds.toArray(), options });
     }
     on(event, handler) {
       (this.listeners[event] ??= []).push(handler);
@@ -68,8 +72,28 @@ vi.mock('maplibre-gl', () => {
 
   class FakeNavigationControl {}
 
+  class FakeLngLatBounds {
+    constructor(sw, ne) {
+      this._sw = sw ? [...sw] : null;
+      this._ne = ne ? [...ne] : null;
+    }
+    extend([lng, lat]) {
+      if (!this._sw || !this._ne) {
+        this._sw = [lng, lat];
+        this._ne = [lng, lat];
+      } else {
+        this._sw = [Math.min(this._sw[0], lng), Math.min(this._sw[1], lat)];
+        this._ne = [Math.max(this._ne[0], lng), Math.max(this._ne[1], lat)];
+      }
+      return this;
+    }
+    toArray() {
+      return [this._sw, this._ne];
+    }
+  }
+
   return {
-    default: { Map: FakeMap, Marker: FakeMarker, NavigationControl: FakeNavigationControl },
+    default: { Map: FakeMap, Marker: FakeMarker, NavigationControl: FakeNavigationControl, LngLatBounds: FakeLngLatBounds },
     __state: state,
   };
 });
@@ -134,6 +158,26 @@ describe('FlightMap', () => {
     expect(map.markers.some(marker => marker.element.dataset.flightId === '2')).toBe(false);
   });
 
+  it('re-adds markers to a fresh map instance after unmount/remount, without stranding them on the old map (StrictMode double-invoke)', () => {
+    const { unmount } = render(
+      <FlightMap flights={[flight({ id: 1 }), flight({ id: 2 })]} selectedFlightId={null} onSelectFlight={() => {}} theme="light" />
+    );
+    const firstMap = __state.maps[0];
+    expect(firstMap.markers).toHaveLength(3); // airport + 2 aircraft
+
+    unmount();
+    // Cleanup must remove the aircraft markers (not just the airport marker) from the old map.
+    expect(firstMap.markers).toHaveLength(0);
+
+    render(
+      <FlightMap flights={[flight({ id: 1 }), flight({ id: 2 })]} selectedFlightId={null} onSelectFlight={() => {}} theme="light" />
+    );
+    const secondMap = __state.maps[1];
+    // Without clearing markersRef on cleanup, the diffing effect would think these markers
+    // already exist (pointing at the destroyed firstMap) and never create them on secondMap.
+    expect(secondMap.markers).toHaveLength(3);
+  });
+
   it('calls map.setStyle exactly once when the theme prop changes', () => {
     const { rerender } = render(<FlightMap flights={[]} selectedFlightId={null} onSelectFlight={() => {}} theme="light" />);
     const map = __state.maps[0];
@@ -143,17 +187,35 @@ describe('FlightMap', () => {
     expect(map.styleCalls).toHaveLength(1);
   });
 
-  it('flies to PUJ when "Centrar PUJ" is clicked and to the initial view when "Restablecer vista" is clicked', async () => {
+  it('flies to PUJ when "Centrar PUJ" is clicked', async () => {
     const { getByLabelText } = render(<FlightMap flights={[]} selectedFlightId={null} onSelectFlight={() => {}} theme="light" />);
     const map = __state.maps[0];
 
     await userEvent.click(getByLabelText('Centrar PUJ'));
     expect(map.flyToCalls.at(-1).center).toEqual([-68.3634, 18.5674]);
     expect(map.flyToCalls.at(-1).zoom).toBe(9);
+  });
+
+  it('fits the map to bounds covering all visible flights plus PUJ when "Restablecer vista" is clicked', async () => {
+    const { getByLabelText } = render(
+      <FlightMap
+        flights={[flight({ id: 1, latitude: 18.78, longitude: -68.12 }), flight({ id: 2, latitude: 19.5, longitude: -69.9 })]}
+        selectedFlightId={null}
+        onSelectFlight={() => {}}
+        theme="light"
+      />
+    );
+    const map = __state.maps[0];
 
     await userEvent.click(getByLabelText('Restablecer vista'));
-    expect(map.flyToCalls.at(-1).center).toEqual([-68.3634, 18.5674]);
-    expect(map.flyToCalls.at(-1).zoom).toBe(6);
+
+    // Bounds cover PUJ (-68.3634, 18.5674) plus both flights (-68.12, 18.78) and (-69.9, 19.5).
+    expect(map.fitBoundsCalls).toHaveLength(1);
+    expect(map.fitBoundsCalls[0].bounds).toEqual([
+      [-69.9, 18.5674],
+      [-68.12, 19.5],
+    ]);
+    expect(map.fitBoundsCalls[0].options).toEqual({ padding: 60 });
   });
 
   it('reports the projected screen position of the selected flight via onPopoverPosition', () => {

@@ -73,28 +73,80 @@ export function nudgePosition(flight, headingJitterDegrees = 0) {
   };
 }
 
+// Natural next status for a flight currently in an active-movement status — lets the simulated
+// feed occasionally progress a flight's status (e.g. approaching -> landed) instead of only ever
+// nudging its position, so useFlightAlerts has something real to diff against.
+const STATUS_PROGRESSION = {
+  enRoute: 'approaching',
+  approaching: 'landed',
+  taxiing: 'taxiingToGate',
+  leftGate: 'taxiing',
+  taxiingToGate: 'arrived',
+};
+const STAND_POOL = ['A1', 'A5', 'B21', 'B32', 'BN8'];
+// Every Nth tick, one eligible flight gets a status/stand/eta change alongside its position
+// nudge. Deterministic (tick-count based) rather than Math.random()-gated, so it stays
+// independent of the `vi.spyOn(Math, 'random')` mock the existing tick tests rely on.
+const MUTATION_TICK_INTERVAL = 3;
+const MUTATION_FIELDS = ['status', 'stand', 'eta'];
+const ETA_NUDGE_MINUTES = 5;
+
+function applyMutation(flight, field) {
+  if (field === 'status') {
+    const nextStatus = STATUS_PROGRESSION[flight.status];
+    if (!nextStatus) return null;
+    flight.status = nextStatus;
+    return { status: nextStatus };
+  }
+  if (field === 'stand') {
+    if (flight.stand) return null;
+    const stand = STAND_POOL[flight.id % STAND_POOL.length];
+    flight.stand = stand;
+    return { stand };
+  }
+  if (field === 'eta') {
+    const nextEta = new Date(new Date(flight.eta).getTime() + ETA_NUDGE_MINUTES * 60000).toISOString();
+    flight.eta = nextEta;
+    return { eta: nextEta };
+  }
+  return null;
+}
+
 export function subscribeToFlightUpdates(onUpdate) {
   const dateISO = getOperationDate();
   const simulatedFlights = FLIGHT_TEMPLATES.map(template => buildFlight(template, dateISO));
+  let tickCount = 0;
 
   const intervalId = setInterval(() => {
-    simulatedFlights
-      .filter(flight => ACTIVE_MOVEMENT_STATUSES.includes(flight.status))
-      .forEach(flight => {
-        const jitter = Math.random() * 6 - 3;
-        const nudged = nudgePosition(flight, jitter);
-        flight.latitude = nudged.latitude;
-        flight.longitude = nudged.longitude;
-        flight.heading = nudged.heading;
-        onUpdate({
-          id: flight.id,
-          latitude: flight.latitude,
-          longitude: flight.longitude,
-          heading: flight.heading,
-          speed: flight.speed,
-          altitude: flight.altitude,
-        });
-      });
+    tickCount += 1;
+    const eligible = simulatedFlights.filter(flight => ACTIVE_MOVEMENT_STATUSES.includes(flight.status));
+    const shouldMutate = eligible.length > 0 && tickCount % MUTATION_TICK_INTERVAL === 0;
+    const mutationTarget = shouldMutate ? eligible[tickCount % eligible.length] : null;
+    const mutationField = MUTATION_FIELDS[(tickCount / MUTATION_TICK_INTERVAL) % MUTATION_FIELDS.length];
+
+    eligible.forEach(flight => {
+      const jitter = Math.random() * 6 - 3;
+      const nudged = nudgePosition(flight, jitter);
+      flight.latitude = nudged.latitude;
+      flight.longitude = nudged.longitude;
+      flight.heading = nudged.heading;
+
+      const update = {
+        id: flight.id,
+        latitude: flight.latitude,
+        longitude: flight.longitude,
+        heading: flight.heading,
+        speed: flight.speed,
+        altitude: flight.altitude,
+      };
+
+      if (flight === mutationTarget) {
+        const change = applyMutation(flight, mutationField);
+        if (change) Object.assign(update, change);
+      }
+
+      onUpdate(update);
+    });
   }, NUDGE_INTERVAL_MS);
 
   return () => clearInterval(intervalId);

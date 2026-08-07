@@ -109,4 +109,28 @@ describe('subscribeToFlightUpdates', () => {
     vi.advanceTimersByTime(8000);
     expect(onUpdate).not.toHaveBeenCalled();
   });
+
+  it('occasionally mutates status/eta/stand on an eligible flight, including the change in that update', () => {
+    const onUpdate = vi.fn();
+    subscribeToFlightUpdates(onUpdate);
+
+    // Ticks 1 and 2 carry only position fields; the periodic mutation rule fires on tick 3.
+    vi.advanceTimersByTime(8000);
+    const mutatedSoFar = onUpdate.mock.calls
+      .map(([update]) => update)
+      .filter(update => 'status' in update || 'eta' in update || 'stand' in update);
+    expect(mutatedSoFar).toHaveLength(0);
+
+    vi.advanceTimersByTime(4000); // tick 3
+    const mutatedAtTickThree = onUpdate.mock.calls
+      .map(([update]) => update)
+      .filter(update => 'status' in update || 'eta' in update || 'stand' in update);
+    expect(mutatedAtTickThree).toHaveLength(1);
+
+    const [mutation] = mutatedAtTickThree;
+    // Flight 10 (enRoute) is the deterministic tick-3 target; its stand is null in the seed
+    // data, so the periodic rule assigns one from the stand pool on this tick.
+    expect(mutation.id).toBe(10);
+    expect(mutation.stand).toBe('A1');
+  });
 });

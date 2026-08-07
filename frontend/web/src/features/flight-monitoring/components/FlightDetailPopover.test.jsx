@@ -20,6 +20,8 @@ const FLIGHT = {
   stand: 'A5',
   supervisor: 'Juan Pérez',
   agents: 5,
+  actualArrival: null,
+  actualDeparture: null,
   services: ['GPU', 'Baggage', 'Cleaning'],
 };
 
@@ -34,6 +36,10 @@ describe('FlightDetailPopover', () => {
     expect(screen.getByText('DM161 · Arajet')).toBeInTheDocument();
     expect(screen.getByText('Aproximando')).toBeInTheDocument();
     expect(screen.getByText('MIA → PUJ · B737 MAX 8 · HI1024')).toBeInTheDocument();
+    // ETA/ETD are rendered via formatClockTime; assert loosely (HH:MM) to stay
+    // timezone-independent, same pattern used elsewhere in this module (e.g.
+    // FlightConnectionStatus.test.jsx, FlightListItem.test.jsx) rather than an exact string.
+    expect(screen.getAllByText(/^\d{2}:\d{2}$/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('8,000 ft')).toBeInTheDocument();
     expect(screen.getByText('250 kt')).toBeInTheDocument();
     expect(screen.getByText('310°')).toBeInTheDocument();
@@ -42,6 +48,38 @@ describe('FlightDetailPopover', () => {
     expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByText('En 20 min')).toBeInTheDocument();
     expect(screen.getByText('Servicios: GPU, Baggage, Cleaning')).toBeInTheDocument();
+  });
+
+  it('shows "Pendiente" for hora real when neither actual arrival nor departure is set', () => {
+    render(<FlightDetailPopover flight={FLIGHT} now="2026-08-06T14:00:00-04:00" style={{}} onClose={() => {}} />);
+    expect(screen.getByText('Hora real')).toBeInTheDocument();
+    expect(screen.getByText('Pendiente')).toBeInTheDocument();
+  });
+
+  it('renders a formatted hora real when actualArrival is present', () => {
+    render(
+      <FlightDetailPopover
+        flight={{ ...FLIGHT, actualArrival: '2026-08-06T14:25:00-04:00' }}
+        now="2026-08-06T14:00:00-04:00"
+        style={{}}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.queryByText('Pendiente')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^\d{2}:\d{2}$/).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('falls back to actualDeparture for hora real when only that is present', () => {
+    render(
+      <FlightDetailPopover
+        flight={{ ...FLIGHT, actualDeparture: '2026-08-06T15:10:00-04:00' }}
+        now="2026-08-06T14:00:00-04:00"
+        style={{}}
+        onClose={() => {}}
+      />
+    );
+    expect(screen.queryByText('Pendiente')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^\d{2}:\d{2}$/).length).toBeGreaterThanOrEqual(3);
   });
 
   it('renders the two disabled cross-module buttons', () => {

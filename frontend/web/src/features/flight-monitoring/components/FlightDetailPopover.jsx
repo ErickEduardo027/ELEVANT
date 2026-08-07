@@ -1,4 +1,5 @@
 import StatusBadge from '../../dashboard/components/StatusBadge';
+import { formatClockTime } from '../../dashboard/mappers';
 import { formatRemaining } from '../flightMonitoringMappers';
 import { XIcon } from './icons';
 
@@ -36,9 +37,15 @@ export default function FlightDetailPopover({ flight, now, style, onClose }) {
 
       <dl className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
         <dt>ETA</dt>
-        <dd>{flight.eta}</dd>
+        <dd>{formatClockTime(flight.eta)}</dd>
         <dt>ETD</dt>
-        <dd>{flight.etd}</dd>
+        <dd>{formatClockTime(flight.etd)}</dd>
+        <dt>Hora real</dt>
+        <dd>
+          {flight.actualArrival ?? flight.actualDeparture
+            ? formatClockTime(flight.actualArrival ?? flight.actualDeparture)
+            : 'Pendiente'}
+        </dd>
         <dt>Altitud</dt>
         <dd>{flight.altitude.toLocaleString('en-US')} ft</dd>
         <dt>Velocidad</dt>

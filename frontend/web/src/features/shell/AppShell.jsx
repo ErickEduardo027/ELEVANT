@@ -27,9 +27,13 @@ export default function AppShell() {
   const { status, data, error } = useDashboardData('PUJ', retryToken);
   const [planningRetryToken, setPlanningRetryToken] = useState(0);
   const planning = usePlanningData('PUJ', undefined, planningRetryToken);
-  const [monitoringRetryToken, setMonitoringRetryToken] = useState(0);
-  const monitoring = useFlightMonitoringData('PUJ', monitoringRetryToken);
   const { theme, toggleTheme, forceState, setForceState } = usePreviewControls();
+  const [monitoringRetryToken, setMonitoringRetryToken] = useState(0);
+  const monitoring = useFlightMonitoringData(
+    'PUJ',
+    monitoringRetryToken,
+    forceState === 'monitoringDisconnected'
+  );
   const sidebar = useResponsiveSidebar();
 
   useEffect(() => {

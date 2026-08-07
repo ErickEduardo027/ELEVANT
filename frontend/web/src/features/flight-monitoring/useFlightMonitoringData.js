@@ -5,7 +5,7 @@ function mergeUpdate(flights, update) {
   return flights.map(flight => (flight.id === update.id ? { ...flight, ...update } : flight));
 }
 
-export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0) {
+export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0, forceDisconnected = false) {
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
   const [connection, setConnection] = useState('syncing');
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
@@ -34,7 +34,9 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0) {
   }, [stationCode, refreshToken]);
 
   useEffect(() => {
-    if (state.status !== 'success') return undefined;
+    // Matches the design spec: forcing a "disconnected" preview state stops the simulated
+    // update feed until reconnected, instead of merely relabeling the connection banner.
+    if (state.status !== 'success' || forceDisconnected) return undefined;
 
     const unsubscribe = subscribeToFlightUpdates(update => {
       setState(current =>
@@ -46,7 +48,7 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0) {
     });
 
     return unsubscribe;
-  }, [state.status]);
+  }, [state.status, forceDisconnected]);
 
   return { status: state.status, data: state.data, error: state.error, connection, lastUpdatedAt };
 }
