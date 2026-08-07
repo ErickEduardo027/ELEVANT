@@ -4,6 +4,13 @@ import userEvent from '@testing-library/user-event';
 import AppShell from './AppShell';
 import * as dashboardService from '../../services/dashboardService';
 import * as planningService from '../../services/planningService';
+import * as flightMonitoringService from '../../services/flightMonitoringService';
+
+vi.mock('../flight-monitoring/components/FlightMap', () => ({
+  default: function FlightMapStub() {
+    return <div data-testid="flight-map-stub" />;
+  },
+}));
 
 const SNAPSHOT = {
   station: { code: 'PUJ', localAbbr: 'AST', localTime: '2026-08-01T14:32:00-04:00', utcTime: '2026-08-01T18:32:00Z' },
@@ -94,6 +101,26 @@ describe('AppShell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Planificación Operativa' })).toBeInTheDocument();
     expect(within(nav).getByText('Planificación operativa').closest('button')).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
+
+  it('switches to the Flight Monitoring module and renders the real monitoring screen', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot').mockResolvedValue({
+      station: { code: 'PUJ' },
+      flights: [],
+    });
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates').mockReturnValue(() => {});
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Monitoreo de vuelos'));
+
+    expect(await screen.findByText('FlyAware conectado')).toBeInTheDocument();
+    expect(within(nav).getByText('Monitoreo de vuelos').closest('button')).toHaveAttribute(
       'aria-current',
       'page'
     );

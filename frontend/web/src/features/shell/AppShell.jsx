@@ -10,6 +10,8 @@ import { useDashboardData } from '../dashboard/useDashboardData';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import PlanningPage from '../planning/PlanningPage';
 import { usePlanningData } from '../planning/usePlanningData';
+import FlightMonitoringPage from '../flight-monitoring/FlightMonitoringPage';
+import { useFlightMonitoringData } from '../flight-monitoring/useFlightMonitoringData';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -25,6 +27,8 @@ export default function AppShell() {
   const { status, data, error } = useDashboardData('PUJ', retryToken);
   const [planningRetryToken, setPlanningRetryToken] = useState(0);
   const planning = usePlanningData('PUJ', undefined, planningRetryToken);
+  const [monitoringRetryToken, setMonitoringRetryToken] = useState(0);
+  const monitoring = useFlightMonitoringData('PUJ', monitoringRetryToken);
   const { theme, toggleTheme, forceState, setForceState } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
@@ -81,6 +85,17 @@ export default function AppShell() {
               error={planning.error}
               onRetry={() => setPlanningRetryToken(token => token + 1)}
               forceState={forceState}
+            />
+          ) : activeModule.id === MODULE_IDS.FLIGHT_MONITORING ? (
+            <FlightMonitoringPage
+              status={monitoring.status}
+              data={monitoring.data}
+              error={monitoring.error}
+              connection={monitoring.connection}
+              lastUpdatedAt={monitoring.lastUpdatedAt}
+              onRetry={() => setMonitoringRetryToken(token => token + 1)}
+              forceState={forceState}
+              theme={theme}
             />
           ) : (
             <ModulePlaceholder
