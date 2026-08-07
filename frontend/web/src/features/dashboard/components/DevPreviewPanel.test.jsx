@@ -51,4 +51,20 @@ describe('DevPreviewPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /planificación: error/i }));
     expect(onSetForceState).toHaveBeenCalledWith('planningError');
   });
+
+  it('exposes the Flight Monitoring forced states', async () => {
+    const onSetForceState = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /monitoreo: sin vuelos/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('monitoringEmpty');
+
+    await userEvent.click(screen.getByRole('button', { name: /monitoreo: error/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('monitoringError');
+
+    await userEvent.click(screen.getByRole('button', { name: /monitoreo: flyaware desconectado/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('monitoringDisconnected');
+  });
 });
