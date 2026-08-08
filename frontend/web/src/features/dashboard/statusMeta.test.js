@@ -49,4 +49,16 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('review', 'RETURNED')).toEqual({ label: 'Devuelto con correcciones', color: 'danger' });
     expect(getStatusMeta('review', 'RESUBMITTED')).toEqual({ label: 'Reenviado', color: 'info' });
   });
+
+  it('maps the Reports-module domains to label and color', () => {
+    expect(getStatusMeta('closure', 'normal')).toEqual({ label: 'Margen suficiente', color: 'success' });
+    expect(getStatusMeta('closure', 'warning')).toEqual({ label: 'Margen ajustado', color: 'warning' });
+    expect(getStatusMeta('closure', 'critical')).toEqual({ label: 'Situación crítica', color: 'danger' });
+    expect(getStatusMeta('groundTime', 'within_sla')).toEqual({ label: 'Dentro del SLA', color: 'success' });
+    expect(getStatusMeta('groundTime', 'near_limit')).toEqual({ label: 'Cerca del límite', color: 'warning' });
+    expect(getStatusMeta('groundTime', 'exceeded')).toEqual({ label: 'Excedido', color: 'danger' });
+    expect(getStatusMeta('reconciliation', 'conforme')).toEqual({ label: 'Conforme', color: 'success' });
+    expect(getStatusMeta('reconciliation', 'diferencia')).toEqual({ label: 'Diferencia', color: 'warning' });
+    expect(getStatusMeta('reconciliation', 'no_ejecutado')).toEqual({ label: 'No ejecutado', color: 'danger' });
+  });
 });

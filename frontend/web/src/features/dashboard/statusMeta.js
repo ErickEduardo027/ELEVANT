@@ -37,10 +37,31 @@ export const REVIEW_STATUS_META = {
   RESUBMITTED: { label: 'Reenviado', color: 'info' },
 };
 
+export const CLOSURE_SEVERITY_META = {
+  normal: { label: 'Margen suficiente', color: 'success' },
+  warning: { label: 'Margen ajustado', color: 'warning' },
+  critical: { label: 'Situación crítica', color: 'danger' },
+};
+
+export const GROUND_TIME_STATUS_META = {
+  within_sla: { label: 'Dentro del SLA', color: 'success' },
+  near_limit: { label: 'Cerca del límite', color: 'warning' },
+  exceeded: { label: 'Excedido', color: 'danger' },
+};
+
+export const RECONCILIATION_STATUS_META = {
+  conforme: { label: 'Conforme', color: 'success' },
+  diferencia: { label: 'Diferencia', color: 'warning' },
+  no_ejecutado: { label: 'No ejecutado', color: 'danger' },
+};
+
 const STATUS_TABLES_BY_DOMAIN = {
   flight: FLIGHT_STATUS_META,
   service: SERVICE_STATUS_META,
   review: REVIEW_STATUS_META,
+  closure: CLOSURE_SEVERITY_META,
+  groundTime: GROUND_TIME_STATUS_META,
+  reconciliation: RECONCILIATION_STATUS_META,
 };
 
 export function getStatusMeta(domain, status) {
