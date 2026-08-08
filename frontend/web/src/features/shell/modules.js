@@ -1,5 +1,5 @@
 import { LayoutGridIcon, CalendarIcon, RadarIcon, BarChartIcon, MessageCircleIcon } from './components/icons';
-import { MapPinIcon, ChecklistIcon, BellIcon } from '../dashboard/components/icons';
+import { MapPinIcon, ChecklistIcon, BellIcon, ShieldCheckIcon } from '../dashboard/components/icons';
 
 export const MODULE_IDS = {
   DASHBOARD: 'dashboard',
@@ -39,9 +39,9 @@ export const MODULES = [
   },
   {
     id: MODULE_IDS.APPROVALS,
-    label: 'Aprobaciones',
-    icon: ChecklistIcon,
-    description: 'Bandeja completa de operaciones pendientes de revisión, con historial y filtros.',
+    label: 'Revisión',
+    icon: ShieldCheckIcon,
+    description: 'Centro de control para validar operaciones de ground handling antes de enviarlas a Finanzas.',
   },
   {
     id: MODULE_IDS.REPORTS,

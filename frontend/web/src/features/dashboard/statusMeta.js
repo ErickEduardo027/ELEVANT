@@ -29,7 +29,21 @@ export const SERVICE_STATUS_META = {
   pendingReview: { label: 'Pendiente de revisión', color: 'warning' },
 };
 
+export const REVIEW_STATUS_META = {
+  PENDING_REVIEW: { label: 'Pendiente de revisión', color: 'warning' },
+  IN_REVIEW: { label: 'En revisión', color: 'info' },
+  APPROVED: { label: 'Aprobado', color: 'success' },
+  RETURNED: { label: 'Devuelto con correcciones', color: 'danger' },
+  RESUBMITTED: { label: 'Reenviado', color: 'info' },
+};
+
+const STATUS_TABLES_BY_DOMAIN = {
+  flight: FLIGHT_STATUS_META,
+  service: SERVICE_STATUS_META,
+  review: REVIEW_STATUS_META,
+};
+
 export function getStatusMeta(domain, status) {
-  const table = domain === 'flight' ? FLIGHT_STATUS_META : SERVICE_STATUS_META;
+  const table = STATUS_TABLES_BY_DOMAIN[domain] ?? SERVICE_STATUS_META;
   return table[status] ?? { label: status, color: 'info' };
 }

@@ -5,6 +5,7 @@ import AppShell from './AppShell';
 import * as dashboardService from '../../services/dashboardService';
 import * as planningService from '../../services/planningService';
 import * as flightMonitoringService from '../../services/flightMonitoringService';
+import * as reviewService from '../../services/reviewService';
 
 vi.mock('../flight-monitoring/components/FlightMap', () => ({
   default: function FlightMapStub() {
@@ -36,33 +37,38 @@ describe('AppShell', () => {
 
     const nav = screen.getByRole('navigation');
     expect(within(nav).getByText('Dashboard').closest('button')).toHaveAttribute('aria-current', 'page');
-    expect(within(nav).getByText('Aprobaciones')).toBeInTheDocument();
+    expect(within(nav).getByText('Revisión')).toBeInTheDocument();
     expect(within(nav).getByText('Chat interno')).toBeInTheDocument();
   });
 
-  it('switches the main content to a module placeholder when a different item is selected', async () => {
+  it('switches to the Review module and renders the real review screen', async () => {
     vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    vi.spyOn(reviewService, 'getReviewQueue').mockResolvedValue({
+      station: { code: 'PUJ' },
+      date: '2026-08-05',
+      operations: [],
+    });
     render(<AppShell />);
     await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
 
-    await userEvent.click(screen.getByText('Aprobaciones'));
+    await userEvent.click(screen.getByText('Revisión'));
 
     expect(screen.queryByText('Vuelos programados hoy')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Aprobaciones' })).toBeInTheDocument();
-    expect(screen.getByText(/en construcción/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Revisión' })).toBeInTheDocument();
+    expect(screen.getByText('No hay operaciones pendientes de revisión.')).toBeInTheDocument();
 
     const nav = screen.getByRole('navigation');
-    expect(within(nav).getByText('Aprobaciones').closest('button')).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByText('Revisión').closest('button')).toHaveAttribute('aria-current', 'page');
   });
 
-  it('shows the pending-approvals count as a badge on the Aprobaciones nav item', async () => {
+  it('shows the pending-approvals count as a badge on the Revisión nav item', async () => {
     vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
     render(<AppShell />);
     await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
 
     const nav = screen.getByRole('navigation');
-    const approvalsItem = within(nav).getByText('Aprobaciones').closest('button');
-    expect(within(approvalsItem).getByText('4')).toBeInTheDocument();
+    const reviewItem = within(nav).getByText('Revisión').closest('button');
+    expect(within(reviewItem).getByText('4')).toBeInTheDocument();
   });
 
   it('keeps a single shared theme between the topbar and the dev preview panel', async () => {

@@ -41,4 +41,12 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('flight', 'taxiingToGate')).toEqual({ label: 'Rodaje a puerta', color: 'active' });
     expect(getStatusMeta('flight', 'unknown')).toEqual({ label: 'Desconocido', color: 'info' });
   });
+
+  it('maps the Review-module statuses to label and color', () => {
+    expect(getStatusMeta('review', 'PENDING_REVIEW')).toEqual({ label: 'Pendiente de revisión', color: 'warning' });
+    expect(getStatusMeta('review', 'IN_REVIEW')).toEqual({ label: 'En revisión', color: 'info' });
+    expect(getStatusMeta('review', 'APPROVED')).toEqual({ label: 'Aprobado', color: 'success' });
+    expect(getStatusMeta('review', 'RETURNED')).toEqual({ label: 'Devuelto con correcciones', color: 'danger' });
+    expect(getStatusMeta('review', 'RESUBMITTED')).toEqual({ label: 'Reenviado', color: 'info' });
+  });
 });

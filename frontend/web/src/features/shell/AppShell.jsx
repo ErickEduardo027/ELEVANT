@@ -12,6 +12,8 @@ import PlanningPage from '../planning/PlanningPage';
 import { usePlanningData } from '../planning/usePlanningData';
 import FlightMonitoringPage from '../flight-monitoring/FlightMonitoringPage';
 import { useFlightMonitoringData } from '../flight-monitoring/useFlightMonitoringData';
+import ReviewPage from '../review/ReviewPage';
+import { useReviewData } from '../review/useReviewData';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -34,6 +36,8 @@ export default function AppShell() {
     monitoringRetryToken,
     forceState === 'monitoringDisconnected'
   );
+  const [reviewRetryToken, setReviewRetryToken] = useState(0);
+  const review = useReviewData('PUJ', reviewRetryToken);
   const sidebar = useResponsiveSidebar();
 
   useEffect(() => {
@@ -100,6 +104,18 @@ export default function AppShell() {
               onRetry={() => setMonitoringRetryToken(token => token + 1)}
               forceState={forceState}
               theme={theme}
+            />
+          ) : activeModule.id === MODULE_IDS.APPROVALS ? (
+            <ReviewPage
+              status={review.status}
+              data={review.data}
+              error={review.error}
+              onRetry={() => setReviewRetryToken(token => token + 1)}
+              onApprove={review.approveOperation}
+              onReturn={review.returnOperation}
+              onBulkApprove={review.bulkApprove}
+              onBulkReturn={review.bulkReturn}
+              forceState={forceState}
             />
           ) : (
             <ModulePlaceholder

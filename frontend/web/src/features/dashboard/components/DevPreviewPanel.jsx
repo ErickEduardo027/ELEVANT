@@ -9,6 +9,8 @@ const STATE_BUTTONS = [
   { state: 'monitoringEmpty', label: 'Monitoreo: sin vuelos' },
   { state: 'monitoringError', label: 'Monitoreo: error' },
   { state: 'monitoringDisconnected', label: 'Monitoreo: FlyAware desconectado' },
+  { state: 'reviewEmpty', label: 'Revisión: sin operaciones' },
+  { state: 'reviewError', label: 'Revisión: error' },
 ];
 
 export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSetForceState }) {
