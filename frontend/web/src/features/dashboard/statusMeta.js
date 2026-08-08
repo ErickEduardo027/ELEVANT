@@ -62,6 +62,12 @@ export const NOTIFICATION_SEVERITY_META = {
   success: { label: 'Positiva', color: 'success' },
 };
 
+export const CHAT_CONVERSATION_STATUS_META = {
+  active: { label: 'En curso', color: 'active' },
+  pending: { label: 'Pendiente', color: 'warning' },
+  closed: { label: 'Cerrada', color: 'success' },
+};
+
 const STATUS_TABLES_BY_DOMAIN = {
   flight: FLIGHT_STATUS_META,
   service: SERVICE_STATUS_META,
@@ -70,6 +76,7 @@ const STATUS_TABLES_BY_DOMAIN = {
   groundTime: GROUND_TIME_STATUS_META,
   reconciliation: RECONCILIATION_STATUS_META,
   notification: NOTIFICATION_SEVERITY_META,
+  chat: CHAT_CONVERSATION_STATUS_META,
 };
 
 export function getStatusMeta(domain, status) {

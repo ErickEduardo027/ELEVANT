@@ -17,6 +17,8 @@ import { useReviewData } from '../review/useReviewData';
 import ReportsPage from '../reports/ReportsPage';
 import NotificationsPage from '../notifications/NotificationsPage';
 import { useNotificationsData } from '../notifications/useNotificationsData';
+import ChatPage from '../chat/ChatPage';
+import { useChatData } from '../chat/useChatData';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -43,6 +45,8 @@ export default function AppShell() {
   const review = useReviewData('PUJ', reviewRetryToken);
   const [notificationsRetryToken, setNotificationsRetryToken] = useState(0);
   const notifications = useNotificationsData('PUJ', notificationsRetryToken);
+  const [chatRetryToken, setChatRetryToken] = useState(0);
+  const chat = useChatData('PUJ', chatRetryToken, forceState === 'chatDisconnected');
   const [focusResource, setFocusResource] = useState(null);
   const sidebar = useResponsiveSidebar();
 
@@ -51,6 +55,12 @@ export default function AppShell() {
     if (notifications.status !== 'success') return;
     setUnreadNotificationsCount(notifications.data?.notifications?.filter(item => !item.read).length ?? 0);
   }, [notifications.status, notifications.data]);
+
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  useEffect(() => {
+    if (chat.status !== 'success') return;
+    setUnreadChatCount(chat.data?.conversations?.filter(conversation => conversation.unreadCount > 0).length ?? 0);
+  }, [chat.status, chat.data]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -64,7 +74,7 @@ export default function AppShell() {
     sidebar.closeOverlay();
   }
 
-  function handleNavigateFromNotification(moduleId, resourceId) {
+  function handleNavigateToResource(moduleId, resourceId) {
     setActiveModuleId(moduleId);
     setFocusResource(
       moduleId === MODULE_IDS.FLIGHT_MONITORING
@@ -85,6 +95,7 @@ export default function AppShell() {
         badgeCounts={{
           [MODULE_IDS.APPROVALS]: data?.kpis?.approvalsPending ?? 0,
           [MODULE_IDS.NOTIFICATIONS]: unreadNotificationsCount,
+          [MODULE_IDS.CHAT]: unreadChatCount,
         }}
         user={CURRENT_USER}
         breakpoint={sidebar.breakpoint}
@@ -161,7 +172,21 @@ export default function AppShell() {
               onMarkManyAsRead={notifications.markManyAsRead}
               onMarkManyAsUnread={notifications.markManyAsUnread}
               onMarkAllAsRead={notifications.markAllAsRead}
-              onNavigateToResource={handleNavigateFromNotification}
+              onNavigateToResource={handleNavigateToResource}
+              forceState={forceState}
+            />
+          ) : activeModule.id === MODULE_IDS.CHAT ? (
+            <ChatPage
+              status={chat.status}
+              data={chat.data}
+              error={chat.error}
+              connection={chat.connection}
+              onRetry={() => setChatRetryToken(token => token + 1)}
+              onSendMessage={chat.sendMessage}
+              onMarkAsRead={chat.markAsRead}
+              onCloseConversation={chat.closeConversation}
+              onCreateConversation={chat.createConversation}
+              onNavigateToResource={handleNavigateToResource}
               forceState={forceState}
             />
           ) : (

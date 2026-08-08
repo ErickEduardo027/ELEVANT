@@ -15,6 +15,9 @@ const STATE_BUTTONS = [
   { state: 'reportsError', label: 'Reportes: error' },
   { state: 'notificationsEmpty', label: 'Notificaciones: sin datos' },
   { state: 'notificationsError', label: 'Notificaciones: error' },
+  { state: 'chatEmpty', label: 'Chat: sin conversaciones' },
+  { state: 'chatError', label: 'Chat: error' },
+  { state: 'chatDisconnected', label: 'Chat: desconectado' },
 ];
 
 export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSetForceState }) {

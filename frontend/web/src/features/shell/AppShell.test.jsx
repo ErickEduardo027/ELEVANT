@@ -214,4 +214,41 @@ describe('AppShell', () => {
     expect(screen.getByRole('tab', { name: 'Cierre operacional' })).toHaveAttribute('aria-selected', 'true');
     expect(within(nav).getByText('Reportes').closest('button')).toHaveAttribute('aria-current', 'page');
   });
+
+  it('switches to the Chat interno module and renders the real chat screen', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Chat interno'));
+
+    expect(await screen.findByText('DM161')).toBeInTheDocument();
+    expect(within(nav).getByText('Chat interno').closest('button')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('shows the unread conversations count as a badge on the Chat interno nav item', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    const chatItem = within(nav).getByText('Chat interno').closest('button');
+    await waitFor(() => expect(within(chatItem).getByText('2')).toBeInTheDocument());
+  });
+
+  it('navigating from the chat header to Monitoreo de Vuelos pre-selects the related flight', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates').mockReturnValue(() => {});
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Chat interno'));
+    await userEvent.click(await screen.findByText('DM161'));
+    await userEvent.click(screen.getByRole('button', { name: 'Ver vuelo' }));
+
+    expect(await screen.findByLabelText('Detalle del vuelo DM161')).toBeInTheDocument();
+    expect(within(nav).getByText('Monitoreo de vuelos').closest('button')).toHaveAttribute('aria-current', 'page');
+  });
 });

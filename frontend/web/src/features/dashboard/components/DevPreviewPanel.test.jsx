@@ -106,4 +106,20 @@ describe('DevPreviewPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /notificaciones: error/i }));
     expect(onSetForceState).toHaveBeenCalledWith('notificationsError');
   });
+
+  it('exposes the Chat interno forced states', async () => {
+    const onSetForceState = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /chat: sin conversaciones/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('chatEmpty');
+
+    await userEvent.click(screen.getByRole('button', { name: /chat: error/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('chatError');
+
+    await userEvent.click(screen.getByRole('button', { name: /chat: desconectado/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('chatDisconnected');
+  });
 });

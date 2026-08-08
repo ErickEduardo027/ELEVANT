@@ -68,4 +68,10 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('notification', 'critical')).toEqual({ label: 'Crítica', color: 'danger' });
     expect(getStatusMeta('notification', 'success')).toEqual({ label: 'Positiva', color: 'success' });
   });
+
+  it('maps the Chat interno conversation statuses to label and color', () => {
+    expect(getStatusMeta('chat', 'active')).toEqual({ label: 'En curso', color: 'active' });
+    expect(getStatusMeta('chat', 'pending')).toEqual({ label: 'Pendiente', color: 'warning' });
+    expect(getStatusMeta('chat', 'closed')).toEqual({ label: 'Cerrada', color: 'success' });
+  });
 });
