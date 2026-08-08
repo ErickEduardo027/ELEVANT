@@ -131,4 +131,17 @@ describe('AppShell', () => {
       'page'
     );
   });
+
+  it('switches to the Reports module and renders the real reports screen', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Reportes'));
+
+    expect(await screen.findByRole('heading', { name: 'Reportes' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Cierre operacional' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(nav).getByText('Reportes').closest('button')).toHaveAttribute('aria-current', 'page');
+  });
 });

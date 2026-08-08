@@ -14,6 +14,7 @@ import FlightMonitoringPage from '../flight-monitoring/FlightMonitoringPage';
 import { useFlightMonitoringData } from '../flight-monitoring/useFlightMonitoringData';
 import ReviewPage from '../review/ReviewPage';
 import { useReviewData } from '../review/useReviewData';
+import ReportsPage from '../reports/ReportsPage';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -117,6 +118,8 @@ export default function AppShell() {
               onBulkReturn={review.bulkReturn}
               forceState={forceState}
             />
+          ) : activeModule.id === MODULE_IDS.REPORTS ? (
+            <ReportsPage forceState={forceState} />
           ) : (
             <ModulePlaceholder
               icon={activeModule.icon}
