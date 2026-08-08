@@ -93,4 +93,17 @@ describe('DevPreviewPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /reportes: error/i }));
     expect(onSetForceState).toHaveBeenCalledWith('reportsError');
   });
+
+  it('exposes the Notifications-module forced states', async () => {
+    const onSetForceState = vi.fn();
+    render(
+      <DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={onSetForceState} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /notificaciones: sin datos/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('notificationsEmpty');
+
+    await userEvent.click(screen.getByRole('button', { name: /notificaciones: error/i }));
+    expect(onSetForceState).toHaveBeenCalledWith('notificationsError');
+  });
 });

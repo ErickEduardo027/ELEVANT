@@ -15,6 +15,8 @@ import { useFlightMonitoringData } from '../flight-monitoring/useFlightMonitorin
 import ReviewPage from '../review/ReviewPage';
 import { useReviewData } from '../review/useReviewData';
 import ReportsPage from '../reports/ReportsPage';
+import NotificationsPage from '../notifications/NotificationsPage';
+import { useNotificationsData } from '../notifications/useNotificationsData';
 
 const CURRENT_USER = { name: 'Laisha Ramírez', role: 'Administrador OCC' };
 
@@ -39,7 +41,16 @@ export default function AppShell() {
   );
   const [reviewRetryToken, setReviewRetryToken] = useState(0);
   const review = useReviewData('PUJ', reviewRetryToken);
+  const [notificationsRetryToken, setNotificationsRetryToken] = useState(0);
+  const notifications = useNotificationsData('PUJ', notificationsRetryToken);
+  const [focusResource, setFocusResource] = useState(null);
   const sidebar = useResponsiveSidebar();
+
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  useEffect(() => {
+    if (notifications.status !== 'success') return;
+    setUnreadNotificationsCount(notifications.data?.notifications?.filter(item => !item.read).length ?? 0);
+  }, [notifications.status, notifications.data]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -49,6 +60,19 @@ export default function AppShell() {
 
   function handleSelectModule(id) {
     setActiveModuleId(id);
+    setFocusResource(null);
+    sidebar.closeOverlay();
+  }
+
+  function handleNavigateFromNotification(moduleId, resourceId) {
+    setActiveModuleId(moduleId);
+    setFocusResource(
+      moduleId === MODULE_IDS.FLIGHT_MONITORING
+        ? { flightId: resourceId }
+        : moduleId === MODULE_IDS.APPROVALS
+          ? { operationId: resourceId }
+          : null
+    );
     sidebar.closeOverlay();
   }
 
@@ -58,7 +82,10 @@ export default function AppShell() {
         modules={MODULES}
         activeModuleId={activeModuleId}
         onSelectModule={handleSelectModule}
-        badgeCounts={{ [MODULE_IDS.APPROVALS]: data?.kpis?.approvalsPending ?? 0 }}
+        badgeCounts={{
+          [MODULE_IDS.APPROVALS]: data?.kpis?.approvalsPending ?? 0,
+          [MODULE_IDS.NOTIFICATIONS]: unreadNotificationsCount,
+        }}
         user={CURRENT_USER}
         breakpoint={sidebar.breakpoint}
         railVisible={sidebar.railVisible}
@@ -71,11 +98,12 @@ export default function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           station={data?.station ?? fallbackStation()}
-          notificationsCount={data?.alerts?.length ?? 0}
+          notificationsCount={unreadNotificationsCount}
           theme={theme}
           onToggleTheme={toggleTheme}
           user={CURRENT_USER}
           onOpenMenu={sidebar.toggle}
+          onOpenNotifications={() => handleSelectModule(MODULE_IDS.NOTIFICATIONS)}
         />
 
         <main key={activeModule.id} className="flex-1 overflow-y-auto p-6 [animation:elevant-fade-in_180ms_ease-out]">
@@ -105,6 +133,7 @@ export default function AppShell() {
               onRetry={() => setMonitoringRetryToken(token => token + 1)}
               forceState={forceState}
               theme={theme}
+              focusFlightId={focusResource?.flightId}
             />
           ) : activeModule.id === MODULE_IDS.APPROVALS ? (
             <ReviewPage
@@ -117,9 +146,24 @@ export default function AppShell() {
               onBulkApprove={review.bulkApprove}
               onBulkReturn={review.bulkReturn}
               forceState={forceState}
+              focusOperationId={focusResource?.operationId}
             />
           ) : activeModule.id === MODULE_IDS.REPORTS ? (
             <ReportsPage forceState={forceState} />
+          ) : activeModule.id === MODULE_IDS.NOTIFICATIONS ? (
+            <NotificationsPage
+              status={notifications.status}
+              data={notifications.data}
+              error={notifications.error}
+              onRetry={() => setNotificationsRetryToken(token => token + 1)}
+              onMarkAsRead={notifications.markAsRead}
+              onMarkAsUnread={notifications.markAsUnread}
+              onMarkManyAsRead={notifications.markManyAsRead}
+              onMarkManyAsUnread={notifications.markManyAsUnread}
+              onMarkAllAsRead={notifications.markAllAsRead}
+              onNavigateToResource={handleNavigateFromNotification}
+              forceState={forceState}
+            />
           ) : (
             <ModulePlaceholder
               icon={activeModule.icon}

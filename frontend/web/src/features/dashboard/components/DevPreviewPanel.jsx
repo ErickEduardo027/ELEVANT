@@ -13,6 +13,8 @@ const STATE_BUTTONS = [
   { state: 'reviewError', label: 'Revisión: error' },
   { state: 'reportsEmpty', label: 'Reportes: sin datos' },
   { state: 'reportsError', label: 'Reportes: error' },
+  { state: 'notificationsEmpty', label: 'Notificaciones: sin datos' },
+  { state: 'notificationsError', label: 'Notificaciones: error' },
 ];
 
 export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSetForceState }) {

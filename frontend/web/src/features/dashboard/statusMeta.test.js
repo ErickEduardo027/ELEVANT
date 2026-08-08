@@ -61,4 +61,11 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('reconciliation', 'diferencia')).toEqual({ label: 'Diferencia', color: 'warning' });
     expect(getStatusMeta('reconciliation', 'no_ejecutado')).toEqual({ label: 'No ejecutado', color: 'danger' });
   });
+
+  it('maps the Notifications-module severities to label and color', () => {
+    expect(getStatusMeta('notification', 'info')).toEqual({ label: 'Informativa', color: 'info' });
+    expect(getStatusMeta('notification', 'warning')).toEqual({ label: 'Atención', color: 'warning' });
+    expect(getStatusMeta('notification', 'critical')).toEqual({ label: 'Crítica', color: 'danger' });
+    expect(getStatusMeta('notification', 'success')).toEqual({ label: 'Positiva', color: 'success' });
+  });
 });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { formatClockTime, formatUtcClockTime } from '../mappers';
 import { BellIcon, ChevronDownIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 
-export default function Topbar({ station, notificationsCount, theme, onToggleTheme, user, onOpenMenu }) {
+export default function Topbar({ station, notificationsCount, theme, onToggleTheme, user, onOpenMenu, onOpenNotifications }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -37,6 +37,7 @@ export default function Topbar({ station, notificationsCount, theme, onToggleThe
       <div className="ml-auto flex items-center gap-3">
         <button
           type="button"
+          onClick={onOpenNotifications}
           aria-label="Notificaciones"
           className="relative rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/5"
         >
@@ -46,7 +47,7 @@ export default function Topbar({ station, notificationsCount, theme, onToggleThe
               data-testid="notifications-badge"
               className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-500 px-1 text-[10px] font-semibold text-white"
             >
-              {notificationsCount}
+              {notificationsCount > 99 ? '99+' : notificationsCount}
             </span>
           )}
         </button>

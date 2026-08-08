@@ -28,8 +28,9 @@ export default function ReviewPage({
   onBulkApprove,
   onBulkReturn,
   forceState = 'default',
+  focusOperationId = null,
 }) {
-  const [selectedOperationId, setSelectedOperationId] = useState(null);
+  const [selectedOperationId, setSelectedOperationId] = useState(focusOperationId);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingReturn, setPendingReturn] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
@@ -38,6 +39,10 @@ export default function ReviewPage({
     const id = setInterval(() => setNow(new Date().toISOString()), 30000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (focusOperationId) setSelectedOperationId(focusOperationId);
+  }, [focusOperationId]);
 
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = (status === 'error' && forceState === 'default') || forceState === 'reviewError';

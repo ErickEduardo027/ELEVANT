@@ -30,6 +30,27 @@ describe('Topbar', () => {
     expect(screen.queryByTestId('notifications-badge')).not.toBeInTheDocument();
   });
 
+  it('caps the notifications badge at "99+" for large counts', () => {
+    render(<Topbar station={STATION} notificationsCount={140} theme="light" onToggleTheme={() => {}} user={USER} />);
+    expect(screen.getByTestId('notifications-badge')).toHaveTextContent('99+');
+  });
+
+  it('calls onOpenNotifications when the bell is clicked', async () => {
+    const onOpenNotifications = vi.fn();
+    render(
+      <Topbar
+        station={STATION}
+        notificationsCount={3}
+        theme="light"
+        onToggleTheme={() => {}}
+        user={USER}
+        onOpenNotifications={onOpenNotifications}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Notificaciones' }));
+    expect(onOpenNotifications).toHaveBeenCalledTimes(1);
+  });
+
   it('calls onToggleTheme when the theme button is clicked', async () => {
     const onToggleTheme = vi.fn();
     render(

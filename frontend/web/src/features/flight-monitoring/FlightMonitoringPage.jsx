@@ -47,8 +47,9 @@ export default function FlightMonitoringPage({
   onRetry,
   forceState = 'default',
   theme = 'light',
+  focusFlightId = null,
 }) {
-  const [selectedFlightId, setSelectedFlightId] = useState(null);
+  const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
   const [popoverPosition, setPopoverPosition] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [listDrawerOpen, setListDrawerOpen] = useState(false);
@@ -62,6 +63,10 @@ export default function FlightMonitoringPage({
   useEffect(() => {
     if (!isTablet) setListDrawerOpen(false);
   }, [isTablet]);
+
+  useEffect(() => {
+    if (focusFlightId) setSelectedFlightId(focusFlightId);
+  }, [focusFlightId]);
 
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = (status === 'error' && forceState === 'default') || forceState === 'monitoringError';

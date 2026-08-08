@@ -55,6 +55,13 @@ export const RECONCILIATION_STATUS_META = {
   no_ejecutado: { label: 'No ejecutado', color: 'danger' },
 };
 
+export const NOTIFICATION_SEVERITY_META = {
+  info: { label: 'Informativa', color: 'info' },
+  warning: { label: 'Atención', color: 'warning' },
+  critical: { label: 'Crítica', color: 'danger' },
+  success: { label: 'Positiva', color: 'success' },
+};
+
 const STATUS_TABLES_BY_DOMAIN = {
   flight: FLIGHT_STATUS_META,
   service: SERVICE_STATUS_META,
@@ -62,6 +69,7 @@ const STATUS_TABLES_BY_DOMAIN = {
   closure: CLOSURE_SEVERITY_META,
   groundTime: GROUND_TIME_STATUS_META,
   reconciliation: RECONCILIATION_STATUS_META,
+  notification: NOTIFICATION_SEVERITY_META,
 };
 
 export function getStatusMeta(domain, status) {
