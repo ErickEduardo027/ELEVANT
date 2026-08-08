@@ -1,5 +1,74 @@
 # Elevant Mobile Agent
 
+## Prototipo funcional
+
+Esta versión incluye un prototipo navegable para demostrar el trabajo del Agente de Rampa:
+
+- inicio de sesión local;
+- vuelos y tareas asignadas;
+- inicio y fin de atención operativa;
+- checklist del puente de abordaje;
+- registro de incidencias y fotografías;
+- almacenamiento local de operaciones pendientes;
+- pantalla de conectividad y sincronización simulada.
+
+La aplicación usa datos de demostración. Todavía no autentica contra la API ni envía información al backend.
+
+## Cómo abrirlo por primera vez en Windows
+
+1. Instalar Node.js LTS desde `https://nodejs.org`.
+2. Instalar **Expo Go** en el teléfono Android o iPhone.
+3. Abrir PowerShell en la carpeta `frontend/mobile-agent`.
+4. Ejecutar:
+
+```powershell
+npm install
+npx expo start
+```
+
+No es necesario ejecutar `npm install` ni crear `node_modules` en la raíz de
+ELEVANT. `metro.config.js` mantiene la resolución de dependencias dentro de
+`frontend/mobile-agent`, respetando los límites de trabajo del repositorio.
+
+Si Metro informa que no puede resolver `expo-asset`, ejecutar solamente dentro
+de `frontend/mobile-agent`:
+
+```powershell
+npx expo install expo-asset
+npx expo start --clear
+```
+
+5. Conectar la computadora y el teléfono a la misma red Wi-Fi.
+6. Escanear el código QR con Expo Go. En iPhone también puede escanearse con la cámara.
+
+Si la red bloquea la conexión local, usar:
+
+```powershell
+npx expo start --tunnel
+```
+
+Para probarlo en el navegador, presionar `w` en la terminal después de iniciar Expo.
+
+### Datos de demostración
+
+- Usuario: `agente.rampa`
+- Contraseña: `123456`
+
+La pantalla acepta cualquier usuario y contraseña no vacíos porque la autenticación real está pendiente.
+
+## Antes de subir los cambios a GitHub
+
+Crear una rama propia para no modificar directamente la rama principal:
+
+```powershell
+git checkout -b feature/mobile-agent-prototype
+git add frontend/mobile-agent
+git commit -m "feat: add mobile agent functional prototype"
+git push -u origin feature/mobile-agent-prototype
+```
+
+Después, solicitar al administrador del repositorio que revise o integre la rama mediante un Pull Request.
+
 Esqueleto de la aplicación móvil para agentes. Se prevé Expo y Expo Router, pero `create-expo-app` no se ejecuta todavía para evitar fijar versiones y decisiones antes de contar con una feature móvil implementable.
 
 Eliezer es responsable de `frontend/mobile-agent`. La aplicación consumirá normalmente
