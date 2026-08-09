@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './LoginPage.css';
 //holaaaaa
 
@@ -138,6 +139,7 @@ function Logo({ bright = false }) {
 }
 
 export default function LoginPage() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [status, setStatus] = useState('idle'); // 'idle' | 'busy' | 'done'
@@ -156,7 +158,10 @@ export default function LoginPage() {
     const rect = submitRef.current.getBoundingClientRect();
     setRipple({ id: Date.now(), x: rect.width / 2, y: rect.height / 2 });
     setStatus('busy');
-    timers.current.push(setTimeout(() => setStatus('done'), 1500));
+    timers.current.push(setTimeout(() => {
+      setStatus('done');
+      navigate('/select-role');
+    }, 1500));
     timers.current.push(setTimeout(() => {
       setStatus('idle');
       setRipple(null);
