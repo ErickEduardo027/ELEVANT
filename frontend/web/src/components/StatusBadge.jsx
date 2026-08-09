@@ -4,6 +4,7 @@ const DOT_TONE_CLASSES = {
   success: 'bg-status-success',
   warning: 'bg-status-warning',
   danger: 'bg-status-danger',
+  neutral: 'bg-status-neutral',
 };
 
 // Presentacional puro: recibe tono + etiqueta ya resueltos. Cada feature

@@ -7,4 +7,5 @@ export const TONE_HEX = {
   success: '#1E9E6B',
   warning: '#D9A441',
   danger: '#C4453C',
+  neutral: '#6B7684',
 };
