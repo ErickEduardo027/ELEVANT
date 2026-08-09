@@ -1,0 +1,131 @@
+function Icon({ className, children }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      {children}
+    </svg>
+  );
+}
+
+export function LayoutGridIcon(props) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4" />
+      <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.4" />
+      <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4" />
+      <rect x="13" y="13" width="7.5" height="7.5" rx="1.4" />
+    </Icon>
+  );
+}
+
+export function CalendarIcon(props) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="4.8" width="17" height="15.7" rx="2" />
+      <path d="M3.5 9.5h17M8 3v3.4M16 3v3.4" />
+      <path d="M7.5 13.2h3M13.5 13.2h3M7.5 16.6h3" />
+    </Icon>
+  );
+}
+
+export function BarChartIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20V10M12 20V4M20 20v-6.5" />
+      <path d="M4 20h16" />
+    </Icon>
+  );
+}
+
+export function MenuIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </Icon>
+  );
+}
+
+export function BellIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M6 9.5a6 6 0 0 1 12 0v4.2l1.6 2.6H4.4L6 13.7V9.5Z" />
+      <path d="M10 19a2 2 0 0 0 4 0" />
+    </Icon>
+  );
+}
+
+export function SunIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v2m0 14v2m9-9h-2M5 12H3m14.5-6.5-1.4 1.4M6.9 17.1l-1.4 1.4m0-13 1.4 1.4m10.2 10.2 1.4 1.4" />
+    </Icon>
+  );
+}
+
+export function MoonIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" />
+    </Icon>
+  );
+}
+
+export function ChevronDownIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Icon>
+  );
+}
+
+export function ShieldCheckIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3.2 5 6v5.4c0 4.3 2.9 8 7 9.4 4.1-1.4 7-5.1 7-9.4V6l-7-2.8Z" />
+      <path d="m9.2 12.1 2 2 3.6-3.9" />
+    </Icon>
+  );
+}
+
+export function UsersIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="8.5" cy="8.2" r="2.7" />
+      <path d="M3.2 18c.5-2.9 2.6-4.6 5.3-4.6s4.8 1.7 5.3 4.6" />
+      <path d="M15.5 6.3a2.6 2.6 0 0 1 0 5" />
+      <path d="M17 13.6c2.2.4 3.6 1.9 4 4.3" />
+    </Icon>
+  );
+}
+
+export function ChecklistIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M9 6h10M9 12h10M9 18h10" />
+      <path d="m4 6 1 1 1.6-1.6M4 12l1 1 1.6-1.6M4 18l1 1 1.6-1.6" />
+    </Icon>
+  );
+}
+
+// Carnet/permiso aeroportuario: no existía en el set de iconos de referencia
+// (feat/adminocc); se agrega siguiendo el mismo lenguaje visual (outline,
+// stroke 1.7, viewBox 24).
+export function IdCardIcon(props) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="5.3" width="18" height="13.4" rx="2" />
+      <circle cx="8.4" cy="10.6" r="1.9" />
+      <path d="M5.4 15.6c.4-1.6 1.5-2.4 3-2.4s2.6.8 3 2.4" />
+      <path d="M13.8 9.5h5M13.8 12.3h5" />
+    </Icon>
+  );
+}

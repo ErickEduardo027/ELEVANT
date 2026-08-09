@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  font-feature-settings: 'tnum' 1;
+}
+
+body {
+  @apply bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes elevant-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
