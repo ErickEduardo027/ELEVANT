@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { BellIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
+import { formatClockTime, formatUtcClockTime } from '../../../lib/clock';
+import { BellIcon, ChevronDownIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 
-export default function Topbar({ roleLabel, notificationsCount = 0, theme, onToggleTheme, user, onOpenMenu, onOpenNotifications }) {
+export default function Topbar({ roleLabel, station, notificationsCount = 0, theme, onToggleTheme, user, onOpenMenu, onOpenNotifications }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -17,10 +18,29 @@ export default function Topbar({ roleLabel, notificationsCount = 0, theme, onTog
         </button>
       )}
 
-      {roleLabel && (
-        <span className="rounded-lg border border-black/10 px-3 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark">
-          {roleLabel}
-        </span>
+      {station ? (
+        <>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-lg border border-black/10 px-3 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark"
+          >
+            {station.code}
+            <ChevronDownIcon className="h-3.5 w-3.5" />
+          </button>
+          <div className="flex items-center gap-3 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
+            <span>
+              {station.localAbbr} {formatClockTime(station.localTime)}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>UTC {formatUtcClockTime(station.utcTime)}</span>
+          </div>
+        </>
+      ) : (
+        roleLabel && (
+          <span className="rounded-lg border border-black/10 px-3 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark">
+            {roleLabel}
+          </span>
+        )
       )}
 
       <div className="ml-auto flex items-center gap-3">

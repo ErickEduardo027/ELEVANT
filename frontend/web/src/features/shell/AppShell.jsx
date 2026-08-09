@@ -9,7 +9,7 @@ import { useTheme } from './useTheme';
 // navegación y usuario; el shell visual (Sidebar, Topbar, layout de
 // contenido) se mantiene único para que la identidad de producto no se
 // fragmente entre roles.
-export default function AppShell({ navigation, roleLabel, user, notificationsPath }) {
+export default function AppShell({ navigation, roleLabel, user, notificationsPath, station }) {
   const location = useLocation();
   const navigate = useNavigate();
   const sidebar = useResponsiveSidebar();
@@ -36,6 +36,7 @@ export default function AppShell({ navigation, roleLabel, user, notificationsPat
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           roleLabel={roleLabel}
+          station={station}
           notificationsCount={notificationsCount}
           theme={theme}
           onToggleTheme={toggleTheme}
