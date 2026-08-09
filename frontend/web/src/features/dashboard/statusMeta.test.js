@@ -74,4 +74,11 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('chat', 'pending')).toEqual({ label: 'Pendiente', color: 'warning' });
     expect(getStatusMeta('chat', 'closed')).toEqual({ label: 'Cerrada', color: 'success' });
   });
+
+  it('maps the Mapa de posiciones statuses to label and color', () => {
+    expect(getStatusMeta('position', 'available')).toEqual({ label: 'Libre', color: 'success' });
+    expect(getStatusMeta('position', 'occupied')).toEqual({ label: 'Ocupada', color: 'info' });
+    expect(getStatusMeta('position', 'disabled')).toEqual({ label: 'Inhabilitada', color: 'danger' });
+    expect(getStatusMeta('position', 'releasing')).toEqual({ label: 'Próxima a liberarse', color: 'warning' });
+  });
 });

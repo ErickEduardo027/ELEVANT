@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -13,6 +14,19 @@ vi.mock('../flight-monitoring/components/FlightMap', () => ({
   default: function FlightMapStub() {
     return <div data-testid="flight-map-stub" />;
   },
+}));
+
+vi.mock('../positions-map/components/PositionMap', () => ({
+  default: forwardRef(function PositionMapStub(props, ref) {
+    useImperativeHandle(ref, () => ({
+      flyToPosition: vi.fn(),
+      flyToBounds: vi.fn(),
+      flyToAll: vi.fn(),
+      flyToPuj: vi.fn(),
+      resetNorth: vi.fn(),
+    }));
+    return <div data-testid="position-map-stub" />;
+  }),
 }));
 
 const SNAPSHOT = {
@@ -133,6 +147,29 @@ describe('AppShell', () => {
       'aria-current',
       'page'
     );
+  });
+
+  it('switches to the Mapa de posiciones module and renders the real positions map screen', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    const nav = screen.getByRole('navigation');
+    await userEvent.click(within(nav).getByText('Mapa de posiciones'));
+
+    expect(await screen.findByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
+    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+    expect(within(nav).getByText('Mapa de posiciones').closest('button')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opening the positions map from the Dashboard preview navigates to the real module', async () => {
+    vi.spyOn(dashboardService, 'getDashboardSnapshot').mockResolvedValue(SNAPSHOT);
+    render(<AppShell />);
+    await waitFor(() => expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /ver mapa completo/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
   });
 
   it('switches to the Notifications module and renders the real notifications screen', async () => {

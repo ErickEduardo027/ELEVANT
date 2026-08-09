@@ -7,7 +7,7 @@ import AlertsFeed from './components/AlertsFeed';
 import PositionsMapPreview from './components/PositionsMapPreview';
 import { PlaneIcon, ChecklistIcon, UsersIcon } from './components/icons';
 
-export default function DashboardPage({ status, data, error, onRetry, forceState = 'default' }) {
+export default function DashboardPage({ status, data, error, onRetry, forceState = 'default', onOpenPositionsMap = () => {} }) {
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = status === 'error' && forceState === 'default';
 
@@ -83,7 +83,7 @@ export default function DashboardPage({ status, data, error, onRetry, forceState
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
         <div className="space-y-4">
           <FlightStatusChart distribution={data?.flightStatusDistribution ?? []} />
-          <PositionsMapPreview onOpenMap={() => {}} />
+          <PositionsMapPreview onOpenMap={onOpenPositionsMap} />
         </div>
         <div className="space-y-4">
           <ApprovalPreviewList approvals={approvals} onViewAll={() => {}} loading={isLoading} />

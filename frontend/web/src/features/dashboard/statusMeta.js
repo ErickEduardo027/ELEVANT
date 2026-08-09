@@ -68,6 +68,13 @@ export const CHAT_CONVERSATION_STATUS_META = {
   closed: { label: 'Cerrada', color: 'success' },
 };
 
+export const POSITION_STATUS_META = {
+  available: { label: 'Libre', color: 'success' },
+  occupied: { label: 'Ocupada', color: 'info' },
+  disabled: { label: 'Inhabilitada', color: 'danger' },
+  releasing: { label: 'Próxima a liberarse', color: 'warning' },
+};
+
 const STATUS_TABLES_BY_DOMAIN = {
   flight: FLIGHT_STATUS_META,
   service: SERVICE_STATUS_META,
@@ -77,6 +84,7 @@ const STATUS_TABLES_BY_DOMAIN = {
   reconciliation: RECONCILIATION_STATUS_META,
   notification: NOTIFICATION_SEVERITY_META,
   chat: CHAT_CONVERSATION_STATUS_META,
+  position: POSITION_STATUS_META,
 };
 
 export function getStatusMeta(domain, status) {

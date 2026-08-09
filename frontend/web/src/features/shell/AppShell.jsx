@@ -12,6 +12,8 @@ import PlanningPage from '../planning/PlanningPage';
 import { usePlanningData } from '../planning/usePlanningData';
 import FlightMonitoringPage from '../flight-monitoring/FlightMonitoringPage';
 import { useFlightMonitoringData } from '../flight-monitoring/useFlightMonitoringData';
+import PositionsMapPage from '../positions-map/PositionsMapPage';
+import { usePositionsMapData } from '../positions-map/usePositionsMapData';
 import ReviewPage from '../review/ReviewPage';
 import { useReviewData } from '../review/useReviewData';
 import ReportsPage from '../reports/ReportsPage';
@@ -40,6 +42,12 @@ export default function AppShell() {
     'PUJ',
     monitoringRetryToken,
     forceState === 'monitoringDisconnected'
+  );
+  const [positionsMapRetryToken, setPositionsMapRetryToken] = useState(0);
+  const positionsMap = usePositionsMapData(
+    'PUJ',
+    positionsMapRetryToken,
+    forceState === 'positionsMapDisconnected'
   );
   const [reviewRetryToken, setReviewRetryToken] = useState(0);
   const review = useReviewData('PUJ', reviewRetryToken);
@@ -125,6 +133,7 @@ export default function AppShell() {
               error={error}
               onRetry={() => setRetryToken(token => token + 1)}
               forceState={forceState}
+              onOpenPositionsMap={() => handleSelectModule(MODULE_IDS.POSITIONS_MAP)}
             />
           ) : activeModule.id === MODULE_IDS.PLANNING ? (
             <PlanningPage
@@ -145,6 +154,18 @@ export default function AppShell() {
               forceState={forceState}
               theme={theme}
               focusFlightId={focusResource?.flightId}
+            />
+          ) : activeModule.id === MODULE_IDS.POSITIONS_MAP ? (
+            <PositionsMapPage
+              status={positionsMap.status}
+              data={positionsMap.data}
+              error={positionsMap.error}
+              connection={positionsMap.connection}
+              lastUpdatedAt={positionsMap.lastUpdatedAt}
+              onRetry={() => setPositionsMapRetryToken(token => token + 1)}
+              forceState={forceState}
+              theme={theme}
+              onNavigateToResource={handleNavigateToResource}
             />
           ) : activeModule.id === MODULE_IDS.APPROVALS ? (
             <ReviewPage
