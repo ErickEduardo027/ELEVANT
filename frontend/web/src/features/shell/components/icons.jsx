@@ -129,3 +129,52 @@ export function IdCardIcon(props) {
     </Icon>
   );
 }
+
+export function ClockIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.3V12l3.2 2" />
+    </Icon>
+  );
+}
+
+export function RefreshCwIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5" />
+      <path d="M20 4v4.5h-4.5" />
+      <path d="M20 12a8 8 0 0 1-13.7 5.7L4 15.5" />
+      <path d="M4 20v-4.5h4.5" />
+    </Icon>
+  );
+}
+
+export function CheckCircleIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="m8.3 12.3 2.4 2.4 5-5.2" />
+    </Icon>
+  );
+}
+
+export function UserMinusIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="8.2" r="3.2" />
+      <path d="M3.2 19c.5-3.3 2.8-5.2 5.8-5.2s5.3 1.9 5.8 5.2" />
+      <path d="M16.5 11h4.5" />
+    </Icon>
+  );
+}
+
+export function AlertTriangleIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.2 2.9 19.6a1 1 0 0 0 .9 1.5h16.4a1 1 0 0 0 .9-1.5L12 4.2Z" />
+      <path d="M12 10v4.2" />
+      <path d="M12 17.4h.01" />
+    </Icon>
+  );
+}
