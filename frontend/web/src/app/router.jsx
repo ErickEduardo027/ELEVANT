@@ -4,6 +4,7 @@ import HumanResourcesLayout from '../features/human-resources/HumanResourcesLayo
 import ModulePlaceholder from '../features/shell/components/ModulePlaceholder';
 import HumanResourcesDashboardPage from '../features/human-resources/dashboard/DashboardPage';
 import UsersPage from '../features/human-resources/users/UsersPage';
+import CertificationsPage from '../features/human-resources/certifications/CertificationsPage';
 import {
   HUMAN_RESOURCES_NAVIGATION,
   HUMAN_RESOURCES_BASE_PATH,
@@ -17,6 +18,8 @@ const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
       <HumanResourcesDashboardPage />
     ) : item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ? (
       <UsersPage />
+    ) : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ? (
+      <CertificationsPage />
     ) : (
       <ModulePlaceholder icon={item.icon} label={item.label} description={item.description} />
     ),

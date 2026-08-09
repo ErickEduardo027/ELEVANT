@@ -1,0 +1,297 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - generic [ref=f5e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f5e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f5e12]:
+        - link "Dashboard" [ref=f5e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f5e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f5e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f5e34]: Habilitaciones y certificaciones
+          - generic [ref=f5e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f5e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f5e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f5e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f5e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f5e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f5e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f5e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f5e68]: Notificaciones
+          - generic [ref=f5e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f5e72] [cursor=pointer]:
+        - generic [ref=f5e73]: CR
+        - generic [ref=f5e74]:
+          - generic [ref=f5e75]: Camila Reyes
+          - generic [ref=f5e76]: Gestión Humana
+  - generic [ref=f5e77]:
+    - banner [ref=f5e78]:
+      - generic [ref=f5e79]: Gestión Humana
+      - generic [ref=f5e80]:
+        - button "Notificaciones" [ref=f5e81] [cursor=pointer]:
+          - generic [ref=f5e85]: "4"
+        - button "Cambiar a modo oscuro" [ref=f5e86] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f5e90] [cursor=pointer]:
+          - generic [ref=f5e91]: CR
+          - generic [ref=f5e92]: Camila Reyes
+    - main [ref=f5e93]:
+      - generic [ref=f5e94]:
+        - generic [ref=f5e95]:
+          - generic [ref=f5e96]:
+            - heading "Habilitaciones y certificaciones" [level=1] [ref=f5e97]
+            - paragraph [ref=f5e98]: "Habilitaciones por agente, cobertura por tipo de equipo y vencimientos: vigentes, próximos a vencer y vencidos."
+          - generic [ref=f5e99]:
+            - button "Actualizar" [ref=f5e100] [cursor=pointer]
+            - button "Agregar habilitación" [ref=f5e106] [cursor=pointer]
+        - tablist [ref=f5e114]:
+          - tab "Por agente" [selected] [ref=f5e115] [cursor=pointer]
+          - tab "Por tipo de equipo" [ref=f5e116] [cursor=pointer]
+        - generic [ref=f5e117]:
+          - generic [ref=f5e118]:
+            - searchbox "Buscar agentes" [ref=f5e120]
+            - combobox "Terminal" [ref=f5e121]:
+              - option "Terminal" [selected]
+              - option "Terminal A"
+              - option "Terminal B"
+            - combobox "Estado" [ref=f5e122]:
+              - option "Estado" [selected]
+              - option "Vigente"
+              - option "Próxima a vencer"
+              - option "Vencida"
+            - combobox "Tipo de equipo" [ref=f5e123]:
+              - option "Tipo de equipo" [selected]
+              - option "Puente de abordaje"
+              - option "Cinta transportadora / Belt Loader"
+              - option "Loader"
+              - option "Escaleras de pasajeros"
+              - option "Club Car"
+              - option "Tractor / Pushback"
+              - option "Baggage Cart"
+              - option "Dollies"
+              - option "GPU"
+              - option "ACU"
+              - option "ASU"
+            - combobox "Ordenar por" [ref=f5e124]:
+              - option "Orden predeterminado" [selected]
+              - option "Agente"
+              - option "Terminal"
+              - option "Habilitaciones vigentes"
+              - option "Próximo vencimiento"
+              - option "Cantidad de vencidas"
+              - option "Última actualización"
+            - button "Limpiar filtros" [disabled] [ref=f5e125]
+          - table [ref=f5e130]:
+            - rowgroup [ref=f5e131]:
+              - row [ref=f5e132]:
+                - columnheader "Agente" [ref=f5e133]
+                - columnheader "Terminal" [ref=f5e134]
+                - columnheader "Habilitaciones" [ref=f5e135]
+                - columnheader "Próxima expiración" [ref=f5e136]
+                - columnheader "Estado general" [ref=f5e137]
+                - columnheader "Última actualización" [ref=f5e138]
+                - columnheader "Acciones" [ref=f5e139]
+            - rowgroup [ref=f5e140]:
+              - row [ref=f5e713]:
+                - cell [ref=f5e714]
+                - cell [ref=f5e716]
+                - cell [ref=f5e718]
+                - cell [ref=f5e720]
+                - cell [ref=f5e722]
+                - cell [ref=f5e724]
+                - cell [ref=f5e726]
+              - row [ref=f5e728]:
+                - cell [ref=f5e729]
+                - cell [ref=f5e731]
+                - cell [ref=f5e733]
+                - cell [ref=f5e735]
+                - cell [ref=f5e737]
+                - cell [ref=f5e739]
+                - cell [ref=f5e741]
+              - row [ref=f5e743]:
+                - cell [ref=f5e744]
+                - cell [ref=f5e746]
+                - cell [ref=f5e748]
+                - cell [ref=f5e750]
+                - cell [ref=f5e752]
+                - cell [ref=f5e754]
+                - cell [ref=f5e756]
+              - row [ref=f5e758]:
+                - cell [ref=f5e759]
+                - cell [ref=f5e761]
+                - cell [ref=f5e763]
+                - cell [ref=f5e765]
+                - cell [ref=f5e767]
+                - cell [ref=f5e769]
+                - cell [ref=f5e771]
+              - row [ref=f5e773]:
+                - cell [ref=f5e774]
+                - cell [ref=f5e776]
+                - cell [ref=f5e778]
+                - cell [ref=f5e780]
+                - cell [ref=f5e782]
+                - cell [ref=f5e784]
+                - cell [ref=f5e786]
+        - dialog "Franklin Ortiz" [ref=f5e483]:
+          - generic [ref=f5e484]:
+            - generic [ref=f5e485]:
+              - heading "Franklin Ortiz" [level=2] [ref=f5e486]
+              - paragraph [ref=f5e487]: RA-1103 · Terminal A / B
+            - button "Cerrar" [ref=f5e488] [cursor=pointer]
+          - generic [ref=f5e491]:
+            - generic [ref=f5e492]:
+              - generic [ref=f5e493]: FO
+              - generic [ref=f5e494]:
+                - generic [ref=f5e495]: Requiere acción
+                - paragraph [ref=f5e497]: Actualizado 16 abr de 2026
+            - generic [ref=f5e498]:
+              - generic [ref=f5e499]:
+                - heading "Información del agente" [level=4] [ref=f5e500]
+                - generic [ref=f5e501]:
+                  - generic [ref=f5e502]:
+                    - paragraph [ref=f5e503]: Nombre
+                    - paragraph [ref=f5e504]: Franklin Ortiz
+                  - generic [ref=f5e505]:
+                    - paragraph [ref=f5e506]: Identificación
+                    - paragraph [ref=f5e507]: 001-1234567-13
+                  - generic [ref=f5e508]:
+                    - paragraph [ref=f5e509]: Código de empleado
+                    - paragraph [ref=f5e510]: RA-1103
+                  - generic [ref=f5e511]:
+                    - paragraph [ref=f5e512]: Terminal
+                    - paragraph [ref=f5e513]: A / B
+                  - generic [ref=f5e514]:
+                    - paragraph [ref=f5e515]: Fecha de ingreso
+                    - paragraph [ref=f5e516]: 27 jul de 2026
+                  - generic [ref=f5e517]:
+                    - paragraph [ref=f5e518]: Última actualización
+                    - paragraph [ref=f5e519]: 16 abr de 2026
+              - generic [ref=f5e520]:
+                - heading "Resumen" [level=4] [ref=f5e521]
+                - generic [ref=f5e522]:
+                  - generic [ref=f5e523]:
+                    - paragraph [ref=f5e524]: Total
+                    - paragraph [ref=f5e525]: "3"
+                  - generic [ref=f5e526]:
+                    - paragraph [ref=f5e527]: Vigentes
+                    - paragraph [ref=f5e528]: "1"
+                  - generic [ref=f5e529]:
+                    - paragraph [ref=f5e530]: Próximas
+                    - paragraph [ref=f5e531]: "1"
+                  - generic [ref=f5e532]:
+                    - paragraph [ref=f5e533]: Vencidas
+                    - paragraph [ref=f5e534]: "1"
+              - generic [ref=f5e535]:
+                - generic [ref=f5e536]:
+                  - heading "Habilitaciones" [level=4] [ref=f5e537]
+                  - button "Agregar habilitación" [ref=f5e538] [cursor=pointer]
+                - table [ref=f5e542]:
+                  - rowgroup [ref=f5e543]:
+                    - row [ref=f5e544]:
+                      - columnheader "Equipo" [ref=f5e545]
+                      - columnheader "Estado" [ref=f5e546]
+                      - columnheader "Obtención" [ref=f5e547]
+                      - columnheader "Vencimiento" [ref=f5e548]
+                      - columnheader "Entidad" [ref=f5e549]
+                      - columnheader "Acciones" [ref=f5e550]
+                  - rowgroup [ref=f5e551]:
+                    - row [ref=f5e552]:
+                      - cell "Tractor / Pushback" [ref=f5e553]
+                      - cell "Vencida" [ref=f5e554]
+                      - cell "05 jun de 2025" [ref=f5e557]
+                      - cell "10 jun de 2026" [ref=f5e558]
+                      - cell "IDAC" [ref=f5e559]
+                      - cell [ref=f5e560]:
+                        - generic [ref=f5e561]:
+                          - button "Detalle" [ref=f5e562] [cursor=pointer]
+                          - button "Renovar" [ref=f5e563] [cursor=pointer]
+                    - row [ref=f5e564]:
+                      - cell "Baggage Cart" [ref=f5e565]
+                      - cell "Próxima a vencer" [ref=f5e566]
+                      - cell "29 ago de 2025" [ref=f5e569]
+                      - cell "02 sept de 2026" [ref=f5e570]
+                      - cell "ALC" [ref=f5e571]
+                      - cell [ref=f5e572]:
+                        - generic [ref=f5e573]:
+                          - button "Detalle" [ref=f5e574] [cursor=pointer]
+                          - button "Renovar" [ref=f5e575] [cursor=pointer]
+                    - row [ref=f5e576]:
+                      - cell "Dollies" [ref=f5e577]
+                      - cell "Vigente" [ref=f5e578]
+                      - cell "16 abr de 2026" [ref=f5e581]
+                      - cell "20 abr de 2027" [ref=f5e582]
+                      - cell "ALC" [ref=f5e583]
+                      - cell [ref=f5e584]:
+                        - generic [ref=f5e585]:
+                          - button "Detalle" [ref=f5e586] [cursor=pointer]
+                          - button "Renovar" [ref=f5e587] [cursor=pointer]
+        - generic:
+          - dialog:
+            - generic:
+              - button
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Agregar habilitación
+                - paragraph: Registra una nueva habilitación otorgada por la entidad certificadora.
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: Agente
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - text: Tipo de equipo
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - generic:
+                      - text: Fecha de entrenamiento
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de obtención
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de vencimiento
+                      - generic: "*"
+                    - textbox
+                - generic:
+                  - generic:
+                    - text: Entidad certificadora
+                    - generic: "*"
+                  - textbox: ALC
+                - generic:
+                  - generic:
+                    - text: Instructor / evaluador
+                    - generic: "*"
+                  - textbox
+                - generic:
+                  - generic: Observaciones
+                  - textbox
+                - generic:
+                  - generic: Documento de soporte (opcional)
+                  - textbox
+                  - generic: Se adjuntará cuando exista almacenamiento de archivos en el backend.
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Registrar habilitación
+        - status [ref=f5e789]:
+          - paragraph [ref=f5e793]: Renovación registrada — Baggage Cart.
+          - button "Cerrar notificación" [ref=f5e794] [cursor=pointer]

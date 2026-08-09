@@ -277,6 +277,19 @@ export function ChevronRightIcon(props) {
   );
 }
 
+// Documento de soporte adjunto a una habilitación: no existía en el set de
+// iconos de referencia; se agrega siguiendo el mismo lenguaje visual
+// (outline, stroke 1.7, viewBox 24).
+export function FileTextIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M7 3.5h7l3.5 3.5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-15.5a1 1 0 0 1 1-1Z" />
+      <path d="M14 3.5V7a1 1 0 0 0 1 1h3.5" />
+      <path d="M9 12.5h6M9 15.7h6M9 18.8h3.5" />
+    </Icon>
+  );
+}
+
 export function LinkExternalIcon(props) {
   return (
     <Icon {...props}>

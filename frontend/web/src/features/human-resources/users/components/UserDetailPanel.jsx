@@ -182,7 +182,7 @@ export default function UserDetailPanel({
             </p>
             <button
               type="button"
-              onClick={() => navigate('/human-resources/certifications')}
+              onClick={() => navigate(`/human-resources/certifications?agentId=${item.id}`)}
               className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-accent-600 hover:underline"
             >
               <ShieldCheckIcon className="h-4 w-4" /> Ver habilitaciones completas
