@@ -298,3 +298,22 @@ export function LinkExternalIcon(props) {
     </Icon>
   );
 }
+
+export function RadarIcon(props) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="8.3" />
+      <circle cx="12" cy="12" r="4.8" />
+      <circle cx="12" cy="12" r="0.2" fill="currentColor" stroke="none" />
+      <path d="M12 12 18.2 6.4" />
+    </Icon>
+  );
+}
+
+export function MessageCircleIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4 12.2a8 8 0 1 1 3.4 6.5L4 20l1.2-3.6a7.9 7.9 0 0 1-1.2-4.2Z" />
+    </Icon>
+  );
+}
