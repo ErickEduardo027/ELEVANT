@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   type FormEvent,
   type KeyboardEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -12,11 +13,15 @@ import {
 import { BrandMark } from "@/components/marketing/BrandMark";
 import {
   DEMO_CREDENTIALS,
-  type MockRegistrationInput,
+  type MockSignInField,
   type MockSignInInput,
-  validateRegistration,
   validateSignIn,
 } from "@/lib/mock-auth";
+import {
+  type MockAffiliationInput,
+  type MockAffiliationRequest,
+  validateAffiliation,
+} from "@/lib/mock-affiliation";
 
 import { useMockSession } from "./MockSessionProvider";
 
@@ -26,10 +31,12 @@ export type AuthMode = "login" | "register";
 
 type AuthExperienceProps = {
   initialMode?: AuthMode;
+  returnTo?: string;
 };
 
-type SignInField = keyof MockSignInInput;
-type RegistrationField = keyof MockRegistrationInput;
+type SignInInputField = keyof MockSignInInput;
+type SignInField = MockSignInField;
+type RegistrationField = keyof MockAffiliationInput;
 type SignInErrors = Partial<Record<SignInField, string>>;
 type RegistrationErrors = Partial<Record<RegistrationField, string>>;
 type SignInFeedback = {
@@ -37,7 +44,7 @@ type SignInFeedback = {
   kind: "info" | "error";
 };
 
-const SIGN_IN_IDS: Record<SignInField, string> = {
+const SIGN_IN_IDS: Record<SignInInputField, string> = {
   email: "auth-email",
   password: "auth-password",
   remember: "auth-remember",
@@ -55,8 +62,7 @@ const REGISTRATION_IDS: Record<RegistrationField, string> = {
   title: "register-title",
   email: "register-email",
   phone: "register-phone",
-  password: "register-password",
-  passwordConfirmation: "register-password-confirmation",
+  servicesOfInterest: "register-services",
   prototypeAcknowledged: "register-prototype-acknowledged",
 };
 
@@ -76,7 +82,7 @@ const INITIAL_SIGN_IN: MockSignInInput = {
   remember: false,
 };
 
-const INITIAL_REGISTRATION: MockRegistrationInput = {
+const INITIAL_REGISTRATION: MockAffiliationInput = {
   legalName: "",
   displayName: "",
   iataCode: "",
@@ -88,21 +94,29 @@ const INITIAL_REGISTRATION: MockRegistrationInput = {
   title: "",
   email: "",
   phone: "",
-  password: "",
-  passwordConfirmation: "",
+  servicesOfInterest: "",
   prototypeAcknowledged: false,
 };
 
-export function AuthExperience({ initialMode = "login" }: AuthExperienceProps) {
+export function AuthExperience({
+  initialMode = "login",
+  returnTo = "/portal",
+}: AuthExperienceProps) {
   const router = useRouter();
-  const { status, session, signOut } = useMockSession();
+  const { status } = useMockSession();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const loginTabRef = useRef<HTMLButtonElement>(null);
   const registerTabRef = useRef<HTMLButtonElement>(null);
 
+  useEffect(() => {
+    if (status === "authenticated") router.replace(returnTo);
+  }, [returnTo, router, status]);
+
   const selectMode = (nextMode: AuthMode, focusTab = false) => {
     setMode(nextMode);
-    router.replace(`/login?mode=${nextMode}`, { scroll: false });
+    const parameters = new URLSearchParams({ mode: nextMode });
+    if (returnTo !== "/portal") parameters.set("returnTo", returnTo);
+    router.replace(`/login?${parameters.toString()}`, { scroll: false });
 
     if (focusTab) {
       requestAnimationFrame(() => {
@@ -141,10 +155,8 @@ export function AuthExperience({ initialMode = "login" }: AuthExperienceProps) {
 
         <section className={styles.formRegion} aria-label="Acceso de aerolíneas">
           <div className={styles.formShell}>
-            {status === "loading" ? (
+            {status === "loading" || status === "authenticated" ? (
               <LoadingState />
-            ) : status === "authenticated" && session ? (
-              <SessionSummary session={session} onSignOut={signOut} />
             ) : (
               <>
                 <div
@@ -175,11 +187,15 @@ export function AuthExperience({ initialMode = "login" }: AuthExperienceProps) {
                     tabIndex={mode === "register" ? 0 : -1}
                     onClick={() => selectMode("register")}
                   >
-                    Registrar aerolínea
+                    Solicitar afiliación
                   </button>
                 </div>
 
-                {mode === "login" ? <SignInPanel /> : <RegistrationPanel />}
+                {mode === "login" ? (
+                  <SignInPanel returnTo={returnTo} />
+                ) : (
+                  <AffiliationPanel />
+                )}
               </>
             )}
           </div>
@@ -243,7 +259,8 @@ function CredentialPanel() {
   );
 }
 
-function SignInPanel() {
+function SignInPanel({ returnTo }: { returnTo: string }) {
+  const router = useRouter();
   const { signIn } = useMockSession();
   const [input, setInput] = useState<MockSignInInput>(INITIAL_SIGN_IN);
   const [errors, setErrors] = useState<SignInErrors>({});
@@ -251,12 +268,14 @@ function SignInPanel() {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<SignInFeedback | null>(null);
 
-  const update = <Field extends SignInField>(
+  const update = <Field extends SignInInputField>(
     field: Field,
     value: MockSignInInput[Field],
   ) => {
     setInput((current) => ({ ...current, [field]: value }));
-    setErrors((current) => withoutKey(current, field));
+    if (field === "email" || field === "password") {
+      setErrors((current) => withoutKey(current, field));
+    }
     setFeedback(null);
   };
 
@@ -288,7 +307,9 @@ function SignInPanel() {
     const result = await signIn(validation.value);
     setPending(false);
 
-    if (!result.ok) {
+    if (result.ok) {
+      router.replace(returnTo);
+    } else {
       setFeedback({ kind: "error", message: result.message });
       if (result.fieldErrors) setErrors(result.fieldErrors);
       if (result.firstInvalidField) {
@@ -323,8 +344,8 @@ function SignInPanel() {
         <p className={styles.formKicker}>Acceso demostrativo</p>
         <h2>Continúa a tu sesión local.</h2>
         <p>
-          Usa las credenciales demo o ingresa una cuenta creada en este
-          navegador.
+          Usa las credenciales demo para entrar al portal de consulta de la
+          aerolínea.
         </p>
       </header>
 
@@ -416,19 +437,18 @@ function SignInPanel() {
   );
 }
 
-function RegistrationPanel() {
-  const { register } = useMockSession();
-  const [input, setInput] = useState<MockRegistrationInput>(INITIAL_REGISTRATION);
+function AffiliationPanel() {
+  const { requestAffiliation } = useMockSession();
+  const [input, setInput] = useState<MockAffiliationInput>(INITIAL_REGISTRATION);
   const [errors, setErrors] = useState<RegistrationErrors>({});
   const [step, setStep] = useState<1 | 2>(1);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmation, setShowConfirmation] = useState(false);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<MockAffiliationRequest | null>(null);
 
   const update = <Field extends RegistrationField>(
     field: Field,
-    value: MockRegistrationInput[Field],
+    value: MockAffiliationInput[Field],
   ) => {
     setInput((current) => ({ ...current, [field]: value }));
     setErrors((current) => withoutKey(current, field));
@@ -436,7 +456,7 @@ function RegistrationPanel() {
   };
 
   const validateField = (field: RegistrationField) => {
-    const result = validateRegistration(input);
+    const result = validateAffiliation(input);
     if (result.ok || !result.fieldErrors[field]) {
       setErrors((current) => withoutKey(current, field));
       return;
@@ -444,8 +464,8 @@ function RegistrationPanel() {
     setErrors((current) => ({ ...current, [field]: result.fieldErrors[field] }));
   };
 
-  const continueToAdministrator = () => {
-    const validation = validateRegistration(input);
+  const continueToContact = () => {
+    const validation = validateAffiliation(input);
     if (!validation.ok) {
       const stepErrors = pickErrors(validation.fieldErrors, STEP_ONE_FIELDS);
       const firstInvalid = STEP_ONE_FIELDS.find((field) => stepErrors[field]);
@@ -465,11 +485,11 @@ function RegistrationPanel() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFeedback(null);
-    const validation = validateRegistration(input);
+    const validation = validateAffiliation(input);
 
     if (!validation.ok) {
       setErrors(validation.fieldErrors);
-      setFeedback("Revisa los campos indicados para crear la sesión local.");
+      setFeedback("Revisa los campos indicados para enviar la solicitud.");
       const firstField = validation.firstInvalidField;
       if (STEP_ONE_FIELDS.includes(firstField)) setStep(1);
       requestAnimationFrame(() => focusField(REGISTRATION_IDS, firstField));
@@ -477,10 +497,12 @@ function RegistrationPanel() {
     }
 
     setPending(true);
-    const result = await register(validation.value);
+    const result = await requestAffiliation(validation.value);
     setPending(false);
 
-    if (!result.ok) {
+    if (result.ok) {
+      setSubmitted(result.request);
+    } else {
       setFeedback(result.message);
       if (result.fieldErrors) setErrors(result.fieldErrors);
       if (result.firstInvalidField) {
@@ -493,6 +515,68 @@ function RegistrationPanel() {
     }
   };
 
+  if (submitted) {
+    return (
+      <div
+        className={`${styles.tabPanel} ${styles.session}`}
+        id="register-panel"
+        role="tabpanel"
+        aria-labelledby="register-tab"
+        tabIndex={0}
+      >
+        <div className={styles.sessionStatus} role="status" aria-live="polite">
+          <span aria-hidden="true" />
+          Solicitud recibida
+        </div>
+        <p className={styles.formKicker}>Afiliación en evaluación</p>
+        <h2>Tu solicitud quedó registrada.</h2>
+        <p className={styles.sessionLead}>
+          Conserva la referencia <strong>{submitted.reference}</strong>. En esta
+          demo el seguimiento permanece únicamente en este navegador.
+        </p>
+        <dl className={styles.sessionCard}>
+          <div className={styles.sessionIdentity}>
+            <dt>Aerolínea</dt>
+            <dd>{submitted.airline.displayName}</dd>
+            <span>
+              {submitted.airline.iataCode ?? submitted.airline.icaoCode ?? "—"}
+            </span>
+          </div>
+          <div>
+            <dt>Estado</dt>
+            <dd>Recibida</dd>
+            <span>{submitted.stations.primary} · estación principal</span>
+          </div>
+        </dl>
+        <div className={styles.sessionNotice}>
+          <InfoIcon />
+          <p>
+            La solicitud no crea una cuenta ni habilita acceso al portal. AVIAM
+            deberá validar la afiliación y emitir credenciales por un canal seguro.
+          </p>
+        </div>
+        <div className={styles.sessionActions}>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            onClick={() => {
+              setSubmitted(null);
+              setInput(INITIAL_REGISTRATION);
+              setErrors({});
+              setStep(1);
+            }}
+          >
+            Nueva solicitud
+          </button>
+          <Link className={styles.secondaryLink} href="/login?mode=login">
+            Ir al inicio de sesión
+            <ArrowRightIcon />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={styles.tabPanel}
@@ -502,11 +586,11 @@ function RegistrationPanel() {
       tabIndex={0}
     >
       <header className={styles.formHeader}>
-        <p className={styles.formKicker}>Registro para evaluación</p>
-        <h2>Configura una aerolínea de demostración.</h2>
+        <p className={styles.formKicker}>Solicitud para evaluación</p>
+        <h2>Solicita la afiliación de tu aerolínea.</h2>
         <p>
-          Este registro crea una sesión únicamente en el navegador. No solicita
-          afiliación ni transmite información.
+          Registra la operación que deseas consultar. La solicitud no crea una
+          cuenta ni concede acceso automático.
         </p>
       </header>
 
@@ -522,8 +606,8 @@ function RegistrationPanel() {
         <div data-active={step === 2}>
           <span>02</span>
           <p>
-            <strong>Administrador</strong>
-            <small>Contacto y acceso</small>
+            <strong>Representante</strong>
+            <small>Contacto y necesidades</small>
           </p>
         </div>
       </div>
@@ -625,15 +709,15 @@ function RegistrationPanel() {
             <button
               className={styles.primaryButton}
               type="button"
-              onClick={continueToAdministrator}
+              onClick={continueToContact}
             >
-              Continuar con el administrador
+              Continuar con el representante
               <ArrowRightIcon />
             </button>
           </fieldset>
         ) : (
           <fieldset className={styles.fieldset}>
-            <legend className={styles.srOnly}>Información del administrador</legend>
+            <legend className={styles.srOnly}>Representante y servicios</legend>
             <div className={styles.fieldGrid}>
               <Field
                 id={REGISTRATION_IDS.fullName}
@@ -679,34 +763,16 @@ function RegistrationPanel() {
                 autoComplete="tel"
                 onChange={(value) => update("phone", value)}
                 onBlur={() => validateField("phone")}
-                hint="Opcional"
+                required
               />
-              <PasswordField
-                id={REGISTRATION_IDS.password}
-                name="password"
-                label="Contraseña"
-                value={input.password}
-                error={errors.password}
-                autoComplete="new-password"
-                visible={showPassword}
-                onVisibilityChange={() => setShowPassword((current) => !current)}
-                onChange={(value) => update("password", value)}
-                onBlur={() => validateField("password")}
-                hint="10+ caracteres, mayúscula, minúscula, número y símbolo"
-              />
-              <PasswordField
-                id={REGISTRATION_IDS.passwordConfirmation}
-                name="passwordConfirmation"
-                label="Confirmar contraseña"
-                value={input.passwordConfirmation}
-                error={errors.passwordConfirmation}
-                autoComplete="new-password"
-                visible={showConfirmation}
-                onVisibilityChange={() =>
-                  setShowConfirmation((current) => !current)
-                }
-                onChange={(value) => update("passwordConfirmation", value)}
-                onBlur={() => validateField("passwordConfirmation")}
+              <TextAreaField
+                id={REGISTRATION_IDS.servicesOfInterest}
+                name="servicesOfInterest"
+                label="Servicios de interés"
+                value={input.servicesOfInterest}
+                error={errors.servicesOfInterest}
+                onChange={(value) => update("servicesOfInterest", value)}
+                onBlur={() => validateField("servicesOfInterest")}
               />
             </div>
 
@@ -734,8 +800,8 @@ function RegistrationPanel() {
                 <span aria-hidden="true">
                   <CheckIcon />
                 </span>
-                Entiendo que este registro crea únicamente una sesión de
-                demostración local y no constituye una afiliación.
+                Entiendo que esta solicitud se guarda solo en este navegador,
+                no se transmite y no crea credenciales de acceso.
               </label>
               {errors.prototypeAcknowledged && (
                 <p
@@ -773,11 +839,11 @@ function RegistrationPanel() {
                 {pending ? (
                   <>
                     <span className={styles.spinner} aria-hidden="true" />
-                    Creando sesión…
+                    Guardando solicitud…
                   </>
                 ) : (
                   <>
-                    Crear sesión demostrativa
+                    Enviar solicitud de afiliación
                     <ArrowRightIcon />
                   </>
                 )}
@@ -856,6 +922,54 @@ function Field({
   );
 }
 
+type TextAreaFieldProps = {
+  id: string;
+  name: string;
+  label: string;
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+};
+
+function TextAreaField({
+  id,
+  name,
+  label,
+  value,
+  error,
+  onChange,
+  onBlur,
+}: TextAreaFieldProps) {
+  return (
+    <div className={styles.field} data-wide="true">
+      <div className={styles.labelRow}>
+        <label htmlFor={id}>
+          {label} <span aria-hidden="true">*</span>
+        </label>
+        {!error && <span id={`${id}-hint`}>Máximo 800 caracteres</span>}
+      </div>
+      <textarea
+        id={id}
+        name={name}
+        value={value}
+        maxLength={800}
+        rows={4}
+        required
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : `${id}-hint`}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        onBlur={onBlur}
+      />
+      {error && (
+        <p className={styles.error} id={`${id}-error`} aria-live="polite">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 type PasswordFieldProps = Omit<FieldProps, "type" | "wide" | "code"> & {
   visible: boolean;
   onVisibilityChange: () => void;
@@ -912,76 +1026,6 @@ function PasswordField({
           {error}
         </p>
       )}
-    </div>
-  );
-}
-
-type Session = NonNullable<ReturnType<typeof useMockSession>["session"]>;
-
-function SessionSummary({
-  session,
-  onSignOut,
-}: {
-  session: Session;
-  onSignOut: () => void;
-}) {
-  const airlineName = session.airline.displayName || session.airline.legalName;
-  const airlineCode = session.airline.iataCode || session.airline.icaoCode || "—";
-
-  return (
-    <div className={styles.session} aria-labelledby="session-title">
-      <div className={styles.sessionStatus} role="status">
-        <span aria-hidden="true" />
-        Sesión demostrativa activa
-      </div>
-      <p className={styles.formKicker}>Acceso confirmado</p>
-      <h2 id="session-title">Bienvenido, {session.user.fullName}.</h2>
-      <p className={styles.sessionLead}>
-        Esta sesión permanece en <strong>/login</strong> y resume la identidad
-        local creada para explorar el flujo. No existe conexión con un portal
-        productivo.
-      </p>
-
-      <dl className={styles.sessionCard}>
-        <div className={styles.sessionIdentity}>
-          <dt>Aerolínea</dt>
-          <dd>{airlineName}</dd>
-          <span>{airlineCode}</span>
-        </div>
-        <div>
-          <dt>Administrador</dt>
-          <dd>{session.user.fullName}</dd>
-          <span>{session.user.email}</span>
-        </div>
-        <div>
-          <dt>Estación principal</dt>
-          <dd>{session.stations.primary}</dd>
-          <span>{session.stations.authorized.length} autorizada(s) en la demo</span>
-        </div>
-        <div>
-          <dt>Perfil</dt>
-          <dd>Administrador de aerolínea</dd>
-          <span>{session.permissions.length} permisos simulados</span>
-        </div>
-      </dl>
-
-      <div className={styles.sessionNotice}>
-        <InfoIcon />
-        <p>
-          Los datos de esta sesión se usan únicamente para demostrar la
-          experiencia en este navegador.
-        </p>
-      </div>
-
-      <div className={styles.sessionActions}>
-        <button className={styles.primaryButton} type="button" onClick={onSignOut}>
-          Cerrar sesión
-        </button>
-        <Link className={styles.secondaryLink} href="/">
-          Volver a la landing
-          <ArrowRightIcon />
-        </Link>
-      </div>
     </div>
   );
 }

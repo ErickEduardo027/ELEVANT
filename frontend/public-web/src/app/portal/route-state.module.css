@@ -1,0 +1,84 @@
+.loading,
+.error {
+  display: grid;
+  min-height: 28rem;
+  align-content: center;
+  gap: 0.9rem;
+  color: #071224;
+}
+
+.loading > span,
+.error > span {
+  color: #1757d8;
+  font-family: var(--font-data);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.titleSkeleton {
+  width: min(75%, 34rem);
+  height: 3.5rem;
+  border-radius: 0.75rem;
+  background: #dce5ef;
+}
+
+.cardGrid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cardGrid i {
+  display: block;
+  height: 7rem;
+  border: 1px solid #d4dee9;
+  border-radius: 0.8rem;
+  background: linear-gradient(100deg, #fff 20%, #edf2f7 48%, #fff 76%);
+  background-size: 220% 100%;
+}
+
+.loading p,
+.error p {
+  max-width: 52ch;
+  color: #56677c;
+  font-size: 0.78rem;
+}
+
+.error h1 {
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 7vw, 3.6rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.error button {
+  width: fit-content;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.9rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: #1757d8;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 720;
+}
+
+@media (min-width: 48rem) {
+  .cardGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cardGrid i {
+    animation: skeleton 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}

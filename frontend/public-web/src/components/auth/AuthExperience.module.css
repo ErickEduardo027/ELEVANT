@@ -88,7 +88,8 @@
 .secondaryLink:focus-visible,
 .passwordControl button:focus-visible,
 .checkbox input:focus-visible + span,
-.field input:focus-visible {
+.field input:focus-visible,
+.field textarea:focus-visible {
   outline: 3px solid var(--auth-cyan);
   outline-offset: 3px;
 }
@@ -474,6 +475,7 @@
 }
 
 .field input,
+.field textarea,
 .passwordControl input {
   width: 100%;
   min-height: 3.25rem;
@@ -491,6 +493,12 @@
     background-color 180ms ease;
 }
 
+.field textarea {
+  min-height: 7rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 .field[data-code="true"] input {
   font-family: var(--auth-data);
   letter-spacing: 0.08em;
@@ -498,17 +506,20 @@
 }
 
 .field input:hover,
+.field textarea:hover,
 .passwordControl input:hover {
   border-color: #768ba3;
 }
 
 .field input:focus,
+.field textarea:focus,
 .passwordControl input:focus {
   border-color: var(--auth-blue);
   box-shadow: 0 0 0 3px rgb(23 87 216 / 13%);
 }
 
 .field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"],
 .passwordControl input[aria-invalid="true"] {
   border-color: var(--auth-error);
   background: #fffafa;
@@ -623,7 +634,7 @@
 
 .localOnly {
   align-self: center;
-  color: #73849a;
+  color: #50617a;
   font-family: var(--auth-data);
   font-size: 0.55rem;
   letter-spacing: 0.03em;
@@ -740,7 +751,7 @@
   margin-top: 1.5rem;
   padding-top: 1rem;
   border-top: 1px solid var(--auth-border);
-  color: #728399;
+  color: #50617a;
   font-size: 0.66rem;
   line-height: 1.55;
 }
@@ -1291,6 +1302,7 @@
   .backLink,
   .tabs button,
   .field input,
+  .field textarea,
   .passwordControl input,
   .passwordControl button,
   .checkbox > span,
@@ -1312,6 +1324,7 @@
   }
 
   .field input,
+  .field textarea,
   .passwordControl input {
     border-width: 2px;
   }

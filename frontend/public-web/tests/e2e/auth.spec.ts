@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { MOCK_AFFILIATION_REQUESTS_STORAGE_KEY } from "../../src/lib/mock-affiliation";
 import {
-  MOCK_ACCOUNTS_STORAGE_KEY,
   MOCK_PERSISTENT_SESSION_KEY,
   MOCK_TRANSIENT_SESSION_KEY,
 } from "../../src/lib/mock-auth";
@@ -45,7 +45,7 @@ test.describe("acceso mock de aerolíneas", () => {
       exact: true,
     });
     const registerTab = page.getByRole("tab", {
-      name: "Registrar aerolínea",
+      name: "Solicitar afiliación",
       exact: true,
     });
 
@@ -75,7 +75,7 @@ test.describe("acceso mock de aerolíneas", () => {
 
   test("inicia y cierra una sesión con las credenciales demo sin transmitir datos", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.goto("/login");
     await page.waitForLoadState("networkidle");
 
@@ -93,10 +93,7 @@ test.describe("acceso mock de aerolíneas", () => {
       .getByRole("button", { name: "Iniciar sesión", exact: true })
       .click();
 
-    await expect(
-      page.getByRole("status").filter({ hasText: "Sesión demostrativa activa" }),
-    ).toBeVisible();
-    await expect(page).toHaveURL(/\/login(?:\?mode=login)?$/);
+    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
 
     const storage = await page.evaluate(
       ({ transientKey, persistentKey }) => ({
@@ -112,7 +109,15 @@ test.describe("acceso mock de aerolíneas", () => {
     expect(storage.persistent).toBeNull();
     expect(writeRequests).toEqual([]);
 
-    await page.getByRole("button", { name: "Cerrar sesión" }).click();
+    await page.goto("/login");
+    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
+    if (testInfo.project.name !== "desktop") {
+      await page
+        .getByRole("button", { name: "Abrir navegación" })
+        .click();
+    }
+    await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
+    await expect(page).toHaveURL(/\/login\?mode=login$/);
     await expect(
       page.getByRole("tab", { name: "Iniciar sesión", exact: true }),
     ).toBeVisible();
@@ -123,7 +128,7 @@ test.describe("acceso mock de aerolíneas", () => {
     expect(transientSessionAfterLogout).toBeNull();
   });
 
-  test("registra una aerolínea local y prepara su sesión", async ({ page }) => {
+  test("registra una solicitud de afiliación sin crear una sesión", async ({ page }) => {
     await page.goto("/login?mode=register");
 
     await page
@@ -145,40 +150,61 @@ test.describe("acceso mock de aerolíneas", () => {
       .getByRole("textbox", { name: "Estaciones adicionales", exact: true })
       .fill("SDQ, STI");
     await page
-      .getByRole("button", { name: /Continuar con el administrador/i })
+      .getByRole("button", { name: /Continuar con el representante/i })
       .click();
 
+    const representativeName = page.locator("#register-full-name");
+    const representativeTitle = page.locator("#register-title");
+    await representativeName.fill("Ana Pérez");
+    await expect(representativeName).toHaveValue("Ana Pérez");
+    await representativeTitle.fill("Administradora de operaciones");
+    await expect(representativeTitle).toHaveValue(
+      "Administradora de operaciones",
+    );
+    await page.locator("#register-email").fill("ana@horizonte.test");
+    await page.locator("#register-phone").fill("+1 809 555 0199");
     await page
-      .getByRole("textbox", { name: "Nombre completo", exact: true })
-      .fill("Ana Pérez");
+      .locator("#register-services")
+      .fill("Asistencia de rampa y conciliación documental.");
     await page
-      .getByRole("textbox", { name: "Cargo", exact: true })
-      .fill("Administradora de operaciones");
-    await page
-      .getByRole("textbox", { name: "Correo corporativo", exact: true })
-      .fill("ana@horizonte.test");
-    await page.getByLabel("Contraseña", { exact: true }).fill("LocalDemo2026!");
-    await page
-      .getByLabel("Confirmar contraseña", { exact: true })
-      .fill("LocalDemo2026!");
-    await page
-      .getByRole("checkbox", { name: /Entiendo que este registro/i })
+      .getByRole("checkbox", { name: /Entiendo que esta solicitud/i })
       .check();
     await page
-      .getByRole("button", { name: /Crear sesión demostrativa/i })
+      .getByRole("button", { name: /Enviar solicitud de afiliación/i })
       .click();
 
     await expect(
-      page.getByRole("status").filter({ hasText: "Sesión demostrativa activa" }),
+      page.getByRole("status").filter({ hasText: "Solicitud recibida" }),
     ).toBeVisible();
-    await expect(page.getByText("Horizonte", { exact: true })).toBeVisible();
-    await expect(page.getByText("Ana Pérez", { exact: true })).toBeVisible();
+    await expect(page.getByText(/ELV-AFL-/)).toBeVisible();
 
-    const accountDocument = await page.evaluate(
-      (key) => window.localStorage.getItem(key),
-      MOCK_ACCOUNTS_STORAGE_KEY,
+    const documents = await page.evaluate(
+      ({ affiliationKey, sessionKey }) => ({
+        affiliation: window.localStorage.getItem(affiliationKey),
+        session: window.localStorage.getItem(sessionKey),
+      }),
+      {
+        affiliationKey: MOCK_AFFILIATION_REQUESTS_STORAGE_KEY,
+        sessionKey: MOCK_PERSISTENT_SESSION_KEY,
+      },
     );
-    expect(accountDocument).not.toBeNull();
-    expect(accountDocument).not.toContain("LocalDemo2026!");
+    expect(documents.affiliation).toContain("ana@horizonte.test");
+    expect(documents.session).toBeNull();
+  });
+
+  test("conserva un returnTo interno y rechaza redirecciones externas", async ({ page }) => {
+    await page.goto("/login?returnTo=%2Fportal%2Fvuelos");
+    await page.getByRole("button", { name: /Usar credenciales de demostración/i }).click();
+    await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/vuelos$/, { timeout: 15_000 });
+
+    await page.evaluate(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+    await page.goto("/login?returnTo=https%3A%2F%2Fevil.example");
+    await page.getByRole("button", { name: /Usar credenciales de demostración/i }).click();
+    await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
+    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
   });
 });

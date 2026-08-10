@@ -4,11 +4,12 @@ import {
   AuthExperience,
   type AuthMode,
 } from "@/components/auth/AuthExperience";
+import { resolveSafeReturnTo } from "@/lib/mock-auth";
 
 export const metadata: Metadata = {
   title: "Acceso de aerolíneas",
   description:
-    "Experiencia local de demostración para el futuro acceso autorizado de aerolíneas en ELEVANT.",
+    "Acceso demostrativo y solicitud de afiliación para aerolíneas en ELEVANT.",
   robots: {
     index: false,
     follow: false,
@@ -16,7 +17,10 @@ export const metadata: Metadata = {
 };
 
 type LoginPageProps = {
-  searchParams: Promise<{ mode?: string | string[] }>;
+  searchParams: Promise<{
+    mode?: string | string[];
+    returnTo?: string | string[];
+  }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -26,6 +30,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     : parameters.mode;
   const initialMode: AuthMode =
     requestedMode === "register" ? "register" : "login";
+  const returnTo = resolveSafeReturnTo(parameters.returnTo);
 
-  return <AuthExperience initialMode={initialMode} />;
+  return <AuthExperience initialMode={initialMode} returnTo={returnTo} />;
 }
