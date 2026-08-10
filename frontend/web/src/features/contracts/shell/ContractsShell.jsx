@@ -9,6 +9,7 @@ import { useContractsHomeData } from '../home/useContractsHomeData';
 import ContractsPage from '../contracts/ContractsPage';
 import ContractRequestsPage from '../requests/ContractRequestsPage';
 import ContractServicesPage from '../services/ContractServicesPage';
+import ContractReportsPage from '../reports/ContractReportsPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
@@ -63,6 +64,8 @@ export default function ContractsShell() {
             <ContractRequestsPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (
             <ContractServicesPage />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
+            <ContractReportsPage />
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}
