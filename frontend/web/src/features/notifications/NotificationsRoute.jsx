@@ -6,9 +6,10 @@ import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 
 // La navegación cruzada hacia Monitoreo de Vuelos / Revisión sigue el mismo
 // patrón de query param que FlightMonitoringRoute/ReviewRoute
-// (`?flightId=`/`?operationId=`); los únicos `relatedModule` navegables que
-// produce el backend simulado son `flight-monitoring` y `approvals` (ver
-// notificationsService.js/RESOURCE_ACTION_LABEL en NotificationDetailDrawer).
+// (`?flightId=`/`?operationId=`); el backend simulado también produce
+// `relatedModule: 'reports'`, que navega directamente al módulo de Reportes
+// (sin recurso específico) (ver notificationsService.js/RESOURCE_ACTION_LABEL
+// en NotificationDetailDrawer).
 export default function NotificationsRoute() {
   const [retryToken, setRetryToken] = useState(0);
   const { forceState } = useAdminOccPreview();
@@ -29,6 +30,7 @@ export default function NotificationsRoute() {
       onNavigateToResource={(moduleId, resourceId) => {
         if (moduleId === 'flight-monitoring') navigate(`/admin-occ/flight-monitoring?flightId=${resourceId}`);
         if (moduleId === 'approvals') navigate(`/admin-occ/review?operationId=${resourceId}`);
+        if (moduleId === 'reports') navigate('/admin-occ/reports');
       }}
       forceState={forceState}
     />
