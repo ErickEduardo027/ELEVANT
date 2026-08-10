@@ -7,6 +7,7 @@ import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import FinanceHomePage from '../home/FinanceHomePage';
 import { useFinanceHomeData } from '../home/useFinanceHomeData';
 import ApprovedServicesPage from '../approved-services/ApprovedServicesPage';
+import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
 import { FINANCE_MODULES, FINANCE_MODULE_IDS } from './modules';
 
 const CURRENT_USER = { name: 'Usuario de Finanzas', role: 'Departamento de Finanzas' };
@@ -40,7 +41,7 @@ export default function FinanceShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsCount={0} theme={theme} onToggleTheme={toggleTheme} user={CURRENT_USER} onOpenMenu={sidebar.toggle} onOpenNotifications={() => {}} />
         <main key={activeModule.id} className="flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
-          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
         </main>
       </div>
     </div>
