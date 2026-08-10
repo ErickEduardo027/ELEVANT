@@ -4,59 +4,36 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DEMO_CREDENTIALS,
-  MOCK_ACCOUNTS_STORAGE_KEY,
+  MOCK_AIRLINE_PERMISSIONS,
   MOCK_PERSISTENT_SESSION_KEY,
+  MOCK_SESSION_SCHEMA_VERSION,
   MOCK_TRANSIENT_SESSION_KEY,
   MockAuthGateway,
-  validateRegistration,
+  resolveSafeReturnTo,
   validateSignIn,
-  type MockRegistrationInput,
 } from "@/lib/mock-auth";
 
 class MemoryStorage implements Storage {
   readonly #values = new Map<string, string>();
-
   get length() {
     return this.#values.size;
   }
-
   clear() {
     this.#values.clear();
   }
-
   getItem(key: string) {
     return this.#values.get(key) ?? null;
   }
-
   key(index: number) {
     return [...this.#values.keys()][index] ?? null;
   }
-
   removeItem(key: string) {
     this.#values.delete(key);
   }
-
   setItem(key: string, value: string) {
     this.#values.set(key, String(value));
   }
 }
-
-const VALID_REGISTRATION: MockRegistrationInput = {
-  legalName: "  Aerolínea Prueba, S.A.  ",
-  displayName: "  Aerolínea Prueba  ",
-  iataCode: " ap ",
-  icaoCode: " apt ",
-  country: "  República Dominicana ",
-  primaryStation: " puj ",
-  additionalStations: "sdq, STI; puj\nsdq",
-  fullName: "  Ana   Pérez  ",
-  title: "  Gerente de Operaciones  ",
-  email: "  ANA@AIRLINE.EXAMPLE ",
-  phone: "+1 809 555 0199",
-  password: "ElevantLocal2026!",
-  passwordConfirmation: "ElevantLocal2026!",
-  prototypeAcknowledged: true,
-};
 
 function createGateway(now = Date.parse("2026-08-09T12:00:00.000Z")) {
   const localStorage = new MemoryStorage();
@@ -68,7 +45,6 @@ function createGateway(now = Date.parse("2026-08-09T12:00:00.000Z")) {
     crypto: webcrypto as unknown as Crypto,
     now: () => currentTime,
   });
-
   return {
     gateway,
     localStorage,
@@ -79,8 +55,8 @@ function createGateway(now = Date.parse("2026-08-09T12:00:00.000Z")) {
   };
 }
 
-describe("mock auth validation", () => {
-  it("normalizes sign-in data without changing the password", () => {
+describe("validación y retorno del acceso", () => {
+  it("normaliza el correo sin modificar la contraseña", () => {
     expect(
       validateSignIn({
         email: "  ADMIN@AIRLINE.EXAMPLE ",
@@ -97,7 +73,7 @@ describe("mock auth validation", () => {
     });
   });
 
-  it("returns stable field errors for an empty sign-in", () => {
+  it("devuelve errores estables para un formulario vacío", () => {
     expect(
       validateSignIn({ email: "", password: "", remember: false }),
     ).toEqual({
@@ -110,51 +86,22 @@ describe("mock auth validation", () => {
     });
   });
 
-  it("normalizes airline codes, stations, names and email", () => {
-    const result = validateRegistration(VALID_REGISTRATION);
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("Expected a valid registration");
-
-    expect(result.value).toMatchObject({
-      legalName: "Aerolínea Prueba, S.A.",
-      displayName: "Aerolínea Prueba",
-      iataCode: "AP",
-      icaoCode: "APT",
-      primaryStation: "PUJ",
-      additionalStations: "SDQ, STI",
-      fullName: "Ana Pérez",
-      email: "ana@airline.example",
-    });
-    expect(VALID_REGISTRATION.iataCode).toBe(" ap ");
-  });
-
-  it("requires one airline code and enforces password confirmation", () => {
-    const result = validateRegistration({
-      ...VALID_REGISTRATION,
-      iataCode: "",
-      icaoCode: "",
-      password: "weak",
-      passwordConfirmation: "different",
-      prototypeAcknowledged: false,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      firstInvalidField: "iataCode",
-      fieldErrors: {
-        iataCode: "Ingresa al menos un código IATA o ICAO.",
-        password:
-          "Usa 10 caracteres con mayúscula, minúscula, número y símbolo.",
-        passwordConfirmation: "Las contraseñas no coinciden.",
-        prototypeAcknowledged:
-          "Confirma que entiendes que este acceso es un prototipo local.",
-      },
-    });
+  it("acepta únicamente destinos internos del portal", () => {
+    expect(resolveSafeReturnTo("/portal/vuelos?estado=activo#hoy")).toBe(
+      "/portal/vuelos?estado=activo#hoy",
+    );
+    expect(resolveSafeReturnTo("https://example.com/portal")).toBe("/portal");
+    expect(resolveSafeReturnTo("//example.com/portal")).toBe("/portal");
+    expect(resolveSafeReturnTo("/login")).toBe("/portal");
+    expect(resolveSafeReturnTo("/portal\\@example.com")).toBe("/portal");
+    expect(resolveSafeReturnTo(["/portal/documentos", "/portal"])).toBe(
+      "/portal/documentos",
+    );
   });
 });
 
-describe("MockAuthGateway", () => {
-  it("authenticates the demo account for 12 hours in sessionStorage", async () => {
+describe("MockAuthGateway v2", () => {
+  it("autentica la demo con contrato v2 y todos los permisos del portal", async () => {
     const { gateway, localStorage, sessionStorage } = createGateway();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const result = await gateway.signIn({
@@ -165,15 +112,12 @@ describe("MockAuthGateway", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected demo authentication");
     expect(result.session).toMatchObject({
+      schemaVersion: MOCK_SESSION_SCHEMA_VERSION,
       role: "AIRLINE_ADMIN",
       source: "demo",
+      airlineId: "airline_demo",
       stations: { primary: "PUJ", authorized: ["PUJ", "SDQ", "STI"] },
-      permissions: [
-        "rotations:read",
-        "evidence:read",
-        "documents:read",
-        "reports:read",
-      ],
+      permissions: [...MOCK_AIRLINE_PERMISSIONS],
     });
     expect(
       Date.parse(result.session.expiresAt) - Date.parse(result.session.issuedAt),
@@ -184,13 +128,9 @@ describe("MockAuthGateway", () => {
     fetchSpy.mockRestore();
   });
 
-  it("persists a remembered demo session for seven days", async () => {
+  it("persiste una sesión recordada durante siete días", async () => {
     const { gateway, localStorage, sessionStorage } = createGateway();
-    const result = await gateway.signIn({
-      ...DEMO_CREDENTIALS,
-      remember: true,
-    });
-
+    const result = await gateway.signIn({ ...DEMO_CREDENTIALS, remember: true });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected demo authentication");
     expect(
@@ -200,90 +140,50 @@ describe("MockAuthGateway", () => {
     expect(sessionStorage.getItem(MOCK_TRANSIENT_SESSION_KEY)).toBeNull();
   });
 
-  it("registers locally, stores only a salted digest and signs in immediately", async () => {
-    const { gateway, localStorage, sessionStorage } = createGateway();
-    const result = await gateway.register(VALID_REGISTRATION);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("Expected local registration");
-    expect(result.session).toMatchObject({
-      source: "registration",
-      role: "AIRLINE_ADMIN",
-      user: { email: "ana@airline.example", fullName: "Ana Pérez" },
-      airline: { iataCode: "AP", icaoCode: "APT" },
-      stations: { primary: "PUJ", authorized: ["PUJ", "SDQ", "STI"] },
-    });
-
-    const stored = localStorage.getItem(MOCK_ACCOUNTS_STORAGE_KEY);
-    expect(stored).not.toBeNull();
-    expect(stored).not.toContain(VALID_REGISTRATION.password);
-    expect(stored).not.toContain("passwordConfirmation");
-    expect(stored).toContain("passwordSalt");
-    expect(stored).toContain("passwordDigest");
-    expect(sessionStorage.getItem(MOCK_TRANSIENT_SESSION_KEY)).not.toBeNull();
-    expect(gateway.getSession()?.sessionId).toBe(result.session.sessionId);
-  });
-
-  it("authenticates a registered account and rejects duplicate email", async () => {
-    const { gateway } = createGateway();
-    expect((await gateway.register(VALID_REGISTRATION)).ok).toBe(true);
-    gateway.signOut();
-
-    const duplicate = await gateway.register({
-      ...VALID_REGISTRATION,
-      email: "ANA@AIRLINE.EXAMPLE",
-    });
-    expect(duplicate).toMatchObject({
-      ok: false,
-      firstInvalidField: "email",
-      fieldErrors: { email: "Este correo ya está registrado." },
-    });
-
-    const signIn = await gateway.signIn({
-      email: "ANA@AIRLINE.EXAMPLE",
-      password: VALID_REGISTRATION.password,
-      remember: true,
-    });
-    expect(signIn).toMatchObject({
-      ok: true,
-      session: { source: "registration" },
-    });
-  });
-
-  it("cleans corrupt account and session documents", async () => {
-    const { gateway, localStorage, sessionStorage } = createGateway();
-    localStorage.setItem(MOCK_ACCOUNTS_STORAGE_KEY, "not-json");
-    localStorage.setItem(MOCK_PERSISTENT_SESSION_KEY, "{broken");
-    sessionStorage.setItem(
-      MOCK_TRANSIENT_SESSION_KEY,
-      JSON.stringify({ schemaVersion: 99 }),
+  it("rechaza cuentas locales antiguas y elimina documentos v1", async () => {
+    const context = createGateway();
+    context.localStorage.setItem(
+      "elevant.mock-auth.accounts.v1",
+      JSON.stringify({ schemaVersion: 1, accounts: [{ email: "old@test" }] }),
+    );
+    context.localStorage.setItem(
+      "elevant.mock-auth.session.v1",
+      JSON.stringify({ schemaVersion: 1 }),
+    );
+    context.sessionStorage.setItem(
+      "elevant.mock-auth.session-tab.v1",
+      JSON.stringify({ schemaVersion: 1 }),
     );
 
-    expect(gateway.getSession()).toBeNull();
-    await gateway.signIn({
-      email: "unknown@airline.example",
-      password: "UnknownPassword2026!",
+    expect(context.gateway.getSession()).toBeNull();
+    expect(context.localStorage.getItem("elevant.mock-auth.accounts.v1")).toBeNull();
+    expect(context.localStorage.getItem("elevant.mock-auth.session.v1")).toBeNull();
+    expect(
+      context.sessionStorage.getItem("elevant.mock-auth.session-tab.v1"),
+    ).toBeNull();
+
+    const result = await context.gateway.signIn({
+      email: "old@test.example",
+      password: "OldPassword2026!",
       remember: false,
     });
-
-    expect(localStorage.getItem(MOCK_ACCOUNTS_STORAGE_KEY)).toBeNull();
-    expect(localStorage.getItem(MOCK_PERSISTENT_SESSION_KEY)).toBeNull();
-    expect(sessionStorage.getItem(MOCK_TRANSIENT_SESSION_KEY)).toBeNull();
+    expect(result).toMatchObject({ ok: false });
   });
 
-  it("removes expired sessions and clears both stores on sign out", async () => {
+  it("limpia sesiones corruptas o expiradas y ambos stores al cerrar", async () => {
     const context = createGateway();
-    const transient = await context.gateway.signIn({
-      ...DEMO_CREDENTIALS,
-      remember: false,
-    });
-    expect(transient.ok).toBe(true);
+    context.localStorage.setItem(MOCK_PERSISTENT_SESSION_KEY, "{broken");
+    context.sessionStorage.setItem(
+      MOCK_TRANSIENT_SESSION_KEY,
+      JSON.stringify({ schemaVersion: 1 }),
+    );
+    expect(context.gateway.getSession()).toBeNull();
+    expect(context.localStorage.getItem(MOCK_PERSISTENT_SESSION_KEY)).toBeNull();
+    expect(context.sessionStorage.getItem(MOCK_TRANSIENT_SESSION_KEY)).toBeNull();
 
+    await context.gateway.signIn({ ...DEMO_CREDENTIALS, remember: false });
     context.advanceBy(12 * 60 * 60 * 1_000 + 1);
     expect(context.gateway.getSession()).toBeNull();
-    expect(
-      context.sessionStorage.getItem(MOCK_TRANSIENT_SESSION_KEY),
-    ).toBeNull();
 
     await context.gateway.signIn({ ...DEMO_CREDENTIALS, remember: true });
     context.gateway.signOut();

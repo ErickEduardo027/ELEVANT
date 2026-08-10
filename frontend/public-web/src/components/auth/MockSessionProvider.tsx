@@ -15,11 +15,14 @@ import {
   MOCK_TRANSIENT_SESSION_KEY,
   MockAuthGateway,
   type MockAirlineSession,
-  type MockRegistrationResult,
   type MockSignInResult,
-  type MockRegistrationInput,
   type MockSignInInput,
 } from "@/lib/mock-auth";
+import {
+  MockAffiliationGateway,
+  type MockAffiliationInput,
+  type MockAffiliationResult,
+} from "@/lib/mock-affiliation";
 
 export type MockSessionStatus = "loading" | "anonymous" | "authenticated";
 
@@ -27,13 +30,16 @@ export interface MockSessionContextValue {
   status: MockSessionStatus;
   session: MockAirlineSession | null;
   signIn: (input: MockSignInInput) => Promise<MockSignInResult>;
-  register: (input: MockRegistrationInput) => Promise<MockRegistrationResult>;
+  requestAffiliation: (
+    input: MockAffiliationInput,
+  ) => Promise<MockAffiliationResult>;
   signOut: () => void;
 }
 
 export interface MockSessionProviderProps {
   children: ReactNode;
   gateway?: MockAuthGateway;
+  affiliationGateway?: MockAffiliationGateway;
 }
 
 const MockSessionContext = createContext<MockSessionContextValue | null>(null);
@@ -41,10 +47,15 @@ const MockSessionContext = createContext<MockSessionContextValue | null>(null);
 export function MockSessionProvider({
   children,
   gateway: providedGateway,
+  affiliationGateway: providedAffiliationGateway,
 }: MockSessionProviderProps) {
   const gateway = useMemo(
     () => providedGateway ?? new MockAuthGateway(),
     [providedGateway],
+  );
+  const affiliationGateway = useMemo(
+    () => providedAffiliationGateway ?? new MockAffiliationGateway(),
+    [providedAffiliationGateway],
   );
   const [session, setSession] = useState<MockAirlineSession | null>(null);
   const [status, setStatus] = useState<MockSessionStatus>("loading");
@@ -86,16 +97,9 @@ export function MockSessionProvider({
     [gateway],
   );
 
-  const register = useCallback(
-    async (input: MockRegistrationInput) => {
-      const result = await gateway.register(input);
-      if (result.ok) {
-        setSession(result.session);
-        setStatus("authenticated");
-      }
-      return result;
-    },
-    [gateway],
+  const requestAffiliation = useCallback(
+    async (input: MockAffiliationInput) => affiliationGateway.submit(input),
+    [affiliationGateway],
   );
 
   const signOut = useCallback(() => {
@@ -105,8 +109,8 @@ export function MockSessionProvider({
   }, [gateway]);
 
   const value = useMemo<MockSessionContextValue>(
-    () => ({ status, session, signIn, register, signOut }),
-    [register, session, signIn, signOut, status],
+    () => ({ status, session, signIn, requestAffiliation, signOut }),
+    [requestAffiliation, session, signIn, signOut, status],
   );
 
   return (

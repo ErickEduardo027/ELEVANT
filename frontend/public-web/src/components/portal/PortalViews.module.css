@@ -1,0 +1,1550 @@
+.viewStack {
+  display: grid;
+  gap: 1rem;
+}
+
+.bridgeState {
+  display: grid;
+  min-height: min(34rem, calc(100dvh - 8rem));
+  align-content: center;
+  justify-items: center;
+  padding: 2rem 1.25rem;
+  border: 1px solid rgb(7 18 36 / 9%);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.8rem 2rem rgb(7 18 36 / 5%);
+  text-align: center;
+}
+
+.bridgeState > span {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 1px solid #cbd9e8;
+  border-radius: 50%;
+  background: #f1f6fd;
+  color: var(--intelligence);
+  place-items: center;
+}
+
+.bridgeState svg {
+  width: 1.45rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.bridgeState strong {
+  margin-top: 1rem;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+
+.bridgeState p {
+  max-width: 30rem;
+  margin-top: 0.35rem;
+  color: #68788c;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.bridgeState button {
+  min-height: 2.75rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--intelligence);
+  border-radius: 0.6rem;
+  background: var(--intelligence);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.eyebrow,
+.panelKicker {
+  color: var(--intelligence);
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.pageHeading {
+  display: grid;
+  gap: 1rem;
+  padding: 0.4rem 0 0.6rem;
+}
+
+.pageHeading h1,
+.overviewHeading h1,
+.flightHero h1 {
+  margin-top: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.pageHeading h1 {
+  font-size: clamp(2.35rem, 8vw, 4.4rem);
+}
+
+.pageLead {
+  max-width: 48rem;
+  margin-top: 0.8rem;
+  color: #58687c;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.pageAction {
+  display: flex;
+  align-items: end;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgb(7 18 36 / 15%);
+  border-radius: 0.65rem;
+  background: #fff;
+  box-shadow: 0 0.4rem 1rem rgb(7 18 36 / 4%);
+  color: #1a2a40;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.secondaryButton svg {
+  width: 1rem;
+  stroke: var(--intelligence);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  border-color: rgb(23 87 216 / 38%);
+  box-shadow: 0 0.6rem 1.4rem rgb(23 87 216 / 10%);
+  transform: translateY(-1px);
+}
+
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.overviewHero {
+  position: relative;
+  min-height: 24rem;
+  overflow: hidden;
+  padding: 1.4rem;
+  border: 1px solid rgb(99 221 255 / 18%);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 90% 20%, rgb(23 87 216 / 44%), transparent 22rem),
+    linear-gradient(145deg, #06152e, #020712 72%);
+  box-shadow: 0 1.4rem 3.5rem rgb(7 18 36 / 15%);
+  color: var(--text);
+  isolation: isolate;
+}
+
+.overviewHero::before {
+  position: absolute;
+  z-index: -1;
+  top: -8rem;
+  right: -6rem;
+  width: 22rem;
+  height: 22rem;
+  border: 1px solid rgb(99 221 255 / 13%);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 4rem rgb(99 221 255 / 3%),
+    0 0 0 8rem rgb(99 221 255 / 2%);
+  content: "";
+}
+
+.overviewHeading {
+  position: relative;
+  z-index: 2;
+  max-width: 42rem;
+}
+
+.overviewHeading .eyebrow {
+  color: var(--active);
+}
+
+.overviewHeading h1 {
+  max-width: 10ch;
+  margin-top: 0.75rem;
+  font-size: clamp(2.8rem, 10vw, 6rem);
+}
+
+.overviewHeading > p:not(.eyebrow) {
+  max-width: 36rem;
+  margin-top: 1rem;
+  color: #b7c6da;
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.overviewHeading .secondaryButton {
+  margin-top: 1.3rem;
+  border-color: rgb(99 221 255 / 25%);
+  background: rgb(255 255 255 / 7%);
+  box-shadow: none;
+  color: #eefaff;
+}
+
+.overviewHeading .secondaryButton svg {
+  stroke: var(--active);
+}
+
+.heroTrace {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 1.3rem;
+  left: 1.4rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  color: #7790b0;
+  font-family: var(--font-data);
+  font-size: 0.48rem;
+  letter-spacing: 0.1em;
+}
+
+.heroTrace i {
+  height: 1px;
+  background: linear-gradient(90deg, rgb(99 221 255 / 20%), var(--active));
+}
+
+.heroTrace svg {
+  position: absolute;
+  right: 30%;
+  bottom: 0.75rem;
+  width: 2.15rem;
+  fill: var(--decision);
+  stroke: none;
+  filter: drop-shadow(0 0 0.65rem rgb(255 100 31 / 55%));
+  transform: rotate(90deg);
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.kpiGrid > div {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1rem;
+  border: 1px solid rgb(7 18 36 / 9%);
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 0.55rem 1.5rem rgb(7 18 36 / 4%);
+}
+
+.kpiGrid > div::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0.18rem;
+  background: #9bacc0;
+  content: "";
+}
+
+.kpiGrid > div[data-tone="positive"]::before {
+  background: #1ea87a;
+}
+
+.kpiGrid > div[data-tone="attention"]::before {
+  background: var(--decision);
+}
+
+.kpiGrid > div[data-tone="critical"]::before {
+  background: #d94d45;
+}
+
+.kpiGrid dt {
+  color: #617186;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.kpiGrid .kpiValue {
+  margin-top: 0.35rem;
+  color: #0a1830;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 7vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.kpiGrid .kpiDetail {
+  margin: 0;
+  display: block;
+  margin-top: 0.55rem;
+  overflow-wrap: anywhere;
+  color: #56677c;
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+
+.overviewGrid,
+.detailGrid,
+.detailMain,
+.detailAside {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgb(7 18 36 / 9%);
+  border-radius: 0.95rem;
+  background: #fff;
+  box-shadow: 0 0.65rem 1.8rem rgb(7 18 36 / 4%);
+}
+
+.panelHeader {
+  display: flex;
+  min-height: 4.6rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(7 18 36 / 8%);
+}
+
+.panelHeader h2 {
+  margin-top: 0.2rem;
+  font-family: var(--font-display);
+  font-size: 1.28rem;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.panelHeader > a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--intelligence);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.panelHeader > a svg {
+  width: 0.9rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.flightList {
+  display: grid;
+}
+
+.flightStrip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem 1rem;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(7 18 36 / 8%);
+}
+
+.flightStrip:last-child {
+  border-bottom: 0;
+}
+
+.flightIdentity span,
+.flightIdentity small,
+.flightTime span,
+.flightTime time {
+  display: block;
+}
+
+.flightIdentity span {
+  color: #0b1d39;
+  font-family: var(--font-data);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.flightIdentity small,
+.flightTime span {
+  margin-top: 0.18rem;
+  color: #56677c;
+  font-size: 0.55rem;
+}
+
+.rotationRoute {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(2.6rem, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.rotationRoute > span:not(.rotationTrack) {
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.rotationTrack {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.rotationTrack i {
+  height: 1px;
+  background: #b7c3d1;
+}
+
+.rotationTrack svg {
+  width: 1rem;
+  margin-inline: 0.25rem;
+  fill: var(--intelligence);
+  stroke: none;
+  transform: rotate(90deg);
+}
+
+.flightStrip .rotationRoute {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.flightTime {
+  text-align: right;
+}
+
+.flightTime time {
+  margin-top: 0.1rem;
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.flightStatuses {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.statusPill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 1.65rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.48rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 99px;
+  background: #f5f8fb;
+  color: #4f5f73;
+  font-size: 0.56rem;
+  font-weight: 730;
+  line-height: 1.2;
+}
+
+.statusPill i {
+  width: 0.36rem;
+  height: 0.36rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.statusPill[data-tone="positive"] {
+  border-color: #a9dec9;
+  background: #eefaf5;
+  color: #147954;
+}
+
+.statusPill[data-tone="attention"] {
+  border-color: #f1c7af;
+  background: #fff5ee;
+  color: #a44418;
+}
+
+.statusPill[data-tone="critical"] {
+  border-color: #edb9b6;
+  background: #fff2f1;
+  color: #ad3933;
+}
+
+.statusPill[data-tone="active"] {
+  border-color: #acc8f2;
+  background: #eff5ff;
+  color: #174f9e;
+}
+
+.flightLink {
+  display: inline-flex;
+  min-height: 2.6rem;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgb(23 87 216 / 16%);
+  border-radius: 0.55rem;
+  color: var(--intelligence);
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+
+.flightLink svg {
+  width: 0.9rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.sourceTag {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.35rem;
+  color: #66778c;
+  font-family: var(--font-data);
+  font-size: 0.52rem;
+  line-height: 1.35;
+}
+
+.sourceTag svg {
+  width: 0.78rem;
+  flex: 0 0 auto;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+}
+
+.sourceTag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  padding: 2.2rem 1.2rem;
+  text-align: center;
+}
+
+.emptyState > span {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid #d3deea;
+  border-radius: 50%;
+  background: #f6f9fc;
+  color: var(--intelligence);
+  place-items: center;
+}
+
+.emptyState svg {
+  width: 1.25rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.emptyState strong {
+  margin-top: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.emptyState p {
+  max-width: 28rem;
+  margin-top: 0.3rem;
+  color: #718095;
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
+.changeTimeline {
+  padding: 1rem;
+  list-style: none;
+}
+
+.changesPanel {
+  min-width: 0;
+}
+
+.changeTimeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 0.8rem minmax(0, 1fr);
+  gap: 0.65rem;
+  padding-bottom: 1.25rem;
+}
+
+.changeTimeline li:not(:last-child)::before {
+  position: absolute;
+  top: 0.75rem;
+  bottom: -0.1rem;
+  left: 0.31rem;
+  width: 1px;
+  background: #d2dce8;
+  content: "";
+}
+
+.timelineDot {
+  position: relative;
+  z-index: 1;
+  width: 0.68rem;
+  height: 0.68rem;
+  margin-top: 0.22rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--intelligence);
+  box-shadow: 0 0 0 1px #8bb0e8;
+}
+
+.changeTimeline time,
+.changeTimeline strong,
+.changeTimeline p {
+  display: block;
+}
+
+.changeTimeline time {
+  color: #56677c;
+  font-family: var(--font-data);
+  font-size: 0.52rem;
+}
+
+.changeTimeline strong {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+}
+
+.changeTimeline p {
+  margin-top: 0.28rem;
+  color: #68788c;
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
+.changeMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.changeMeta > span {
+  color: var(--intelligence);
+  font-family: var(--font-data);
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.filterPanel {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid rgb(7 18 36 / 9%);
+  border-radius: 0.9rem;
+  background: #fff;
+  box-shadow: 0 0.6rem 1.6rem rgb(7 18 36 / 4%);
+}
+
+.filterPanel label {
+  display: grid;
+  gap: 0.35rem;
+  color: #526175;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.filterPanel input,
+.filterPanel select {
+  width: 100%;
+  min-height: 2.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  background: #f9fbfd;
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.filterPanel select {
+  cursor: pointer;
+}
+
+.inputShell {
+  position: relative;
+  display: block;
+}
+
+.inputShell svg {
+  position: absolute;
+  top: 50%;
+  left: 0.75rem;
+  width: 1rem;
+  stroke: #75859a;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+  transform: translateY(-50%);
+}
+
+.inputShell input {
+  padding-left: 2.25rem;
+}
+
+.readOnlyFlag,
+.countBadge {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.48rem;
+  border: 1px solid #cbd9e8;
+  border-radius: 99px;
+  background: #f5f8fc;
+  color: #607187;
+  font-family: var(--font-data);
+  font-size: 0.5rem;
+  white-space: nowrap;
+}
+
+.readOnlyFlag svg {
+  width: 0.72rem;
+  stroke: #18825d;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.countBadge {
+  min-width: 1.75rem;
+  justify-content: center;
+  color: var(--intelligence);
+  font-weight: 700;
+}
+
+.flightTableWrap {
+  display: none;
+}
+
+.flightCards {
+  display: grid;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.detailToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.detailToolbar > a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.35rem;
+  color: #4f6074;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.detailToolbar > a svg {
+  width: 0.95rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.flightHero {
+  position: relative;
+  overflow: hidden;
+  padding: 1.25rem;
+  border: 1px solid rgb(99 221 255 / 18%);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 100% 0, rgb(23 87 216 / 42%), transparent 20rem),
+    linear-gradient(145deg, #071831, #020712 75%);
+  box-shadow: 0 1.2rem 3rem rgb(7 18 36 / 14%);
+  color: var(--text);
+}
+
+.flightHeroTopline {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.flightHero .eyebrow {
+  color: var(--active);
+}
+
+.flightHero h1 {
+  font-family: var(--font-data);
+  font-size: clamp(2.3rem, 10vw, 4.8rem);
+  letter-spacing: -0.05em;
+}
+
+.flightHeroStatuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.flightHero .statusPill {
+  border-color: rgb(255 255 255 / 19%);
+  background: rgb(255 255 255 / 7%);
+  color: #d9e8fa;
+}
+
+.flightRouteHero {
+  display: grid;
+  grid-template-columns: auto minmax(3rem, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 2rem;
+}
+
+.flightRouteHero > div:first-child,
+.flightRouteHero > div:last-child {
+  min-width: 0;
+}
+
+.flightRouteHero > div:last-child {
+  text-align: right;
+}
+
+.flightRouteHero strong,
+.flightRouteHero span {
+  display: block;
+}
+
+.flightRouteHero strong {
+  font-family: var(--font-data);
+  font-size: clamp(1.7rem, 8vw, 3.5rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+.flightRouteHero > div > span {
+  margin-top: 0.3rem;
+  color: #7890ae;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+}
+
+.flightPath {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.flightPath span {
+  height: 1px;
+  background: linear-gradient(90deg, rgb(99 221 255 / 20%), var(--active));
+}
+
+.flightPath svg {
+  width: 1.8rem;
+  margin-inline: 0.45rem;
+  fill: var(--decision);
+  stroke: none;
+  filter: drop-shadow(0 0 0.55rem rgb(255 100 31 / 55%));
+  transform: rotate(90deg);
+}
+
+.flightFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 2rem;
+  border-top: 1px solid rgb(145 178 224 / 20%);
+  border-left: 1px solid rgb(145 178 224 / 20%);
+}
+
+.flightFacts > div {
+  min-width: 0;
+  padding: 0.8rem;
+  border-right: 1px solid rgb(145 178 224 / 20%);
+  border-bottom: 1px solid rgb(145 178 224 / 20%);
+}
+
+.flightFacts dt {
+  color: #7890ae;
+  font-family: var(--font-data);
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.flightFacts dd {
+  margin-top: 0.28rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.flightFacts span {
+  display: block;
+  margin-top: 0.15rem;
+  color: #9cadc4;
+  font-size: 0.55rem;
+}
+
+.heroProvenance {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  color: #8ca0ba;
+  font-size: 0.55rem;
+}
+
+.flightHero .sourceTag {
+  color: #9db3ce;
+}
+
+.serviceList {
+  display: grid;
+}
+
+.serviceList article {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(7 18 36 / 8%);
+}
+
+.serviceList article:last-child {
+  border-bottom: 0;
+}
+
+.serviceList article > div:first-child {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.serviceList article > div:first-child > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #cad7e5;
+  border-radius: 0.5rem;
+  background: #f5f8fc;
+  color: var(--intelligence);
+  font-family: var(--font-data);
+  font-size: 0.58rem;
+  place-items: center;
+}
+
+.serviceList strong,
+.serviceList small {
+  display: block;
+}
+
+.serviceList strong {
+  font-size: 0.74rem;
+}
+
+.serviceList small {
+  margin-top: 0.16rem;
+  color: #7d8b9d;
+  font-size: 0.58rem;
+}
+
+.serviceList dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.serviceList dl div {
+  min-width: 0;
+  padding: 0.55rem;
+  border-radius: 0.45rem;
+  background: #f6f8fb;
+}
+
+.serviceList dt {
+  color: #7b899c;
+  font-size: 0.5rem;
+  text-transform: uppercase;
+}
+
+.serviceList dd {
+  margin-top: 0.2rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-data);
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.serviceStatus {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.operationTimeline {
+  padding: 1rem;
+  list-style: none;
+}
+
+.operationTimeline li {
+  display: grid;
+  grid-template-columns: 3.1rem 0.85rem minmax(0, 1fr);
+  gap: 0.55rem;
+}
+
+.operationTime {
+  padding-top: 0.1rem;
+  text-align: right;
+}
+
+.operationTime time,
+.operationTime span {
+  display: block;
+}
+
+.operationTime time {
+  color: #142642;
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.operationTime span {
+  margin-top: 0.12rem;
+  color: #8a97a8;
+  font-size: 0.45rem;
+  line-height: 1.3;
+}
+
+.operationNode {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.operationNode::after {
+  position: absolute;
+  z-index: 0;
+  top: 0.55rem;
+  bottom: -0.55rem;
+  width: 1px;
+  background: linear-gradient(var(--intelligence), #d5dfe9);
+  content: "";
+}
+
+.operationTimeline li:last-child .operationNode::after {
+  display: none;
+}
+
+.operationNode i {
+  position: relative;
+  z-index: 1;
+  width: 0.62rem;
+  height: 0.62rem;
+  margin-top: 0.18rem;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--intelligence);
+  box-shadow: 0 0 0 1px #9ab8e4;
+}
+
+.operationEvent {
+  min-width: 0;
+  padding: 0 0 1.25rem;
+}
+
+.operationEvent > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.operationEvent strong {
+  color: #12243f;
+  font-size: 0.72rem;
+}
+
+.operationEvent p {
+  margin-top: 0.35rem;
+  color: #66768a;
+  font-size: 0.64rem;
+  line-height: 1.55;
+}
+
+.operationEvent .sourceTag {
+  margin-top: 0.55rem;
+}
+
+.clearState {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 0.7rem;
+  padding: 1rem;
+}
+
+.clearState > svg {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0.65rem;
+  border-radius: 50%;
+  background: #eaf8f2;
+  stroke: #18825d;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.clearState strong {
+  font-size: 0.72rem;
+}
+
+.clearState p {
+  margin-top: 0.2rem;
+  color: #718095;
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.incidentList,
+.documentList {
+  list-style: none;
+}
+
+.incidentList > li {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  gap: 0.65rem;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(7 18 36 / 8%);
+}
+
+.incidentList > li:last-child,
+.documentList > li:last-child {
+  border-bottom: 0;
+}
+
+.incidentList > li > svg {
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0.4rem;
+  border-radius: 0.4rem;
+  background: #fff2ee;
+  stroke: #b44623;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.incidentList span,
+.incidentList strong,
+.incidentList p {
+  display: block;
+}
+
+.incidentList > li > div > span {
+  color: #a24b2c;
+  font-size: 0.5rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.incidentList strong {
+  margin-top: 0.16rem;
+  font-size: 0.7rem;
+}
+
+.incidentList p {
+  margin-top: 0.3rem;
+  color: #69798d;
+  font-size: 0.61rem;
+  line-height: 1.5;
+}
+
+.incidentList > li > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.incidentList time {
+  color: #8390a1;
+  font-size: 0.5rem;
+}
+
+.documentList > li {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgb(7 18 36 / 8%);
+}
+
+.documentIcon {
+  display: grid;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.45rem;
+  background: #eef4fd;
+  color: var(--intelligence);
+  place-items: center;
+}
+
+.documentIcon svg,
+.documentList a svg {
+  width: 1rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.documentList strong,
+.documentList div > span {
+  display: block;
+}
+
+.documentList strong {
+  overflow-wrap: anywhere;
+  font-size: 0.67rem;
+}
+
+.documentList div > span {
+  margin-top: 0.2rem;
+  color: #7c8a9c;
+  font-size: 0.52rem;
+}
+
+.documentList a {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid #cad6e4;
+  border-radius: 0.5rem;
+  color: var(--intelligence);
+  place-items: center;
+}
+
+.documentReadOnly {
+  color: #7e8b9c;
+  font-family: var(--font-data);
+  font-size: 0.48rem;
+  white-space: nowrap;
+}
+
+.iconLink {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid #cbd6e3;
+  border-radius: 0.5rem;
+  color: var(--intelligence);
+  place-items: center;
+}
+
+.iconLink svg {
+  width: 0.95rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+@media (min-width: 48rem) {
+  .viewStack {
+    gap: 1.25rem;
+  }
+
+  .pageHeading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .overviewHero {
+    min-height: 25rem;
+    padding: 2rem;
+  }
+
+  .heroTrace {
+    right: 2rem;
+    bottom: 1.8rem;
+    left: 2rem;
+  }
+
+  .kpiGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .kpiGrid > div {
+    padding: 1.15rem;
+  }
+
+  .panelHeader {
+    padding: 1rem 1.2rem;
+  }
+
+  .flightStrip {
+    grid-template-columns: 5.2rem minmax(8rem, 1fr) 4.5rem minmax(8rem, auto) auto;
+    gap: 0.8rem;
+    padding: 1rem 1.2rem;
+  }
+
+  .flightStrip .rotationRoute {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .flightStatuses {
+    grid-column: auto;
+  }
+
+  .flightLink {
+    width: 2.6rem;
+    grid-column: auto;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .flightLink span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .filterPanel {
+    grid-template-columns: minmax(15rem, 1.6fr) minmax(10rem, 0.7fr) minmax(9rem, 0.6fr);
+    align-items: end;
+  }
+
+  .flightHero {
+    padding: 1.8rem;
+  }
+
+  .flightHeroTopline {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .flightHeroStatuses {
+    justify-content: flex-end;
+  }
+
+  .flightFacts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .serviceList article {
+    grid-template-columns: minmax(10rem, 1.1fr) minmax(14rem, 1.4fr) minmax(8rem, 0.8fr);
+    align-items: center;
+    padding: 1rem 1.2rem;
+  }
+
+  .serviceStatus {
+    display: grid;
+    justify-items: end;
+  }
+
+  .operationTimeline {
+    padding: 1.2rem;
+  }
+
+  .operationTimeline li {
+    grid-template-columns: 4.2rem 1rem minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+}
+
+@media (min-width: 80rem) {
+  .overviewGrid {
+    grid-template-columns: minmax(0, 1.62fr) minmax(18rem, 0.78fr);
+  }
+
+  .detailGrid {
+    grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 0.75fr);
+    align-items: start;
+  }
+
+  .detailAside {
+    position: sticky;
+    top: 6.5rem;
+  }
+
+  .flightCards {
+    display: none;
+  }
+
+  .flightTableWrap {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .flightTable {
+    width: 100%;
+    min-width: 56rem;
+    border-collapse: collapse;
+    text-align: left;
+  }
+
+  .flightTable th,
+  .flightTable td {
+    padding: 0.9rem 0.75rem;
+    border-bottom: 1px solid rgb(7 18 36 / 8%);
+    vertical-align: middle;
+  }
+
+  .flightTable thead th {
+    background: #f6f8fb;
+    color: #718095;
+    font-family: var(--font-data);
+    font-size: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .flightTable tbody tr:last-child th,
+  .flightTable tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .flightTable tbody tr {
+    transition: background-color 150ms ease;
+  }
+
+  .flightTable tbody tr:hover {
+    background: #f8fbff;
+  }
+
+  .flightTable tbody th > a,
+  .flightTable tbody th > small,
+  .flightTable td > time,
+  .flightTable td > small,
+  .flightTable td > strong {
+    display: block;
+  }
+
+  .flightTable tbody th > a {
+    color: var(--intelligence);
+    font-family: var(--font-data);
+    font-size: 0.72rem;
+  }
+
+  .flightTable tbody th > small,
+  .flightTable td > small {
+    margin-top: 0.2rem;
+    color: #8190a3;
+    font-size: 0.52rem;
+  }
+
+  .flightTable td > time,
+  .flightTable td > strong {
+    font-family: var(--font-data);
+    font-size: 0.6rem;
+  }
+
+  .flightTable .rotationRoute {
+    min-width: 7.5rem;
+  }
+}
+
+@media (min-width: 90rem) {
+  .overviewHero {
+    min-height: 27rem;
+    padding: 2.4rem;
+  }
+
+  .overviewHeading > p:not(.eyebrow) {
+    font-size: 1rem;
+  }
+
+  .heroTrace {
+    right: 2.4rem;
+    left: 2.4rem;
+  }
+}
+
+@media (max-width: 23.5rem) {
+  .kpiGrid,
+  .flightFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .flightRouteHero {
+    gap: 0.45rem;
+  }
+
+  .flightPath svg {
+    width: 1.3rem;
+    margin-inline: 0.2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secondaryButton,
+  .flightTable tbody tr {
+    transition: none;
+  }
+}
