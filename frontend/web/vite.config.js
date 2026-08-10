@@ -19,6 +19,7 @@ export default defineConfig({
         main: 'index.html',
         dashboard: 'dashboard.html',
         contracts: 'contracts.html',
+        finance: 'finance.html',
       },
     },
   },
