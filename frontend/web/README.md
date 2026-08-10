@@ -32,6 +32,13 @@ Los valores con prefijos `NEXT_PUBLIC_`, `PUBLIC_` o equivalentes se entregan al
 3. Apuntar la URL base a la API del ambiente correspondiente, sin terminarla en `/api/v1` para que el cliente conserve explícito el versionado.
 4. Mantener el archivo local de ambiente fuera de Git.
 
+## Vistas disponibles en el prototipo
+
+- Administración/OCC: `http://localhost:5173/dashboard.html`.
+- Departamento de Contratos: `http://localhost:5173/contracts.html`.
+
+El área de Contratos conserva la estructura visual del panel administrativo, pero mantiene sus capacidades en `src/features/contracts` para que cada módulo pueda evolucionar en una rama independiente.
+
 El modo mock debe ser reemplazable: una feature consume una interfaz o adaptador local, y ese adaptador selecciona datos simulados o el cliente de `packages/api-client`. Los componentes de presentación no deben conocer esa decisión.
 
 ## Estructura prevista
