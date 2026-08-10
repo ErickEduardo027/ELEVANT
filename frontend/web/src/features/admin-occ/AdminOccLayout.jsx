@@ -18,7 +18,9 @@ export default function AdminOccLayout() {
         station={fallbackStation()}
         notificationsPath={`${ADMIN_OCC_BASE_PATH}/notifications`}
       />
-      <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} />
+      {import.meta.env.DEV && (
+        <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} />
+      )}
     </>
   );
 }

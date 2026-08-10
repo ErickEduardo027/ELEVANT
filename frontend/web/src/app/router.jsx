@@ -22,7 +22,7 @@ import ReviewRoute from '../features/review/ReviewRoute';
 import ReportsRoute from '../features/reports/ReportsRoute';
 import NotificationsRoute from '../features/notifications/NotificationsRoute';
 import ChatRoute from '../features/chat/ChatRoute';
-import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon } from '../features/shell/components/icons';
+import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon, AlertTriangleIcon } from '../features/shell/components/icons';
 
 const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
   path: item.path.slice(HUMAN_RESOURCES_BASE_PATH.length + 1),
@@ -47,6 +47,10 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       ...humanResourcesChildren,
+      {
+        path: '*',
+        element: <ModulePlaceholder icon={AlertTriangleIcon} label="Módulo no encontrado" description="La ruta que buscas no existe dentro de Recursos Humanos." />,
+      },
     ],
   },
   {
@@ -69,6 +73,10 @@ const router = createBrowserRouter([
       { path: 'reports', element: <ReportsRoute /> },
       { path: 'notifications', element: <NotificationsRoute /> },
       { path: 'chat', element: <ChatRoute /> },
+      {
+        path: '*',
+        element: <ModulePlaceholder icon={AlertTriangleIcon} label="Módulo no encontrado" description="La ruta que buscas no existe dentro de Administrador / OCC." />,
+      },
     ],
   },
   {
@@ -86,6 +94,10 @@ const router = createBrowserRouter([
   {
     path: '/aerolinea',
     element: <ModulePlaceholder icon={PlaneIcon} label="Cliente / Aerolínea" description="Portal de aerolínea — pendiente de construcción." />,
+  },
+  {
+    path: '*',
+    element: <ModulePlaceholder icon={AlertTriangleIcon} label="Página no encontrada" description="La ruta que buscas no existe." />,
   },
 ]);
 
