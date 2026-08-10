@@ -21,6 +21,7 @@ import PositionsMapRoute from '../features/positions-map/PositionsMapRoute';
 import ReviewRoute from '../features/review/ReviewRoute';
 import ReportsRoute from '../features/reports/ReportsRoute';
 import NotificationsRoute from '../features/notifications/NotificationsRoute';
+import ChatRoute from '../features/chat/ChatRoute';
 import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon } from '../features/shell/components/icons';
 
 const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
@@ -55,9 +56,9 @@ const router = createBrowserRouter([
         <AdminOccLayout />
       </AdminOccPreviewProvider>
     ),
-    // Las Tasks 6-12 agregan aquí, una por task, su import de `*Route` y su
-    // entrada en este arreglo (planning, flight-monitoring, positions-map,
-    // review, reports, notifications, chat).
+    // Los 8 módulos de /admin-occ (dashboard, planning, flight-monitoring,
+    // positions-map, review, reports, notifications, chat) quedaron
+    // completamente portados y enrutados en las Tasks 6-12.
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <DashboardRoute /> },
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
       { path: 'review', element: <ReviewRoute /> },
       { path: 'reports', element: <ReportsRoute /> },
       { path: 'notifications', element: <NotificationsRoute /> },
+      { path: 'chat', element: <ChatRoute /> },
     ],
   },
   {
