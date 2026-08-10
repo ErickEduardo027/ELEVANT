@@ -14,6 +14,7 @@ import {
 import AdminOccLayout from '../features/admin-occ/AdminOccLayout';
 import { AdminOccPreviewProvider } from '../features/admin-occ/AdminOccPreviewContext';
 import { ADMIN_OCC_BASE_PATH } from '../features/admin-occ/navigation';
+import DashboardRoute from '../features/dashboard/DashboardRoute';
 import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon } from '../features/shell/components/icons';
 
 const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
@@ -48,11 +49,13 @@ const router = createBrowserRouter([
         <AdminOccLayout />
       </AdminOccPreviewProvider>
     ),
-    // Las Tasks 5-12 agregan aquí, una por task, su import de `*Route` y su
-    // entrada en este arreglo (dashboard, planning, flight-monitoring,
-    // positions-map, review, reports, notifications, chat). Hasta entonces
-    // solo existe el redirect de índice.
-    children: [{ index: true, element: <Navigate to="dashboard" replace /> }],
+    // Las Tasks 6-12 agregan aquí, una por task, su import de `*Route` y su
+    // entrada en este arreglo (planning, flight-monitoring, positions-map,
+    // review, reports, notifications, chat).
+    children: [
+      { index: true, element: <Navigate to="dashboard" replace /> },
+      { path: 'dashboard', element: <DashboardRoute /> },
+    ],
   },
   {
     path: '/contratos',
