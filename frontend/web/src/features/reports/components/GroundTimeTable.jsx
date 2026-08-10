@@ -1,6 +1,7 @@
 import ReportTable from './ReportTable';
 import ReportDetailPanel from './ReportDetailPanel';
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatSignedMinutes } from '../reportsMappers';
 
 const COLUMNS = [
@@ -38,7 +39,10 @@ const COLUMNS = [
     key: 'status',
     label: 'Estado',
     sortValue: row => row.status,
-    render: row => <StatusBadge domain="groundTime" status={row.status} />,
+    render: row => {
+      const meta = getStatusMeta('groundTime', row.status);
+      return <StatusBadge tone={meta.color} label={meta.label} />;
+    },
   },
 ];
 

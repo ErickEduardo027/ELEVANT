@@ -1,4 +1,4 @@
-import KpiCard from '../../dashboard/components/KpiCard';
+import KpiCard from '../../../components/KpiCard';
 import { AlertTriangleIcon, ChecklistIcon, PlaneIcon, ShieldCheckIcon } from '../../dashboard/components/icons';
 import { ClockIcon } from './icons';
 
