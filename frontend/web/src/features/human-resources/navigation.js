@@ -11,6 +11,7 @@ import {
 import {
   CERTIFICATIONS_STATUS_MOCK,
   PERMITS_STATUS_MOCK,
+  SCHEDULES_STATUS_MOCK,
   NOTIFICATIONS_STATUS_MOCK,
 } from './mockData';
 
@@ -70,6 +71,7 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/schedules`,
     icon: CalendarIcon,
     description: 'Turnos, disponibilidad, asignación por terminal y cobertura de personal.',
+    badge: SCHEDULES_STATUS_MOCK.coverageAlerts > 0 ? { count: SCHEDULES_STATUS_MOCK.coverageAlerts, tone: 'warning' } : null,
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.REPORTS,
