@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './LoginPage.css';
-//holaaaaa
 
 // Served from the framework's `public/` directory (see public/brand/elevant-logo.png).
 const elevantLogo = '/brand/elevant-logo.png';
