@@ -6,6 +6,7 @@ import ModulePlaceholder from '../features/shell/components/ModulePlaceholder';
 import HumanResourcesDashboardPage from '../features/human-resources/dashboard/DashboardPage';
 import UsersPage from '../features/human-resources/users/UsersPage';
 import CertificationsPage from '../features/human-resources/certifications/CertificationsPage';
+import PermitsPage from '../features/human-resources/permits/PermitsPage';
 import {
   HUMAN_RESOURCES_NAVIGATION,
   HUMAN_RESOURCES_BASE_PATH,
@@ -33,6 +34,8 @@ const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
       <UsersPage />
     ) : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ? (
       <CertificationsPage />
+    ) : item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ? (
+      <PermitsPage />
     ) : (
       <ModulePlaceholder icon={item.icon} label={item.label} description={item.description} />
     ),

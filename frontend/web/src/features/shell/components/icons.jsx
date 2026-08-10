@@ -317,3 +317,18 @@ export function MessageCircleIcon(props) {
     </Icon>
   );
 }
+
+// Licencia de conducir en rampa: no existía en el set de iconos de
+// referencia (feat/adminocc); se agrega siguiendo el mismo lenguaje visual
+// (outline, stroke 1.7, viewBox 24).
+export function CarIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M5 16.2 6.3 11a2 2 0 0 1 1.9-1.4h7.6A2 2 0 0 1 17.7 11l1.3 5.2" />
+      <rect x="3.2" y="16.2" width="17.6" height="4" rx="1.6" />
+      <circle cx="7.3" cy="18.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="16.7" cy="18.2" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M8.5 9.6V7.4h7v2.2" />
+    </Icon>
+  );
+}
