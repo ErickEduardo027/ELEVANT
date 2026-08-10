@@ -15,6 +15,7 @@ import AdminOccLayout from '../features/admin-occ/AdminOccLayout';
 import { AdminOccPreviewProvider } from '../features/admin-occ/AdminOccPreviewContext';
 import { ADMIN_OCC_BASE_PATH } from '../features/admin-occ/navigation';
 import DashboardRoute from '../features/dashboard/DashboardRoute';
+import PlanningRoute from '../features/planning/PlanningRoute';
 import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon } from '../features/shell/components/icons';
 
 const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <DashboardRoute /> },
+      { path: 'planning', element: <PlanningRoute /> },
     ],
   },
   {
