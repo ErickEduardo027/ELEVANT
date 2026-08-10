@@ -6,6 +6,7 @@ import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import ContractsHomePage from '../home/ContractsHomePage';
 import { useContractsHomeData } from '../home/useContractsHomeData';
+import ContractsPage from '../contracts/ContractsPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
@@ -54,6 +55,8 @@ export default function ContractsShell() {
         <main key={activeModule.id} className="flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
+            <ContractsPage />
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}
