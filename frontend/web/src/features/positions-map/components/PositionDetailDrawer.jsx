@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { XIcon } from '../../flight-monitoring/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
@@ -27,6 +28,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   if (!position) return null;
 
   const hasFlight = Boolean(position.flightId);
+  const meta = getStatusMeta('position', position.status);
 
   return (
     <>
@@ -44,7 +46,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
               {position.id}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge domain="position" status={position.status} />
+              <StatusBadge tone={meta.color} label={meta.label} />
               <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
                 {TERMINAL_LABELS[position.terminal] ?? position.terminal}
               </span>
