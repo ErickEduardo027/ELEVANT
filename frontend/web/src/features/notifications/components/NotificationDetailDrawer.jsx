@@ -1,6 +1,6 @@
 import { formatClockTime } from '../../dashboard/mappers';
 import { NOTIFICATION_CATEGORIES } from '../notificationsMappers';
-import { useEscapeToClose } from '../useEscapeToClose';
+import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import NotificationSeverityBadge from './NotificationSeverityBadge';
 import { ArrowRightIcon, CheckCheckIcon } from './icons';
 import { XIcon } from '../../review/components/icons';

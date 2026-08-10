@@ -20,6 +20,7 @@ import FlightMonitoringRoute from '../features/flight-monitoring/FlightMonitorin
 import PositionsMapRoute from '../features/positions-map/PositionsMapRoute';
 import ReviewRoute from '../features/review/ReviewRoute';
 import ReportsRoute from '../features/reports/ReportsRoute';
+import NotificationsRoute from '../features/notifications/NotificationsRoute';
 import { FileTextIcon, BarChartIcon, IdCardIcon, PlaneIcon } from '../features/shell/components/icons';
 
 const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
@@ -65,6 +66,7 @@ const router = createBrowserRouter([
       { path: 'positions-map', element: <PositionsMapRoute /> },
       { path: 'review', element: <ReviewRoute /> },
       { path: 'reports', element: <ReportsRoute /> },
+      { path: 'notifications', element: <NotificationsRoute /> },
     ],
   },
   {

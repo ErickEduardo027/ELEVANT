@@ -1,5 +1,5 @@
 import { NOTIFICATION_CATEGORIES } from '../notificationsMappers';
-import { useEscapeToClose } from '../useEscapeToClose';
+import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import { XIcon } from '../../review/components/icons';
 
 function PreferenceToggle({ category, value, onTogglePreference }) {
