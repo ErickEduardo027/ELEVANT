@@ -219,11 +219,22 @@ completed/error) que ya existen.
 
 ## Testing
 
-Se sigue la convención del repo (cada mapper/hook/servicio tiene su
-`.test.js`): `humanResourcesReportsService.test.js`, `reportsMappers.test.js`,
-`useReportFilters.test.js`, y un test de integración de `ReportsPage.jsx`. Se
-agregan casos a `ReportTabs`/`ExportButton` solo para el nuevo prop opcional
-(sin tocar los tests existentes de Admin/OCC).
+Corrección tras inspeccionar el repo: la convención de "cada mapper/hook/
+servicio tiene su `.test.js`" es de Admin/OCC — Gestión Humana no tiene hoy
+ningún archivo `.test.*` en `src/features/human-resources/` (Dashboard,
+Usuarios, Habilitaciones, Carnets, Horarios se entregaron sin tests
+automatizados). Este módulo sigue la convención real de Gestión Humana: sin
+`.test.js` nuevos en `src/features/human-resources/reports/` ni en
+`humanResourcesReportsService.js` — se verifica con lint/typecheck/build y
+prueba manual en el navegador, tal como pide `skill.md` ("Ejecuta lint/
+typecheck/build disponibles... verifica que las rutas... sigan
+funcionando").
+
+La única excepción es `src/features/reports/` (Admin/OCC), que sí tiene
+cobertura de test exhaustiva hoy: los dos cambios retrocompatibles
+(`ReportTabs.tabs`, `ExportButton.exportFn`) sí llevan un caso de test nuevo
+cada uno, siguiendo el patrón ya establecido en `ExportButton.test.jsx` — sin
+tocar los tests existentes.
 
 ## Fuera de alcance
 
