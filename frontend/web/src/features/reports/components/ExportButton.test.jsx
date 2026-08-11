@@ -48,4 +48,17 @@ describe('ExportButton', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'PDF' }));
     expect(screen.getByRole('button', { name: /generando/i })).toBeDisabled();
   });
+
+  it('uses a custom exportFn instead of the default reportsService.exportReport', async () => {
+    const customExportFn = vi.fn().mockResolvedValue({ reportId: 'expirations', format: 'pdf', fileName: 'expirations.pdf' });
+    const onExported = vi.fn();
+    render(<ExportButton reportId="expirations" exportFn={customExportFn} onExported={onExported} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /exportar/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'PDF' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /completado/i })).toBeInTheDocument(), { timeout: 2000 });
+    expect(customExportFn).toHaveBeenCalledWith({ reportId: 'expirations', format: 'pdf' });
+    expect(onExported).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'expirations.pdf' }));
+  });
 });

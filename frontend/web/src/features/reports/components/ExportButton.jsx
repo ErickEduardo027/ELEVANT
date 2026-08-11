@@ -17,7 +17,7 @@ const STATE_CLASS = {
   error: 'border-status-danger/40 text-status-danger hover:bg-status-danger/10',
 };
 
-export default function ExportButton({ reportId, onExported, onExportError, disabled = false }) {
+export default function ExportButton({ reportId, exportFn = exportReport, onExported, onExportError, disabled = false }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState('idle');
   const mountedRef = useRef(true);
@@ -33,7 +33,7 @@ export default function ExportButton({ reportId, onExported, onExportError, disa
     setOpen(false);
     setState('generating');
     try {
-      const result = await exportReport({ reportId, format });
+      const result = await exportFn({ reportId, format });
       if (!mountedRef.current) return;
       setState('completed');
       onExported?.(result);
