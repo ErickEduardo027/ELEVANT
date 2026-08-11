@@ -1,15 +1,16 @@
 # ELEVANT
 
-Elevant es la plataforma privada de AVIAM para organizar la futura gestión de
-asistencia en tierra: preoperación, planificación, operación en rampa, evidencias,
-validación de OCC y procesos de facturación. Este repositorio contiene únicamente
-la base técnica inicial; los módulos de negocio todavía no están implementados.
+Elevant es la plataforma privada de AVIAM para organizar la gestión de asistencia
+en tierra: preoperación, planificación, operación en rampa, evidencias, validación
+de OCC y procesos de facturación. Este monorepositorio reúne el backend y los
+clientes web y móvil; los frontends disponen de prototipos funcionales con datos
+simulados mientras se completa su integración con la API.
 
 ## Arquitectura
 
 ```text
-Elevant Web ───────────────┐
-                           ├──> Elevant API ──> SQL Server
+Elevant Web interno ───────┐
+Elevant Public Web ────────┼──> Elevant API ──> SQL Server
 Elevant Mobile Agent ──────┘          │
                                       └──> FlightAware AeroAPI (futuro)
 ```
@@ -42,8 +43,9 @@ ELEVANT/
 │   ├── database/         Documentación y utilidades de SQL Server
 │   ├── infrastructure/   Docker, Dokploy, proxy, monitoreo y backups
 │   └── scripts/          Build, migraciones y automatización del backend
-├── frontend/web/         Base neutral de la aplicación web
-├── frontend/mobile-agent/ Base neutral de Elevant Mobile Agent
+├── frontend/web/         Aplicación interna para Administración/OCC y departamentos
+├── frontend/public-web/  Landing pública y portal demostrativo de aerolíneas
+├── frontend/mobile-agent/ Prototipo Expo para agentes de rampa
 ├── packages/             Cliente API y configuración compartida futura
 ├── docs/                 Arquitectura, API, seguridad y onboarding
 ├── scripts/              Verificación y utilidades globales del repositorio
@@ -61,12 +63,11 @@ clientes web y móvil se concentran en `frontend`.
 - Git.
 - Docker Desktop con Docker Compose para el entorno local completo.
 - PowerShell 5.1 o PowerShell 7 para los scripts.
-- Node.js 20 o superior y pnpm, solo cuando se inicialicen web o móvil.
+- Node.js 20 o superior y el gestor indicado por cada aplicación frontend.
 
-El workspace pnpm incluye `frontend/*` y `packages/*`. Por ahora `package.json` solo
-ofrece scripts reales para revisar secretos y mostrar el árbol. `format` y `lint`
-se añadirán cuando web o móvil seleccionen herramientas concretas; no existen
-scripts simulados que terminen correctamente sin validar nada.
+El workspace pnpm incluye `frontend/*` y `packages/*`. El `package.json` raíz
+ofrece scripts para revisar secretos y mostrar el árbol; cada aplicación frontend
+declara sus propios comandos de desarrollo, lint, pruebas y compilación.
 
 Compruebe el equipo con:
 
@@ -104,16 +105,23 @@ futuras migraciones se aplican mediante el proceso controlado documentado en
 
 ## Trabajo de Laisha
 
-Laisha debe leer `frontend/web/README.md`, elegir posteriormente Next.js, Astro u otra
-tecnología en una PR independiente y consumir
-`https://api-dev.elevant.com`. Puede trabajar con mocks sin ejecutar API ni
-SQL Server localmente.
+Laisha debe leer `frontend/web/README.md` y mantener los módulos internos de
+Administración/OCC y departamentos. La aplicación consumirá
+`https://api-dev.elevant.com`; mientras la integración no esté disponible puede
+trabajar con adaptadores mock sin ejecutar API ni SQL Server localmente.
+
+## Web pública y portal de aerolíneas
+
+`frontend/public-web` contiene la landing pública, el acceso local y el portal
+demostrativo para aerolíneas. Usa Next.js y datos simulados; no autentica contra
+Production ni transmite información operativa real. Sus rutas, credenciales demo
+y comandos están documentados en `frontend/public-web/README.md`.
 
 ## Trabajo de Eliezer
 
-Eliezer debe leer `frontend/mobile-agent/README.md` e inicializar Expo en una PR
-independiente. La APK se instalará en la tablet y consumirá la API remota de
-Development; no se aloja como una aplicación web en el VPS.
+Eliezer debe leer `frontend/mobile-agent/README.md` y mantener el prototipo Expo.
+La APK se instalará en la tablet y consumirá la API remota de Development cuando
+se complete la integración; no se aloja como una aplicación web en el VPS.
 
 ## Variables y secretos
 
@@ -152,14 +160,15 @@ contrato oficial entre backend, web y móvil. Consulte `CONTRIBUTING.md` y
 
 ## No implementado todavía
 
-No existen aún autenticación, usuarios, vuelos, contratos, asignaciones, operación
-en rampa, incidencias, facturación, llamadas reales a FlightAware, cliente API
-generado, aplicación web, proyecto Expo ni despliegue en Dokploy.
+No están implementadas aún la autenticación real de los clientes, la sustitución
+general de datos simulados por la API, las llamadas reales a FlightAware, el
+cliente API generado ni el despliegue completo en Dokploy. Los prototipos no deben
+interpretarse como integraciones productivas.
 
 ## Próximos pasos
 
 1. Configurar usuarios reales en CODEOWNERS y proteger `main` y `Development`.
 2. Publicar la API técnica en Development.
-3. Acordar el primer contrato mediante OpenAPI.
-4. Inicializar web y móvil en Pull Requests independientes.
-5. Diseñar el primer módulo y su modelo de datos con un ADR específico.
+3. Acordar y publicar los contratos mediante OpenAPI.
+4. Sustituir progresivamente los adaptadores mock de web y móvil.
+5. Validar despliegues y observabilidad por ambiente antes de habilitar datos reales.

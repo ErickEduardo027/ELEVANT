@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { colors } from '../theme/colors';
 import { PrimaryButton } from '../components/ui';
+import { exitApplication } from '../utils/app-exit';
 
 export default function LoginScreen() {
   const [user, setUser] = useState('agente.rampa');
@@ -26,6 +28,7 @@ export default function LoginScreen() {
         <View style={styles.inputBox}><Ionicons name="lock-closed-outline" size={22} color={colors.navy} /><TextInput value={password} onChangeText={setPassword} placeholder="Contraseña" secureTextEntry={!visible} style={styles.input} /><Pressable onPress={() => setVisible(!visible)}><Ionicons name={visible ? 'eye-off-outline' : 'eye-outline'} size={23} color={colors.navy} /></Pressable></View>
         {!!error && <Text style={styles.error}>{error}</Text>}
         <PrimaryButton title="INICIAR SESIÓN" icon="log-in-outline" onPress={login} />
+        <PrimaryButton title="SALIR" icon="exit-outline" onPress={exitApplication} secondary />
         <Text style={styles.demo}>Prototipo: puedes usar los datos precargados.</Text>
       </View>
       <View style={styles.footer}><Text style={styles.footerTitle}>ELEVANDO LA GESTIÓN DE</Text><Text style={styles.footerAccent}>OPERACIONES EN TIERRA.</Text></View>

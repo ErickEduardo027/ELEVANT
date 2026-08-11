@@ -8,24 +8,44 @@ export type Flight = {
   position: string;
   arrival: string;
   departure: string;
-  status: 'Próximo' | 'En atención' | 'Retrasado';
+  flightStatus: FlightStatus;
   services: string[];
 };
+
+export type FlightStatus =
+  | 'Programado'
+  | 'Resultado desconocido'
+  | 'Cancelado'
+  | 'Desviado'
+  | 'En rodaje / Salió de puerta'
+  | 'Programado / Retrasado'
+  | 'Retrasado'
+  | 'Llegó al aeropuerto'
+  | 'Aterrizó / En rodaje'
+  | 'Llegó a la puerta'
+  | 'En ruta'
+  | 'En ruta / A tiempo';
+
+export const operationAllowedFlightStatuses: FlightStatus[] = [
+  'Llegó al aeropuerto', 'Aterrizó / En rodaje', 'Llegó a la puerta',
+];
+
+export const canOperateFlight = (status: FlightStatus) => operationAllowedFlightStatuses.includes(status);
 
 export const flights: Flight[] = [
   {
     id: 'B61015', number: 'B6 1015', airline: 'JetBlue', origin: 'JFK', destination: 'PUJ',
-    aircraft: 'Airbus A320', position: 'Puerta B12', arrival: '14:35', departure: '16:05', status: 'Próximo',
+    aircraft: 'Airbus A320', position: 'Puerta B12', arrival: '14:35', departure: '16:05', flightStatus: 'Llegó a la puerta',
     services: ['Puente de abordaje', 'Equipaje', 'GPU', 'Agua potable'],
   },
   {
     id: 'AA2401', number: 'AA 2401', airline: 'American Airlines', origin: 'MIA', destination: 'PUJ',
-    aircraft: 'Boeing 737-800', position: 'Puerta B08', arrival: '15:10', departure: '16:40', status: 'En atención',
+    aircraft: 'Boeing 737-800', position: 'Puerta B08', arrival: '15:10', departure: '16:40', flightStatus: 'Programado',
     services: ['Puente de abordaje', 'Limpieza de cabina', 'Equipaje'],
   },
   {
     id: 'DL1826', number: 'DL 1826', airline: 'Delta', origin: 'ATL', destination: 'PUJ',
-    aircraft: 'Airbus A321', position: 'Puerta A04', arrival: '16:25', departure: '17:55', status: 'Retrasado',
+    aircraft: 'Airbus A321', position: 'Puerta A04', arrival: '16:25', departure: '17:55', flightStatus: 'Llegó a la puerta',
     services: ['Puente de abordaje', 'GPU', 'Aire acondicionado'],
   },
 ];
