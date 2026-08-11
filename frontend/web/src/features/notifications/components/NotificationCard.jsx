@@ -21,10 +21,25 @@ function Chip({ children }) {
   );
 }
 
-export default function NotificationCard({ notification, nowIso, selected = false, onToggleSelect, onOpen }) {
-  const CategoryIcon = CATEGORY_ICON[notification.category] ?? BellIcon;
+export default function NotificationCard({
+  notification,
+  nowIso,
+  selected = false,
+  onToggleSelect,
+  onOpen,
+  categoryIconMap = CATEGORY_ICON,
+}) {
+  const CategoryIcon = categoryIconMap[notification.category] ?? BellIcon;
   const accentColor = STATUS_COLORS[getStatusMeta('notification', notification.severity).color];
   const unread = !notification.read;
+  const contextItems =
+    notification.contextItems?.length > 0
+      ? notification.contextItems
+      : [
+          notification.flightNumber ? { value: notification.flightNumber } : null,
+          notification.airline ? { value: notification.airline } : null,
+          notification.position ? { value: `Pos. ${notification.position}` } : null,
+        ].filter(Boolean);
 
   return (
     <div
@@ -67,11 +82,11 @@ export default function NotificationCard({ notification, nowIso, selected = fals
           {notification.description}
         </p>
 
-        {(notification.flightNumber || notification.airline || notification.position) && (
+        {contextItems.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-            {notification.flightNumber && <Chip>{notification.flightNumber}</Chip>}
-            {notification.airline && <Chip>{notification.airline}</Chip>}
-            {notification.position && <Chip>Pos. {notification.position}</Chip>}
+            {contextItems.map((item, index) => (
+              <Chip key={`${notification.id}-context-${index}`}>{item.label ? `${item.label}: ${item.value}` : item.value}</Chip>
+            ))}
           </div>
         )}
       </div>

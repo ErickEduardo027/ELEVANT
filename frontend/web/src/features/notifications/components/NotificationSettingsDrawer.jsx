@@ -30,7 +30,16 @@ function PreferenceToggle({ category, value, onTogglePreference }) {
   );
 }
 
-export default function NotificationSettingsDrawer({ open, preferences, onTogglePreference, onClose }) {
+export default function NotificationSettingsDrawer({
+  open,
+  preferences,
+  onTogglePreference,
+  onClose,
+  categories = NOTIFICATION_CATEGORIES,
+  thresholdDays,
+  thresholdOptions = [],
+  onChangeThreshold,
+}) {
   useEscapeToClose(open, onClose);
 
   if (!open) return null;
@@ -65,7 +74,7 @@ export default function NotificationSettingsDrawer({ open, preferences, onToggle
         </div>
 
         <div className="flex-1 divide-y divide-black/5 overflow-y-auto px-5 dark:divide-white/5">
-          {NOTIFICATION_CATEGORIES.map(category => (
+          {categories.map(category => (
             <PreferenceToggle
               key={category.id}
               category={category}
@@ -73,6 +82,25 @@ export default function NotificationSettingsDrawer({ open, preferences, onToggle
               onTogglePreference={onTogglePreference}
             />
           ))}
+
+          {thresholdOptions.length > 0 && (
+            <div className="py-3">
+              <label className="flex flex-col gap-1.5 text-sm text-ink-900 dark:text-text-primary-dark">
+                Umbral de vencimiento
+                <select
+                  value={thresholdDays}
+                  onChange={event => onChangeThreshold?.(Number(event.target.value))}
+                  className="rounded-lg border border-black/10 bg-white/80 px-3 py-2 text-sm text-ink-900 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+                >
+                  {thresholdOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       </aside>
     </>

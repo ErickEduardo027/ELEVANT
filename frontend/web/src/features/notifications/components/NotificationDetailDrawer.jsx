@@ -11,8 +11,8 @@ const RESOURCE_ACTION_LABEL = {
   reports: 'Ver reporte',
 };
 
-function categoryLabel(categoryId) {
-  return NOTIFICATION_CATEGORIES.find(category => category.id === categoryId)?.label ?? categoryId;
+function categoryLabel(categoryId, categoryLabelMap) {
+  return categoryLabelMap?.[categoryId] ?? NOTIFICATION_CATEGORIES.find(category => category.id === categoryId)?.label ?? categoryId;
 }
 
 function MetadataRow({ label, value }) {
@@ -25,13 +25,23 @@ function MetadataRow({ label, value }) {
   );
 }
 
-export default function NotificationDetailDrawer({ notification, onClose, onMarkAsRead, onMarkAsUnread, onNavigate }) {
+export default function NotificationDetailDrawer({
+  notification,
+  onClose,
+  onMarkAsRead,
+  onMarkAsUnread,
+  onNavigate,
+  categoryLabelMap,
+  resourceActionLabelMap = RESOURCE_ACTION_LABEL,
+  detailFields,
+}) {
   useEscapeToClose(Boolean(notification), onClose);
 
   if (!notification) return null;
 
-  const actionLabel = RESOURCE_ACTION_LABEL[notification.relatedModule];
+  const actionLabel = resourceActionLabelMap[notification.relatedModule];
   const metadataEntries = Object.entries(notification.metadata ?? {});
+  const resolvedDetailFields = detailFields ?? notification.detailFields ?? [];
 
   return (
     <>
@@ -46,7 +56,7 @@ export default function NotificationDetailDrawer({ notification, onClose, onMark
         <div className="flex items-start justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/5">
           <div className="space-y-1.5">
             <p className="text-[11px] uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
-              {categoryLabel(notification.category)}
+              {categoryLabel(notification.category, categoryLabelMap)}
             </p>
             <p id="notification-drawer-title" className="text-base font-semibold text-ink-900 dark:text-text-primary-dark">
               {notification.title}
@@ -72,11 +82,17 @@ export default function NotificationDetailDrawer({ notification, onClose, onMark
           <p className="text-sm text-ink-900 dark:text-text-primary-dark">{notification.description}</p>
 
           <div className="space-y-1.5 rounded-xl border border-black/5 p-3 dark:border-white/5">
-            <MetadataRow label="Origen" value={notification.source} />
-            <MetadataRow label="Vuelo" value={notification.flightNumber} />
-            <MetadataRow label="Aerolínea" value={notification.airline} />
-            <MetadataRow label="Posición" value={notification.position} />
-            <MetadataRow label="Operación" value={notification.operationId} />
+            {resolvedDetailFields.length > 0 ? (
+              resolvedDetailFields.map(field => <MetadataRow key={field.label} label={field.label} value={field.value} />)
+            ) : (
+              <>
+                <MetadataRow label="Origen" value={notification.source} />
+                <MetadataRow label="Vuelo" value={notification.flightNumber} />
+                <MetadataRow label="Aerolínea" value={notification.airline} />
+                <MetadataRow label="Posición" value={notification.position} />
+                <MetadataRow label="Operación" value={notification.operationId} />
+              </>
+            )}
             {metadataEntries.map(([key, value]) => (
               <MetadataRow key={key} label={key} value={String(value)} />
             ))}
