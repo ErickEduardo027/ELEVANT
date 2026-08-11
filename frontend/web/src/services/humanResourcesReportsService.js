@@ -111,6 +111,29 @@ export async function getAccountMovementsReport(filters = {}) {
 }
 
 /**
+ * Reporte 3 — Personal por terminal y turno: una fila por turno asignado
+ * (no por agente único) — así "cuántos turnos se cubrieron en Terminal B de
+ * madrugada" es una métrica bien definida, sin inventar una regla de
+ * deduplicación no pedida por el brief.
+ */
+export async function getStaffDistributionReport(filters = {}) {
+  const shifts = await getShifts();
+
+  const rows = shifts
+    .filter(shift => !filters.terminal || shift.terminal === filters.terminal)
+    .filter(shift => !filters.shiftBlock || shift.block === filters.shiftBlock)
+    .map(shift => ({
+      id: shift.id,
+      agentName: shift.agentName,
+      terminal: shift.terminal,
+      block: shift.block,
+      date: shift.date,
+    }));
+
+  return { rows };
+}
+
+/**
  * Simula la generación de un reporte en el backend (mismo mock de latencia
  * que exportReport de Admin/OCC).
  */
