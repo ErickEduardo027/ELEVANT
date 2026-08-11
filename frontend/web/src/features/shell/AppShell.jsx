@@ -29,7 +29,7 @@ function fallbackStation() {
   return { code: 'PUJ', localAbbr: 'AST', localTime: now, utcTime: now };
 }
 
-export default function AppShell() {
+export default function AppShell({ user = CURRENT_USER, onLogout }) {
   const [activeModuleId, setActiveModuleId] = useState(MODULE_IDS.DASHBOARD);
   const [retryToken, setRetryToken] = useState(0);
 
@@ -120,9 +120,10 @@ export default function AppShell() {
           notificationsCount={unreadNotificationsCount}
           theme={theme}
           onToggleTheme={toggleTheme}
-          user={CURRENT_USER}
+          user={user}
           onOpenMenu={sidebar.toggle}
           onOpenNotifications={() => handleSelectModule(MODULE_IDS.NOTIFICATIONS)}
+          onLogout={onLogout}
         />
 
         <main key={activeModule.id} className="flex-1 overflow-y-auto p-6 [animation:elevant-fade-in_180ms_ease-out]">

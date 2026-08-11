@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { formatClockTime, formatUtcClockTime } from '../mappers';
 import { BellIcon, ChevronDownIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 
-export default function Topbar({ station, notificationsCount, theme, onToggleTheme, user, onOpenMenu, onOpenNotifications }) {
+export default function Topbar({ station, notificationsCount, theme, onToggleTheme, user, onOpenMenu, onOpenNotifications, onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -101,6 +101,10 @@ export default function Topbar({ station, notificationsCount, theme, onToggleThe
               <button
                 type="button"
                 role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onLogout?.();
+                }}
                 className="block w-full px-3 py-1.5 text-left text-sm text-status-danger hover:bg-black/5 dark:hover:bg-white/5"
               >
                 Cerrar sesión
