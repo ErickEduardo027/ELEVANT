@@ -134,6 +134,25 @@ export async function getStaffDistributionReport(filters = {}) {
 }
 
 /**
+ * Reporte 4 — Cobertura de habilitaciones: reutiliza el mismo cálculo de
+ * `deriveEquipmentCoverage` que ya usa el módulo de Habilitaciones (vista
+ * "Por tipo de equipo"), pero recalculado contra `filters.cutoffDate` en vez
+ * de "hoy" cuando el usuario la cambia — sin duplicar el umbral de vigencia
+ * (30 días) ni la fórmula de `coveragePercent`.
+ */
+export async function getQualificationCoverageReport(filters = {}) {
+  const cutoffDate = filters.cutoffDate ? new Date(filters.cutoffDate) : new Date();
+  const [qualifications, catalog] = await Promise.all([getQualifications(), getEquipmentCatalog()]);
+
+  const items = mapQualifications(qualifications, cutoffDate);
+  const coverage = deriveEquipmentCoverage(items, catalog).filter(
+    entry => !filters.terminal || entry.terminals.includes(filters.terminal)
+  );
+
+  return { coverage };
+}
+
+/**
  * Simula la generación de un reporte en el backend (mismo mock de latencia
  * que exportReport de Admin/OCC).
  */
