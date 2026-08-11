@@ -1,13 +1,13 @@
 import { REPORT_TABS } from '../reportsMappers';
 
-export default function ReportTabs({ active, onChange }) {
+export default function ReportTabs({ tabs = REPORT_TABS, active, onChange }) {
   return (
     <div
       role="tablist"
       aria-label="Tipo de reporte"
       className="inline-flex flex-wrap gap-1 rounded-xl border border-black/10 bg-white/70 p-1 dark:border-white/10 dark:bg-surface-dark-card"
     >
-      {REPORT_TABS.map(tab => (
+      {tabs.map(tab => (
         <button
           key={tab.id}
           type="button"
