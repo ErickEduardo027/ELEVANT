@@ -31,6 +31,7 @@ function toExpirationRow(item, kind) {
   const meta = EXPIRATION_KIND_META[kind];
   return {
     id: `${kind}-${item.id}`,
+    agentId: item.agentId,
     agentName: item.agentName,
     documentLabel: kind === 'certification' ? item.equipmentName : item.typeLabel,
     kind,
@@ -63,6 +64,8 @@ export async function getExpirationReport(filters = {}) {
     .filter(row => !filters.documentKind || row.kind === filters.documentKind)
     .filter(row => !filters.status || row.status === filters.status)
     .filter(row => !filters.terminal || row.terminals.includes(filters.terminal))
+    .filter(row => !filters.dateFrom || row.dueDate.slice(0, 10) >= filters.dateFrom)
+    .filter(row => !filters.dateTo || row.dueDate.slice(0, 10) <= filters.dateTo)
     .sort((a, b) => a.daysRemaining - b.daysRemaining);
 
   return { rows };
@@ -95,8 +98,10 @@ export async function getAccountMovementsReport(filters = {}) {
       historiesByUser[index]
         .filter(event => ACCOUNT_MOVEMENT_EVENT_META[event.action])
         .filter(event => inDateRange(event.occurredAt, filters.dateFrom, filters.dateTo))
+        .filter(event => !filters.movementKind || ACCOUNT_MOVEMENT_EVENT_META[event.action].kind === filters.movementKind)
         .map(event => ({
           id: event.id,
+          userId: user.identity.id,
           userName: `${user.identity.firstName} ${user.identity.lastName}`,
           movement: ACCOUNT_MOVEMENT_EVENT_META[event.action].label,
           movementKind: ACCOUNT_MOVEMENT_EVENT_META[event.action].kind,
@@ -120,6 +125,8 @@ export async function getStaffDistributionReport(filters = {}) {
   const shifts = await getShifts();
 
   const rows = shifts
+    .filter(shift => !filters.dateFrom || shift.date >= filters.dateFrom)
+    .filter(shift => !filters.dateTo || shift.date <= filters.dateTo)
     .filter(shift => !filters.terminal || shift.terminal === filters.terminal)
     .filter(shift => !filters.shiftBlock || shift.block === filters.shiftBlock)
     .map(shift => ({

@@ -143,3 +143,45 @@ export function buildMovementTrend(rows, kind) {
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([date, count]) => ({ label: formatDateKeyShort(date), value: count }));
 }
+
+function coverageTone(coveragePercent) {
+  if (coveragePercent == null) return 'neutral';
+  if (coveragePercent >= 80) return 'success';
+  if (coveragePercent >= 60) return 'warning';
+  return 'danger';
+}
+
+export function buildCoverageSummary(coverage) {
+  const total = coverage.length;
+  const active = coverage.filter(item => item.coveragePercent != null && item.coveragePercent >= 80).length;
+  const warning = coverage.filter(item => item.coveragePercent != null && item.coveragePercent >= 60 && item.coveragePercent < 80).length;
+  const critical = coverage.filter(item => item.coveragePercent != null && item.coveragePercent < 60).length;
+  const averageCoverage =
+    total === 0
+      ? 0
+      : Math.round(
+          coverage.reduce((sum, item) => sum + (item.coveragePercent ?? 0), 0) / total
+        );
+
+  return { total, active, warning, critical, averageCoverage };
+}
+
+export function mapCoverageRow(item) {
+  return {
+    ...item,
+    coverageTone: coverageTone(item.coveragePercent),
+    needCount: item.totalAgents,
+    activeCount: item.activeCount,
+    warningCount: item.expiringSoonCount,
+    expiredCount: item.expiredCount,
+  };
+}
+
+export function buildCoverageChartData(coverage) {
+  return coverage
+    .map(item => ({
+      label: item.equipmentName,
+      value: item.coveragePercent ?? 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+}
