@@ -1,12 +1,19 @@
-import { LayoutGridIcon, CalendarIcon, BarChartIcon } from '../shell/components/icons.jsx';
-import { UsersIcon, ShieldCheckIcon, ChecklistIcon, BellIcon } from '../dashboard/components/icons/index.jsx';
-
+import {
+  BarChartIcon,
+  BellIcon,
+  CalendarIcon,
+  ChecklistIcon,
+  IdCardIcon,
+  LayoutGridIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+} from '../shell/components/icons';
 import {
   CERTIFICATIONS_STATUS_MOCK,
   NOTIFICATIONS_STATUS_MOCK,
   PERMITS_STATUS_MOCK,
   SCHEDULES_STATUS_MOCK,
-} from './mockData.js';
+} from './mockData';
 
 export const HUMAN_RESOURCES_BASE_PATH = '/gestion-humana';
 
@@ -54,7 +61,7 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     id: HUMAN_RESOURCES_MODULE_IDS.PERMITS,
     label: 'Carnets y permisos aeroportuarios',
     path: `${HUMAN_RESOURCES_BASE_PATH}/permits`,
-    icon: ChecklistIcon,
+    icon: IdCardIcon,
     description: 'Carnet aeroportuario y licencias en rampa.',
     badge: badgeFromStatus(PERMITS_STATUS_MOCK),
   },

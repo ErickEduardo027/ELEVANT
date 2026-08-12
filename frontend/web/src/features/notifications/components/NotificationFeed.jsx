@@ -1,7 +1,7 @@
 import { groupNotificationsByDate } from '../notificationsMappers';
 import NotificationCard from './NotificationCard';
 
-export default function NotificationFeed({ notifications, nowIso, selectedIds, onToggleSelect, onOpen }) {
+export default function NotificationFeed({ notifications, nowIso, selectedIds, onToggleSelect, onOpen, cardProps = {} }) {
   const groups = groupNotificationsByDate(notifications, nowIso);
 
   return (
@@ -20,6 +20,7 @@ export default function NotificationFeed({ notifications, nowIso, selectedIds, o
                 selected={selectedIds.has(notification.id)}
                 onToggleSelect={onToggleSelect}
                 onOpen={onOpen}
+                {...cardProps}
               />
             ))}
           </div>

@@ -1,4 +1,4 @@
-import { LayoutGridIcon, CalendarIcon, RadarIcon, BarChartIcon, MessageCircleIcon } from './components/icons';
+﻿import { LayoutGridIcon, CalendarIcon, RadarIcon, BarChartIcon, MessageCircleIcon } from './components/icons';
 import { MapPinIcon, ChecklistIcon, BellIcon, ShieldCheckIcon } from '../dashboard/components/icons';
 
 export const MODULE_IDS = {

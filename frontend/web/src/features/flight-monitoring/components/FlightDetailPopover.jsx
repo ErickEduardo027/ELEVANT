@@ -1,10 +1,13 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { formatRemaining } from '../flightMonitoringMappers';
 import { XIcon } from './icons';
 
 export default function FlightDetailPopover({ flight, now, style, onClose }) {
   if (!flight) return null;
+
+  const meta = getStatusMeta('flight', flight.status);
 
   return (
     <div
@@ -19,7 +22,7 @@ export default function FlightDetailPopover({ flight, now, style, onClose }) {
           <p className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
             {flight.flightNumber} · {flight.airline}
           </p>
-          <StatusBadge domain="flight" status={flight.status} />
+          <StatusBadge tone={meta.color} label={meta.label} />
         </div>
         <button
           type="button"

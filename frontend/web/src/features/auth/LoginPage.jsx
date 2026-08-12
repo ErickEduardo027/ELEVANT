@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './LoginPage.css';
 
-// Served from the framework's `public/` directory (see public/brand/elevant-logo.png).
-const elevantLogo = '/brand/elevant-logo.png';
+// Public asset resolved through Vite's base URL so it works in dev and production builds.
+const elevantLogo = `${import.meta.env.BASE_URL}brand/elevant-logo.png`;
 
 const BLOBS = [
   { key: 'b1', style: { width: 620, height: 620, left: '-14%', top: '-18%', background: 'radial-gradient(circle, rgba(60,124,224,0.42), rgba(60,124,224,0) 68%)', animationName: 'elv-float16', animationDuration: '16s' } },

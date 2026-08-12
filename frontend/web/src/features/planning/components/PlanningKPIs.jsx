@@ -1,4 +1,4 @@
-import KpiCard from '../../dashboard/components/KpiCard';
+import KpiCard from '../../../components/KpiCard';
 import { PlaneIcon, ChecklistIcon, MapPinIcon, AlertTriangleIcon } from '../../dashboard/components/icons';
 
 export default function PlanningKPIs({ kpis, loading = false }) {

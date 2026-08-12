@@ -46,6 +46,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         onSelectModule={handleSelectModule}
         badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: home.data?.kpis?.pendingRequests ?? 0 }}
         user={user}
+        onLogout={onLogout}
         breakpoint={sidebar.breakpoint}
         railVisible={sidebar.railVisible}
         railExpanded={sidebar.railExpanded}
@@ -56,7 +57,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsCount={0} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={() => {}} onLogout={onLogout} />
-        <main key={activeModule.id} className="flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
+        <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (

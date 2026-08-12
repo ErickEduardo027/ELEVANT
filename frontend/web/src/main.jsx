@@ -1,10 +1,17 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/App.jsx';
+import { RouterProvider } from 'react-router-dom';
+import router from './app/router.jsx';
+import { AuthProvider } from './features/auth/AuthContext.jsx';
+import { ThemeProvider } from './features/shell/useTheme.jsx';
 import './styles/tokens.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ThemeProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

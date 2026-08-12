@@ -1,5 +1,7 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 
 export default function ConversationStatusBadge({ status }) {
-  return <StatusBadge domain="chat" status={status} />;
+  const meta = getStatusMeta('chat', status);
+  return <StatusBadge tone={meta.color} label={meta.label} />;
 }

@@ -56,9 +56,12 @@
 
 .elv-logo-img {
   position: absolute;
-  left: -63px;
-  top: -53px;
-  width: 210px;
+  left: -13.67px;
+  top: -22.56px;
+  width: 115.07px;
+  height: auto;
+  max-width: none;
+  display: block;
 }
 
 .elv-divider-v {

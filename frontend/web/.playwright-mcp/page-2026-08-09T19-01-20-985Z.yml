@@ -1,0 +1,370 @@
+- generic [ref=f5e3]:
+  - complementary [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - generic [ref=f5e8]: ELEVANT
+        - button "Contraer barra lateral" [ref=f5e9] [cursor=pointer]
+      - navigation "Navegación principal" [ref=f5e12]:
+        - link "Dashboard" [ref=f5e13] [cursor=pointer]:
+          - /url: /human-resources/dashboard
+        - link "Gestión de usuarios y cuentas" [ref=f5e21] [cursor=pointer]:
+          - /url: /human-resources/users
+        - link "Habilitaciones y certificaciones 1" [ref=f5e29] [cursor=pointer]:
+          - /url: /human-resources/certifications
+          - generic [ref=f5e34]: Habilitaciones y certificaciones
+          - generic [ref=f5e35]: "1"
+        - link "Carnets y permisos aeroportuarios 2" [ref=f5e36] [cursor=pointer]:
+          - /url: /human-resources/permits
+          - generic [ref=f5e43]: Carnets y permisos aeroportuarios
+          - generic [ref=f5e44]: "2"
+        - link "Horarios y disponibilidad" [ref=f5e45] [cursor=pointer]:
+          - /url: /human-resources/schedules
+        - link "Reportes" [ref=f5e52] [cursor=pointer]:
+          - /url: /human-resources/reports
+        - link "Trazabilidad / Auditoría" [ref=f5e57] [cursor=pointer]:
+          - /url: /human-resources/audit
+        - link "Notificaciones 4" [ref=f5e63] [cursor=pointer]:
+          - /url: /human-resources/notifications
+          - generic [ref=f5e68]: Notificaciones
+          - generic [ref=f5e69]: "4"
+      - button "CR Camila Reyes Gestión Humana" [ref=f5e72] [cursor=pointer]:
+        - generic [ref=f5e73]: CR
+        - generic [ref=f5e74]:
+          - generic [ref=f5e75]: Camila Reyes
+          - generic [ref=f5e76]: Gestión Humana
+  - generic [ref=f5e77]:
+    - banner [ref=f5e78]:
+      - generic [ref=f5e79]: Gestión Humana
+      - generic [ref=f5e80]:
+        - button "Notificaciones" [ref=f5e81] [cursor=pointer]:
+          - generic [ref=f5e85]: "4"
+        - button "Cambiar a modo claro" [ref=f5e797] [cursor=pointer]
+        - button "CR Camila Reyes" [ref=f5e90] [cursor=pointer]:
+          - generic [ref=f5e91]: CR
+          - generic [ref=f5e92]: Camila Reyes
+    - main [ref=f5e93]:
+      - generic [ref=f5e94]:
+        - generic [ref=f5e95]:
+          - generic [ref=f5e96]:
+            - heading "Habilitaciones y certificaciones" [level=1] [ref=f5e97]
+            - paragraph [ref=f5e98]: "Habilitaciones por agente, cobertura por tipo de equipo y vencimientos: vigentes, próximos a vencer y vencidos."
+          - generic [ref=f5e99]:
+            - button "Actualizar" [ref=f5e100] [cursor=pointer]
+            - button "Agregar habilitación" [ref=f5e106] [cursor=pointer]
+        - generic [ref=f5e109]:
+          - generic [ref=f5e110]:
+            - generic [ref=f5e801]: Habilitaciones vigentes
+            - generic [ref=f5e806]: "11"
+          - generic [ref=f5e111]:
+            - generic [ref=f5e807]: Próximas a vencer
+            - generic [ref=f5e812]: "4"
+          - generic [ref=f5e112]:
+            - generic [ref=f5e813]: Vencidas
+            - generic [ref=f5e817]: "4"
+          - generic [ref=f5e113]:
+            - generic [ref=f5e818]: Agentes con alguna habilitación vencida
+            - generic [ref=f5e825]: "3"
+        - tablist [ref=f5e114]:
+          - tab "Por agente" [ref=f5e115] [cursor=pointer]
+          - tab "Por tipo de equipo" [selected] [ref=f5e116] [cursor=pointer]
+        - generic [ref=f5e1067]:
+          - button "100% Puente de abordaje Terminal A · 2 agentes habilitados 2 0 0" [ref=f5e1068] [cursor=pointer]:
+            - generic [ref=f5e1069]: 100%
+            - generic [ref=f5e1074]:
+              - paragraph [ref=f5e1076]: Puente de abordaje
+              - paragraph [ref=f5e1077]: Terminal A · 2 agentes habilitados
+              - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e1079]:
+                - generic [ref=f5e1080]: "2"
+                - generic [ref=f5e1082]: "0"
+                - generic [ref=f5e1084]: "0"
+          - button "0% Cinta transportadora / Belt Loader Terminal A / B · 2 agentes habilitados 0 2 0" [ref=f5e1086] [cursor=pointer]:
+            - generic [ref=f5e1087]: 0%
+            - generic [ref=f5e1092]:
+              - paragraph [ref=f5e1094]: Cinta transportadora / Belt Loader
+              - paragraph [ref=f5e1095]: Terminal A / B · 2 agentes habilitados
+              - generic "0 vigentes · 2 próximas a vencer · 0 vencidas" [ref=f5e1097]:
+                - generic [ref=f5e1098]: "0"
+                - generic [ref=f5e1100]: "2"
+                - generic [ref=f5e1102]: "0"
+          - button "100% Loader Terminal A / B · 2 agentes habilitados 2 0 0" [ref=f5e1104] [cursor=pointer]:
+            - generic [ref=f5e1105]: 100%
+            - generic [ref=f5e1110]:
+              - paragraph [ref=f5e1112]: Loader
+              - paragraph [ref=f5e1113]: Terminal A / B · 2 agentes habilitados
+              - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e1115]:
+                - generic [ref=f5e1116]: "2"
+                - generic [ref=f5e1118]: "0"
+                - generic [ref=f5e1120]: "0"
+          - button "100% Escaleras de pasajeros Terminal B · 2 agentes habilitados 2 0 0" [ref=f5e1122] [cursor=pointer]:
+            - generic [ref=f5e1123]: 100%
+            - generic [ref=f5e1128]:
+              - paragraph [ref=f5e1130]: Escaleras de pasajeros
+              - paragraph [ref=f5e1131]: Terminal B · 2 agentes habilitados
+              - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e1133]:
+                - generic [ref=f5e1134]: "2"
+                - generic [ref=f5e1136]: "0"
+                - generic [ref=f5e1138]: "0"
+          - button "50% Club Car Terminal A / B · 2 agentes habilitados 1 1 0" [active] [ref=f5e1140] [cursor=pointer]:
+            - generic [ref=f5e1141]: 50%
+            - generic [ref=f5e1146]:
+              - paragraph [ref=f5e1148]: Club Car
+              - paragraph [ref=f5e1149]: Terminal A / B · 2 agentes habilitados
+              - generic "1 vigente · 1 próxima a vencer · 0 vencidas" [ref=f5e1151]:
+                - generic [ref=f5e1152]: "1"
+                - generic [ref=f5e1154]: "1"
+                - generic [ref=f5e1156]: "0"
+          - button "0% Tractor / Pushback Cobertura limitada Terminal A / B · 1 agente habilitado 0 0 1" [ref=f5e1158] [cursor=pointer]:
+            - generic [ref=f5e1159]: 0%
+            - generic [ref=f5e1164]:
+              - generic [ref=f5e1165]:
+                - paragraph [ref=f5e1166]: Tractor / Pushback
+                - generic [ref=f5e1167]: Cobertura limitada
+              - paragraph [ref=f5e1168]: Terminal A / B · 1 agente habilitado
+              - generic "0 vigentes · 0 próximas a vencer · 1 vencida" [ref=f5e1170]:
+                - generic [ref=f5e1171]: "0"
+                - generic [ref=f5e1173]: "0"
+                - generic [ref=f5e1175]: "1"
+          - button "100% Baggage Cart Cobertura limitada Terminal A / B · 1 agente habilitado 1 0 0" [ref=f5e1177] [cursor=pointer]:
+            - generic [ref=f5e1178]: 100%
+            - generic [ref=f5e1183]:
+              - generic [ref=f5e1184]:
+                - paragraph [ref=f5e1185]: Baggage Cart
+                - generic [ref=f5e1186]: Cobertura limitada
+              - paragraph [ref=f5e1187]: Terminal A / B · 1 agente habilitado
+              - generic "1 vigente · 0 próximas a vencer · 0 vencidas" [ref=f5e1189]:
+                - generic [ref=f5e1190]: "1"
+                - generic [ref=f5e1192]: "0"
+                - generic [ref=f5e1194]: "0"
+          - button "100% Dollies Terminal A / B · 2 agentes habilitados 2 0 0" [ref=f5e1196] [cursor=pointer]:
+            - generic [ref=f5e1197]: 100%
+            - generic [ref=f5e1202]:
+              - paragraph [ref=f5e1204]: Dollies
+              - paragraph [ref=f5e1205]: Terminal A / B · 2 agentes habilitados
+              - generic "2 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e1207]:
+                - generic [ref=f5e1208]: "2"
+                - generic [ref=f5e1210]: "0"
+                - generic [ref=f5e1212]: "0"
+          - button "0% GPU Terminal A · 3 agentes habilitados 0 1 2" [ref=f5e1214] [cursor=pointer]:
+            - generic [ref=f5e1215]: 0%
+            - generic [ref=f5e1220]:
+              - paragraph [ref=f5e1222]: GPU
+              - paragraph [ref=f5e1223]: Terminal A · 3 agentes habilitados
+              - generic "0 vigentes · 1 próxima a vencer · 2 vencidas" [ref=f5e1225]:
+                - generic [ref=f5e1226]: "0"
+                - generic [ref=f5e1228]: "1"
+                - generic [ref=f5e1230]: "2"
+          - button "50% ACU Terminal A / B · 2 agentes habilitados 1 0 1" [ref=f5e1232] [cursor=pointer]:
+            - generic [ref=f5e1233]: 50%
+            - generic [ref=f5e1238]:
+              - paragraph [ref=f5e1240]: ACU
+              - paragraph [ref=f5e1241]: Terminal A / B · 2 agentes habilitados
+              - generic "1 vigente · 0 próximas a vencer · 1 vencida" [ref=f5e1243]:
+                - generic [ref=f5e1244]: "1"
+                - generic [ref=f5e1246]: "0"
+                - generic [ref=f5e1248]: "1"
+          - button "Sin datos ASU Sin terminal asignada · 0 agentes habilitados 0 0 0" [ref=f5e1250] [cursor=pointer]:
+            - generic [ref=f5e1251]: Sin datos
+            - generic [ref=f5e1252]:
+              - paragraph [ref=f5e1254]: ASU
+              - paragraph [ref=f5e1255]: Sin terminal asignada · 0 agentes habilitados
+              - generic "0 vigentes · 0 próximas a vencer · 0 vencidas" [ref=f5e1257]:
+                - generic [ref=f5e1258]: "0"
+                - generic [ref=f5e1260]: "0"
+                - generic [ref=f5e1262]: "0"
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Franklin Ortiz
+                - paragraph: RA-1103 · Terminal A / B
+              - button
+            - generic:
+              - generic:
+                - generic: FO
+                - generic:
+                  - generic: Requiere acción
+                  - paragraph: Actualizado 09 ago de 2026
+              - generic:
+                - generic:
+                  - heading [level=4]: Información del agente
+                  - generic:
+                    - generic:
+                      - paragraph: Nombre
+                      - paragraph: Franklin Ortiz
+                    - generic:
+                      - paragraph: Identificación
+                      - paragraph: 001-1234567-13
+                    - generic:
+                      - paragraph: Código de empleado
+                      - paragraph: RA-1103
+                    - generic:
+                      - paragraph: Terminal
+                      - paragraph: A / B
+                    - generic:
+                      - paragraph: Fecha de ingreso
+                      - paragraph: 27 jul de 2026
+                    - generic:
+                      - paragraph: Última actualización
+                      - paragraph: 09 ago de 2026
+                - generic:
+                  - heading [level=4]: Resumen
+                  - generic:
+                    - generic:
+                      - paragraph: Total
+                      - paragraph: "3"
+                    - generic:
+                      - paragraph: Vigentes
+                      - paragraph: "2"
+                    - generic:
+                      - paragraph: Próximas
+                      - paragraph: "0"
+                    - generic:
+                      - paragraph: Vencidas
+                      - paragraph: "1"
+                - generic:
+                  - generic:
+                    - heading [level=4]: Habilitaciones
+                    - button: Agregar habilitación
+                  - generic:
+                    - table:
+                      - rowgroup:
+                        - row:
+                          - columnheader: Equipo
+                          - columnheader: Estado
+                          - columnheader: Obtención
+                          - columnheader: Vencimiento
+                          - columnheader: Entidad
+                          - columnheader: Acciones
+                      - rowgroup:
+                        - row:
+                          - cell: Tractor / Pushback
+                          - cell:
+                            - generic: Vencida
+                          - cell: 05 jun de 2025
+                          - cell: 10 jun de 2026
+                          - cell: IDAC
+                          - cell:
+                            - generic:
+                              - button: Detalle
+                              - button: Renovar
+                        - row:
+                          - cell: Baggage Cart
+                          - cell:
+                            - generic: Vigente
+                          - cell: 09 ago de 2026
+                          - cell: 22 sept de 2028
+                          - cell: ALC
+                          - cell:
+                            - generic:
+                              - button: Detalle
+                              - button: Renovar
+                        - row:
+                          - cell: Dollies
+                          - cell:
+                            - generic: Vigente
+                          - cell: 16 abr de 2026
+                          - cell: 20 abr de 2027
+                          - cell: ALC
+                          - cell:
+                            - generic:
+                              - button: Detalle
+                              - button: Renovar
+        - dialog "Club Car" [ref=f5e1266]:
+          - generic [ref=f5e1267]:
+            - generic [ref=f5e1268]:
+              - heading "Club Car" [level=2] [ref=f5e1269]
+              - paragraph [ref=f5e1270]: Terminal A / B
+            - button "Cerrar" [ref=f5e1271] [cursor=pointer]
+          - generic [ref=f5e1274]:
+            - generic [ref=f5e1275]:
+              - generic [ref=f5e1276]: 1 vigentes
+              - generic [ref=f5e1277]: 1 próximas a vencer
+              - generic [ref=f5e1278]: 0 vencidas
+            - table [ref=f5e1281]:
+              - rowgroup [ref=f5e1282]:
+                - row [ref=f5e1283]:
+                  - columnheader "Agente" [ref=f5e1284]
+                  - columnheader "Terminal" [ref=f5e1285]
+                  - columnheader "Estado" [ref=f5e1286]
+                  - columnheader "Fecha de vencimiento" [ref=f5e1287]
+                  - columnheader "Última renovación" [ref=f5e1288]
+                  - columnheader "Acciones" [ref=f5e1289]
+              - rowgroup [ref=f5e1290]:
+                - row [ref=f5e1291]:
+                  - cell [ref=f5e1292]:
+                    - generic [ref=f5e1293]:
+                      - paragraph [ref=f5e1294]: Rosa Elena Guzmán
+                      - paragraph [ref=f5e1295]: RA-1077
+                  - cell "B" [ref=f5e1296]
+                  - cell "Próxima a vencer" [ref=f5e1297]
+                  - cell "30 ago de 2026" [ref=f5e1300]
+                  - cell "26 ago de 2025" [ref=f5e1301]
+                  - cell [ref=f5e1302]:
+                    - button "Ver agente" [ref=f5e1304] [cursor=pointer]
+                - row [ref=f5e1305]:
+                  - cell [ref=f5e1306]:
+                    - generic [ref=f5e1307]:
+                      - paragraph [ref=f5e1308]: Carlos Núñez
+                      - paragraph [ref=f5e1309]: RA-1197
+                  - cell "A" [ref=f5e1310]
+                  - cell "Vigente" [ref=f5e1311]
+                  - cell "28 feb de 2027" [ref=f5e1314]
+                  - cell "24 feb de 2026" [ref=f5e1315]
+                  - cell [ref=f5e1316]:
+                    - button "Ver agente" [ref=f5e1318] [cursor=pointer]
+        - generic:
+          - dialog:
+            - generic:
+              - generic:
+                - heading [level=2]: Agregar habilitación
+                - paragraph: Registra una nueva habilitación otorgada por la entidad certificadora.
+              - button
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - text: Agente
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - text: Tipo de equipo
+                    - generic: "*"
+                  - combobox
+                - generic:
+                  - generic:
+                    - generic:
+                      - text: Fecha de entrenamiento
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de obtención
+                      - generic: "*"
+                    - textbox
+                  - generic:
+                    - generic:
+                      - text: Fecha de vencimiento
+                      - generic: "*"
+                    - textbox
+                - generic:
+                  - generic:
+                    - text: Entidad certificadora
+                    - generic: "*"
+                  - textbox: ALC
+                - generic:
+                  - generic:
+                    - text: Instructor / evaluador
+                    - generic: "*"
+                  - textbox
+                - generic:
+                  - generic: Observaciones
+                  - textbox
+                - generic:
+                  - generic: Documento de soporte (opcional)
+                  - textbox
+                  - generic: Se adjuntará cuando exista almacenamiento de archivos en el backend.
+            - generic:
+              - generic:
+                - button: Cancelar
+                - button [disabled]: Registrar habilitación

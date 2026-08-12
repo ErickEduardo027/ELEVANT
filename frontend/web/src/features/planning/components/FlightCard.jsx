@@ -1,4 +1,4 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { UsersIcon } from '../../dashboard/components/icons';
@@ -34,7 +34,7 @@ export default function FlightCard({ flight, now, onSelect }) {
       className="cursor-pointer rounded-xl border border-black/5 bg-white/70 p-3 shadow-sm backdrop-blur-md transition-shadow hover:shadow-md dark:border-white/5 dark:bg-surface-dark-card"
     >
       <div className="flex flex-wrap items-center gap-3">
-        <StatusBadge domain="flight" status={flight.status} />
+        <StatusBadge tone={meta.color} label={meta.label} />
         <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
           {formatClockTime(flight.scheduledTime)}
         </span>

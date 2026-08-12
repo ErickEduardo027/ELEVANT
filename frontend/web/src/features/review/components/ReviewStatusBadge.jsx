@@ -1,5 +1,7 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 
 export default function ReviewStatusBadge({ status }) {
-  return <StatusBadge domain="review" status={status} />;
+  const meta = getStatusMeta('review', status);
+  return <StatusBadge tone={meta.color} label={meta.label} />;
 }

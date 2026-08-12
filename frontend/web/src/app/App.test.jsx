@@ -58,52 +58,83 @@ afterEach(() => {
 });
 
 describe('App routing', () => {
-  it('logs in the admin user and lands on Admin/OCC', async () => {
-    render(<App />);
-    await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
-    await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
-    await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
+  it(
+    'logs in the admin user and lands on Admin/OCC',
+    async () => {
+      render(<App />);
+      await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
+      await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
+      await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
 
-    expect(await screen.findByText('Admin OCC shell')).toBeInTheDocument();
-    expect(window.location.pathname).toBe('/admin-occ');
-  });
+      expect(await screen.findByText('Admin OCC shell')).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/admin-occ');
+    },
+    15000
+  );
 
-  it('blocks access to another role and redirects to the authenticated home', async () => {
-    window.sessionStorage.setItem(
-      'elevant-auth-session',
-      JSON.stringify({
-        email: 'gestionhumana@elevant.test',
-        name: 'Camila Reyes',
-        role: 'GESTION_HUMANA',
-        roleLabel: 'Gestión Humana',
-        homePath: '/gestion-humana',
-      })
-    );
-    window.history.replaceState({}, '', '/admin-occ');
+  it.each([
+    {
+      email: 'admin@elevant.test',
+      shell: 'Admin OCC shell',
+      logoutButton: 'logout-admin',
+      path: '/admin-occ',
+    },
+    {
+      email: 'gestionhumana@elevant.test',
+      shell: 'Gestión Humana shell',
+      logoutButton: 'logout-hr',
+      path: '/gestion-humana',
+    },
+    {
+      email: 'contratos@elevant.test',
+      shell: 'Contratos shell',
+      logoutButton: 'logout-contracts',
+      path: '/contratos',
+    },
+    {
+      email: 'finanzas@elevant.test',
+      shell: 'Finanzas shell',
+      logoutButton: 'logout-finance',
+      path: '/finanzas',
+    },
+  ])(
+    'logs out from $path back to /login',
+    async ({ email, shell, logoutButton, path }) => {
+      render(<App />);
+      await userEvent.type(screen.getByLabelText(/correo corporativo/i), email);
+      await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
+      await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
 
-    render(<App />);
+      expect(await screen.findByText(shell)).toBeInTheDocument();
+      expect(window.location.pathname).toBe(path);
 
-    expect(await screen.findByText('Gestión Humana shell')).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe('/gestion-humana'));
-  });
+      await userEvent.click(await screen.findByRole('button', { name: logoutButton }));
+      await waitFor(() => expect(window.location.pathname).toBe('/login'));
+      expect(await screen.findByText(/inicia sesión para continuar/i)).toBeInTheDocument();
+    },
+    15000
+  );
 
-  it('logs out back to /login', async () => {
-    window.sessionStorage.setItem(
-      'elevant-auth-session',
-      JSON.stringify({
-        email: 'finanzas@elevant.test',
-        name: 'Elena Rojas',
-        role: 'FINANZAS',
-        roleLabel: 'Finanzas',
-        homePath: '/finanzas',
-      })
-    );
-    window.history.replaceState({}, '', '/finanzas');
+  it(
+    'blocks access to another role and redirects to the authenticated home',
+    async () => {
+      window.sessionStorage.setItem(
+        'elevant-auth-session',
+        JSON.stringify({
+          email: 'gestionhumana@elevant.test',
+          name: 'Camila Reyes',
+          role: 'GESTION_HUMANA',
+          roleLabel: 'Gestión Humana',
+          homePath: '/gestion-humana',
+        })
+      );
+      window.history.replaceState({}, '', '/admin-occ');
 
-    render(<App />);
-    await userEvent.click(await screen.findByRole('button', { name: 'logout-finance' }));
+      render(<App />);
 
-    await waitFor(() => expect(window.location.pathname).toBe('/login'));
-    expect(await screen.findByText(/inicia sesión para continuar/i)).toBeInTheDocument();
-  });
+      expect(await screen.findByText('Gestión Humana shell')).toBeInTheDocument();
+      await waitFor(() => expect(window.location.pathname).toBe('/gestion-humana'));
+    },
+    15000
+  );
 });

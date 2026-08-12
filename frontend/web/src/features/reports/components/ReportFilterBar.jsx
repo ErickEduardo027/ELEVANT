@@ -1,7 +1,11 @@
 import DateRangePicker from './DateRangePicker';
 import { DATE_PRESETS } from '../reportsMappers';
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ label, value, onChange, options, emptyLabel = 'Todos' }) {
+  const resolvedOptions = options.map(option =>
+    typeof option === 'string' ? { value: option, label: option } : option
+  );
+
   return (
     <label className="flex min-w-[150px] flex-col gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
       {label}
@@ -9,11 +13,11 @@ function FilterSelect({ label, value, onChange, options }) {
         value={value}
         onChange={event => onChange(event.target.value)}
         className="rounded-lg border border-black/10 bg-white/80 px-2 py-1.5 text-sm text-ink-900 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
-      >
-        <option value="">Todos</option>
-        {options.map(option => (
-          <option key={option} value={option}>
-            {option}
+        >
+        <option value="">{emptyLabel}</option>
+        {resolvedOptions.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
           </option>
         ))}
       </select>
@@ -32,28 +36,46 @@ export default function ReportFilterBar({
   options,
   hasActiveFilters,
   onResetFilters,
+  controls,
+  activeChips,
+  showDatePicker = true,
 }) {
-  const showPosition = activeReport === 'closure';
+  const showPosition = activeReport === 'closure' && !controls;
 
-  const activeChips = [];
-  if (datePreset !== 'today') {
-    const preset = DATE_PRESETS.find(item => item.id === datePreset);
-    activeChips.push(preset?.label ?? 'Rango personalizado');
-  }
-  if (facets.airline) activeChips.push(`Aerolínea: ${facets.airline}`);
-  if (facets.agent) activeChips.push(`Agente: ${facets.agent}`);
-  if (facets.terminal) activeChips.push(`Terminal: ${facets.terminal}`);
-  if (showPosition && facets.position) activeChips.push(`Posición: ${facets.position}`);
+  const resolvedChips =
+    activeChips ??
+    (() => {
+      const chips = [];
+      if (datePreset !== 'today') {
+        const preset = DATE_PRESETS.find(item => item.id === datePreset);
+        chips.push(preset?.label ?? 'Rango personalizado');
+      }
+      if (facets?.airline) chips.push(`Aerolínea: ${facets.airline}`);
+      if (facets?.agent) chips.push(`Agente: ${facets.agent}`);
+      if (facets?.terminal) chips.push(`Terminal: ${facets.terminal}`);
+      if (showPosition && facets?.position) chips.push(`Posición: ${facets.position}`);
+      return chips;
+    })();
+
+  const resolvedControls =
+    controls ??
+    [
+      { key: 'airline', label: 'Aerolínea', value: facets?.airline ?? '', onChange: value => onFacetChange('airline', value), options: options.airlines },
+      { key: 'agent', label: 'Agente', value: facets?.agent ?? '', onChange: value => onFacetChange('agent', value), options: options.agents },
+      { key: 'terminal', label: 'Terminal', value: facets?.terminal ?? '', onChange: value => onFacetChange('terminal', value), options: options.terminals },
+      ...(showPosition
+        ? [{ key: 'position', label: 'Posición', value: facets?.position ?? '', onChange: value => onFacetChange('position', value), options: options.positions }]
+        : []),
+    ];
 
   return (
     <div className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <DateRangePicker
-          datePreset={datePreset}
-          onSelectPreset={onSelectPreset}
-          customRange={customRange}
-          onCustomDateChange={onCustomDateChange}
-        />
+        {showDatePicker ? (
+          <DateRangePicker datePreset={datePreset} onSelectPreset={onSelectPreset} customRange={customRange} onCustomDateChange={onCustomDateChange} />
+        ) : (
+          <div />
+        )}
         <button
           type="button"
           onClick={onResetFilters}
@@ -69,17 +91,21 @@ export default function ReportFilterBar({
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <FilterSelect label="Aerolínea" value={facets.airline} onChange={value => onFacetChange('airline', value)} options={options.airlines} />
-        <FilterSelect label="Agente" value={facets.agent} onChange={value => onFacetChange('agent', value)} options={options.agents} />
-        <FilterSelect label="Terminal" value={facets.terminal} onChange={value => onFacetChange('terminal', value)} options={options.terminals} />
-        {showPosition && (
-          <FilterSelect label="Posición" value={facets.position} onChange={value => onFacetChange('position', value)} options={options.positions} />
-        )}
+        {resolvedControls.map(control => (
+          <FilterSelect
+            key={control.key}
+            label={control.label}
+            value={control.value}
+            onChange={control.onChange}
+            options={control.options}
+            emptyLabel={control.emptyLabel}
+          />
+        ))}
       </div>
 
-      {activeChips.length > 0 && (
+      {resolvedChips.length > 0 && (
         <div data-testid="active-filter-chips" aria-label="Filtros activos" className="flex flex-wrap gap-1.5">
-          {activeChips.map(chip => (
+          {resolvedChips.map(chip => (
             <span key={chip} className="rounded-full bg-accent-600/10 px-2.5 py-1 text-xs font-medium text-accent-600">
               {chip}
             </span>

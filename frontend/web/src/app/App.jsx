@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import LoginPage from '../features/auth/LoginPage.jsx';
-import { clearSession, mockLogin, readSession } from '../features/auth/authService.js';
+import { logout, mockLogin, readSession } from '../features/auth/authService.js';
 import { ROUTE_PATHS, resolveRoute } from '../features/auth/roleRouting.js';
 import AppShell from '../features/shell/AppShell.jsx';
 import ContractsShell from '../features/contracts/shell/ContractsShell.jsx';
@@ -52,7 +52,7 @@ export default function App() {
   }
 
   function handleLogout() {
-    clearSession();
+    logout();
     setSession(null);
     navigate(ROUTE_PATHS.LOGIN, true);
     bumpLocationVersion();

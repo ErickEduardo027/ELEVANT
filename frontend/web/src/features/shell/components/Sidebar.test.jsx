@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Sidebar from './Sidebar';
@@ -18,6 +18,7 @@ function baseProps(overrides = {}) {
     activeModuleId: 'dashboard',
     onSelectModule: () => {},
     user: USER,
+    onLogout: () => {},
     breakpoint: 'desktop',
     railVisible: true,
     railExpanded: true,
@@ -59,6 +60,14 @@ describe('Sidebar', () => {
     render(<Sidebar {...baseProps({ onToggle })} />);
     await userEvent.click(screen.getByRole('button', { name: /contraer barra lateral/i }));
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onLogout from the footer user menu logout action', async () => {
+    const onLogout = vi.fn();
+    render(<Sidebar {...baseProps({ onLogout })} />);
+    await userEvent.click(screen.getByRole('button', { name: /laisha/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /cerrar sesi/i }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
   it('collapses every item to an icon with only a hover tooltip for its label', () => {

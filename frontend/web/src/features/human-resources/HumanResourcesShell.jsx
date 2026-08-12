@@ -59,6 +59,7 @@ export default function HumanResourcesShell({ user = CURRENT_USER_MOCK, onLogout
         onSelectModule={handleSelectModule}
         badgeCounts={badgeCounts}
         user={user}
+        onLogout={onLogout}
         breakpoint={sidebar.breakpoint}
         railVisible={sidebar.railVisible}
         railExpanded={sidebar.railExpanded}
@@ -79,7 +80,7 @@ export default function HumanResourcesShell({ user = CURRENT_USER_MOCK, onLogout
           onLogout={onLogout}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ? (
             <div className="mx-auto max-w-[1440px] space-y-4">
               <header className="rounded-2xl border border-black/5 bg-white/70 p-5 shadow-sm backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">

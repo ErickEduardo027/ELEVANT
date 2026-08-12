@@ -81,6 +81,10 @@ export function clearSession() {
   removeFrom(window.sessionStorage);
 }
 
+export function logout() {
+  clearSession();
+}
+
 export async function mockLogin({ email, password, remember = false }) {
   const normalizedEmail = String(email ?? '').trim().toLowerCase();
   const user = MOCK_USERS[normalizedEmail];
