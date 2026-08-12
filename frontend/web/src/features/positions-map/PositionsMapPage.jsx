@@ -13,7 +13,7 @@ import { usePositionsMapFilters } from './usePositionsMapFilters';
 import { usePositionAlerts } from './usePositionAlerts';
 import { useIsTabletBreakpoint } from '../flight-monitoring/useIsTabletBreakpoint';
 import { findPositionByQuery } from './positionsMapMappers';
-import { MODULE_IDS } from '../shell/modules';
+import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
 
 export default function PositionsMapPage({
   status,
@@ -94,7 +94,7 @@ export default function PositionsMapPage({
   }
 
   function handleViewFlightInMonitoring(flightId) {
-    onNavigateToResource(MODULE_IDS.FLIGHT_MONITORING, flightId);
+    onNavigateToResource(ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, flightId);
   }
 
   if (isError) {

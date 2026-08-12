@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import PlanningKPIs from './PlanningKPIs';
-import * as countUpModule from '../../dashboard/useCountUp';
+import * as countUpModule from '../../../hooks/useCountUp';
 
 const KPIS = { flightsToday: 20, pendingAssignment: 9, positionsOccupied: 5, conflicts: 2 };
 

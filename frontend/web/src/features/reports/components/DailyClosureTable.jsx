@@ -1,6 +1,7 @@
 import ReportTable from './ReportTable';
 import ReportDetailPanel from './ReportDetailPanel';
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../review/reviewMappers';
 import { formatLeadTime } from '../reportsMappers';
 
@@ -41,7 +42,10 @@ const COLUMNS = [
     key: 'severity',
     label: 'Estado',
     sortValue: row => row.severity,
-    render: row => <StatusBadge domain="closure" status={row.severity} />,
+    render: row => {
+      const meta = getStatusMeta('closure', row.severity);
+      return <StatusBadge tone={meta.color} label={meta.label} />;
+    },
   },
 ];
 

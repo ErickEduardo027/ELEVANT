@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './LoginPage.css';
-//holaaaaa
 
-// Served from the framework's `public/` directory (see public/brand/elevant-logo.png).
-const elevantLogo = '/brand/elevant-logo.png';
+// Public asset resolved through Vite's base URL so it works in dev and production builds.
+const elevantLogo = `${import.meta.env.BASE_URL}brand/elevant-logo.png`;
 
 const BLOBS = [
   { key: 'b1', style: { width: 620, height: 620, left: '-14%', top: '-18%', background: 'radial-gradient(circle, rgba(60,124,224,0.42), rgba(60,124,224,0) 68%)', animationName: 'elv-float16', animationDuration: '16s' } },
@@ -137,11 +137,12 @@ function Logo({ bright = false }) {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage({ onSubmit = async () => {} }) {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [status, setStatus] = useState('idle'); // 'idle' | 'busy' | 'done'
   const [ripple, setRipple] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const submitRef = useRef(null);
   const timers = useRef([]);
 
@@ -156,11 +157,22 @@ export default function LoginPage() {
     const rect = submitRef.current.getBoundingClientRect();
     setRipple({ id: Date.now(), x: rect.width / 2, y: rect.height / 2 });
     setStatus('busy');
-    timers.current.push(setTimeout(() => setStatus('done'), 1500));
-    timers.current.push(setTimeout(() => {
-      setStatus('idle');
-      setRipple(null);
-    }, 3400));
+    setErrorMessage('');
+
+    const formData = new FormData(e.currentTarget);
+    const email = String(formData.get('email') ?? '');
+    const password = String(formData.get('password') ?? '');
+
+    Promise.resolve(onSubmit({ email, password, remember }))
+      .then(() => {
+        setStatus('done');
+        timers.current.push(setTimeout(() => setStatus('idle'), 1200));
+      })
+      .catch(error => {
+        setStatus('idle');
+        setRipple(null);
+        setErrorMessage(error?.message ?? 'No fue posible iniciar sesión.');
+      });
   };
 
   const submitLabel = useMemo(() => {
@@ -226,6 +238,9 @@ export default function LoginPage() {
               <div className="elv-welcome-title">Bienvenido de nuevo</div>
               <div className="elv-welcome-sub">Inicia sesión para continuar en la plataforma operativa.</div>
             </div>
+            <p className="elv-login-hint">
+              Usa uno de los correos mock de desarrollo y la contraseña compartida para entrar al rol correcto.
+            </p>
 
             <form className="elv-form" onSubmit={handleSubmit}>
               <div className="elv-field">
@@ -280,6 +295,12 @@ export default function LoginPage() {
                 </label>
                 <a href="#" className="elv-link">¿Olvidaste tu contraseña?</a>
               </div>
+
+              {errorMessage && (
+                <div role="alert" className="elv-error">
+                  {errorMessage}
+                </div>
+              )}
 
               <button ref={submitRef} type="submit" disabled={busy} className="elv-submit">
                 {status === 'done' && <span className="elv-submit-done-bg" />}

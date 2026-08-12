@@ -1,6 +1,7 @@
 import ReportTable from './ReportTable';
 import ReportDetailPanel from './ReportDetailPanel';
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatDateKey } from '../reportsMappers';
 
 const COLUMNS = [
@@ -20,7 +21,10 @@ const COLUMNS = [
     key: 'status',
     label: 'Estado',
     sortValue: row => row.status,
-    render: row => <StatusBadge domain="reconciliation" status={row.status} />,
+    render: row => {
+      const meta = getStatusMeta('reconciliation', row.status);
+      return <StatusBadge tone={meta.color} label={meta.label} />;
+    },
   },
 ];
 

@@ -1,5 +1,7 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
+import { getStatusMeta } from '../../dashboard/statusMeta';
 
 export default function NotificationSeverityBadge({ severity }) {
-  return <StatusBadge domain="notification" status={severity} />;
+  const meta = getStatusMeta('notification', severity);
+  return <StatusBadge tone={meta.color} label={meta.label} />;
 }

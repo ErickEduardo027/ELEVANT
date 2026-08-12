@@ -1,4 +1,4 @@
-import KpiCard from '../../dashboard/components/KpiCard';
+import KpiCard from '../../../components/KpiCard';
 import { ContractIcon, RequestIcon, ServiceIcon, AlertIcon, ArrowIcon } from '../components/icons';
 
 const STATUS_META = {

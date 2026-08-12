@@ -62,15 +62,32 @@ describe('Topbar', () => {
 
   it('opens the user menu on avatar click and shows profile and logout options', async () => {
     render(<Topbar station={STATION} notificationsCount={0} theme="light" onToggleTheme={() => {}} user={USER} />);
-    expect(screen.queryByText('Cerrar sesión')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /laisha ramírez/i }));
+    expect(screen.queryByText(/cerrar sesi/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /laisha/i }));
     expect(screen.getByText('Perfil')).toBeInTheDocument();
-    expect(screen.getByText('Cerrar sesión')).toBeInTheDocument();
+    expect(screen.getByText(/cerrar sesi/i)).toBeInTheDocument();
+  });
+
+  it('calls onLogout when the logout menu item is clicked', async () => {
+    const onLogout = vi.fn();
+    render(
+      <Topbar
+        station={STATION}
+        notificationsCount={0}
+        theme="light"
+        onToggleTheme={() => {}}
+        user={USER}
+        onLogout={onLogout}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /laisha/i }));
+    await userEvent.click(screen.getByRole('menuitem', { name: /cerrar sesi/i }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
   it('does not render a menu button when onOpenMenu is not provided', () => {
     render(<Topbar station={STATION} notificationsCount={0} theme="light" onToggleTheme={() => {}} user={USER} />);
-    expect(screen.queryByRole('button', { name: /abrir menú de navegación/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /abrir men/i })).not.toBeInTheDocument();
   });
 
   it('calls onOpenMenu when the mobile menu button is clicked', async () => {
@@ -85,7 +102,7 @@ describe('Topbar', () => {
         onOpenMenu={onOpenMenu}
       />
     );
-    await userEvent.click(screen.getByRole('button', { name: /abrir menú de navegación/i }));
+    await userEvent.click(screen.getByRole('button', { name: /abrir men/i }));
     expect(onOpenMenu).toHaveBeenCalledTimes(1);
   });
 });

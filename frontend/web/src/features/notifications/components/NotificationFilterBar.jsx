@@ -33,7 +33,15 @@ export default function NotificationFilterBar({
   onCustomDate,
   onResetFilters,
   hasActiveFilters,
+  categoryOptions = NOTIFICATION_CATEGORIES,
+  severityOptions = NOTIFICATION_SEVERITIES,
+  datePresetOptions = NOTIFICATION_DATE_PRESETS,
+  statusOptions = STATUS_OPTIONS,
+  searchPlaceholder = 'Buscar por vuelo, referencia o descripción...',
+  statusControlVariant = 'select',
 }) {
+  const isStatusToggle = statusControlVariant === 'toggle';
+
   return (
     <div className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="flex flex-wrap items-end gap-3">
@@ -45,7 +53,7 @@ export default function NotificationFilterBar({
               type="text"
               value={filters.search}
               onChange={event => onFilterChange('search', event.target.value)}
-              placeholder="Buscar por vuelo, referencia o descripción..."
+              placeholder={searchPlaceholder}
               className="w-full rounded-lg border border-black/10 bg-white/80 py-1.5 pl-7 pr-2 text-sm text-ink-900 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
             />
           </span>
@@ -55,20 +63,44 @@ export default function NotificationFilterBar({
           label="Categoría"
           value={filters.category}
           onChange={value => onFilterChange('category', value)}
-          options={[{ id: '', label: 'Todas' }, ...NOTIFICATION_CATEGORIES]}
+          options={[{ id: '', label: 'Todas' }, ...categoryOptions]}
         />
         <FilterSelect
           label="Severidad"
           value={filters.severity}
           onChange={value => onFilterChange('severity', value)}
-          options={[{ id: '', label: 'Todas' }, ...NOTIFICATION_SEVERITIES]}
+          options={[{ id: '', label: 'Todas' }, ...severityOptions]}
         />
-        <FilterSelect
-          label="Estado"
-          value={filters.status}
-          onChange={value => onFilterChange('status', value)}
-          options={STATUS_OPTIONS}
-        />
+
+        {isStatusToggle ? (
+          <div className="flex min-w-[180px] flex-col gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+            Estado
+            <div className="flex flex-wrap gap-1 rounded-lg border border-black/10 bg-white/60 p-1 dark:border-white/10 dark:bg-surface-dark-card">
+              {statusOptions.map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onFilterChange('status', option.id)}
+                  aria-pressed={filters.status === option.id}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-200 ${
+                    filters.status === option.id
+                      ? 'bg-accent-600 text-white'
+                      : 'text-text-secondary-light hover:text-ink-900 dark:text-text-secondary-dark dark:hover:text-text-primary-dark'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <FilterSelect
+            label="Estado"
+            value={filters.status}
+            onChange={value => onFilterChange('status', value)}
+            options={statusOptions}
+          />
+        )}
 
         <button
           type="button"
@@ -86,7 +118,7 @@ export default function NotificationFilterBar({
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg border border-black/10 bg-white/60 p-1 dark:border-white/10 dark:bg-surface-dark-card">
-          {NOTIFICATION_DATE_PRESETS.map(preset => (
+          {datePresetOptions.map(preset => (
             <button
               key={preset.id}
               type="button"

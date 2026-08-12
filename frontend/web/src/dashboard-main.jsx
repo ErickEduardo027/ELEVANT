@@ -1,10 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import AppShell from './features/shell/AppShell.jsx';
+import App from './app/App.jsx';
 import './styles/tokens.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AppShell />
+    <App />
   </StrictMode>,
 );

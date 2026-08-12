@@ -1,6 +1,6 @@
 import { BarChartIcon } from '../../shell/components/icons';
 import { ContractIcon, ServiceIcon, AlertIcon } from '../components/icons';
-import KpiCard from '../../dashboard/components/KpiCard';
+import KpiCard from '../../../components/KpiCard';
 import { buildExcelCompatibleContent } from '../../../services/contractReportsService';
 import { useContractReportsData } from './useContractReportsData';
 

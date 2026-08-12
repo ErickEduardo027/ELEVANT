@@ -1,4 +1,4 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 
@@ -21,7 +21,7 @@ export default function FlightListItem({ flight, selected, onSelect }) {
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge domain="flight" status={flight.status} />
+        <StatusBadge tone={meta.color} label={meta.label} />
         <span className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
           {flight.flightNumber}
         </span>

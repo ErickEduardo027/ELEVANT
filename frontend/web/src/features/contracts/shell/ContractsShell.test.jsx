@@ -17,6 +17,6 @@ describe('ContractsShell', () => {
     render(<ContractsShell />);
     await waitFor(() => expect(screen.getByText('Contratos recientes')).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: /ver contratos/i }));
-    expect(screen.getByText(/registro, consulta y actualización de contratos/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Contratos' })).toBeInTheDocument();
   });
 });

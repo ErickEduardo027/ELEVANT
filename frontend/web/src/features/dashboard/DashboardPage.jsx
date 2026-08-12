@@ -1,5 +1,5 @@
-import KpiCard from './components/KpiCard';
-import ProgressRing from './components/ProgressRing';
+import KpiCard from '../../components/KpiCard';
+import ProgressRing from '../../components/ProgressRing';
 import FlyAwareStatusPanel from './components/FlyAwareStatusPanel';
 import FlightStatusChart from './components/FlightStatusChart';
 import ApprovalPreviewList from './components/ApprovalPreviewList';
@@ -10,6 +10,11 @@ import { PlaneIcon, ChecklistIcon, UsersIcon } from './components/icons';
 export default function DashboardPage({ status, data, error, onRetry, forceState = 'default', onOpenPositionsMap = () => {} }) {
   const isLoading = status === 'loading' || forceState === 'loading';
   const isError = status === 'error' && forceState === 'default';
+
+  const servicesPending = data?.kpis?.servicesPending ?? 0;
+  const servicesExecuted = data?.kpis?.servicesExecuted ?? 0;
+  const servicesTotal = servicesPending + servicesExecuted;
+  const servicesPercent = servicesTotal === 0 ? 0 : Math.round((servicesExecuted / servicesTotal) * 100);
 
   const approvals = forceState === 'emptyApprovals' ? [] : data?.pendingApprovals ?? [];
   const flyAware =
@@ -50,15 +55,10 @@ export default function DashboardPage({ status, data, error, onRetry, forceState
           loading={isLoading}
           visual={
             <div className="flex items-center gap-3">
-              <ProgressRing
-                pending={data?.kpis?.servicesPending ?? 0}
-                executed={data?.kpis?.servicesExecuted ?? 0}
-                size={56}
-                strokeWidth={6}
-              />
+              <ProgressRing percent={servicesPercent} size={56} strokeWidth={6} />
               <div className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                <div>{data?.kpis?.servicesExecuted ?? 0} ejecutados</div>
-                <div>{data?.kpis?.servicesPending ?? 0} pendientes</div>
+                <div>{servicesExecuted} ejecutados</div>
+                <div>{servicesPending} pendientes</div>
               </div>
             </div>
           }

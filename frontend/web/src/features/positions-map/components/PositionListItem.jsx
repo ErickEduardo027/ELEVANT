@@ -1,4 +1,4 @@
-import StatusBadge from '../../dashboard/components/StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS, getStatusMeta } from '../../dashboard/statusMeta';
 
 export default function PositionListItem({ position, selected, onSelect }) {
@@ -25,7 +25,7 @@ export default function PositionListItem({ position, selected, onSelect }) {
           {position.terminal === 'FBO' ? 'FBO' : `Terminal ${position.terminal}`}
         </span>
         <span className="ml-auto">
-          <StatusBadge domain="position" status={position.status} />
+          <StatusBadge tone={meta.color} label={meta.label} />
         </span>
       </div>
       <div className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">

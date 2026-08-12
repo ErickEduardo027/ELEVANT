@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import SidebarItem from './SidebarItem';
-import { ChevronDownIcon } from '../../dashboard/components/icons';
+import { ChevronDownIcon, LogOutIcon } from './icons';
 
 const LOGO_URL = '/brand/elevant-logo.png';
 
-// Crop coordinates picked from the source square logo (1254x1254): the mark
-// (the three swept bars) sits roughly in the top third, above the wordmark
-// and tagline. Cropped via background-position/-size rather than a second
-// asset, since only one brand PNG exists today.
 function LogoMark({ className = '' }) {
   return (
     <span
@@ -22,9 +18,8 @@ function LogoMark({ className = '' }) {
   );
 }
 
-function UserMenu({ user, expanded, presentation }) {
+function UserMenu({ user, expanded, presentation, onLogout }) {
   const [open, setOpen] = useState(false);
-
   const menuPosition =
     presentation === 'overlay' || expanded
       ? 'bottom-full left-0 mb-2 w-full'
@@ -48,6 +43,7 @@ function UserMenu({ user, expanded, presentation }) {
             .slice(0, 2)
             .join('')}
         </span>
+
         {expanded && (
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-ink-900 dark:text-text-primary-dark">
@@ -82,6 +78,10 @@ function UserMenu({ user, expanded, presentation }) {
           <button
             type="button"
             role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onLogout?.();
+            }}
             className="block w-full px-3 py-1.5 text-left text-sm text-status-danger hover:bg-black/5 dark:hover:bg-white/5"
           >
             Cerrar sesión
@@ -92,25 +92,47 @@ function UserMenu({ user, expanded, presentation }) {
   );
 }
 
+function SidebarFooter({ expanded, onLogout }) {
+  if (!onLogout) return null;
+
+  return (
+    <div className="mt-3 border-t border-black/5 pt-3 dark:border-white/5">
+      <button
+        type="button"
+        onClick={onLogout}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-status-danger transition-colors hover:bg-status-danger/10 ${
+          expanded ? '' : 'justify-center'
+        }`}
+        aria-label="Cerrar sesión"
+      >
+        <LogOutIcon className="h-4 w-4 shrink-0" />
+        {expanded && <span>Cerrar sesión</span>}
+      </button>
+    </div>
+  );
+}
+
 function SidebarContent({
   expanded,
   presentation,
+  navigation,
   modules,
   activeModuleId,
   onSelectModule,
   badgeCounts,
   user,
   onToggle,
+  onCloseOverlay,
+  onLogout,
 }) {
+  const items = navigation ?? modules?.map(item => ({ ...item, badge: badgeCounts?.[item.id], path: item.path ?? `#${item.id}` })) ?? [];
+  const useModuleNavigation = Boolean(modules?.length && !navigation);
+
   return (
-    <div className="flex h-full flex-col gap-1 p-3">
+    <div className="flex h-full min-w-0 flex-col gap-1 p-3">
       <div className={`mb-2 flex items-center gap-2 px-1 py-2 ${expanded ? '' : 'justify-center'}`}>
         <LogoMark className="h-8 w-8" />
-        {expanded && (
-          <span className="truncate text-sm font-bold tracking-wide text-ink-900 dark:text-text-primary-dark">
-            ELEVANT
-          </span>
-        )}
+        {expanded && <span className="truncate text-sm font-bold tracking-wide text-ink-900 dark:text-text-primary-dark">ELEVANT</span>}
         {presentation === 'inline' && (
           <button
             type="button"
@@ -126,32 +148,44 @@ function SidebarContent({
       </div>
 
       <nav aria-label="Navegación principal" className="flex-1 space-y-1 overflow-y-auto">
-        {modules.map(module => (
+        {items.map(item => (
           <SidebarItem
-            key={module.id}
-            icon={module.icon}
-            label={module.label}
+            key={item.id}
+            icon={item.icon}
+            label={item.label}
+            to={!useModuleNavigation ? item.path : undefined}
             expanded={expanded}
-            active={module.id === activeModuleId}
-            badge={badgeCounts[module.id]}
-            onClick={() => onSelectModule(module.id)}
+            active={useModuleNavigation ? item.id === activeModuleId : undefined}
+            badge={useModuleNavigation ? badgeCounts?.[item.id] : item.badge}
+            onNavigate={!useModuleNavigation ? onCloseOverlay : undefined}
+            onClick={
+              useModuleNavigation
+                ? () => {
+                    onSelectModule?.(item.id);
+                    if (presentation === 'overlay') onCloseOverlay?.();
+                  }
+                : undefined
+            }
           />
         ))}
       </nav>
 
       <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
-        <UserMenu user={user} expanded={expanded} presentation={presentation} />
+        <UserMenu user={user} expanded={expanded} presentation={presentation} onLogout={onLogout} />
+        <SidebarFooter expanded={expanded} onLogout={onLogout} />
       </div>
     </div>
   );
 }
 
 export default function Sidebar({
+  navigation,
   modules,
   activeModuleId,
   onSelectModule,
   badgeCounts = {},
   user,
+  onLogout,
   breakpoint,
   railVisible,
   railExpanded,
@@ -172,12 +206,15 @@ export default function Sidebar({
           <SidebarContent
             expanded={railExpanded}
             presentation="inline"
+            navigation={navigation}
             modules={modules}
             activeModuleId={activeModuleId}
             onSelectModule={onSelectModule}
             badgeCounts={badgeCounts}
             user={user}
             onToggle={onToggle}
+            onCloseOverlay={onCloseOverlay}
+            onLogout={onLogout}
           />
         </aside>
       )}
@@ -202,12 +239,15 @@ export default function Sidebar({
           <SidebarContent
             expanded
             presentation="overlay"
+            navigation={navigation}
             modules={modules}
             activeModuleId={activeModuleId}
             onSelectModule={onSelectModule}
             badgeCounts={badgeCounts}
             user={user}
             onToggle={onCloseOverlay}
+            onCloseOverlay={onCloseOverlay}
+            onLogout={onLogout}
           />
         </aside>
       )}

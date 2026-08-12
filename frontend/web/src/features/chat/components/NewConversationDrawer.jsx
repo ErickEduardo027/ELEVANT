@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useEscapeToClose } from '../../notifications/useEscapeToClose';
+import { useEscapeToClose } from '../../../hooks/useEscapeToClose';
 import { XIcon } from '../../review/components/icons';
 
 export default function NewConversationDrawer({ open, options, onCreate, onClose }) {

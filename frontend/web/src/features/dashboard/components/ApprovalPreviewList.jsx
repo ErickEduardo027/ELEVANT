@@ -1,7 +1,8 @@
 import FlightStripCard from './FlightStripCard';
-import StatusBadge from './StatusBadge';
+import StatusBadge from '../../../components/StatusBadge';
 import { ChecklistIcon } from './icons';
 import { mapApprovalToStrip } from '../mappers';
+import { getStatusMeta } from '../statusMeta';
 
 function SkeletonRows() {
   return (
@@ -49,6 +50,7 @@ export default function ApprovalPreviewList({ approvals, onViewAll, loading = fa
         <div className="space-y-2">
           {approvals.slice(0, 5).map(approval => {
             const strip = mapApprovalToStrip(approval);
+            const statusMeta = getStatusMeta('service', strip.status);
             return (
               <FlightStripCard
                 key={strip.key}
@@ -56,7 +58,7 @@ export default function ApprovalPreviewList({ approvals, onViewAll, loading = fa
                 primary={strip.primary}
                 secondary={strip.secondary}
                 meta={strip.meta}
-                badge={<StatusBadge domain="service" status={strip.status} />}
+                badge={<StatusBadge tone={statusMeta.color} label={statusMeta.label} />}
               />
             );
           })}
