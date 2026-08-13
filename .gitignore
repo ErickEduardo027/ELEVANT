@@ -76,3 +76,7 @@ Desktop.ini
 
 .fake
 .worktrees/
+
+# Backend local del prototipo
+backend-prototipo/data/runtime.json
+backend-prototipo/data/*.tmp

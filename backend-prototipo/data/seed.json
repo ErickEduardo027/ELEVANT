@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "createdAt": null,
+  "updatedAt": null,
+  "users": [],
+  "airlines": [],
+  "serviceRequests": [],
+  "contracts": [],
+  "contractServices": [],
+  "personnel": [],
+  "flights": [],
+  "assignments": [],
+  "operations": [],
+  "incidents": [],
+  "reports": [],
+  "preinvoices": [],
+  "chats": [],
+  "messages": [],
+  "notifications": [],
+  "audit": []
+}
