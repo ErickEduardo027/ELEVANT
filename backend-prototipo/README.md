@@ -41,6 +41,9 @@ npm test
 La escritura se realiza primero en un archivo temporal y luego se reemplaza el
 archivo de ejecución para reducir el riesgo de corrupción.
 
+Cuando una etapa incrementa `schemaVersion`, el backend detecta automáticamente
+el archivo local anterior y vuelve a generar `runtime.json` desde `seed.json`.
+
 ## Variables opcionales
 
 ```text

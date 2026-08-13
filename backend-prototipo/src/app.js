@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { authenticate, closeSession, resolveSession } from './auth.js';
 
 function applyCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,6 +11,18 @@ function sendJson(res, statusCode, payload) {
   applyCors(res);
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  if (chunks.length === 0) return {};
+
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw Object.assign(new Error('El cuerpo debe contener JSON válido.'), { statusCode: 400 });
+  }
 }
 
 export function createApp({ store }) {
@@ -43,10 +56,33 @@ export function createApp({ store }) {
         });
       }
 
+      if (req.method === 'POST' && url.pathname === '/api/auth/login') {
+        const state = await store.read();
+        const credentials = await readJsonBody(req);
+        const session = authenticate(state.users, credentials);
+
+        if (!session) return sendJson(res, 401, { error: 'Credenciales inválidas.' });
+        return sendJson(res, 200, session);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/auth/session') {
+        const state = await store.read();
+        const session = resolveSession(state.users, req.headers.authorization);
+        if (!session) return sendJson(res, 401, { error: 'Sesión inválida o finalizada.' });
+        return sendJson(res, 200, session);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+        closeSession(req.headers.authorization);
+        return sendJson(res, 200, { ok: true });
+      }
+
       return sendJson(res, 404, { error: 'Ruta no encontrada.' });
     } catch (error) {
       console.error(error);
-      return sendJson(res, 500, { error: 'Error interno del prototipo.' });
+      return sendJson(res, error.statusCode ?? 500, {
+        error: error.statusCode ? error.message : 'Error interno del prototipo.',
+      });
     }
   });
 }
