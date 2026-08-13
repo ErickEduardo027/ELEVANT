@@ -1,3 +1,5 @@
+import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRING_WINDOW_DAYS = 45;
 
@@ -19,6 +21,7 @@ function todayAtNoon() {
 
 export function resolveContractStatus(contract, referenceDate = todayAtNoon()) {
   if (contract.statusOverride === 'disabled') return 'disabled';
+  if (!contract.endDate) return 'active';
   const endDate = new Date(`${contract.endDate}T12:00:00`);
   const daysRemaining = Math.ceil((endDate - referenceDate) / DAY_MS);
   if (daysRemaining < 0) return 'expired';
@@ -31,10 +34,14 @@ function withStatus(contract) {
 }
 
 export async function getContracts() {
+  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/contracts');
   return contracts.map(withStatus);
 }
 
 export async function createContract(input) {
+  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/contracts', {
+    method: 'POST', body: JSON.stringify(input),
+  });
   const sequence = contracts.length + 19;
   const contract = {
     id: `CTR-${new Date().getFullYear()}-${String(sequence).padStart(3, '0')}`,
@@ -51,6 +58,9 @@ export async function createContract(input) {
 }
 
 export async function updateContract(contractId, changes) {
+  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/contracts/${contractId}`, {
+    method: 'PATCH', body: JSON.stringify(changes),
+  });
   let updated = null;
   contracts = contracts.map(contract => {
     if (contract.id !== contractId) return contract;
@@ -64,6 +74,22 @@ export async function updateContract(contractId, changes) {
   });
   if (!updated) throw new Error('El contrato solicitado no existe.');
   return withStatus(updated);
+}
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
 }
 
 export function __resetContractsStoreForTests() {

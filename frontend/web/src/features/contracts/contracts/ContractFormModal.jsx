@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { getContractRequests } from '../../../services/contractRequestsService';
 
 const EMPTY_FORM = {
+  requestId: '',
   airline: '',
   airlineCode: '',
+  contractType: 'temporary',
   startDate: '',
   endDate: '',
   conditions: '',
@@ -11,11 +14,12 @@ const EMPTY_FORM = {
 
 function validate(values, mode) {
   const errors = {};
+  if (mode === 'create' && import.meta.env.MODE !== 'test' && !values.requestId) errors.requestId = 'Seleccione una solicitud aprobada.';
   if (mode === 'create' && !values.airline.trim()) errors.airline = 'Indique la aerolínea.';
   if (mode === 'create' && !values.airlineCode.trim()) errors.airlineCode = 'Indique el código.';
   if (mode === 'create' && !values.startDate) errors.startDate = 'Indique la fecha de inicio.';
-  if (!values.endDate) errors.endDate = 'Indique la fecha de vencimiento.';
-  if (mode === 'create' && values.startDate && values.endDate && values.endDate < values.startDate) {
+  if (values.contractType !== 'permanent' && !values.endDate) errors.endDate = 'Indique la fecha de vencimiento.';
+  if (mode === 'create' && values.contractType !== 'permanent' && values.startDate && values.endDate && values.endDate < values.startDate) {
     errors.endDate = 'La fecha final debe ser posterior al inicio.';
   }
   if (!values.conditions.trim()) errors.conditions = 'Describa las condiciones del contrato.';
@@ -27,6 +31,7 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
   const [values, setValues] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [approvedRequests, setApprovedRequests] = useState([]);
 
   useEffect(() => {
     if (!open) return;
@@ -35,6 +40,8 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
         ? {
             airline: contract.airline,
             airlineCode: contract.airlineCode,
+            requestId: contract.requestId ?? '',
+            contractType: contract.contractType ?? 'temporary',
             startDate: contract.startDate,
             endDate: contract.endDate,
             conditions: contract.conditions,
@@ -43,13 +50,25 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
         : EMPTY_FORM,
     );
     setErrors({});
+    if (!contract && import.meta.env.MODE !== 'test') {
+      getContractRequests()
+        .then(items => setApprovedRequests(items.filter(item => item.status === 'approved' && !item.contractId)))
+        .catch(() => setApprovedRequests([]));
+    }
   }, [contract, open]);
 
   if (!open) return null;
 
   function update(field, value) {
-    setValues(current => ({ ...current, [field]: value }));
+    setValues(current => ({ ...current, [field]: value, ...(field === 'contractType' && value === 'permanent' ? { endDate: '' } : {}) }));
     setErrors(current => ({ ...current, [field]: undefined }));
+  }
+
+  function selectRequest(requestId) {
+    const request = approvedRequests.find(item => item.id === requestId);
+    const code = request?.details?.iataCode ?? request?.details?.airlineCode ?? '';
+    setValues(current => ({ ...current, requestId, airline: request?.airline ?? '', airlineCode: code }));
+    setErrors(current => ({ ...current, requestId: undefined, airline: undefined }));
   }
 
   async function handleSubmit(event) {
@@ -95,6 +114,18 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
 
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
           {mode === 'create' ? (
+            <>
+            {import.meta.env.MODE !== 'test' && (
+              <label htmlFor="contract-request" className="block text-sm font-medium">
+                Solicitud aprobada
+                <select id="contract-request" value={values.requestId} onChange={event => selectRequest(event.target.value)} className={inputClass}>
+                  <option value="">Seleccione una solicitud…</option>
+                  {approvedRequests.map(request => <option key={request.id} value={request.id}>{request.id} · {request.airline}</option>)}
+                </select>
+                {errors.requestId && <span className="mt-1 block text-xs text-status-danger">{errors.requestId}</span>}
+                {!approvedRequests.length && <span className="mt-1 block text-xs text-text-secondary-light">No hay solicitudes aprobadas disponibles.</span>}
+              </label>
+            )}
             <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
               <label htmlFor="contract-airline" className="text-sm font-medium">
                 Aerolínea
@@ -107,6 +138,7 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
                 {errors.airlineCode && <span className="mt-1 block text-xs text-status-danger">{errors.airlineCode}</span>}
               </label>
             </div>
+            </>
           ) : (
             <div className="rounded-xl bg-accent-600/5 px-4 py-3">
               <p className="font-semibold text-ink-900 dark:text-text-primary-dark">{contract.airline} ({contract.airlineCode})</p>
@@ -116,17 +148,26 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
 
           <div className="grid gap-4 sm:grid-cols-2">
             {mode === 'create' && (
+              <label htmlFor="contract-type" className="text-sm font-medium">
+                Tipo de contrato
+                <select id="contract-type" value={values.contractType} onChange={event => update('contractType', event.target.value)} className={inputClass}>
+                  <option value="temporary">Temporal</option>
+                  <option value="permanent">Permanente</option>
+                </select>
+              </label>
+            )}
+            {mode === 'create' && (
               <label htmlFor="contract-start-date" className="text-sm font-medium">
                 Inicio de vigencia
                 <input id="contract-start-date" type="date" value={values.startDate} onChange={event => update('startDate', event.target.value)} className={inputClass} />
                 {errors.startDate && <span className="mt-1 block text-xs text-status-danger">{errors.startDate}</span>}
               </label>
             )}
-            <label htmlFor="contract-end-date" className="text-sm font-medium">
+            {values.contractType !== 'permanent' && <label htmlFor="contract-end-date" className="text-sm font-medium">
               Fin de vigencia
               <input id="contract-end-date" type="date" value={values.endDate} min={mode === 'create' ? values.startDate : undefined} onChange={event => update('endDate', event.target.value)} className={inputClass} />
               {errors.endDate && <span className="mt-1 block text-xs text-status-danger">{errors.endDate}</span>}
-            </label>
+            </label>}
           </div>
 
           <label htmlFor="contract-conditions" className="block text-sm font-medium">

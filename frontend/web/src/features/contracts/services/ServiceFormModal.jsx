@@ -24,7 +24,13 @@ export default function ServiceFormModal({ open, service, contracts, onClose, on
 
   function selectContract(contractId) {
     const contract = contracts.find(item => item.id === contractId);
-    setValues(current => ({ ...current, contractId, airline: contract?.airline ?? '' }));
+    setValues(current => ({
+      ...current,
+      contractId,
+      airline: contract?.airline ?? '',
+      startDate: contract?.startDate ?? current.startDate,
+      endDate: contract?.endDate ?? '',
+    }));
   }
 
   async function submit(event) {
@@ -34,7 +40,8 @@ export default function ServiceFormModal({ open, service, contracts, onClose, on
     if (!editing && !values.name.trim()) nextErrors.name = 'Indica el servicio.';
     if (!values.rate || Number(values.rate) <= 0) nextErrors.rate = 'Indica una tarifa válida.';
     if (!editing && !values.startDate) nextErrors.startDate = 'Indica el inicio.';
-    if (!values.endDate) nextErrors.endDate = 'Indica el vencimiento.';
+    const selectedContract = contracts.find(item => item.id === values.contractId);
+    if (selectedContract?.contractType !== 'permanent' && !values.endDate) nextErrors.endDate = 'Indica el vencimiento.';
     if (!editing && values.startDate && values.endDate < values.startDate) nextErrors.endDate = 'La fecha final debe ser posterior.';
     if (Object.keys(nextErrors).length) return setErrors(nextErrors);
     setSaving(true);
@@ -53,7 +60,7 @@ export default function ServiceFormModal({ open, service, contracts, onClose, on
         <form onSubmit={submit} className="space-y-5 p-6">
           {!editing ? <div className="grid gap-4 sm:grid-cols-2"><label htmlFor="service-contract" className="text-sm font-medium">Contrato<select id="service-contract" value={values.contractId} onChange={event => selectContract(event.target.value)} className={inputClass}>{contracts.map(contract => <option key={contract.id} value={contract.id}>{contract.id} · {contract.airline}</option>)}</select>{errors.contractId && <span className="mt-1 block text-xs text-status-danger">{errors.contractId}</span>}</label><label htmlFor="service-name" className="text-sm font-medium">Servicio<input id="service-name" value={values.name} onChange={event => update('name', event.target.value)} className={inputClass} placeholder="Ej. GPU" />{errors.name && <span className="mt-1 block text-xs text-status-danger">{errors.name}</span>}</label></div> : <div className="rounded-xl bg-accent-600/5 px-4 py-3 text-sm"><p className="font-semibold">{service.contractId} · {service.airline}</p><p>{service.name}</p></div>}
           <div className="grid gap-4 sm:grid-cols-3"><label htmlFor="service-rate" className="text-sm font-medium">Tarifa<input id="service-rate" type="number" min="0.01" step="0.01" value={values.rate} onChange={event => update('rate', event.target.value)} className={inputClass} />{errors.rate && <span className="mt-1 block text-xs text-status-danger">{errors.rate}</span>}</label><label htmlFor="service-currency" className="text-sm font-medium">Moneda<select id="service-currency" value={values.currency} onChange={event => update('currency', event.target.value)} className={inputClass}><option>USD</option><option>DOP</option></select></label><label htmlFor="service-unit" className="text-sm font-medium">Unidad de cobro<select id="service-unit" value={values.billingUnit} onChange={event => update('billingUnit', event.target.value)} className={inputClass}><option>Por operación</option><option>Por hora</option><option>Por pasajero</option><option>Por kilogramo</option></select></label></div>
-          <div className="grid gap-4 sm:grid-cols-2">{!editing && <label htmlFor="service-start" className="text-sm font-medium">Inicio de vigencia<input id="service-start" type="date" value={values.startDate} onChange={event => update('startDate', event.target.value)} className={inputClass} />{errors.startDate && <span className="mt-1 block text-xs text-status-danger">{errors.startDate}</span>}</label>}<label htmlFor="service-end" className="text-sm font-medium">Fin de vigencia<input id="service-end" type="date" min={editing ? undefined : values.startDate} value={values.endDate} onChange={event => update('endDate', event.target.value)} className={inputClass} />{errors.endDate && <span className="mt-1 block text-xs text-status-danger">{errors.endDate}</span>}</label></div>
+          <div className="grid gap-4 sm:grid-cols-2">{!editing && <label htmlFor="service-start" className="text-sm font-medium">Inicio de vigencia<input id="service-start" type="date" value={values.startDate} onChange={event => update('startDate', event.target.value)} className={inputClass} />{errors.startDate && <span className="mt-1 block text-xs text-status-danger">{errors.startDate}</span>}</label>}{(editing ? Boolean(values.endDate) : contracts.find(item => item.id === values.contractId)?.contractType !== 'permanent') && <label htmlFor="service-end" className="text-sm font-medium">Fin de vigencia<input id="service-end" type="date" min={editing ? undefined : values.startDate} value={values.endDate ?? ''} onChange={event => update('endDate', event.target.value)} className={inputClass} />{errors.endDate && <span className="mt-1 block text-xs text-status-danger">{errors.endDate}</span>}</label>}</div>
           {editing && <label className="flex items-center gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10"><input type="checkbox" checked={values.active} onChange={event => update('active', event.target.checked)} className="h-4 w-4 accent-accent-600" /><span className="text-sm font-semibold">Servicio habilitado para futuras operaciones</span></label>}
           <p className="rounded-xl bg-status-info/5 p-3 text-xs text-text-secondary-light dark:text-text-secondary-dark">Las modificaciones tarifarias aplican a futuras operaciones. El historial facturado no se altera.</p>
           <div className="flex justify-end gap-3 border-t border-black/5 pt-5 dark:border-white/5"><button type="button" onClick={onClose} className="rounded-xl border border-black/10 px-4 py-2.5 text-sm font-semibold dark:border-white/10">Cancelar</button><button type="submit" disabled={saving} className="rounded-xl bg-accent-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Guardando…' : editing ? 'Guardar cambios' : 'Agregar servicio'}</button></div>

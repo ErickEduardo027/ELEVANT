@@ -11,6 +11,7 @@ const STATUS_META = {
 };
 
 function formatDate(value) {
+  if (!value) return 'Sin vencimiento';
   return new Intl.DateTimeFormat('es-DO', {
     day: '2-digit',
     month: 'short',
@@ -95,7 +96,7 @@ export default function ContractsPage() {
                     <tr key={contract.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                       <td className="px-5 py-4"><span className="flex items-center gap-2 font-mono text-xs font-semibold"><ContractIcon className="h-4 w-4 text-accent-600" />{contract.id}</span></td>
                       <td className="px-5 py-4"><span className="block font-semibold">{contract.airline}</span><span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{contract.airlineCode}</span></td>
-                      <td className="px-5 py-4 text-text-secondary-light dark:text-text-secondary-dark">{formatDate(contract.startDate)} — {formatDate(contract.endDate)}</td>
+                      <td className="px-5 py-4 text-text-secondary-light dark:text-text-secondary-dark"><span className="block text-xs font-semibold uppercase">{contract.contractType === 'permanent' ? 'Permanente' : 'Temporal'}</span>{formatDate(contract.startDate)} — {formatDate(contract.endDate)}</td>
                       <td className="px-5 py-4"><span className="inline-flex items-center gap-1.5"><ServiceIcon className="h-4 w-4 text-accent-600" />{contract.servicesCount}</span></td>
                       <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${meta.classes}`}>{meta.label}</span></td>
                       <td className="px-5 py-4 text-right"><button type="button" onClick={() => openEdit(contract)} className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-accent-600 hover:bg-accent-600/5 dark:border-white/10">Ver / actualizar</button></td>
