@@ -46,6 +46,8 @@ async function startTestServer() {
     personnel: [],
     audit: [],
     serviceRequests: [],
+    contracts: [],
+    contractServices: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -315,4 +317,60 @@ test('una solicitud pública llega a Contratos y puede resolverse', async t => {
   assert.equal(resolveResponse.status, 200);
   assert.equal(resolved.status, 'approved');
   assert.equal(resolved.decisionNote, 'Solicitud aprobada para elaborar contrato.');
+});
+
+test('Contratos convierte una solicitud aprobada en contrato y servicios pactados persistentes', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const requestResponse = await fetch(`${context.baseUrl}/api/public/service-requests`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      airline: 'Aerolínea Integrada', contactName: 'Ana Pérez', contactEmail: 'ana@integrada.test',
+      type: 'affiliation', requestedService: 'Servicios de rampa permanentes.',
+      details: { iataCode: 'AI' },
+    }),
+  });
+  const request = await requestResponse.json();
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'contratos@elevant.test', password: 'Elevant2026!' }),
+  });
+  const login = await loginResponse.json();
+  const headers = { Authorization: `Bearer ${login.token}`, 'Content-Type': 'application/json' };
+
+  await fetch(`${context.baseUrl}/api/contracts/requests/${request.id}/resolve`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ status: 'approved', decisionNote: 'Aprobada para contratación.' }),
+  });
+  const contractResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      requestId: request.id, airline: request.airline, airlineCode: 'AI', contractType: 'permanent',
+      startDate: '2026-08-13', conditions: 'Atención permanente en la estación PUJ.',
+    }),
+  });
+  const contract = await contractResponse.json();
+  assert.equal(contractResponse.status, 201);
+  assert.equal(contract.contractType, 'permanent');
+  assert.equal(contract.endDate, null);
+
+  const serviceResponse = await fetch(`${context.baseUrl}/api/contracts/services`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      contractId: contract.id, name: 'Puente de abordaje', rate: 485,
+      currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-13',
+    }),
+  });
+  const service = await serviceResponse.json();
+  assert.equal(serviceResponse.status, 201);
+  assert.equal(service.contractId, contract.id);
+  assert.equal(service.endDate, null);
+
+  const contractsResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, { headers });
+  assert.equal((await contractsResponse.json())[0].servicesCount, 1);
+  const persisted = await context.store.read();
+  assert.equal(persisted.serviceRequests[0].contractId, contract.id);
+  assert.equal(persisted.contractServices[0].rate, 485);
 });

@@ -1,3 +1,5 @@
+import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
 const INITIAL_SERVICES = [
   { id: 'SRV-001', contractId: 'CTR-2026-018', airline: 'Arajet', name: 'Puente de abordaje', rate: 485, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-03-01', endDate: '2027-02-28', active: true },
   { id: 'SRV-002', contractId: 'CTR-2026-018', airline: 'Arajet', name: 'GPU', rate: 220, currency: 'USD', billingUnit: 'Por hora', startDate: '2026-03-01', endDate: '2027-02-28', active: true },
@@ -10,10 +12,14 @@ const INITIAL_SERVICES = [
 let services = INITIAL_SERVICES.map(service => ({ ...service }));
 
 export async function getContractServices() {
+  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/services');
   return services.map(service => ({ ...service }));
 }
 
 export async function createContractService(input) {
+  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/services', {
+    method: 'POST', body: JSON.stringify(input),
+  });
   const service = {
     id: `SRV-${String(services.length + 1).padStart(3, '0')}`,
     contractId: input.contractId,
@@ -31,6 +37,9 @@ export async function createContractService(input) {
 }
 
 export async function updateContractService(serviceId, changes) {
+  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/services/${serviceId}`, {
+    method: 'PATCH', body: JSON.stringify(changes),
+  });
   let updated = null;
   services = services.map(service => {
     if (service.id !== serviceId) return service;
@@ -46,6 +55,22 @@ export async function updateContractService(serviceId, changes) {
   });
   if (!updated) throw new Error('El servicio pactado no existe.');
   return { ...updated };
+}
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
 }
 
 export function __resetContractServicesStoreForTests() {
