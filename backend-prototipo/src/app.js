@@ -140,6 +140,60 @@ export function createApp({ store }) {
         return sendJson(res, 200, session);
       }
 
+      if (req.method === 'POST' && url.pathname === '/api/public/service-requests') {
+        const payload = await readJsonBody(req);
+        const airline = String(payload.airline ?? '').trim();
+        const contactName = String(payload.contactName ?? '').trim();
+        const contactEmail = String(payload.contactEmail ?? '').trim().toLowerCase();
+        const requestedService = String(payload.requestedService ?? '').trim();
+        const type = payload.type === 'additionalService' ? 'additionalService' : 'affiliation';
+        if (!airline || !contactName || !contactEmail || !requestedService) {
+          throw Object.assign(new Error('Faltan datos obligatorios de la solicitud.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          const request = {
+            id: nextId('SOL'), airline, contactName, contactEmail, type, requestedService,
+            receivedAt: new Date().toISOString(), status: 'pending', decisionNote: '', notifiedAt: null,
+            details: payload.details ?? null,
+          };
+          state.serviceRequests.unshift(request);
+          return request;
+        });
+        return sendJson(res, 201, created);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/contracts/requests') {
+        const state = await store.read();
+        requireSession(state, req, ['CONTRATOS']);
+        return sendJson(res, 200, state.serviceRequests);
+      }
+
+      const contractRequestAction = url.pathname.match(/^\/api\/contracts\/requests\/([^/]+)\/(review|resolve)$/);
+      if (contractRequestAction && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        const [, requestId, action] = contractRequestAction;
+        const updated = await store.update(state => {
+          const request = state.serviceRequests.find(item => item.id === requestId);
+          if (!request) throw Object.assign(new Error('La solicitud no existe.'), { statusCode: 404 });
+          if (action === 'review') request.status = 'inReview';
+          if (action === 'resolve') {
+            if (!['approved', 'rejected'].includes(payload.status)) {
+              throw Object.assign(new Error('La decisión seleccionada no es válida.'), { statusCode: 400 });
+            }
+            const note = String(payload.decisionNote ?? '').trim();
+            if (!note) throw Object.assign(new Error('Debe registrar una observación.'), { statusCode: 400 });
+            request.status = payload.status;
+            request.decisionNote = note;
+            request.notifiedAt = new Date().toISOString();
+          }
+          appendAudit(state, session, `service_request_${action}`, request.id);
+          return request;
+        });
+        return sendJson(res, 200, updated);
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {
         const state = await store.read();
         const session = resolveSession(state.users, req.headers.authorization);
