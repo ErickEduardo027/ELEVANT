@@ -1,0 +1,13 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+echo Instalando backend prototipo...
+call npm ci --prefix backend-prototipo || exit /b 1
+echo Instalando web departamental...
+call npm ci --prefix frontend\web || exit /b 1
+echo Instalando portal de aerolinea...
+call npm ci --prefix frontend\public-web || exit /b 1
+echo Instalando app movil...
+call npm ci --prefix frontend\mobile-agent || exit /b 1
+echo Instalacion completada.
+pause

@@ -1,0 +1,16 @@
+{
+  "name": "elevant-backend-prototipo",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.17.2"
+  }
+}

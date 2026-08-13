@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 // Dev preview only — not the project's chosen framework (see README.md).
 export default defineConfig({
   plugins: [react()],
+  server: { proxy: { '/api': { target: 'http://localhost:4310', changeOrigin: true } } },
   // maplibre-gl loads its worker chunk via `new Worker(url)` (a runtime string, not a static
   // import), so Vite's dependency crawler never discovers it and only pre-bundles maplibre-gl.js
   // itself into .vite/deps — the sibling *-worker.mjs it then requests 404s there, silently

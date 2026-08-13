@@ -1,4 +1,5 @@
 import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
+import { clearPrototypeToken, prototypeApi, savePrototypeToken } from '../../lib/prototypeApi';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
 export const MOCK_PASSWORD = 'Elevant2026!';
@@ -79,6 +80,7 @@ export function persistSession(session, remember = false) {
 export function clearSession() {
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
+  clearPrototypeToken();
 }
 
 export function logout() {
@@ -88,8 +90,12 @@ export function logout() {
 export async function mockLogin({ email, password, remember = false }) {
   const normalizedEmail = String(email ?? '').trim().toLowerCase();
   const user = MOCK_USERS[normalizedEmail];
-  if (!user || password !== MOCK_PASSWORD) {
-    throw new Error('Credenciales inválidas. Verifica el correo mock y la contraseña compartida.');
+  if (import.meta.env.MODE === 'test') {
+    if (!user || password !== MOCK_PASSWORD) throw new Error('Credenciales inválidas. Verifica el correo mock y la contraseña compartida.');
+  } else {
+    const authenticated = await prototypeApi.login({ email: normalizedEmail, password });
+    if (!user || authenticated.user.role !== user.role) throw new Error('La cuenta no corresponde al departamento solicitado.');
+    savePrototypeToken(authenticated.token, remember);
   }
 
   const session = {

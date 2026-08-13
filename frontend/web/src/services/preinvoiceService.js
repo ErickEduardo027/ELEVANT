@@ -1,3 +1,6 @@
+import { prototypeApi } from '../lib/prototypeApi';
+const USE_BACKEND = import.meta.env.MODE !== 'test';
+
 const INITIAL = [
   { id: 'PRE-2026-082', airline: 'American Airlines', period: 'Agosto 2026', services: 8, total: 2680, currency: 'USD', status: 'draft' },
   { id: 'PRE-2026-079', airline: 'Arajet', period: 'Agosto 2026', services: 6, total: 111000, currency: 'DOP', status: 'approved' },
@@ -5,12 +8,19 @@ const INITIAL = [
 ];
 let preinvoices = structuredClone(INITIAL);
 
-export async function getPreinvoices() { return structuredClone(preinvoices); }
+export async function getPreinvoices() { if (USE_BACKEND) return (await prototypeApi.data('preinvoices')).map(fromApi); return structuredClone(preinvoices); }
 export async function createPreinvoice({ airline, period, currency = 'USD' }) {
   if (!airline || !period) throw new Error('Aerolínea y período son obligatorios.');
+  if (USE_BACKEND) {
+    const airlines = await prototypeApi.data('airlines');
+    const selected = airlines.find(item => item.name === airline || item.id === airline);
+    if (!selected) throw new Error('Aerolínea no encontrada.');
+    return fromApi(await prototypeApi.createPreinvoice({ airlineId: selected.id, period, currency }));
+  }
   const item = { id: `PRE-2026-${String(83 + preinvoices.length).padStart(3, '0')}`, airline, period, services: 4, total: currency === 'DOP' ? 74000 : 1240, currency, status: 'draft' };
   preinvoices.unshift(item); return structuredClone(item);
 }
-export async function approvePreinvoice(id) { const item = preinvoices.find(row => row.id === id); if (!item) throw new Error('Pre-factura no encontrada.'); item.status = 'approved'; return structuredClone(item); }
-export async function sendPreinvoice(id) { const item = preinvoices.find(row => row.id === id); if (!item || item.status !== 'approved') throw new Error('La pre-factura debe estar aprobada antes del envío.'); item.status = 'sent'; item.sentAt = new Date().toISOString(); return structuredClone(item); }
+export async function approvePreinvoice(id) { if (USE_BACKEND) return fromApi(await prototypeApi.transitionPreinvoice(id, 'approve')); const item = preinvoices.find(row => row.id === id); if (!item) throw new Error('Pre-factura no encontrada.'); item.status = 'approved'; return structuredClone(item); }
+export async function sendPreinvoice(id) { if (USE_BACKEND) return fromApi(await prototypeApi.transitionPreinvoice(id, 'send')); const item = preinvoices.find(row => row.id === id); if (!item || item.status !== 'approved') throw new Error('La pre-factura debe estar aprobada antes del envío.'); item.status = 'sent'; item.sentAt = new Date().toISOString(); return structuredClone(item); }
+function fromApi(item) { return { ...item, status: item.status.toLowerCase() }; }
 export function resetPreinvoicesForTests() { preinvoices = structuredClone(INITIAL); }

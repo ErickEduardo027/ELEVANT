@@ -1,0 +1,54 @@
+{
+  "meta": { "schemaVersion": 2, "station": "PUJ", "updatedAt": "2026-08-12T08:00:00-04:00" },
+  "users": [
+    { "id": "USR-ADMIN", "email": "admin@elevant.test", "password": "Elevant2026!", "name": "Laisha Ramírez", "role": "ADMIN_OCC", "department": "Administrador OCC", "enabled": true },
+    { "id": "USR-HR", "email": "gestionhumana@elevant.test", "password": "Elevant2026!", "name": "Camila Reyes", "role": "GESTION_HUMANA", "department": "Gestión Humana", "enabled": true },
+    { "id": "USR-CONTRACTS", "email": "contratos@elevant.test", "password": "Elevant2026!", "name": "Marcos Silva", "role": "CONTRATOS", "department": "Contratos", "enabled": true },
+    { "id": "USR-FINANCE", "email": "finanzas@elevant.test", "password": "Elevant2026!", "name": "Elena Rojas", "role": "FINANZAS", "department": "Finanzas", "enabled": true },
+    { "id": "USR-AGENT-01", "email": "agente@elevant.test", "password": "Elevant2026!", "name": "José Pérez", "role": "AGENTE_RAMPA", "department": "Operaciones en rampa", "enabled": true }
+  ],
+  "airlines": [
+    { "id": "AIR-DEMO", "name": "Elevant Demo Air", "code": "EV", "contactEmail": "operaciones@demo-air.test", "status": "active" },
+    { "id": "AIR-AA", "name": "American Airlines", "code": "AA", "contactEmail": "station.puj@aa.test", "status": "active" },
+    { "id": "AIR-DL", "name": "Delta Air Lines", "code": "DL", "contactEmail": "station.puj@dl.test", "status": "active" }
+    ,{ "id": "AIR-B6", "name": "JetBlue", "code": "B6", "contactEmail": "station.puj@jetblue.test", "status": "active" }
+  ],
+  "serviceRequests": [
+    { "id": "SOL-108", "airlineId": "AIR-DEMO", "airline": "Elevant Demo Air", "station": "PUJ", "type": "AFFILIATION", "title": "Inicio de operaciones regulares", "description": "Solicitud de afiliación y servicios de rampa.", "requestedServices": ["Puente de abordaje", "GPU", "Equipaje"], "requestedFor": "2026-08-15T14:00:00-04:00", "status": "SUBMITTED", "createdAt": "2026-08-12T08:10:00-04:00", "updatedAt": "2026-08-12T08:10:00-04:00" }
+  ],
+  "contracts": [
+    { "id": "CTR-B6-DEMO", "airlineId": "AIR-B6", "airline": "JetBlue", "airlineCode": "B6", "type": "PERMANENT", "startDate": "2026-01-01", "endDate": null, "status": "ACTIVE", "conditions": "Contrato de demostración para operación móvil.", "sourceRequestId": null, "createdAt": "2026-08-01T08:00:00-04:00" }
+  ],
+  "contractServices": [
+    { "id": "SVC-B6-01", "contractId": "CTR-B6-DEMO", "code": "PUENTE", "name": "Puente de abordaje", "unit": "SERVICE", "unitPrice": 310, "currency": "USD", "active": true },
+    { "id": "SVC-B6-02", "contractId": "CTR-B6-DEMO", "code": "EQUIPAJE", "name": "Equipaje", "unit": "SERVICE", "unitPrice": 220, "currency": "USD", "active": true },
+    { "id": "SVC-B6-03", "contractId": "CTR-B6-DEMO", "code": "GPU", "name": "GPU", "unit": "SERVICE", "unitPrice": 325, "currency": "USD", "active": true }
+  ],
+  "personnel": [
+    { "id": "AGT-001", "userId": "USR-AGENT-01", "name": "José Pérez", "type": "ramp-agent", "status": "active", "available": true, "qualifications": ["Puente de abordaje", "GPU", "Equipaje"], "shift": "08:00-16:00" },
+    { "id": "AGT-002", "name": "María Castillo", "type": "ramp-agent", "status": "active", "available": true, "qualifications": ["Limpieza", "Equipaje"], "shift": "08:00-16:00" }
+  ],
+  "hrAllocations": [
+    { "id": "HRA-B6-DEMO", "agentId": "AGT-001", "agentName": "José Pérez", "station": "PUJ", "date": "2026-08-12", "shift": "08:00-16:00", "status": "ASSIGNED", "allocatedAt": "2026-08-12T08:00:00-04:00", "allocatedBy": "USR-HR" }
+  ],
+  "flights": [
+    { "id": "FLT-EV204", "airlineId": "AIR-DEMO", "airline": "Elevant Demo Air", "number": "EV 204", "origin": "MIA", "destination": "PUJ", "station": "PUJ", "scheduledAt": "2026-08-12T15:10:00-04:00", "estimatedAt": "2026-08-12T15:18:00-04:00", "gate": "B08", "aircraft": "A320-200", "flightStatus": "ARRIVED_GATE", "operationStatus": "PENDING", "contractId": null },
+    { "id": "B61015", "airlineId": "AIR-B6", "airline": "JetBlue", "number": "B6 1015", "origin": "JFK", "destination": "PUJ", "station": "PUJ", "scheduledAt": "2026-08-12T14:35:00-04:00", "estimatedAt": "2026-08-12T14:35:00-04:00", "gate": "B12", "aircraft": "Airbus A320", "flightStatus": "ARRIVED_GATE", "operationStatus": "ASSIGNED", "contractId": "CTR-B6-DEMO" }
+  ],
+  "assignments": [
+    { "id": "ASG-B6-DEMO", "flightId": "B61015", "agentId": "AGT-001", "agentName": "José Pérez", "services": ["Puente de abordaje", "Equipaje", "GPU"], "gate": "B12", "status": "ASSIGNED", "assignedAt": "2026-08-12T08:10:00-04:00", "assignedBy": "USR-ADMIN" }
+  ],
+  "operations": [],
+  "incidents": [],
+  "executedServices": [],
+  "reviews": [],
+  "preinvoices": [],
+  "reconciliations": [],
+  "documents": [],
+  "notifications": [],
+  "chats": [],
+  "messages": [],
+  "reports": [],
+  "mobileSyncRecords": [],
+  "audit": []
+}

@@ -28,6 +28,7 @@ import ChatRoute from '../features/chat/ChatRoute';
 import ContractsShell from '../features/contracts/shell/ContractsShell';
 import FinanceShell from '../features/finance/shell/FinanceShell';
 import { AlertTriangleIcon } from '../features/shell/components/icons';
+import PrototypeHub from '../features/prototype/PrototypeHub';
 
 function LoginRoute() {
   const navigate = useNavigate();
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
   { path: '/', element: <Navigate to={ROUTE_PATHS.LOGIN} replace /> },
   { path: ROUTE_PATHS.LOGIN, element: <LoginRoute /> },
   { path: '/select-role', element: <Navigate to={ROUTE_PATHS.LOGIN} replace /> },
+  { path: '/prototipo', element: <PrototypeHub /> },
   {
     path: HUMAN_RESOURCES_BASE_PATH,
     element: <ProtectedRole role={ROLE_KEYS.GESTION_HUMANA}><HumanResourcesLayout /></ProtectedRole>,

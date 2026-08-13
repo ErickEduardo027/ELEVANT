@@ -661,6 +661,24 @@ export class MockPortalRepository {
       "/portal/solicitudes",
     );
     this.#persist();
+    if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_PROTOTYPE_API_URL) {
+      void fetch(`${process.env.NEXT_PUBLIC_PROTOTYPE_API_URL}/api/airline/requests`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          airlineId: request.airlineId,
+          airline: request.airlineId === 'airline_demo' ? 'Aerolínea Demo' : 'Aerolínea solicitante',
+          station: request.station,
+          flightId: request.flightId,
+          requestedBy: request.requestedBy,
+          type: request.type,
+          title: request.title,
+          description: request.description,
+          requestedFor: request.requestedFor,
+          requestedServices: [],
+        }),
+      }).catch(() => undefined);
+    }
     return clone(request);
   }
 

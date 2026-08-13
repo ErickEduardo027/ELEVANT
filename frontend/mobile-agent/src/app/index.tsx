@@ -6,15 +6,17 @@ import { router } from 'expo-router';
 import { colors } from '../theme/colors';
 import { PrimaryButton } from '../components/ui';
 import { exitApplication } from '../utils/app-exit';
+import { loginAgent } from '../services/prototype-api';
 
 export default function LoginScreen() {
-  const [user, setUser] = useState('agente.rampa');
-  const [password, setPassword] = useState('123456');
+  const [user, setUser] = useState('agente@elevant.test');
+  const [password, setPassword] = useState('Elevant2026!');
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState('');
-  const login = () => {
+  const login = async () => {
     if (!user.trim() || !password.trim()) return setError('Completa el usuario y la contraseña.');
-    setError(''); router.replace('/home');
+    try { setError(''); await loginAgent(user, password); router.replace('/home'); }
+    catch (loginError) { setError(loginError instanceof Error ? loginError.message : 'No fue posible iniciar sesión.'); }
   };
   return <SafeAreaView style={styles.safe}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>

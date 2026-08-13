@@ -1,3 +1,6 @@
+import { prototypeApi } from '../lib/prototypeApi';
+
+const USE_BACKEND = import.meta.env.MODE !== 'test';
 const INITIAL_REQUESTS = [
   { id: 'SOL-108', airline: 'Sky High', contactName: 'María Santos', contactEmail: 'operaciones@skyhigh.do', type: 'additionalService', requestedService: 'GPU para vuelo DO401 del 12 de agosto', receivedAt: '2026-08-09T09:35:00-04:00', status: 'pending', decisionNote: '', notifiedAt: null },
   { id: 'SOL-107', airline: 'Air Century', contactName: 'Carlos Méndez', contactEmail: 'comercial@aircentury.com', type: 'affiliation', requestedService: 'Afiliación como nuevo cliente para operaciones regulares', receivedAt: '2026-08-08T15:10:00-04:00', status: 'inReview', decisionNote: '', notifiedAt: null },
@@ -9,21 +12,35 @@ const INITIAL_REQUESTS = [
 let requests = INITIAL_REQUESTS.map(request => ({ ...request }));
 
 export async function getContractRequests() {
+  if (USE_BACKEND) return (await prototypeApi.data('serviceRequests')).map(fromApi);
   return requests.map(request => ({ ...request }));
 }
 
 export async function markRequestInReview(requestId) {
+  if (USE_BACKEND) return fromApi(await prototypeApi.reviewRequest(requestId));
   return updateRequest(requestId, { status: 'inReview' });
 }
 
 export async function resolveContractRequest(requestId, { status, decisionNote }) {
   if (!['approved', 'rejected'].includes(status)) throw new Error('La decisión seleccionada no es válida.');
   if (!decisionNote.trim()) throw new Error('Debe registrar una observación para atender la solicitud.');
+  if (USE_BACKEND) {
+    const result = await prototypeApi.decideRequest(requestId, {
+      status: status.toUpperCase(), decisionNote, contractType: 'TEMPORARY',
+      defaultRate: 300, currency: 'USD',
+    });
+    return fromApi(result.request);
+  }
   return updateRequest(requestId, {
     status,
     decisionNote: decisionNote.trim(),
     notifiedAt: new Date().toISOString(),
   });
+}
+
+function fromApi(item) {
+  const statuses = { SUBMITTED: 'pending', IN_REVIEW: 'inReview', APPROVED: 'approved', REJECTED: 'rejected' };
+  return { ...item, type: item.type === 'AFFILIATION' ? 'affiliation' : 'additionalService', requestedService: item.title, receivedAt: item.createdAt, status: statuses[item.status] || item.status?.toLowerCase(), contactName: item.contactName || 'Representante de aerolínea', contactEmail: item.contactEmail || '' };
 }
 
 function updateRequest(requestId, changes) {

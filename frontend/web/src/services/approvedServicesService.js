@@ -8,10 +8,12 @@ const SERVICES = [
 let services = structuredClone(SERVICES);
 
 export async function getApprovedServices() {
+  if (USE_BACKEND) return (await prototypeApi.data('executedServices')).map(item => ({ ...item, date: item.executedAt?.slice(0, 10), contract: item.contractId, status: item.status === 'APPROVED' ? 'pending' : item.status.toLowerCase() }));
   return structuredClone(services);
 }
 
 export async function markApprovedServiceReviewed(id) {
+  if (USE_BACKEND) return (await prototypeApi.data('executedServices')).find(item => item.id === id);
   const service = services.find(item => item.id === id);
   if (!service) throw new Error('Servicio aprobado no encontrado.');
   service.status = 'reviewed';
@@ -22,3 +24,5 @@ export async function markApprovedServiceReviewed(id) {
 export function resetApprovedServicesForTests() {
   services = structuredClone(SERVICES);
 }
+import { prototypeApi } from '../lib/prototypeApi';
+const USE_BACKEND = import.meta.env.MODE !== 'test';
