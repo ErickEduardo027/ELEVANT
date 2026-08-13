@@ -23,8 +23,19 @@ async function startTestServer() {
         roleLabel: 'Administrador OCC',
         active: true,
       },
+      {
+        id: 'USR-GESTION-HUMANA',
+        email: 'gestionhumana@elevant.test',
+        password: 'Elevant2026!',
+        name: 'Camila Reyes',
+        role: 'GESTION_HUMANA',
+        roleLabel: 'Gestión Humana',
+        active: true,
+      },
     ],
     flights: [],
+    personnel: [],
+    audit: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -56,7 +67,7 @@ test('health responde y crea el archivo persistente limpio', async t => {
   const persisted = JSON.parse(
     await readFile(path.join(context.dataDirectory, 'runtime.json'), 'utf8'),
   );
-  assert.equal(persisted.users.length, 1);
+  assert.equal(persisted.users.length, 2);
   assert.equal(persisted.users[0].email, 'admin@elevant.test');
   assert.deepEqual(persisted.flights, []);
 });
@@ -159,4 +170,91 @@ test('regenera datos cuando cambia la versión del esquema', async () => {
   assert.equal(state.schemaVersion, 2);
   assert.equal(state.users[0].email, 'nuevo@elevant.test');
   assert.deepEqual(state.flights, []);
+});
+
+test('Gestión Humana crea, desactiva y reactiva el acceso móvil de un agente', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const hrLoginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'gestionhumana@elevant.test',
+      password: 'Elevant2026!',
+    }),
+  });
+  const hrLogin = await hrLoginResponse.json();
+  assert.equal(hrLoginResponse.status, 200);
+
+  const createResponse = await fetch(`${context.baseUrl}/api/hr/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${hrLogin.token}`,
+    },
+    body: JSON.stringify({
+      identity: {
+        firstName: 'Ana',
+        lastName: 'Pérez',
+        email: 'ana.perez@elevant.test',
+        phone: '809-555-0101',
+        identificationType: 'Cédula',
+        identificationNumber: '001-0000000-1',
+      },
+      access: { roleId: 'role-agente-rampa' },
+      userType: 'ramp_agent',
+      rampAgent: {
+        employeeNumber: 'AVIAM-001',
+        terminals: ['PUJ'],
+        category: 'Agente de Rampa',
+        hireDate: '2026-08-13',
+        supervisorName: 'Camila Reyes',
+      },
+    }),
+  });
+  const created = await createResponse.json();
+  assert.equal(createResponse.status, 201);
+  assert.equal(created.identity.email, 'ana.perez@elevant.test');
+  assert.equal(created.account.status, 'active');
+
+  const mobileLogin = async () => fetch(`${context.baseUrl}/api/mobile/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'ana.perez@elevant.test',
+      password: 'Elevant2026!',
+    }),
+  });
+
+  const firstMobileLogin = await mobileLogin();
+  assert.equal(firstMobileLogin.status, 200);
+  assert.equal((await firstMobileLogin.json()).user.role, 'AGENTE_RAMPA');
+
+  const deactivateResponse = await fetch(
+    `${context.baseUrl}/api/hr/users/${created.identity.id}/deactivate`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hrLogin.token}`,
+      },
+      body: JSON.stringify({ reason: 'Prueba de desactivación' }),
+    },
+  );
+  assert.equal(deactivateResponse.status, 200);
+  assert.equal((await deactivateResponse.json()).account.status, 'disabled');
+  assert.equal((await mobileLogin()).status, 401);
+
+  const activateResponse = await fetch(
+    `${context.baseUrl}/api/hr/users/${created.identity.id}/activate`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${hrLogin.token}` },
+    },
+  );
+  assert.equal(activateResponse.status, 200);
+  assert.equal((await activateResponse.json()).account.status, 'active');
+  assert.equal((await mobileLogin()).status, 200);
 });

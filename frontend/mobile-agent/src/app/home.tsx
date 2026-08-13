@@ -8,15 +8,18 @@ import { checklistSections, flights, Flight } from '../data/mock';
 import { colors } from '../theme/colors';
 import { getOperationState, getOutbox, OperationState } from '../storage/prototype-storage';
 import { exitApplication } from '../utils/app-exit';
+import { getMobileSession, logoutMobileAgent, MobileAgent } from '../services/mobile-auth';
 
 export default function HomeScreen() {
   const [pending, setPending] = useState(0);
   const [operationStates, setOperationStates] = useState<Record<string, OperationState>>({});
   const [profileVisible, setProfileVisible] = useState(false);
+  const [agent, setAgent] = useState<MobileAgent | null>(null);
   useFocusEffect(useCallback(() => {
     const checklistTotal = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-    Promise.all([getOutbox(), ...flights.map(flight => getOperationState(flight.id, checklistTotal))]).then(([queue, ...states]) => {
+    Promise.all([getOutbox(), getMobileSession(), ...flights.map(flight => getOperationState(flight.id, checklistTotal))]).then(([queue, session, ...states]) => {
       setPending(queue.length);
+      setAgent(session?.user ?? null);
       setOperationStates(Object.fromEntries(flights.map((flight, index) => [flight.id, states[index]])));
     });
   }, []));
@@ -28,14 +31,14 @@ export default function HomeScreen() {
     </Card>
   </Pressable>;
   return <SafeAreaView style={styles.safe}>
-    <View style={styles.header}><View><Text style={styles.hello}>Buenos días,</Text><Text style={styles.name}>Agente de Rampa</Text></View><Pressable accessibilityLabel="Abrir menú del agente" onPress={() => setProfileVisible(true)} style={styles.avatar}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.avatarImage} /></Pressable></View>
+    <View style={styles.header}><View><Text style={styles.hello}>Buenos días,</Text><Text style={styles.name}>{agent?.name ?? 'Agente de Rampa'}</Text></View><Pressable accessibilityLabel="Abrir menú del agente" onPress={() => setProfileVisible(true)} style={styles.avatar}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.avatarImage} /></Pressable></View>
     <View style={styles.quickRow}>
       <Pressable style={styles.quick} onPress={() => router.push('/sync')}><Ionicons name={pending ? 'cloud-offline-outline' : 'cloud-done-outline'} size={25} color={pending ? colors.orange : colors.success} /><View><Text style={styles.quickTitle}>{pending} pendientes</Text><Text style={styles.quickText}>Sincronización</Text></View></Pressable>
       <Pressable style={styles.quick} onPress={() => router.push('/chat')}><Ionicons name="chatbubbles-outline" size={25} color={colors.blue} /><View style={styles.quickCopy}><Text style={styles.quickTitle}>Chat con OCC</Text><Text style={styles.quickText}>Apoyo en tiempo real</Text></View><View style={styles.onlineDot} /></Pressable>
     </View>
     <View style={styles.sectionRow}><View><Text style={styles.sectionTitle}>Vuelos asignados</Text><Text style={styles.sectionSub}>Operaciones programadas para hoy</Text></View><StatusPill text={`${flights.length} vuelos`} /></View>
     <FlatList data={flights} keyExtractor={x => x.id} renderItem={renderFlight} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false} />
-    <Modal visible={profileVisible} transparent animationType="fade" onRequestClose={() => setProfileVisible(false)}><Pressable style={styles.overlay} onPress={() => setProfileVisible(false)}><Pressable style={styles.profileCard} onPress={() => undefined}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.profileLogo} /><Text style={styles.profileName}>Agente de Rampa</Text><Text style={styles.profileUser}>agente.rampa · AVIAM</Text><Text style={styles.profileNote}>La información y las credenciales son administradas por AVIAM.</Text><Pressable style={styles.menuButton} onPress={() => { setProfileVisible(false); router.replace('/'); }}><Ionicons name="log-out-outline" size={21} color={colors.navy} /><Text style={styles.menuButtonText}>Cerrar sesión</Text></Pressable><Pressable style={[styles.menuButton, styles.exitButton]} onPress={() => { setProfileVisible(false); exitApplication(); }}><Ionicons name="exit-outline" size={21} color={colors.danger} /><Text style={[styles.menuButtonText, styles.exitText]}>Salir de la aplicación</Text></Pressable></Pressable></Pressable></Modal>
+    <Modal visible={profileVisible} transparent animationType="fade" onRequestClose={() => setProfileVisible(false)}><Pressable style={styles.overlay} onPress={() => setProfileVisible(false)}><Pressable style={styles.profileCard} onPress={() => undefined}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.profileLogo} /><Text style={styles.profileName}>{agent?.name ?? 'Agente de Rampa'}</Text><Text style={styles.profileUser}>{agent?.email ?? 'Cuenta de agente'} · AVIAM</Text><Text style={styles.profileNote}>La información y las credenciales son administradas por AVIAM.</Text><Pressable style={styles.menuButton} onPress={async () => { setProfileVisible(false); await logoutMobileAgent(); router.replace('/'); }}><Ionicons name="log-out-outline" size={21} color={colors.navy} /><Text style={styles.menuButtonText}>Cerrar sesión</Text></Pressable><Pressable style={[styles.menuButton, styles.exitButton]} onPress={() => { setProfileVisible(false); exitApplication(); }}><Ionicons name="exit-outline" size={21} color={colors.danger} /><Text style={[styles.menuButtonText, styles.exitText]}>Salir de la aplicación</Text></Pressable></Pressable></Pressable></Modal>
   </SafeAreaView>;
 }
 

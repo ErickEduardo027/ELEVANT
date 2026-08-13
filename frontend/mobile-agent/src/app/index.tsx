@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,15 +6,31 @@ import { router } from 'expo-router';
 import { colors } from '../theme/colors';
 import { PrimaryButton } from '../components/ui';
 import { exitApplication } from '../utils/app-exit';
+import { getMobileSession, loginMobileAgent } from '../services/mobile-auth';
 
 export default function LoginScreen() {
-  const [user, setUser] = useState('agente.rampa');
-  const [password, setPassword] = useState('123456');
+  const [user, setUser] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState('');
-  const login = () => {
+  useEffect(() => {
+    getMobileSession().then(session => {
+      if (session) router.replace('/home');
+    });
+  }, []);
+  const login = async () => {
     if (!user.trim() || !password.trim()) return setError('Completa el usuario y la contraseña.');
-    setError(''); router.replace('/home');
+    setBusy(true);
+    setError('');
+    try {
+      await loginMobileAgent(user.trim(), password);
+      router.replace('/home');
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Credenciales inválidas.');
+    } finally {
+      setBusy(false);
+    }
   };
   return <SafeAreaView style={styles.safe}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
@@ -27,9 +43,9 @@ export default function LoginScreen() {
         <View style={styles.inputBox}><Ionicons name="person-outline" size={22} color={colors.navy} /><TextInput value={user} onChangeText={setUser} placeholder="Usuario" autoCapitalize="none" style={styles.input} /></View>
         <View style={styles.inputBox}><Ionicons name="lock-closed-outline" size={22} color={colors.navy} /><TextInput value={password} onChangeText={setPassword} placeholder="Contraseña" secureTextEntry={!visible} style={styles.input} /><Pressable onPress={() => setVisible(!visible)}><Ionicons name={visible ? 'eye-off-outline' : 'eye-outline'} size={23} color={colors.navy} /></Pressable></View>
         {!!error && <Text style={styles.error}>{error}</Text>}
-        <PrimaryButton title="INICIAR SESIÓN" icon="log-in-outline" onPress={login} />
+        <PrimaryButton title={busy ? 'AUTENTICANDO…' : 'INICIAR SESIÓN'} icon="log-in-outline" onPress={login} disabled={busy} />
         <PrimaryButton title="SALIR" icon="exit-outline" onPress={exitApplication} secondary />
-        <Text style={styles.demo}>Prototipo: puedes usar los datos precargados.</Text>
+        <Text style={styles.demo}>Utiliza las credenciales proporcionadas por Gestión Humana.</Text>
       </View>
       <View style={styles.footer}><Text style={styles.footerTitle}>ELEVANDO LA GESTIÓN DE</Text><Text style={styles.footerAccent}>OPERACIONES EN TIERRA.</Text></View>
     </KeyboardAvoidingView>
