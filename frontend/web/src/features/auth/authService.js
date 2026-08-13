@@ -2,6 +2,9 @@ import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
 export const MOCK_PASSWORD = 'Elevant2026!';
+export const PROTOTYPE_API_URL = String(
+  import.meta.env.VITE_PROTOTYPE_API_URL || 'http://localhost:4310'
+).replace(/\/$/, '');
 
 const MOCK_USERS = {
   'admin@elevant.test': {
@@ -65,6 +68,25 @@ export function getMockUsers() {
   return Object.values(MOCK_USERS).map(({ email, name, roleLabel }) => ({ email, name, roleLabel }));
 }
 
+async function request(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo. Verifica que esté iniciado en el puerto 4310.');
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la autenticación.');
+  return payload;
+}
+
 export function readSession() {
   return readFrom(window.localStorage) ?? readFrom(window.sessionStorage);
 }
@@ -82,17 +104,35 @@ export function clearSession() {
 }
 
 export function logout() {
+  const session = readSession();
+  if (session?.token) {
+    void request('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.token}` },
+    }).catch(() => undefined);
+  }
   clearSession();
 }
 
 export async function mockLogin({ email, password, remember = false }) {
-  const normalizedEmail = String(email ?? '').trim().toLowerCase();
-  const user = MOCK_USERS[normalizedEmail];
-  if (!user || password !== MOCK_PASSWORD) {
-    throw new Error('Credenciales inválidas. Verifica el correo mock y la contraseña compartida.');
+  let response;
+  if (import.meta.env.MODE === 'test') {
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const testUser = MOCK_USERS[normalizedEmail];
+    if (!testUser || password !== MOCK_PASSWORD) {
+      throw new Error('Credenciales inválidas.');
+    }
+    response = { token: 'test-session-token', user: testUser };
+  } else {
+    response = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
   }
+  const user = response.user;
 
   const session = {
+    token: response.token,
     email: user.email,
     name: user.name,
     role: user.role,

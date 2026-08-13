@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react';
-import { clearSession, mockLogin, readSession } from './authService';
+import { logout as closeBackendSession, mockLogin, readSession } from './authService';
 
 const AuthContext = createContext(null);
 
@@ -13,7 +13,7 @@ export function AuthProvider({ children }) {
       return nextSession;
     },
     logout() {
-      clearSession();
+      closeBackendSession();
       setSession(null);
     },
   }), [session]);

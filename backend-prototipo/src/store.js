@@ -16,14 +16,15 @@ export function createJsonStore({ dataDirectory }) {
 
   async function initialize() {
     await mkdir(dataDirectory, { recursive: true });
+    const seed = await readJson(seedPath);
 
     try {
-      return await readJson(runtimePath);
+      const runtime = await readJson(runtimePath);
+      if (runtime.schemaVersion === seed.schemaVersion) return runtime;
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
     }
 
-    const seed = await readJson(seedPath);
     const now = new Date().toISOString();
     const initialState = {
       ...clone(seed),
