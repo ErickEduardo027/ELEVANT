@@ -24,6 +24,15 @@ async function startTestServer() {
         active: true,
       },
       {
+        id: 'USR-CONTRATOS',
+        email: 'contratos@elevant.test',
+        password: 'Elevant2026!',
+        name: 'Marcos Silva',
+        role: 'CONTRATOS',
+        roleLabel: 'Contratos',
+        active: true,
+      },
+      {
         id: 'USR-GESTION-HUMANA',
         email: 'gestionhumana@elevant.test',
         password: 'Elevant2026!',
@@ -36,6 +45,7 @@ async function startTestServer() {
     flights: [],
     personnel: [],
     audit: [],
+    serviceRequests: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -67,7 +77,7 @@ test('health responde y crea el archivo persistente limpio', async t => {
   const persisted = JSON.parse(
     await readFile(path.join(context.dataDirectory, 'runtime.json'), 'utf8'),
   );
-  assert.equal(persisted.users.length, 2);
+  assert.equal(persisted.users.length, 3);
   assert.equal(persisted.users[0].email, 'admin@elevant.test');
   assert.deepEqual(persisted.flights, []);
 });
@@ -257,4 +267,52 @@ test('Gestión Humana crea, desactiva y reactiva el acceso móvil de un agente',
   assert.equal(activateResponse.status, 200);
   assert.equal((await activateResponse.json()).account.status, 'active');
   assert.equal((await mobileLogin()).status, 200);
+});
+
+test('una solicitud pública llega a Contratos y puede resolverse', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const createResponse = await fetch(`${context.baseUrl}/api/public/service-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      airline: 'Aerolínea de Prueba',
+      contactName: 'Ana Pérez',
+      contactEmail: 'ana@aerolinea.test',
+      type: 'affiliation',
+      requestedService: 'Afiliación y servicios de rampa en PUJ.',
+    }),
+  });
+  const created = await createResponse.json();
+  assert.equal(createResponse.status, 201);
+  assert.equal(created.status, 'pending');
+
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'contratos@elevant.test', password: 'Elevant2026!' }),
+  });
+  const login = await loginResponse.json();
+  const authorization = { Authorization: `Bearer ${login.token}` };
+
+  const listResponse = await fetch(`${context.baseUrl}/api/contracts/requests`, { headers: authorization });
+  assert.equal(listResponse.status, 200);
+  assert.equal((await listResponse.json())[0].id, created.id);
+
+  const reviewResponse = await fetch(`${context.baseUrl}/api/contracts/requests/${created.id}/review`, {
+    method: 'POST', headers: authorization,
+  });
+  assert.equal((await reviewResponse.json()).status, 'inReview');
+
+  const resolveResponse = await fetch(`${context.baseUrl}/api/contracts/requests/${created.id}/resolve`, {
+    method: 'POST',
+    headers: { ...authorization, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'approved', decisionNote: 'Solicitud aprobada para elaborar contrato.' }),
+  });
+  const resolved = await resolveResponse.json();
+  assert.equal(resolveResponse.status, 200);
+  assert.equal(resolved.status, 'approved');
+  assert.equal(resolved.decisionNote, 'Solicitud aprobada para elaborar contrato.');
 });

@@ -98,8 +98,45 @@ export function MockSessionProvider({
   );
 
   const requestAffiliation = useCallback(
-    async (input: MockAffiliationInput) => affiliationGateway.submit(input),
-    [affiliationGateway],
+    async (input: MockAffiliationInput) => {
+      if (providedAffiliationGateway || process.env.NODE_ENV === "test") {
+        return affiliationGateway.submit(input);
+      }
+      const localResult = affiliationGateway.submit(input);
+      if (!localResult.ok) return localResult;
+      try {
+        const baseUrl = (process.env.NEXT_PUBLIC_PROTOTYPE_API_URL || "http://localhost:4310").replace(/\/$/, "");
+        const response = await fetch(`${baseUrl}/api/public/service-requests`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            airline: localResult.request.airline.displayName,
+            contactName: localResult.request.representative.fullName,
+            contactEmail: localResult.request.representative.email,
+            type: "affiliation",
+            requestedService: localResult.request.servicesOfInterest,
+            details: localResult.request,
+          }),
+        });
+        const created = await response.json();
+        if (!response.ok) throw new Error(created.error || "No se pudo enviar la solicitud.");
+        return {
+          ok: true as const,
+          request: {
+            ...localResult.request,
+            id: created.id,
+            reference: created.id,
+            submittedAt: created.receivedAt,
+          },
+        };
+      } catch {
+        return {
+          ok: false as const,
+          message: "La solicitud se guardó localmente, pero no fue posible enviarla a Contratos. Verifica que el backend esté iniciado.",
+        };
+      }
+    },
+    [affiliationGateway, providedAffiliationGateway],
   );
 
   const signOut = useCallback(() => {
