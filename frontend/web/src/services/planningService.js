@@ -1,3 +1,5 @@
+import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
 function getOperationDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -67,9 +69,38 @@ function buildFlight(template, stationCode, dateISO) {
 }
 
 export async function getPlanningSnapshot(stationCode = 'PUJ', dateISO = getOperationDate()) {
+  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/occ/planning?date=${encodeURIComponent(dateISO)}`);
   return {
     station: { code: stationCode, localAbbr: 'AST' },
     date: dateISO,
     flights: FLIGHT_TEMPLATES.map(template => buildFlight(template, stationCode, dateISO)),
   };
+}
+
+export async function getPlanningOptions() {
+  return apiRequest('/api/occ/planning/options');
+}
+
+export async function createPlannedFlight(input) {
+  return apiRequest('/api/occ/flights', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function assignPlannedFlight(flightId, input) {
+  return apiRequest(`/api/occ/flights/${flightId}/assign`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
 }

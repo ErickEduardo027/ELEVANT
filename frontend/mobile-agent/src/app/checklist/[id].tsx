@@ -2,20 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
-import { checklistSections, flights } from '../../data/mock';
+import { checklistSections, Flight } from '../../data/mock';
 import { addToOutbox, ChecklistAnswer, getChecklist, getOperationState, OperationState, saveChecklist } from '../../storage/prototype-storage';
 import { colors } from '../../theme/colors';
+import { getAssignedFlight } from '../../services/assigned-flights';
 
 type Answers = Record<string, ChecklistAnswer>;
 export default function ChecklistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const flight = flights.find(x => x.id === id);
+  const [flight, setFlight] = useState<Flight>();
   const [sectionIndex, setSectionIndex] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
   const [operation, setOperation] = useState<OperationState>();
   const section = checklistSections[sectionIndex];
   const total = checklistSections.reduce((sum, item) => sum + item.items.length, 0);
-  useEffect(() => { if (flight) Promise.all([getChecklist(flight.id), getOperationState(flight.id, total)]).then(([record, state]) => { setAnswers(record.answers); setOperation(state); }); }, [flight, total]);
+  useEffect(() => { getAssignedFlight(id).then(found => { setFlight(found); if (found) Promise.all([getChecklist(found.id), getOperationState(found.id, total)]).then(([record, state]) => { setAnswers(record.answers); setOperation(state); }); }); }, [id, total]);
   const completed = Object.keys(answers).length;
   const sectionCompleted = useMemo(() => section.items.every((_, i) => answers[`${section.id}:${i}`]), [answers, section]);
   if (!flight) return <View style={styles.notFound}><Text style={styles.title}>Vuelo no encontrado</Text><Text style={styles.help}>El identificador recibido no corresponde a un vuelo asignado.</Text><PrimaryButton title="VOLVER" icon="arrow-back" onPress={() => router.back()} /></View>;

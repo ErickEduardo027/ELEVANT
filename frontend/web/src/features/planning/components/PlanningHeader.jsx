@@ -20,7 +20,7 @@ function ActionButton({ icon: ActionIcon, label, onClick, disabled }) {
   );
 }
 
-export default function PlanningHeader({ onRefresh }) {
+export default function PlanningHeader({ onRefresh, onNewFlight }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -34,7 +34,7 @@ export default function PlanningHeader({ onRefresh }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ActionButton icon={PlusIcon} label="Nuevo vuelo" disabled />
+          <ActionButton icon={PlusIcon} label="Nuevo vuelo" onClick={onNewFlight} />
           <ActionButton icon={UploadIcon} label="Importar vuelos" disabled />
           <ActionButton icon={RefreshCwIcon} label="Actualizar" onClick={onRefresh} />
           <ActionButton icon={DownloadIcon} label="Exportar" disabled />

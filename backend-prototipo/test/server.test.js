@@ -48,6 +48,7 @@ async function startTestServer() {
     serviceRequests: [],
     contracts: [],
     contractServices: [],
+    assignments: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -373,4 +374,64 @@ test('Contratos convierte una solicitud aprobada en contrato y servicios pactado
   const persisted = await context.store.read();
   assert.equal(persisted.serviceRequests[0].contractId, contract.id);
   assert.equal(persisted.contractServices[0].rate, 485);
+});
+
+test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica en su móvil', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+  const login = async (email, route = '/api/auth/login') => {
+    const response = await fetch(`${context.baseUrl}${route}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'Elevant2026!' }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+
+  const hr = await login('gestionhumana@elevant.test');
+  const agentResponse = await fetch(`${context.baseUrl}/api/hr/users`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${hr.token}` },
+    body: JSON.stringify({
+      identity: { firstName: 'Ana', lastName: 'Pérez', email: 'ana.occ@elevant.test', phone: '809-555-0101', identificationType: 'Cédula', identificationNumber: '001-1' },
+      access: { roleId: 'role-agente-rampa' }, userType: 'ramp_agent',
+      rampAgent: { employeeNumber: 'AVIAM-002', terminals: ['PUJ'], category: 'Agente de Rampa', hireDate: '2026-08-13', supervisorName: 'Camila Reyes' },
+    }),
+  });
+  const agent = await agentResponse.json();
+
+  const contractsLogin = await login('contratos@elevant.test');
+  await context.store.update(state => state.serviceRequests.unshift({ id: 'SOL-OCC', airline: 'Aerolínea Integrada', status: 'approved', contractId: null }));
+  const contractResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${contractsLogin.token}` },
+    body: JSON.stringify({ requestId: 'SOL-OCC', airline: 'Aerolínea Integrada', airlineCode: 'AI', contractType: 'temporary', startDate: '2026-08-01', endDate: '2027-08-01', conditions: 'Servicios en PUJ.' }),
+  });
+  const contract = await contractResponse.json();
+  const serviceResponse = await fetch(`${context.baseUrl}/api/contracts/services`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${contractsLogin.token}` },
+    body: JSON.stringify({ contractId: contract.id, name: 'Puente de abordaje', rate: 485, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-01', endDate: '2027-08-01' }),
+  });
+  const service = await serviceResponse.json();
+
+  const occ = await login('admin@elevant.test');
+  const flightResponse = await fetch(`${context.baseUrl}/api/occ/flights`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ contractId: contract.id, flightNumber: 'AI101', origin: 'MIA', destination: 'PUJ', scheduledTime: '2026-08-13T14:30:00-04:00', aircraftType: 'A320', position: 'B12' }),
+  });
+  const flight = await flightResponse.json();
+  assert.equal(flightResponse.status, 201);
+  const assignmentResponse = await fetch(`${context.baseUrl}/api/occ/flights/${flight.id}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ agentId: agent.identity.id, serviceIds: [service.id], position: 'B12' }),
+  });
+  assert.equal(assignmentResponse.status, 200);
+  assert.deepEqual((await assignmentResponse.json()).services, ['Puente de abordaje']);
+
+  const mobile = await login('ana.occ@elevant.test', '/api/mobile/auth/login');
+  assert.equal(mobile.user.personnelId, agent.identity.id);
+  const mobileResponse = await fetch(`${context.baseUrl}/api/mobile/flights`, { headers: { Authorization: `Bearer ${mobile.token}` } });
+  const mobileFlights = await mobileResponse.json();
+  assert.equal(mobileResponse.status, 200);
+  assert.equal(mobileFlights.length, 1);
+  assert.equal(mobileFlights[0].id, flight.id);
 });

@@ -4,18 +4,19 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Card, PrimaryButton } from '../../components/ui';
-import { canOperateFlight, flights } from '../../data/mock';
+import { canOperateFlight, Flight } from '../../data/mock';
 import { addToOutbox, getOperationState, OperationState } from '../../storage/prototype-storage';
 import { colors } from '../../theme/colors';
+import { getAssignedFlight } from '../../services/assigned-flights';
 
 const types = ['Operativa', 'Seguridad', 'Equipo', 'Documentación'];
 const impacts = ['Bajo', 'Medio', 'Alto'];
 export default function IncidentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const flight = flights.find(x => x.id === id);
+  const [flight, setFlight] = useState<Flight>();
   const [type, setType] = useState('Operativa'); const [impact, setImpact] = useState('Medio'); const [description, setDescription] = useState(''); const [image, setImage] = useState<string>();
   const [operation, setOperation] = useState<OperationState>();
-  useEffect(() => { if (flight) getOperationState(flight.id).then(setOperation); }, [flight]);
+  useEffect(() => { getAssignedFlight(id).then(found => { setFlight(found); if (found) getOperationState(found.id).then(setOperation); }); }, [id]);
   const camera = async () => { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) return Alert.alert('Permiso requerido', 'Autoriza la cámara para adjuntar evidencia.'); const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.65 }); if (!result.canceled) setImage(result.assets[0].uri); };
   const gallery = async () => { const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.65 }); if (!result.canceled) setImage(result.assets[0].uri); };
   if (!flight) return <View style={styles.notFound}><Text style={styles.label}>Vuelo no encontrado</Text><PrimaryButton title="VOLVER" icon="arrow-back" onPress={() => router.back()} /></View>;

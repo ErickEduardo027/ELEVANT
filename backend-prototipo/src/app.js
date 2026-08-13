@@ -326,6 +326,89 @@ export function createApp({ store }) {
         return sendJson(res, 200, updated);
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/occ/planning') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        return sendJson(res, 200, { station: { code: 'PUJ', localAbbr: 'AST' }, date: url.searchParams.get('date') || new Date().toISOString().slice(0, 10), flights: state.flights });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/occ/planning/options') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        const contracts = state.contracts.filter(contract => contractStatus(contract) === 'active');
+        const agents = state.personnel
+          .filter(record => record.userType === 'ramp_agent' && record.account.status === 'active')
+          .map(record => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
+        return sendJson(res, 200, {
+          contracts: contracts.map(contract => contractView(state, contract)),
+          services: state.contractServices.filter(service => service.active && contracts.some(contract => contract.id === service.contractId)),
+          agents,
+        });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/occ/flights') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const required = ['contractId', 'flightNumber', 'origin', 'destination', 'scheduledTime', 'aircraftType'];
+        if (required.some(field => !String(payload[field] ?? '').trim())) {
+          throw Object.assign(new Error('Faltan datos obligatorios del vuelo.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          const contract = state.contracts.find(item => item.id === payload.contractId && contractStatus(item) === 'active');
+          if (!contract) throw Object.assign(new Error('El vuelo requiere un contrato activo.'), { statusCode: 409 });
+          const flight = {
+            id: nextId('FLT'), contractId: contract.id, airlineIata: contract.airlineCode,
+            airlineName: contract.airline, flightNumber: String(payload.flightNumber).trim().toUpperCase(),
+            status: payload.status || 'scheduled', scheduledTime: payload.scheduledTime,
+            estimatedTime: payload.scheduledTime, origin: String(payload.origin).trim().toUpperCase(),
+            destination: String(payload.destination).trim().toUpperCase(), aircraftType: String(payload.aircraftType).trim(),
+            position: String(payload.position ?? '').trim() || null, station: 'PUJ', supervisor: null,
+            agents: [], agentIds: [], teams: [], services: [], serviceIds: [], conflict: null,
+            observations: String(payload.observations ?? '').trim(),
+            history: [{ at: new Date().toISOString(), note: 'Vuelo registrado por OCC' }],
+            operationStatus: 'pending', createdAt: new Date().toISOString(),
+          };
+          state.flights.unshift(flight);
+          appendAudit(state, session, 'flight_created', flight.id, contract.id);
+          return flight;
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const assignFlightMatch = url.pathname.match(/^\/api\/occ\/flights\/([^/]+)\/assign$/);
+      if (assignFlightMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const assigned = await store.update(state => {
+          const flight = state.flights.find(item => item.id === assignFlightMatch[1]);
+          if (!flight) throw Object.assign(new Error('El vuelo no existe.'), { statusCode: 404 });
+          const agent = state.personnel.find(record => record.identity.id === payload.agentId && record.userType === 'ramp_agent' && record.account.status === 'active');
+          if (!agent) throw Object.assign(new Error('El agente no está habilitado.'), { statusCode: 409 });
+          const allowedServices = state.contractServices.filter(service => service.contractId === flight.contractId && service.active);
+          const selectedServices = allowedServices.filter(service => (payload.serviceIds ?? []).includes(service.id));
+          if (!selectedServices.length) throw Object.assign(new Error('Seleccione al menos un servicio pactado.'), { statusCode: 400 });
+          flight.agentIds = [agent.identity.id];
+          flight.agents = [`${agent.identity.firstName} ${agent.identity.lastName}`.trim()];
+          flight.serviceIds = selectedServices.map(service => service.id);
+          flight.services = selectedServices.map(service => service.name);
+          flight.position = String(payload.position ?? flight.position ?? '').trim() || null;
+          flight.history.unshift({ at: new Date().toISOString(), note: `Asignado a ${flight.agents[0]} y enviado al móvil` });
+          state.assignments.unshift({ id: nextId('ASG'), flightId: flight.id, agentId: agent.identity.id, serviceIds: flight.serviceIds, assignedAt: new Date().toISOString() });
+          appendAudit(state, session, 'flight_assigned', flight.id, agent.identity.id);
+          return flight;
+        });
+        return sendJson(res, 200, assigned);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/mobile/flights') {
+        const state = await store.read();
+        const session = requireSession(state, req, ['AGENTE_RAMPA']);
+        const personnelId = session.user.personnelId;
+        return sendJson(res, 200, state.flights.filter(flight => flight.agentIds?.includes(personnelId)));
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {
         const state = await store.read();
         const session = resolveSession(state.users, req.headers.authorization);

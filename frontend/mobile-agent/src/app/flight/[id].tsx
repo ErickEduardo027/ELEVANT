@@ -3,16 +3,17 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
-import { canOperateFlight, checklistSections, flights } from '../../data/mock';
+import { canOperateFlight, checklistSections, Flight } from '../../data/mock';
 import { addToOutbox, cancelOperationStart, flightKey, getChecklist, getOperationState, OperationState, setJson } from '../../storage/prototype-storage';
 import { colors } from '../../theme/colors';
+import { getAssignedFlight } from '../../services/assigned-flights';
 
 export default function FlightDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const flight = flights.find(x => x.id === id);
+  const [flight, setFlight] = useState<Flight>();
   const [state, setState] = useState<OperationState>({});
   const checklistTotal = checklistSections.reduce((sum, item) => sum + item.items.length, 0);
-  useFocusEffect(useCallback(() => { if (flight) getOperationState(flight.id, checklistTotal).then(setState); }, [flight, checklistTotal]));
+  useFocusEffect(useCallback(() => { getAssignedFlight(id).then(found => { setFlight(found); if (found) getOperationState(found.id, checklistTotal).then(setState); }); }, [id, checklistTotal]));
   if (!flight) return <View style={styles.notFound}><Text style={styles.title}>Vuelo no encontrado</Text><PrimaryButton title="VOLVER" icon="arrow-back" onPress={() => router.back()} /></View>;
   const update = async (next: OperationState, action: string) => { const unsynchronized = { ...next, syncedAt: undefined }; await setJson(flightKey(flight.id), unsynchronized); await addToOutbox('operación', `${action} - ${flight.number}`, { flightId: flight.id, ...unsynchronized }); setState(unsynchronized); };
   const start = () => {
