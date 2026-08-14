@@ -14,13 +14,17 @@ describe('ExportButton', () => {
 
   it('walks through generating -> completed and calls onExported with the result', async () => {
     const onExported = vi.fn();
-    render(<ExportButton reportId="closure" onExported={onExported} />);
+    let finishExport;
+    const exportFn = vi.fn(() => new Promise(resolve => { finishExport = resolve; }));
+    render(<ExportButton reportId="closure" exportFn={exportFn} onExported={onExported} />);
 
     await userEvent.click(screen.getByRole('button', { name: /exportar/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: 'PDF' }));
 
     expect(screen.getByRole('button', { name: /generando/i })).toBeInTheDocument();
     expect(screen.getByTestId('export-spinner')).toBeInTheDocument();
+
+    finishExport({ reportId: 'closure', format: 'pdf', fileName: 'closure.pdf' });
 
     await waitFor(() => expect(screen.getByRole('button', { name: /completado/i })).toBeInTheDocument(), { timeout: 2000 });
     expect(onExported).toHaveBeenCalledWith(expect.objectContaining({ format: 'pdf', fileName: expect.stringMatching(/\.pdf$/) }));
@@ -43,7 +47,8 @@ describe('ExportButton', () => {
   });
 
   it('disables the trigger while generating', async () => {
-    render(<ExportButton reportId="closure" />);
+    const exportFn = vi.fn(() => new Promise(() => {}));
+    render(<ExportButton reportId="closure" exportFn={exportFn} />);
     await userEvent.click(screen.getByRole('button', { name: /exportar/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: 'PDF' }));
     expect(screen.getByRole('button', { name: /generando/i })).toBeDisabled();

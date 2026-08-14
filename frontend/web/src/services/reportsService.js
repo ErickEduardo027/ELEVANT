@@ -1,4 +1,5 @@
 import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { downloadTabularReport } from '../utils/reportDownloads';
 
 // En pruebas conserva el conjunto determinista. En ejecución utiliza las operaciones persistidas.
 //
@@ -451,12 +452,20 @@ export async function getOperationalSummary(stationCode = 'PUJ', filters = {}) {
 }
 
 export async function exportReport({ reportId, format }) {
-  // Simula latencia de generación de un reporte en el backend.
-  await new Promise(resolve => setTimeout(resolve, 900));
-  return {
+  const fetchers = {
+    closure: getClosureReport,
+    reconciliation: getReconciliationReport,
+    groundTime: getGroundTimeReport,
+    summary: getOperationalSummary,
+  };
+  const data = await (fetchers[reportId] ?? getOperationalSummary)();
+  const rows = data.rows ?? data.records ?? [];
+  const result = {
     reportId,
     format,
-    fileName: `${reportId}-${stationDateKey(new Date())}.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+    fileName: `${reportId}-${stationDateKey(new Date())}.${format === 'excel' ? 'xls' : 'pdf'}`,
     generatedAt: new Date().toISOString(),
   };
+  if (import.meta.env.MODE !== 'test') downloadTabularReport({ title: `Reporte operacional ${reportId}`, format, fileName: result.fileName, rows });
+  return result;
 }

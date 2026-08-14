@@ -4,6 +4,7 @@ import { getUsers, getUserHistory } from './humanResourcesUsersService';
 import { getShifts } from './humanResourcesSchedulesService';
 import { mapQualifications, deriveEquipmentCoverage } from '../features/human-resources/certifications/mappers';
 import { mapPermits } from '../features/human-resources/permits/mappers';
+import { downloadTabularReport } from '../utils/reportDownloads';
 
 // Adaptador stub del módulo "Reportes de Gestión Humana": hoy combina los
 // stores en memoria de Habilitaciones, Carnets, Usuarios y Horarios (cada
@@ -164,11 +165,20 @@ export async function getQualificationCoverageReport(filters = {}) {
  * que exportReport de Admin/OCC).
  */
 export async function exportReport({ reportId, format }) {
-  await new Promise(resolve => setTimeout(resolve, 900));
-  return {
+  const fetchers = {
+    expirations: getExpirationReport,
+    accountMovements: getAccountMovementsReport,
+    staffDistribution: getStaffDistributionReport,
+    qualificationCoverage: getQualificationCoverageReport,
+  };
+  const data = await (fetchers[reportId] ?? getStaffDistributionReport)();
+  const rows = data.rows ?? data.coverage ?? [];
+  const result = {
     reportId,
     format,
-    fileName: `${reportId}-${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+    fileName: `${reportId}-${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xls' : 'pdf'}`,
     generatedAt: new Date().toISOString(),
   };
+  if (import.meta.env.MODE !== 'test') downloadTabularReport({ title: `Reporte de Gestión Humana ${reportId}`, format, fileName: result.fileName, rows });
+  return result;
 }
