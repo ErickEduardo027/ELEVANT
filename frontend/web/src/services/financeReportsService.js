@@ -1,6 +1,7 @@
 import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
-const REPORT = { kpis: { approvedServices: 0, preinvoiced: 0, reconciled: 0, differences: 0 }, byAirline: [] };
+const EMPTY_REPORT = { kpis: { approvedServices: 0, preinvoiced: 0, reconciled: 0, differences: 0 }, byAirline: [] };
+let report = structuredClone(EMPTY_REPORT);
 let audit = [];
 const usesApi = () => import.meta.env.MODE !== 'test';
 
@@ -12,10 +13,10 @@ async function request(path, options = {}) {
   return payload;
 }
 
-export async function getFinanceReport() { return usesApi() ? request('/api/finance/reports') : { ...structuredClone(REPORT), audit: structuredClone(audit) }; }
+export async function getFinanceReport() { return usesApi() ? request('/api/finance/reports') : { ...structuredClone(report), audit: structuredClone(audit) }; }
 export async function registerFinanceReportExport(format, user = 'Usuario de Finanzas') {
   if (usesApi()) return request('/api/finance/reports/export', { method: 'POST', body: JSON.stringify({ format }) });
-  const row = { id: `EXP-${Date.now()}`, format, user, exportedAt: new Date().toISOString(), report: structuredClone(REPORT), fileName: `reporte.${format === 'excel' ? 'xls' : 'pdf'}` }; audit.unshift(row); return structuredClone(row);
+  const row = { id: `EXP-${Date.now()}`, format, user, exportedAt: new Date().toISOString(), report: structuredClone(report), fileName: `reporte.${format === 'excel' ? 'xls' : 'pdf'}` }; audit.unshift(row); return structuredClone(row);
 }
 const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 export function downloadFinanceReport(result) {
@@ -28,4 +29,5 @@ export function downloadFinanceReport(result) {
   const popup = window.open('', '_blank', 'noopener,noreferrer'); if (!popup) throw new Error('El navegador bloqueó la ventana de impresión.');
   popup.document.write(`<html><head><title>Reporte financiero</title><style>body{font-family:Arial;padding:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px}</style></head><body><h1>Reporte financiero ELEVANT</h1><table><tr><th>Aerolínea</th><th>Aprobados</th><th>Facturados</th><th>Importe</th></tr>${rows.map(row => `<tr><td>${esc(row.airline)}</td><td>${row.approved}</td><td>${row.billed}</td><td>${row.amount} ${esc(row.currency)}</td></tr>`).join('')}</table><script>window.onload=()=>window.print()</script></body></html>`); popup.document.close();
 }
-export function resetFinanceReportsForTests() { audit = []; }
+export function setFinanceReportForTests(value) { report = structuredClone(value); }
+export function resetFinanceReportsForTests() { audit = []; report = structuredClone(EMPTY_REPORT); }

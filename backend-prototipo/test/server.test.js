@@ -603,3 +603,50 @@ test('una solicitud pública genera una notificación persistente para Contratos
   assert.equal(readResponse.status, 200);
   assert.equal((await readResponse.json()).read, true);
 });
+
+test('Contratos y Finanzas intercambian mensajes departamentales persistentes', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  async function login(email) {
+    const response = await fetch(`${context.baseUrl}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'Elevant2026!' }),
+    });
+    assert.equal(response.status, 200);
+    return (await response.json()).token;
+  }
+
+  const contractsToken = await login('contratos@elevant.test');
+  const financeToken = await login('finanzas@elevant.test');
+  const sentResponse = await fetch(`${context.baseUrl}/api/internal-chat/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${contractsToken}` },
+    body: JSON.stringify({ recipientRole: 'FINANZAS', content: 'Contrato CTR-2026-001 disponible para revisión.' }),
+  });
+  const sent = await sentResponse.json();
+  assert.equal(sentResponse.status, 201);
+  assert.equal(sent.senderRole, 'CONTRATOS');
+  assert.equal(sent.recipientRole, 'FINANZAS');
+
+  const inboxResponse = await fetch(`${context.baseUrl}/api/internal-chat/messages`, {
+    headers: { Authorization: `Bearer ${financeToken}` },
+  });
+  const inbox = await inboxResponse.json();
+  assert.equal(inboxResponse.status, 200);
+  assert.equal(inbox.messages.length, 1);
+  assert.equal(inbox.messages[0].content, 'Contrato CTR-2026-001 disponible para revisión.');
+
+  const readResponse = await fetch(`${context.baseUrl}/api/internal-chat/messages/${sent.id}/read`, {
+    method: 'POST', headers: { Authorization: `Bearer ${financeToken}` },
+  });
+  assert.equal(readResponse.status, 200);
+  assert.ok((await readResponse.json()).readAt);
+
+  const notificationsResponse = await fetch(`${context.baseUrl}/api/notifications`, {
+    headers: { Authorization: `Bearer ${financeToken}` },
+  });
+  const notifications = await notificationsResponse.json();
+  assert.equal(notifications.notifications[0].source, 'Chat departamental');
+});

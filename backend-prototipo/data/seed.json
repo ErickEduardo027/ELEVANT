@@ -53,6 +53,7 @@
   "preinvoices": [],
   "chats": [],
   "messages": [],
+  "departmentMessages": [],
   "notifications": [],
   "syncReceipts": [],
   "audit": []
