@@ -112,6 +112,34 @@ function preinvoiceView(item) {
   };
 }
 
+function financeReportView(state) {
+  const rows = approvedServiceRows(state);
+  const preinvoices = state.preinvoices ?? [];
+  const airlines = [...new Set([...rows.map(item => item.airline), ...preinvoices.map(item => item.airline)])];
+  return {
+    generatedAt: new Date().toISOString(),
+    kpis: {
+      approvedServices: rows.length,
+      preinvoiced: preinvoices.reduce((total, item) => total + (item.serviceIds?.length ?? 0), 0),
+      reconciled: preinvoices.filter(item => item.status === 'sent').length,
+      differences: 0,
+    },
+    byAirline: airlines.map(airline => {
+      const approved = rows.filter(item => item.airline === airline);
+      const billed = preinvoices.filter(item => item.airline === airline && ['approved', 'sent'].includes(item.status));
+      const currencies = [...new Set([...approved.map(item => item.currency), ...billed.map(item => item.currency)])];
+      return {
+        airline, approved: approved.length,
+        billed: billed.reduce((total, item) => total + (item.serviceIds?.length ?? 0), 0),
+        amount: billed.reduce((total, item) => total + Number(item.total ?? 0), 0),
+        currency: currencies.length === 1 ? currencies[0] : 'USD',
+      };
+    }),
+    audit: state.audit.filter(item => item.action === 'finance_report_exported').slice(0, 20)
+      .map(item => ({ id: item.id, format: item.detail, user: item.actorName, exportedAt: item.occurredAt })),
+  };
+}
+
 function ensureChatCollections(state) {
   state.chats ??= [];
   state.messages ??= [];
@@ -806,6 +834,30 @@ export function createApp({ store }) {
           approvedServices: rows.slice(0, 6),
           pendingActions: preinvoices.filter(item => item.status !== 'sent').map(item => ({ id: item.id, kind: 'Pre-factura', airline: item.airline, detail: item.status === 'draft' ? 'Pendiente de revisión' : 'Aprobada para envío', moduleId: 'finance-preinvoices' })),
         });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/finance/reports') {
+        const state = await store.read();
+        requireSession(state, req, ['FINANZAS']);
+        return sendJson(res, 200, financeReportView(state));
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/finance/reports/export') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['FINANZAS']);
+        const payload = await readJsonBody(req);
+        if (!['pdf', 'excel'].includes(payload.format)) {
+          throw Object.assign(new Error('El formato debe ser PDF o Excel.'), { statusCode: 400 });
+        }
+        const result = await store.update(state => {
+          const entry = appendAudit(state, session, 'finance_report_exported', session.user.id, payload.format);
+          return {
+            id: entry.id, format: payload.format, user: session.user.name, exportedAt: entry.occurredAt,
+            fileName: `reporte-financiero-${new Date().toISOString().slice(0, 10)}.${payload.format === 'excel' ? 'xls' : 'pdf'}`,
+            report: financeReportView(state),
+          };
+        });
+        return sendJson(res, 201, result);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {
