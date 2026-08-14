@@ -77,8 +77,9 @@ export async function getPlanningSnapshot(stationCode = 'PUJ', dateISO = getOper
   };
 }
 
-export async function getPlanningOptions() {
-  return apiRequest('/api/occ/planning/options');
+export async function getPlanningOptions(scheduledTime = '') {
+  const query = scheduledTime ? `?scheduledTime=${encodeURIComponent(scheduledTime)}` : '';
+  return apiRequest(`/api/occ/planning/options${query}`);
 }
 
 export async function createPlannedFlight(input) {

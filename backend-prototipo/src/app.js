@@ -743,12 +743,20 @@ export function createApp({ store }) {
       if (req.method === 'GET' && url.pathname === '/api/occ/planning/options') {
         const state = await store.read();
         requireSession(state, req, ['ADMIN_OCC']);
+        const scheduledTime = url.searchParams.get('scheduledTime') || null;
         const contracts = state.contracts.filter(contract => isOperationalContract(contract));
         const agents = state.personnel
           .filter(record => record.userType === 'ramp_agent')
-          .map(record => ({ record, eligibility: agentEligibility(state, record) }))
-          .filter(item => item.eligibility.eligible)
-          .map(({ record }) => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
+          .map(record => {
+            const eligibility = agentEligibility(state, record, scheduledTime);
+            return {
+              id: record.identity.id,
+              name: `${record.identity.firstName} ${record.identity.lastName}`.trim(),
+              terminals: record.rampAgent?.terminals ?? [],
+              eligible: eligibility.eligible,
+              eligibilityReasons: eligibility.reasons,
+            };
+          });
         return sendJson(res, 200, {
           contracts: contracts.map(contract => contractView(state, contract)),
           services: state.contractServices.filter(service => service.active && contracts.some(contract => contract.id === service.contractId)),
