@@ -7,11 +7,27 @@ const SERVICES = [
 
 let services = structuredClone(SERVICES);
 
+function usesPrototypeApi() { return import.meta.env.MODE !== 'test'; }
+
+async function financeApi(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}), ...options.headers },
+  });
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No se pudieron cargar los servicios aprobados.');
+  return payload;
+}
+
 export async function getApprovedServices() {
+  if (usesPrototypeApi()) return financeApi('/api/finance/approved-services');
   return structuredClone(services);
 }
 
 export async function markApprovedServiceReviewed(id) {
+  if (usesPrototypeApi()) return financeApi(`/api/finance/approved-services/${encodeURIComponent(id)}/review`, { method: 'POST' });
   const service = services.find(item => item.id === id);
   if (!service) throw new Error('Servicio aprobado no encontrado.');
   service.status = 'reviewed';
@@ -22,3 +38,4 @@ export async function markApprovedServiceReviewed(id) {
 export function resetApprovedServicesForTests() {
   services = structuredClone(SERVICES);
 }
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
