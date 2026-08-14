@@ -112,6 +112,74 @@ function preinvoiceView(item) {
   };
 }
 
+function ensureChatCollections(state) {
+  state.chats ??= [];
+  state.messages ??= [];
+}
+
+function findAgentRecord(state, personnelId) {
+  return state.personnel.find(item => item.identity?.id === personnelId) ?? null;
+}
+
+function ensureAgentChat(state, personnelId) {
+  ensureChatCollections(state);
+  let chat = state.chats.find(item => item.agentId === personnelId && item.status !== 'closed');
+  if (chat) return chat;
+  const agent = findAgentRecord(state, personnelId);
+  if (!agent) throw Object.assign(new Error('No existe el agente asociado a la conversación.'), { statusCode: 404 });
+  const flight = state.flights.find(item => item.agentIds?.includes(personnelId)) ?? null;
+  chat = {
+    id: nextId('CHAT'), agentId: personnelId,
+    agentName: `${agent.identity.firstName} ${agent.identity.lastName}`.trim(),
+    flightId: flight?.id ?? null, flightNumber: flight?.flightNumber ?? 'Sin vuelo',
+    airline: flight?.airlineName ?? 'AVIAM', origin: flight?.origin ?? null,
+    destination: flight?.destination ?? 'PUJ', position: flight?.position ?? null,
+    operationId: state.operations.find(item => item.flightId === flight?.id)?.id ?? null,
+    agentStatus: 'online', status: 'active', requiresAttention: false,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  };
+  state.chats.unshift(chat);
+  return chat;
+}
+
+function chatMessageView(message) {
+  return {
+    id: message.id, clientId: message.clientId ?? null, conversationId: message.chatId,
+    type: 'message', senderId: message.senderId ?? null, senderRole: message.senderRole,
+    senderName: message.senderName, content: message.content, createdAt: message.createdAt,
+    readAt: message.readAt ?? null, status: message.status ?? 'delivered', attachments: message.attachments ?? [],
+  };
+}
+
+function chatConversationView(state, chat) {
+  const messages = state.messages.filter(item => item.chatId === chat.id)
+    .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
+  const last = messages.at(-1) ?? null;
+  return {
+    ...chat,
+    lastMessage: last?.content ?? '', lastMessageAt: last?.createdAt ?? chat.updatedAt,
+    unreadCount: messages.filter(item => item.senderRole === 'agent' && !item.readAt).length,
+  };
+}
+
+function appendChatMessage(state, chat, { clientId = null, senderId = null, senderRole, senderName, content, attachments = [] }) {
+  ensureChatCollections(state);
+  if (clientId) {
+    const existing = state.messages.find(item => item.clientId === clientId && item.chatId === chat.id);
+    if (existing) return existing;
+  }
+  const message = {
+    id: nextId('MSG'), clientId, chatId: chat.id, senderId, senderRole, senderName,
+    content: String(content ?? '').trim(), attachments, createdAt: new Date().toISOString(),
+    readAt: null, status: 'delivered',
+  };
+  if (!message.content) throw Object.assign(new Error('El mensaje no puede estar vacío.'), { statusCode: 400 });
+  state.messages.push(message);
+  chat.updatedAt = message.createdAt;
+  if (senderRole === 'agent') chat.requiresAttention = true;
+  return message;
+}
+
 function roleDefinition(roleId) {
   const roles = {
     'role-admin-occ': { name: 'Administrador OCC', userType: 'admin_occ', portal: 'back_office', permissions: ['Consultar', 'Crear', 'Editar', 'Aprobar', 'Exportar', 'Administrar'] },
@@ -477,6 +545,95 @@ export function createApp({ store }) {
         return sendJson(res, 200, state.flights.filter(flight => flight.agentIds?.includes(personnelId)));
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/mobile/chat') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['AGENTE_RAMPA']);
+        const result = await store.update(state => {
+          const chat = ensureAgentChat(state, session.user.personnelId);
+          const messages = state.messages.filter(item => item.chatId === chat.id)
+            .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
+          for (const message of messages) {
+            if (message.senderRole === 'occ' && !message.readAt) message.readAt = new Date().toISOString();
+          }
+          return { conversation: chatConversationView(state, chat), messages: messages.map(chatMessageView) };
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/occ/chat/conversations') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        ensureChatCollections(state);
+        return sendJson(res, 200, {
+          station: { code: 'PUJ', localAbbr: 'AST' },
+          conversations: state.chats.map(chat => chatConversationView(state, chat))
+            .sort((left, right) => String(right.lastMessageAt).localeCompare(String(left.lastMessageAt))),
+        });
+      }
+
+      const occChatMessagesMatch = url.pathname.match(/^\/api\/occ\/chat\/conversations\/([^/]+)\/messages$/);
+      if (occChatMessagesMatch && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        const chat = state.chats?.find(item => item.id === occChatMessagesMatch[1]);
+        if (!chat) throw Object.assign(new Error('La conversación no existe.'), { statusCode: 404 });
+        const messages = state.messages.filter(item => item.chatId === chat.id)
+          .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)));
+        return sendJson(res, 200, { conversationId: chat.id, messages: messages.map(chatMessageView) });
+      }
+
+      if (occChatMessagesMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const message = await store.update(state => {
+          const chat = state.chats?.find(item => item.id === occChatMessagesMatch[1]);
+          if (!chat) throw Object.assign(new Error('La conversación no existe.'), { statusCode: 404 });
+          const created = appendChatMessage(state, chat, {
+            senderId: session.user.id, senderRole: 'occ', senderName: session.user.name,
+            content: payload.content, attachments: payload.attachments ?? [],
+          });
+          appendAudit(state, session, 'occ_chat_message_sent', chat.agentId, chat.id);
+          return chatMessageView(created);
+        });
+        return sendJson(res, 201, message);
+      }
+
+      const occChatReadMatch = url.pathname.match(/^\/api\/occ\/chat\/conversations\/([^/]+)\/read$/);
+      if (occChatReadMatch && req.method === 'POST') {
+        const current = await store.read();
+        requireSession(current, req, ['ADMIN_OCC']);
+        const conversation = await store.update(state => {
+          const chat = state.chats?.find(item => item.id === occChatReadMatch[1]);
+          if (!chat) throw Object.assign(new Error('La conversación no existe.'), { statusCode: 404 });
+          const readAt = new Date().toISOString();
+          state.messages.filter(item => item.chatId === chat.id && item.senderRole === 'agent' && !item.readAt)
+            .forEach(message => { message.readAt = readAt; });
+          chat.requiresAttention = false;
+          return chatConversationView(state, chat);
+        });
+        return sendJson(res, 200, conversation);
+      }
+
+      const occChatCloseMatch = url.pathname.match(/^\/api\/occ\/chat\/conversations\/([^/]+)\/close$/);
+      if (occChatCloseMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const result = await store.update(state => {
+          const chat = state.chats?.find(item => item.id === occChatCloseMatch[1]);
+          if (!chat) throw Object.assign(new Error('La conversación no existe.'), { statusCode: 404 });
+          chat.status = 'closed';
+          chat.requiresAttention = false;
+          const message = appendChatMessage(state, chat, {
+            senderId: session.user.id, senderRole: 'system', senderName: 'Sistema',
+            content: 'La conversación fue marcada como cerrada.',
+          });
+          appendAudit(state, session, 'occ_chat_closed', chat.agentId, chat.id);
+          return { conversation: chatConversationView(state, chat), message: chatMessageView(message) };
+        });
+        return sendJson(res, 200, result);
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/mobile/sync') {
         const current = await store.read();
         const session = requireSession(current, req, ['AGENTE_RAMPA']);
@@ -488,6 +645,16 @@ export function createApp({ store }) {
           const accepted = [];
           for (const item of [...items].sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')))) {
             if (!item?.idempotencyKey || state.syncReceipts.some(receipt => receipt.idempotencyKey === item.idempotencyKey)) continue;
+            if (item.type === 'chat') {
+              const chat = ensureAgentChat(state, session.user.personnelId);
+              appendChatMessage(state, chat, {
+                clientId: item.idempotencyKey, senderId: session.user.personnelId,
+                senderRole: 'agent', senderName: session.user.name, content: item.payload?.text,
+              });
+              state.syncReceipts.push({ idempotencyKey: item.idempotencyKey, synchronizedAt });
+              accepted.push(item.idempotencyKey);
+              continue;
+            }
             const flightId = item.payload?.flightId;
             const flight = state.flights.find(candidate => candidate.id === flightId && candidate.agentIds?.includes(session.user.personnelId));
             if (!flight) throw Object.assign(new Error('El vuelo no está asignado a este agente.'), { statusCode: 403 });
