@@ -1,4 +1,4 @@
-import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
 function getOperationDate() {
   return new Date().toISOString().slice(0, 10);
@@ -101,6 +101,7 @@ async function apiRequest(path, options = {}) {
     throw new Error('No fue posible conectar con el backend del prototipo.');
   }
   const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
   if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
   return payload;
 }

@@ -5,7 +5,7 @@ import {
   getAccountHistory as getMockAccountHistory,
 } from '../features/human-resources/users/usersMock';
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
-import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
 const USE_BACKEND = import.meta.env.MODE !== 'test';
 
@@ -25,6 +25,7 @@ async function apiRequest(path, options = {}) {
     throw new Error('No fue posible conectar con el backend del prototipo.');
   }
   const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
   if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
   return payload;
 }

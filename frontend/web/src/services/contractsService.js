@@ -1,4 +1,4 @@
-import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRING_WINDOW_DAYS = 45;
@@ -88,6 +88,7 @@ async function apiRequest(path, options = {}) {
     throw new Error('No fue posible conectar con el backend del prototipo.');
   }
   const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
   if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
   return payload;
 }

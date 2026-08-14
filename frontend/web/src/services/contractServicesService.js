@@ -1,4 +1,4 @@
-import { PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
 const INITIAL_SERVICES = [
   { id: 'SRV-001', contractId: 'CTR-2026-018', airline: 'Arajet', name: 'Puente de abordaje', rate: 485, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-03-01', endDate: '2027-02-28', active: true },
@@ -69,6 +69,7 @@ async function apiRequest(path, options = {}) {
     throw new Error('No fue posible conectar con el backend del prototipo.');
   }
   const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
   if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
   return payload;
 }

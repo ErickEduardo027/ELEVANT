@@ -435,3 +435,45 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   assert.equal(mobileFlights.length, 1);
   assert.equal(mobileFlights[0].id, flight.id);
 });
+
+test('OCC muestra y acepta contratos activos próximos a vencer', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  await context.store.update(state => {
+    state.contracts.push({
+      id: 'CTR-2026-001', requestId: 'SOL-AVIAM', airline: 'Aviam', airlineCode: '232',
+      contractType: 'temporary', startDate: '2026-08-01', endDate: '2026-08-16',
+      conditions: 'Todo', statusOverride: null, createdAt: new Date().toISOString(),
+    });
+    state.contractServices.push({
+      id: 'SRV-AVIAM', contractId: 'CTR-2026-001', airline: 'Aviam', name: 'Catering',
+      rate: 25, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-01',
+      endDate: '2026-08-16', active: true, createdAt: new Date().toISOString(),
+    });
+  });
+
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@elevant.test', password: 'Elevant2026!' }),
+  });
+  const session = await loginResponse.json();
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` };
+
+  const optionsResponse = await fetch(`${context.baseUrl}/api/occ/planning/options`, { headers });
+  const options = await optionsResponse.json();
+  assert.equal(optionsResponse.status, 200);
+  assert.equal(options.contracts[0].id, 'CTR-2026-001');
+  assert.equal(options.contracts[0].status, 'expiring');
+
+  const flightResponse = await fetch(`${context.baseUrl}/api/occ/flights`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      contractId: 'CTR-2026-001', flightNumber: 'AV232', origin: 'MIA', destination: 'PUJ',
+      scheduledTime: '2026-08-14T10:30:00-04:00', aircraftType: 'A320', position: 'A04',
+    }),
+  });
+  assert.equal(flightResponse.status, 201);
+  assert.equal((await flightResponse.json()).contractId, 'CTR-2026-001');
+});

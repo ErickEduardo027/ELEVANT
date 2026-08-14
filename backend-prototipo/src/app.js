@@ -36,6 +36,10 @@ function contractStatus(contract, reference = new Date()) {
   return 'active';
 }
 
+function isOperationalContract(contract, reference = new Date()) {
+  return ['active', 'expiring'].includes(contractStatus(contract, reference));
+}
+
 function contractView(state, contract) {
   return {
     ...contract,
@@ -335,7 +339,7 @@ export function createApp({ store }) {
       if (req.method === 'GET' && url.pathname === '/api/occ/planning/options') {
         const state = await store.read();
         requireSession(state, req, ['ADMIN_OCC']);
-        const contracts = state.contracts.filter(contract => contractStatus(contract) === 'active');
+        const contracts = state.contracts.filter(contract => isOperationalContract(contract));
         const agents = state.personnel
           .filter(record => record.userType === 'ramp_agent' && record.account.status === 'active')
           .map(record => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
@@ -355,7 +359,7 @@ export function createApp({ store }) {
           throw Object.assign(new Error('Faltan datos obligatorios del vuelo.'), { statusCode: 400 });
         }
         const created = await store.update(state => {
-          const contract = state.contracts.find(item => item.id === payload.contractId && contractStatus(item) === 'active');
+          const contract = state.contracts.find(item => item.id === payload.contractId && isOperationalContract(item));
           if (!contract) throw Object.assign(new Error('El vuelo requiere un contrato activo.'), { statusCode: 409 });
           const flight = {
             id: nextId('FLT'), contractId: contract.id, airlineIata: contract.airlineCode,
