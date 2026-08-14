@@ -435,6 +435,14 @@ test('Contratos convierte una solicitud aprobada en contrato y servicios pactado
   const persisted = await context.store.read();
   assert.equal(persisted.serviceRequests[0].contractId, contract.id);
   assert.equal(persisted.contractServices[0].rate, 485);
+
+  const reportResponse = await fetch(`${context.baseUrl}/api/contracts/reports`, { headers });
+  const report = await reportResponse.json();
+  assert.equal(reportResponse.status, 200);
+  assert.equal(report.rows.length, 1);
+  assert.equal(report.rows[0].airline, 'Aerolínea Integrada');
+  assert.equal(report.rows[0].services, 1);
+  assert.equal(report.rows[0].estimatedValue, 485);
 });
 
 test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica en su móvil', async t => {
@@ -572,6 +580,16 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   });
   assert.equal(approveResponse.status, 200);
   assert.equal((await approveResponse.json()).status, 'APPROVED');
+
+  const operationalReportResponse = await fetch(`${context.baseUrl}/api/reports/operational-records`, {
+    headers: { Authorization: `Bearer ${occ.token}` },
+  });
+  const operationalReport = await operationalReportResponse.json();
+  assert.equal(operationalReportResponse.status, 200);
+  assert.equal(operationalReport.records.length, 1);
+  assert.equal(operationalReport.records[0].flight.number, 'AI101');
+  assert.equal(operationalReport.records[0].services[0].name, 'Puente de abordaje');
+  assert.equal(operationalReport.records[0].incidents, 1);
 
   const finance = await login('finanzas@elevant.test');
   const approvedServicesResponse = await fetch(`${context.baseUrl}/api/finance/approved-services`, { headers: { Authorization: `Bearer ${finance.token}` } });

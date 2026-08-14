@@ -140,6 +140,48 @@ function financeReportView(state) {
   };
 }
 
+function operationalReportRecords(state) {
+  return state.operations.filter(operation => operation.endedAt).map(operation => {
+    const flight = state.flights.find(item => item.id === operation.flightId) ?? {};
+    const services = (flight.serviceIds ?? []).map(serviceId => state.contractServices.find(item => item.id === serviceId)).filter(Boolean);
+    const actualMinutes = minutesBetween(operation.startedAt, operation.endedAt);
+    return {
+      id: operation.id,
+      flight: { number: flight.flightNumber, airline: flight.airlineName, airlineIata: flight.airlineIata },
+      terminal: flight.destination === 'PUJ' ? 'PUJ' : flight.destination ?? 'PUJ',
+      aircraftType: flight.aircraftType ?? 'Sin registrar',
+      date: String(operation.endedAt).slice(0, 10),
+      position: { assigned: flight.position ?? 'Sin posición', final: flight.position ?? 'Sin posición' },
+      positionChange: null,
+      reportedAt: operation.submittedAt ?? operation.endedAt,
+      actualBlockAt: operation.endedAt,
+      flightStatus: flight.flightStatus ?? 'arrived',
+      agent: { id: flight.agentIds?.[0] ?? null, name: flight.agents?.[0] ?? 'Agente de rampa' },
+      groundTime: { contractedMinutes: actualMinutes, actualMinutes },
+      services: services.map(service => ({ name: service.name, contractedQty: 1, executedQty: 1 })),
+      incidents: state.incidents.filter(item => item.flightId === operation.flightId).length,
+    };
+  });
+}
+
+function contractReportView(state) {
+  const airlines = [...new Set(state.contracts.map(contract => contract.airline))];
+  return {
+    generatedAt: new Date().toISOString(),
+    rows: airlines.map(airline => {
+      const contracts = state.contracts.filter(contract => contract.airline === airline);
+      const services = state.contractServices.filter(service => contracts.some(contract => contract.id === service.contractId));
+      return {
+        airline,
+        activeContracts: contracts.filter(contract => contractStatus(contract) === 'active').length,
+        expiringContracts: contracts.filter(contract => contractStatus(contract) === 'expiring').length,
+        services: services.length,
+        estimatedValue: services.reduce((total, service) => total + Number(service.rate ?? 0), 0),
+      };
+    }),
+  };
+}
+
 function ensureChatCollections(state) {
   state.chats ??= [];
   state.messages ??= [];
@@ -554,6 +596,26 @@ export function createApp({ store }) {
         const state = await store.read();
         requireSession(state, req, ['CONTRATOS', 'ADMIN_OCC', 'FINANZAS']);
         return sendJson(res, 200, state.contracts.map(contract => contractView(state, contract)));
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/contracts/reports') {
+        const state = await store.read();
+        requireSession(state, req, ['CONTRATOS']);
+        return sendJson(res, 200, contractReportView(state));
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/contracts/reports/export') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        if (!['PDF', 'Excel'].includes(payload.format)) {
+          throw Object.assign(new Error('El formato debe ser PDF o Excel.'), { statusCode: 400 });
+        }
+        const result = await store.update(state => {
+          const entry = appendAudit(state, session, 'contract_report_exported', session.user.id, payload.format);
+          return { id: entry.id, format: payload.format, airline: payload.airline ?? 'all', user: session.user.name, exportedAt: entry.occurredAt };
+        });
+        return sendJson(res, 201, result);
       }
 
       if (req.method === 'POST' && url.pathname === '/api/contracts/contracts') {
@@ -1113,6 +1175,12 @@ export function createApp({ store }) {
         const state = await store.read();
         requireSession(state, req, ['FINANZAS']);
         return sendJson(res, 200, financeReportView(state));
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/reports/operational-records') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        return sendJson(res, 200, { station: { code: 'PUJ' }, records: operationalReportRecords(state) });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/finance/reports/export') {
