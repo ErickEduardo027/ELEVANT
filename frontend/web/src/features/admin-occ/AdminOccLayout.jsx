@@ -20,7 +20,7 @@ export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout }) {
         notificationsPath={`${ADMIN_OCC_BASE_PATH}/notifications`}
       />
       {import.meta.env.DEV && (
-        <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} />
+        <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} defaultOpen={false} />
       )}
     </>
   );
