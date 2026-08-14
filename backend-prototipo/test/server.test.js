@@ -331,6 +331,54 @@ test('una solicitud pública llega a Contratos y puede resolverse', async t => {
   assert.equal(resolveResponse.status, 200);
   assert.equal(resolved.status, 'approved');
   assert.equal(resolved.decisionNote, 'Solicitud aprobada para elaborar contrato.');
+
+  const trackingResponse = await fetch(
+    `${context.baseUrl}/api/public/service-requests?contactEmail=${encodeURIComponent('ana@aerolinea.test')}`,
+  );
+  const tracked = await trackingResponse.json();
+  assert.equal(trackingResponse.status, 200);
+  assert.equal(tracked.length, 1);
+  assert.equal(tracked[0].id, created.id);
+  assert.equal(tracked[0].status, 'approved');
+  assert.equal(tracked[0].decisionNote, 'Solicitud aprobada para elaborar contrato.');
+  assert.ok(tracked[0].updatedAt);
+
+  const lateCancellation = await fetch(`${context.baseUrl}/api/public/service-requests/${created.id}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contactEmail: 'ana@aerolinea.test', reason: 'Ya no se requiere.' }),
+  });
+  assert.equal(lateCancellation.status, 409);
+});
+
+test('la aerolínea puede cancelar una solicitud pendiente propia', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const createResponse = await fetch(`${context.baseUrl}/api/public/service-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      airline: 'Aerolínea Portal', contactName: 'María López', contactEmail: 'maria@portal.test',
+      type: 'additionalService', requestedService: 'Escalera adicional',
+    }),
+  });
+  const created = await createResponse.json();
+  const cancelResponse = await fetch(`${context.baseUrl}/api/public/service-requests/${created.id}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contactEmail: 'maria@portal.test', reason: 'Cambio operacional.' }),
+  });
+  const cancelled = await cancelResponse.json();
+  assert.equal(cancelResponse.status, 200);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.cancellationReason, 'Cambio operacional.');
+
+  const otherUserResponse = await fetch(
+    `${context.baseUrl}/api/public/service-requests?contactEmail=${encodeURIComponent('otro@portal.test')}`,
+  );
+  assert.deepEqual(await otherUserResponse.json(), []);
 });
 
 test('Contratos convierte una solicitud aprobada en contrato y servicios pactados persistentes', async t => {

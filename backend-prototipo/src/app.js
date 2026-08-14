@@ -464,9 +464,10 @@ export function createApp({ store }) {
           throw Object.assign(new Error('Faltan datos obligatorios de la solicitud.'), { statusCode: 400 });
         }
         const created = await store.update(state => {
+          const receivedAt = new Date().toISOString();
           const request = {
             id: nextId('SOL'), airline, contactName, contactEmail, type, requestedService,
-            receivedAt: new Date().toISOString(), status: 'pending', decisionNote: '', notifiedAt: null,
+            receivedAt, updatedAt: receivedAt, status: 'pending', decisionNote: '', notifiedAt: null,
             details: payload.details ?? null,
           };
           state.serviceRequests.unshift(request);
@@ -480,6 +481,40 @@ export function createApp({ store }) {
           return request;
         });
         return sendJson(res, 201, created);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/public/service-requests') {
+        const state = await store.read();
+        const contactEmail = String(url.searchParams.get('contactEmail') ?? '').trim().toLowerCase();
+        if (!contactEmail) {
+          throw Object.assign(new Error('El correo de seguimiento es obligatorio.'), { statusCode: 400 });
+        }
+        const requests = state.serviceRequests
+          .filter(item => item.contactEmail === contactEmail)
+          .sort((left, right) => String(right.receivedAt).localeCompare(String(left.receivedAt)));
+        return sendJson(res, 200, requests);
+      }
+
+      const publicRequestCancelMatch = url.pathname.match(/^\/api\/public\/service-requests\/([^/]+)\/cancel$/);
+      if (publicRequestCancelMatch && req.method === 'POST') {
+        const payload = await readJsonBody(req);
+        const contactEmail = String(payload.contactEmail ?? '').trim().toLowerCase();
+        const reason = String(payload.reason ?? '').trim();
+        if (!contactEmail || !reason) {
+          throw Object.assign(new Error('El correo y el motivo de cancelación son obligatorios.'), { statusCode: 400 });
+        }
+        const updated = await store.update(state => {
+          const request = state.serviceRequests.find(item => item.id === publicRequestCancelMatch[1] && item.contactEmail === contactEmail);
+          if (!request) throw Object.assign(new Error('La solicitud no existe o no pertenece al usuario.'), { statusCode: 404 });
+          if (request.status !== 'pending') {
+            throw Object.assign(new Error('La solicitud ya no puede cancelarse.'), { statusCode: 409 });
+          }
+          request.status = 'cancelled';
+          request.cancellationReason = reason;
+          request.updatedAt = new Date().toISOString();
+          return request;
+        });
+        return sendJson(res, 200, updated);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/contracts/requests') {
@@ -508,6 +543,7 @@ export function createApp({ store }) {
             request.decisionNote = note;
             request.notifiedAt = new Date().toISOString();
           }
+          request.updatedAt = new Date().toISOString();
           appendAudit(state, session, `service_request_${action}`, request.id);
           return request;
         });
