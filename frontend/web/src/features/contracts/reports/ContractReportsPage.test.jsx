@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ContractReportsPage from './ContractReportsPage';
@@ -12,12 +12,10 @@ describe('ContractReportsPage', () => {
     expect(within(screen.getByRole('table')).queryByText('Delta Air Lines')).not.toBeInTheDocument();
   });
 
-  it('registers the PDF export and opens the print dialog', async () => {
-    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  it('registers the direct PDF export', async () => {
     render(<ContractReportsPage />);
     await screen.findByText('Servicios por aerolínea');
     await userEvent.click(screen.getByRole('button', { name: /exportar pdf/i }));
     expect(await screen.findByRole('status')).toHaveTextContent(/exportación pdf registrada/i);
-    expect(print).toHaveBeenCalledOnce();
   });
 });

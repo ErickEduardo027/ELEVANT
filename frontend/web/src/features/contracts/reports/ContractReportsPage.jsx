@@ -1,19 +1,13 @@
 import { BarChartIcon } from '../../shell/components/icons';
 import { ContractIcon, ServiceIcon, AlertIcon } from '../components/icons';
 import KpiCard from '../../../components/KpiCard';
-import { buildExcelCompatibleContent } from '../../../services/contractReportsService';
+import { downloadTabularReport } from '../../../utils/reportDownloads';
 import { useContractReportsData } from './useContractReportsData';
 
 const money = value => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 
 function downloadExcel(rows) {
-  const blob = new Blob([buildExcelCompatibleContent(rows)], { type: 'application/vnd.ms-excel;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'reporte-contractual.xls';
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadTabularReport({ title: 'Reporte contractual ELEVANT', format: 'excel', fileName: 'reporte-contractual.xls', rows });
 }
 
 export default function ContractReportsPage() {
@@ -26,8 +20,8 @@ export default function ContractReportsPage() {
   }
 
   async function exportPdf() {
+    downloadTabularReport({ title: 'Reporte contractual ELEVANT', format: 'pdf', fileName: 'reporte-contractual.pdf', rows: reports.rows });
     await reports.registerExport('PDF');
-    window.print();
   }
 
   if (reports.status === 'error') return <div role="alert" className="rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card"><p className="font-semibold text-status-danger">No se pudo generar el reporte contractual.</p><button type="button" onClick={reports.retry} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Reintentar</button></div>;
