@@ -1,13 +1,31 @@
-const REPORT = {
-  kpis: { approvedServices: 36, preinvoiced: 11, reconciled: 8, differences: 3 },
-  byAirline: [
-    { airline: 'American Airlines', approved: 12, billed: 10, amount: 4320, currency: 'USD' },
-    { airline: 'Delta Air Lines', approved: 9, billed: 8, amount: 3475, currency: 'USD' },
-    { airline: 'Arajet', approved: 8, billed: 7, amount: 148000, currency: 'DOP' },
-    { airline: 'JetBlue', approved: 7, billed: 6, amount: 2890, currency: 'USD' },
-  ],
-};
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+const REPORT = { kpis: { approvedServices: 0, preinvoiced: 0, reconciled: 0, differences: 0 }, byAirline: [] };
 let audit = [];
-export async function getFinanceReport() { return { ...structuredClone(REPORT), audit: structuredClone(audit) }; }
-export async function registerFinanceReportExport(format, user = 'Usuario de Finanzas') { const row = { id: `EXP-${Date.now()}`, format, user, exportedAt: new Date().toISOString() }; audit.unshift(row); return structuredClone(row); }
+const usesApi = () => import.meta.env.MODE !== 'test';
+
+async function request(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token ?? ''}`, ...options.headers } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) { handleUnauthorizedResponse(response); throw new Error(payload.error || 'No fue posible generar el reporte.'); }
+  return payload;
+}
+
+export async function getFinanceReport() { return usesApi() ? request('/api/finance/reports') : { ...structuredClone(REPORT), audit: structuredClone(audit) }; }
+export async function registerFinanceReportExport(format, user = 'Usuario de Finanzas') {
+  if (usesApi()) return request('/api/finance/reports/export', { method: 'POST', body: JSON.stringify({ format }) });
+  const row = { id: `EXP-${Date.now()}`, format, user, exportedAt: new Date().toISOString(), report: structuredClone(REPORT), fileName: `reporte.${format === 'excel' ? 'xls' : 'pdf'}` }; audit.unshift(row); return structuredClone(row);
+}
+const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function downloadFinanceReport(result) {
+  const rows = result.report.byAirline ?? [];
+  if (result.format === 'excel') {
+    const body = rows.map(row => `<Row><Cell><Data ss:Type="String">${esc(row.airline)}</Data></Cell><Cell><Data ss:Type="Number">${row.approved}</Data></Cell><Cell><Data ss:Type="Number">${row.billed}</Data></Cell><Cell><Data ss:Type="Number">${row.amount}</Data></Cell></Row>`).join('');
+    const xml = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Finanzas"><Table><Row><Cell><Data ss:Type="String">Aerolínea</Data></Cell><Cell><Data ss:Type="String">Aprobados</Data></Cell><Cell><Data ss:Type="String">Facturados</Data></Cell><Cell><Data ss:Type="String">Importe</Data></Cell></Row>${body}</Table></Worksheet></Workbook>`;
+    const url = URL.createObjectURL(new Blob([xml], { type: 'application/vnd.ms-excel' })); const link = document.createElement('a'); link.href = url; link.download = result.fileName; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); return;
+  }
+  const popup = window.open('', '_blank', 'noopener,noreferrer'); if (!popup) throw new Error('El navegador bloqueó la ventana de impresión.');
+  popup.document.write(`<html><head><title>Reporte financiero</title><style>body{font-family:Arial;padding:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px}</style></head><body><h1>Reporte financiero ELEVANT</h1><table><tr><th>Aerolínea</th><th>Aprobados</th><th>Facturados</th><th>Importe</th></tr>${rows.map(row => `<tr><td>${esc(row.airline)}</td><td>${row.approved}</td><td>${row.billed}</td><td>${row.amount} ${esc(row.currency)}</td></tr>`).join('')}</table><script>window.onload=()=>window.print()</script></body></html>`); popup.document.close();
+}
 export function resetFinanceReportsForTests() { audit = []; }
