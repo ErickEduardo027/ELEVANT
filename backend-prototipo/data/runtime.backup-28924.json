@@ -1,0 +1,613 @@
+{
+  "schemaVersion": 3,
+  "createdAt": "2026-08-14T21:13:05.425Z",
+  "updatedAt": "2026-08-14T21:48:01.280Z",
+  "users": [
+    {
+      "id": "USR-ADMIN-OCC",
+      "email": "admin@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Laisha Ramírez",
+      "role": "ADMIN_OCC",
+      "roleLabel": "Administrador OCC",
+      "active": true
+    },
+    {
+      "id": "USR-GESTION-HUMANA",
+      "email": "gestionhumana@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Camila Reyes",
+      "role": "GESTION_HUMANA",
+      "roleLabel": "Gestión Humana",
+      "active": true
+    },
+    {
+      "id": "USR-CONTRATOS",
+      "email": "contratos@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Marcos Silva",
+      "role": "CONTRATOS",
+      "roleLabel": "Contratos",
+      "active": true
+    },
+    {
+      "id": "USR-FINANZAS",
+      "email": "finanzas@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Elena Rojas",
+      "role": "FINANZAS",
+      "roleLabel": "Finanzas",
+      "active": true
+    },
+    {
+      "id": "USR-AGENT-1786742615350-ej0awh",
+      "personnelId": "PER-1786742615350-5oysym",
+      "email": "eliezercalric535@gmail.com",
+      "password": "Elevant2026!",
+      "name": "Eliezer Calderón Richardson",
+      "role": "AGENTE_RAMPA",
+      "roleLabel": "Agente de Rampa",
+      "active": true
+    }
+  ],
+  "airlines": [],
+  "serviceRequests": [
+    {
+      "id": "SOL-1786742982404-syxule",
+      "airline": "Avianca",
+      "contactName": "Pedro",
+      "contactEmail": "pedro@avianca.com",
+      "type": "affiliation",
+      "requestedService": "Todos",
+      "receivedAt": "2026-08-14T21:29:42.404Z",
+      "updatedAt": "2026-08-14T21:31:47.689Z",
+      "status": "approved",
+      "decisionNote": "Aceptado",
+      "notifiedAt": "2026-08-14T21:31:47.689Z",
+      "details": {
+        "schemaVersion": 1,
+        "id": "aff_bf603e47-bba0-4fea-b9fd-34de9271f034",
+        "reference": "ELV-AFL-20260814-D68825",
+        "status": "received",
+        "submittedAt": "2026-08-14T21:29:42.043Z",
+        "airline": {
+          "legalName": "Ejemplo de Solicitud",
+          "displayName": "Avianca",
+          "iataCode": "32",
+          "icaoCode": "323",
+          "country": "Chile"
+        },
+        "stations": {
+          "primary": "STG",
+          "requested": [
+            "STG"
+          ]
+        },
+        "representative": {
+          "fullName": "Pedro",
+          "title": "Gerente",
+          "email": "pedro@avianca.com",
+          "phone": "8092320939"
+        },
+        "servicesOfInterest": "Todos"
+      },
+      "contractId": "CTR-2026-001"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CTR-2026-001",
+      "requestId": "SOL-1786742982404-syxule",
+      "airline": "Avianca",
+      "airlineCode": "232",
+      "contractType": "permanent",
+      "startDate": "2026-08-14",
+      "endDate": null,
+      "conditions": "Se ejecutará cada servicio cuando corresponda",
+      "statusOverride": null,
+      "createdAt": "2026-08-14T21:32:45.185Z"
+    }
+  ],
+  "contractServices": [],
+  "personnel": [
+    {
+      "identity": {
+        "id": "PER-1786742615350-5oysym",
+        "avatarUrl": "",
+        "firstName": "Eliezer",
+        "lastName": "Calderón Richardson",
+        "email": "eliezercalric535@gmail.com",
+        "phone": "8297759067",
+        "identificationType": "Cédula",
+        "identificationNumber": "402-1968180-2"
+      },
+      "account": {
+        "id": "ACC-1786742615350-vq5pri",
+        "userId": "PER-1786742615350-5oysym",
+        "status": "active",
+        "createdAt": "2026-08-14T21:23:35.350Z",
+        "lastLoginAt": null,
+        "invitationStatus": "accepted",
+        "invitationSentAt": "2026-08-14T21:23:35.350Z"
+      },
+      "access": {
+        "portal": "ramp_mobile_app",
+        "roleId": "role-agente-rampa",
+        "roleName": "Agente de Rampa",
+        "permissions": [
+          "Consultar",
+          "Crear"
+        ]
+      },
+      "userType": "ramp_agent",
+      "rampAgent": {
+        "employeeNumber": "1968180",
+        "terminals": [
+          "A",
+          "B"
+        ],
+        "category": "Agente1",
+        "hireDate": "2026-08-13",
+        "supervisorName": "Juan"
+      }
+    }
+  ],
+  "qualifications": [
+    {
+      "id": "QLF-1786742818453-a8ge2b",
+      "agentId": "PER-1786742615350-5oysym",
+      "agentName": "Eliezer Calderón Richardson",
+      "employeeNumber": "1968180",
+      "terminals": [
+        "A",
+        "B"
+      ],
+      "equipmentId": "bridge",
+      "equipmentName": "Puente de abordaje",
+      "trainingDate": "2026-08-13T04:00:00.000Z",
+      "obtainedAt": "2026-08-13T04:00:00.000Z",
+      "expiresAt": "2026-08-31T04:00:00.000Z",
+      "certifyingEntity": "ALC",
+      "instructor": "Juan",
+      "notes": "Excelente",
+      "supportDocument": null,
+      "updatedAt": "2026-08-14T21:26:58.453Z"
+    }
+  ],
+  "qualificationHistory": [
+    {
+      "id": "QLH-1786742818453-4s8l2d",
+      "qualificationId": "QLF-1786742818453-a8ge2b",
+      "eventType": "created",
+      "description": "Habilitación registrada para Puente de abordaje",
+      "occurredAt": "2026-08-14T21:26:58.453Z",
+      "performedBy": "Camila Reyes"
+    }
+  ],
+  "permits": [
+    {
+      "id": "PER-1786742615350-5oysym-carnet",
+      "agentId": "PER-1786742615350-5oysym",
+      "agentName": "Eliezer Calderón Richardson",
+      "employeeNumber": "1968180",
+      "terminals": [
+        "A",
+        "B"
+      ],
+      "type": "carnet",
+      "number": "",
+      "issuedAt": "2026-08-13",
+      "expiresAt": "2026-08-13",
+      "supportDocument": null,
+      "updatedAt": "2026-08-14T21:23:35.350Z"
+    },
+    {
+      "id": "PER-1786742615350-5oysym-licencia",
+      "agentId": "PER-1786742615350-5oysym",
+      "agentName": "Eliezer Calderón Richardson",
+      "employeeNumber": "1968180",
+      "terminals": [
+        "A",
+        "B"
+      ],
+      "type": "licencia",
+      "number": "",
+      "issuedAt": "2026-08-13",
+      "expiresAt": "2026-08-13",
+      "supportDocument": null,
+      "updatedAt": "2026-08-14T21:23:35.350Z"
+    }
+  ],
+  "permitHistory": [
+    {
+      "id": "PMH-1786742615350-5ned39",
+      "permitId": "PER-1786742615350-5oysym-carnet",
+      "documentType": "carnet",
+      "eventType": "issued",
+      "description": "Carnet aeroportuario pendiente de registro",
+      "occurredAt": "2026-08-14T21:23:35.350Z",
+      "performedBy": "Camila Reyes"
+    },
+    {
+      "id": "PMH-1786742615350-a95e3i",
+      "permitId": "PER-1786742615350-5oysym-licencia",
+      "documentType": "licencia",
+      "eventType": "issued",
+      "description": "Licencia de conducir en rampa pendiente de registro",
+      "occurredAt": "2026-08-14T21:23:35.350Z",
+      "performedBy": "Camila Reyes"
+    }
+  ],
+  "shifts": [],
+  "availabilityRequests": [],
+  "flights": [
+    {
+      "id": "FLT-1786743511292-ie0iwm",
+      "contractId": "CTR-2026-001",
+      "airlineIata": "232",
+      "airlineName": "Avianca",
+      "flightNumber": "323",
+      "status": "scheduled",
+      "scheduledTime": "2026-08-14T17:38",
+      "estimatedTime": "2026-08-14T17:38",
+      "origin": "STG",
+      "destination": "PUJ",
+      "aircraftType": "Boing 737 MAX",
+      "position": "B3",
+      "station": "PUJ",
+      "supervisor": null,
+      "agents": [],
+      "agentIds": [],
+      "teams": [],
+      "services": [],
+      "serviceIds": [],
+      "conflict": null,
+      "observations": "Realizar catering",
+      "history": [
+        {
+          "at": "2026-08-14T21:38:31.292Z",
+          "note": "Vuelo registrado por OCC"
+        }
+      ],
+      "operationStatus": "pending",
+      "createdAt": "2026-08-14T21:38:31.292Z"
+    }
+  ],
+  "assignments": [],
+  "operations": [],
+  "incidents": [],
+  "reports": [],
+  "preinvoices": [],
+  "chats": [
+    {
+      "id": "CHAT-1786743900602-brnfcb",
+      "agentId": "PER-1786742615350-5oysym",
+      "agentName": "Eliezer Calderón Richardson",
+      "flightId": null,
+      "flightNumber": "Sin vuelo",
+      "airline": "AVIAM",
+      "origin": null,
+      "destination": "PUJ",
+      "position": null,
+      "operationId": null,
+      "agentStatus": "online",
+      "status": "active",
+      "requiresAttention": false,
+      "createdAt": "2026-08-14T21:45:00.602Z",
+      "updatedAt": "2026-08-14T21:45:27.889Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "MSG-1786743916811-z9lk8d",
+      "clientId": "1786743988423-11vollxi26pc",
+      "chatId": "CHAT-1786743900602-brnfcb",
+      "senderId": "PER-1786742615350-5oysym",
+      "senderRole": "agent",
+      "senderName": "Eliezer Calderón Richardson",
+      "content": "Hola",
+      "attachments": [],
+      "createdAt": "2026-08-14T21:45:16.811Z",
+      "readAt": "2026-08-14T21:45:22.621Z",
+      "status": "delivered"
+    },
+    {
+      "id": "MSG-1786743927889-tmnvl4",
+      "clientId": null,
+      "chatId": "CHAT-1786743900602-brnfcb",
+      "senderId": "USR-ADMIN-OCC",
+      "senderRole": "occ",
+      "senderName": "Laisha Ramírez",
+      "content": "Hola",
+      "attachments": [],
+      "createdAt": "2026-08-14T21:45:27.889Z",
+      "readAt": "2026-08-14T21:45:30.513Z",
+      "status": "delivered"
+    }
+  ],
+  "departmentMessages": [
+    {
+      "id": "DMSG-1786743985000-yebn4u",
+      "senderRole": "CONTRATOS",
+      "senderId": "USR-CONTRATOS",
+      "senderName": "Marcos Silva",
+      "recipientRole": "FINANZAS",
+      "content": "Hola",
+      "contextType": null,
+      "contextId": null,
+      "contextLabel": null,
+      "createdAt": "2026-08-14T21:46:25.000Z",
+      "readAt": "2026-08-14T21:47:43.962Z"
+    },
+    {
+      "id": "DMSG-1786744067251-fvvmwp",
+      "senderRole": "FINANZAS",
+      "senderId": "USR-FINANZAS",
+      "senderName": "Elena Rojas",
+      "recipientRole": "CONTRATOS",
+      "content": "Hola",
+      "contextType": null,
+      "contextId": null,
+      "contextLabel": null,
+      "createdAt": "2026-08-14T21:47:47.251Z",
+      "readAt": "2026-08-14T21:48:01.280Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "NOT-1786744067251-mq9hde",
+      "recipientRole": "CONTRATOS",
+      "category": "general",
+      "severity": "info",
+      "title": "Nuevo mensaje de Departamento de Finanzas",
+      "description": "Hola",
+      "read": false,
+      "createdAt": "2026-08-14T21:47:47.251Z",
+      "flightNumber": null,
+      "airline": null,
+      "position": null,
+      "operationId": null,
+      "relatedModule": null,
+      "relatedRoute": null,
+      "source": "Chat departamental",
+      "metadata": {
+        "messageId": "DMSG-1786744067251-fvvmwp",
+        "senderRole": "FINANZAS"
+      }
+    },
+    {
+      "id": "NOT-1786743985000-7dyqxm",
+      "recipientRole": "FINANZAS",
+      "category": "general",
+      "severity": "info",
+      "title": "Nuevo mensaje de Departamento de Contratos",
+      "description": "Hola",
+      "read": false,
+      "createdAt": "2026-08-14T21:46:25.000Z",
+      "flightNumber": null,
+      "airline": null,
+      "position": null,
+      "operationId": null,
+      "relatedModule": null,
+      "relatedRoute": null,
+      "source": "Chat departamental",
+      "metadata": {
+        "messageId": "DMSG-1786743985000-yebn4u",
+        "senderRole": "CONTRATOS"
+      }
+    },
+    {
+      "id": "NOT-1786743165186-n4a9vm",
+      "recipientRole": "FINANZAS",
+      "category": "operational",
+      "severity": "success",
+      "title": "Nuevo contrato disponible",
+      "description": "CTR-2026-001 de Avianca fue creado y está disponible para el flujo operativo.",
+      "read": false,
+      "createdAt": "2026-08-14T21:32:45.186Z",
+      "flightNumber": null,
+      "airline": null,
+      "position": null,
+      "operationId": null,
+      "relatedModule": null,
+      "relatedRoute": null,
+      "source": "Contratos",
+      "metadata": {
+        "contractId": "CTR-2026-001"
+      }
+    },
+    {
+      "id": "NOT-1786743165185-j5grjc",
+      "recipientRole": "ADMIN_OCC",
+      "category": "operational",
+      "severity": "success",
+      "title": "Nuevo contrato disponible",
+      "description": "CTR-2026-001 de Avianca fue creado y está disponible para el flujo operativo.",
+      "read": false,
+      "createdAt": "2026-08-14T21:32:45.185Z",
+      "flightNumber": null,
+      "airline": null,
+      "position": null,
+      "operationId": null,
+      "relatedModule": null,
+      "relatedRoute": null,
+      "source": "Contratos",
+      "metadata": {
+        "contractId": "CTR-2026-001"
+      }
+    },
+    {
+      "id": "NOT-1786742982404-008otp",
+      "recipientRole": "CONTRATOS",
+      "category": "general",
+      "severity": "info",
+      "title": "Nueva solicitud de servicio",
+      "description": "Avianca envió una solicitud de Todos.",
+      "read": false,
+      "createdAt": "2026-08-14T21:29:42.404Z",
+      "flightNumber": null,
+      "airline": null,
+      "position": null,
+      "operationId": null,
+      "relatedModule": "contract-requests",
+      "relatedRoute": "SOL-1786742982404-syxule",
+      "source": "Portal de aerolíneas",
+      "metadata": {
+        "requestId": "SOL-1786742982404-syxule",
+        "type": "affiliation"
+      }
+    }
+  ],
+  "syncReceipts": [
+    {
+      "idempotencyKey": "1786743988423-11vollxi26pc",
+      "synchronizedAt": "2026-08-14T21:45:16.808Z"
+    }
+  ],
+  "audit": [
+    {
+      "id": "AUD-1786744067251-d4bt4h",
+      "action": "department_message_sent",
+      "actorId": "USR-FINANZAS",
+      "actorName": "Elena Rojas",
+      "affectedUserId": "DMSG-1786744067251-fvvmwp",
+      "occurredAt": "2026-08-14T21:47:47.251Z",
+      "detail": "CONTRATOS"
+    },
+    {
+      "id": "AUD-1786743985000-ng15mj",
+      "action": "department_message_sent",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "DMSG-1786743985000-yebn4u",
+      "occurredAt": "2026-08-14T21:46:25.000Z",
+      "detail": "FINANZAS"
+    },
+    {
+      "id": "AUD-1786743927889-2s0366",
+      "action": "occ_chat_message_sent",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:45:27.889Z",
+      "detail": "CHAT-1786743900602-brnfcb"
+    },
+    {
+      "id": "AUD-1786743916811-8b58zf",
+      "action": "mobile_sync_completed",
+      "actorId": "USR-AGENT-1786742615350-ej0awh",
+      "actorName": "Eliezer Calderón Richardson",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:45:16.811Z",
+      "detail": "1 registros"
+    },
+    {
+      "id": "AUD-1786743511292-ptsywp",
+      "action": "flight_created",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "FLT-1786743511292-ie0iwm",
+      "occurredAt": "2026-08-14T21:38:31.292Z",
+      "detail": "CTR-2026-001"
+    },
+    {
+      "id": "AUD-1786743302300-uxg0ef",
+      "action": "contract_report_exported",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "USR-CONTRATOS",
+      "occurredAt": "2026-08-14T21:35:02.300Z",
+      "detail": "PDF"
+    },
+    {
+      "id": "AUD-1786743165186-9jb6ii",
+      "action": "contract_created",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "CTR-2026-001",
+      "occurredAt": "2026-08-14T21:32:45.186Z",
+      "detail": "Solicitud SOL-1786742982404-syxule"
+    },
+    {
+      "id": "AUD-1786743107689-nopk28",
+      "action": "service_request_resolve",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "SOL-1786742982404-syxule",
+      "occurredAt": "2026-08-14T21:31:47.689Z"
+    },
+    {
+      "id": "AUD-1786743084909-i2l8g3",
+      "action": "service_request_review",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "SOL-1786742982404-syxule",
+      "occurredAt": "2026-08-14T21:31:24.909Z"
+    },
+    {
+      "id": "AUD-1786742818453-koa3j4",
+      "action": "qualification_created",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:26:58.453Z",
+      "detail": "QLF-1786742818453-a8ge2b"
+    },
+    {
+      "id": "AUD-1786742710047-x0pdfe",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:25:10.047Z"
+    },
+    {
+      "id": "AUD-1786742706654-snruah",
+      "action": "account_deactivate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:25:06.654Z"
+    },
+    {
+      "id": "AUD-1786742695854-g7xdic",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:24:55.854Z"
+    },
+    {
+      "id": "AUD-1786742695094-4ie7u3",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:24:55.094Z"
+    },
+    {
+      "id": "AUD-1786742693295-ix9xy5",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:24:53.295Z"
+    },
+    {
+      "id": "AUD-1786742681515-xehv08",
+      "action": "account_deactivate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:24:41.515Z"
+    },
+    {
+      "id": "AUD-1786742615351-vq3azl",
+      "action": "account_created",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786742615350-5oysym",
+      "occurredAt": "2026-08-14T21:23:35.351Z"
+    }
+  ]
+}
