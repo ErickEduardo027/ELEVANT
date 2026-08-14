@@ -236,6 +236,30 @@ function appendAudit(state, session, action, affectedUserId, detail = null) {
   return entry;
 }
 
+function appendNotification(state, {
+  recipientRole,
+  category = 'general',
+  severity = 'info',
+  title,
+  description,
+  source = 'Sistema ELEVANT',
+  flight = null,
+  operationId = null,
+  relatedModule = null,
+  relatedRoute = null,
+  metadata = {},
+}) {
+  state.notifications ??= [];
+  const item = {
+    id: nextId('NOT'), recipientRole, category, severity, title, description,
+    read: false, createdAt: new Date().toISOString(), flightNumber: flight?.flightNumber ?? null,
+    airline: flight?.airlineName ?? null, position: flight?.position ?? null,
+    operationId, relatedModule, relatedRoute, source, metadata,
+  };
+  state.notifications.unshift(item);
+  return item;
+}
+
 function findPersonnel(state, personnelId) {
   const record = state.personnel.find(item => item.identity.id === personnelId);
   if (!record) throw Object.assign(new Error('Usuario no encontrado.'), { statusCode: 404 });
@@ -339,6 +363,13 @@ export function createApp({ store }) {
             details: payload.details ?? null,
           };
           state.serviceRequests.unshift(request);
+          appendNotification(state, {
+            recipientRole: 'CONTRATOS', category: 'general', severity: 'info',
+            title: 'Nueva solicitud de servicio',
+            description: `${airline} envió una solicitud de ${requestedService}.`,
+            source: 'Portal de aerolíneas', relatedModule: 'contract-requests', relatedRoute: request.id,
+            metadata: { requestId: request.id, type },
+          });
           return request;
         });
         return sendJson(res, 201, created);
@@ -412,6 +443,14 @@ export function createApp({ store }) {
           };
           state.contracts.unshift(contract);
           request.contractId = contract.id;
+          for (const recipientRole of ['ADMIN_OCC', 'FINANZAS']) {
+            appendNotification(state, {
+              recipientRole, category: 'operational', severity: 'success',
+              title: 'Nuevo contrato disponible',
+              description: `${contract.id} de ${contract.airline} fue creado y está disponible para el flujo operativo.`,
+              source: 'Contratos', metadata: { contractId: contract.id },
+            });
+          }
           appendAudit(state, session, 'contract_created', contract.id, `Solicitud ${requestId}`);
           return contractView(state, contract);
         });
@@ -560,6 +599,12 @@ export function createApp({ store }) {
           flight.position = String(payload.position ?? flight.position ?? '').trim() || null;
           flight.history.unshift({ at: new Date().toISOString(), note: `Asignado a ${flight.agents[0]} y enviado al móvil` });
           state.assignments.unshift({ id: nextId('ASG'), flightId: flight.id, agentId: agent.identity.id, serviceIds: flight.serviceIds, assignedAt: new Date().toISOString() });
+          appendNotification(state, {
+            recipientRole: 'AGENTE_RAMPA', category: 'operational', severity: 'info',
+            title: 'Nueva asignación de vuelo',
+            description: `${flight.flightNumber} fue asignado a ${flight.agents[0]}.`,
+            source: 'Planificación OCC', flight, metadata: { personnelId: agent.identity.id },
+          });
           appendAudit(state, session, 'flight_assigned', flight.id, agent.identity.id);
           return flight;
         });
@@ -697,6 +742,13 @@ export function createApp({ store }) {
                 operation.endedAt = item.payload.endedAt;
                 operation.submittedAt = synchronizedAt;
                 operation.reviewStatus = 'PENDING_REVIEW';
+                appendNotification(state, {
+                  recipientRole: 'ADMIN_OCC', category: 'review', severity: 'info',
+                  title: 'Nueva operación pendiente de revisión',
+                  description: `El reporte del vuelo ${flight.flightNumber} fue sincronizado y requiere revisión.`,
+                  source: 'Aplicación móvil', flight, operationId: operation.id,
+                  relatedModule: 'approvals', relatedRoute: operation.id,
+                });
                 flight.operationStatus = 'completed';
               } else if (item.payload.startedAt) flight.operationStatus = 'in_progress';
               operation.history.push({ at: item.createdAt, action: item.payload.endedAt ? 'Operación completada' : 'Operación iniciada', user: session.user.name, fromStatus: null, toStatus: item.payload.endedAt ? 'PENDING_REVIEW' : null, comment: '' });
@@ -739,7 +791,17 @@ export function createApp({ store }) {
           if (action === 'return' && !String(payload.reason ?? '').trim()) throw Object.assign(new Error('El motivo de devolución es obligatorio.'), { statusCode: 400 });
           const previous = operation.reviewStatus;
           if (action === 'start') operation.reviewStatus = 'IN_REVIEW';
-          if (action === 'approve') { operation.reviewStatus = 'APPROVED'; operation.approvedAt = new Date().toISOString(); }
+          if (action === 'approve') {
+            operation.reviewStatus = 'APPROVED'; operation.approvedAt = new Date().toISOString();
+            const flight = state.flights.find(item => item.id === operation.flightId);
+            appendNotification(state, {
+              recipientRole: 'FINANZAS', category: 'review', severity: 'success',
+              title: 'Operación aprobada por OCC',
+              description: `Los servicios del vuelo ${flight?.flightNumber ?? operation.id} están disponibles para revisión financiera.`,
+              source: 'Revisión OCC', flight, operationId: operation.id,
+              metadata: { operationId: operation.id },
+            });
+          }
           if (action === 'return') { operation.reviewStatus = 'RETURNED'; operation.returnReason = String(payload.reason).trim(); }
           operation.history.push({ at: new Date().toISOString(), action: action === 'approve' ? 'Operación aprobada' : action === 'return' ? 'Devuelto con correcciones' : 'Revisión iniciada', user: session.user.name, fromStatus: previous, toStatus: operation.reviewStatus, comment: operation.returnReason ?? payload.comment ?? '' });
           appendAudit(state, session, `review_${action}`, operation.id);
@@ -858,6 +920,44 @@ export function createApp({ store }) {
           };
         });
         return sendJson(res, 201, result);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/notifications') {
+        const state = await store.read();
+        const session = requireSession(state, req);
+        const notifications = (state.notifications ?? [])
+          .filter(item => item.recipientRole === session.user.role)
+          .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+        return sendJson(res, 200, { station: { code: 'PUJ', localAbbr: 'AST' }, notifications });
+      }
+
+      const notificationReadMatch = url.pathname.match(/^\/api\/notifications\/([^/]+)\/(read|unread)$/);
+      if (notificationReadMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req);
+        const [, notificationId, action] = notificationReadMatch;
+        const updated = await store.update(state => {
+          const item = (state.notifications ?? []).find(candidate => candidate.id === notificationId && candidate.recipientRole === session.user.role);
+          if (!item) throw Object.assign(new Error('La notificación no existe.'), { statusCode: 404 });
+          item.read = action === 'read';
+          item.readAt = item.read ? new Date().toISOString() : null;
+          return item;
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/notifications/read-all') {
+        const current = await store.read();
+        const session = requireSession(current, req);
+        const updated = await store.update(state => {
+          const now = new Date().toISOString();
+          return (state.notifications ?? []).filter(item => item.recipientRole === session.user.role).map(item => {
+            item.read = true;
+            item.readAt = now;
+            return item;
+          });
+        });
+        return sendJson(res, 200, updated);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {
