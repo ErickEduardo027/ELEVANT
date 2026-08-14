@@ -48,6 +48,8 @@ export function useChatData(stationCode = 'PUJ', refreshToken = 0, forceDisconne
     const unsubscribe = subscribeToConversationUpdates(({ conversationId, message }) => {
       setState(current => {
         if (!current.data) return current;
+        const currentMessages = current.data.messagesByConversationId[conversationId] ?? [];
+        if (currentMessages.some(item => item.id === message.id)) return current;
         const conversations = current.data.conversations.map(conversation =>
           conversation.id === conversationId
             ? { ...conversation, lastMessage: message.content, lastMessageAt: message.createdAt, unreadCount: conversation.unreadCount + 1 }
@@ -55,7 +57,7 @@ export function useChatData(stationCode = 'PUJ', refreshToken = 0, forceDisconne
         );
         const messagesByConversationId = {
           ...current.data.messagesByConversationId,
-          [conversationId]: [...(current.data.messagesByConversationId[conversationId] ?? []), message],
+          [conversationId]: [...currentMessages, message],
         };
         return { ...current, data: { ...current.data, conversations, messagesByConversationId } };
       });

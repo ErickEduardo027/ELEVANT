@@ -1,4 +1,21 @@
-// Adaptador mock del módulo Chat interno. Sustituir por llamadas HTTP/WebSocket reales cuando exista backend.
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+// Adaptador del chat OCC. En pruebas conserva el store mock; en ejecución usa el backend persistente.
+const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+
+async function prototypeRequest(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token ?? ''}`, ...options.headers },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    handleUnauthorizedResponse(response);
+    throw new Error(payload.error || 'No fue posible completar la operación del chat.');
+  }
+  return payload;
+}
 //
 // Endpoints conceptuales que este adaptador representa (ver Claude-skills/plan-chat/skill.md):
 //   GET  /chat/conversations
@@ -294,6 +311,7 @@ function findConversationOrThrow(id) {
 }
 
 export async function getConversations(stationCode = 'PUJ') {
+  if (usesPrototypeApi()) return prototypeRequest('/api/occ/chat/conversations');
   const conversations = conversationStore.map(template =>
     computeConversationSummary(template, messageStore[template.id] ?? [])
   );
@@ -304,6 +322,7 @@ export async function getConversations(stationCode = 'PUJ') {
 }
 
 export async function getMessages(conversationId) {
+  if (usesPrototypeApi()) return prototypeRequest(`/api/occ/chat/conversations/${encodeURIComponent(conversationId)}/messages`);
   findConversationOrThrow(conversationId);
   return {
     conversationId,
@@ -312,6 +331,9 @@ export async function getMessages(conversationId) {
 }
 
 export async function sendMessage(conversationId, content, attachments = []) {
+  if (usesPrototypeApi()) return prototypeRequest(`/api/occ/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content, attachments }),
+  });
   const conversation = findConversationOrThrow(conversationId);
   const message = occMessage(`MSG-${conversation.id}-${messageIdCounter++}`, conversationId, new Date().toISOString(), content, {
     status: 'sent',
@@ -322,6 +344,7 @@ export async function sendMessage(conversationId, content, attachments = []) {
 }
 
 export async function markConversationAsRead(conversationId) {
+  if (usesPrototypeApi()) return prototypeRequest(`/api/occ/chat/conversations/${encodeURIComponent(conversationId)}/read`, { method: 'POST' });
   const conversation = findConversationOrThrow(conversationId);
   const now = new Date().toISOString();
   messageStore[conversationId] = (messageStore[conversationId] ?? []).map(message =>
@@ -331,6 +354,7 @@ export async function markConversationAsRead(conversationId) {
 }
 
 export async function closeConversation(conversationId) {
+  if (usesPrototypeApi()) return prototypeRequest(`/api/occ/chat/conversations/${encodeURIComponent(conversationId)}/close`, { method: 'POST' });
   const conversation = findConversationOrThrow(conversationId);
   conversation.status = 'closed';
   const closingMessage = systemMessage(
@@ -347,11 +371,13 @@ export async function closeConversation(conversationId) {
 }
 
 export async function getAvailableFlightsForNewConversation() {
+  if (usesPrototypeApi()) return [];
   const openFlightIds = new Set(conversationStore.map(conversation => conversation.flightId));
   return structuredCloneValue(AVAILABLE_FLIGHT_TEMPLATES.filter(flight => !openFlightIds.has(flight.flightId)));
 }
 
 export async function createConversation({ flightId, operationId, agentId }) {
+  if (usesPrototypeApi()) throw new Error('La conversación se crea automáticamente al asignar y conectar al agente móvil.');
   const template = AVAILABLE_FLIGHT_TEMPLATES.find(
     flight => flight.flightId === flightId && flight.operationId === operationId && flight.agentId === agentId
   );
@@ -395,6 +421,27 @@ const SIMULATED_AGENT_REPLIES = [
 ];
 
 export function subscribeToConversationUpdates(onIncomingMessage) {
+  if (usesPrototypeApi()) {
+    const knownIds = new Set();
+    const poll = async () => {
+      try {
+        const { conversations } = await getConversations();
+        for (const conversation of conversations) {
+          const { messages } = await getMessages(conversation.id);
+          for (const message of messages) {
+            if (knownIds.has(message.id)) continue;
+            knownIds.add(message.id);
+            onIncomingMessage({ conversationId: conversation.id, message });
+          }
+        }
+      } catch {
+        // El siguiente ciclo reintenta sin reemplazar el estado visible.
+      }
+    };
+    void poll();
+    const intervalId = setInterval(() => void poll(), 5000);
+    return () => clearInterval(intervalId);
+  }
   let tickCount = 0;
 
   const intervalId = setInterval(() => {

@@ -455,11 +455,33 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
       { idempotencyKey: 'SYNC-CHECKLIST', type: 'checklist', createdAt: '2026-08-13T15:29:00-04:00', payload: { flightId: flight.id, answers: { exterior: 'OK', escalera: 'NA' }, completedAt: '2026-08-13T15:29:00-04:00' } },
       { idempotencyKey: 'SYNC-START', type: 'operación', createdAt: '2026-08-13T14:31:00-04:00', payload: { flightId: flight.id, startedAt: '2026-08-13T14:31:00-04:00' } },
       { idempotencyKey: 'SYNC-INCIDENT', type: 'incidencia', createdAt: '2026-08-13T14:45:00-04:00', payload: { flightId: flight.id, type: 'Equipo', impact: 'Alto', description: 'Daño detectado durante la operación.' } },
+      { idempotencyKey: 'SYNC-CHAT', type: 'chat', createdAt: '2026-08-13T14:46:00-04:00', payload: { text: 'OCC, necesito apoyo en la posición B12.' } },
     ] }),
   });
   const sync = await syncResponse.json();
   assert.equal(syncResponse.status, 200);
-  assert.equal(sync.count, 4);
+  assert.equal(sync.count, 5);
+
+  const conversationsResponse = await fetch(`${context.baseUrl}/api/occ/chat/conversations`, { headers: { Authorization: `Bearer ${occ.token}` } });
+  const conversations = await conversationsResponse.json();
+  assert.equal(conversationsResponse.status, 200);
+  assert.equal(conversations.conversations.length, 1);
+  assert.equal(conversations.conversations[0].lastMessage, 'OCC, necesito apoyo en la posición B12.');
+  assert.equal(conversations.conversations[0].unreadCount, 1);
+
+  const conversationId = conversations.conversations[0].id;
+  const occReplyResponse = await fetch(`${context.baseUrl}/api/occ/chat/conversations/${conversationId}/messages`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ content: 'Recibido, enviaremos apoyo a la posición.' }),
+  });
+  assert.equal(occReplyResponse.status, 201);
+
+  const mobileChatResponse = await fetch(`${context.baseUrl}/api/mobile/chat`, { headers: { Authorization: `Bearer ${mobile.token}` } });
+  const mobileChat = await mobileChatResponse.json();
+  assert.equal(mobileChatResponse.status, 200);
+  assert.equal(mobileChat.messages.length, 2);
+  assert.equal(mobileChat.messages[0].clientId, 'SYNC-CHAT');
+  assert.equal(mobileChat.messages[1].content, 'Recibido, enviaremos apoyo a la posición.');
 
   const reviewQueueResponse = await fetch(`${context.baseUrl}/api/occ/reviews`, { headers: { Authorization: `Bearer ${occ.token}` } });
   const reviewQueue = await reviewQueueResponse.json();
