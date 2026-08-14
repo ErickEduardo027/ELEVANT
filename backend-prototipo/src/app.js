@@ -77,6 +77,41 @@ function reviewOperationView(state, operation) {
   };
 }
 
+function approvedServiceRows(state) {
+  return state.operations
+    .filter(operation => operation.reviewStatus === 'APPROVED')
+    .flatMap(operation => {
+      const flight = state.flights.find(item => item.id === operation.flightId);
+      if (!flight) return [];
+      return (flight.serviceIds ?? []).map(serviceId => {
+        const service = state.contractServices.find(item => item.id === serviceId);
+        if (!service) return null;
+        const id = `${operation.id}:${service.id}`;
+        return {
+          id,
+          operationId: operation.id,
+          serviceId: service.id,
+          airline: flight.airlineName,
+          flight: flight.flightNumber,
+          date: String(operation.approvedAt ?? operation.endedAt ?? '').slice(0, 10),
+          approvedAt: operation.approvedAt,
+          service: service.name,
+          contract: flight.contractId,
+          amount: Number(service.rate ?? 0),
+          currency: service.currency ?? 'USD',
+          status: (operation.financeReviewedServiceIds ?? []).includes(service.id) ? 'reviewed' : 'pending',
+        };
+      }).filter(Boolean);
+    });
+}
+
+function preinvoiceView(item) {
+  return {
+    ...item,
+    services: item.serviceIds?.length ?? item.services ?? 0,
+  };
+}
+
 function roleDefinition(roleId) {
   const roles = {
     'role-admin-occ': { name: 'Administrador OCC', userType: 'admin_occ', portal: 'back_office', permissions: ['Consultar', 'Crear', 'Editar', 'Aprobar', 'Exportar', 'Administrar'] },
@@ -516,6 +551,94 @@ export function createApp({ store }) {
           return reviewOperationView(state, operation);
         });
         return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/finance/approved-services') {
+        const state = await store.read();
+        requireSession(state, req, ['FINANZAS']);
+        return sendJson(res, 200, approvedServiceRows(state));
+      }
+
+      const approvedServiceMatch = url.pathname.match(/^\/api\/finance\/approved-services\/(.+)\/review$/);
+      if (approvedServiceMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['FINANZAS']);
+        const rowId = decodeURIComponent(approvedServiceMatch[1]);
+        const updated = await store.update(state => {
+          const row = approvedServiceRows(state).find(item => item.id === rowId);
+          if (!row) throw Object.assign(new Error('Servicio aprobado no encontrado.'), { statusCode: 404 });
+          const operation = state.operations.find(item => item.id === row.operationId);
+          operation.financeReviewedServiceIds ??= [];
+          if (!operation.financeReviewedServiceIds.includes(row.serviceId)) operation.financeReviewedServiceIds.push(row.serviceId);
+          appendAudit(state, session, 'approved_service_reviewed', rowId);
+          return approvedServiceRows(state).find(item => item.id === rowId);
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/finance/preinvoices') {
+        const state = await store.read();
+        requireSession(state, req, ['FINANZAS']);
+        return sendJson(res, 200, (state.preinvoices ?? []).map(preinvoiceView));
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/finance/preinvoices') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['FINANZAS']);
+        const payload = await readJsonBody(req);
+        if (!String(payload.airline ?? '').trim() || !String(payload.period ?? '').trim()) {
+          throw Object.assign(new Error('Aerolínea y período son obligatorios.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          state.preinvoices ??= [];
+          const candidates = approvedServiceRows(state).filter(item => item.airline === String(payload.airline).trim());
+          if (!candidates.length) throw Object.assign(new Error('La aerolínea no tiene servicios operativos aprobados.'), { statusCode: 409 });
+          const currencies = [...new Set(candidates.map(item => item.currency))];
+          if (currencies.length > 1) throw Object.assign(new Error('Los servicios con monedas distintas deben prefacturarse por separado.'), { statusCode: 409 });
+          const preinvoice = {
+            id: nextId('PRE'), airline: String(payload.airline).trim(), period: String(payload.period).trim(),
+            serviceIds: candidates.map(item => item.id), total: candidates.reduce((sum, item) => sum + item.amount, 0),
+            currency: currencies[0] ?? payload.currency ?? 'USD', status: 'draft', createdAt: new Date().toISOString(),
+          };
+          state.preinvoices.unshift(preinvoice);
+          appendAudit(state, session, 'preinvoice_created', preinvoice.id);
+          return preinvoiceView(preinvoice);
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const preinvoiceActionMatch = url.pathname.match(/^\/api\/finance\/preinvoices\/([^/]+)\/(approve|send)$/);
+      if (preinvoiceActionMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['FINANZAS']);
+        const [, preinvoiceId, action] = preinvoiceActionMatch;
+        const updated = await store.update(state => {
+          const item = state.preinvoices.find(candidate => candidate.id === preinvoiceId);
+          if (!item) throw Object.assign(new Error('Pre-factura no encontrada.'), { statusCode: 404 });
+          if (action === 'send' && item.status !== 'approved') throw Object.assign(new Error('La pre-factura debe estar aprobada antes del envío.'), { statusCode: 409 });
+          item.status = action === 'approve' ? 'approved' : 'sent';
+          item[action === 'approve' ? 'approvedAt' : 'sentAt'] = new Date().toISOString();
+          appendAudit(state, session, `preinvoice_${action}`, item.id);
+          return preinvoiceView(item);
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/finance/summary') {
+        const state = await store.read();
+        requireSession(state, req, ['FINANZAS']);
+        const rows = approvedServiceRows(state);
+        const preinvoices = state.preinvoices ?? [];
+        return sendJson(res, 200, {
+          kpis: {
+            approvedServices: rows.length,
+            pendingReview: rows.filter(item => item.status === 'pending').length,
+            draftPreinvoices: preinvoices.filter(item => item.status === 'draft').length,
+            reconciliationDifferences: 0,
+          },
+          approvedServices: rows.slice(0, 6),
+          pendingActions: preinvoices.filter(item => item.status !== 'sent').map(item => ({ id: item.id, kind: 'Pre-factura', airline: item.airline, detail: item.status === 'draft' ? 'Pendiente de revisión' : 'Aprobada para envío', moduleId: 'finance-preinvoices' })),
+        });
       }
 
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {

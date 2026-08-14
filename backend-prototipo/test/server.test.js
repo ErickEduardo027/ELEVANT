@@ -41,6 +41,15 @@ async function startTestServer() {
         roleLabel: 'Gestión Humana',
         active: true,
       },
+      {
+        id: 'USR-FINANZAS',
+        email: 'finanzas@elevant.test',
+        password: 'Elevant2026!',
+        name: 'Elena Rojas',
+        role: 'FINANZAS',
+        roleLabel: 'Finanzas',
+        active: true,
+      },
     ],
     flights: [],
     personnel: [],
@@ -52,6 +61,7 @@ async function startTestServer() {
     operations: [],
     incidents: [],
     syncReceipts: [],
+    preinvoices: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -83,7 +93,7 @@ test('health responde y crea el archivo persistente limpio', async t => {
   const persisted = JSON.parse(
     await readFile(path.join(context.dataDirectory, 'runtime.json'), 'utf8'),
   );
-  assert.equal(persisted.users.length, 3);
+  assert.equal(persisted.users.length, 4);
   assert.equal(persisted.users[0].email, 'admin@elevant.test');
   assert.deepEqual(persisted.flights, []);
 });
@@ -464,6 +474,28 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   });
   assert.equal(approveResponse.status, 200);
   assert.equal((await approveResponse.json()).status, 'APPROVED');
+
+  const finance = await login('finanzas@elevant.test');
+  const approvedServicesResponse = await fetch(`${context.baseUrl}/api/finance/approved-services`, { headers: { Authorization: `Bearer ${finance.token}` } });
+  const approvedServices = await approvedServicesResponse.json();
+  assert.equal(approvedServicesResponse.status, 200);
+  assert.equal(approvedServices.length, 1);
+  assert.equal(approvedServices[0].flight, 'AI101');
+
+  const preinvoiceResponse = await fetch(`${context.baseUrl}/api/finance/preinvoices`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${finance.token}` },
+    body: JSON.stringify({ airline: 'Aerolínea Integrada', period: 'Agosto 2026' }),
+  });
+  const preinvoice = await preinvoiceResponse.json();
+  assert.equal(preinvoiceResponse.status, 201);
+  assert.equal(preinvoice.services, 1);
+  assert.equal(preinvoice.total, 485);
+
+  const approvePreinvoiceResponse = await fetch(`${context.baseUrl}/api/finance/preinvoices/${preinvoice.id}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${finance.token}` } });
+  assert.equal(approvePreinvoiceResponse.status, 200);
+  const sendPreinvoiceResponse = await fetch(`${context.baseUrl}/api/finance/preinvoices/${preinvoice.id}/send`, { method: 'POST', headers: { Authorization: `Bearer ${finance.token}` } });
+  assert.equal(sendPreinvoiceResponse.status, 200);
+  assert.equal((await sendPreinvoiceResponse.json()).status, 'sent');
 
   const duplicateSyncResponse = await fetch(`${context.baseUrl}/api/mobile/sync`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${mobile.token}` },
