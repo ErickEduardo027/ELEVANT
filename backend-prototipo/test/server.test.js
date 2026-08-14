@@ -567,3 +567,39 @@ test('OCC muestra y acepta contratos activos próximos a vencer', async t => {
   assert.equal(flightResponse.status, 201);
   assert.equal((await flightResponse.json()).contractId, 'CTR-2026-001');
 });
+
+test('una solicitud pública genera una notificación persistente para Contratos', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const requestResponse = await fetch(`${context.baseUrl}/api/public/service-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      airline: 'Aerolínea Prueba', contactName: 'Ana Cliente',
+      contactEmail: 'ana@aerolinea.test', requestedService: 'Afiliación', type: 'affiliation',
+    }),
+  });
+  assert.equal(requestResponse.status, 201);
+
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'contratos@elevant.test', password: 'Elevant2026!' }),
+  });
+  const login = await loginResponse.json();
+  const headers = { Authorization: `Bearer ${login.token}` };
+
+  const listResponse = await fetch(`${context.baseUrl}/api/notifications`, { headers });
+  const snapshot = await listResponse.json();
+  assert.equal(listResponse.status, 200);
+  assert.equal(snapshot.notifications.length, 1);
+  assert.equal(snapshot.notifications[0].recipientRole, 'CONTRATOS');
+  assert.equal(snapshot.notifications[0].read, false);
+
+  const readResponse = await fetch(`${context.baseUrl}/api/notifications/${snapshot.notifications[0].id}/read`, {
+    method: 'POST', headers,
+  });
+  assert.equal(readResponse.status, 200);
+  assert.equal((await readResponse.json()).read, true);
+});

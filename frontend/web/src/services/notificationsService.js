@@ -1,4 +1,25 @@
-// Adaptador mock del módulo Notificaciones. Sustituir por llamadas HTTP reales cuando exista backend.
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+// En pruebas conserva el catálogo exhaustivo. En ejecución normal usa notificaciones persistentes del prototipo.
+function usesPrototypeApi() {
+  return import.meta.env.MODE !== 'test';
+}
+
+async function notificationsApi(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...options.headers,
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la operación de notificaciones.');
+  return payload;
+}
 //
 // Endpoints conceptuales que este adaptador representa (ver Claude-skills/plan-notification/skill.md):
 //   GET  /notifications
@@ -262,6 +283,7 @@ function findNotificationOrThrow(id) {
 }
 
 export async function getNotifications(stationCode = 'PUJ') {
+  if (usesPrototypeApi()) return notificationsApi('/api/notifications');
   return {
     station: { code: stationCode, localAbbr: 'AST' },
     notifications: store.map(structuredCloneNotification),
@@ -269,16 +291,24 @@ export async function getNotifications(stationCode = 'PUJ') {
 }
 
 export async function getNotification(id) {
+  if (usesPrototypeApi()) {
+    const snapshot = await notificationsApi('/api/notifications');
+    const item = snapshot.notifications.find(notification => notification.id === id);
+    if (!item) throw new Error(`No existe la notificación ${id}`);
+    return item;
+  }
   return structuredCloneNotification(findNotificationOrThrow(id));
 }
 
 export async function markNotificationAsRead(id) {
+  if (usesPrototypeApi()) return notificationsApi(`/api/notifications/${id}/read`, { method: 'POST' });
   const notification = findNotificationOrThrow(id);
   notification.read = true;
   return structuredCloneNotification(notification);
 }
 
 export async function markNotificationAsUnread(id) {
+  if (usesPrototypeApi()) return notificationsApi(`/api/notifications/${id}/unread`, { method: 'POST' });
   const notification = findNotificationOrThrow(id);
   notification.read = false;
   return structuredCloneNotification(notification);
@@ -293,6 +323,7 @@ export async function markNotificationsAsUnread(ids) {
 }
 
 export async function markAllNotificationsAsRead() {
+  if (usesPrototypeApi()) return notificationsApi('/api/notifications/read-all', { method: 'POST' });
   store = store.map(notification => ({ ...notification, read: true }));
   return store.map(structuredCloneNotification);
 }
