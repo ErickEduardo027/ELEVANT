@@ -6,6 +6,7 @@ import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { CURRENT_USER_MOCK, HUMAN_RESOURCES_DASHBOARD_MOCK } from './mockData';
 import { HUMAN_RESOURCES_MODULE_IDS, HUMAN_RESOURCES_NAVIGATION } from './navigation';
+import useNotificationBadge from '../notifications/useNotificationBadge';
 
 function stationSnapshot() {
   const now = new Date().toISOString();
@@ -34,6 +35,7 @@ export default function HumanResourcesShell({ user = CURRENT_USER_MOCK, onLogout
   const [activeModuleId, setActiveModuleId] = useState(HUMAN_RESOURCES_MODULE_IDS.DASHBOARD);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notifications = useNotificationBadge();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -71,7 +73,7 @@ export default function HumanResourcesShell({ user = CURRENT_USER_MOCK, onLogout
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           station={stationSnapshot()}
-          notificationsCount={HUMAN_RESOURCES_DASHBOARD_MOCK.unreadNotifications}
+          notificationsCount={notifications.count}
           theme={theme}
           onToggleTheme={toggleTheme}
           user={user}

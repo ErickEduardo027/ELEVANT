@@ -5,6 +5,10 @@ function usesPrototypeApi() {
   return import.meta.env.MODE !== 'test';
 }
 
+function notifyBadgeChanged() {
+  window.dispatchEvent(new CustomEvent('elevant-notifications-refresh'));
+}
+
 async function notificationsApi(path, options = {}) {
   const session = readSession();
   const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
@@ -301,14 +305,22 @@ export async function getNotification(id) {
 }
 
 export async function markNotificationAsRead(id) {
-  if (usesPrototypeApi()) return notificationsApi(`/api/notifications/${id}/read`, { method: 'POST' });
+  if (usesPrototypeApi()) {
+    const updated = await notificationsApi(`/api/notifications/${id}/read`, { method: 'POST' });
+    notifyBadgeChanged();
+    return updated;
+  }
   const notification = findNotificationOrThrow(id);
   notification.read = true;
   return structuredCloneNotification(notification);
 }
 
 export async function markNotificationAsUnread(id) {
-  if (usesPrototypeApi()) return notificationsApi(`/api/notifications/${id}/unread`, { method: 'POST' });
+  if (usesPrototypeApi()) {
+    const updated = await notificationsApi(`/api/notifications/${id}/unread`, { method: 'POST' });
+    notifyBadgeChanged();
+    return updated;
+  }
   const notification = findNotificationOrThrow(id);
   notification.read = false;
   return structuredCloneNotification(notification);
@@ -323,7 +335,11 @@ export async function markNotificationsAsUnread(ids) {
 }
 
 export async function markAllNotificationsAsRead() {
-  if (usesPrototypeApi()) return notificationsApi('/api/notifications/read-all', { method: 'POST' });
+  if (usesPrototypeApi()) {
+    const updated = await notificationsApi('/api/notifications/read-all', { method: 'POST' });
+    notifyBadgeChanged();
+    return updated;
+  }
   store = store.map(notification => ({ ...notification, read: true }));
   return store.map(structuredCloneNotification);
 }
