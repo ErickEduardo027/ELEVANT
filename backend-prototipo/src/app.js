@@ -145,6 +145,26 @@ function ensureChatCollections(state) {
   state.messages ??= [];
 }
 
+const DEPARTMENT_ROLES = ['ADMIN_OCC', 'CONTRATOS', 'FINANZAS', 'GESTION_HUMANA'];
+const DEPARTMENT_LABELS = {
+  ADMIN_OCC: 'Administrador / OCC',
+  CONTRATOS: 'Departamento de Contratos',
+  FINANZAS: 'Departamento de Finanzas',
+  GESTION_HUMANA: 'Gestión Humana',
+};
+
+function ensureDepartmentMessages(state) {
+  state.departmentMessages ??= [];
+}
+
+function departmentMessageView(message) {
+  return {
+    ...message,
+    senderLabel: DEPARTMENT_LABELS[message.senderRole] ?? message.senderRole,
+    recipientLabel: DEPARTMENT_LABELS[message.recipientRole] ?? message.recipientRole,
+  };
+}
+
 function findAgentRecord(state, personnelId) {
   return state.personnel.find(item => item.identity?.id === personnelId) ?? null;
 }
@@ -631,6 +651,70 @@ export function createApp({ store }) {
           return { conversation: chatConversationView(state, chat), messages: messages.map(chatMessageView) };
         });
         return sendJson(res, 200, result);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/internal-chat/messages') {
+        const state = await store.read();
+        const session = requireSession(state, req, DEPARTMENT_ROLES);
+        ensureDepartmentMessages(state);
+        const messages = state.departmentMessages
+          .filter(item => item.senderRole === session.user.role || item.recipientRole === session.user.role)
+          .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))
+          .map(departmentMessageView);
+        return sendJson(res, 200, {
+          currentRole: session.user.role,
+          participants: DEPARTMENT_ROLES
+            .filter(role => role !== session.user.role)
+            .map(role => ({ role, label: DEPARTMENT_LABELS[role] })),
+          messages,
+        });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/internal-chat/messages') {
+        const current = await store.read();
+        const session = requireSession(current, req, DEPARTMENT_ROLES);
+        const payload = await readJsonBody(req);
+        const recipientRole = String(payload.recipientRole ?? '').trim().toUpperCase();
+        const content = String(payload.content ?? '').trim();
+        if (!DEPARTMENT_ROLES.includes(recipientRole) || recipientRole === session.user.role) {
+          throw Object.assign(new Error('Seleccione un departamento destinatario válido.'), { statusCode: 400 });
+        }
+        if (!content) throw Object.assign(new Error('El mensaje no puede estar vacío.'), { statusCode: 400 });
+        const message = await store.update(state => {
+          ensureDepartmentMessages(state);
+          const created = {
+            id: nextId('DMSG'), senderRole: session.user.role, senderId: session.user.id,
+            senderName: session.user.name, recipientRole, content,
+            contextType: String(payload.contextType ?? '').trim() || null,
+            contextId: String(payload.contextId ?? '').trim() || null,
+            contextLabel: String(payload.contextLabel ?? '').trim() || null,
+            createdAt: new Date().toISOString(), readAt: null,
+          };
+          state.departmentMessages.push(created);
+          appendNotification(state, {
+            recipientRole, category: 'general', severity: 'info',
+            title: `Nuevo mensaje de ${DEPARTMENT_LABELS[session.user.role]}`,
+            description: content.length > 120 ? `${content.slice(0, 117)}…` : content,
+            source: 'Chat departamental', metadata: { messageId: created.id, senderRole: session.user.role },
+          });
+          appendAudit(state, session, 'department_message_sent', created.id, recipientRole);
+          return departmentMessageView(created);
+        });
+        return sendJson(res, 201, message);
+      }
+
+      const departmentMessageReadMatch = url.pathname.match(/^\/api\/internal-chat\/messages\/([^/]+)\/read$/);
+      if (departmentMessageReadMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, DEPARTMENT_ROLES);
+        const updated = await store.update(state => {
+          ensureDepartmentMessages(state);
+          const message = state.departmentMessages.find(item => item.id === departmentMessageReadMatch[1] && item.recipientRole === session.user.role);
+          if (!message) throw Object.assign(new Error('El mensaje no existe o no pertenece al departamento.'), { statusCode: 404 });
+          message.readAt ??= new Date().toISOString();
+          return departmentMessageView(message);
+        });
+        return sendJson(res, 200, updated);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/occ/chat/conversations') {

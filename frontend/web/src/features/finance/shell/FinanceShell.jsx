@@ -11,6 +11,7 @@ import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
 import ReconciliationPage from '../reconciliation/ReconciliationPage';
 import TariffsPage from '../tariffs/TariffsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
+import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { FINANCE_MODULES, FINANCE_MODULE_IDS } from './modules';
 import useNotificationBadge from '../../notifications/useNotificationBadge';
 
@@ -46,7 +47,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsCount={notifications.count} notificationCenter={notifications} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={notifications.refresh} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
-          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage /> : activeModule.id === FINANCE_MODULE_IDS.CHAT ? <DepartmentChatPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
         </main>
       </div>
     </div>
