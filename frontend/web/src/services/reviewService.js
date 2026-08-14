@@ -1,4 +1,10 @@
-// Adaptador mock del módulo Revisión. Sustituir por llamadas HTTP reales cuando exista backend.
+import {
+  handleUnauthorizedResponse,
+  PROTOTYPE_API_URL,
+  readSession,
+} from '../features/auth/authService';
+
+// En pruebas conserva los escenarios mock exhaustivos. En ejecución normal consume la cola persistente del backend.
 //
 // Endpoints conceptuales que este adaptador representa (ver Claude-skills/plan-revision/skill.md):
 //   GET  /reviews
@@ -21,6 +27,26 @@
 // every evening at the station (UTC midnight is 20:00 local), well before the station's own day
 // is over, silently dating new mock timestamps a day ahead of the station's current date.
 const STATION_UTC_OFFSET_MS = 4 * 60 * 60 * 1000;
+
+function usesPrototypeApi() {
+  return import.meta.env.MODE !== 'test';
+}
+
+async function reviewApi(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+      ...options.headers,
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la revisión operativa.');
+  return payload;
+}
 
 function getOperationDate() {
   return new Date(Date.now() - STATION_UTC_OFFSET_MS).toISOString().slice(0, 10);
@@ -869,6 +895,7 @@ function appendHistory(operation, entry) {
 }
 
 export async function getReviewQueue(stationCode = 'PUJ') {
+  if (usesPrototypeApi()) return reviewApi(`/api/occ/reviews?station=${encodeURIComponent(stationCode)}`);
   return {
     station: { code: stationCode, localAbbr: 'AST' },
     date: getOperationDate(),
@@ -877,10 +904,12 @@ export async function getReviewQueue(stationCode = 'PUJ') {
 }
 
 export async function getReviewOperation(id) {
+  if (usesPrototypeApi()) return reviewApi(`/api/occ/reviews/${encodeURIComponent(id)}`);
   return structuredCloneOperation(findOperationOrThrow(id));
 }
 
 export async function startReview(id, { user }) {
+  if (usesPrototypeApi()) return reviewApi(`/api/occ/reviews/${encodeURIComponent(id)}/start`, { method: 'POST', body: JSON.stringify({ user }) });
   const operation = findOperationOrThrow(id);
   const fromStatus = operation.status;
   operation.status = 'IN_REVIEW';
@@ -889,6 +918,7 @@ export async function startReview(id, { user }) {
 }
 
 export async function approveReviewOperation(id, { user, comment = '' } = {}) {
+  if (usesPrototypeApi()) return reviewApi(`/api/occ/reviews/${encodeURIComponent(id)}/approve`, { method: 'POST', body: JSON.stringify({ user, comment }) });
   const operation = findOperationOrThrow(id);
   const fromStatus = operation.status;
   operation.status = 'APPROVED';
@@ -899,6 +929,7 @@ export async function approveReviewOperation(id, { user, comment = '' } = {}) {
 
 export async function returnReviewOperation(id, { user, reason }) {
   if (!reason || !reason.trim()) throw new Error('El motivo de devolución es obligatorio.');
+  if (usesPrototypeApi()) return reviewApi(`/api/occ/reviews/${encodeURIComponent(id)}/return`, { method: 'POST', body: JSON.stringify({ user, reason }) });
   const operation = findOperationOrThrow(id);
   const fromStatus = operation.status;
   operation.status = 'RETURNED';

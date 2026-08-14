@@ -110,9 +110,15 @@ export async function clearOutbox() {
 
 export async function completeMockSynchronization() {
   const items = await getOutbox();
-  const synchronizedAt = new Date().toISOString();
+  return completeSynchronization(items.map(item => item.idempotencyKey), new Date().toISOString());
+}
+
+export async function completeSynchronization(acceptedKeys: string[], synchronizedAt: string) {
+  const items = await getOutbox();
+  const accepted = new Set(acceptedKeys);
+  const synchronizedItems = items.filter(item => accepted.has(item.idempotencyKey));
   const completedFlightIds = new Set<string>();
-  for (const item of items) {
+  for (const item of synchronizedItems) {
     const flightId = typeof item.payload?.flightId === 'string' ? item.payload.flightId : undefined;
     if (item.type === 'operación' && flightId && item.payload?.endedAt) completedFlightIds.add(flightId);
   }
@@ -120,8 +126,8 @@ export async function completeMockSynchronization() {
     const state = await getJson<OperationState>(flightKey(flightId), {});
     if (state.endedAt) await setJson(flightKey(flightId), { ...state, syncedAt: synchronizedAt });
   }));
-  await clearOutbox();
-  return { synchronizedAt, count: items.length };
+  await setJson(KEYS.outbox, items.filter(item => !accepted.has(item.idempotencyKey)));
+  return { synchronizedAt, count: synchronizedItems.length };
 }
 
 export async function cancelOperationStart(flightId: string) {
