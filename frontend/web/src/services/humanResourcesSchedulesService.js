@@ -8,6 +8,26 @@ import {
   AVAILABILITY_REQUESTS_MOCK,
 } from '../features/human-resources/schedules/schedulesMock';
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+const USE_BACKEND = import.meta.env.MODE !== 'test';
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
+}
 
 // Adaptador stub para el dominio "Horarios y disponibilidad": hoy resuelve
 // contra un store en memoria (mock), mañana contra el backend real de
@@ -48,21 +68,25 @@ function delay(ms = 220) {
 }
 
 export async function getAgents() {
+  if (USE_BACKEND) return apiRequest('/api/hr/ramp-agents');
   await delay(120);
   return structuredClone(AGENTS_MOCK);
 }
 
 export async function getPositions() {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/positions');
   await delay(80);
   return structuredClone(POSITIONS_MOCK);
 }
 
 export async function getShiftBlocks() {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/shift-blocks');
   await delay(60);
   return structuredClone(SHIFT_BLOCKS_MOCK);
 }
 
 export async function getCoverageRequirements() {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/coverage-requirements');
   await delay(120);
   return structuredClone(COVERAGE_REQUIREMENTS_MOCK);
 }
@@ -74,18 +98,24 @@ export async function getCoverageRequirements() {
  * comentario de contrato arriba).
  */
 export async function getQualificationSummaries() {
+  if (USE_BACKEND) {
+    const qualifications = await apiRequest('/api/hr/qualifications');
+    return qualifications.map(item => ({ agentId: item.agentId, positionId: item.equipmentId, expiresAt: item.expiresAt }));
+  }
   await delay(120);
   return structuredClone(AGENT_POSITION_QUALIFICATIONS_MOCK);
 }
 
 /** @returns {Promise<import('../types/humanResourcesSchedules').ShiftAssignment[]>} */
 export async function getShifts() {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/shifts');
   await delay();
   return structuredClone(shiftsStore);
 }
 
 /** @returns {Promise<import('../types/humanResourcesSchedules').AvailabilityRequest[]>} */
 export async function getAvailabilityRequests() {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/availability-requests');
   await delay(150);
   return structuredClone(requestsStore);
 }
@@ -99,6 +129,7 @@ export async function getAvailabilityRequests() {
  * @returns {Promise<import('../types/humanResourcesSchedules').ShiftAssignment>}
  */
 export async function saveShift(payload) {
+  if (USE_BACKEND) return apiRequest('/api/hr/schedules/shifts', { method: 'POST', body: JSON.stringify(payload) });
   await delay(320);
   const agentRecord = AGENTS_MOCK.find(item => item.agentId === payload.agentId);
   if (!agentRecord) throw new Error(`Agente no encontrado: ${payload.agentId}`);
@@ -136,6 +167,7 @@ export async function saveShift(payload) {
 }
 
 export async function deleteShift(shiftId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/schedules/shifts/${encodeURIComponent(shiftId)}`, { method: 'DELETE' });
   await delay(220);
   shiftsStore = shiftsStore.filter(item => item.id !== shiftId);
 }
@@ -149,6 +181,7 @@ export async function deleteShift(shiftId) {
  * @returns {Promise<import('../types/humanResourcesSchedules').AvailabilityRequest>}
  */
 export async function resolveAvailabilityRequest(requestId, status) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/schedules/availability-requests/${encodeURIComponent(requestId)}/resolve`, { method: 'POST', body: JSON.stringify({ status }) });
   await delay(280);
   const record = requestsStore.find(item => item.id === requestId);
   if (!record) throw new Error(`Solicitud no encontrada: ${requestId}`);

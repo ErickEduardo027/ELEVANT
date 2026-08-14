@@ -412,6 +412,34 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
     }),
   });
   const agent = await agentResponse.json();
+  const hrHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${hr.token}` };
+
+  const qualificationResponse = await fetch(`${context.baseUrl}/api/hr/qualifications`, {
+    method: 'POST', headers: hrHeaders,
+    body: JSON.stringify({
+      agentId: agent.identity.id, equipmentId: 'bridge', trainingDate: '2026-08-01',
+      obtainedAt: '2026-08-01', expiresAt: '2027-08-01',
+      certifyingEntity: 'AVIAM', instructor: 'Camila Reyes',
+    }),
+  });
+  assert.equal(qualificationResponse.status, 201);
+
+  for (const [type, number] of [['carnet', 'CARN-002'], ['licencia', 'LIC-002']]) {
+    const permitResponse = await fetch(`${context.baseUrl}/api/hr/permits/${agent.identity.id}-${type}/renew`, {
+      method: 'POST', headers: hrHeaders,
+      body: JSON.stringify({ number, issuedAt: '2026-08-01', expiresAt: '2027-08-01' }),
+    });
+    assert.equal(permitResponse.status, 200);
+  }
+
+  const shiftResponse = await fetch(`${context.baseUrl}/api/hr/schedules/shifts`, {
+    method: 'POST', headers: hrHeaders,
+    body: JSON.stringify({
+      agentId: agent.identity.id, date: '2026-08-13', startTime: '14:00',
+      endTime: '22:00', terminal: 'A', positionId: 'bridge',
+    }),
+  });
+  assert.equal(shiftResponse.status, 200);
 
   const contractsLogin = await login('contratos@elevant.test');
   await context.store.update(state => state.serviceRequests.unshift({ id: 'SOL-OCC', airline: 'Aerolínea Integrada', status: 'approved', contractId: null }));

@@ -256,6 +256,93 @@ function appendAudit(state, session, action, affectedUserId, detail = null) {
   return entry;
 }
 
+const EQUIPMENT_TYPES = [
+  { id: 'bridge', name: 'Puente de abordaje' },
+  { id: 'gpu', name: 'GPU' },
+  { id: 'air-conditioning', name: 'Aire acondicionado' },
+  { id: 'baggage', name: 'Equipaje' },
+  { id: 'cabin-cleaning', name: 'Limpieza de cabina' },
+  { id: 'catering', name: 'Catering' },
+  { id: 'fuel', name: 'Combustible' },
+  { id: 'pushback', name: 'Pushback' },
+  { id: 'stairs', name: 'Escalera de servicio' },
+  { id: 'water', name: 'Agua potable' },
+  { id: 'lavatory', name: 'Servicio sanitario' },
+];
+
+const HR_POSITIONS = [
+  { id: 'gpu', name: 'GPU (unidad de poder en tierra)', requiresQualification: true },
+  { id: 'bridge', name: 'Puente de abordaje', requiresQualification: true },
+  { id: 'baggage', name: 'Equipaje', requiresQualification: true },
+  { id: 'ramp-agent', name: 'Agente de rampa', requiresQualification: false },
+  { id: 'supervisor', name: 'Supervisor de rampa', requiresQualification: false },
+];
+
+const SHIFT_BLOCKS = [
+  { id: 'morning', label: 'Mañana', startTime: '06:00', endTime: '14:00' },
+  { id: 'afternoon', label: 'Tarde', startTime: '14:00', endTime: '22:00' },
+  { id: 'night', label: 'Noche', startTime: '22:00', endTime: '06:00' },
+];
+
+function ensureHumanResourcesCollections(state) {
+  state.qualifications ??= [];
+  state.qualificationHistory ??= [];
+  state.permits ??= [];
+  state.permitHistory ??= [];
+  state.shifts ??= [];
+  state.availabilityRequests ??= [];
+}
+
+function rampAgentView(record) {
+  return {
+    agentId: record.identity.id,
+    agentName: `${record.identity.firstName} ${record.identity.lastName}`.trim(),
+    employeeNumber: record.rampAgent?.employeeNumber ?? '',
+    terminals: record.rampAgent?.terminals ?? [],
+  };
+}
+
+function isCurrentDate(value, reference = new Date()) {
+  if (!value) return false;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date >= reference;
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = String(value ?? '').split(':').map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+}
+
+function shiftCoversDateTime(shift, scheduledTime) {
+  const scheduled = new Date(scheduledTime);
+  if (!Number.isFinite(scheduled.getTime()) || shift.date !== scheduledTime.slice(0, 10)) return false;
+  const current = scheduled.getHours() * 60 + scheduled.getMinutes();
+  const start = timeToMinutes(shift.startTime);
+  const end = timeToMinutes(shift.endTime);
+  if (start === null || end === null) return false;
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
+
+function agentEligibility(state, record, scheduledTime = null) {
+  ensureHumanResourcesCollections(state);
+  const now = new Date();
+  const active = record.account?.status === 'active';
+  const qualifications = state.qualifications.filter(item => item.agentId === record.identity.id && isCurrentDate(item.expiresAt, now));
+  const permits = state.permits.filter(item => item.agentId === record.identity.id && isCurrentDate(item.expiresAt, now));
+  const permitTypes = new Set(permits.map(item => item.type));
+  const hasDocuments = permitTypes.has('carnet') && permitTypes.has('licencia');
+  const shifts = state.shifts.filter(item => item.agentId === record.identity.id);
+  const hasShift = scheduledTime
+    ? shifts.some(item => shiftCoversDateTime(item, scheduledTime))
+    : shifts.some(item => item.date >= new Date().toISOString().slice(0, 10));
+  const reasons = [];
+  if (!active) reasons.push('Cuenta inactiva');
+  if (!qualifications.length) reasons.push('Sin habilitación vigente');
+  if (!hasDocuments) reasons.push('Carnet o licencia no vigente');
+  if (!hasShift) reasons.push('Sin turno compatible');
+  return { eligible: active && qualifications.length > 0 && hasDocuments && hasShift, reasons };
+}
+
 function appendNotification(state, {
   recipientRole,
   category = 'general',
@@ -560,8 +647,10 @@ export function createApp({ store }) {
         requireSession(state, req, ['ADMIN_OCC']);
         const contracts = state.contracts.filter(contract => isOperationalContract(contract));
         const agents = state.personnel
-          .filter(record => record.userType === 'ramp_agent' && record.account.status === 'active')
-          .map(record => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
+          .filter(record => record.userType === 'ramp_agent')
+          .map(record => ({ record, eligibility: agentEligibility(state, record) }))
+          .filter(item => item.eligibility.eligible)
+          .map(({ record }) => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
         return sendJson(res, 200, {
           contracts: contracts.map(contract => contractView(state, contract)),
           services: state.contractServices.filter(service => service.active && contracts.some(contract => contract.id === service.contractId)),
@@ -607,8 +696,10 @@ export function createApp({ store }) {
         const assigned = await store.update(state => {
           const flight = state.flights.find(item => item.id === assignFlightMatch[1]);
           if (!flight) throw Object.assign(new Error('El vuelo no existe.'), { statusCode: 404 });
-          const agent = state.personnel.find(record => record.identity.id === payload.agentId && record.userType === 'ramp_agent' && record.account.status === 'active');
-          if (!agent) throw Object.assign(new Error('El agente no está habilitado.'), { statusCode: 409 });
+          const agent = state.personnel.find(record => record.identity.id === payload.agentId && record.userType === 'ramp_agent');
+          if (!agent) throw Object.assign(new Error('El agente no existe o no es Agente de Rampa.'), { statusCode: 409 });
+          const eligibility = agentEligibility(state, agent, flight.scheduledTime);
+          if (!eligibility.eligible) throw Object.assign(new Error(`El agente no está disponible: ${eligibility.reasons.join(', ')}.`), { statusCode: 409 });
           const allowedServices = state.contractServices.filter(service => service.contractId === flight.contractId && service.active);
           const selectedServices = allowedServices.filter(service => (payload.serviceIds ?? []).includes(service.id));
           if (!selectedServices.length) throw Object.assign(new Error('Seleccione al menos un servicio pactado.'), { statusCode: 400 });
@@ -1056,6 +1147,231 @@ export function createApp({ store }) {
         return sendJson(res, 200, { ok: true });
       }
 
+      if (url.pathname === '/api/hr/ramp-agents' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA', 'ADMIN_OCC']);
+        return sendJson(res, 200, state.personnel.filter(item => item.userType === 'ramp_agent').map(rampAgentView));
+      }
+
+      if (url.pathname === '/api/hr/equipment-types' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        return sendJson(res, 200, EQUIPMENT_TYPES);
+      }
+
+      if (url.pathname === '/api/hr/qualifications' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA', 'ADMIN_OCC']);
+        ensureHumanResourcesCollections(state);
+        const agentId = url.searchParams.get('agentId');
+        return sendJson(res, 200, agentId ? state.qualifications.filter(item => item.agentId === agentId) : state.qualifications);
+      }
+
+      if (url.pathname === '/api/hr/qualifications' && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const created = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const agent = state.personnel.find(item => item.identity.id === payload.agentId && item.userType === 'ramp_agent');
+          const equipment = EQUIPMENT_TYPES.find(item => item.id === payload.equipmentId);
+          if (!agent || !equipment || !payload.obtainedAt || !payload.expiresAt) {
+            throw Object.assign(new Error('Agente, equipo y vigencia son obligatorios.'), { statusCode: 400 });
+          }
+          const view = rampAgentView(agent);
+          const record = {
+            id: nextId('QLF'), ...view, equipmentId: equipment.id, equipmentName: equipment.name,
+            trainingDate: payload.trainingDate || payload.obtainedAt, obtainedAt: payload.obtainedAt,
+            expiresAt: payload.expiresAt, certifyingEntity: payload.certifyingEntity || 'AVIAM',
+            instructor: payload.instructor || '', notes: payload.notes || '',
+            supportDocument: payload.supportDocument ?? null, updatedAt: new Date().toISOString(),
+          };
+          state.qualifications.unshift(record);
+          state.qualificationHistory.unshift({
+            id: nextId('QLH'), qualificationId: record.id, eventType: 'created',
+            description: `Habilitación registrada para ${equipment.name}`,
+            occurredAt: record.updatedAt, performedBy: session.user.name,
+          });
+          appendAudit(state, session, 'qualification_created', agent.identity.id, record.id);
+          return record;
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const qualificationMatch = url.pathname.match(/^\/api\/hr\/qualifications\/([^/]+)$/);
+      if (qualificationMatch && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        ensureHumanResourcesCollections(state);
+        const record = state.qualifications.find(item => item.id === qualificationMatch[1]);
+        return record ? sendJson(res, 200, record) : sendJson(res, 404, { error: 'Habilitación no encontrada.' });
+      }
+      if (qualificationMatch && req.method === 'PATCH') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const record = state.qualifications.find(item => item.id === qualificationMatch[1]);
+          if (!record) throw Object.assign(new Error('Habilitación no encontrada.'), { statusCode: 404 });
+          Object.assign(record, payload, { id: record.id, agentId: record.agentId, updatedAt: new Date().toISOString() });
+          appendAudit(state, session, 'qualification_updated', record.agentId, record.id);
+          return record;
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      const qualificationHistoryMatch = url.pathname.match(/^\/api\/hr\/qualifications\/([^/]+)\/history$/);
+      if (qualificationHistoryMatch && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        ensureHumanResourcesCollections(state);
+        return sendJson(res, 200, state.qualificationHistory.filter(item => item.qualificationId === qualificationHistoryMatch[1]));
+      }
+
+      const qualificationRenewMatch = url.pathname.match(/^\/api\/hr\/qualifications\/([^/]+)\/renew$/);
+      if (qualificationRenewMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const record = state.qualifications.find(item => item.id === qualificationRenewMatch[1]);
+          if (!record) throw Object.assign(new Error('Habilitación no encontrada.'), { statusCode: 404 });
+          Object.assign(record, payload, { id: record.id, agentId: record.agentId, updatedAt: new Date().toISOString() });
+          state.qualificationHistory.unshift({
+            id: nextId('QLH'), qualificationId: record.id, eventType: 'renewed',
+            description: 'Habilitación renovada', occurredAt: record.updatedAt, performedBy: session.user.name,
+          });
+          appendAudit(state, session, 'qualification_renewed', record.agentId, record.id);
+          return record;
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (url.pathname === '/api/hr/permits' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA', 'ADMIN_OCC']);
+        ensureHumanResourcesCollections(state);
+        const agentId = url.searchParams.get('agentId');
+        return sendJson(res, 200, agentId ? state.permits.filter(item => item.agentId === agentId) : state.permits);
+      }
+
+      const permitHistoryMatch = url.pathname.match(/^\/api\/hr\/permits\/([^/]+)\/history$/);
+      if (permitHistoryMatch && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        ensureHumanResourcesCollections(state);
+        return sendJson(res, 200, state.permitHistory.filter(item => item.permitId === permitHistoryMatch[1]));
+      }
+
+      const permitRenewMatch = url.pathname.match(/^\/api\/hr\/permits\/([^/]+)\/renew$/);
+      if (permitRenewMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const record = state.permits.find(item => item.id === permitRenewMatch[1]);
+          if (!record) throw Object.assign(new Error('Documento aeroportuario no encontrado.'), { statusCode: 404 });
+          Object.assign(record, payload, { id: record.id, agentId: record.agentId, updatedAt: new Date().toISOString() });
+          state.permitHistory.unshift({
+            id: nextId('PMH'), permitId: record.id, documentType: record.type, eventType: 'renewed',
+            description: `${record.type === 'carnet' ? 'Carnet' : 'Licencia'} renovado`,
+            occurredAt: record.updatedAt, performedBy: session.user.name,
+          });
+          appendAudit(state, session, 'permit_renewed', record.agentId, record.id);
+          return record;
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (url.pathname === '/api/hr/schedules/positions' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        return sendJson(res, 200, HR_POSITIONS);
+      }
+      if (url.pathname === '/api/hr/schedules/shift-blocks' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        return sendJson(res, 200, SHIFT_BLOCKS);
+      }
+      if (url.pathname === '/api/hr/schedules/coverage-requirements' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        return sendJson(res, 200, []);
+      }
+      if (url.pathname === '/api/hr/schedules/shifts' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA', 'ADMIN_OCC']);
+        ensureHumanResourcesCollections(state);
+        return sendJson(res, 200, state.shifts);
+      }
+      if (url.pathname === '/api/hr/schedules/shifts' && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const saved = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const agent = state.personnel.find(item => item.identity.id === payload.agentId && item.userType === 'ramp_agent');
+          if (!agent || !payload.date || !payload.startTime || !payload.endTime || !payload.terminal) {
+            throw Object.assign(new Error('Faltan datos obligatorios del turno.'), { statusCode: 400 });
+          }
+          const index = payload.id
+            ? state.shifts.findIndex(item => item.id === payload.id)
+            : state.shifts.findIndex(item => item.agentId === payload.agentId && item.date === payload.date);
+          const block = SHIFT_BLOCKS.find(item => item.startTime === payload.startTime && item.endTime === payload.endTime)?.id ?? 'morning';
+          const now = new Date().toISOString();
+          const record = {
+            id: index >= 0 ? state.shifts[index].id : nextId('SHF'), agentId: agent.identity.id,
+            agentName: rampAgentView(agent).agentName, date: payload.date, startTime: payload.startTime,
+            endTime: payload.endTime, block, terminal: payload.terminal,
+            positionId: payload.positionId ?? null, createdAt: index >= 0 ? state.shifts[index].createdAt : now, updatedAt: now,
+          };
+          if (index >= 0) state.shifts[index] = record; else state.shifts.push(record);
+          appendAudit(state, session, 'shift_saved', agent.identity.id, record.id);
+          return record;
+        });
+        return sendJson(res, 200, saved);
+      }
+
+      const shiftMatch = url.pathname.match(/^\/api\/hr\/schedules\/shifts\/([^/]+)$/);
+      if (shiftMatch && req.method === 'DELETE') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const record = state.shifts.find(item => item.id === shiftMatch[1]);
+          state.shifts = state.shifts.filter(item => item.id !== shiftMatch[1]);
+          appendAudit(state, session, 'shift_deleted', record?.agentId ?? null, shiftMatch[1]);
+        });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (url.pathname === '/api/hr/schedules/availability-requests' && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['GESTION_HUMANA']);
+        ensureHumanResourcesCollections(state);
+        return sendJson(res, 200, state.availabilityRequests);
+      }
+
+      const availabilityMatch = url.pathname.match(/^\/api\/hr\/schedules\/availability-requests\/([^/]+)\/resolve$/);
+      if (availabilityMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['GESTION_HUMANA']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          ensureHumanResourcesCollections(state);
+          const record = state.availabilityRequests.find(item => item.id === availabilityMatch[1]);
+          if (!record) throw Object.assign(new Error('Solicitud de disponibilidad no encontrada.'), { statusCode: 404 });
+          record.status = payload.status;
+          record.resolvedAt = new Date().toISOString();
+          record.resolvedBy = session.user.name;
+          return record;
+        });
+        return sendJson(res, 200, updated);
+      }
+
       if (url.pathname === '/api/hr/roles' && req.method === 'GET') {
         const state = await store.read();
         requireSession(state, req, ['GESTION_HUMANA']);
@@ -1100,6 +1416,24 @@ export function createApp({ store }) {
             ...(payload.airlineClient ? { airlineClient: payload.airlineClient } : {}),
           };
           state.personnel.unshift(created);
+          ensureHumanResourcesCollections(state);
+          if (created.userType === 'ramp_agent') {
+            const agent = rampAgentView(created);
+            const issuedAt = created.rampAgent?.hireDate || now.slice(0, 10);
+            const expiresAt = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+            for (const type of ['carnet', 'licencia']) {
+              const permit = {
+                id: `${id}-${type}`, ...agent, type, number: '',
+                issuedAt, expiresAt, supportDocument: null, updatedAt: now,
+              };
+              state.permits.push(permit);
+              state.permitHistory.push({
+                id: nextId('PMH'), permitId: permit.id, documentType: type, eventType: 'issued',
+                description: `${type === 'carnet' ? 'Carnet aeroportuario' : 'Licencia de conducir en rampa'} pendiente de registro`,
+                occurredAt: now, performedBy: session.user.name,
+              });
+            }
+          }
           syncMobileAccount(state, created);
           appendAudit(state, session, 'account_created', id);
           return created;
