@@ -49,6 +49,9 @@ async function startTestServer() {
     contracts: [],
     contractServices: [],
     assignments: [],
+    operations: [],
+    incidents: [],
+    syncReceipts: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -434,6 +437,39 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   assert.equal(mobileResponse.status, 200);
   assert.equal(mobileFlights.length, 1);
   assert.equal(mobileFlights[0].id, flight.id);
+
+  const syncResponse = await fetch(`${context.baseUrl}/api/mobile/sync`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${mobile.token}` },
+    body: JSON.stringify({ items: [
+      { idempotencyKey: 'SYNC-END', type: 'operación', createdAt: '2026-08-13T15:30:00-04:00', payload: { flightId: flight.id, startedAt: '2026-08-13T14:31:00-04:00', endedAt: '2026-08-13T15:30:00-04:00' } },
+      { idempotencyKey: 'SYNC-CHECKLIST', type: 'checklist', createdAt: '2026-08-13T15:29:00-04:00', payload: { flightId: flight.id, answers: { exterior: 'OK', escalera: 'NA' }, completedAt: '2026-08-13T15:29:00-04:00' } },
+      { idempotencyKey: 'SYNC-START', type: 'operación', createdAt: '2026-08-13T14:31:00-04:00', payload: { flightId: flight.id, startedAt: '2026-08-13T14:31:00-04:00' } },
+      { idempotencyKey: 'SYNC-INCIDENT', type: 'incidencia', createdAt: '2026-08-13T14:45:00-04:00', payload: { flightId: flight.id, type: 'Equipo', impact: 'Alto', description: 'Daño detectado durante la operación.' } },
+    ] }),
+  });
+  const sync = await syncResponse.json();
+  assert.equal(syncResponse.status, 200);
+  assert.equal(sync.count, 4);
+
+  const reviewQueueResponse = await fetch(`${context.baseUrl}/api/occ/reviews`, { headers: { Authorization: `Bearer ${occ.token}` } });
+  const reviewQueue = await reviewQueueResponse.json();
+  assert.equal(reviewQueueResponse.status, 200);
+  assert.equal(reviewQueue.operations.length, 1);
+  assert.equal(reviewQueue.operations[0].flight.number, 'AI101');
+  assert.equal(reviewQueue.operations[0].status, 'PENDING_REVIEW');
+  assert.equal(reviewQueue.operations[0].incidents.length, 1);
+
+  const approveResponse = await fetch(`${context.baseUrl}/api/occ/reviews/${reviewQueue.operations[0].id}/approve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` }, body: JSON.stringify({ comment: 'Operación validada.' }),
+  });
+  assert.equal(approveResponse.status, 200);
+  assert.equal((await approveResponse.json()).status, 'APPROVED');
+
+  const duplicateSyncResponse = await fetch(`${context.baseUrl}/api/mobile/sync`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${mobile.token}` },
+    body: JSON.stringify({ items: [{ idempotencyKey: 'SYNC-INCIDENT', type: 'incidencia', createdAt: '2026-08-13T14:45:00-04:00', payload: { flightId: flight.id } }] }),
+  });
+  assert.equal((await duplicateSyncResponse.json()).count, 0);
 });
 
 test('OCC muestra y acepta contratos activos próximos a vencer', async t => {

@@ -48,6 +48,35 @@ function contractView(state, contract) {
   };
 }
 
+function minutesBetween(start, end) {
+  if (!start || !end) return 0;
+  return Math.max(0, Math.round((new Date(end) - new Date(start)) / 60_000));
+}
+
+function reviewOperationView(state, operation) {
+  const flight = state.flights.find(item => item.id === operation.flightId) ?? {};
+  const incidents = state.incidents.filter(item => item.flightId === operation.flightId);
+  const agentName = flight.agents?.[0] ?? 'Agente de rampa';
+  const duration = minutesBetween(operation.startedAt, operation.endedAt);
+  const reviewStatus = operation.reviewStatus ?? 'PENDING_REVIEW';
+  return {
+    id: operation.id, status: reviewStatus, priority: incidents.some(item => item.impact === 'Alto') ? 'HIGH' : 'NORMAL',
+    flight: { number: flight.flightNumber, airline: flight.airlineName, airlineIata: flight.airlineIata, origin: flight.origin, destination: flight.destination, aircraftType: flight.aircraftType, registration: null },
+    schedule: { sta: flight.scheduledTime, ata: flight.estimatedTime, std: flight.scheduledTime, atd: operation.endedAt },
+    position: flight.position ?? 'Sin posición', agent: { id: flight.agentIds?.[0] ?? null, name: agentName }, supervisor: { id: null, name: flight.supervisor ?? 'Administrador OCC' },
+    submittedAt: operation.submittedAt ?? operation.endedAt, approvedAt: operation.approvedAt ?? null,
+    planned: { position: flight.position, startTime: flight.estimatedTime, agents: flight.agentIds?.length ?? 0, teams: flight.teams?.length ?? 0, services: flight.services ?? [], duration, supervisor: flight.supervisor ?? 'Administrador OCC' },
+    actual: { position: flight.position, startTime: operation.startedAt, agents: flight.agentIds?.length ?? 0, teams: flight.teams?.length ?? 0, services: flight.services ?? [], duration, supervisor: flight.supervisor ?? 'Administrador OCC' },
+    timeline: { blocksOn: operation.startedAt, doorsOpen: null, loadingStart: null, loadingEnd: null, boardingStart: null, firstPax: null, lastPax: null, firstBag: null, lastBag: null, doorsClose: null, blocksOff: operation.endedAt },
+    services: (flight.services ?? []).map(name => ({ name, status: 'completed' })), equipment: [],
+    incidents: incidents.map(item => ({ id: item.id, type: item.type, severity: item.impact === 'Alto' ? 'high' : item.impact === 'Medio' ? 'medium' : 'low', status: 'open', description: item.description, reportedBy: agentName, occurredAt: item.createdAt, observation: item.imageUri ? 'Incluye evidencia adjunta desde la aplicación móvil.' : '' })),
+    evidence: operation.checklist ? [{ id: `CHK-${operation.id}`, name: `Checklist ${flight.flightNumber}`, type: 'checklist', user: agentName, date: operation.checklist.completedAt, status: 'available' }] : [],
+    signatures: [{ name: agentName, role: 'Agente de rampa', status: 'signed', timestamp: operation.endedAt }],
+    observations: [], reconciliation: [],
+    history: operation.history ?? [], returnReason: operation.returnReason ?? null,
+  };
+}
+
 function roleDefinition(roleId) {
   const roles = {
     'role-admin-occ': { name: 'Administrador OCC', userType: 'admin_occ', portal: 'back_office', permissions: ['Consultar', 'Crear', 'Editar', 'Aprobar', 'Exportar', 'Administrar'] },
@@ -411,6 +440,82 @@ export function createApp({ store }) {
         const session = requireSession(state, req, ['AGENTE_RAMPA']);
         const personnelId = session.user.personnelId;
         return sendJson(res, 200, state.flights.filter(flight => flight.agentIds?.includes(personnelId)));
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/mobile/sync') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['AGENTE_RAMPA']);
+        const payload = await readJsonBody(req);
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const synchronizedAt = new Date().toISOString();
+        const result = await store.update(state => {
+          state.syncReceipts ??= [];
+          const accepted = [];
+          for (const item of [...items].sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')))) {
+            if (!item?.idempotencyKey || state.syncReceipts.some(receipt => receipt.idempotencyKey === item.idempotencyKey)) continue;
+            const flightId = item.payload?.flightId;
+            const flight = state.flights.find(candidate => candidate.id === flightId && candidate.agentIds?.includes(session.user.personnelId));
+            if (!flight) throw Object.assign(new Error('El vuelo no está asignado a este agente.'), { statusCode: 403 });
+            let operation = state.operations.find(candidate => candidate.flightId === flightId);
+            if (!operation) {
+              operation = { id: nextId('REV'), flightId, agentId: session.user.personnelId, startedAt: null, endedAt: null, submittedAt: null, reviewStatus: null, checklist: null, history: [] };
+              state.operations.unshift(operation);
+            }
+            if (item.type === 'operación') {
+              if (item.payload.startedAt) operation.startedAt = item.payload.startedAt;
+              if (item.payload.endedAt) {
+                operation.endedAt = item.payload.endedAt;
+                operation.submittedAt = synchronizedAt;
+                operation.reviewStatus = 'PENDING_REVIEW';
+                flight.operationStatus = 'completed';
+              } else if (item.payload.startedAt) flight.operationStatus = 'in_progress';
+              operation.history.push({ at: item.createdAt, action: item.payload.endedAt ? 'Operación completada' : 'Operación iniciada', user: session.user.name, fromStatus: null, toStatus: item.payload.endedAt ? 'PENDING_REVIEW' : null, comment: '' });
+            }
+            if (item.type === 'checklist') operation.checklist = { answers: item.payload.answers ?? {}, completedAt: item.payload.completedAt ?? synchronizedAt };
+            if (item.type === 'incidencia') state.incidents.unshift({ id: nextId('INC'), flightId, agentId: session.user.personnelId, type: item.payload.type, impact: item.payload.impact, description: item.payload.description, imageUri: item.payload.imageUri ?? null, createdAt: item.createdAt, synchronizedAt });
+            state.syncReceipts.push({ idempotencyKey: item.idempotencyKey, synchronizedAt });
+            accepted.push(item.idempotencyKey);
+          }
+          appendAudit(state, session, 'mobile_sync_completed', session.user.personnelId, `${accepted.length} registros`);
+          return { synchronizedAt, accepted, count: accepted.length };
+        });
+        return sendJson(res, 200, result);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/occ/reviews') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        return sendJson(res, 200, { station: { code: 'PUJ', localAbbr: 'AST' }, date: new Date().toISOString().slice(0, 10), operations: state.operations.filter(item => item.endedAt && item.checklist).map(item => reviewOperationView(state, item)) });
+      }
+
+      const reviewDetailMatch = url.pathname.match(/^\/api\/occ\/reviews\/([^/]+)$/);
+      if (reviewDetailMatch && req.method === 'GET') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        const operation = state.operations.find(item => item.id === reviewDetailMatch[1] && item.endedAt && item.checklist);
+        if (!operation) return sendJson(res, 404, { error: 'La operación de revisión no existe.' });
+        return sendJson(res, 200, reviewOperationView(state, operation));
+      }
+
+      const reviewActionMatch = url.pathname.match(/^\/api\/occ\/reviews\/([^/]+)\/(start|approve|return)$/);
+      if (reviewActionMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const [, operationId, action] = reviewActionMatch;
+        const updated = await store.update(state => {
+          const operation = state.operations.find(item => item.id === operationId);
+          if (!operation) throw Object.assign(new Error('La operación no existe.'), { statusCode: 404 });
+          if (action === 'return' && !String(payload.reason ?? '').trim()) throw Object.assign(new Error('El motivo de devolución es obligatorio.'), { statusCode: 400 });
+          const previous = operation.reviewStatus;
+          if (action === 'start') operation.reviewStatus = 'IN_REVIEW';
+          if (action === 'approve') { operation.reviewStatus = 'APPROVED'; operation.approvedAt = new Date().toISOString(); }
+          if (action === 'return') { operation.reviewStatus = 'RETURNED'; operation.returnReason = String(payload.reason).trim(); }
+          operation.history.push({ at: new Date().toISOString(), action: action === 'approve' ? 'Operación aprobada' : action === 'return' ? 'Devuelto con correcciones' : 'Revisión iniciada', user: session.user.name, fromStatus: previous, toStatus: operation.reviewStatus, comment: operation.returnReason ?? payload.comment ?? '' });
+          appendAudit(state, session, `review_${action}`, operation.id);
+          return reviewOperationView(state, operation);
+        });
+        return sendJson(res, 200, updated);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {

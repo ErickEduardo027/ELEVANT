@@ -54,5 +54,6 @@
   "chats": [],
   "messages": [],
   "notifications": [],
+  "syncReceipts": [],
   "audit": []
 }
