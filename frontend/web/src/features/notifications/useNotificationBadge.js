@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getNotifications } from '../../services/notificationsService';
+import {
+  getNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+} from '../../services/notificationsService';
 
 export const NOTIFICATIONS_REFRESH_EVENT = 'elevant-notifications-refresh';
 
@@ -9,6 +13,7 @@ export function requestNotificationsRefresh() {
 
 export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000 } = {}) {
   const [count, setCount] = useState(fallback);
+  const [items, setItems] = useState([]);
   const [status, setStatus] = useState('idle');
   const mounted = useRef(true);
 
@@ -17,7 +22,9 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
     try {
       const snapshot = await getNotifications();
       if (!mounted.current) return;
-      setCount((snapshot.notifications ?? []).filter(item => !item.read).length);
+      const nextItems = snapshot.notifications ?? [];
+      setItems(nextItems);
+      setCount(nextItems.filter(item => !item.read).length);
       setStatus('success');
     } catch {
       if (mounted.current) setStatus('error');
@@ -45,5 +52,19 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
     };
   }, [intervalMs, refresh]);
 
-  return { count, status, refresh };
+  const markAsRead = useCallback(async id => {
+    const updated = await markNotificationAsRead(id);
+    setItems(current => current.map(item => item.id === id ? updated : item));
+    setCount(current => Math.max(0, current - 1));
+    return updated;
+  }, []);
+
+  const markAllAsRead = useCallback(async () => {
+    const updated = await markAllNotificationsAsRead();
+    setItems(updated);
+    setCount(0);
+    return updated;
+  }, []);
+
+  return { count, items, status, refresh, markAsRead, markAllAsRead };
 }
