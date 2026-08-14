@@ -1,6 +1,7 @@
 import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
+export const AUTH_EXPIRED_EVENT = 'elevant-auth-expired';
 export const MOCK_PASSWORD = 'Elevant2026!';
 export const PROTOTYPE_API_URL = String(
   import.meta.env.VITE_PROTOTYPE_API_URL || 'http://localhost:4310'
@@ -101,6 +102,13 @@ export function persistSession(session, remember = false) {
 export function clearSession() {
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
+}
+
+export function handleUnauthorizedResponse(response) {
+  if (response?.status !== 401) return false;
+  clearSession();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  return true;
 }
 
 export function logout() {

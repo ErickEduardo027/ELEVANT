@@ -13,6 +13,7 @@ function publicUser(user) {
     name: user.name,
     role: user.role,
     roleLabel: user.roleLabel,
+    ...(user.personnelId ? { personnelId: user.personnelId } : {}),
   };
 }
 

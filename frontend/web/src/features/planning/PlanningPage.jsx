@@ -11,11 +11,15 @@ import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
 import { usePlanningFilters } from './usePlanningFilters';
 import { computeKpis, getFilterOptions } from './planningMappers';
+import FlightPlanningModal from './components/FlightPlanningModal';
+import AssignmentModal from './components/AssignmentModal';
 
 export default function PlanningPage({ status, data, error, onRetry, forceState = 'default' }) {
   const [activeView, setActiveView] = useState('timeline');
   const [selectedFlightId, setSelectedFlightId] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
+  const [creating, setCreating] = useState(false);
+  const [assigningFlight, setAssigningFlight] = useState(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date().toISOString()), 30000);
@@ -58,7 +62,7 @@ export default function PlanningPage({ status, data, error, onRetry, forceState 
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-4">
-      <PlanningHeader onRefresh={onRetry} />
+      <PlanningHeader onRefresh={onRetry} onNewFlight={() => setCreating(true)} />
 
       <PlanningFilters
         filters={filters}
@@ -86,7 +90,9 @@ export default function PlanningPage({ status, data, error, onRetry, forceState 
         <FlightTimeline flights={displayedFlights} now={now} onSelectFlight={setSelectedFlightId} />
       )}
 
-      <PlanningDrawer flight={selectedFlight} onClose={() => setSelectedFlightId(null)} />
+      <PlanningDrawer flight={selectedFlight} onClose={() => setSelectedFlightId(null)} onAssign={flight => setAssigningFlight(flight)} />
+      <FlightPlanningModal open={creating} onClose={() => setCreating(false)} onCreated={onRetry} />
+      <AssignmentModal flight={assigningFlight} onClose={() => setAssigningFlight(null)} onAssigned={() => { setSelectedFlightId(null); onRetry(); }} />
     </div>
   );
 }

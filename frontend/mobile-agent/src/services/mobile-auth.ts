@@ -4,6 +4,7 @@ const SESSION_KEY = 'elevant:mobile-session';
 
 export type MobileAgent = {
   id: string;
+  personnelId?: string;
   email: string;
   name: string;
   role: 'AGENTE_RAMPA';

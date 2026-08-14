@@ -22,9 +22,9 @@ function ListOrEmpty({ items, emptyLabel }) {
   return <span>{items.join(', ')}</span>;
 }
 
-const DISABLED_ACTIONS = ['Editar planificación', 'Asignar recursos', 'Crear Work Order'];
+const DISABLED_ACTIONS = ['Editar planificación', 'Crear Work Order'];
 
-export default function PlanningDrawer({ flight, onClose }) {
+export default function PlanningDrawer({ flight, onClose, onAssign }) {
   useEffect(() => {
     if (!flight) return undefined;
     function handleKeyDown(event) {
@@ -131,6 +131,7 @@ export default function PlanningDrawer({ flight, onClose }) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => onAssign?.(flight)} className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white">Asignar recursos</button>
           {DISABLED_ACTIONS.map(label => (
             <button
               key={label}

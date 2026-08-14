@@ -26,6 +26,28 @@ function nextId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function contractStatus(contract, reference = new Date()) {
+  if (contract.statusOverride === 'disabled') return 'disabled';
+  if (!contract.endDate) return 'active';
+  const end = new Date(`${contract.endDate}T23:59:59`);
+  const remainingDays = Math.ceil((end - reference) / 86_400_000);
+  if (remainingDays < 0) return 'expired';
+  if (remainingDays <= 45) return 'expiring';
+  return 'active';
+}
+
+function isOperationalContract(contract, reference = new Date()) {
+  return ['active', 'expiring'].includes(contractStatus(contract, reference));
+}
+
+function contractView(state, contract) {
+  return {
+    ...contract,
+    status: contractStatus(contract),
+    servicesCount: state.contractServices.filter(service => service.contractId === contract.id).length,
+  };
+}
+
 function roleDefinition(roleId) {
   const roles = {
     'role-admin-occ': { name: 'Administrador OCC', userType: 'admin_occ', portal: 'back_office', permissions: ['Consultar', 'Crear', 'Editar', 'Aprobar', 'Exportar', 'Administrar'] },
@@ -192,6 +214,203 @@ export function createApp({ store }) {
           return request;
         });
         return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/contracts/contracts') {
+        const state = await store.read();
+        requireSession(state, req, ['CONTRATOS', 'ADMIN_OCC', 'FINANZAS']);
+        return sendJson(res, 200, state.contracts.map(contract => contractView(state, contract)));
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/contracts/contracts') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        const requestId = String(payload.requestId ?? '').trim();
+        const airline = String(payload.airline ?? '').trim();
+        const airlineCode = String(payload.airlineCode ?? '').trim().toUpperCase();
+        const startDate = String(payload.startDate ?? '').trim();
+        const endDate = payload.contractType === 'permanent' ? null : String(payload.endDate ?? '').trim();
+        const conditions = String(payload.conditions ?? '').trim();
+        const contractType = payload.contractType === 'permanent' ? 'permanent' : 'temporary';
+        if (!requestId || !airline || !airlineCode || !startDate || !conditions || (contractType === 'temporary' && !endDate)) {
+          throw Object.assign(new Error('Faltan datos obligatorios del contrato.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          const request = state.serviceRequests.find(item => item.id === requestId);
+          if (!request || request.status !== 'approved') {
+            throw Object.assign(new Error('El contrato requiere una solicitud aprobada.'), { statusCode: 409 });
+          }
+          if (request.contractId) {
+            throw Object.assign(new Error('La solicitud ya tiene un contrato asociado.'), { statusCode: 409 });
+          }
+          const sequence = state.contracts.length + 1;
+          const contract = {
+            id: `CTR-${new Date().getFullYear()}-${String(sequence).padStart(3, '0')}`,
+            requestId, airline, airlineCode, contractType, startDate, endDate,
+            conditions, statusOverride: null, createdAt: new Date().toISOString(),
+          };
+          state.contracts.unshift(contract);
+          request.contractId = contract.id;
+          appendAudit(state, session, 'contract_created', contract.id, `Solicitud ${requestId}`);
+          return contractView(state, contract);
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const contractMatch = url.pathname.match(/^\/api\/contracts\/contracts\/([^/]+)$/);
+      if (contractMatch && req.method === 'PATCH') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          const contract = state.contracts.find(item => item.id === contractMatch[1]);
+          if (!contract) throw Object.assign(new Error('El contrato solicitado no existe.'), { statusCode: 404 });
+          const type = payload.contractType ?? contract.contractType;
+          contract.contractType = type === 'permanent' ? 'permanent' : 'temporary';
+          contract.endDate = contract.contractType === 'permanent' ? null : String(payload.endDate ?? contract.endDate ?? '').trim();
+          contract.conditions = String(payload.conditions ?? contract.conditions).trim();
+          contract.statusOverride = payload.disabled ? 'disabled' : null;
+          contract.updatedAt = new Date().toISOString();
+          appendAudit(state, session, 'contract_updated', contract.id);
+          return contractView(state, contract);
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/contracts/services') {
+        const state = await store.read();
+        requireSession(state, req, ['CONTRATOS', 'ADMIN_OCC', 'FINANZAS']);
+        return sendJson(res, 200, state.contractServices);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/contracts/services') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        const rate = Number(payload.rate);
+        if (!payload.contractId || !String(payload.name ?? '').trim() || !(rate > 0) || !payload.currency || !payload.billingUnit || !payload.startDate) {
+          throw Object.assign(new Error('Faltan datos obligatorios del servicio pactado.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          const contract = state.contracts.find(item => item.id === payload.contractId);
+          if (!contract) throw Object.assign(new Error('El contrato asociado no existe.'), { statusCode: 404 });
+          const service = {
+            id: `SRV-${String(state.contractServices.length + 1).padStart(3, '0')}`,
+            contractId: contract.id, airline: contract.airline, name: String(payload.name).trim(),
+            rate, currency: payload.currency, billingUnit: payload.billingUnit,
+            startDate: payload.startDate,
+            endDate: contract.contractType === 'permanent' ? null : (payload.endDate || contract.endDate),
+            active: true, createdAt: new Date().toISOString(),
+          };
+          state.contractServices.unshift(service);
+          appendAudit(state, session, 'contract_service_created', service.id, contract.id);
+          return service;
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const serviceMatch = url.pathname.match(/^\/api\/contracts\/services\/([^/]+)$/);
+      if (serviceMatch && req.method === 'PATCH') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['CONTRATOS']);
+        const payload = await readJsonBody(req);
+        const updated = await store.update(state => {
+          const service = state.contractServices.find(item => item.id === serviceMatch[1]);
+          if (!service) throw Object.assign(new Error('El servicio pactado no existe.'), { statusCode: 404 });
+          if (payload.rate !== undefined) service.rate = Number(payload.rate);
+          if (payload.currency) service.currency = payload.currency;
+          if (payload.billingUnit) service.billingUnit = payload.billingUnit;
+          if (payload.endDate !== undefined) service.endDate = payload.endDate || null;
+          if (payload.active !== undefined) service.active = Boolean(payload.active);
+          service.updatedAt = new Date().toISOString();
+          appendAudit(state, session, 'contract_service_updated', service.id);
+          return service;
+        });
+        return sendJson(res, 200, updated);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/occ/planning') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        return sendJson(res, 200, { station: { code: 'PUJ', localAbbr: 'AST' }, date: url.searchParams.get('date') || new Date().toISOString().slice(0, 10), flights: state.flights });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/occ/planning/options') {
+        const state = await store.read();
+        requireSession(state, req, ['ADMIN_OCC']);
+        const contracts = state.contracts.filter(contract => isOperationalContract(contract));
+        const agents = state.personnel
+          .filter(record => record.userType === 'ramp_agent' && record.account.status === 'active')
+          .map(record => ({ id: record.identity.id, name: `${record.identity.firstName} ${record.identity.lastName}`.trim(), terminals: record.rampAgent?.terminals ?? [] }));
+        return sendJson(res, 200, {
+          contracts: contracts.map(contract => contractView(state, contract)),
+          services: state.contractServices.filter(service => service.active && contracts.some(contract => contract.id === service.contractId)),
+          agents,
+        });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/occ/flights') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const required = ['contractId', 'flightNumber', 'origin', 'destination', 'scheduledTime', 'aircraftType'];
+        if (required.some(field => !String(payload[field] ?? '').trim())) {
+          throw Object.assign(new Error('Faltan datos obligatorios del vuelo.'), { statusCode: 400 });
+        }
+        const created = await store.update(state => {
+          const contract = state.contracts.find(item => item.id === payload.contractId && isOperationalContract(item));
+          if (!contract) throw Object.assign(new Error('El vuelo requiere un contrato activo.'), { statusCode: 409 });
+          const flight = {
+            id: nextId('FLT'), contractId: contract.id, airlineIata: contract.airlineCode,
+            airlineName: contract.airline, flightNumber: String(payload.flightNumber).trim().toUpperCase(),
+            status: payload.status || 'scheduled', scheduledTime: payload.scheduledTime,
+            estimatedTime: payload.scheduledTime, origin: String(payload.origin).trim().toUpperCase(),
+            destination: String(payload.destination).trim().toUpperCase(), aircraftType: String(payload.aircraftType).trim(),
+            position: String(payload.position ?? '').trim() || null, station: 'PUJ', supervisor: null,
+            agents: [], agentIds: [], teams: [], services: [], serviceIds: [], conflict: null,
+            observations: String(payload.observations ?? '').trim(),
+            history: [{ at: new Date().toISOString(), note: 'Vuelo registrado por OCC' }],
+            operationStatus: 'pending', createdAt: new Date().toISOString(),
+          };
+          state.flights.unshift(flight);
+          appendAudit(state, session, 'flight_created', flight.id, contract.id);
+          return flight;
+        });
+        return sendJson(res, 201, created);
+      }
+
+      const assignFlightMatch = url.pathname.match(/^\/api\/occ\/flights\/([^/]+)\/assign$/);
+      if (assignFlightMatch && req.method === 'POST') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const assigned = await store.update(state => {
+          const flight = state.flights.find(item => item.id === assignFlightMatch[1]);
+          if (!flight) throw Object.assign(new Error('El vuelo no existe.'), { statusCode: 404 });
+          const agent = state.personnel.find(record => record.identity.id === payload.agentId && record.userType === 'ramp_agent' && record.account.status === 'active');
+          if (!agent) throw Object.assign(new Error('El agente no está habilitado.'), { statusCode: 409 });
+          const allowedServices = state.contractServices.filter(service => service.contractId === flight.contractId && service.active);
+          const selectedServices = allowedServices.filter(service => (payload.serviceIds ?? []).includes(service.id));
+          if (!selectedServices.length) throw Object.assign(new Error('Seleccione al menos un servicio pactado.'), { statusCode: 400 });
+          flight.agentIds = [agent.identity.id];
+          flight.agents = [`${agent.identity.firstName} ${agent.identity.lastName}`.trim()];
+          flight.serviceIds = selectedServices.map(service => service.id);
+          flight.services = selectedServices.map(service => service.name);
+          flight.position = String(payload.position ?? flight.position ?? '').trim() || null;
+          flight.history.unshift({ at: new Date().toISOString(), note: `Asignado a ${flight.agents[0]} y enviado al móvil` });
+          state.assignments.unshift({ id: nextId('ASG'), flightId: flight.id, agentId: agent.identity.id, serviceIds: flight.serviceIds, assignedAt: new Date().toISOString() });
+          appendAudit(state, session, 'flight_assigned', flight.id, agent.identity.id);
+          return flight;
+        });
+        return sendJson(res, 200, assigned);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/mobile/flights') {
+        const state = await store.read();
+        const session = requireSession(state, req, ['AGENTE_RAMPA']);
+        const personnelId = session.user.personnelId;
+        return sendJson(res, 200, state.flights.filter(flight => flight.agentIds?.includes(personnelId)));
       }
 
       if (req.method === 'GET' && url.pathname === '/api/auth/session') {

@@ -4,23 +4,27 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { Card, StatusPill } from '../components/ui';
-import { checklistSections, flights, Flight } from '../data/mock';
+import { checklistSections, Flight } from '../data/mock';
 import { colors } from '../theme/colors';
 import { getOperationState, getOutbox, OperationState } from '../storage/prototype-storage';
 import { exitApplication } from '../utils/app-exit';
 import { getMobileSession, logoutMobileAgent, MobileAgent } from '../services/mobile-auth';
+import { refreshAssignedFlights } from '../services/assigned-flights';
 
 export default function HomeScreen() {
   const [pending, setPending] = useState(0);
   const [operationStates, setOperationStates] = useState<Record<string, OperationState>>({});
   const [profileVisible, setProfileVisible] = useState(false);
   const [agent, setAgent] = useState<MobileAgent | null>(null);
+  const [flights, setFlights] = useState<Flight[]>([]);
   useFocusEffect(useCallback(() => {
     const checklistTotal = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-    Promise.all([getOutbox(), getMobileSession(), ...flights.map(flight => getOperationState(flight.id, checklistTotal))]).then(([queue, session, ...states]) => {
+    Promise.all([getOutbox(), getMobileSession(), refreshAssignedFlights()]).then(async ([queue, session, assigned]) => {
+      const states = await Promise.all(assigned.map(flight => getOperationState(flight.id, checklistTotal)));
       setPending(queue.length);
       setAgent(session?.user ?? null);
-      setOperationStates(Object.fromEntries(flights.map((flight, index) => [flight.id, states[index]])));
+      setFlights(assigned);
+      setOperationStates(Object.fromEntries(assigned.map((flight, index) => [flight.id, states[index]])));
     });
   }, []));
   const renderFlight = ({ item }: { item: Flight }) => <Pressable onPress={() => router.push({ pathname: '/flight/[id]', params: { id: item.id } })}>

@@ -20,9 +20,10 @@ describe('PlanningHeader', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('disables the placeholder actions with a "Próximamente" tooltip', () => {
+  it('enables new flight and keeps future actions disabled', () => {
     render(<PlanningHeader onRefresh={() => {}} />);
-    for (const label of ['Nuevo vuelo', 'Importar vuelos', 'Exportar']) {
+    expect(screen.getByRole('button', { name: 'Nuevo vuelo' })).toBeEnabled();
+    for (const label of ['Importar vuelos', 'Exportar']) {
       const button = screen.getByRole('button', { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('title', 'Próximamente');

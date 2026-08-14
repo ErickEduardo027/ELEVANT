@@ -46,6 +46,9 @@ async function startTestServer() {
     personnel: [],
     audit: [],
     serviceRequests: [],
+    contracts: [],
+    contractServices: [],
+    assignments: [],
   };
   await writeFile(path.join(dataDirectory, 'seed.json'), JSON.stringify(seed), 'utf8');
 
@@ -315,4 +318,162 @@ test('una solicitud pública llega a Contratos y puede resolverse', async t => {
   assert.equal(resolveResponse.status, 200);
   assert.equal(resolved.status, 'approved');
   assert.equal(resolved.decisionNote, 'Solicitud aprobada para elaborar contrato.');
+});
+
+test('Contratos convierte una solicitud aprobada en contrato y servicios pactados persistentes', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  const requestResponse = await fetch(`${context.baseUrl}/api/public/service-requests`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      airline: 'Aerolínea Integrada', contactName: 'Ana Pérez', contactEmail: 'ana@integrada.test',
+      type: 'affiliation', requestedService: 'Servicios de rampa permanentes.',
+      details: { iataCode: 'AI' },
+    }),
+  });
+  const request = await requestResponse.json();
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'contratos@elevant.test', password: 'Elevant2026!' }),
+  });
+  const login = await loginResponse.json();
+  const headers = { Authorization: `Bearer ${login.token}`, 'Content-Type': 'application/json' };
+
+  await fetch(`${context.baseUrl}/api/contracts/requests/${request.id}/resolve`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ status: 'approved', decisionNote: 'Aprobada para contratación.' }),
+  });
+  const contractResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      requestId: request.id, airline: request.airline, airlineCode: 'AI', contractType: 'permanent',
+      startDate: '2026-08-13', conditions: 'Atención permanente en la estación PUJ.',
+    }),
+  });
+  const contract = await contractResponse.json();
+  assert.equal(contractResponse.status, 201);
+  assert.equal(contract.contractType, 'permanent');
+  assert.equal(contract.endDate, null);
+
+  const serviceResponse = await fetch(`${context.baseUrl}/api/contracts/services`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      contractId: contract.id, name: 'Puente de abordaje', rate: 485,
+      currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-13',
+    }),
+  });
+  const service = await serviceResponse.json();
+  assert.equal(serviceResponse.status, 201);
+  assert.equal(service.contractId, contract.id);
+  assert.equal(service.endDate, null);
+
+  const contractsResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, { headers });
+  assert.equal((await contractsResponse.json())[0].servicesCount, 1);
+  const persisted = await context.store.read();
+  assert.equal(persisted.serviceRequests[0].contractId, contract.id);
+  assert.equal(persisted.contractServices[0].rate, 485);
+});
+
+test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica en su móvil', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+  const login = async (email, route = '/api/auth/login') => {
+    const response = await fetch(`${context.baseUrl}${route}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'Elevant2026!' }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+
+  const hr = await login('gestionhumana@elevant.test');
+  const agentResponse = await fetch(`${context.baseUrl}/api/hr/users`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${hr.token}` },
+    body: JSON.stringify({
+      identity: { firstName: 'Ana', lastName: 'Pérez', email: 'ana.occ@elevant.test', phone: '809-555-0101', identificationType: 'Cédula', identificationNumber: '001-1' },
+      access: { roleId: 'role-agente-rampa' }, userType: 'ramp_agent',
+      rampAgent: { employeeNumber: 'AVIAM-002', terminals: ['PUJ'], category: 'Agente de Rampa', hireDate: '2026-08-13', supervisorName: 'Camila Reyes' },
+    }),
+  });
+  const agent = await agentResponse.json();
+
+  const contractsLogin = await login('contratos@elevant.test');
+  await context.store.update(state => state.serviceRequests.unshift({ id: 'SOL-OCC', airline: 'Aerolínea Integrada', status: 'approved', contractId: null }));
+  const contractResponse = await fetch(`${context.baseUrl}/api/contracts/contracts`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${contractsLogin.token}` },
+    body: JSON.stringify({ requestId: 'SOL-OCC', airline: 'Aerolínea Integrada', airlineCode: 'AI', contractType: 'temporary', startDate: '2026-08-01', endDate: '2027-08-01', conditions: 'Servicios en PUJ.' }),
+  });
+  const contract = await contractResponse.json();
+  const serviceResponse = await fetch(`${context.baseUrl}/api/contracts/services`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${contractsLogin.token}` },
+    body: JSON.stringify({ contractId: contract.id, name: 'Puente de abordaje', rate: 485, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-01', endDate: '2027-08-01' }),
+  });
+  const service = await serviceResponse.json();
+
+  const occ = await login('admin@elevant.test');
+  const flightResponse = await fetch(`${context.baseUrl}/api/occ/flights`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ contractId: contract.id, flightNumber: 'AI101', origin: 'MIA', destination: 'PUJ', scheduledTime: '2026-08-13T14:30:00-04:00', aircraftType: 'A320', position: 'B12' }),
+  });
+  const flight = await flightResponse.json();
+  assert.equal(flightResponse.status, 201);
+  const assignmentResponse = await fetch(`${context.baseUrl}/api/occ/flights/${flight.id}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ agentId: agent.identity.id, serviceIds: [service.id], position: 'B12' }),
+  });
+  assert.equal(assignmentResponse.status, 200);
+  assert.deepEqual((await assignmentResponse.json()).services, ['Puente de abordaje']);
+
+  const mobile = await login('ana.occ@elevant.test', '/api/mobile/auth/login');
+  assert.equal(mobile.user.personnelId, agent.identity.id);
+  const mobileResponse = await fetch(`${context.baseUrl}/api/mobile/flights`, { headers: { Authorization: `Bearer ${mobile.token}` } });
+  const mobileFlights = await mobileResponse.json();
+  assert.equal(mobileResponse.status, 200);
+  assert.equal(mobileFlights.length, 1);
+  assert.equal(mobileFlights[0].id, flight.id);
+});
+
+test('OCC muestra y acepta contratos activos próximos a vencer', async t => {
+  resetSessionsForTests();
+  const context = await startTestServer();
+  t.after(context.close);
+
+  await context.store.update(state => {
+    state.contracts.push({
+      id: 'CTR-2026-001', requestId: 'SOL-AVIAM', airline: 'Aviam', airlineCode: '232',
+      contractType: 'temporary', startDate: '2026-08-01', endDate: '2026-08-16',
+      conditions: 'Todo', statusOverride: null, createdAt: new Date().toISOString(),
+    });
+    state.contractServices.push({
+      id: 'SRV-AVIAM', contractId: 'CTR-2026-001', airline: 'Aviam', name: 'Catering',
+      rate: 25, currency: 'USD', billingUnit: 'Por operación', startDate: '2026-08-01',
+      endDate: '2026-08-16', active: true, createdAt: new Date().toISOString(),
+    });
+  });
+
+  const loginResponse = await fetch(`${context.baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@elevant.test', password: 'Elevant2026!' }),
+  });
+  const session = await loginResponse.json();
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` };
+
+  const optionsResponse = await fetch(`${context.baseUrl}/api/occ/planning/options`, { headers });
+  const options = await optionsResponse.json();
+  assert.equal(optionsResponse.status, 200);
+  assert.equal(options.contracts[0].id, 'CTR-2026-001');
+  assert.equal(options.contracts[0].status, 'expiring');
+
+  const flightResponse = await fetch(`${context.baseUrl}/api/occ/flights`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      contractId: 'CTR-2026-001', flightNumber: 'AV232', origin: 'MIA', destination: 'PUJ',
+      scheduledTime: '2026-08-14T10:30:00-04:00', aircraftType: 'A320', position: 'A04',
+    }),
+  });
+  assert.equal(flightResponse.status, 201);
+  assert.equal((await flightResponse.json()).contractId, 'CTR-2026-001');
 });

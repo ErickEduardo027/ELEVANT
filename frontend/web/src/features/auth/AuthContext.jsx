@@ -1,10 +1,15 @@
-import { createContext, useContext, useMemo, useState } from 'react';
-import { logout as closeBackendSession, mockLogin, readSession } from './authService';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { AUTH_EXPIRED_EVENT, logout as closeBackendSession, mockLogin, readSession } from './authService';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(() => readSession());
+  useEffect(() => {
+    const expireSession = () => setSession(null);
+    window.addEventListener(AUTH_EXPIRED_EVENT, expireSession);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expireSession);
+  }, []);
   const value = useMemo(() => ({
     session,
     async login(credentials) {
