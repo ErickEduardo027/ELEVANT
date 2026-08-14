@@ -1,9 +1,15 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { useMockSession } from "@/components/auth/MockSessionProvider";
 import type { ServiceRequest } from "@/lib/portal";
+import {
+  cancelTrackedServiceRequest,
+  createTrackedServiceRequest,
+  listTrackedServiceRequests,
+  type TrackedServiceRequest,
+} from "@/lib/prototype-requests";
 
 import { ClipboardIcon, PlaneIcon, SearchIcon } from "./PortalIcons";
 import {
@@ -37,7 +43,10 @@ function futureLocalDateTime(): string {
 
 export function PortalRequests() {
   const { session } = useMockSession();
-  const { data, mutate, timeMode } = usePortalWorkspace();
+  const { data, timeMode } = usePortalWorkspace();
+  const [requests, setRequests] = useState<TrackedServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [dialog, setDialog] = useState<RequestDialog | null>(null);
@@ -45,7 +54,7 @@ export function PortalRequests() {
 
   const visibleRequests = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
-    return data.serviceRequests.filter((request) => {
+    return requests.filter((request) => {
       const flight = data.flights.find((item) => item.id === request.flightId);
       const matchesQuery = !normalized || [
         request.id,
@@ -55,48 +64,59 @@ export function PortalRequests() {
       ].join(" ").toLocaleLowerCase("es").includes(normalized);
       return matchesQuery && (!status || request.status === status);
     });
-  }, [data.flights, data.serviceRequests, query, status]);
+  }, [data.flights, query, requests, status]);
 
   const counts = useMemo(() => ({
-    total: data.serviceRequests.length,
-    review: data.serviceRequests.filter((request) => ["SUBMITTED", "IN_REVIEW"].includes(request.status)).length,
-    approved: data.serviceRequests.filter((request) => request.status === "APPROVED").length,
-    cancellable: data.serviceRequests.filter((request) => request.status === "SUBMITTED").length,
-  }), [data.serviceRequests]);
+    total: requests.length,
+    review: requests.filter((request) => ["SUBMITTED", "IN_REVIEW"].includes(request.status)).length,
+    approved: requests.filter((request) => request.status === "APPROVED").length,
+    cancellable: requests.filter((request) => request.status === "SUBMITTED").length,
+  }), [requests]);
 
-  const complete = (result: ReturnType<typeof mutate>, message: string) => {
-    if (!result.ok) {
-      setFeedback({ tone: "error", message: result.message });
-      return;
+  const loadRequests = useCallback(async (silent = false) => {
+    if (!session) return;
+    if (!silent) setLoading(true);
+    try {
+      setRequests(await listTrackedServiceRequests(session));
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "No fue posible consultar las solicitudes.");
+    } finally {
+      if (!silent) setLoading(false);
     }
-    setFeedback({ tone: "success", message });
-    setDialog(null);
-  };
+  }, [session]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    void loadRequests();
+    const timer = window.setInterval(() => void loadRequests(true), 5_000);
+    return () => window.clearInterval(timer);
+  }, [loadRequests]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!dialog) return;
+    if (!dialog || !session) return;
     const form = new FormData(event.currentTarget);
-    if (dialog.kind === "create") {
-      const flightId = String(form.get("flightId") ?? "") || null;
-      complete(
-        mutate((repository) => repository.createServiceRequest({
+    try {
+      if (dialog.kind === "create") {
+        const flightId = String(form.get("flightId") ?? "") || null;
+        const created = await createTrackedServiceRequest(session, {
           station: String(form.get("station") ?? ""),
           flightId,
           type: String(form.get("type")) as ServiceRequest["type"],
           title: String(form.get("title") ?? ""),
           description: String(form.get("description") ?? ""),
           requestedFor: String(form.get("requestedFor") ?? ""),
-        })),
-        "Solicitud recibida. Puedes consultar su seguimiento en esta misma pantalla.",
-      );
-    } else {
-      complete(
-        mutate((repository) =>
-          repository.cancelServiceRequest(dialog.id, String(form.get("reason") ?? "")),
-        ),
-        "Solicitud cancelada y registrada en la auditoría.",
-      );
+        });
+        setRequests((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+        setFeedback({ tone: "success", message: "Solicitud recibida por Contratos. Su estado se actualizará automáticamente." });
+      } else {
+        const updated = await cancelTrackedServiceRequest(session, dialog.id, String(form.get("reason") ?? ""));
+        setRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
+        setFeedback({ tone: "success", message: "Solicitud cancelada correctamente." });
+      }
+      setDialog(null);
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "No fue posible completar la solicitud." });
     }
   };
 
@@ -114,6 +134,7 @@ export function PortalRequests() {
       />
 
       {feedback && <Feedback tone={feedback.tone}>{feedback.message}</Feedback>}
+      {loadError && <Feedback tone="error">{loadError}</Feedback>}
 
       <section className={styles.metricGrid} aria-label="Resumen de solicitudes">
         <article className={styles.metricCard}><span>Total</span><strong>{counts.total}</strong><small>Dentro del alcance autorizado</small></article>
@@ -182,6 +203,11 @@ export function PortalRequests() {
               {request.cancellationReason && (
                 <Feedback tone="info">Motivo de cancelación: {request.cancellationReason}</Feedback>
               )}
+              {request.decisionNote && (
+                <Feedback tone={request.status === "REJECTED" ? "error" : "success"}>
+                  Respuesta de Contratos: {request.decisionNote}
+                </Feedback>
+              )}
               <div className={styles.cardFooter}>
                 <Provenance value={request.provenance} />
                 {request.status === "SUBMITTED" && (
@@ -197,7 +223,12 @@ export function PortalRequests() {
             </article>
           );
         }) : (
-          <Panel><EmptyState title="No hay solicitudes para mostrar" description="Ajusta los filtros o registra una nueva solicitud operacional." /></Panel>
+          <Panel>
+            <EmptyState
+              title={loading ? "Consultando solicitudes" : "No hay solicitudes para mostrar"}
+              description={loading ? "Conectando con Contratos…" : "Ajusta los filtros o registra una nueva solicitud operacional."}
+            />
+          </Panel>
         )}
       </div>
 
