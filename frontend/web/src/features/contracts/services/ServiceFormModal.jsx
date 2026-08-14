@@ -44,7 +44,7 @@ export default function ServiceFormModal({ open, service, contracts, onClose, on
     if (!editing && !values.startDate) nextErrors.startDate = 'Indica el inicio.';
     const selectedContract = contracts.find(item => item.id === values.contractId);
     if (selectedContract?.contractType !== 'permanent' && !values.endDate) nextErrors.endDate = 'Indica el vencimiento.';
-    if (!editing && values.startDate && values.endDate < values.startDate) nextErrors.endDate = 'La fecha final debe ser posterior.';
+    if (!editing && values.startDate && values.endDate && values.endDate < values.startDate) nextErrors.endDate = 'La fecha final debe ser posterior.';
     if (Object.keys(nextErrors).length) return setErrors(nextErrors);
     setSaving(true);
     setRequestError('');
