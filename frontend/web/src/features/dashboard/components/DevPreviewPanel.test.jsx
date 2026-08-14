@@ -4,6 +4,15 @@ import userEvent from '@testing-library/user-event';
 import DevPreviewPanel from './DevPreviewPanel';
 
 describe('DevPreviewPanel', () => {
+  it('can start hidden and opens from the floating control', async () => {
+    render(<DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={() => {}} defaultOpen={false} />);
+    expect(screen.queryByText(/vista previa.*solo desarrollo/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /mostrar herramientas/i }));
+    expect(screen.getByText(/vista previa.*solo desarrollo/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /ocultar herramientas/i }));
+    expect(screen.queryByText(/vista previa.*solo desarrollo/i)).not.toBeInTheDocument();
+  });
+
   it('is labeled clearly as a development-only tool', () => {
     render(<DevPreviewPanel theme="light" forceState="default" onToggleTheme={() => {}} onSetForceState={() => {}} />);
     expect(screen.getByText(/vista previa.*solo desarrollo/i)).toBeInTheDocument();
