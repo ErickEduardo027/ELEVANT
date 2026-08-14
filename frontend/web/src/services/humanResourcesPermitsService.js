@@ -4,6 +4,26 @@ import {
   getPermitHistory as getMockPermitHistory,
 } from '../features/human-resources/permits/permitsMock';
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+const USE_BACKEND = import.meta.env.MODE !== 'test';
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
+}
 
 // Adaptador stub para el dominio "Carnets y permisos aeroportuarios": hoy
 // resuelve contra un store en memoria (mock), mañana contra el backend real
@@ -62,24 +82,28 @@ function appendHistory(permitId, documentType, eventType, description, performed
  * usuarios cuando exista (ver comentario de contrato arriba).
  */
 export async function getAgents() {
+  if (USE_BACKEND) return apiRequest('/api/hr/ramp-agents');
   await delay(120);
   return structuredClone(AGENTS_MOCK);
 }
 
 /** @returns {Promise<import('../types/humanResourcesPermits').AirportPermitRecord[]>} */
 export async function getPermits() {
+  if (USE_BACKEND) return apiRequest('/api/hr/permits');
   await delay();
   return structuredClone(permitsStore);
 }
 
 /** @returns {Promise<import('../types/humanResourcesPermits').AirportPermitRecord[]>} */
 export async function getAgentPermits(agentId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/permits?agentId=${encodeURIComponent(agentId)}`);
   await delay(150);
   return structuredClone(permitsStore.filter(item => item.agentId === agentId));
 }
 
 /** @returns {Promise<import('../types/humanResourcesPermits').PermitHistoryEvent[]>} */
 export async function getPermitHistory(permitId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/permits/${encodeURIComponent(permitId)}/history`);
   await delay(150);
   return structuredClone(historyStore.get(permitId) ?? []);
 }
@@ -93,6 +117,7 @@ export async function getPermitHistory(permitId) {
  * @returns {Promise<import('../types/humanResourcesPermits').AirportPermitRecord>}
  */
 export async function renewPermit(permitId, payload) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/permits/${encodeURIComponent(permitId)}/renew`, { method: 'POST', body: JSON.stringify(payload) });
   await delay(320);
   const record = findPermitOrThrow(permitId);
   const wasExpired = new Date(record.expiresAt) < new Date();
