@@ -19,13 +19,19 @@ export default function HomeScreen() {
   const [flights, setFlights] = useState<Flight[]>([]);
   useFocusEffect(useCallback(() => {
     const checklistTotal = checklistSections.reduce((sum, section) => sum + section.items.length, 0);
-    Promise.all([getOutbox(), getMobileSession(), refreshAssignedFlights()]).then(async ([queue, session, assigned]) => {
+    let active = true;
+    const load = async () => {
+      const [queue, session, assigned] = await Promise.all([getOutbox(), getMobileSession(), refreshAssignedFlights()]);
       const states = await Promise.all(assigned.map(flight => getOperationState(flight.id, checklistTotal)));
+      if (!active) return;
       setPending(queue.length);
       setAgent(session?.user ?? null);
       setFlights(assigned);
       setOperationStates(Object.fromEntries(assigned.map((flight, index) => [flight.id, states[index]])));
-    });
+    };
+    load().catch(() => {});
+    const interval = setInterval(() => load().catch(() => {}), 5000);
+    return () => { active = false; clearInterval(interval); };
   }, []));
   const renderFlight = ({ item }: { item: Flight }) => <Pressable onPress={() => router.push({ pathname: '/flight/[id]', params: { id: item.id } })}>
     <Card style={styles.flightCard}>

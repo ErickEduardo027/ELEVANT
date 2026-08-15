@@ -94,4 +94,14 @@ describe('FlightDetailPopover', () => {
     await userEvent.click(screen.getByLabelText('Cerrar detalle'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('allows OCC to persist a new operational flight status', async () => {
+    const onStatusChange = vi.fn().mockResolvedValue({ ...FLIGHT, status: 'gateArrival' });
+    render(<FlightDetailPopover flight={FLIGHT} now="2026-08-06T14:00:00-04:00" style={{}} onClose={() => {}} onStatusChange={onStatusChange} />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Actualizar estado del vuelo'), 'gateArrival');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar estado' }));
+
+    expect(onStatusChange).toHaveBeenCalledWith(FLIGHT.id, 'gateArrival');
+  });
 });
