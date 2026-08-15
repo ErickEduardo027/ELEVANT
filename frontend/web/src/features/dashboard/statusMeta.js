@@ -16,6 +16,8 @@ export const FLIGHT_STATUS_META = {
   landed: { label: 'Aterrizado', color: 'success' },
   taxiingToGate: { label: 'Rodaje a puerta', color: 'active' },
   arrived: { label: 'En posición', color: 'success' },
+  gateArrival: { label: 'Llegó a la puerta', color: 'success' },
+  enRouteOnTime: { label: 'En ruta / A tiempo', color: 'active' },
   delayed: { label: 'Retrasado', color: 'warning' },
   diverted: { label: 'Desviado', color: 'danger' },
   cancelled: { label: 'Cancelado', color: 'danger' },

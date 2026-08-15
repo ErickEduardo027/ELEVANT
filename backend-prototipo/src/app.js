@@ -828,6 +828,38 @@ export function createApp({ store }) {
         return sendJson(res, 200, assigned);
       }
 
+      const flightStatusMatch = url.pathname.match(/^\/api\/occ\/flights\/([^/]+)\/status$/);
+      if (flightStatusMatch && req.method === 'PATCH') {
+        const current = await store.read();
+        const session = requireSession(current, req, ['ADMIN_OCC']);
+        const payload = await readJsonBody(req);
+        const allowedStatuses = new Set([
+          'scheduled', 'unknown', 'cancelled', 'diverted', 'taxiing', 'delayed',
+          'landed', 'arrived', 'gateArrival', 'enRoute', 'enRouteOnTime',
+        ]);
+        if (!allowedStatuses.has(payload.status)) {
+          throw Object.assign(new Error('El estado de vuelo indicado no es válido.'), { statusCode: 400 });
+        }
+        const updated = await store.update(state => {
+          const flight = state.flights.find(item => item.id === flightStatusMatch[1]);
+          if (!flight) throw Object.assign(new Error('El vuelo no existe.'), { statusCode: 404 });
+          flight.status = payload.status;
+          flight.updatedAt = new Date().toISOString();
+          flight.history.unshift({ at: flight.updatedAt, note: `Estado actualizado a ${payload.status}` });
+          if (flight.agentIds?.length) {
+            appendNotification(state, {
+              recipientRole: 'AGENTE_RAMPA', category: 'operational', severity: 'info',
+              title: 'Estado de vuelo actualizado',
+              description: `${flight.flightNumber} cambió al estado ${payload.status}.`,
+              source: 'Monitoreo OCC', flight,
+            });
+          }
+          appendAudit(state, session, 'flight_status_updated', flight.id, payload.status);
+          return flight;
+        });
+        return sendJson(res, 200, updated);
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/mobile/flights') {
         const state = await store.read();
         const session = requireSession(state, req, ['AGENTE_RAMPA']);

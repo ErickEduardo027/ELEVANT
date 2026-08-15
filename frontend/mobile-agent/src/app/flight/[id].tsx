@@ -6,14 +6,26 @@ import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import { canOperateFlight, checklistSections, Flight } from '../../data/mock';
 import { addToOutbox, cancelOperationStart, flightKey, getChecklist, getOperationState, OperationState, setJson } from '../../storage/prototype-storage';
 import { colors } from '../../theme/colors';
-import { getAssignedFlight } from '../../services/assigned-flights';
+import { getAssignedFlight, refreshAssignedFlights } from '../../services/assigned-flights';
 
 export default function FlightDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [flight, setFlight] = useState<Flight>();
   const [state, setState] = useState<OperationState>({});
   const checklistTotal = checklistSections.reduce((sum, item) => sum + item.items.length, 0);
-  useFocusEffect(useCallback(() => { getAssignedFlight(id).then(found => { setFlight(found); if (found) getOperationState(found.id, checklistTotal).then(setState); }); }, [id, checklistTotal]));
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const load = async () => {
+      const assigned = await refreshAssignedFlights();
+      const found = assigned.find(item => item.id === id) ?? await getAssignedFlight(id);
+      if (!active) return;
+      setFlight(found);
+      if (found) setState(await getOperationState(found.id, checklistTotal));
+    };
+    load().catch(() => {});
+    const interval = setInterval(() => load().catch(() => {}), 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, [id, checklistTotal]));
   if (!flight) return <View style={styles.notFound}><Text style={styles.title}>Vuelo no encontrado</Text><PrimaryButton title="VOLVER" icon="arrow-back" onPress={() => router.back()} /></View>;
   const update = async (next: OperationState, action: string) => { const unsynchronized = { ...next, syncedAt: undefined }; await setJson(flightKey(flight.id), unsynchronized); await addToOutbox('operación', `${action} - ${flight.number}`, { flightId: flight.id, ...unsynchronized }); setState(unsynchronized); };
   const start = () => {

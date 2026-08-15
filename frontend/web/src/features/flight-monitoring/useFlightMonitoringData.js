@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getFlightMonitoringSnapshot, subscribeToFlightUpdates } from '../../services/flightMonitoringService';
+import { getFlightMonitoringSnapshot, subscribeToFlightUpdates, updateFlightStatus } from '../../services/flightMonitoringService';
 
 function mergeUpdate(flights, update) {
   return flights.map(flight => (flight.id === update.id ? { ...flight, ...update } : flight));
@@ -50,5 +50,14 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0, f
     return unsubscribe;
   }, [state.status, forceDisconnected]);
 
-  return { status: state.status, data: state.data, error: state.error, connection, lastUpdatedAt };
+  async function changeFlightStatus(flightId, status) {
+    const updated = await updateFlightStatus(flightId, status);
+    setState(current => current.data
+      ? { ...current, data: { ...current.data, flights: mergeUpdate(current.data.flights, updated) } }
+      : current);
+    setLastUpdatedAt(new Date().toISOString());
+    return updated;
+  }
+
+  return { status: state.status, data: state.data, error: state.error, connection, lastUpdatedAt, changeFlightStatus };
 }

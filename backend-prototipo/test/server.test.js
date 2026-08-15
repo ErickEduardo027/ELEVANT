@@ -524,6 +524,14 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   assert.equal(assignmentResponse.status, 200);
   assert.deepEqual((await assignmentResponse.json()).services, ['Puente de abordaje']);
 
+  const statusResponse = await fetch(`${context.baseUrl}/api/occ/flights/${flight.id}/status`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${occ.token}` },
+    body: JSON.stringify({ status: 'gateArrival' }),
+  });
+  const updatedFlight = await statusResponse.json();
+  assert.equal(statusResponse.status, 200);
+  assert.equal(updatedFlight.status, 'gateArrival');
+
   const mobile = await login('ana.occ@elevant.test', '/api/mobile/auth/login');
   assert.equal(mobile.user.personnelId, agent.identity.id);
   const mobileResponse = await fetch(`${context.baseUrl}/api/mobile/flights`, { headers: { Authorization: `Bearer ${mobile.token}` } });
@@ -531,6 +539,7 @@ test('OCC registra un vuelo contratado, asigna un agente habilitado y lo publica
   assert.equal(mobileResponse.status, 200);
   assert.equal(mobileFlights.length, 1);
   assert.equal(mobileFlights[0].id, flight.id);
+  assert.equal(mobileFlights[0].status, 'gateArrival');
 
   const syncResponse = await fetch(`${context.baseUrl}/api/mobile/sync`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${mobile.token}` },
