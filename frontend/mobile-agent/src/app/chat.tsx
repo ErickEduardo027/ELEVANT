@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { addToOutbox, ChatMessage, getChatMessages, saveChatMessages } from '../storage/prototype-storage';
+import { refreshOccChat } from '../services/mobile-chat';
+import { synchronizePendingRecords } from '../services/automatic-sync';
 import { colors } from '../theme/colors';
 
 const initialMessages: ChatMessage[] = [{
@@ -14,27 +16,40 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
-  useEffect(() => { getChatMessages().then(saved => { if (saved.length) setMessages(saved); }); }, []);
+  useEffect(() => {
+    let mounted = true;
+    const refresh = async () => {
+      try {
+        await synchronizePendingRecords();
+        const updated = await refreshOccChat();
+        if (mounted) setMessages(updated.length ? updated : initialMessages);
+      } catch {
+        const saved = await getChatMessages();
+        if (mounted && saved.length) setMessages(saved);
+      }
+    };
+    void refresh();
+    const interval = setInterval(() => void refresh(), 5000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
 
   const send = async (value = text) => {
     const clean = value.trim();
     if (!clean) return;
     const now = new Date().toISOString();
-    const own: ChatMessage = { id: `${Date.now()}-agent`, sender: 'agent', text: clean, createdAt: now, pending: true };
+    const queued = await addToOutbox('chat', `Mensaje a OCC: ${clean}`, { recipient: 'Administrador / OCC', text: clean, createdAt: now });
+    const own: ChatMessage = { id: queued.idempotencyKey, sender: 'agent', text: clean, createdAt: now, pending: true };
     const next = [...messages, own];
     setMessages(next); setText('');
-    await Promise.all([saveChatMessages(next), addToOutbox('chat', `Mensaje a OCC: ${clean}`, { recipient: 'Administrador / OCC', text: clean, createdAt: now })]);
-    setTimeout(async () => {
-      const reply: ChatMessage = { id: `${Date.now()}-occ`, sender: 'occ', text: 'Recibido. OCC está revisando tu solicitud y dará seguimiento.', createdAt: new Date().toISOString() };
-      setMessages(current => { const updated = [...current.map(item => item.id === own.id ? { ...item, pending: false } : item), reply]; saveChatMessages(updated); return updated; });
-    }, 900);
+    await saveChatMessages(next);
+    void synchronizePendingRecords().then(refreshOccChat).then(setMessages).catch(() => undefined);
   };
 
   const clear = () => Alert.alert('Limpiar conversación', '¿Deseas borrar el historial local de este chat?', [{ text: 'Cancelar', style: 'cancel' }, { text: 'Borrar', style: 'destructive', onPress: async () => { setMessages(initialMessages); await saveChatMessages(initialMessages); } }]);
 
   return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
-    <View style={styles.contact}><View style={styles.avatar}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.brandIcon} /></View><View style={styles.contactCopy}><Text style={styles.contactName}>Administrador / OCC</Text><View style={styles.statusRow}><View style={styles.dot} /><Text style={styles.status}>Disponible · respuesta simulada</Text></View></View><Pressable onPress={clear} hitSlop={12}><Ionicons name="trash-outline" size={21} color={colors.muted} /></Pressable></View>
-    <View style={styles.notice}><Ionicons name="information-circle-outline" size={18} color={colors.blue} /><Text style={styles.noticeText}>Los mensajes se guardan en el dispositivo y quedan pendientes para la futura API.</Text></View>
+    <View style={styles.contact}><View style={styles.avatar}><Image source={require('../../assets/images/elevant-symbol.png')} style={styles.brandIcon} /></View><View style={styles.contactCopy}><Text style={styles.contactName}>Administrador / OCC</Text><View style={styles.statusRow}><View style={styles.dot} /><Text style={styles.status}>Canal operativo conectado</Text></View></View><Pressable onPress={clear} hitSlop={12}><Ionicons name="trash-outline" size={21} color={colors.muted} /></Pressable></View>
+    <View style={styles.notice}><Ionicons name="information-circle-outline" size={18} color={colors.blue} /><Text style={styles.noticeText}>Los mensajes se guardan localmente y se sincronizan automáticamente con OCC.</Text></View>
     <ScrollView ref={scrollRef} style={styles.messages} contentContainerStyle={styles.messagesContent} onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
       {messages.map(message => <View key={message.id} style={[styles.bubble, message.sender === 'agent' ? styles.agentBubble : styles.occBubble]}><Text style={[styles.messageText, message.sender === 'agent' && styles.agentText]}>{message.text}</Text><Text style={[styles.time, message.sender === 'agent' && styles.agentTime]}>{new Date(message.createdAt).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' })}{message.pending ? ' · pendiente' : ''}</Text></View>)}
     </ScrollView>

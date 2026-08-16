@@ -10,8 +10,9 @@ import ContractsPage from '../contracts/ContractsPage';
 import ContractRequestsPage from '../requests/ContractRequestsPage';
 import ContractServicesPage from '../services/ContractServicesPage';
 import ContractReportsPage from '../reports/ContractReportsPage';
-import ContractCommunicationsPage from '../communications/ContractCommunicationsPage';
+import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
+import useNotificationBadge from '../../notifications/useNotificationBadge';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
 
@@ -26,6 +27,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   const home = useContractsHomeData(retryToken);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notifications = useNotificationBadge();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -56,7 +58,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar station={stationSnapshot()} notificationsCount={0} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={() => {}} onLogout={onLogout} />
+        <Topbar station={stationSnapshot()} notificationsCount={notifications.count} notificationCenter={notifications} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={notifications.refresh} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} />
@@ -69,7 +71,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
             <ContractReportsPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CHAT ? (
-            <ContractCommunicationsPage />
+            <DepartmentChatPage />
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}

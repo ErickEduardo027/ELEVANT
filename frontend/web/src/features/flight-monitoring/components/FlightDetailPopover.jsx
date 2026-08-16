@@ -1,10 +1,23 @@
+import { useEffect, useState } from 'react';
 import StatusBadge from '../../../components/StatusBadge';
 import { getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { formatRemaining } from '../flightMonitoringMappers';
 import { XIcon } from './icons';
 
-export default function FlightDetailPopover({ flight, now, style, onClose }) {
+const EDITABLE_STATUSES = [
+  ['scheduled', 'Programado'], ['delayed', 'Programado / Retrasado'],
+  ['enRoute', 'En ruta'], ['landed', 'Aterrizó'], ['taxiing', 'Aterrizó / En rodaje'],
+  ['arrived', 'Llegó al aeropuerto'], ['gateArrival', 'Llegó a la puerta'],
+  ['cancelled', 'Cancelado'], ['diverted', 'Desviado'], ['unknown', 'Resultado desconocido'],
+];
+
+export default function FlightDetailPopover({ flight, now, style, onClose, onStatusChange }) {
+  const [selectedStatus, setSelectedStatus] = useState(flight?.status ?? 'scheduled');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { setSelectedStatus(flight?.status ?? 'scheduled'); setError(''); }, [flight?.id, flight?.status]);
   if (!flight) return null;
 
   const meta = getStatusMeta('flight', flight.status);
@@ -68,6 +81,23 @@ export default function FlightDetailPopover({ flight, now, style, onClose }) {
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
         Servicios: {flight.services.length > 0 ? flight.services.join(', ') : 'Sin servicios registrados'}
       </p>
+
+      {onStatusChange && <div className="space-y-2 rounded-xl bg-accent-600/5 p-3">
+        <label className="block text-xs font-semibold">Actualizar estado del vuelo
+          <select value={selectedStatus} onChange={event => setSelectedStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-2 text-xs dark:border-white/10 dark:bg-surface-dark">
+            {EDITABLE_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
+        <button type="button" disabled={saving || selectedStatus === flight.status} onClick={async () => {
+          setSaving(true); setError('');
+          try { await onStatusChange(flight.id, selectedStatus); }
+          catch (reason) { setError(reason?.message || 'No fue posible actualizar el estado.'); }
+          finally { setSaving(false); }
+        }} className="w-full rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+          {saving ? 'Guardando…' : 'Guardar estado'}
+        </button>
+      </div>}
 
       <div className="flex flex-wrap gap-2 pt-1">
         <button

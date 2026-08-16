@@ -5,6 +5,30 @@ import {
   getAccountHistory as getMockAccountHistory,
 } from '../features/human-resources/users/usersMock';
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+const USE_BACKEND = import.meta.env.MODE !== 'test';
+
+async function apiRequest(path, options = {}) {
+  const session = readSession();
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
+}
 
 // Adaptador stub para el dominio "Gestión de usuarios y cuentas": hoy
 // resuelve contra un store en memoria (mock), mañana contra el backend
@@ -81,12 +105,17 @@ function roleOrThrow(roleId) {
 
 /** @returns {Promise<import('../types/humanResourcesUsers').UserRecord[]>} */
 export async function getUsers() {
+  if (USE_BACKEND) return apiRequest('/api/hr/users');
   await delay();
   return structuredClone(usersStore);
 }
 
 /** @returns {Promise<import('../types/humanResourcesUsers').UserRecord|null>} */
 export async function getUserById(userId) {
+  if (USE_BACKEND) {
+    const users = await apiRequest('/api/hr/users');
+    return users.find(item => item.identity.id === userId) ?? null;
+  }
   await delay(120);
   const record = usersStore.find(item => item.identity.id === userId);
   return record ? structuredClone(record) : null;
@@ -94,12 +123,17 @@ export async function getUserById(userId) {
 
 /** @returns {Promise<import('../types/humanResourcesUsers').Role[]>} */
 export async function getRoles() {
+  if (USE_BACKEND) return apiRequest('/api/hr/roles');
   await delay(120);
   return structuredClone(ROLES_MOCK);
 }
 
 /** @returns {Promise<string[]>} */
 export async function getPermissionsByRole(roleId) {
+  if (USE_BACKEND) {
+    const roles = await apiRequest('/api/hr/roles');
+    return roles.find(item => item.id === roleId)?.permissions ?? [];
+  }
   await delay(120);
   return structuredClone(roleOrThrow(roleId).permissions);
 }
@@ -110,12 +144,14 @@ export async function getPermissionsByRole(roleId) {
  * @returns {Promise<import('../types/humanResourcesUsers').Airline[]>}
  */
 export async function getAirlines() {
+  if (USE_BACKEND) return [];
   await delay(120);
   return structuredClone(AIRLINES_MOCK);
 }
 
 /** @returns {Promise<import('../types/humanResourcesUsers').AccountHistoryEvent[]>} */
 export async function getUserHistory(userId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}/history`);
   await delay(150);
   return structuredClone(historyStore.get(userId) ?? []);
 }
@@ -127,6 +163,9 @@ export async function getUserHistory(userId) {
  * @returns {Promise<import('../types/humanResourcesUsers').UserRecord>}
  */
 export async function createUser(payload) {
+  if (USE_BACKEND) {
+    return apiRequest('/api/hr/users', { method: 'POST', body: JSON.stringify(payload) });
+  }
   await delay(320);
   const id = nextUserId();
   const role = roleOrThrow(payload.access.roleId);
@@ -164,6 +203,9 @@ export async function createUser(payload) {
  * @returns {Promise<import('../types/humanResourcesUsers').UserRecord>}
  */
 export async function updateUser(userId, payload) {
+  if (USE_BACKEND) {
+    return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  }
   await delay(280);
   const record = findRecordOrThrow(userId);
   const previousRoleName = record.access.roleName;
@@ -189,6 +231,7 @@ export async function updateUser(userId, payload) {
 }
 
 export async function activateAccount(userId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}/activate`, { method: 'POST', body: '{}' });
   await delay(260);
   const record = findRecordOrThrow(userId);
   const wasDisabled = record.account.status === 'disabled' || record.account.status === 'blocked';
@@ -200,6 +243,9 @@ export async function activateAccount(userId) {
 
 /** @param {string} userId @param {import('../types/humanResourcesUsers').DeactivateAccountPayload} [payload] */
 export async function deactivateAccount(userId, payload = {}) {
+  if (USE_BACKEND) {
+    return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}/deactivate`, { method: 'POST', body: JSON.stringify(payload) });
+  }
   await delay(260);
   const record = findRecordOrThrow(userId);
   record.account.status = 'disabled';
@@ -208,6 +254,7 @@ export async function deactivateAccount(userId, payload = {}) {
 }
 
 export async function resendInvitation(userId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}/resend-invitation`, { method: 'POST', body: '{}' });
   await delay(260);
   const record = findRecordOrThrow(userId);
   record.account.invitationStatus = 'sent';
@@ -218,6 +265,7 @@ export async function resendInvitation(userId) {
 }
 
 export async function resetAccess(userId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/users/${encodeURIComponent(userId)}/reset-access`, { method: 'POST', body: '{}' });
   await delay(260);
   const record = findRecordOrThrow(userId);
   appendHistory(userId, 'access_reset');

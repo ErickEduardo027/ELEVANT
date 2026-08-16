@@ -46,9 +46,10 @@ describe('PlanningDrawer', () => {
     expect(screen.getByText('Sin eventos registrados')).toBeInTheDocument();
   });
 
-  it('disables the three action buttons with a "Próximamente" tooltip', () => {
+  it('enables assignment and keeps future actions disabled', () => {
     render(<PlanningDrawer flight={FLIGHT} onClose={() => {}} />);
-    for (const label of ['Editar planificación', 'Asignar recursos', 'Crear Work Order']) {
+    expect(screen.getByRole('button', { name: 'Asignar recursos' })).toBeEnabled();
+    for (const label of ['Editar planificación', 'Crear Work Order']) {
       const button = screen.getByRole('button', { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('title', 'Próximamente');

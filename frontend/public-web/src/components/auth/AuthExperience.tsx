@@ -800,8 +800,8 @@ function AffiliationPanel() {
                 <span aria-hidden="true">
                   <CheckIcon />
                 </span>
-                Entiendo que esta solicitud se guarda solo en este navegador,
-                no se transmite y no crea credenciales de acceso.
+                Entiendo que esta solicitud será enviada al Departamento de
+                Contratos y no crea credenciales de acceso automáticamente.
               </label>
               {errors.prototypeAcknowledged && (
                 <p

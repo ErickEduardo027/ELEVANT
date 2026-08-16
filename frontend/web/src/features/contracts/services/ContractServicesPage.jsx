@@ -4,7 +4,7 @@ import ServiceFormModal from './ServiceFormModal';
 import { useContractServicesData } from './useContractServicesData';
 
 const money = (value, currency) => new Intl.NumberFormat('es-DO', { style: 'currency', currency }).format(value);
-const date = value => new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
+const date = value => value ? new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : 'Sin vencimiento';
 
 export default function ContractServicesPage() {
   const data = useContractServicesData();

@@ -7,6 +7,26 @@ import {
 import { mapQualifications, deriveEquipmentCoverage } from '../features/human-resources/certifications/mappers';
 import { DEFAULT_CERTIFYING_ENTITY } from '../features/human-resources/certifications/statusMeta';
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
+const USE_BACKEND = import.meta.env.MODE !== 'test';
+
+async function apiRequest(path, options = {}) {
+  const token = readSession()?.token;
+  let response;
+  try {
+    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el backend del prototipo.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
+  return payload;
+}
 
 // Adaptador stub para el dominio "Habilitaciones y certificaciones": hoy
 // resuelve contra un store en memoria (mock), mañana contra el backend real
@@ -85,6 +105,7 @@ function appendHistory(qualificationId, eventType, description, performedBy = CU
 
 /** @returns {Promise<import('../types/humanResourcesQualifications').EquipmentType[]>} */
 export async function getEquipmentCatalog() {
+  if (USE_BACKEND) return apiRequest('/api/hr/equipment-types');
   await delay(120);
   return structuredClone(EQUIPMENT_CATALOG_MOCK);
 }
@@ -95,18 +116,21 @@ export async function getEquipmentCatalog() {
  * Gestión de usuarios cuando exista (ver comentario de contrato arriba).
  */
 export async function getAgents() {
+  if (USE_BACKEND) return apiRequest('/api/hr/ramp-agents');
   await delay(120);
   return structuredClone(AGENTS_MOCK);
 }
 
 /** @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification[]>} */
 export async function getQualifications() {
+  if (USE_BACKEND) return apiRequest('/api/hr/qualifications');
   await delay();
   return structuredClone(qualificationsStore);
 }
 
 /** @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification|null>} */
 export async function getQualificationById(qualificationId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/qualifications/${encodeURIComponent(qualificationId)}`);
   await delay(120);
   const record = qualificationsStore.find(item => item.id === qualificationId);
   return record ? structuredClone(record) : null;
@@ -114,6 +138,7 @@ export async function getQualificationById(qualificationId) {
 
 /** @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification[]>} */
 export async function getAgentQualifications(agentId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/qualifications?agentId=${encodeURIComponent(agentId)}`);
   await delay(150);
   return structuredClone(qualificationsStore.filter(item => item.agentId === agentId));
 }
@@ -126,6 +151,10 @@ export async function getAgentQualifications(agentId) {
  * @returns {Promise<import('../types/humanResourcesQualifications').EquipmentCoverage[]>}
  */
 export async function getEquipmentCoverage() {
+  if (USE_BACKEND) {
+    const [records, equipment] = await Promise.all([getQualifications(), getEquipmentCatalog()]);
+    return deriveEquipmentCoverage(mapQualifications(records), equipment);
+  }
   await delay(200);
   const items = mapQualifications(structuredClone(qualificationsStore));
   return deriveEquipmentCoverage(items, structuredClone(EQUIPMENT_CATALOG_MOCK));
@@ -133,6 +162,7 @@ export async function getEquipmentCoverage() {
 
 /** @returns {Promise<import('../types/humanResourcesQualifications').QualificationHistoryEvent[]>} */
 export async function getQualificationHistory(qualificationId) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/qualifications/${encodeURIComponent(qualificationId)}/history`);
   await delay(150);
   return structuredClone(historyStore.get(qualificationId) ?? []);
 }
@@ -142,6 +172,7 @@ export async function getQualificationHistory(qualificationId) {
  * @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification>}
  */
 export async function createQualification(payload) {
+  if (USE_BACKEND) return apiRequest('/api/hr/qualifications', { method: 'POST', body: JSON.stringify(payload) });
   await delay(320);
   const agent = findAgentOrThrow(payload.agentId);
   const id = nextQualificationId();
@@ -179,6 +210,7 @@ export async function createQualification(payload) {
  * @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification>}
  */
 export async function updateQualification(qualificationId, payload) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/qualifications/${encodeURIComponent(qualificationId)}`, { method: 'PATCH', body: JSON.stringify(payload) });
   await delay(260);
   const record = findQualificationOrThrow(qualificationId);
 
@@ -200,6 +232,7 @@ export async function updateQualification(qualificationId, payload) {
  * @returns {Promise<import('../types/humanResourcesQualifications').AgentQualification>}
  */
 export async function renewQualification(qualificationId, payload) {
+  if (USE_BACKEND) return apiRequest(`/api/hr/qualifications/${encodeURIComponent(qualificationId)}/renew`, { method: 'POST', body: JSON.stringify(payload) });
   await delay(320);
   const record = findQualificationOrThrow(qualificationId);
   const wasExpired = new Date(record.expiresAt) < new Date();

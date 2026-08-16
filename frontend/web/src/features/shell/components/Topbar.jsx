@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatClockTime, formatUtcClockTime } from '../../../lib/clock';
 import { BellIcon, ChevronDownIcon, LogOutIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
+import NotificationPopover from '../../notifications/components/NotificationPopover';
 
 export default function Topbar({
   station,
@@ -11,9 +12,11 @@ export default function Topbar({
   roleLabel,
   onOpenMenu,
   onOpenNotifications,
+  notificationCenter,
   onLogout,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   return (
     <header className="flex items-center gap-4 border-b border-black/5 bg-white/70 px-6 py-3 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
@@ -65,22 +68,31 @@ export default function Topbar({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={onOpenNotifications}
-          aria-label="Notificaciones"
-          className="relative rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/5"
-        >
-          <BellIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
-          {notificationsCount > 0 && (
-            <span
-              data-testid="notifications-badge"
-              className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-500 px-1 text-[10px] font-semibold text-white"
-            >
-              {notificationsCount > 99 ? '99+' : notificationsCount}
-            </span>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              if (notificationCenter) setNotificationsOpen(open => !open);
+              else onOpenNotifications?.();
+            }}
+            aria-label="Notificaciones"
+            aria-expanded={notificationCenter ? notificationsOpen : undefined}
+            className="relative rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/5"
+          >
+            <BellIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
+            {notificationsCount > 0 && (
+              <span
+                data-testid="notifications-badge"
+                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-500 px-1 text-[10px] font-semibold text-white"
+              >
+                {notificationsCount > 99 ? '99+' : notificationsCount}
+              </span>
+            )}
+          </button>
+          {notificationCenter && notificationsOpen && (
+            <NotificationPopover center={notificationCenter} onClose={() => setNotificationsOpen(false)} />
           )}
-        </button>
+        </div>
 
         <button
           type="button"

@@ -22,6 +22,7 @@ function MonitoringMapArea({
   selectedFlight,
   now,
   onClosePopover,
+  onStatusChange,
 }) {
   return (
     <div className="relative min-h-[420px] flex-1">
@@ -33,7 +34,7 @@ function MonitoringMapArea({
         onPopoverPosition={onPopoverPosition}
       />
       <FlightLegend />
-      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} />
+      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
     </div>
   );
 }
@@ -48,6 +49,7 @@ export default function FlightMonitoringPage({
   forceState = 'default',
   theme = 'light',
   focusFlightId = null,
+  onStatusChange,
 }) {
   const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
   const [popoverPosition, setPopoverPosition] = useState(null);
@@ -136,6 +138,7 @@ export default function FlightMonitoringPage({
       selectedFlight={selectedFlight}
       now={now}
       onClosePopover={() => setSelectedFlightId(null)}
+      onStatusChange={onStatusChange}
     />
   );
 

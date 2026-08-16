@@ -1,4 +1,7 @@
-// Adaptador mock del módulo Reportes. Sustituir por llamadas HTTP reales cuando exista backend.
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { downloadTabularReport } from '../utils/reportDownloads';
+
+// En pruebas conserva el conjunto determinista. En ejecución utiliza las operaciones persistidas.
 //
 // Endpoints conceptuales que este adaptador representa (ver Claude-skills/plan-revision/plan-reports/skill.md):
 //   GET  /reports/closure
@@ -312,6 +315,22 @@ function cloneRecords() {
   return JSON.parse(JSON.stringify(OPERATIONAL_RECORDS));
 }
 
+const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+
+async function baseRecords() {
+  if (!usesPrototypeApi()) return cloneRecords();
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}/api/reports/operational-records`, {
+    headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {},
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    handleUnauthorizedResponse(response);
+    throw new Error(payload.error || 'No se pudieron cargar los reportes operativos.');
+  }
+  return payload.records ?? [];
+}
+
 // Umbrales de clasificación de severidad del cierre operacional. Se exponen como
 // constantes (no en línea) para que puedan sustituirse por el valor que envíe la
 // API sin tocar la lógica que las consume.
@@ -408,7 +427,7 @@ function applyCommonFilters(records, filters = {}) {
 }
 
 export async function getClosureReport(stationCode = 'PUJ', filters = {}) {
-  const records = applyCommonFilters(cloneRecords(), filters).filter(record => record.positionChange !== null);
+  const records = applyCommonFilters(await baseRecords(), filters).filter(record => record.positionChange !== null);
   const rows = records
     .filter(record => (filters.position ? record.positionChange.finalPosition === filters.position : true))
     .map(toClosureRow);
@@ -416,29 +435,37 @@ export async function getClosureReport(stationCode = 'PUJ', filters = {}) {
 }
 
 export async function getReconciliationReport(stationCode = 'PUJ', filters = {}) {
-  const records = applyCommonFilters(cloneRecords(), filters);
+  const records = applyCommonFilters(await baseRecords(), filters);
   const rows = records.flatMap(toReconciliationRows);
   return { station: { code: stationCode }, rows };
 }
 
 export async function getGroundTimeReport(stationCode = 'PUJ', filters = {}) {
-  const records = applyCommonFilters(cloneRecords(), filters);
+  const records = applyCommonFilters(await baseRecords(), filters);
   const rows = records.map(toGroundTimeRow);
   return { station: { code: stationCode }, rows };
 }
 
 export async function getOperationalSummary(stationCode = 'PUJ', filters = {}) {
-  const records = applyCommonFilters(cloneRecords(), filters);
+  const records = applyCommonFilters(await baseRecords(), filters);
   return { station: { code: stationCode }, records };
 }
 
 export async function exportReport({ reportId, format }) {
-  // Simula latencia de generación de un reporte en el backend.
-  await new Promise(resolve => setTimeout(resolve, 900));
-  return {
+  const fetchers = {
+    closure: getClosureReport,
+    reconciliation: getReconciliationReport,
+    groundTime: getGroundTimeReport,
+    summary: getOperationalSummary,
+  };
+  const data = await (fetchers[reportId] ?? getOperationalSummary)();
+  const rows = data.rows ?? data.records ?? [];
+  const result = {
     reportId,
     format,
-    fileName: `${reportId}-${stationDateKey(new Date())}.${format === 'excel' ? 'xlsx' : 'pdf'}`,
+    fileName: `${reportId}-${stationDateKey(new Date())}.${format === 'excel' ? 'xls' : 'pdf'}`,
     generatedAt: new Date().toISOString(),
   };
+  if (import.meta.env.MODE !== 'test') downloadTabularReport({ title: `Reporte operacional ${reportId}`, format, fileName: result.fileName, rows });
+  return result;
 }

@@ -122,8 +122,8 @@ describe('exportReport', () => {
     expect(result.generatedAt).toEqual(expect.any(String));
   });
 
-  it('uses the xlsx extension for excel exports', async () => {
+  it('uses an Excel-compatible xls extension for exports', async () => {
     const result = await exportReport({ reportId: 'closure', format: 'excel' });
-    expect(result.fileName).toMatch(/\.xlsx$/);
+    expect(result.fileName).toMatch(/\.xls$/);
   });
 });

@@ -1,3 +1,5 @@
+import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+
 const SNAPSHOT = {
   generatedAt: '2026-08-10T11:00:00-04:00',
   rows: [
@@ -10,11 +12,29 @@ const SNAPSHOT = {
 
 let exportsLog = [];
 
+const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+
+async function contractReportApi(path, options = {}) {
+  const session = readSession();
+  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}), ...options.headers },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    handleUnauthorizedResponse(response);
+    throw new Error(payload.error || 'No se pudo generar el reporte contractual.');
+  }
+  return payload;
+}
+
 export async function getContractReportsSnapshot() {
+  if (usesPrototypeApi()) return contractReportApi('/api/contracts/reports');
   return { ...SNAPSHOT, rows: SNAPSHOT.rows.map(row => ({ ...row })) };
 }
 
 export async function recordContractReportExport({ format, airline, user }) {
+  if (usesPrototypeApi()) return contractReportApi('/api/contracts/reports/export', { method: 'POST', body: JSON.stringify({ format, airline }) });
   const record = { id: `EXP-${exportsLog.length + 1}`, format, airline, user, exportedAt: new Date().toISOString() };
   exportsLog = [record, ...exportsLog];
   return { ...record };
