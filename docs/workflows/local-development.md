@@ -1,19 +1,15 @@
 # Desarrollo local
 
-## Requisitos backend
+## Requisitos
 
-- SDK .NET compatible con `backend/global.json`.
-- Git.
-- Docker con Compose para levantar SQL Server local cuando el caso lo requiera.
-- PowerShell 5.1 o 7 para scripts del repositorio.
+- SDK .NET indicado por `backend/global.json`.
+- Docker Desktop/Engine con Compose para el stack SQL local.
+- PowerShell 5.1/7 y Git.
+- Node.js compatible con cada frontend y npm.
 
-Node y pnpm se exigirán cuando web o móvil hayan sido inicializados. La presencia de Corepack no equivale a que pnpm ya esté habilitado.
+Cada frontend conserva su propio `package-lock.json`; se instala desde su carpeta y no se asume pnpm/root workspace.
 
-## Inicio rápido del backend
-
-Desde la raíz del monorepositorio, entrar a la unidad autónoma del backend antes
-de invocar .NET. Así el CLI resuelve `backend/global.json`, la solución y las
-herramientas locales correctas:
+## Backend sin contenedores
 
 ```powershell
 Push-Location backend
@@ -25,20 +21,25 @@ dotnet test Elevant.sln --configuration Release --no-build
 Pop-Location
 ```
 
-El mismo flujo está encapsulado en `backend/scripts/restore-build-test.ps1` y puede
-ejecutarse desde cualquier directorio.
+`backend/scripts/restore-build-test.ps1` encapsula la secuencia. `/health` comprueba proceso; `/health/ready` incluye dependencias y puede fallar sin SQL.
 
-La API puede arrancar sin migrar la base. El endpoint `/health` comprueba vida del proceso; `/health/ready` comprueba dependencias y puede fallar si SQL Server no está disponible.
+## Stack local completo
 
-Para infraestructura local, copiar `backend/.env.example` a `backend/.env`,
-establecer una contraseña local fuerte y levantar los servicios con
-`backend/infrastructure/docker/compose.local.yml`. Nunca reutilizar credenciales
-de Development o Production.
+```powershell
+Copy-Item backend/.env.example backend/.env
+# Reemplazar todos los REPLACE_ME.
+docker compose --env-file backend/.env -f backend/infrastructure/docker/compose.local.yml up --build
+```
 
-## Antes de terminar una sesión
+El orden es SQL -> provisioner -> migrator -> seeder Development -> API. Las identidades SQL son distintas y `sa` queda deshabilitado después del bootstrap. Nunca reutilice esas contraseñas en el VPS o Production.
 
-- no dejar secretos ni archivos locales preparados para commit;
-- ejecutar las pruebas relacionadas;
-- actualizar documentación si cambió un contrato u operación;
+## Frontends
+
+Entre a `frontend/web`, `frontend/public-web` o `frontend/mobile-agent`, lea su README y ejecute solo los scripts declarados en su `package.json`. Una tablet no puede alcanzar el `localhost` de la PC; use una URL de red autorizada/Tailscale según el ambiente.
+
+## Cierre de sesión
+
+- ejecutar pruebas/build enfocados;
 - revisar `git diff` y `git status`;
-- no incluir `bin`, `obj`, `node_modules`, bases, backups o resultados de pruebas.
+- actualizar docs si cambió un contrato;
+- no incluir `.env`, secrets, `bin`, `obj`, `.next`, `node_modules`, bases, backups, artefactos de firma o resultados runtime.

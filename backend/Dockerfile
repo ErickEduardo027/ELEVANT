@@ -13,6 +13,8 @@ COPY ["src/Elevant.Application/Elevant.Application.csproj", "src/Elevant.Applica
 COPY ["src/Elevant.Application/packages.lock.json", "src/Elevant.Application/"]
 COPY ["src/Elevant.Contracts/Elevant.Contracts.csproj", "src/Elevant.Contracts/"]
 COPY ["src/Elevant.Contracts/packages.lock.json", "src/Elevant.Contracts/"]
+COPY ["src/Elevant.DatabaseTool/Elevant.DatabaseTool.csproj", "src/Elevant.DatabaseTool/"]
+COPY ["src/Elevant.DatabaseTool/packages.lock.json", "src/Elevant.DatabaseTool/"]
 COPY ["src/Elevant.Domain/Elevant.Domain.csproj", "src/Elevant.Domain/"]
 COPY ["src/Elevant.Domain/packages.lock.json", "src/Elevant.Domain/"]
 COPY ["src/Elevant.Infrastructure/Elevant.Infrastructure.csproj", "src/Elevant.Infrastructure/"]

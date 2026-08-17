@@ -1,29 +1,34 @@
-# Despliegue con Dokploy
+# ELEVANT en Dokploy
 
-El objetivo inicial es un servidor KVM 2 administrado por el equipo. Las capacidades comerciales de ese plan pueden cambiar: antes de desplegar se deben verificar CPU, RAM, disco, límites de I/O y soporte de virtualización del proveedor. No se presupone que un único tamaño sea suficiente para la carga final.
+La guía canónica es `docs/deployment/dokploy.md`. Este directorio resume la topología que debe configurarse después de que `feature/database-v1` sea revisada y fusionada manualmente en `Development`.
 
-## Separación requerida
+## Ciclos de vida separados
 
-Crear dos proyectos o stacks Dokploy distintos: `elevant-development` y `elevant-production`. Cada uno necesita dominio, variables, contraseña SQL, base, red y volumen propios. No montar el mismo directorio para SQL, uploads o backups en ambos stacks. Production se configurará en una fase posterior.
+1. `elevant-dev-database`: Compose manual, sin AutoDeploy; SQL, volúmenes y provisioner.
+2. `elevant-dev-database-release`: jobs migrator + seeder Development por release.
+3. `elevant-dev-api`: imagen API futura, desplegable solo después de release DB sano.
+4. `elevant-dev-aviam-web`: Vite compilado y Nginx no-root.
+5. `elevant-dev-public-web`: Next standalone/Node no-root.
 
-Las variables sensibles se cargan en el almacén de variables de Dokploy; no se pegan en Compose ni en logs. `MSSQL_SA_PASSWORD`, dominios y futuros tokens deben ser distintos entre ambientes.
+Mobile Agent no es un servicio Dokploy. CI/EAS produce una APK firmada que se instala en la tablet y consume `elevant-dev-api`.
 
-## Configuración del servicio
+Solo API se conecta a la red de datos. Las webs llaman a API por HTTPS y jamás reciben credenciales SQL. Un redeploy de API/web no toca el contenedor o volumen SQL.
 
-1. Conectar el repositorio privado y seleccionar exactamente la rama `Development`.
-2. Importar `backend/infrastructure/docker/compose.development.yml`; su build usa `backend/` como contexto y `Dockerfile` como ruta relativa.
-3. Publicar únicamente la API mediante el proxy; el contenedor escucha en `8080`.
-4. Configurar el dominio HTTPS y la sonda `GET /health`.
-5. Mantener SQL Server solo en la red interna `data`, sin puerto de host.
-6. Validar `GET /health` y `GET /health/ready` después de desplegar. La primera comprueba vida del proceso; la segunda incluye dependencias.
+## Estado de esta rama
 
-Development usa internamente `ASPNETCORE_ENVIRONMENT=Testing` para habilitar
-Swagger de forma explícita sin activar el modo local. El servicio one-shot `db-init`
-crea `ElevantDevelopmentDb` si no existe; las tablas futuras se administran con
-migraciones EF Core explícitas.
+Están implementados y validados los dos primeros Compose y las imágenes de base. Los Dockerfiles/Compose de API y frontends se crearán al comenzar su integración real; la documentación reserva puertos, recursos y fronteras para evitar decisiones incompatibles.
 
-## Migraciones y reversión
+Nada en esta rama llama a la API de Dokploy ni modifica el VPS. El push a `Development` publica imágenes probadas en GHCR, pero un operador elige digest y ejecuta el despliegue inicial.
 
-El despliegue no ejecuta migraciones. Una migración debe revisarse, respaldarse y aplicarse mediante `backend/scripts/update-database.ps1` con el ambiente explícito. Para Dokploy Development se usa `-Environment Testing`, porque ese es el ambiente interno de ASP.NET Core. Production exige `-AllowProduction` y la frase de confirmación exacta.
+## Acceso Development
 
-Antes de una versión con cambios incompatibles, preparar una estrategia expand/contract o ventana de mantenimiento. Revertir la imagen no revierte el esquema; la reversión de datos se decide y prueba por separado.
+Sin dominio propio, la opción recomendada es Tailscale Services + Serve con HTTPS, no puertos públicos o certificados self-signed:
+
+- `svc:elevant-dev-api` -> `127.0.0.1:18080`;
+- `svc:elevant-dev-aviam-web` -> `127.0.0.1:18081`;
+- `svc:elevant-dev-public-web` -> `127.0.0.1:18082`;
+- `svc:elevant-dev-dokploy` -> `127.0.0.1:3000`.
+
+Cada aplicación obtiene hostname/certificado separado. No use Funnel y no anuncie toda una subnet Docker. El firewall del proveedor mantiene cerrados 1433, 18080-18082, 3000 y, tras verificar el acceso privado, los puertos públicos que no sean necesarios.
+
+Antes del primer despliegue hay que confirmar tailnet/Services, roles `dev`/`ops`, acceso de la tablet, namespace/credencial GHCR y un CIDR Docker no conflictivo.

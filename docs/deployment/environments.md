@@ -1,51 +1,57 @@
-# Ambientes
+# Ambientes ELEVANT
 
-Elevant separa Local, Development y Production. Separar no significa cambiar solo una variable: cada ambiente conserva identidad, red, datos, credenciales y almacenamiento propios.
+Una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Agent dentro de cada ambiente. “Public Web” describe a sus usuarios; no significa que el ambiente Development deba estar abierto a Internet.
+
+## Matriz
+
+| Aspecto | Local | Development VPS | Production futura |
+| --- | --- | --- | --- |
+| Rama | feature actual | `Development` | commit promovido desde `main` |
+| API | `http://127.0.0.1:8080` | `https://elevant-dev-api.<tailnet>.ts.net` | dominio público controlado |
+| AVIAM Web | `http://localhost:5173` | `https://elevant-dev-aviam-web.<tailnet>.ts.net` | dominio interno/controlado |
+| Public Web | `http://localhost:3000` | `https://elevant-dev-public-web.<tailnet>.ts.net` | dominio público controlado |
+| Mobile | Expo/device | APK de pruebas conectada al tailnet | build de tienda con API pública |
+| Base | `ElevantDevelopmentDb` local | `ElevantDevelopmentDb` | `ElevantProductionDb` |
+| Datos | sintéticos | sintéticos/reconstruibles | reales autorizados |
+| SQL edition | Developer | Developer | por decidir/licenciar |
+| Swagger | habilitado | habilitado por config | deshabilitado |
+| Backups | opcionales | nativos locales + restore-check | cifrados off-host + restore probado |
+
+`<tailnet>` es un placeholder. Los nombres Tailscale se fijan al configurar el VPS; no se escriben valores inventados en builds.
 
 ## Development
 
-- Rama: `Development`.
-- API: `https://api-dev.elevant.com`.
-- Web futura: `https://web-dev.elevant.example`.
-- Base: `ElevantDevelopmentDb`.
-- Usa datos sintéticos o controlados, logs operativos y Swagger habilitado.
-- La APK de pruebas y el frontend local o desplegado consumen este ambiente.
-- Mantiene secretos, volumen, uploads y backups exclusivos.
-- El stack se llama Development, pero la API usa internamente
-  `ASPNETCORE_ENVIRONMENT=Testing` para no activar el modo local permisivo.
+- `ASPNETCORE_ENVIRONMENT=Development` y `ELEVANT_DATABASE_ENVIRONMENT=Development`.
+- SQL Server 2022 Developer Edition: uso exclusivo de desarrollo/pruebas, sin usuarios ni datos reales.
+- Base, volumen, credenciales, claves JWT, FlightAware y backups propios.
+- Acceso HTTPS privado mediante Tailscale Services; Tailscale no reemplaza autenticación/RBAC/tenant.
+- CORS de API permite solo los dos orígenes web Development y, si se necesitan, `http://localhost:5173`/`http://localhost:3000`.
+- Aplicaciones nativas no dependen de CORS, pero sí de TLS y autenticación.
+- No se habilitan uploads reales sin object storage y política de retención.
 
 ## Production
 
-- Rama: `main`.
-- API: `https://api.elevant.example`.
-- Web: `https://app.elevant.example`.
-- Base: `ElevantProductionDb`.
-- Usa datos reales, logs restringidos y Swagger deshabilitado o protegido fuera de
-  la aplicación.
-- Mantiene backups, secretos y volúmenes exclusivos.
-- Solo Erick puede aprobar y ejecutar despliegues de Production.
+Production no se despliega en el VPS Development ni se define copiando su Compose. Requiere otra instancia/host, licencia SQL válida, secretos, volúmenes, backup externo, dominio y observabilidad independientes.
 
-| Aspecto | Local | Development | Production |
-| --- | --- | --- | --- |
-| Propósito | Desarrollo individual | Integración y aceptación | Operación real |
-| API | Equipo o Compose local | Dominio de desarrollo remoto | Dominio productivo |
-| SQL Server | Contenedor/instancia local | Base y usuario exclusivos | Base y usuario exclusivos |
-| Datos | Sintéticos | Sintéticos | Reales autorizados |
-| Swagger | Habilitado | Habilitado por configuración | Deshabilitado |
-| Secretos | Almacén local ignorado | Gestor de plataforma | Gestor de plataforma |
-| Backups | Opcionales/desechables | Independientes | Externos, cifrados y verificados |
+`ElevantProductionDb` aplica las mismas migraciones y queda sin filas de negocio. Solo existen el marcador técnico de ambiente y el historial de EF hasta que los usuarios autorizados creen información por la API. No existe servicio/comando seeder.
+
+Antes de habilitar Production se decide como mínimo:
+
+- SQL Server Standard con licencia o Express aceptando explícitamente sus límites;
+- dominio/TLS y distribución de Mobile en tiendas;
+- RPO, RTO, cifrado y destino off-host;
+- política de privacidad/retención;
+- autenticación, autorización tenant y auditoría completas;
+- prueba de carga, restore y rollback.
 
 ## Promoción
 
-Development se construye actualmente desde la rama `Development`. Antes de habilitar Production se publicará una imagen versionada e inmutable para promover exactamente el artefacto validado, sin reconstruirlo para cambiar configuración o secretos. También se validarán migraciones, compatibilidad de clientes, salud, logs, rollback y backups.
+Se promueve el mismo artefacto inmutable probado, no se reconstruye para Production. Un release coordinado sigue `migración compatible -> API -> clientes`. Los cambios deben ser backward-compatible porque API, ambas webs y Mobile tienen ciclos independientes.
 
-## Aislamiento obligatorio
+Prohibido:
 
-- No compartir base de datos, contraseñas, claves JWT ni API key de FlightAware.
-- No montar el mismo volumen entre ambientes.
-- No restaurar datos reales en Development.
-- No compartir directorios de uploads ni backups.
-- No permitir que una aplicación de Development llame accidentalmente a Production.
-- Etiquetar observabilidad y alertas con el ambiente real.
-
-Los placeholders `*.elevant.example` son ejemplos reservados para documentación; deben reemplazarse por dominios controlados antes de desplegar.
+- compartir base, login, JWT key, API key, volumen o backup;
+- restaurar Production en Development;
+- apuntar un build Development a Production;
+- usar una URL Tailscale como endpoint de una app pública de tienda;
+- convertir fixtures/backups del prototipo en datos reales.

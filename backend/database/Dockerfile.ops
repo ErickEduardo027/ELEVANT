@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+
+ARG MSSQL_BASE_IMAGE=mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+FROM ${MSSQL_BASE_IMAGE}
+
+USER root
+WORKDIR /opt/elevant-db-ops
+COPY --chmod=0444 scripts/bootstrap/provision-development.sql ./sql/provision-development.sql
+COPY --chmod=0444 scripts/backup/backup-development.sql ./sql/backup-development.sql
+COPY --chmod=0444 scripts/recovery/restore-check-development.sql ./sql/restore-check-development.sql
+COPY --chmod=0555 scripts/container/entrypoint.sh ./entrypoint.sh
+COPY --chmod=0555 scripts/container/provision-development.sh ./provision-development.sh
+COPY --chmod=0555 scripts/container/backup-development.sh ./backup-development.sh
+COPY --chmod=0555 scripts/container/restore-check-development.sh ./restore-check-development.sh
+USER mssql
+
+ENTRYPOINT ["/opt/elevant-db-ops/entrypoint.sh"]

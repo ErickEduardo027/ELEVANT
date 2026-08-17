@@ -1,77 +1,45 @@
-# Elevant Web
+# Elevant AVIAM Web
 
-Esqueleto de la aplicación web. El framework todavía no está decidido: puede inicializarse con Next.js o Astro cuando exista una historia de usuario que permita evaluar renderizado, autenticación y despliegue. Hasta entonces este directorio no simula una aplicación ejecutable.
+Aplicación interna que utilizará el personal de AVIAM: OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El proyecto actual sí es ejecutable y usa Vite 6, React 18, React Router y Tailwind; ya no es un esqueleto con framework pendiente.
 
-Laisha es responsable de `frontend/web`. Su destino predeterminado durante el
-desarrollo será `https://api-dev.elevant.com`; no necesita ejecutar el backend
-ni instalar SQL Server localmente.
+## Ejecutar y validar
 
-## Inicialización futura
+Desde `frontend/web`:
 
-La elección entre Next.js, Astro u otra tecnología se hará en una Pull Request
-independiente. Antes de ejecutar el CLI oficial, conservar este README y las
-carpetas acordadas; los directorios que genere el framework deben mapearse a
-`src/app`, `components`, `features`, `hooks`, `lib`, `services`, `types` y `config`,
-sin borrar convenciones ni documentación útil.
+```powershell
+npm install
+npm run dev
+npm test
+npm run build
+```
 
-## Límite de la aplicación
+Vite sirve por defecto en `http://localhost:5173`. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan además de las rutas del router.
 
-La web se comunica únicamente con la API Elevant mediante HTTPS y, cuando corresponda, con sus hubs SignalR. No debe:
+Copie `.env.example` a `.env.local` y configure:
 
-- conectarse a SQL Server;
-- llamar directamente a FlightAware u otro proveedor;
-- contener credenciales, tokens de servidor o cadenas de conexión;
-- duplicar contratos que puedan generarse desde OpenAPI.
+```text
+VITE_PROTOTYPE_API_URL=http://localhost:4310
+```
 
-Los valores con prefijos `NEXT_PUBLIC_`, `PUBLIC_` o equivalentes se entregan al navegador y, por tanto, nunca son secretos.
+La variable es pública y actualmente apunta al backend prototipo. Cuando los contratos .NET estén disponibles se cambiará por la URL de `Elevant.Api` en Development. Nunca incluya tokens, contraseñas o cadenas SQL en una variable `VITE_*`.
 
-## Configuración local
+## Frontera de seguridad
 
-1. Copiar `.env.example` al archivo local que use el framework elegido.
-2. Activar una sola familia de variables: `NEXT_PUBLIC_*` para Next.js o `PUBLIC_*` para Astro.
-3. Apuntar la URL base a la API del ambiente correspondiente, sin terminarla en `/api/v1` para que el cliente conserve explícito el versionado.
-4. Mantener el archivo local de ambiente fuera de Git.
+La aplicación puede mostrar información de varias aerolíneas únicamente cuando la cuenta interna tenga roles y scopes de estación explícitos. Esos permisos se validan en el servidor. Filtros, menús ocultos y sesión del prototipo no autorizan datos.
 
-## Vistas disponibles en el prototipo
+La web consume solo HTTPS/REST y, cuando se implemente, SignalR. No accede directamente a SQL Server, FlightAware ni almacenamiento de objetos. Los servicios en `src/services` mantienen la selección mock/remota fuera de los componentes.
 
-- Administración/OCC: `http://localhost:5173/dashboard.html`.
-- Departamento de Contratos: `http://localhost:5173/contracts.html`.
+## Módulos observados
 
-El área de Contratos conserva la estructura visual del panel administrativo, pero mantiene sus capacidades en `src/features/contracts` para que cada módulo pueda evolucionar en una rama independiente.
+- panel OCC y monitoreo de vuelos/turnarounds;
+- planificación, posiciones, agentes, equipos y cobertura;
+- checklists, incidencias, evidencias y revisión;
+- contratos, solicitudes, servicios y tarifas;
+- gestión humana, turnos, disponibilidad, habilitaciones y permisos;
+- finanzas/reportes, notificaciones y chat aún sujetos a contratos definitivos.
 
-El modo mock debe ser reemplazable: una feature consume una interfaz o adaptador local, y ese adaptador selecciona datos simulados o el cliente de `packages/api-client`. Los componentes de presentación no deben conocer esa decisión.
+Los mocks de finanzas, notificaciones y chat no son diseño persistente. Facturación documental y comunicación fueron diferidas de DB v1 porque faltan reglas inequívocas.
 
-## Estructura prevista
+## Despliegue previsto
 
-- `src/app`: composición, rutas y providers del framework elegido.
-- `src/components`: componentes reutilizables sin reglas de negocio.
-- `src/features`: cortes por capacidad del producto.
-- `src/hooks`: hooks compartidos del framework elegido.
-- `src/lib`: configuración, cliente HTTP, SignalR y utilidades técnicas.
-- `src/services`: adaptadores de API y capacidades del navegador.
-- `src/types`: tipos propios de interfaz no generados desde OpenAPI.
-- `src/config`: lectura y validación de variables públicas.
-- `public`: recursos estáticos públicos, nunca documentos privados.
-- `tests`: configuración y pruebas transversales.
-
-Cada vista que consulte datos debe diseñar y probar al menos estos estados: carga, éxito, resultado vacío, error recuperable y acceso no autorizado. Los errores HTTP se interpretan como Problem Details; no se muestran mensajes internos del servidor.
-
-## Contratos y OpenAPI
-
-El backend publica el documento OpenAPI. El flujo esperado es:
-
-1. obtener un documento válido del ambiente de desarrollo o de un artefacto de CI;
-2. guardarlo de forma reproducible en `packages/api-client/openapi`;
-3. ejecutar el generador que se seleccione en ADR-0007;
-4. revisar el cambio generado y ejecutar validaciones de frontend;
-5. importar exclusivamente desde la superficie pública de `packages/api-client`.
-
-No se edita manualmente `packages/api-client/generated`.
-
-## Criterios antes de inicializar
-
-- decisión registrada de framework y gestor de estado, si hace falta;
-- versión de Node y pnpm fijadas en la raíz;
-- estrategia de autenticación acordada con el backend;
-- contrato OpenAPI accesible;
-- pipeline web habilitado a partir de la plantilla de CI.
+Development usará una imagen estática construida en CI y servida por Nginx sin privilegios; no se usará `vite preview` como servidor. La imagen se desplegará separada de API, Public Web y SQL, y consumirá la misma API privada de Development.

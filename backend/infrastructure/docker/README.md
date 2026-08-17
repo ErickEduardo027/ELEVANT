@@ -1,57 +1,84 @@
 # Docker y Compose
 
-El contexto de construcción es `backend/`, que contiene la solución, la configuración central de .NET, el Dockerfile y todos los proyectos de Clean Architecture. El Dockerfile restaura esos archivos en una capa separada, publica solo `Elevant.Api` y ejecuta la imagen final de ASP.NET como el usuario no privilegiado incluido en la imagen oficial de .NET 10.
+## Imágenes
 
-No se instala `curl` ni se declara un `HEALTHCHECK` dentro de la imagen. En despliegues, Dokploy debe consultar `GET /health` por el puerto interno `8080`.
+| Archivo | Resultado | Uso |
+| --- | --- | --- |
+| `backend/Dockerfile` | `elevant-api` | API .NET, usuario no-root, puerto 8080 |
+| `backend/Dockerfile.database-release` | `elevant-db-release` | verificador, bundle EF linux-x64 y seed Development |
+| `backend/database/Dockerfile.ops` | `elevant-db-ops` | bootstrap, backup y restore-check con `sqlcmd` |
 
-## Desarrollo local
+SQL Server está fijado en el Compose y en la imagen ops a SQL Server 2022 CU26 Ubuntu 22.04 con digest aprobado. Actualizar CU/digest requiere PR, pruebas de migración limpia + upgrade, backup y restore-check; nunca se usa `2022-latest` en despliegue.
 
-1. Copiar `backend/.env.example` a un archivo local ignorado, por ejemplo `backend/.env.local`.
-2. Cambiar `MSSQL_SA_PASSWORD` por una contraseña local fuerte que cumpla la política de SQL Server.
-3. Validar y arrancar:
+## Entorno local
 
 ```powershell
+Copy-Item backend/.env.example backend/.env.local
+# Sustituir todos los REPLACE_ME.
 docker compose --env-file backend/.env.local -f backend/infrastructure/docker/compose.local.yml config --quiet
 docker compose --env-file backend/.env.local -f backend/infrastructure/docker/compose.local.yml up --build
 ```
 
-La API queda ligada por defecto a `127.0.0.1:8080` y SQL Server a `127.0.0.1:1433`. Cambiar `API_PORT` o `MSSQL_PORT` evita conflictos locales. El volumen `elevant-sql-local-data` persiste hasta que el operador lo elimine explícitamente.
+El orden local es SQL -> provisioner -> migrator -> seeder -> API. SQL se liga solo a `127.0.0.1:1433`, la API a `127.0.0.1:8080` y los datos viven en named volumes. `sa` se deshabilita tras verificar el DBA. No reutilice el archivo local como configuración de un VPS.
 
-## Stacks remotos
+## Deployables Development
 
-`compose.development.yml` es el stack activo para Dokploy Development. Usa
-`ASPNETCORE_ENVIRONMENT=Testing`, crea `ElevantDevelopmentDb` de forma idempotente
-y mantiene SQL Server en una red interna. `compose.production.yml.example` sigue
-inactivo hasta preparar Production. Cada stack recibe variables y secretos propios.
+### 1. Datos: ciclo manual
 
-```powershell
-docker compose --env-file C:\secure\elevant-development.env -f backend/infrastructure/docker/compose.development.yml config --quiet
-docker compose --env-file C:\secure\elevant-production.env -f backend/infrastructure/docker/compose.production.yml.example config --quiet
+`compose.development.database.yml` contiene SQL Server y el provisioner. No tiene `ports`, dominio, bind mount del repositorio ni build en el VPS. Usa:
+
+- `elevant-dev-sql-data` para `/var/opt/mssql`;
+- `elevant-dev-sql-backups` para backups nativos;
+- red externa/internal `elevant-dev-data`;
+- SQL Developer Edition, solo para desarrollo/pruebas;
+- 4 GB/1.25 CPU de límite, 3072 MB de memoria interna SQL y `shm_size` 512 MB;
+- logs rotados y 90 s de gracia de parada.
+
+Antes del primer deploy, inspeccione subnets existentes y cree recursos una sola vez con un CIDR no conflictivo:
+
+```bash
+docker network ls
+docker network inspect <redes-relevantes>
+docker network create --driver bridge --internal --subnet <CIDR_APROBADO> elevant-dev-data
+docker volume create elevant-dev-sql-data
+docker volume create elevant-dev-sql-backups
 ```
 
-Ningún stack remoto publica SQL Server. Development usa Developer Edition y puede
-usar `sa` temporalmente para simplificar el arranque inicial; debe migrarse a un
-login de aplicación con privilegios mínimos. Production usa SQL Server Express por
-defecto y no se modifica en esta fase. No ejecutar `docker compose config` sin
-`--quiet` con secretos reales, porque la salida renderizada incluye variables interpoladas.
+No elimine/recree esos recursos en un deploy. El stack no usa AutoDeploy.
 
-## Variables
+### 2. Release DB: por versión
 
-| Variable | Uso |
-|---|---|
-| `MSSQL_IMAGE` | Imagen SQL Server 2022 aprobada. |
-| `MSSQL_SA_PASSWORD` | Secreto independiente por ambiente; nunca se registra. |
-| `ELEVANT_DB_NAME` | Nombre independiente de la base. |
-| `ELEVANT_DATABASE_CONNECTION_STRING` | Cadena secreta de la API con un login de privilegios mínimos; obligatoria remotamente. |
-| `MSSQL_PORT` | Puerto local ligado a loopback; no se usa remotamente. |
-| `API_PORT` | Puerto local de la API. |
-| `ASPNETCORE_ENVIRONMENT` | `Development`, `Testing` o `Production`. |
-| `CORS_ALLOWED_ORIGIN_0..3` | Orígenes exactos de aplicaciones web; los valores vacíos se ignoran. |
-| `MSSQL_PID` | Edición de SQL opcional; Production usa `Express` por defecto. |
-| `DOKPLOY_NETWORK_NAME` | Red externa compartida con el proxy de Dokploy. |
-| `FORWARDED_HEADERS_KNOWN_NETWORK_0` | CIDR exacto de la red confiable del proxy. |
+`compose.development.release.yml` ejecuta `migrate` y luego `seed-development`. Ambos usan `elevant-db-release@sha256:...`, credenciales distintas y la red de datos. El fallo de migración impide el seed y debe impedir desplegar la API nueva.
 
-En local y temporalmente en Dokploy Development la API puede usar `sa` como
-excepción controlada. La cadena se entrega desde el almacén de secretos de Dokploy
-y nunca se escribe en un archivo versionado. Development fija
-`ASPNETCORE_ENVIRONMENT=Testing`; Production fija `Production`.
+No hay Compose Production en esta fase: su licencia, host, backup off-host y credenciales todavía deben aprobarse. Production aplicará la misma imagen/migraciones con su guard y jamás incluirá el servicio seeder.
+
+## Imágenes inmutables
+
+CI construye y ejecuta `elevant-db-ops:ci` y `elevant-db-release:ci` contra SQL Server 2022. Solo después, en un push a `Development`, publica tags `sha-<commit>` y alias `development` en GHCR. Para Dokploy resuelva el tag SHA y configure una referencia con digest:
+
+```text
+ghcr.io/<namespace>/elevant-db-release@sha256:<digest>
+```
+
+El alias mutable no se usa directamente en un deployment. Dokploy requiere una credencial de registro con `read:packages` si los packages son privados.
+
+## Variables remotas
+
+| Grupo | Variables |
+| --- | --- |
+| SQL bootstrap | `MSSQL_SA_PASSWORD`, `ELEVANT_DB_DBA_PASSWORD`, `ELEVANT_DB_MIGRATOR_PASSWORD`, `ELEVANT_DB_APP_PASSWORD`, `ELEVANT_DB_SEEDER_PASSWORD`, `ELEVANT_DB_HEALTH_PASSWORD`, `ELEVANT_DB_BACKUP_PASSWORD` |
+| Imágenes | `ELEVANT_DB_OPS_IMAGE`, `ELEVANT_DB_RELEASE_IMAGE` con digest |
+| Release | `ELEVANT_MIGRATOR_CONNECTION_STRING`, `ELEVANT_SEEDER_CONNECTION_STRING`, `ELEVANT_DEV_SEED_ACCOUNT_PASSWORD` |
+
+No ejecute `docker compose config` sin `--quiet` con secretos reales: la salida interpolada puede revelarlos. No use un único `env_file` compartido con la API.
+
+## Operaciones
+
+Las tareas manuales usan el mismo Compose/imagen aprobada:
+
+```bash
+docker compose --profile operations -f compose.development.database.yml run --rm backup
+docker compose --profile operations -f compose.development.database.yml run --rm restore-check
+```
+
+Dokploy puede programarlas con su scheduler: backup nocturno y restore-check semanal. Primero verifique espacio libre; no elimine la última copia válida antes de crear/verificar la nueva.

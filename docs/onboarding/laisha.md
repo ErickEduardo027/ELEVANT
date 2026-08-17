@@ -1,23 +1,21 @@
-# Onboarding de Laisha — aplicación web
+# Onboarding AVIAM Web
 
-La aplicación web es todavía un esqueleto neutral. No se debe inicializar un framework hasta registrar la decisión y fijar las versiones de Node/pnpm.
+`frontend/web` es la aplicación interna AVIAM y ya usa Vite 6 + React 18. Lea `AGENTS.md`, `frontend/AGENTS.md`, su README y la guía de consumidores API.
 
 ## Primer recorrido
 
-1. Leer `frontend/web/README.md` y `docs/api/consumer-guidelines.md`.
-2. Revisar el contrato de ping y Problem Details en OpenAPI.
-3. Entender el flujo OpenAPI → generador → `packages/api-client`.
-4. Revisar los estados obligatorios de carga, éxito, vacío, error y acceso.
-5. Confirmar que las variables públicas solo contienen URL y flags no secretos.
+1. Ejecutar `npm install`, tests y build desde `frontend/web`.
+2. Recorrer rutas OCC, planificación, contratos, finanzas y gestión humana.
+3. Ubicar servicios/adaptadores que hoy consumen mocks/backend prototipo.
+4. Revisar estados loading/empty/error/unauthorized y Problem Details.
+5. Entender roles y scopes de estación que la API debe imponer.
 
-## Al iniciar la web
+## Reglas
 
-- registrar elección entre Next.js/Astro con sus razones;
-- extender configuraciones TypeScript/ESLint cuando existan;
-- encapsular mocks detrás del mismo adaptador que el cliente real;
-- añadir accesibilidad, pruebas y pipeline desde la primera feature;
-- consumir solo la API, nunca SQL Server o FlightAware.
+- `VITE_*` es público; solo URL/flags no secretos.
+- componentes no seleccionan mock vs API;
+- no confiar menús/filtros como autorización;
+- consumir Elevant API, nunca SQL/FlightAware;
+- coordinar OpenAPI y compatibilidad antes de reemplazar mocks.
 
-## Verificación
-
-Poder cambiar entre mock y API sin modificar componentes de presentación, regenerar el cliente sin editar `generated` y representar Problem Details sin mostrar detalles internos.
+Development se desplegará como build estático/Nginx separado de API/Public Web y accesible por HTTPS privado.
