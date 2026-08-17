@@ -1,6 +1,8 @@
+using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
@@ -89,6 +91,14 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
 
+    public DbSet<MobileDevice> MobileDevices => Set<MobileDevice>();
+
+    public DbSet<MobileCommandReceipt> MobileCommandReceipts => Set<MobileCommandReceipt>();
+
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
+    public DbSet<AuditChange> AuditChanges => Set<AuditChange>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -99,6 +109,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigureIdentityAndReference();
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigureOperations();
+        builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
         builder.ConfigureElevantConventions();
     }
