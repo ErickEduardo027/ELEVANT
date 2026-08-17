@@ -1,4 +1,5 @@
 using System.Text;
+using Elevant.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
@@ -8,6 +9,8 @@ internal static class ModelBuilderExtensions
 {
     public static void ConfigureElevantConventions(this ModelBuilder modelBuilder)
     {
+        ConfigureAuditableEntities(modelBuilder);
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             var tableName = entityType.GetTableName();
@@ -28,6 +31,29 @@ internal static class ModelBuilderExtensions
                     property.SetColumnName(ToSnakeCase(columnName));
                 }
             }
+        }
+    }
+
+    private static void ConfigureAuditableEntities(ModelBuilder modelBuilder)
+    {
+        var auditableTypes = modelBuilder.Model.GetEntityTypes()
+            .Where(entityType => typeof(AuditableEntity).IsAssignableFrom(entityType.ClrType))
+            .Select(entityType => entityType.ClrType)
+            .ToArray();
+
+        foreach (var auditableType in auditableTypes)
+        {
+            var builder = modelBuilder.Entity(auditableType);
+            builder.Property(nameof(AuditableEntity.PublicId))
+                .HasDefaultValueSql("NEWSEQUENTIALID()");
+            builder.Property(nameof(AuditableEntity.CreatedAt))
+                .HasPrecision(3)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+            builder.Property(nameof(AuditableEntity.UpdatedAt))
+                .HasPrecision(3)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+            builder.Property(nameof(AuditableEntity.RowVersion)).IsRowVersion();
+            builder.HasIndex(nameof(AuditableEntity.PublicId)).IsUnique();
         }
     }
 
