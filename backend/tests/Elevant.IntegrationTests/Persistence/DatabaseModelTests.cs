@@ -1,5 +1,6 @@
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Infrastructure.Identity;
@@ -29,6 +30,10 @@ public sealed class DatabaseModelTests
     [InlineData(typeof(QualificationCycle), "hr", "qualification_cycles")]
     [InlineData(typeof(Contract), "commercial", "contracts")]
     [InlineData(typeof(ContractServiceRate), "commercial", "contract_service_rates")]
+    [InlineData(typeof(Turnaround), "ops", "turnarounds")]
+    [InlineData(typeof(FlightLeg), "ops", "flight_legs")]
+    [InlineData(typeof(OperationAgentAssignment), "ops", "operation_agent_assignments")]
+    [InlineData(typeof(OperationChecklist), "ops", "operation_checklists")]
     public void CanonicalEntitiesUseExpectedSchemaAndTable(Type entityType, string schema, string table)
     {
         using var context = CreateContext();
@@ -89,5 +94,33 @@ public sealed class DatabaseModelTests
         Assert.NotNull(unitPrice);
         Assert.Equal(19, unitPrice.GetPrecision());
         Assert.Equal(4, unitPrice.GetScale());
+    }
+
+    [Fact]
+    public void TurnaroundHasAtMostOneLegInEachDirection()
+    {
+        using var context = CreateContext();
+        var leg = context.Model.FindEntityType(typeof(FlightLeg));
+
+        Assert.NotNull(leg);
+        Assert.Contains(
+            leg.GetIndexes(),
+            index => index.IsUnique && index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(FlightLeg.TurnaroundId), nameof(FlightLeg.Direction)]));
+    }
+
+    [Fact]
+    public void ExecutedServiceKeepsHistoricalPriceAndCurrencySnapshot()
+    {
+        using var context = CreateContext();
+        var service = context.Model.FindEntityType(typeof(OperationService));
+        var unitPrice = service?.FindProperty(nameof(OperationService.UnitPriceSnapshot));
+        var currency = service?.FindProperty(nameof(OperationService.CurrencyCodeSnapshot));
+
+        Assert.NotNull(unitPrice);
+        Assert.Equal(19, unitPrice.GetPrecision());
+        Assert.Equal(4, unitPrice.GetScale());
+        Assert.NotNull(currency);
+        Assert.Equal("char(3)", currency.GetColumnType());
     }
 }

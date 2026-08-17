@@ -1,6 +1,7 @@
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Infrastructure.Identity;
@@ -46,6 +47,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OperationalPosition> OperationalPositions => Set<OperationalPosition>();
 
+    public DbSet<EquipmentAsset> EquipmentAssets => Set<EquipmentAsset>();
+
     public DbSet<RampAgent> RampAgents => Set<RampAgent>();
 
     public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
@@ -66,6 +69,26 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
 
+    public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
+
+    public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();
+
+    public DbSet<GroundOperation> GroundOperations => Set<GroundOperation>();
+
+    public DbSet<OperationAgentAssignment> OperationAgentAssignments => Set<OperationAgentAssignment>();
+
+    public DbSet<OperationEquipmentAssignment> OperationEquipmentAssignments => Set<OperationEquipmentAssignment>();
+
+    public DbSet<OperationService> OperationServices => Set<OperationService>();
+
+    public DbSet<OperationChecklist> OperationChecklists => Set<OperationChecklist>();
+
+    public DbSet<Incident> Incidents => Set<Incident>();
+
+    public DbSet<OperationSubmission> OperationSubmissions => Set<OperationSubmission>();
+
+    public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -75,6 +98,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
         builder.ConfigureWorkforceAndCommercial();
+        builder.ConfigureOperations();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
         builder.ConfigureElevantConventions();
     }
