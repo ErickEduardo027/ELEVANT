@@ -1,6 +1,8 @@
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Reference;
+using Elevant.Domain.Entities.Workforce;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -44,6 +46,26 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OperationalPosition> OperationalPositions => Set<OperationalPosition>();
 
+    public DbSet<RampAgent> RampAgents => Set<RampAgent>();
+
+    public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
+
+    public DbSet<AirportPermitCycle> AirportPermitCycles => Set<AirportPermitCycle>();
+
+    public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+
+    public DbSet<AvailabilityRequest> AvailabilityRequests => Set<AvailabilityRequest>();
+
+    public DbSet<CoverageRequirement> CoverageRequirements => Set<CoverageRequirement>();
+
+    public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
+
+    public DbSet<Contract> Contracts => Set<Contract>();
+
+    public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
+
+    public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -52,6 +74,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         base.OnModelCreating(builder);
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
+        builder.ConfigureWorkforceAndCommercial();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
         builder.ConfigureElevantConventions();
     }
