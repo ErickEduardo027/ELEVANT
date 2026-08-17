@@ -1,25 +1,23 @@
-# Onboarding de Erick — backend y coordinación técnica
+# Onboarding backend/operación
 
-Esta guía resume el recorrido inicial para trabajar en el backend y coordinar contratos. No concede acceso por sí sola; las credenciales y permisos se entregan por canales autorizados.
+Esta guía no concede accesos. Lea `AGENTS.md`, `backend/AGENTS.md`, arquitectura DB v1, migraciones y Dokploy.
 
 ## Primer recorrido
 
-1. Leer `docs/architecture/system-overview.md`, `backend-architecture.md` y los ADR aceptados.
-2. Entrar a `backend`, instalar el SDK resuelto por `backend/global.json` y
-   restaurar las herramientas locales desde esa carpeta.
-3. Ejecutar restore bloqueado, build y tests Release.
-4. Arrancar la API y comprobar ping y liveness sin depender de una migración.
-5. Levantar SQL local solo para pruebas que lo requieran.
-6. Revisar procedimientos de migración, secretos y despliegue.
+1. Restaurar herramientas/locks, compilar y ejecutar toda la solución.
+2. Revisar las cinco migraciones y snapshot; ejecutar tests SQL reales.
+3. Entender marcador de ambiente, doble guarda Production y seed Development.
+4. Validar Compose local/database/release con secretos sintéticos.
+5. Revisar identidades DBA/migrator/app/seeder/health/backup.
+6. Entender ciclos separados SQL, DB release, API y webs.
 
-## Responsabilidades iniciales
+## Responsabilidades
 
-- proteger el grafo de proyectos y mantener controllers delgados;
-- coordinar cambios OpenAPI con consumidores;
-- revisar migraciones y operación segura;
-- evitar entidades o integraciones ficticias;
-- mantener CI y documentación alineados con comandos reales.
+- proteger dependencias Clean Architecture y contratos OpenAPI;
+- revisar migraciones/SQL idempotente/expand-contract;
+- impedir seed/cascadas/acceso cross-tenant indebido;
+- mantener API fuera de credenciales elevadas;
+- operar backup/restore, GHCR digest, Tailscale y Dokploy sin revelar secretos;
+- no desplegar Production antes de licencia, backup off-host y autorización.
 
-## Verificación
-
-Poder explicar por qué Domain no referencia Infrastructure, por qué la API no migra al arrancar, la diferencia entre `/health` y `/health/ready`, y cómo se revoca un secreto expuesto.
+Debe poder explicar por qué API no migra al arrancar, por qué Production queda vacía, cómo falla un target cruzado y cómo recuperar Development sin sobrescribir el origen.

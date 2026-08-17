@@ -1,40 +1,44 @@
-# Consideraciones para KVM 2
+# Capacidad KVM 2 para Development
 
-KVM 2 se trata como un perfil de servidor con recursos finitos, no como una garantía de capacidad. Las especificaciones comerciales pueden cambiar; antes de desplegar se verifica en el contrato vigente CPU, RAM, almacenamiento, transferencia, virtualización, región y política de backup.
+Perfil de trabajo: 2 vCPU, 8 GB RAM y 100 GB de almacenamiento para Ubuntu, Docker, Dokploy, su Postgres/Redis/Traefik, Tailscale, SQL Server, API y dos webs. Debe medirse: el nombre comercial del plan no garantiza IOPS o rendimiento sostenido.
 
-Inicialmente alojará Dokploy, reverse proxy, Elevant API, Elevant Web, SQL Server,
-SignalR, servicios en segundo plano, monitoreo básico y backups controlados.
+## Presupuesto inicial
 
-Mobile Agent no se alojará como una web en el VPS:
+| Componente | Memoria/CPU inicial |
+| --- | --- |
+| SQL Server container | hard limit 4 GB / 1.25 CPU |
+| SQL `MSSQL_MEMORY_LIMIT_MB` | 3072 MB dentro del límite |
+| Migrator/seeder/ops | 512 MB / 0.50 CPU, transitorio |
+| API futura | 768 MB / 0.60 CPU |
+| Public Web Next futura | 512 MB / 0.35 CPU |
+| AVIAM Web Nginx futura | 128 MB / 0.15 CPU |
 
-```text
-se compila la APK
-        ↓
-se instala en la tablet
-        ↓
-consume por HTTPS la API alojada en el KVM
-```
+Quedan aproximadamente 2.5 GB para host, Docker, Dokploy y picos. No ejecutar builds en el VPS ni desplegar varias imágenes pesadas simultáneamente. Ajustar solo con métricas de working set, CPU, IOPS, latencia y errores.
 
-## Capacidad
-
-En el mismo host competirían sistema operativo, Docker, Dokploy, proxy, API, SQL Server, logs y backups temporales. SQL Server suele dominar memoria y almacenamiento. No se fijan límites rígidos en este scaffold porque dependen de las características reales del servidor. Antes de Production se debe limitar la memoria de SQL Server, conservar margen para picos y medir con carga representativa.
-
-No se habilitan réplicas múltiples, workers o herramientas pesadas por defecto. Si memoria, IOPS o CPU sostienen saturación, se optimiza y después se escala o separa la base; no se oculta el problema reiniciando servicios.
+SQL usa `shm_size=512m`, 90 s de gracia y logs rotados. API/web usan logs 10 MB x3. Configurar alertas de disco a 70/80/90 % y mantener 15 GB libres. Los assets actuales caben en sus imágenes; no son object storage.
 
 ## Almacenamiento
 
-- Separar volumen de datos de capas efímeras de contenedor.
-- Vigilar espacio, IOPS y crecimiento de logs.
-- Mantener backups cifrados fuera del host y del proveedor primario cuando sea posible.
-- Probar restauración en infraestructura aislada.
-- Evitar que imágenes y artefactos antiguos consuman todo el disco.
-- No guardar fotografías o videos grandes indefinidamente en el disco del VPS.
-- Monitorear RAM, CPU, almacenamiento y crecimiento de imágenes Docker.
+- `/var/opt/mssql` en named volume externo y persistente.
+- backups en otro named volume; siete locales como retención inicial.
+- jamás almacenar binarios/evidencias en SQL o una carpeta improvisada del checkout.
+- limpiar imágenes no referenciadas mediante política controlada, nunca borrar volúmenes por rutina.
+- probar semanalmente restore + `DBCC CHECKDB`.
 
-## Red y endurecimiento
+Un backup en el mismo VPS no protege frente a pérdida total. Antes de aceptar datos no reconstruibles se necesita copia cifrada off-host.
 
-Exponer solo los puertos necesarios para HTTPS y administración controlada. SQL Server permanece en red privada y el puerto 1433 nunca se publica. Usar HTTPS, firewall, actualizaciones, SSH con llave, cuenta no root, protección del panel y rotación de credenciales. Confirmar zona horaria del host, pero guardar fechas de aplicación en UTC.
+## Red
 
-## Continuidad
+SQL no publica 1433. API y webs futuras ligan puertos solo a `127.0.0.1`; Tailscale Services entrega HTTPS al tailnet. Verificar firewall desde fuera porque Docker puede modificar iptables. No anunciar redes Docker completas por Tailscale.
 
-Un único KVM es un punto de fallo. Documentar RPO/RTO antes de almacenar datos reales, automatizar backup externo, conservar configuración reproducible y ensayar reconstrucción. Dokploy simplifica despliegue, pero no sustituye alta disponibilidad ni recuperación ante desastre.
+La tablet:
+
+```text
+APK Development instalada -> Tailscale/HTTPS -> Elevant API en KVM -> SQL privado
+```
+
+No se sirve Mobile como web. Una app de Play Store Production necesitará endpoint público real y su propio perfil de firma/configuración.
+
+## Límites de continuidad
+
+Un KVM es un punto único de fallo. Development puede aceptar reconstrucción mientras todo sea sintético. Production requiere otra evaluación de capacidad/HA, licencia SQL, RPO/RTO, backup externo, restore probado, observabilidad y posible separación de la base.

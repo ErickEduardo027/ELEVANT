@@ -1,7 +1,3 @@
-SET NOCOUNT ON;
-
-IF DB_ID(N'ElevantDevelopmentDb') IS NULL
-BEGIN
-    EXEC(N'CREATE DATABASE [ElevantDevelopmentDb]');
-END;
-GO
+-- Deprecated compatibility entrypoint.
+-- New deployments must use provision-development.sql through the immutable db-ops image.
+:r provision-development.sql

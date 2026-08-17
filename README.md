@@ -1,174 +1,87 @@
 # ELEVANT
 
-Elevant es la plataforma privada de AVIAM para organizar la gestión de asistencia
-en tierra: preoperación, planificación, operación en rampa, evidencias, validación
-de OCC y procesos de facturación. Este monorepositorio reúne el backend y los
-clientes web y móvil; los frontends disponen de prototipos funcionales con datos
-simulados mientras se completa su integración con la API.
-
-## Arquitectura
+ELEVANT es la plataforma de AVIAM para planificar y controlar asistencia en tierra. Este monorepositorio contiene tres experiencias de usuario que consumen una sola API y una sola base lógica por ambiente:
 
 ```text
-Elevant Web interno ───────┐
-Elevant Public Web ────────┼──> Elevant API ──> SQL Server
-Elevant Mobile Agent ──────┘          │
-                                      └──> FlightAware AeroAPI (futuro)
+AVIAM Web interno ───────┐
+Portal público/clientes ─┼── HTTPS ──> Elevant.Api ──> SQL Server
+Mobile Agent nativo ─────┘                  │
+                                            └──> proveedores externos autorizados
 ```
 
-REST será la fuente de verdad. SignalR se reservará para notificaciones y cambios
-en tiempo real. Solo la API podrá acceder a SQL Server y a FlightAware.
+| Aplicación | Usuarios | Tecnología actual |
+| --- | --- | --- |
+| `frontend/web` | Personal interno de AVIAM: OCC, administración y departamentos | Vite 6, React 18 |
+| `frontend/public-web` | Visitantes y clientes/aerolíneas con aislamiento por organización y estación | Next.js 16, React 19 |
+| `frontend/mobile-agent` | Agentes de rampa en tablet Android/iOS | Expo 54, React Native |
+| `backend` | API compartida, dominio, persistencia y tareas de base | .NET 10, EF Core 10, SQL Server 2022 |
 
-El backend es un monolito modular en .NET 10 organizado con Clean Architecture.
-`Domain` permanece independiente; `Application` depende de Domain;
-`Infrastructure` implementa los puertos de Application; y `Api` actúa como host y
-composition root. Las funcionalidades futuras se organizarán mediante vertical
-slices dentro de Application sin romper esas dependencias.
+Ningún cliente accede directamente a SQL Server ni a FlightAware. La autorización de tenant, rol, estación y agente siempre se resuelve en la API; los mocks y `localStorage` no son fronteras de seguridad.
 
-## Responsables
+## Estado de la primera base de datos
 
-| Área | Responsable |
-|---|---|
-| API, SQL Server, Docker, Dokploy, seguridad y despliegues | Erick |
-| Aplicación web | Laisha |
-| Elevant Mobile Agent | Eliezer |
+La v1 de persistencia modela plataforma, identidad, catálogos, personal, habilitaciones, contratos versionados, turnarounds/vuelos, operación en rampa, checklists, incidencias, revisión OCC, idempotencia móvil y auditoría. Las migraciones viven en `backend/src/Elevant.Infrastructure/Persistence/Migrations`.
 
-## Estructura resumida
+Development y Production son bases físicas distintas:
 
-```text
-ELEVANT/
-├── backend/              Unidad autónoma del servidor
-│   ├── Elevant.sln       Solución .NET del backend
-│   ├── src/              Domain, Application, Contracts, Infrastructure y Api
-│   ├── tests/            Pruebas unitarias, de integración y arquitectura
-│   ├── database/         Documentación y utilidades de SQL Server
-│   ├── infrastructure/   Docker, Dokploy, proxy, monitoreo y backups
-│   └── scripts/          Build, migraciones y automatización del backend
-├── frontend/web/         Aplicación interna para Administración/OCC y departamentos
-├── frontend/public-web/  Landing pública y portal demostrativo de aerolíneas
-├── frontend/mobile-agent/ Prototipo Expo para agentes de rampa
-├── packages/             Cliente API y configuración compartida futura
-├── docs/                 Arquitectura, API, seguridad y onboarding
-├── scripts/              Verificación y utilidades globales del repositorio
-└── .github/              CI y plantillas de colaboración
-```
+- `ElevantDevelopmentDb`: mismas migraciones y fixtures sintéticos mediante un seeder separado e idempotente.
+- `ElevantProductionDb`: mismas migraciones, cero datos de negocio iniciales y ningún comando de seed.
 
-La carpeta maestra del repositorio es `ELEVANT`. Todo lo que pertenece al servidor
-—incluidos solución, configuración .NET, código, pruebas, base de datos,
-infraestructura, Docker y scripts operativos— se concentra en `backend`. Los
-clientes web y móvil se concentran en `frontend`.
+Cada tarea comprueba el nombre físico, el ambiente declarado y un marcador inmutable dentro de la base. Production requiere una segunda confirmación explícita. Facturación documental, chat/notificaciones y archivos/evidencias quedan diferidos hasta cerrar sus reglas y el almacenamiento de objetos.
 
-## Requisitos
+Lea [database-v1.md](docs/architecture/database-v1.md) y [schema-v1.md](docs/database/schema-v1.md) antes de modificar el modelo.
 
-- .NET SDK 10 estable, según `backend/global.json`.
-- Git.
-- Docker Desktop con Docker Compose para el entorno local completo.
-- PowerShell 5.1 o PowerShell 7 para los scripts.
-- Node.js 20 o superior y el gestor indicado por cada aplicación frontend.
+## Inicio rápido
 
-El workspace pnpm incluye `frontend/*` y `packages/*`. El `package.json` raíz
-ofrece scripts para revisar secretos y mostrar el árbol; cada aplicación frontend
-declara sus propios comandos de desarrollo, lint, pruebas y compilación.
-
-Compruebe el equipo con:
-
-```powershell
-./scripts/setup/verify-prerequisites.ps1
-```
-
-## Inicio rápido del backend
-
-Restaurar, compilar y probar sin iniciar SQL Server:
+Backend sin Docker:
 
 ```powershell
 Push-Location backend
 dotnet tool restore
-./scripts/restore-build-test.ps1
+dotnet restore Elevant.sln --locked-mode
+dotnet build Elevant.sln --configuration Release --no-restore
+dotnet test Elevant.sln --configuration Release --no-build
 Pop-Location
 ```
 
-Para ejecutar la API directamente, copie los placeholders, defina una contraseña
-local segura y cargue las variables en su sesión. ASP.NET Core no lee archivos
-`.env` automáticamente.
-
-## API y SQL Server con Docker
+Entorno local completo con SQL Server, bootstrap, migraciones, seed y API:
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
-# Edite backend/.env y reemplace todos los valores REPLACE_ antes de continuar.
+# Sustituir todos los valores REPLACE_ME.
 docker compose --env-file backend/.env -f backend/infrastructure/docker/compose.local.yml up --build
 ```
 
-La API queda disponible en `http://localhost:8080`, con ping en
-`/api/v1/system/ping`. SQL Server se liga únicamente a `127.0.0.1`. La base vacía y
-futuras migraciones se aplican mediante el proceso controlado documentado en
-`docs/database/migrations.md`; nunca se aplican automáticamente al arrancar.
+La API queda ligada a `http://127.0.0.1:8080` y SQL Server a `127.0.0.1:1433`. El puerto SQL solo existe para desarrollo local. El Compose remoto nunca publica 1433.
 
-## Trabajo de Laisha
+Cada frontend se instala y valida dentro de su propia carpeta con npm y su `package-lock.json`; consulte su README. Mobile se compila como APK/app nativa y no se aloja como sitio web en el VPS.
 
-Laisha debe leer `frontend/web/README.md` y mantener los módulos internos de
-Administración/OCC y departamentos. La aplicación consumirá
-`https://api-dev.elevant.com`; mientras la integración no esté disponible puede
-trabajar con adaptadores mock sin ejecutar API ni SQL Server localmente.
+## Ramas y despliegue
 
-## Web pública y portal de aerolíneas
+- `Development` es la rama de integración.
+- `feature/database-v1` es la rama de entrega de esta primera base; sus subramas separan módulos y se integran allí.
+- `main` representa Production cuando su promoción esté habilitada.
 
-`frontend/public-web` contiene la landing pública, el acceso local y el portal
-demostrativo para aerolíneas. Usa Next.js y datos simulados; no autentica contra
-Production ni transmite información operativa real. Sus rutas, credenciales demo
-y comandos están documentados en `frontend/public-web/README.md`.
+No se fusiona ni despliega automáticamente una rama feature. Tras revisión y merge manual en `Development`, CI valida SQL Server 2022, el esquema, upgrades, ausencia de seed en Production y las imágenes. Solo en un push válido a `Development` publica `elevant-db-ops` y `elevant-db-release` en GHCR; no llama a Dokploy.
 
-## Trabajo de Eliezer
+En el VPS de Development, SQL Server/volúmenes tienen un stack manual separado del release de migraciones. Más adelante API, AVIAM Web y Public Web serán deployables independientes; la tablet consumirá esa misma API. La guía operativa está en [dokploy.md](docs/deployment/dokploy.md).
 
-Eliezer debe leer `frontend/mobile-agent/README.md` y mantener el prototipo Expo.
-La APK se instalará en la tablet y consumirá la API remota de Development cuando
-se complete la integración; no se aloja como una aplicación web en el VPS.
+## Guía para personas y agentes
 
-## Variables y secretos
+- Lea [AGENTS.md](AGENTS.md) y el archivo más cercano dentro del árbol antes de editar.
+- OpenAPI será el contrato entre API y clientes; las entidades EF no se exponen por HTTP.
+- Los datos de `backend-prototipo`, los backups JSON y las credenciales demo son material descartable: no se convierten en seed ni se promueven.
+- Secretos, backups SQL, binarios subidos, bases runtime y artefactos de firma nunca se versionan.
 
-Los archivos `.env.example`, incluido `backend/.env.example`, contienen solo
-placeholders. Las variables principales
-son `ConnectionStrings__ElevantDatabase`, `Cors__AllowedOrigins__0`,
-`FlightAware__BaseUrl`, `FlightAware__ApiKey` y las opciones futuras de
-autenticación. Los secretos reales se gestionarán en Dokploy y nunca se subirán a
-Git.
+Documentación principal:
 
-## Ambientes
+- [Backend](backend/README.md)
+- [Frontends](frontend/README.md)
+- [Migraciones](docs/database/migrations.md)
+- [Ambientes](docs/deployment/environments.md)
+- [Arquitectura](docs/architecture/system-overview.md)
+- [Contribución](CONTRIBUTING.md)
 
-- Development (`Development`): `https://api-dev.elevant.com`, datos sintéticos,
-  Swagger habilitado y base `ElevantDevelopmentDb`.
-- Production (`main`): `https://api.elevant.example`, datos reales, Swagger no
-  expuesto y base `ElevantProductionDb`.
+## Todavía no implementado
 
-Los ambientes no comparten bases, contraseñas, claves JWT, API keys, volúmenes,
-uploads ni backups. Solo Erick aprueba despliegues a Production.
-
-## Flujo de trabajo
-
-Las ramas son `main`, `Development`, `feature/*`, `fix/*` y `hotfix/*`. OpenAPI es el
-contrato oficial entre backend, web y móvil. Consulte `CONTRIBUTING.md` y
-`docs/workflows/team-collaboration.md` antes de abrir una PR.
-
-## Documentación principal
-
-- `docs/architecture/system-overview.md`
-- `docs/architecture/backend-architecture.md`
-- `docs/api/openapi-contract.md`
-- `docs/deployment/environments.md`
-- `docs/security/secrets-management.md`
-- `docs/onboarding/`
-- `SETUP_REPORT.md`
-
-## No implementado todavía
-
-No están implementadas aún la autenticación real de los clientes, la sustitución
-general de datos simulados por la API, las llamadas reales a FlightAware, el
-cliente API generado ni el despliegue completo en Dokploy. Los prototipos no deben
-interpretarse como integraciones productivas.
-
-## Próximos pasos
-
-1. Configurar usuarios reales en CODEOWNERS y proteger `main` y `Development`.
-2. Publicar la API técnica en Development.
-3. Acordar y publicar los contratos mediante OpenAPI.
-4. Sustituir progresivamente los adaptadores mock de web y móvil.
-5. Validar despliegues y observabilidad por ambiente antes de habilitar datos reales.
+El esquema v1 y su operación están preparados, pero los casos de uso HTTP de negocio, autenticación completa de clientes, sustitución general de mocks, integración real con FlightAware, facturación final, notificaciones/chat y almacenamiento de evidencias siguen pendientes. No trate una pantalla prototipo como una integración productiva.

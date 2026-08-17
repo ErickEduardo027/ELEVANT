@@ -1,11 +1,22 @@
-# Frontend
+# Frontends de ELEVANT
 
-Este directorio contiene los puntos de entrada para usuarios de Elevant. Los clientes consumen exclusivamente la API del backend; no acceden de forma directa a SQL Server, FlightAware ni otros proveedores externos.
+Los tres clientes comparten `Elevant.Api` y la base lógica de su ambiente. Sus diferencias son de audiencia, autorización, interfaz y ciclo de distribución; no justifican backends o bases paralelas.
 
-- `frontend/public-web`: aplicación Next.js pública con la landing de ELEVANT, acceso demostrativo y portal de consulta para aerolíneas.
-- `frontend/web`: aplicación interna para Administración/OCC y departamentos operativos, actualmente basada en vistas y datos de demostración.
-- `frontend/mobile-agent`: prototipo Expo para los flujos del agente de rampa y la operación con conectividad intermitente.
+| Carpeta | Audiencia | Ejecución/entrega |
+| --- | --- | --- |
+| `web` | Personal interno AVIAM | Vite/React; sitio desplegable en Development |
+| `public-web` | Visitantes y clientes/aerolíneas | Next.js; sitio desplegable en Development |
+| `mobile-agent` | Agentes de rampa | Expo/React Native; APK inicial y tiendas más adelante |
 
-Cada aplicación mantiene sus comandos, dependencias, variables públicas y alcance en su propio `README.md`. Los prototipos usan datos simulados mientras no exista un contrato de API integrado; esa condición debe mantenerse visible en la interfaz y en la documentación.
+Actualmente consumen el backend prototipo y/o adaptadores mock. Esos objetos describen necesidades de producto, no tablas definitivas. La migración a la API .NET se hará mediante contratos OpenAPI y adaptadores reemplazables.
 
-El workspace de la raíz incluye `frontend/*`, pero las instalaciones y validaciones se ejecutan dentro de cada aplicación con el gestor indicado por su archivo de bloqueo. Ningún frontend debe contener secretos ni conectarse directamente a la base de datos o a proveedores externos.
+Reglas comunes:
+
+- jamás conectarse a SQL Server o FlightAware desde el cliente;
+- no colocar secretos en variables `VITE_*`, `NEXT_PUBLIC_*` o `EXPO_PUBLIC_*`;
+- no confiar en `localStorage`, AsyncStorage o filtros de UI para autorización;
+- derivar tenant, roles y estaciones de la sesión validada por la API;
+- manejar carga, vacío, error, no autorizado y reintento;
+- conservar compatibilidad cuando los clientes se desplieguen de manera independiente.
+
+Cada aplicación usa npm y su propio `package-lock.json`. Lea [AGENTS.md](AGENTS.md), el README de la aplicación y cualquier `AGENTS.md` más cercano antes de cambiar código.
