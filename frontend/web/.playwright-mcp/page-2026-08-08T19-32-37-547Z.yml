@@ -1,0 +1,68 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e1247]: ELEVANT
+        - button "Contraer barra lateral" [ref=e1248] [cursor=pointer]
+      - navigation "Navegación principal" [ref=e12]:
+        - button "Dashboard" [ref=e13] [cursor=pointer]
+        - button "Planificación operativa" [ref=e21] [cursor=pointer]
+        - button "Monitoreo de vuelos" [ref=e28] [cursor=pointer]
+        - button "Mapa de posiciones" [ref=e36] [cursor=pointer]
+        - button "Revisión 4" [ref=e1253] [cursor=pointer]:
+          - generic [ref=e1254]: Revisión
+          - generic [ref=e1255]: "4"
+        - button "Reportes" [ref=e49] [cursor=pointer]
+        - button "Notificaciones 5" [ref=e1257] [cursor=pointer]:
+          - generic [ref=e1258]: Notificaciones
+          - generic [ref=e1259]: "5"
+        - button "Chat interno 6" [ref=e1260] [cursor=pointer]:
+          - generic [ref=e1261]: Chat interno
+          - generic [ref=e1262]: "6"
+      - button "LR Laisha Ramírez Administrador OCC" [ref=e1263] [cursor=pointer]:
+        - generic [ref=e70]: LR
+        - generic [ref=e1264]:
+          - generic [ref=e1265]: Laisha Ramírez
+          - generic [ref=e1266]: Administrador OCC
+  - generic [ref=e74]:
+    - banner [ref=e75]:
+      - button "PUJ" [ref=e76] [cursor=pointer]
+      - generic [ref=e79]:
+        - generic [ref=e80]: AST 14:32
+        - generic [ref=e81]: ·
+        - generic [ref=e82]: UTC 18:32
+      - generic [ref=e83]:
+        - button "Notificaciones" [ref=e84] [cursor=pointer]:
+          - generic [ref=e88]: "5"
+        - button "Cambiar a modo claro" [ref=e880] [cursor=pointer]
+        - button "LR Laisha Ramírez" [ref=e93] [cursor=pointer]:
+          - generic [ref=e94]: LR
+          - generic [ref=e95]: Laisha Ramírez
+    - main [ref=e516]:
+      - alert [ref=e1297]:
+        - paragraph [ref=e1298]: No se pudo cargar el chat interno.
+        - paragraph [ref=e1299]: Verifique la conexión e intente nuevamente.
+        - button "Reintentar" [ref=e1300] [cursor=pointer]
+  - generic [ref=e293]:
+    - paragraph [ref=e294]: Vista previa (solo desarrollo)
+    - 'button "Tema: oscuro" [ref=e897] [cursor=pointer]'
+    - generic [ref=e296]:
+      - button "Normal" [ref=e297] [cursor=pointer]
+      - button "Carga" [ref=e298] [cursor=pointer]
+      - button "FlyAware caído" [ref=e299] [cursor=pointer]
+      - button "Sin aprobaciones" [ref=e300] [cursor=pointer]
+      - 'button "Planificación: sin vuelos" [ref=e301] [cursor=pointer]'
+      - 'button "Planificación: sin resultados" [ref=e302] [cursor=pointer]'
+      - 'button "Planificación: error" [ref=e303] [cursor=pointer]'
+      - 'button "Monitoreo: sin vuelos" [ref=e304] [cursor=pointer]'
+      - 'button "Monitoreo: error" [ref=e305] [cursor=pointer]'
+      - 'button "Monitoreo: FlyAware desconectado" [ref=e306] [cursor=pointer]'
+      - 'button "Revisión: sin operaciones" [ref=e307] [cursor=pointer]'
+      - 'button "Revisión: error" [ref=e308] [cursor=pointer]'
+      - 'button "Reportes: sin datos" [ref=e309] [cursor=pointer]'
+      - 'button "Reportes: error" [ref=e310] [cursor=pointer]'
+      - 'button "Notificaciones: sin datos" [ref=e311] [cursor=pointer]'
+      - 'button "Notificaciones: error" [ref=e312] [cursor=pointer]'
+      - 'button "Chat: sin conversaciones" [ref=e313] [cursor=pointer]'
+      - 'button "Chat: error" [active] [ref=e314] [cursor=pointer]'
+      - 'button "Chat: desconectado" [ref=e315] [cursor=pointer]'

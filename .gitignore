@@ -75,3 +75,8 @@ Desktop.ini
 # El versionado de packages/api-client/generated se decidirá en el ADR 0007.
 
 .fake
+.worktrees/
+
+# Backend local del prototipo
+backend-prototipo/data/runtime.json
+backend-prototipo/data/*.tmp

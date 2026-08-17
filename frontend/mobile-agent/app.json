@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "ELEVANT Mobile",
+    "slug": "elevant-mobile-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/elevant-symbol.png",
+    "scheme": "elevant",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.elevant.mobileagent"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/elevant-symbol.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.elevant.mobileagent"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/elevant-symbol.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/elevant-logo.jpeg",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

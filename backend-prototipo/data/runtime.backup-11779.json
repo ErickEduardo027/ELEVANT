@@ -1,0 +1,402 @@
+{
+  "schemaVersion": 3,
+  "createdAt": "2026-08-13T18:42:35.891Z",
+  "updatedAt": "2026-08-13T23:20:42.628Z",
+  "users": [
+    {
+      "id": "USR-ADMIN-OCC",
+      "email": "admin@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Laisha Ramírez",
+      "role": "ADMIN_OCC",
+      "roleLabel": "Administrador OCC",
+      "active": true
+    },
+    {
+      "id": "USR-GESTION-HUMANA",
+      "email": "gestionhumana@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Camila Reyes",
+      "role": "GESTION_HUMANA",
+      "roleLabel": "Gestión Humana",
+      "active": true
+    },
+    {
+      "id": "USR-CONTRATOS",
+      "email": "contratos@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Marcos Silva",
+      "role": "CONTRATOS",
+      "roleLabel": "Contratos",
+      "active": true
+    },
+    {
+      "id": "USR-FINANZAS",
+      "email": "finanzas@elevant.test",
+      "password": "Elevant2026!",
+      "name": "Elena Rojas",
+      "role": "FINANZAS",
+      "roleLabel": "Finanzas",
+      "active": true
+    },
+    {
+      "id": "USR-AGENT-1786647091869-s5yc47",
+      "personnelId": "PER-1786647091869-ose9j1",
+      "email": "eliezercalric535@gmail.com",
+      "password": "Elevant2026!",
+      "name": "Eliezer Calderón",
+      "role": "AGENTE_RAMPA",
+      "roleLabel": "Agente de Rampa",
+      "active": true
+    }
+  ],
+  "airlines": [],
+  "serviceRequests": [
+    {
+      "id": "SOL-1786648692273-5vyrqo",
+      "airline": "Aviam",
+      "contactName": "Eliezer",
+      "contactEmail": "elie@gmail.com",
+      "type": "affiliation",
+      "requestedService": "Todos los servicio",
+      "receivedAt": "2026-08-13T19:18:12.273Z",
+      "status": "approved",
+      "decisionNote": "Chek",
+      "notifiedAt": "2026-08-13T19:19:46.142Z",
+      "details": {
+        "schemaVersion": 1,
+        "id": "aff_c520b729-96b5-47c9-af35-1d4d698a6b3b",
+        "reference": "ELV-AFL-20260813-16B9AF",
+        "status": "received",
+        "submittedAt": "2026-08-13T19:18:11.940Z",
+        "airline": {
+          "legalName": "Hola",
+          "displayName": "Aviam",
+          "iataCode": "34",
+          "icaoCode": "343",
+          "country": "Estados Unidos"
+        },
+        "stations": {
+          "primary": "PJU",
+          "requested": [
+            "PJU"
+          ]
+        },
+        "representative": {
+          "fullName": "Eliezer",
+          "title": "Gerente",
+          "email": "elie@gmail.com",
+          "phone": "17868172108"
+        },
+        "servicesOfInterest": "Todos los servicio"
+      },
+      "contractId": "CTR-2026-001"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CTR-2026-001",
+      "requestId": "SOL-1786648692273-5vyrqo",
+      "airline": "Aviam",
+      "airlineCode": "232",
+      "contractType": "temporary",
+      "startDate": "2026-08-13",
+      "endDate": "2026-08-16",
+      "conditions": "Todo",
+      "statusOverride": null,
+      "createdAt": "2026-08-13T21:27:10.709Z"
+    }
+  ],
+  "contractServices": [
+    {
+      "id": "SRV-001",
+      "contractId": "CTR-2026-001",
+      "airline": "Aviam",
+      "name": "Catering",
+      "rate": 25,
+      "currency": "USD",
+      "billingUnit": "Por operación",
+      "startDate": "2026-08-13",
+      "endDate": "2026-08-16",
+      "active": true,
+      "createdAt": "2026-08-13T21:28:08.301Z"
+    }
+  ],
+  "personnel": [
+    {
+      "identity": {
+        "id": "PER-1786647091869-ose9j1",
+        "avatarUrl": "",
+        "firstName": "Eliezer",
+        "lastName": "Calderón",
+        "email": "eliezercalric535@gmail.com",
+        "phone": "",
+        "identificationType": "Cédula",
+        "identificationNumber": ""
+      },
+      "account": {
+        "id": "ACC-1786647091869-jw82wi",
+        "userId": "PER-1786647091869-ose9j1",
+        "status": "active",
+        "createdAt": "2026-08-13T18:51:31.869Z",
+        "lastLoginAt": null,
+        "invitationStatus": "accepted",
+        "invitationSentAt": "2026-08-13T18:51:31.869Z"
+      },
+      "access": {
+        "portal": "ramp_mobile_app",
+        "roleId": "role-agente-rampa",
+        "roleName": "Agente de Rampa",
+        "permissions": [
+          "Consultar",
+          "Crear"
+        ]
+      },
+      "userType": "ramp_agent",
+      "rampAgent": {
+        "employeeNumber": "11",
+        "terminals": [
+          "A"
+        ],
+        "category": "Agente de Rampa",
+        "hireDate": "2021-09-09",
+        "supervisorName": ""
+      }
+    }
+  ],
+  "flights": [
+    {
+      "id": "FLT-1786663221135-pujs56",
+      "contractId": "CTR-2026-001",
+      "airlineIata": "232",
+      "airlineName": "Aviam",
+      "flightNumber": "A53",
+      "status": "scheduled",
+      "scheduledTime": "2026-08-13T19:25",
+      "estimatedTime": "2026-08-13T19:25",
+      "origin": "PRD",
+      "destination": "PUJ",
+      "aircraftType": "Boing 9000",
+      "position": "A2",
+      "station": "PUJ",
+      "supervisor": null,
+      "agents": [
+        "Eliezer Calderón"
+      ],
+      "agentIds": [
+        "PER-1786647091869-ose9j1"
+      ],
+      "teams": [],
+      "services": [
+        "Catering"
+      ],
+      "serviceIds": [
+        "SRV-001"
+      ],
+      "conflict": null,
+      "observations": "Hola",
+      "history": [
+        {
+          "at": "2026-08-13T23:20:42.628Z",
+          "note": "Asignado a Eliezer Calderón y enviado al móvil"
+        },
+        {
+          "at": "2026-08-13T23:20:21.135Z",
+          "note": "Vuelo registrado por OCC"
+        }
+      ],
+      "operationStatus": "pending",
+      "createdAt": "2026-08-13T23:20:21.135Z"
+    },
+    {
+      "id": "FLT-1786662973275-qoes0v",
+      "contractId": "CTR-2026-001",
+      "airlineIata": "232",
+      "airlineName": "Aviam",
+      "flightNumber": "283",
+      "status": "scheduled",
+      "scheduledTime": "2026-08-13T19:12",
+      "estimatedTime": "2026-08-13T19:12",
+      "origin": "MEX",
+      "destination": "PUJ",
+      "aircraftType": "Boing 737",
+      "position": "A2",
+      "station": "PUJ",
+      "supervisor": null,
+      "agents": [
+        "Eliezer Calderón"
+      ],
+      "agentIds": [
+        "PER-1786647091869-ose9j1"
+      ],
+      "teams": [],
+      "services": [
+        "Catering"
+      ],
+      "serviceIds": [
+        "SRV-001"
+      ],
+      "conflict": null,
+      "observations": "Es rojo",
+      "history": [
+        {
+          "at": "2026-08-13T23:17:29.948Z",
+          "note": "Asignado a Eliezer Calderón y enviado al móvil"
+        },
+        {
+          "at": "2026-08-13T23:16:13.275Z",
+          "note": "Vuelo registrado por OCC"
+        }
+      ],
+      "operationStatus": "pending",
+      "createdAt": "2026-08-13T23:16:13.275Z"
+    }
+  ],
+  "assignments": [
+    {
+      "id": "ASG-1786663242628-70m115",
+      "flightId": "FLT-1786663221135-pujs56",
+      "agentId": "PER-1786647091869-ose9j1",
+      "serviceIds": [
+        "SRV-001"
+      ],
+      "assignedAt": "2026-08-13T23:20:42.628Z"
+    },
+    {
+      "id": "ASG-1786663049948-6vb8et",
+      "flightId": "FLT-1786662973275-qoes0v",
+      "agentId": "PER-1786647091869-ose9j1",
+      "serviceIds": [
+        "SRV-001"
+      ],
+      "assignedAt": "2026-08-13T23:17:29.948Z"
+    }
+  ],
+  "operations": [],
+  "incidents": [],
+  "reports": [],
+  "preinvoices": [],
+  "chats": [],
+  "messages": [],
+  "notifications": [],
+  "audit": [
+    {
+      "id": "AUD-1786663242628-qc4iha",
+      "action": "flight_assigned",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "FLT-1786663221135-pujs56",
+      "occurredAt": "2026-08-13T23:20:42.628Z",
+      "detail": "PER-1786647091869-ose9j1"
+    },
+    {
+      "id": "AUD-1786663221135-flo477",
+      "action": "flight_created",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "FLT-1786663221135-pujs56",
+      "occurredAt": "2026-08-13T23:20:21.135Z",
+      "detail": "CTR-2026-001"
+    },
+    {
+      "id": "AUD-1786663049948-6fbvyn",
+      "action": "flight_assigned",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "FLT-1786662973275-qoes0v",
+      "occurredAt": "2026-08-13T23:17:29.948Z",
+      "detail": "PER-1786647091869-ose9j1"
+    },
+    {
+      "id": "AUD-1786662973275-13rylw",
+      "action": "flight_created",
+      "actorId": "USR-ADMIN-OCC",
+      "actorName": "Laisha Ramírez",
+      "affectedUserId": "FLT-1786662973275-qoes0v",
+      "occurredAt": "2026-08-13T23:16:13.275Z",
+      "detail": "CTR-2026-001"
+    },
+    {
+      "id": "AUD-1786656488301-695b9t",
+      "action": "contract_service_created",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "SRV-001",
+      "occurredAt": "2026-08-13T21:28:08.301Z",
+      "detail": "CTR-2026-001"
+    },
+    {
+      "id": "AUD-1786656430710-ydoozh",
+      "action": "contract_created",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "CTR-2026-001",
+      "occurredAt": "2026-08-13T21:27:10.710Z",
+      "detail": "Solicitud SOL-1786648692273-5vyrqo"
+    },
+    {
+      "id": "AUD-1786656230627-260jsv",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T21:23:50.627Z"
+    },
+    {
+      "id": "AUD-1786656224993-w5xeos",
+      "action": "account_reset-access",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T21:23:44.993Z"
+    },
+    {
+      "id": "AUD-1786656217783-7wxprz",
+      "action": "account_deactivate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T21:23:37.783Z"
+    },
+    {
+      "id": "AUD-1786648786142-xczwqr",
+      "action": "service_request_resolve",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "SOL-1786648692273-5vyrqo",
+      "occurredAt": "2026-08-13T19:19:46.142Z"
+    },
+    {
+      "id": "AUD-1786648759737-sgmk10",
+      "action": "service_request_review",
+      "actorId": "USR-CONTRATOS",
+      "actorName": "Marcos Silva",
+      "affectedUserId": "SOL-1786648692273-5vyrqo",
+      "occurredAt": "2026-08-13T19:19:19.737Z"
+    },
+    {
+      "id": "AUD-1786647698121-tklzkt",
+      "action": "account_activate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T19:01:38.122Z"
+    },
+    {
+      "id": "AUD-1786647662749-ft38o3",
+      "action": "account_deactivate",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T19:01:02.749Z"
+    },
+    {
+      "id": "AUD-1786647091869-o136pm",
+      "action": "account_created",
+      "actorId": "USR-GESTION-HUMANA",
+      "actorName": "Camila Reyes",
+      "affectedUserId": "PER-1786647091869-ose9j1",
+      "occurredAt": "2026-08-13T18:51:31.869Z"
+    }
+  ]
+}
