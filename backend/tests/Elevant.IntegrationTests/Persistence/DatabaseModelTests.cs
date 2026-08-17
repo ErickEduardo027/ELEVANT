@@ -1,5 +1,7 @@
+using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
@@ -34,6 +36,9 @@ public sealed class DatabaseModelTests
     [InlineData(typeof(FlightLeg), "ops", "flight_legs")]
     [InlineData(typeof(OperationAgentAssignment), "ops", "operation_agent_assignments")]
     [InlineData(typeof(OperationChecklist), "ops", "operation_checklists")]
+    [InlineData(typeof(MobileDevice), "integration", "mobile_devices")]
+    [InlineData(typeof(MobileCommandReceipt), "integration", "mobile_command_receipts")]
+    [InlineData(typeof(AuditEntry), "audit", "audit_entries")]
     public void CanonicalEntitiesUseExpectedSchemaAndTable(Type entityType, string schema, string table)
     {
         using var context = CreateContext();
@@ -122,5 +127,31 @@ public sealed class DatabaseModelTests
         Assert.Equal(4, unitPrice.GetScale());
         Assert.NotNull(currency);
         Assert.Equal("char(3)", currency.GetColumnType());
+    }
+
+    [Fact]
+    public void MobileIdempotencyIsScopedToTheDevice()
+    {
+        using var context = CreateContext();
+        var receipt = context.Model.FindEntityType(typeof(MobileCommandReceipt));
+
+        Assert.NotNull(receipt);
+        Assert.Contains(
+            receipt.GetIndexes(),
+            index => index.IsUnique && index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(MobileCommandReceipt.MobileDeviceId), nameof(MobileCommandReceipt.IdempotencyKey)]));
+    }
+
+    [Fact]
+    public void AuditEntryCarriesTenantStationEntityAndCorrelationContext()
+    {
+        using var context = CreateContext();
+        var auditEntry = context.Model.FindEntityType(typeof(AuditEntry));
+
+        Assert.NotNull(auditEntry);
+        Assert.NotNull(auditEntry.FindProperty(nameof(AuditEntry.OrganizationId)));
+        Assert.NotNull(auditEntry.FindProperty(nameof(AuditEntry.StationId)));
+        Assert.NotNull(auditEntry.FindProperty(nameof(AuditEntry.EntityPublicId)));
+        Assert.NotNull(auditEntry.FindProperty(nameof(AuditEntry.CorrelationId)));
     }
 }
