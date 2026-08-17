@@ -16,7 +16,9 @@ public sealed class DatabaseModelTests
     private static ElevantDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ElevantDbContext>()
-            .UseSqlServer("Server=localhost;Initial Catalog=ElevantDevelopmentDb;Integrated Security=true;")
+            .UseSqlServer(
+                "Server=localhost;Initial Catalog=ElevantDevelopmentDb;Integrated Security=true;",
+                ElevantSqlServerOptions.Configure)
             .Options;
 
         return new ElevantDbContext(options);

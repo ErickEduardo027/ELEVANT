@@ -25,17 +25,9 @@ public sealed class ElevantDbContextFactory : IDesignTimeDbContextFactory<Elevan
             Environment.GetEnvironmentVariable(DatabaseTargetGuard.ProductionConfirmationVariable));
 
         var options = new DbContextOptionsBuilder<ElevantDbContext>()
-            .UseSqlServer(connectionString, ConfigureSqlServer)
+            .UseSqlServer(connectionString, ElevantSqlServerOptions.Configure)
             .Options;
 
         return new ElevantDbContext(options);
-    }
-
-    private static void ConfigureSqlServer(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder options)
-    {
-        options.MigrationsAssembly(typeof(ElevantDbContext).Assembly.FullName);
-        options.MigrationsHistoryTable("__EFMigrationsHistory", "infra");
-        options.UseCompatibilityLevel(160);
-        options.EnableRetryOnFailure();
     }
 }
