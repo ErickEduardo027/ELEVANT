@@ -11,13 +11,18 @@ public abstract class Entity<TId>
 {
     private readonly List<IDomainEvent> _domainEvents = [];
 
+    /// <summary>Initializes an entity that will receive its identity from persistence.</summary>
+    protected Entity()
+    {
+    }
+
     protected Entity(TId id)
     {
         Id = id;
     }
 
     /// <summary>Gets the entity identity.</summary>
-    public TId Id { get; protected init; }
+    public TId Id { get; protected set; } = default!;
 
     /// <summary>Gets the events raised since the entity was loaded or last cleared.</summary>
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();

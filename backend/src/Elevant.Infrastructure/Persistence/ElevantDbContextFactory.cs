@@ -19,6 +19,11 @@ public sealed class ElevantDbContextFactory : IDesignTimeDbContextFactory<Elevan
                 $"Set {ConnectionStringEnvironmentVariable} before running an EF Core design command.");
         }
 
+        DatabaseTargetGuard.Validate(
+            connectionString,
+            Environment.GetEnvironmentVariable(DatabaseTargetGuard.EnvironmentVariable),
+            Environment.GetEnvironmentVariable(DatabaseTargetGuard.ProductionConfirmationVariable));
+
         var options = new DbContextOptionsBuilder<ElevantDbContext>()
             .UseSqlServer(connectionString, ConfigureSqlServer)
             .Options;
@@ -29,6 +34,7 @@ public sealed class ElevantDbContextFactory : IDesignTimeDbContextFactory<Elevan
     private static void ConfigureSqlServer(Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder options)
     {
         options.MigrationsAssembly(typeof(ElevantDbContext).Assembly.FullName);
+        options.MigrationsHistoryTable("__EFMigrationsHistory", "infra");
         options.UseCompatibilityLevel(160);
         options.EnableRetryOnFailure();
     }
