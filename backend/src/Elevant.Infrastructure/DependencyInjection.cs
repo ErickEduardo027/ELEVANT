@@ -28,12 +28,7 @@ public static class DependencyInjection
         }
 
         services.AddDbContext<ElevantDbContext>(options =>
-            options.UseSqlServer(connectionString, sqlServerOptions =>
-            {
-                sqlServerOptions.MigrationsAssembly(typeof(ElevantDbContext).Assembly.FullName);
-                sqlServerOptions.UseCompatibilityLevel(160);
-                sqlServerOptions.EnableRetryOnFailure();
-            }));
+            options.UseSqlServer(connectionString, ElevantSqlServerOptions.Configure));
 
         services
             .AddHealthChecks()
