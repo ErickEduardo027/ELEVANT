@@ -1,0 +1,43 @@
+name: elevant-dev-database-release
+
+services:
+  migrator:
+    image: "${ELEVANT_DB_RELEASE_IMAGE:?Set an immutable GHCR database-release image including @sha256 digest}"
+    pull_policy: always
+    command: ["migrate"]
+    environment:
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "${ELEVANT_MIGRATOR_CONNECTION_STRING:?ELEVANT_MIGRATOR_CONNECTION_STRING must be set}"
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: &rotated-logs
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - data
+
+  seeder-development:
+    image: "${ELEVANT_DB_RELEASE_IMAGE:?Set an immutable GHCR database-release image including @sha256 digest}"
+    pull_policy: always
+    command: ["seed-development"]
+    environment:
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "${ELEVANT_SEEDER_CONNECTION_STRING:?ELEVANT_SEEDER_CONNECTION_STRING must be set}"
+      ELEVANT_DEV_SEED_ACCOUNT_PASSWORD: "${ELEVANT_DEV_SEED_ACCOUNT_PASSWORD:?ELEVANT_DEV_SEED_ACCOUNT_PASSWORD must be set}"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+networks:
+  data:
+    external: true
+    name: elevant-dev-data

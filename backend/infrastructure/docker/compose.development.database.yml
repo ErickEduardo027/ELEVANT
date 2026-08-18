@@ -1,0 +1,154 @@
+name: elevant-dev-database
+
+services:
+  backup-storage-init:
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    user: "0:0"
+    command: ["initialize-backup-storage"]
+    volumes:
+      - sql-backups:/var/opt/mssql/backups
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.10
+    logging: &rotated-logs
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    hostname: elevant-dev-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}"
+      MSSQL_MEMORY_LIMIT_MB: "3072"
+      ELEVANT_DB_HEALTH_PASSWORD: "${ELEVANT_DB_HEALTH_PASSWORD:?ELEVANT_DB_HEALTH_PASSWORD must be set}"
+      TZ: "UTC"
+    volumes:
+      - sql-data:/var/opt/mssql
+      - sql-backups:/var/opt/mssql/backups
+    depends_on:
+      backup-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          SQLCMD=/opt/mssql-tools18/bin/sqlcmd;
+          if [ ! -x "$$SQLCMD" ]; then SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi;
+          "$$SQLCMD" -S localhost -U elevant_dev_health -P "$${ELEVANT_DB_HEALTH_PASSWORD}"
+          -C -b -Q "SELECT 1" -o /dev/null
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    stop_grace_period: 90s
+    mem_limit: 4g
+    cpus: 1.25
+    shm_size: 512m
+    logging: *rotated-logs
+    networks:
+      data:
+        aliases:
+          - elevant-dev-sql
+
+  provisioner:
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    command: ["provision-development"]
+    environment: &database-credentials
+      ELEVANT_SQL_SERVER: "elevant-dev-sql"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set}"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+      ELEVANT_DB_MIGRATOR_PASSWORD: "${ELEVANT_DB_MIGRATOR_PASSWORD:?ELEVANT_DB_MIGRATOR_PASSWORD must be set}"
+      ELEVANT_DB_APP_PASSWORD: "${ELEVANT_DB_APP_PASSWORD:?ELEVANT_DB_APP_PASSWORD must be set}"
+      ELEVANT_DB_SEEDER_PASSWORD: "${ELEVANT_DB_SEEDER_PASSWORD:?ELEVANT_DB_SEEDER_PASSWORD must be set}"
+      ELEVANT_DB_HEALTH_PASSWORD: "${ELEVANT_DB_HEALTH_PASSWORD:?ELEVANT_DB_HEALTH_PASSWORD must be set}"
+      ELEVANT_DB_BACKUP_PASSWORD: "${ELEVANT_DB_BACKUP_PASSWORD:?ELEVANT_DB_BACKUP_PASSWORD must be set}"
+    depends_on:
+      sqlserver:
+        condition: service_started
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+  backup:
+    profiles: ["operations"]
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    command: ["backup-development"]
+    environment:
+      ELEVANT_SQL_SERVER: "elevant-dev-sql"
+      ELEVANT_DB_BACKUP_PASSWORD: "${ELEVANT_DB_BACKUP_PASSWORD:?ELEVANT_DB_BACKUP_PASSWORD must be set}"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+    volumes:
+      - sql-backups:/var/opt/mssql/backups
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+  restore-check:
+    profiles: ["operations"]
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    command: ["restore-check-development"]
+    environment:
+      ELEVANT_SQL_SERVER: "elevant-dev-sql"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+    volumes:
+      - sql-backups:/var/opt/mssql/backups:ro
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+  verify-development:
+    profiles: ["operations"]
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    command: ["verify-development"]
+    environment:
+      ELEVANT_SQL_SERVER: "elevant-dev-sql"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+volumes:
+  sql-data:
+    external: true
+    name: elevant-dev-sql-data
+  sql-backups:
+    external: true
+    name: elevant-dev-sql-backups
+
+networks:
+  data:
+    external: true
+    name: elevant-dev-data

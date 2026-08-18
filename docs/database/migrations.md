@@ -1,30 +1,76 @@
 # Migraciones de base de datos
 
-Las migraciones de EF Core residen en Elevant.Infrastructure y se crean con la herramienta local fijada por el repositorio. La API no ejecuta `Database.Migrate()` al arrancar.
+EF Core es la única fuente del esquema normal. Las migraciones residen en `backend/src/Elevant.Infrastructure/Persistence/Migrations`; la API nunca ejecuta `Migrate`, `EnsureCreated` ni seed al arrancar.
 
-`ElevantDevelopmentDb` y la futura `ElevantProductionDb` aplican la misma secuencia de migraciones para conservar el esquema. Sus datos, credenciales, instancias y volúmenes permanecen separados.
+Development y Production aplican la misma cadena. Se separan por instancia, nombre, marcador, credenciales, volumen, datos y backups. Una migración no contiene DML de negocio; Production queda vacía salvo marcador e historial técnicos.
 
 ## Crear una migración
 
-1. Confirmar que el cambio de modelo corresponde a un requisito aprobado.
-2. Configurar una conexión local desechable mediante variable de ambiente.
-3. Ejecutar `backend/scripts/add-migration.ps1` con un nombre descriptivo.
-4. Revisar archivos generados y SQL resultante.
-5. Probar avance en una base limpia y en una base con el esquema anterior.
-6. Añadir pruebas y documentar compatibilidad/rollback.
+Desde la raíz:
 
-## Aplicar una migración
+```powershell
+$env:ELEVANT_DATABASE_ENVIRONMENT = 'Development'
+$env:ConnectionStrings__ElevantDatabase = 'Server=localhost;Initial Catalog=ElevantDevelopmentDb;Integrated Security=True;TrustServerCertificate=True'
+./backend/scripts/add-migration.ps1 -Name V1_06_DescriptiveName
+```
 
-Usar `backend/scripts/update-database.ps1` indicando el ambiente. Production requiere el switch y la confirmación textual definidos por el script. Una aprobación de pull request no sustituye la autorización operativa de aplicar el esquema.
+El script fuerza Development y comprueba que no quede drift. Después:
 
-## Despliegue compatible
+1. revisar `Up`, `Down`, designer y snapshot;
+2. confirmar nombres, precisión, nullability, índices, foreign keys y ausencia de cascadas/DML;
+3. generar SQL idempotente;
+4. probar una base limpia y upgrade desde la última migración publicada;
+5. probar que Production migra con cero filas de negocio;
+6. documentar compatibilidad y recuperación.
 
-Para cambios destructivos aplicar expand/contract:
+No se edita `infra.__EFMigrationsHistory` a mano ni se reutiliza el nombre/ID de una migración publicada.
 
-1. agregar estructuras compatibles;
-2. desplegar código que lea/escriba ambas formas si hace falta;
-3. migrar datos y verificar;
-4. retirar el uso antiguo;
-5. eliminar la estructura en una liberación posterior.
+## Aplicación local administrada
 
-Los scripts no muestran cadenas de conexión. Ante fallo, detener, preservar evidencia segura y seguir el plan de recuperación; no editar manualmente la tabla de historial salvo procedimiento aprobado.
+Primero compile Release. Configure una cadena con credenciales de migración y el nombre exacto. Development:
+
+```powershell
+Push-Location backend
+dotnet build Elevant.sln --configuration Release
+$env:ConnectionStrings__ElevantDatabase = 'REPLACE_WITH_DEVELOPMENT_MIGRATOR_CONNECTION'
+./scripts/update-database.ps1 -Environment Development
+Pop-Location
+```
+
+Production requiere además `-AllowProduction` y escribir exactamente `MIGRATE ElevantProductionDb SCHEMA ONLY`. El script configura la segunda guarda, verifica nombre + marcador antes y después, y no ejecuta seed:
+
+```powershell
+./backend/scripts/update-database.ps1 -Environment Production -AllowProduction
+```
+
+Esto es una herramienta de administrador local. En Dokploy se usa la imagen `elevant-db-release` con bundle EF inmutable, no el SDK ni el checkout del repositorio.
+
+## Bootstrap
+
+- Development: `database/scripts/bootstrap/provision-development.sql`, ejecutado por `elevant-db-ops`.
+- Production futura: `database/scripts/bootstrap/initialize-production.sql`, manual, con `sqlcmd -b -v CONFIRM_PRODUCTION_DATABASE=ElevantProductionDb`.
+
+El bootstrap crea la base y su marcador antes de EF. No adopta silenciosamente una base existente sin marcador. El registro técnico de `database_instances` no es un seed de negocio.
+
+## Release remoto Development
+
+1. CI prueba migraciones contra SQL Server 2022 y construye el bundle.
+2. CI ejecuta provisionamiento -> migración -> seed en una instancia efímera.
+3. En un push válido a `Development`, publica imágenes GHCR con tag SHA.
+4. El operador resuelve ese tag a digest y actualiza `ELEVANT_DB_RELEASE_IMAGE`.
+5. Dokploy ejecuta `compose.development.release.yml`: migrator y luego seeder.
+6. Solo tras ambos códigos cero se despliega/actualiza la API compatible.
+
+La referencia mutable `:development` sirve para descubrimiento; Dokploy debe fijar `@sha256:...`.
+
+## Cambios incompatibles
+
+Use expand/contract:
+
+1. agregar columnas/tablas compatibles;
+2. desplegar código que tolere la forma anterior y nueva;
+3. completar backfill con un job separado, reanudable y medible;
+4. cambiar lecturas y verificar;
+5. retirar estructuras antiguas en otro release.
+
+Revertir una imagen no revierte el esquema. Nunca improvise un `Down` destructivo en una base compartida. Preserve backup y evidencia, detenga la promoción y siga el procedimiento de recuperación aprobado.

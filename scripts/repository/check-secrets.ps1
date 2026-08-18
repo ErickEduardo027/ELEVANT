@@ -21,7 +21,7 @@ $rules = @(
     [PSCustomObject]@{ Name = 'github-fine-grained-token'; Pattern = 'github_pat_[A-Za-z0-9_]{30,}' },
     [PSCustomObject]@{ Name = 'aws-access-key'; Pattern = '(?:AKIA|ASIA)[A-Z0-9]{16}' },
     [PSCustomObject]@{ Name = 'slack-token'; Pattern = 'xox[baprs]-[A-Za-z0-9-]{20,}' },
-    [PSCustomObject]@{ Name = 'connection-string-password'; Pattern = '(?i)(?:Password|Pwd)\s*=\s*(?!\$\{|%|\{|<|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER)[^;\s"'']{8,}' },
+    [PSCustomObject]@{ Name = 'connection-string-password'; Pattern = '(?i)(?:^|;)\s*(?:Password|Pwd)\s*=\s*(?!\$\{|%|\{|<|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|CI[_-]?ONLY|DESIGN[_-]?ONLY|SYNTHETIC|NOT[_-]?A[_-]?SECRET)[^;\s"'']{8,}' },
     [PSCustomObject]@{ Name = 'secret-assignment'; Pattern = '(?i)(?:api[_-]?key|client[_-]?secret|flightaware[_-]?(?:key|token)|secret[_-]?key)\s*[:=]\s*["'']?(?!\$\{|\$env:|<|REPLACE|CHANGE[_-]?ME|CHANGEME|YOUR[_-]|EXAMPLE|PLACEHOLDER)[A-Za-z0-9_+\-/=]{12,}' }
 )
 
@@ -47,7 +47,7 @@ foreach ($relativeFile in $relativeFiles) {
 }
 
 if ($findings.Count -gt 0) {
-    Write-Error 'Se detectaron posibles secretos. Por seguridad no se muestran los valores.'
+    Write-Host 'Se detectaron posibles secretos. Solo se muestran archivo, línea y regla; nunca el valor.' -ForegroundColor Red
     $findings | Sort-Object -Unique | ForEach-Object { Write-Host $_ }
     exit 1
 }

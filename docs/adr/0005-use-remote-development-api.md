@@ -1,29 +1,24 @@
-# ADR-0005: Usar una API remota de Development para integración de clientes
+# ADR-0005: API remota de Development
 
 ## Estado
 
-Accepted — 2026-07-18.
+Accepted — 2026-07-18; endpoint/topología amended by ADR-0008 — 2026-08-17.
 
 ## Contexto
 
-Web y móvil necesitan integrar contra un backend accesible desde navegadores, emuladores y tablets. Obligar a cada persona a ejecutar SQL Server e integraciones completas ralentiza el trabajo; usar Production para pruebas pondría datos y disponibilidad en riesgo. Los mocks siguen siendo útiles para estados deterministas, pero no validan red, CORS, serialización ni despliegue.
+Las dos webs y Mobile necesitan integrar contra un backend accesible desde navegadores y tablets. Solo mocks no valida HTTPS, CORS, serialización o deployment; usar Production sería inseguro.
 
 ## Decisión
 
-Proveer una API remota de Development aislada como destino común de integración en `https://api-dev.elevant.com`. Los clientes conservan adaptadores mock reemplazables para desarrollo y pruebas específicas.
+Mantener una Elevant API remota Development aislada como destino común, además de mocks reemplazables. Development usa datos sintéticos, credenciales/volúmenes/backups propios y no comparte recursos con Production.
 
-Development usa datos sintéticos, credenciales propias, CORS explícito y observabilidad etiquetada. No comparte base, volumen, uploads, backups o secretos con Production. Internamente la API usa `ASPNETCORE_ENVIRONMENT=Testing`.
+La URL original `api-dev.elevant.com` no está disponible todavía. ADR-0008 define temporalmente Tailscale Services/HTTPS (`elevant-dev-api.<tailnet>.ts.net`) y `ASPNETCORE_ENVIRONMENT=Development` hasta disponer de dominio real.
 
 ## Consecuencias
 
-- Web y tablets pueden validar el contrato sin ejecutar todo el backend localmente.
-- El equipo detecta problemas reales de HTTPS, CORS y serialización.
-- El ambiente requiere mantenimiento, datos sintéticos estables y coordinación ante cambios incompatibles.
-- Los mocks continúan necesarios para fallos y estados difíciles de reproducir.
-- La disponibilidad de Development no convierte el ambiente en una dependencia de tests unitarios o CI determinista.
+- clientes validan contrato/red sin ejecutar SQL local;
+- el ambiente requiere operación, fixtures estables y compatibilidad;
+- mocks siguen necesarios para estados deterministas/fallos;
+- disponibilidad Development no convierte el VPS en dependencia de tests unitarios/CI.
 
-## Alternativas consideradas
-
-- Solo backend local: útil para backend, insuficiente para colaboración y dispositivos remotos.
-- Solo mocks: rápido, pero oculta incompatibilidades de transporte y contrato.
-- Usar Production: rechazado por riesgo de seguridad, datos y operación.
+Usar Production o exponer 1433 fueron rechazados.

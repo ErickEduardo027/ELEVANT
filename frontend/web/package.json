@@ -2,7 +2,7 @@
   "name": "elevant-web-preview",
   "private": true,
   "version": "0.0.0",
-  "description": "Vite dev preview only — not the project's chosen framework. See README.md.",
+  "description": "Internal AVIAM operations application built with Vite and React.",
   "type": "module",
   "scripts": {
     "dev": "vite",

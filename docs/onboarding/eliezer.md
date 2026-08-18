@@ -1,23 +1,22 @@
-# Onboarding de Eliezer — Mobile Agent
+# Onboarding Mobile Agent
 
-Mobile Agent es un esqueleto para una futura aplicación Expo instalada en tablet. La prioridad técnica es mantener seguridad y comportamiento comprensible con conectividad intermitente.
+`frontend/mobile-agent` ya es una app Expo 54/React Native para tablet. Lea `AGENTS.md`, `frontend/AGENTS.md`, su README y la guía API.
 
 ## Primer recorrido
 
-1. Leer `frontend/mobile-agent/README.md` y la guía de consumidores API.
-2. Revisar separación entre REST como fuente de verdad y SignalR como aviso.
-3. Modelar en papel estados de outbox, reintentos e idempotencia.
-4. Identificar qué variables `EXPO_PUBLIC_*` son visibles dentro de la APK.
-5. Revisar permisos de cámara, evidencia y almacenamiento seguro.
+1. Ejecutar `npm install`, `npm run lint` y abrir en dispositivo representativo.
+2. Recorrer login, vuelos/tareas, operación, checklist, incidencias y sync.
+3. Identificar llamadas actuales al backend prototipo y datos locales.
+4. Revisar device ID + idempotency key y estados de outbox.
+5. Revisar permisos de cámara y almacenamiento seguro.
 
-## Al iniciar Expo
+## Reglas
 
-- fijar versión de Node, pnpm, Expo y Expo Router;
-- probar desde una tablet y una red representativas;
-- encapsular capacidades nativas para poder simularlas;
-- separar identificador, endpoint, firma y almacenamiento de Development/Production;
-- no guardar tokens en configuración pública ni logs.
+- `EXPO_PUBLIC_*` es visible en APK;
+- REST es verdad; SignalR solo avisa;
+- servidor valida agente/estación, no IDs enviados por dispositivo;
+- reintentos no duplican efectos;
+- claves de firma/tokens no se versionan;
+- evidencias reales esperan object storage/política.
 
-## Verificación
-
-Poder demostrar una operación pendiente que sobrevive al reinicio, una reconexión sin duplicar efectos y un permiso de cámara rechazado sin bloquear el resto de la aplicación.
+La entrega inicial será APK Development por canal controlado. Mobile no se aloja en Dokploy; la tablet usa HTTPS/Tailscale hacia la misma API.

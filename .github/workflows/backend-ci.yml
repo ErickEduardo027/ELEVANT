@@ -27,7 +27,22 @@ jobs:
   build-and-test:
     name: Restore, build and test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: "Developer"
+          MSSQL_SA_PASSWORD: "CI-Only_StrongPassword!2026"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'CI-Only_StrongPassword!2026' -C -b -Q 'SELECT 1' -o /dev/null"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
     defaults:
       run:
         working-directory: backend
@@ -35,12 +50,13 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       DOTNET_NOLOGO: "1"
       NUGET_XMLDOC_MODE: skip
+      ELEVANT_TEST_SQLSERVER_MASTER: "Server=localhost,1433;Initial Catalog=master;User ID=sa;Password=CI-Only_StrongPassword!2026;Encrypt=True;TrustServerCertificate=True"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: backend/global.json
           cache: true
@@ -58,20 +74,176 @@ jobs:
       - name: Test
         run: dotnet test Elevant.sln --configuration Release --no-build --logger trx --results-directory TestResults
 
-      - name: Validate Development Compose
+      - name: Check migration snapshot
         env:
-          MSSQL_SA_PASSWORD: REPLACE_ME_CI_StrongPassword123!
-          ELEVANT_DATABASE_CONNECTION_STRING: Server=sqlserver,1433;Database=ElevantDevelopmentDb;User Id=sa;Password=REPLACE_ME_CI_StrongPassword123!;Encrypt=True;TrustServerCertificate=True
-          CORS_ALLOWED_ORIGIN_0: http://localhost:3000
-          DOKPLOY_NETWORK_NAME: ci-proxy
-          FORWARDED_HEADERS_KNOWN_NETWORK_0: 172.30.0.0/16
-        run: docker compose -f infrastructure/docker/compose.development.yml config --quiet
+          ConnectionStrings__ElevantDatabase: "Server=localhost,1433;Initial Catalog=ElevantDevelopmentDb;User ID=sa;Password=CI-Only_StrongPassword!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_DATABASE_ENVIRONMENT: Development
+        run: >-
+          dotnet ef migrations has-pending-model-changes
+          --project src/Elevant.Infrastructure
+          --startup-project src/Elevant.Api
+          --context ElevantDbContext
+          --configuration Release
+          --no-build
+
+      - name: Generate reviewable idempotent SQL
+        env:
+          ConnectionStrings__ElevantDatabase: "Server=localhost,1433;Initial Catalog=ElevantDevelopmentDb;User ID=sa;Password=CI-Only_StrongPassword!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_DATABASE_ENVIRONMENT: Development
+        run: >-
+          dotnet ef migrations script --idempotent
+          --project src/Elevant.Infrastructure
+          --startup-project src/Elevant.Api
+          --context ElevantDbContext
+          --configuration Release
+          --no-build
+          --output artifacts/database/elevant-v1-idempotent.sql
+
+      - name: Validate Development database Compose files
+        env:
+          MSSQL_SA_PASSWORD: "CI-Only_StrongPassword!2026"
+          ELEVANT_DB_DBA_PASSWORD: "CI-Only_DbaPassword!2026"
+          ELEVANT_DB_MIGRATOR_PASSWORD: "CI-Only_Migrator!2026"
+          ELEVANT_DB_APP_PASSWORD: "CI-Only_AppPassword!2026"
+          ELEVANT_DB_SEEDER_PASSWORD: "CI-Only_SeederPassword!2026"
+          ELEVANT_DB_HEALTH_PASSWORD: "CI-Only_HealthPassword!2026"
+          ELEVANT_DB_BACKUP_PASSWORD: "CI-Only_BackupPassword!2026"
+          ELEVANT_DB_OPS_IMAGE: "ghcr.io/example/elevant-db-ops@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ELEVANT_DB_RELEASE_IMAGE: "ghcr.io/example/elevant-db-release@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ELEVANT_MIGRATOR_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=CI-Only_Migrator!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_SEEDER_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=CI-Only_SeederPassword!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_DEV_SEED_ACCOUNT_PASSWORD: "CI-Only_AccountPassword!2026"
+        run: |
+          docker compose -f infrastructure/docker/compose.development.database.yml config --quiet
+          docker compose -f infrastructure/docker/compose.development.release.yml config --quiet
+
+      - name: Build database images
+        run: |
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:ci database
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:ci .
+
+      - name: Stop integration SQL Server before isolated certification
+        run: |
+          docker stop "${{ job.services.sqlserver.id }}"
+
+      - name: Certify database containers end to end
+        shell: pwsh
+        run: >-
+          ./scripts/certify-database-containers.ps1
+          -OpsImage elevant-db-ops:ci
+          -ReleaseImage elevant-db-release:ci
+          -ExpectedRevision $env:GITHUB_SHA
+          -ExpectedSource "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: backend-test-results-${{ github.run_id }}
           path: backend/TestResults/**/*.trx
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload migration review artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: database-migration-sql-${{ github.run_id }}
+          path: backend/artifacts/database/elevant-v1-idempotent.sql
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-database-images:
+    name: Rebuild, certify and publish database images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/Development'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build publishable database images
+        run: |
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:publish database
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:publish .
+
+      - name: Certify the exact publishable images
+        shell: pwsh
+        run: >-
+          ./scripts/certify-database-containers.ps1
+          -OpsImage elevant-db-ops:publish
+          -ReleaseImage elevant-db-release:publish
+          -ExpectedRevision $env:GITHUB_SHA
+          -ExpectedSource "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+
+      - name: Compute GHCR references
+        id: images
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "ops_repo=ghcr.io/${owner}/elevant-db-ops" >> "$GITHUB_OUTPUT"
+          echo "ops_sha=ghcr.io/${owner}/elevant-db-ops:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ops_alias=ghcr.io/${owner}/elevant-db-ops:development" >> "$GITHUB_OUTPUT"
+          echo "release_repo=ghcr.io/${owner}/elevant-db-release" >> "$GITHUB_OUTPUT"
+          echo "release_sha=ghcr.io/${owner}/elevant-db-release:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "release_alias=ghcr.io/${owner}/elevant-db-release:development" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish and record immutable digests
+        shell: bash
+        env:
+          OPS_REPO: ${{ steps.images.outputs.ops_repo }}
+          OPS_SHA: ${{ steps.images.outputs.ops_sha }}
+          OPS_ALIAS: ${{ steps.images.outputs.ops_alias }}
+          RELEASE_REPO: ${{ steps.images.outputs.release_repo }}
+          RELEASE_SHA: ${{ steps.images.outputs.release_sha }}
+          RELEASE_ALIAS: ${{ steps.images.outputs.release_alias }}
+        run: |
+          set -Eeuo pipefail
+
+          push_and_digest() {
+            local ref="$1"
+            local output digest
+            output="$(docker push "$ref")"
+            printf '%s\n' "$output" >&2
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Could not resolve pushed digest for $ref." >&2
+              exit 1
+            fi
+            printf '%s' "$digest"
+          }
+
+          docker tag elevant-db-ops:publish "$OPS_SHA"
+          docker tag elevant-db-ops:publish "$OPS_ALIAS"
+          docker tag elevant-db-release:publish "$RELEASE_SHA"
+          docker tag elevant-db-release:publish "$RELEASE_ALIAS"
+
+          ops_digest="$(push_and_digest "$OPS_SHA")"
+          ops_alias_digest="$(push_and_digest "$OPS_ALIAS")"
+          release_digest="$(push_and_digest "$RELEASE_SHA")"
+          release_alias_digest="$(push_and_digest "$RELEASE_ALIAS")"
+
+          if [[ "$ops_digest" != "$ops_alias_digest" || "$release_digest" != "$release_alias_digest" ]]; then
+            echo "A mutable alias does not resolve to the certified SHA image." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Certified database images"
+            echo "- \`${OPS_REPO}@${ops_digest}\` (tag \`${OPS_SHA}\`)"
+            echo "- \`${RELEASE_REPO}@${release_digest}\` (tag \`${RELEASE_SHA}\`)"
+            echo "Configure Dokploy only with the digest references above."
+          } >> "$GITHUB_STEP_SUMMARY"

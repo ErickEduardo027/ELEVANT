@@ -1,47 +1,12 @@
 # ELEVANT Public Web
 
-Aplicación web de ELEVANT con landing comercial, afiliación y portal demostrativo responsive para aerolíneas clientes de AVIAM. La sesión, los datos y las acciones de esta entrega son locales: no se conectan a una operación ni a un backend real.
+Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
-## Acceso demostrativo
+La implementación actual es demostrativa: sesión, autorización, documentos, finanzas y la mayoría de los datos viven en adaptadores mock/locales. No representa una conexión segura con la API .NET ni con Production.
 
-- Correo: `operaciones@demo.elevant.test`
-- Contraseña: `ElevantDemo2026!`
-- Rol: `AIRLINE_ADMIN`
-- Aerolínea: ELEVANT Demo Airlines
-- Estación primaria: PUJ
+## Ejecutar y validar
 
-El botón **Usar credenciales de demostración** completa el formulario. La pestaña de afiliación registra una solicitud local con referencia `ELV-AFL-*`; no crea una cuenta ni inicia sesión.
-
-## Rutas
-
-- `/`: landing comercial, recorrido operativo, preview del producto, piloto PUJ y solicitud de demostración.
-- `/login`: acceso mock y solicitud de afiliación.
-- `/portal`: resumen consultivo, KPIs, vuelos activos, cambios y notificaciones.
-- `/portal/vuelos`: búsqueda, filtros y detalle de cada rotación autorizada.
-- `/portal/solicitudes`: creación, consulta y cancelación controlada de solicitudes recibidas.
-- `/portal/contratos`: vigencia, estaciones y tarifarios exportables.
-- `/portal/documentos`: reportes/evidencias autorizados, descarga PDF y auditoría.
-- `/portal/finanzas`: prefacturas, facturas, conciliaciones, disputas y reclamos.
-- `/portal/reportes`: indicadores, gráficas accesibles y exportaciones CSV.
-- `/portal/perfil`: organización, estaciones, permisos, zona horaria y auditoría.
-
-## Alcance del portal mock
-
-La experiencia prioriza consultas. Las únicas escrituras permitidas son solicitudes de servicio y respuestas financieras (aceptar, disputar o reclamar). No permite modificar vuelos, servicios ejecutados, contratos, documentos ni importes.
-
-El repositorio aplica aislamiento por aerolínea y estación, permisos de sesión, procedencia de datos y persistencia por tenant en `localStorage`. Desde Perfil se puede restablecer únicamente el estado demo del portal.
-
-## Experiencia gráfica
-
-El hero de la landing usa Three.js con geometría procedural original y selecciona automáticamente uno de tres niveles:
-
-- `FULL`: escritorio con WebGL, texturas completas y mayor detalle.
-- `LITE`: tablet/móvil o dispositivos con recursos limitados.
-- `STATIC`: movimiento reducido, ahorro de datos, red lenta o WebGL no disponible.
-
-No se descarga ningún modelo 3D ni recurso multimedia desde terceros durante la ejecución. La procedencia y las licencias están documentadas en `public/assets/README.md` y `public/assets/3d/manifest.json`.
-
-## Comandos
+Desde `frontend/public-web`:
 
 ```powershell
 npm install
@@ -49,10 +14,44 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
-npm run test:e2e
 npm run build
 ```
 
-El formulario comercial funciona en modo `preview`: valida los datos en el navegador, no los transmite y comunica ese límite de forma explícita.
+Para E2E, instale los navegadores de Playwright según su documentación y ejecute `npm run test:e2e`.
 
-La suite Playwright cubre escritorio, tablet y móvil, incluidos autenticación, guard, navegación, persistencia, acciones controladas, overflow horizontal y accesibilidad Axe.
+Variables públicas actuales:
+
+```text
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_DEMO_FORM_MODE=preview
+NEXT_PUBLIC_PROTOTYPE_API_URL=http://localhost:4310
+```
+
+`NEXT_PUBLIC_*` queda incorporado al bundle y nunca puede contener secretos. Antes de cambiar código, lea el `AGENTS.md` de esta carpeta y la documentación incluida en la versión instalada de Next.
+
+## Rutas observadas
+
+- `/`: landing, propuesta comercial y solicitud demo.
+- `/login`: acceso mock y afiliación local.
+- `/portal`: resumen y actividad autorizada.
+- `/portal/vuelos` y `/portal/vuelos/[operationId]`: búsqueda y detalle de turnarounds.
+- `/portal/solicitudes`: solicitudes de servicio.
+- `/portal/contratos`: vigencia, estaciones y tarifarios.
+- `/portal/documentos`: documentos/evidencias autorizados.
+- `/portal/finanzas`: prefacturas, facturas, conciliaciones y disputas.
+- `/portal/reportes`: indicadores y exportaciones.
+- `/portal/perfil`: organización, estaciones, permisos y auditoría.
+
+## Contrato de seguridad
+
+El navegador nunca decide el tenant confiable. La API obtiene la organización desde la membresía de la cuenta autenticada y aplica el scope de estación en cada consulta. Un `organizationId`, `airlineId` o `stationId` recibido del cliente se valida contra esa sesión; ocultar una opción o separar claves de `localStorage` no autoriza acceso.
+
+Las escrituras previstas se limitan a capacidades expresas, como solicitudes de servicio y respuestas financieras. El portal no modifica vuelos, ejecución histórica, tarifas contractuales o auditoría. Cualquier ampliación requiere permiso de API, historial y pruebas de aislamiento entre tenants.
+
+## Datos de demostración
+
+La interfaz ofrece una identidad `.test` solo para UX. Es material sintético, no una cuenta de Production. El formulario comercial permanece en modo preview y no transmite solicitudes mientras no exista su contrato de backend.
+
+## Despliegue previsto
+
+Development usará una imagen Node no-root con salida Next `standalone`, construida en CI y desplegada aparte de AVIAM Web y API. Consumirá la misma API privada de Development. El sitio público de Production necesitará dominio público real; una URL del tailnet solo es válida para pruebas privadas.

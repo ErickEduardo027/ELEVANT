@@ -1,17 +1,116 @@
+using Elevant.Domain.Entities.Audit;
+using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Infrastructure;
+using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Integration;
+using Elevant.Domain.Entities.Operations;
+using Elevant.Domain.Entities.Reference;
+using Elevant.Domain.Entities.Workforce;
+using Elevant.Infrastructure.Identity;
+using Elevant.Infrastructure.Persistence.Configurations;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Infrastructure.Persistence;
 
 /// <summary>EF Core boundary for Elevant-owned data.</summary>
 public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
-    : DbContext(options)
+    : IdentityDbContext<ApplicationUser, ApplicationRole, long>(options)
 {
-    /// <inheritdoc />
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        ArgumentNullException.ThrowIfNull(modelBuilder);
+    public DbSet<DatabaseInstance> DatabaseInstances => Set<DatabaseInstance>();
 
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
-        base.OnModelCreating(modelBuilder);
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    public DbSet<Organization> Organizations => Set<Organization>();
+
+    public DbSet<Person> Persons => Set<Person>();
+
+    public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
+
+    public DbSet<PermissionDefinition> Permissions => Set<PermissionDefinition>();
+
+    public DbSet<AccountStationScope> AccountStationScopes => Set<AccountStationScope>();
+
+    public DbSet<Airline> Airlines => Set<Airline>();
+
+    public DbSet<Airport> Airports => Set<Airport>();
+
+    public DbSet<Station> Stations => Set<Station>();
+
+    public DbSet<Terminal> Terminals => Set<Terminal>();
+
+    public DbSet<Stand> Stands => Set<Stand>();
+
+    public DbSet<ServiceDefinition> ServiceDefinitions => Set<ServiceDefinition>();
+
+    public DbSet<EquipmentType> EquipmentTypes => Set<EquipmentType>();
+
+    public DbSet<AircraftType> AircraftTypes => Set<AircraftType>();
+
+    public DbSet<OperationalPosition> OperationalPositions => Set<OperationalPosition>();
+
+    public DbSet<EquipmentAsset> EquipmentAssets => Set<EquipmentAsset>();
+
+    public DbSet<RampAgent> RampAgents => Set<RampAgent>();
+
+    public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
+
+    public DbSet<AirportPermitCycle> AirportPermitCycles => Set<AirportPermitCycle>();
+
+    public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
+
+    public DbSet<AvailabilityRequest> AvailabilityRequests => Set<AvailabilityRequest>();
+
+    public DbSet<CoverageRequirement> CoverageRequirements => Set<CoverageRequirement>();
+
+    public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
+
+    public DbSet<Contract> Contracts => Set<Contract>();
+
+    public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
+
+    public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
+
+    public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
+
+    public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();
+
+    public DbSet<GroundOperation> GroundOperations => Set<GroundOperation>();
+
+    public DbSet<OperationAgentAssignment> OperationAgentAssignments => Set<OperationAgentAssignment>();
+
+    public DbSet<OperationEquipmentAssignment> OperationEquipmentAssignments => Set<OperationEquipmentAssignment>();
+
+    public DbSet<OperationService> OperationServices => Set<OperationService>();
+
+    public DbSet<OperationChecklist> OperationChecklists => Set<OperationChecklist>();
+
+    public DbSet<Incident> Incidents => Set<Incident>();
+
+    public DbSet<OperationSubmission> OperationSubmissions => Set<OperationSubmission>();
+
+    public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
+
+    public DbSet<MobileDevice> MobileDevices => Set<MobileDevice>();
+
+    public DbSet<MobileCommandReceipt> MobileCommandReceipts => Set<MobileCommandReceipt>();
+
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
+    public DbSet<AuditChange> AuditChanges => Set<AuditChange>();
+
+    /// <inheritdoc />
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        base.OnModelCreating(builder);
+        builder.ConfigurePlatform();
+        builder.ConfigureIdentityAndReference();
+        builder.ConfigureWorkforceAndCommercial();
+        builder.ConfigureOperations();
+        builder.ConfigureIntegrationAndAudit();
+        builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
+        builder.ConfigureElevantConventions();
     }
 }

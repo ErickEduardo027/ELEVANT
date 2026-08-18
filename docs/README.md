@@ -1,25 +1,31 @@
-# Documentación de Elevant
+# Documentación ELEVANT
 
-La documentación se mantiene junto al código y describe decisiones técnicas, operación y formas de trabajo. Cuando el comportamiento del sistema cambie, el mismo pull request debe actualizar la guía afectada.
+La documentación vive con el código. Cuando cambia un contrato técnico u operativo, el mismo PR actualiza la guía correspondiente.
+
+## Lectura inicial
+
+1. `AGENTS.md` raíz y el más cercano al árbol que se modificará.
+2. `architecture/system-overview.md` y `architecture/database-v1.md`.
+3. `database/schema-v1.md` para el inventario persistente.
+4. `database/migrations.md` antes de tocar EF Core.
+5. `deployment/dokploy.md` antes de preparar un release remoto.
 
 ## Índice
 
-- `architecture`: límites, dependencias, monolito modular, vertical slices, tiempo real e integraciones.
-- `workflows`: desarrollo local, Git, pull requests y flujos por plataforma.
-- `api`: convenciones HTTP, versionado, errores, OpenAPI y SignalR.
-- `database`: propiedad de datos y migraciones; los artefactos operativos viven en
-  `backend/database` y respaldo/recuperación en `backend/infrastructure/backups`.
-- `deployment`: ambientes, Docker, Dokploy, KVM 2 y rollback.
-- `security`: línea base, secretos y respuesta a incidentes.
-- `onboarding`: recorridos iniciales por rol.
-- `adr`: registro de decisiones de arquitectura.
+- `architecture`: límites, dependencias, monolito modular, modelo v1 e integraciones.
+- `database`: propiedad, inventario y migraciones. Scripts ejecutables están en `backend/database`.
+- `deployment`: ambientes, Dokploy, capacidad del KVM y rollback.
+- `api`: HTTP, errores, OpenAPI y consumidores.
+- `workflows`: Git, desarrollo local y flujos por plataforma.
+- `security`: acceso SQL, secretos y línea base.
+- `onboarding`: recorridos por rol.
+- `adr`: decisiones aceptadas/propuestas.
 
 ## Convenciones
 
-- El código y los identificadores técnicos pueden estar en inglés; las guías operativas se escriben en español claro.
-- `Accepted` identifica una decisión vigente; `Proposed`, una opción todavía no autorizada.
-- Nunca se incluyen secretos, datos personales, capturas de Production ni archivos extraídos de documentación privada.
-- Los ejemplos usan dominios, identificadores y valores ficticios.
-- Los comandos se ejecutan desde la raíz del repositorio salvo indicación contraria.
-
-Si una guía contradice una prueba automatizada o el código desplegado, se detiene la operación de riesgo, se verifica la fuente de verdad y se corrige la discrepancia en un cambio revisado.
+- Identificadores técnicos en inglés; operación en español claro.
+- `Accepted` significa vigente; `Proposed`, pendiente de autorización.
+- Ejemplos usan valores ficticios y dominios `.test`/placeholders.
+- Nunca incluir secretos, PII, capturas/dumps/backups de Production o datos extraídos del prototipo.
+- Los comandos parten de la raíz salvo indicación.
+- Código/migración/prueba ejecutable prevalece si una guía quedó desactualizada; detenga la operación de riesgo y corrija la discrepancia.

@@ -79,4 +79,5 @@ Desktop.ini
 
 # Backend local del prototipo
 backend-prototipo/data/runtime.json
+backend-prototipo/data/runtime.backup-*.json
 backend-prototipo/data/*.tmp
