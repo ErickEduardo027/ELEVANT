@@ -41,22 +41,46 @@ done
 server="${ELEVANT_SQL_SERVER:-elevant-dev-sql}"
 login=""
 password=""
+readiness_query="
+SET NOCOUNT ON;
+IF DB_ID(N'ElevantDevelopmentDb') IS NULL
+BEGIN
+  SELECT 1;
+END
+ELSE
+BEGIN
+  EXEC(N'USE [ElevantDevelopmentDb]; SELECT 1;');
+END;"
+
+can_provision_with() {
+  local probe_login="$1"
+  local probe_password="$2"
+
+  "$sqlcmd_path" \
+    -S "$server" \
+    -d master \
+    -U "$probe_login" \
+    -P "$probe_password" \
+    -C -b \
+    -Q "$readiness_query" \
+    -o /dev/null 2>/dev/null
+}
 
 for attempt in $(seq 1 60); do
-  if "$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+  if can_provision_with elevant_dev_dba "$ELEVANT_DB_DBA_PASSWORD"; then
     login="elevant_dev_dba"
     password="$ELEVANT_DB_DBA_PASSWORD"
     break
   fi
 
-  if "$sqlcmd_path" -S "$server" -U sa -P "$MSSQL_SA_PASSWORD" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+  if can_provision_with sa "$MSSQL_SA_PASSWORD"; then
     login="sa"
     password="$MSSQL_SA_PASSWORD"
     break
   fi
 
   if [[ "$attempt" == "60" ]]; then
-    echo "SQL Server did not become reachable with DBA or bootstrap credentials." >&2
+    echo "SQL Server and ElevantDevelopmentDb did not become ready with DBA or bootstrap credentials." >&2
     exit 1
   fi
   sleep 2
