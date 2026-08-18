@@ -113,7 +113,7 @@ foreach ($relativeFile in $relativeFiles) {
         continue
     }
 
-    $fileInfo = Get-Item -LiteralPath $fullPath
+    $fileInfo = Get-Item -LiteralPath $fullPath -Force
     if ($fileInfo.Length -gt 2MB) {
         continue
     }
