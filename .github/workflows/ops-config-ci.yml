@@ -20,19 +20,32 @@ concurrency:
 jobs:
   validate:
     name: Validate secret-free operations artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Validate shell syntax and lint
+      - name: Validate runner tools, shell syntax and lint
         shell: bash
         run: |
           set -Eeuo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends openssh-server shellcheck
+
+          required_tools=(
+            bash
+            shellcheck
+            sshd
+            systemd-analyze
+            visudo
+          )
+
+          for tool in "${required_tools[@]}"; do
+            command -v "$tool"
+          done
+
+          shellcheck --version
+          sshd -V
 
           scripts=(
             ops/dokploy/firewall/elevant-firewall-apply
