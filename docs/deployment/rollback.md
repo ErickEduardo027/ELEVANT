@@ -3,6 +3,11 @@
 Este procedimiento se completa con datos específicos de cada liberación. No
 autoriza ejecutar cambios en Production sin la aprobación de Erick.
 
+El bootstrap del VPS, firewall, Tailscale y Traefik tiene checkpoints propios en
+[`dokploy-configuration.md`](dokploy-configuration.md). Su rollback temporizado se
+prueba antes de desplegar DB; no use un rollback de aplicación para modificar
+reglas de host o volúmenes SQL.
+
 ## Antes del despliegue
 
 - Registrar la imagen o digest anterior y la nueva.

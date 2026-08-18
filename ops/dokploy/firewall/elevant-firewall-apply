@@ -1,0 +1,414 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+readonly LOCK_FILE="/run/lock/elevant-firewall.lock"
+readonly WAIT_SECONDS="10"
+readonly PUBLIC_CHAIN="ELEVANT-PUBLIC-IN"
+readonly DOCKER_CHAIN="ELEVANT-DOCKER-PUBLIC"
+readonly PUBLIC_JUMP_COMMENT="elevant-managed-public-input"
+readonly DOCKER_JUMP_COMMENT="elevant-managed-docker-public"
+readonly UPDATE_GUARD_COMMENT="elevant-update-guard"
+
+CONFIG_FILE="/etc/elevant/firewall.env"
+DRY_RUN=0
+PUBLIC_INTERFACE=""
+FIREWALL_PHASE=""
+
+log() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: elevant-firewall-apply [--config ABSOLUTE_PATH] [--dry-run]
+
+Applies the ELEVANT public-interface firewall policy without flushing built-in,
+Docker, or Tailscale chains. The configuration file must contain exactly the
+supported KEY=value settings documented in firewall.env.example.
+EOF
+}
+
+print_command() {
+  printf 'DRY-RUN:'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run() {
+  if (( DRY_RUN )); then
+    print_command "$@"
+  else
+    "$@"
+  fi
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config)
+        (( $# >= 2 )) || die "--config requires a path"
+        CONFIG_FILE="$2"
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* ]] || die "configuration path must be absolute"
+  [[ -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || \
+    die "configuration must be a regular, non-symlink file: $CONFIG_FILE"
+  [[ -r "$CONFIG_FILE" ]] || die "configuration is not readable: $CONFIG_FILE"
+
+  local metadata
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")" || \
+    die "could not inspect configuration ownership and mode"
+  [[ "$metadata" == "0:600" ]] || \
+    die "configuration must be owned by UID 0 with exact mode 0600"
+
+  local line key value line_number=0
+  local seen_interface=0 seen_phase=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 ))
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]+)$ ]]; then
+      die "invalid configuration syntax at line $line_number"
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$key" in
+      ELEVANT_PUBLIC_INTERFACE)
+        (( seen_interface == 0 )) || die "duplicate setting: $key"
+        PUBLIC_INTERFACE="$value"
+        seen_interface=1
+        ;;
+      ELEVANT_FIREWALL_PHASE)
+        (( seen_phase == 0 )) || die "duplicate setting: $key"
+        FIREWALL_PHASE="$value"
+        seen_phase=1
+        ;;
+      *)
+        die "unsupported configuration setting at line $line_number: $key"
+        ;;
+    esac
+  done < "$CONFIG_FILE"
+
+  (( seen_interface == 1 && seen_phase == 1 )) || \
+    die "configuration is missing one or more required settings"
+
+  [[ "$PUBLIC_INTERFACE" =~ ^[[:alnum:]_.:-]{1,15}$ ]] || \
+    die "invalid public interface name"
+  [[ "$FIREWALL_PHASE" == "transitional" || "$FIREWALL_PHASE" == "final" ]] || \
+    die "ELEVANT_FIREWALL_PHASE must be transitional or final"
+}
+
+check_nft_backend() {
+  local tool="$1" version
+  version="$("$tool" --version)"
+  [[ "$version" == *"(nf_tables)"* ]] || \
+    die "$tool is not using the required iptables-nft backend: $version"
+}
+
+chain_exists() {
+  local tool="$1" chain="$2"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" >/dev/null 2>&1
+}
+
+rule_count() {
+  local tool="$1" chain="$2"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" |
+    awk -v chain="$chain" '$1 == "-A" && $2 == chain { count += 1 } END { print count + 0 }'
+}
+
+reference_count() {
+  local tool="$1" chain="$2"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S |
+    awk -v chain="$chain" '
+      $1 == "-A" {
+        for (field_no = 3; field_no <= NF; field_no += 1) {
+          if (($field_no == "-j" || $field_no == "--jump" ||
+               $field_no == "-g" || $field_no == "--goto") &&
+              $(field_no + 1) == chain) {
+            count += 1
+          }
+        }
+      }
+      END { print count + 0 }
+    '
+}
+
+jump_position() {
+  local tool="$1" parent="$2" child="$3"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S "$parent" |
+    awk -v parent="$parent" -v child="$child" '
+      $1 == "-A" && $2 == parent {
+        rule_no += 1
+        for (field_no = 3; field_no <= NF; field_no += 1) {
+          if (($field_no == "-j" || $field_no == "--jump" ||
+               $field_no == "-g" || $field_no == "--goto") &&
+              $(field_no + 1) == child) {
+            print rule_no
+            exit
+          }
+        }
+      }
+    '
+}
+
+validate_managed_references() {
+  local tool="$1" chain="$2" parent="$3" comment="$4"
+  local count position
+  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$chain")
+
+  chain_exists "$tool" "$chain" || return 0
+  count="$(reference_count "$tool" "$chain")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
+
+  if (( count == 0 )); then
+    return 0
+  fi
+
+  if (( count != 1 )) || \
+     ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
+    die "$tool chain $chain has an unknown or duplicate external reference"
+  fi
+
+  position="$(jump_position "$tool" "$parent" "$chain")"
+  [[ "$position" == "1" ]] || \
+    die "$tool managed jump from $parent to $chain is not rule 1"
+}
+
+require_docker_user_path() {
+  local tool="$1" family="$2"
+  local count position
+
+  chain_exists "$tool" FORWARD || die "$family FORWARD chain is unavailable"
+  chain_exists "$tool" DOCKER-USER || \
+    die "$family DOCKER-USER chain is required but unavailable; start Docker and retry"
+  "$tool" -w "$WAIT_SECONDS" -t filter -C FORWARD -j DOCKER-USER >/dev/null 2>&1 || \
+    die "$family FORWARD has no unconditional jump to DOCKER-USER"
+
+  count="$(reference_count "$tool" DOCKER-USER)"
+  position="$(jump_position "$tool" FORWARD DOCKER-USER)"
+  [[ "$count" == "1" && "$position" == "1" ]] || \
+    die "$family DOCKER-USER must have exactly one reference at FORWARD rule 1"
+}
+
+require_default_route_interface() {
+  local family_flag="$1" family_name="$2" routes
+
+  routes="$(ip "$family_flag" route show default)" || \
+    die "could not inspect $family_name default routes"
+  [[ -n "$routes" ]] || die "$family_name has no default route"
+
+  awk -v expected="$PUBLIC_INTERFACE" '
+    {
+      route_has_interface = 0
+      for (field_no = 1; field_no <= NF; field_no += 1) {
+        if ($field_no == "dev" && field_no < NF) {
+          route_has_interface = 1
+          if ($(field_no + 1) != expected) {
+            exit 1
+          }
+        }
+      }
+      if (route_has_interface == 0) {
+        exit 1
+      }
+      route_count += 1
+    }
+    END {
+      if (route_count == 0) {
+        exit 1
+      }
+    }
+  ' <<< "$routes" || \
+    die "every $family_name default route must use $PUBLIC_INTERFACE"
+}
+
+append_public_rules() {
+  local tool="$1" protocol="$2"
+
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+    -m conntrack --ctstate INVALID \
+    -m comment --comment "elevant-drop-invalid" -j DROP
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+    -m conntrack --ctstate ESTABLISHED,RELATED \
+    -m comment --comment "elevant-allow-established" -j ACCEPT
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+    -p "$protocol" -m comment --comment "elevant-allow-control-messages" -j ACCEPT
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+    -p udp --dport 41641 \
+    -m comment --comment "elevant-allow-tailscale-direct" -j ACCEPT
+
+  if [[ "$FIREWALL_PHASE" == "transitional" ]]; then
+    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+      -p tcp --dport 22 -m conntrack --ctstate NEW \
+      -m comment --comment "elevant-temporary-ssh" -j ACCEPT
+    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+      -p tcp --dport 80 -m conntrack --ctstate NEW \
+      -m comment --comment "elevant-temporary-http" -j ACCEPT
+  fi
+
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
+    -m comment --comment "elevant-public-default-deny" -j DROP
+}
+
+append_docker_rules() {
+  local tool="$1"
+
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
+    -m conntrack --ctstate INVALID \
+    -m comment --comment "elevant-docker-drop-invalid" -j DROP
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
+    -m conntrack --ctstate ESTABLISHED,RELATED \
+    -m comment --comment "elevant-docker-allow-established" -j ACCEPT
+
+  if [[ "$FIREWALL_PHASE" == "transitional" ]]; then
+    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
+      -p tcp -m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 80 \
+      -m comment --comment "elevant-docker-temporary-http" -j ACCEPT
+  fi
+
+  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
+    -m comment --comment "elevant-docker-public-default-deny" -j DROP
+}
+
+rebuild_chain() {
+  local tool="$1" chain="$2" kind="$3" protocol="${4:-}"
+  local existed=0 old_count=0 index
+
+  if chain_exists "$tool" "$chain"; then
+    existed=1
+    old_count="$(rule_count "$tool" "$chain")"
+
+    # Keep the managed path closed while replacing its rules. If any later
+    # command fails, this guard deliberately remains in place (fail closed).
+    run "$tool" -w "$WAIT_SECONDS" -t filter -I "$chain" 1 \
+      -m comment --comment "$UPDATE_GUARD_COMMENT" -j DROP
+  else
+    run "$tool" -w "$WAIT_SECONDS" -t filter -N "$chain"
+  fi
+
+  case "$kind" in
+    public)
+      append_public_rules "$tool" "$protocol"
+      ;;
+    docker)
+      append_docker_rules "$tool"
+      ;;
+    *)
+      die "internal error: unsupported chain kind: $kind"
+      ;;
+  esac
+
+  if (( existed )); then
+    # Rule 1 is the update guard. Remove the old rules at position 2, leaving
+    # the newly appended rules untouched, then remove only the exact guard.
+    for (( index = 0; index < old_count; index += 1 )); do
+      run "$tool" -w "$WAIT_SECONDS" -t filter -D "$chain" 2
+    done
+    run "$tool" -w "$WAIT_SECONDS" -t filter -D "$chain" \
+      -m comment --comment "$UPDATE_GUARD_COMMENT" -j DROP
+  fi
+}
+
+ensure_jump() {
+  local tool="$1" parent="$2" child="$3" comment="$4"
+  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$child")
+
+  validate_managed_references "$tool" "$child" "$parent" "$comment"
+
+  if ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
+    run "$tool" -w "$WAIT_SECONDS" -t filter -I "$parent" 1 "${rule[@]}"
+  fi
+}
+
+preflight() {
+  (( EUID == 0 )) || die "must run as root"
+
+  require_command flock
+  require_command ip
+  require_command iptables
+  require_command ip6tables
+  require_command awk
+  require_command stat
+
+  check_nft_backend iptables
+  check_nft_backend ip6tables
+  ip link show dev "$PUBLIC_INTERFACE" >/dev/null 2>&1 || \
+    die "configured public interface does not exist: $PUBLIC_INTERFACE"
+  require_default_route_interface -4 IPv4
+  require_default_route_interface -6 IPv6
+
+  chain_exists iptables INPUT || die "IPv4 INPUT chain is unavailable"
+  chain_exists ip6tables INPUT || die "IPv6 INPUT chain is unavailable"
+
+  require_docker_user_path iptables IPv4
+  require_docker_user_path ip6tables IPv6
+
+  # An ELEVANT-owned chain may be rebuilt only when it is unreferenced or has
+  # exactly its expected managed parent jump. Validate every family before any
+  # rule is changed so a failure cannot leave a partially updated policy.
+  validate_managed_references iptables "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
+  validate_managed_references iptables "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
+  validate_managed_references ip6tables "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
+  validate_managed_references ip6tables "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
+}
+
+main() {
+  parse_args "$@"
+  (( EUID == 0 )) || die "must run as root"
+  require_command stat
+  load_config
+
+  require_command flock
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "another ELEVANT firewall operation is running"
+
+  preflight
+  trap 'status=$?; if (( status != 0 )); then log "apply failed; an update guard may be denying traffic. Use the audited rollback from the provider console."; fi' EXIT
+
+  log "applying phase=$FIREWALL_PHASE interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
+
+  rebuild_chain iptables "$PUBLIC_CHAIN" public icmp
+  ensure_jump iptables INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
+
+  rebuild_chain iptables "$DOCKER_CHAIN" docker
+  ensure_jump iptables DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
+
+  rebuild_chain ip6tables "$PUBLIC_CHAIN" public ipv6-icmp
+  ensure_jump ip6tables INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
+
+  rebuild_chain ip6tables "$DOCKER_CHAIN" docker
+  ensure_jump ip6tables DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
+
+  log "policy applied successfully"
+}
+
+main "$@"

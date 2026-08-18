@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+readonly LOCK_FILE="/run/lock/elevant-firewall.lock"
+readonly WAIT_SECONDS="10"
+readonly PUBLIC_CHAIN="ELEVANT-PUBLIC-IN"
+readonly DOCKER_CHAIN="ELEVANT-DOCKER-PUBLIC"
+readonly PUBLIC_JUMP_COMMENT="elevant-managed-public-input"
+readonly DOCKER_JUMP_COMMENT="elevant-managed-docker-public"
+readonly APPLY_UNIT="elevant-firewall.service"
+
+CONFIG_FILE="/etc/elevant/firewall.env"
+DRY_RUN=0
+PUBLIC_INTERFACE=""
+FIREWALL_PHASE=""
+
+log() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: elevant-firewall-rollback [--config ABSOLUTE_PATH] [--dry-run]
+
+Removes only the exact ELEVANT jumps and the two ELEVANT-owned custom chains.
+It does not flush or save INPUT, FORWARD, DOCKER-USER, Docker, or Tailscale rules.
+EOF
+}
+
+print_command() {
+  printf 'DRY-RUN:'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run() {
+  if (( DRY_RUN )); then
+    print_command "$@"
+  else
+    "$@"
+  fi
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config)
+        (( $# >= 2 )) || die "--config requires a path"
+        CONFIG_FILE="$2"
+        shift 2
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* ]] || die "configuration path must be absolute"
+  [[ -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || \
+    die "configuration must be a regular, non-symlink file: $CONFIG_FILE"
+  [[ -r "$CONFIG_FILE" ]] || die "configuration is not readable: $CONFIG_FILE"
+
+  local metadata
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")" || \
+    die "could not inspect configuration ownership and mode"
+  [[ "$metadata" == "0:600" ]] || \
+    die "configuration must be owned by UID 0 with exact mode 0600"
+
+  local line key value line_number=0
+  local seen_interface=0 seen_phase=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 ))
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]+)$ ]]; then
+      die "invalid configuration syntax at line $line_number"
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    case "$key" in
+      ELEVANT_PUBLIC_INTERFACE)
+        (( seen_interface == 0 )) || die "duplicate setting: $key"
+        PUBLIC_INTERFACE="$value"
+        seen_interface=1
+        ;;
+      ELEVANT_FIREWALL_PHASE)
+        (( seen_phase == 0 )) || die "duplicate setting: $key"
+        FIREWALL_PHASE="$value"
+        seen_phase=1
+        ;;
+      *)
+        die "unsupported configuration setting at line $line_number: $key"
+        ;;
+    esac
+  done < "$CONFIG_FILE"
+
+  (( seen_interface == 1 && seen_phase == 1 )) || \
+    die "configuration is missing one or more required settings"
+  [[ "$PUBLIC_INTERFACE" =~ ^[[:alnum:]_.:-]{1,15}$ ]] || \
+    die "invalid public interface name"
+  [[ "$FIREWALL_PHASE" == "transitional" || "$FIREWALL_PHASE" == "final" ]] || \
+    die "ELEVANT_FIREWALL_PHASE must be transitional or final"
+}
+
+check_nft_backend() {
+  local tool="$1" version
+  version="$("$tool" --version)"
+  [[ "$version" == *"(nf_tables)"* ]] || \
+    die "$tool is not using the required iptables-nft backend: $version"
+}
+
+chain_exists() {
+  local tool="$1" chain="$2"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" >/dev/null 2>&1
+}
+
+reference_count() {
+  local tool="$1" chain="$2"
+  "$tool" -w "$WAIT_SECONDS" -t filter -S |
+    awk -v chain="$chain" '
+      $1 == "-A" {
+        for (field_no = 3; field_no <= NF; field_no += 1) {
+          if (($field_no == "-j" || $field_no == "--jump" ||
+               $field_no == "-g" || $field_no == "--goto") &&
+              $(field_no + 1) == chain) {
+            count += 1
+          }
+        }
+      }
+      END { print count + 0 }
+    '
+}
+
+validate_managed_references() {
+  local tool="$1" chain="$2" parent="$3" comment="$4"
+  local count
+  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$chain")
+
+  chain_exists "$tool" "$chain" || return 0
+  count="$(reference_count "$tool" "$chain")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
+
+  if (( count == 0 )); then
+    return 0
+  fi
+
+  if (( count != 1 )) || \
+     ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
+    die "$tool chain $chain has an unknown or duplicate external reference"
+  fi
+}
+
+assert_unreferenced() {
+  local tool="$1" chain="$2" count
+
+  chain_exists "$tool" "$chain" || return 0
+  count="$(reference_count "$tool" "$chain")"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
+  (( count == 0 )) || \
+    die "$tool chain $chain still has an external reference; refusing to flush it"
+}
+
+remove_exact_jump() {
+  local tool="$1" parent="$2" child="$3" comment="$4"
+  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$child")
+
+  while "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; do
+    run "$tool" -w "$WAIT_SECONDS" -t filter -D "$parent" "${rule[@]}"
+    if (( DRY_RUN )); then
+      break
+    fi
+  done
+}
+
+remove_owned_chain() {
+  local tool="$1" chain="$2"
+
+  if chain_exists "$tool" "$chain"; then
+    run "$tool" -w "$WAIT_SECONDS" -t filter -F "$chain"
+    run "$tool" -w "$WAIT_SECONDS" -t filter -X "$chain"
+  fi
+}
+
+remove_family_jumps() {
+  local tool="$1"
+
+  if chain_exists "$tool" INPUT; then
+    remove_exact_jump "$tool" INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
+  fi
+  if chain_exists "$tool" DOCKER-USER; then
+    remove_exact_jump "$tool" DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
+  fi
+
+}
+
+validate_family_references() {
+  local tool="$1"
+
+  validate_managed_references "$tool" "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
+  validate_managed_references "$tool" "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
+}
+
+assert_family_unreferenced() {
+  local tool="$1"
+
+  assert_unreferenced "$tool" "$PUBLIC_CHAIN"
+  assert_unreferenced "$tool" "$DOCKER_CHAIN"
+}
+
+remove_family_chains() {
+  local tool="$1"
+
+  remove_owned_chain "$tool" "$PUBLIC_CHAIN"
+  remove_owned_chain "$tool" "$DOCKER_CHAIN"
+}
+
+query_unit_state() {
+  local operation="$1" state status=0
+
+  if state="$(systemctl "$operation" "$APPLY_UNIT" 2>/dev/null)"; then
+    status=0
+  else
+    status=$?
+  fi
+
+  [[ -n "$state" ]] || \
+    die "could not query $operation for $APPLY_UNIT (systemctl exit $status)"
+  printf '%s\n' "$state"
+}
+
+deactivate_apply_unit() {
+  local active_state enabled_state needs_deactivation=0
+
+  active_state="$(query_unit_state is-active)"
+  enabled_state="$(query_unit_state is-enabled)"
+
+  case "$active_state" in
+    inactive|failed|unknown)
+      ;;
+    *)
+      needs_deactivation=1
+      ;;
+  esac
+
+  case "$enabled_state" in
+    disabled|masked|masked-runtime|not-found)
+      ;;
+    *)
+      needs_deactivation=1
+      ;;
+  esac
+
+  if (( needs_deactivation )); then
+    run systemctl disable --now "$APPLY_UNIT"
+  fi
+
+  if (( ! DRY_RUN )); then
+    active_state="$(query_unit_state is-active)"
+    enabled_state="$(query_unit_state is-enabled)"
+
+    case "$active_state" in
+      inactive|failed|unknown)
+        ;;
+      *)
+        die "$APPLY_UNIT remains $active_state; refusing to remove firewall rules"
+        ;;
+    esac
+    case "$enabled_state" in
+      disabled|masked|masked-runtime|not-found)
+        ;;
+      *)
+        die "$APPLY_UNIT remains $enabled_state; refusing to remove firewall rules"
+        ;;
+    esac
+  fi
+}
+
+main() {
+  parse_args "$@"
+  (( EUID == 0 )) || die "must run as root"
+  require_command stat
+  load_config
+
+  require_command flock
+  require_command iptables
+  require_command ip6tables
+  require_command awk
+  require_command systemctl
+  check_nft_backend iptables
+  check_nft_backend ip6tables
+
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die "another ELEVANT firewall operation is running"
+
+  log "removing ELEVANT-managed rules for interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
+  # Reject unknown references in every family before removing anything.
+  validate_family_references iptables
+  validate_family_references ip6tables
+
+  # A rollback must not leave the apply unit active(exited) or enabled for the
+  # next boot, otherwise the removed policy could be silently re-applied.
+  deactivate_apply_unit
+
+  remove_family_jumps iptables
+  remove_family_jumps ip6tables
+
+  # In a real rollback, verify the exact managed jumps are now gone before any
+  # owned chain is flushed. Dry-run already proved all references were managed.
+  if (( ! DRY_RUN )); then
+    assert_family_unreferenced iptables
+    assert_family_unreferenced ip6tables
+  fi
+
+  remove_family_chains iptables
+  remove_family_chains ip6tables
+  log "rollback completed successfully"
+}
+
+main "$@"

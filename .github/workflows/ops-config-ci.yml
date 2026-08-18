@@ -1,0 +1,343 @@
+name: Operations configuration CI
+
+on:
+  push:
+    branches:
+      - main
+      - Development
+  pull_request:
+    branches:
+      - main
+      - Development
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-config-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate secret-free operations artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate shell syntax and lint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends openssh-server shellcheck
+
+          scripts=(
+            ops/dokploy/firewall/elevant-firewall-apply
+            ops/dokploy/firewall/elevant-firewall-rollback
+            ops/dokploy/preflight/collect-state
+            ops/dokploy/ssh/elevant-ssh-rollback
+            ops/dokploy/ssh/elevant-ssh-verify
+          )
+
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+
+      - name: Validate systemd and OpenSSH contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -D -m 0755 \
+            ops/dokploy/firewall/elevant-firewall-apply \
+            /usr/local/sbin/elevant-firewall-apply
+          sudo install -D -m 0755 \
+            ops/dokploy/firewall/elevant-firewall-rollback \
+            /usr/local/sbin/elevant-firewall-rollback
+          sudo install -D -m 0644 \
+            ops/dokploy/firewall/README.md \
+            /usr/local/share/doc/elevant-firewall/README.md
+
+          systemd-analyze verify \
+            ops/dokploy/firewall/elevant-firewall.service \
+            ops/dokploy/firewall/elevant-firewall-rollback.service \
+            ops/dokploy/firewall/elevant-firewall-rollback.timer
+
+          test ! -e /etc/ssh/sshd_config.d/00-elevant-hardening.conf
+          sudo install -D -m 0644 \
+            ops/dokploy/ssh/00-elevant-hardening.conf \
+            /etc/ssh/sshd_config.d/00-elevant-hardening.conf
+          sudo install -D -m 0755 \
+            ops/dokploy/ssh/elevant-ssh-verify \
+            /usr/local/sbin/elevant-ssh-verify
+          sudo install -d -m 0755 /run/sshd
+          id -u elevant-ops >/dev/null 2>&1 || \
+            sudo useradd --system --create-home elevant-ops
+          sudo /usr/local/sbin/elevant-ssh-verify
+          sudo visudo -cf ops/dokploy/ssh/sudoers.elevant-ops
+
+      - name: Validate Tailscale policy contract
+        shell: python
+        run: |
+          import json
+          import pathlib
+          import re
+
+          path = pathlib.Path("ops/dokploy/tailscale/policy.hujson.example")
+          source = path.read_text(encoding="utf-8")
+          without_comments = re.sub(r"(?m)^\s*//.*$", "", source)
+          strict_json = re.sub(r",(?=\s*[}\]])", "", without_comments)
+          policy = json.loads(strict_json)
+
+          assert set(policy) == {
+              "groups",
+              "tagOwners",
+              "autoApprovers",
+              "grants",
+              "tests",
+          }
+
+          expected_services = {
+              "svc:elevant-dev-dokploy",
+              "svc:elevant-dev-monitoring",
+              "svc:elevant-dev-api",
+              "svc:elevant-dev-aviam-web",
+              "svc:elevant-dev-public-web",
+          }
+          assert policy["groups"] == {
+              "group:elevant-ops": ["owner@example.com"],
+              "group:elevant-dev": ["developer@example.com"],
+          }
+          assert policy["tagOwners"] == {
+              "tag:elevant-dev-host": ["group:elevant-ops"]
+          }
+          assert policy["autoApprovers"]["services"] == {
+              service: ["tag:elevant-dev-host"] for service in expected_services
+          }
+          assert policy["grants"] == [
+              {
+                  "src": ["group:elevant-ops"],
+                  "dst": ["tag:elevant-dev-host"],
+                  "ip": ["tcp:22", "icmp:*"],
+              },
+              {
+                  "src": ["group:elevant-ops"],
+                  "dst": [
+                      "svc:elevant-dev-dokploy",
+                      "svc:elevant-dev-monitoring",
+                  ],
+                  "ip": ["tcp:443"],
+              },
+              {
+                  "src": ["group:elevant-ops", "group:elevant-dev"],
+                  "dst": [
+                      "svc:elevant-dev-api",
+                      "svc:elevant-dev-aviam-web",
+                      "svc:elevant-dev-public-web",
+                  ],
+                  "ip": ["tcp:443"],
+              },
+          ]
+          assert len(policy["tests"]) == 6
+          tests = {
+              (test["src"], test["proto"]): {
+                  "accept": set(test.get("accept", [])),
+                  "deny": set(test.get("deny", [])),
+              }
+              for test in policy["tests"]
+          }
+          assert set(tests) == {
+              ("group:elevant-ops", "tcp"),
+              ("group:elevant-ops", "icmp"),
+              ("group:elevant-ops", "udp"),
+              ("group:elevant-dev", "tcp"),
+              ("group:elevant-dev", "icmp"),
+              ("group:elevant-dev", "udp"),
+          }
+          assert tests[("group:elevant-ops", "tcp")]["accept"] == {
+              "tag:elevant-dev-host:22",
+              "svc:elevant-dev-dokploy:443",
+              "svc:elevant-dev-monitoring:443",
+              "svc:elevant-dev-api:443",
+              "svc:elevant-dev-aviam-web:443",
+              "svc:elevant-dev-public-web:443",
+          }
+          assert tests[("group:elevant-dev", "tcp")]["accept"] == {
+              "svc:elevant-dev-api:443",
+              "svc:elevant-dev-aviam-web:443",
+              "svc:elevant-dev-public-web:443",
+          }
+          for source in ("group:elevant-ops", "group:elevant-dev"):
+              assert tests[(source, "udp")]["accept"] == set()
+              assert tests[(source, "udp")]["deny"] == {
+                  "tag:elevant-dev-host:7946",
+                  "tag:elevant-dev-host:4789",
+              }
+          assert tests[("group:elevant-ops", "icmp")] == {
+              "accept": {"tag:elevant-dev-host:0"},
+              "deny": set(),
+          }
+          assert tests[("group:elevant-dev", "icmp")] == {
+              "accept": set(),
+              "deny": {"tag:elevant-dev-host:0"},
+          }
+          assert tests[("group:elevant-ops", "tcp")]["deny"] == {
+              "tag:elevant-dev-host:80",
+              "tag:elevant-dev-host:443",
+              "tag:elevant-dev-host:3000",
+              "tag:elevant-dev-host:18083",
+              "tag:elevant-dev-host:1433",
+              "tag:elevant-dev-host:2375",
+              "tag:elevant-dev-host:2376",
+              "tag:elevant-dev-host:2377",
+              "tag:elevant-dev-host:7946",
+          }
+          assert tests[("group:elevant-dev", "tcp")]["deny"] == {
+              "svc:elevant-dev-dokploy:443",
+              "svc:elevant-dev-monitoring:443",
+              "tag:elevant-dev-host:22",
+              "tag:elevant-dev-host:80",
+              "tag:elevant-dev-host:443",
+              "tag:elevant-dev-host:3000",
+              "tag:elevant-dev-host:18083",
+              "tag:elevant-dev-host:1433",
+              "tag:elevant-dev-host:2375",
+              "tag:elevant-dev-host:2376",
+              "tag:elevant-dev-host:2377",
+              "tag:elevant-dev-host:7946",
+          }
+
+      - name: Validate observability Compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          compose=(
+            docker compose
+            --env-file ops/dokploy/observability/.env.example
+            -f ops/dokploy/observability/compose.yml
+          )
+
+          "${compose[@]}" config --quiet
+
+          while IFS= read -r image; do
+            if [[ ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+              printf 'Image is not pinned by digest: %s\n' "$image" >&2
+              exit 1
+            fi
+          done < <("${compose[@]}" config --images)
+
+          rendered="$RUNNER_TEMP/elevant-observability.json"
+          "${compose[@]}" config --format json > "$rendered"
+
+          python - "$rendered" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          config = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          services = config["services"]
+          assert config["name"] == "elevant-dev-observability"
+          assert set(services) == {
+              "beszel-volume-init",
+              "beszel-hub",
+              "beszel-agent",
+          }
+          assert config["networks"] == {
+              "default": {
+                  "name": "elevant-dev-observability-runtime",
+                  "driver": "bridge",
+                  "ipam": {},
+              }
+          }
+          assert config["volumes"] == {
+              "beszel_data": {
+                  "name": "elevant-dev-beszel-data",
+                  "external": True,
+              },
+              "beszel_agent_data": {
+                  "name": "elevant-dev-beszel-agent-data",
+                  "external": True,
+              },
+          }
+
+          for name, service in services.items():
+              assert not service.get("privileged", False), name
+              assert service.get("read_only") is True, name
+              assert service.get("cap_drop") == ["ALL"], name
+              assert "no-new-privileges:true" in service.get("security_opt", []), name
+              assert not service.get("devices"), name
+              assert not service.get("pid"), name
+              assert not service.get("ipc"), name
+              for volume in service.get("volumes", []):
+                  assert volume.get("type") == "volume", (name, volume)
+                  assert "/var/run/docker.sock" not in str(volume), (name, volume)
+
+          def volume_contract(service):
+              return {
+                  (
+                      volume["source"],
+                      volume["target"],
+                      volume.get("read_only", False),
+                  )
+                  for volume in service.get("volumes", [])
+              }
+
+          init = services["beszel-volume-init"]
+          assert init.get("network_mode") == "none"
+          assert init.get("user") == "0:0"
+          assert init.get("cap_add") == ["CHOWN"]
+          assert volume_contract(init) == {
+              ("beszel_data", "/beszel_data", False),
+              ("beszel_agent_data", "/var/lib/beszel-agent", False),
+          }
+
+          hub = services["beszel-hub"]
+          assert set(hub.get("networks", {})) == {"default"}
+          assert hub.get("user") == "65532:0"
+          assert hub.get("cap_add", []) == []
+          assert volume_contract(hub) == {
+              ("beszel_data", "/beszel_data", False),
+          }
+
+          agent = services["beszel-agent"]
+          assert agent.get("network_mode") == "host"
+          assert agent.get("user") == "65532:0"
+          assert agent.get("cap_add", []) == []
+          assert agent["environment"]["DOCKER_HOST"] == ""
+          assert agent["environment"]["DISABLE_SSH"] == "true"
+          assert not agent.get("ports")
+          assert volume_contract(agent) == {
+              ("beszel_agent_data", "/var/lib/beszel-agent", False),
+          }
+
+          published = [
+              (
+                  service_name,
+                  port.get("host_ip"),
+                  port.get("published"),
+                  port.get("target"),
+                  port.get("protocol"),
+              )
+              for service_name, service in services.items()
+              for port in service.get("ports", [])
+          ]
+          assert published == [("beszel-hub", "127.0.0.1", "18083", 8090, "tcp")]
+          assert "/var/run/docker.sock" not in pathlib.Path(sys.argv[1]).read_text(
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Validate immutable database handoff
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sha256sum --check --strict <<'EOF'
+          dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee  backend/infrastructure/docker/compose.development.database.yml
+          bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07  backend/infrastructure/docker/compose.development.release.yml
+          408a76510e6ffa9b7fc9119b88313f7d9eb5683bf8e68ebd0f323dbda2115034  ops/dokploy/observability/compose.yml
+          EOF
+
+      - name: Scan repository for committed secrets
+        shell: pwsh
+        run: ./scripts/repository/check-secrets.ps1

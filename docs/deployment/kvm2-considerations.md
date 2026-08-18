@@ -9,11 +9,14 @@ Perfil de trabajo: 2 vCPU, 8 GB RAM y 100 GB de almacenamiento para Ubuntu, Dock
 | SQL Server container | hard limit 4 GB / 1.25 CPU |
 | SQL `MSSQL_MEMORY_LIMIT_MB` | 3072 MB dentro del límite |
 | Migrator/seeder/ops | 512 MB / 0.50 CPU, transitorio |
+| Beszel hub/agent | 384 MB / 0.30 CPU persistente; init 32 MB / 0.05 CPU transitorio |
 | API futura | 768 MB / 0.60 CPU |
 | Public Web Next futura | 512 MB / 0.35 CPU |
 | AVIAM Web Nginx futura | 128 MB / 0.15 CPU |
 
-Quedan aproximadamente 2.5 GB para host, Docker, Dokploy y picos. No ejecutar builds en el VPS ni desplegar varias imágenes pesadas simultáneamente. Ajustar solo con métricas de working set, CPU, IOPS, latencia y errores.
+Con SQL y observabilidad, antes de API/webs, quedan aproximadamente 2 GB o más para host, Docker, Dokploy y picos según el working set real. Los límites no son una autorización para saturarlos simultáneamente. No ejecutar builds en el VPS ni desplegar varias imágenes pesadas a la vez. Ajustar solo con métricas de working set, CPU, IOPS, latencia y errores.
+
+El host auditado no tenía swap. Antes de SQL se crea un swapfile de 2 GiB, modo `0600`, persistente y con `vm.swappiness=10`; es un amortiguador ante picos, no capacidad adicional para carga sostenida.
 
 SQL usa `shm_size=512m`, 90 s de gracia y logs rotados. API/web usan logs 10 MB x3. Configurar alertas de disco a 70/80/90 % y mantener 15 GB libres. Los assets actuales caben en sus imágenes; no son object storage.
 

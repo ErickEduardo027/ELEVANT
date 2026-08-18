@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export LC_ALL=C
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly SSHD='/usr/sbin/sshd'
+readonly TEST_CONTEXT='user=elevant-ops,host=elevant-dev-host,addr=100.64.0.1'
+
+die() {
+  printf 'elevant-ssh-verify: ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+(( EUID == 0 )) || die 'must run as root'
+[[ -x "$SSHD" ]] || die "sshd not found at $SSHD"
+
+"$SSHD" -t || die 'sshd syntax validation failed'
+effective="$("$SSHD" -T -C "$TEST_CONTEXT")" || \
+  die 'could not render effective sshd configuration'
+
+require_exact() {
+  local expected="$1"
+  grep -Fxq -- "$expected" <<<"$effective" || \
+    die "effective configuration is missing: $expected"
+}
+
+require_exact 'permitrootlogin no'
+require_exact 'pubkeyauthentication yes'
+require_exact 'passwordauthentication no'
+require_exact 'kbdinteractiveauthentication no'
+require_exact 'authenticationmethods publickey'
+require_exact 'permitemptypasswords no'
+require_exact 'allowusers elevant-ops'
+require_exact 'allowagentforwarding no'
+require_exact 'allowtcpforwarding no'
+require_exact 'gatewayports no'
+require_exact 'permittunnel no'
+require_exact 'permituserenvironment no'
+require_exact 'x11forwarding no'
+require_exact 'maxauthtries 3'
+
+printf 'elevant-ssh-verify: effective SSH policy is valid\n'

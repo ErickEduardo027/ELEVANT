@@ -8,7 +8,7 @@ La documentación vive con el código. Cuando cambia un contrato técnico u oper
 2. `architecture/system-overview.md` y `architecture/database-v1.md`.
 3. `database/schema-v1.md` para el inventario persistente.
 4. `database/migrations.md` antes de tocar EF Core.
-5. `deployment/dokploy.md` antes de preparar un release remoto.
+5. `deployment/dokploy.md` para la arquitectura y `deployment/dokploy-configuration.md` para ejecutar el bootstrap manual.
 
 ## Índice
 

@@ -1,0 +1,136 @@
+{
+  // PLANTILLA: no guardar en la consola hasta sustituir los dos logins
+  // example.com por identidades que ya aparezcan en Users de la tailnet.
+  "groups": {
+    "group:elevant-ops": [
+      // REPLACE_OWNER_LOGIN
+      "owner@example.com",
+    ],
+    "group:elevant-dev": [
+      // REPLACE_DEVELOPER_LOGIN; agregar una linea por persona
+      "developer@example.com",
+    ],
+  },
+
+  // Solo el grupo operativo puede asignar la identidad del VPS.
+  "tagOwners": {
+    "tag:elevant-dev-host": ["group:elevant-ops"],
+  },
+
+  // El host etiquetado puede anunciar exclusivamente estos Services. Esto no
+  // concede acceso a ellos; el acceso se controla por separado en grants.
+  "autoApprovers": {
+    "services": {
+      "svc:elevant-dev-dokploy": ["tag:elevant-dev-host"],
+      "svc:elevant-dev-monitoring": ["tag:elevant-dev-host"],
+      "svc:elevant-dev-api": ["tag:elevant-dev-host"],
+      "svc:elevant-dev-aviam-web": ["tag:elevant-dev-host"],
+      "svc:elevant-dev-public-web": ["tag:elevant-dev-host"],
+    },
+  },
+
+  // Grants es deny-by-default. No agregar reglas con src/dst/ip "*".
+  "grants": [
+    {
+      // OpenSSH del host e ICMP, solo para operaciones.
+      "src": ["group:elevant-ops"],
+      "dst": ["tag:elevant-dev-host"],
+      "ip": ["tcp:22", "icmp:*"],
+    },
+    {
+      // Plano de control, solo para operaciones y siempre mediante Services.
+      "src": ["group:elevant-ops"],
+      "dst": [
+        "svc:elevant-dev-dokploy",
+        "svc:elevant-dev-monitoring",
+      ],
+      "ip": ["tcp:443"],
+    },
+    {
+      // Productos Development futuros; nunca dan acceso directo al host o SQL.
+      "src": ["group:elevant-ops", "group:elevant-dev"],
+      "dst": [
+        "svc:elevant-dev-api",
+        "svc:elevant-dev-aviam-web",
+        "svc:elevant-dev-public-web",
+      ],
+      "ip": ["tcp:443"],
+    },
+  ],
+
+  // Las pruebas se ejecutan al guardar y evitan ampliar acceso por accidente.
+  "tests": [
+    {
+      "src": "group:elevant-ops",
+      "proto": "tcp",
+      "accept": [
+        "tag:elevant-dev-host:22",
+        "svc:elevant-dev-dokploy:443",
+        "svc:elevant-dev-monitoring:443",
+        "svc:elevant-dev-api:443",
+        "svc:elevant-dev-aviam-web:443",
+        "svc:elevant-dev-public-web:443",
+      ],
+      "deny": [
+        "tag:elevant-dev-host:80",
+        "tag:elevant-dev-host:443",
+        "tag:elevant-dev-host:3000",
+        "tag:elevant-dev-host:18083",
+        "tag:elevant-dev-host:1433",
+        "tag:elevant-dev-host:2375",
+        "tag:elevant-dev-host:2376",
+        "tag:elevant-dev-host:2377",
+        "tag:elevant-dev-host:7946",
+      ],
+    },
+    {
+      "src": "group:elevant-ops",
+      "proto": "icmp",
+      "accept": ["tag:elevant-dev-host:0"],
+    },
+    {
+      "src": "group:elevant-ops",
+      "proto": "udp",
+      "deny": [
+        "tag:elevant-dev-host:7946",
+        "tag:elevant-dev-host:4789",
+      ],
+    },
+    {
+      "src": "group:elevant-dev",
+      "proto": "tcp",
+      "accept": [
+        "svc:elevant-dev-api:443",
+        "svc:elevant-dev-aviam-web:443",
+        "svc:elevant-dev-public-web:443",
+      ],
+      "deny": [
+        "svc:elevant-dev-dokploy:443",
+        "svc:elevant-dev-monitoring:443",
+        "tag:elevant-dev-host:22",
+        "tag:elevant-dev-host:80",
+        "tag:elevant-dev-host:443",
+        "tag:elevant-dev-host:3000",
+        "tag:elevant-dev-host:18083",
+        "tag:elevant-dev-host:1433",
+        "tag:elevant-dev-host:2375",
+        "tag:elevant-dev-host:2376",
+        "tag:elevant-dev-host:2377",
+        "tag:elevant-dev-host:7946",
+      ],
+    },
+    {
+      "src": "group:elevant-dev",
+      "proto": "icmp",
+      "deny": ["tag:elevant-dev-host:0"],
+    },
+    {
+      "src": "group:elevant-dev",
+      "proto": "udp",
+      "deny": [
+        "tag:elevant-dev-host:7946",
+        "tag:elevant-dev-host:4789",
+      ],
+    },
+  ],
+}

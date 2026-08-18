@@ -64,7 +64,7 @@ Cada frontend se instala y valida dentro de su propia carpeta con npm y su `pack
 
 No se fusiona ni despliega automáticamente una rama feature. Tras revisión y merge manual en `Development`, CI valida SQL Server 2022, el esquema, upgrades, ausencia de seed en Production y las imágenes. Solo en un push válido a `Development` publica `elevant-db-ops` y `elevant-db-release` en GHCR; no llama a Dokploy.
 
-En el VPS de Development, SQL Server/volúmenes tienen un stack manual separado del release de migraciones. Más adelante API, AVIAM Web y Public Web serán deployables independientes; la tablet consumirá esa misma API. La guía operativa está en [dokploy.md](docs/deployment/dokploy.md).
+En el VPS de Development, SQL Server/volúmenes tienen un stack manual separado del release de migraciones. Más adelante API, AVIAM Web y Public Web serán deployables independientes; la tablet consumirá esa misma API. La arquitectura está en [dokploy.md](docs/deployment/dokploy.md) y el bootstrap manual con checkpoints en [Configuración de Dokploy](docs/deployment/dokploy-configuration.md).
 
 ## Guía para personas y agentes
 

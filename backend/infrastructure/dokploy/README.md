@@ -1,6 +1,6 @@
 # ELEVANT en Dokploy
 
-La guía canónica es `docs/deployment/dokploy.md`. Este directorio resume la topología que debe configurarse después de que `feature/database-v1` sea revisada y fusionada manualmente en `Development`.
+La guía canónica es `docs/deployment/dokploy.md` y la secuencia operativa auditada está en `docs/deployment/dokploy-configuration.md`. Este directorio resume la topología posterior al merge de DB v1 en `Development`.
 
 ## Ciclos de vida separados
 
@@ -16,9 +16,9 @@ Solo API se conecta a la red de datos. Las webs llaman a API por HTTPS y jamás 
 
 ## Estado de esta rama
 
-Están implementados y validados los dos primeros Compose y las imágenes de base. Los Dockerfiles/Compose de API y frontends se crearán al comenzar su integración real; la documentación reserva puertos, recursos y fronteras para evitar decisiones incompatibles.
+Están implementados y validados los dos primeros Compose y las imágenes de base. El run de publicación del merge de DB v1 certificó las referencias inmutables que registra la guía operativa. Los Dockerfiles/Compose de API y frontends se crearán al comenzar su integración real; la documentación reserva puertos, recursos y fronteras para evitar decisiones incompatibles.
 
-Nada en esta rama llama a la API de Dokploy ni modifica el VPS. El push a `Development` publica imágenes probadas en GHCR, pero un operador elige digest y ejecuta el despliegue inicial.
+Nada en estos artefactos llama a la API de Dokploy ni modifica el VPS automáticamente. El push a `Development` publica imágenes probadas en GHCR, pero el operador elige el digest y ejecuta manualmente el despliegue inicial con validación entre pasos.
 
 ## Acceso Development
 
