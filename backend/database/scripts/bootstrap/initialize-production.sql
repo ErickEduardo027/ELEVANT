@@ -25,7 +25,7 @@ BEGIN
         N'@value nvarchar(32) OUTPUT',
         @value = @existing_environment OUTPUT;
 
-    IF @existing_environment <> N'Production'
+    IF @existing_environment IS NULL OR @existing_environment <> N'Production'
         THROW 51012, 'Existing database marker is not Production.', 1;
 
     PRINT N'ElevantProductionDb already exists with a valid Production marker.';
@@ -58,10 +58,16 @@ DECLARE @growth_sql nvarchar(max) =
     N'ALTER DATABASE [ElevantProductionDb] MODIFY FILE (NAME = ' + QUOTENAME(@log_file, '''') + N', FILEGROWTH = 128MB);';
 EXEC sys.sp_executesql @growth_sql;
 
+GO
+
 USE [ElevantProductionDb];
 
-EXEC(N'CREATE SCHEMA [infra] AUTHORIZATION [dbo]');
+IF SCHEMA_ID(N'infra') IS NULL
+    EXEC(N'CREATE SCHEMA [infra] AUTHORIZATION [dbo]');
 
+IF OBJECT_ID(N'[infra].[database_instances]', N'U') IS NULL
+BEGIN
+    EXEC(N'
 CREATE TABLE [infra].[database_instances]
 (
     [id] tinyint NOT NULL CONSTRAINT [pk_database_instances] PRIMARY KEY,
@@ -69,10 +75,22 @@ CREATE TABLE [infra].[database_instances]
     [environment_name] nvarchar(32) NOT NULL,
     [created_at] datetimeoffset(3) NOT NULL,
     CONSTRAINT [ck_database_instances_singleton] CHECK ([id] = 1),
-    CONSTRAINT [ck_database_instances_environment] CHECK ([environment_name] IN (N'Development', N'Production'))
+    CONSTRAINT [ck_database_instances_environment] CHECK ([environment_name] IN (N''Development'', N''Production''))
 );
 
 INSERT INTO [infra].[database_instances] ([id], [instance_id], [environment_name], [created_at])
-VALUES (1, NEWID(), N'Production', SYSUTCDATETIME());
+VALUES (1, NEWID(), N''Production'', SYSUTCDATETIME());');
+END;
+
+IF (SELECT COUNT_BIG(*) FROM [infra].[database_instances]) <> 1
+    THROW 51013, 'Production database marker must be a singleton.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM [infra].[database_instances]
+    WHERE [id] = 1
+      AND [environment_name] = N'Production'
+)
+    THROW 51014, 'Production database marker is not Production.', 1;
 
 PRINT N'ElevantProductionDb bootstrap completed. Apply the reviewed EF migration bundle next.';

@@ -20,6 +20,7 @@ required=(
   ELEVANT_DB_BACKUP_PASSWORD
 )
 
+declare -A password_owners=()
 for variable_name in "${required[@]}"; do
   value="${!variable_name:-}"
   if [[ -z "$value" ]]; then
@@ -30,20 +31,27 @@ for variable_name in "${required[@]}"; do
     echo "$variable_name must be 16-128 characters from the documented safe character set." >&2
     exit 1
   fi
+  if [[ -n "${password_owners[$value]+present}" ]]; then
+    echo "$variable_name must not reuse the password from ${password_owners[$value]}." >&2
+    exit 1
+  fi
+  password_owners["$value"]="$variable_name"
 done
 
 server="${ELEVANT_SQL_SERVER:-elevant-dev-sql}"
-login="elevant_dev_dba"
-password="$ELEVANT_DB_DBA_PASSWORD"
+login=""
+password=""
 
 for attempt in $(seq 1 60); do
-  if "$sqlcmd_path" -S "$server" -U "$login" -P "$password" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+  if "$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+    login="elevant_dev_dba"
+    password="$ELEVANT_DB_DBA_PASSWORD"
     break
   fi
 
-  login="sa"
-  password="$MSSQL_SA_PASSWORD"
-  if "$sqlcmd_path" -S "$server" -U "$login" -P "$password" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+  if "$sqlcmd_path" -S "$server" -U sa -P "$MSSQL_SA_PASSWORD" -C -b -Q "SELECT 1" -o /dev/null 2>/dev/null; then
+    login="sa"
+    password="$MSSQL_SA_PASSWORD"
     break
   fi
 
@@ -53,6 +61,11 @@ for attempt in $(seq 1 60); do
   fi
   sleep 2
 done
+
+if [[ -z "$login" || -z "$password" ]]; then
+  echo "SQL Server credential selection did not complete safely." >&2
+  exit 1
+fi
 
 "$sqlcmd_path" \
   -S "$server" \
@@ -68,5 +81,17 @@ done
     "BACKUP_PASSWORD=$ELEVANT_DB_BACKUP_PASSWORD" \
   -i /opt/elevant-db-ops/sql/provision-development.sql
 
-"$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b \
-  -Q "SELECT 1; ALTER LOGIN [sa] DISABLE;" -o /dev/null
+if ! "$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b \
+  -Q "SELECT 1;" -o /dev/null 2>/dev/null; then
+  echo "Declared Development DBA credentials failed verification; sa remains unchanged." >&2
+  exit 1
+fi
+
+sa_disabled="$("$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b -h -1 -W \
+  -Q "SET NOCOUNT ON; SELECT [is_disabled] FROM sys.sql_logins WHERE [name] = N'sa';")"
+if [[ "$sa_disabled" == "0" ]]; then
+  "$sqlcmd_path" -S "$server" -U sa -P "$MSSQL_SA_PASSWORD" -C -b -Q "ALTER LOGIN [sa] DISABLE;" -o /dev/null
+elif [[ "$sa_disabled" != "1" ]]; then
+  echo "Could not verify the sa login state after provisioning." >&2
+  exit 1
+fi

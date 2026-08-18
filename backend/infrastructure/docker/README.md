@@ -34,6 +34,8 @@ El orden local es SQL -> provisioner -> migrator -> seeder -> API. SQL se liga s
 - 4 GB/1.25 CPU de límite, 3072 MB de memoria interna SQL y `shm_size` 512 MB;
 - logs rotados y 90 s de gracia de parada.
 
+Antes de SQL, `backup-storage-init` usa el comando incluido en la misma imagen ops para preparar el volumen de backups como UID/GID 10001. Corre sin red, con todas las capacidades eliminadas salvo `CHOWN` y `FOWNER`. Esto evita que el volumen root-owned de Docker haga fallar el primer backup; SQL y los demás jobs siguen como `mssql` no-root. El Compose local aplica el mismo orden.
+
 Antes del primer deploy, inspeccione subnets existentes y cree recursos una sola vez con un CIDR no conflictivo:
 
 ```bash
@@ -54,7 +56,7 @@ No hay Compose Production en esta fase: su licencia, host, backup off-host y cre
 
 ## Imágenes inmutables
 
-CI construye y ejecuta `elevant-db-ops:ci` y `elevant-db-release:ci` contra SQL Server 2022. Solo después, en un push a `Development`, publica tags `sha-<commit>` y alias `development` en GHCR. Para Dokploy resuelva el tag SHA y configure una referencia con digest:
+CI construye `elevant-db-ops:ci` y `elevant-db-release:ci` con las etiquetas OCI `org.opencontainers.image.revision=<commit>` y `org.opencontainers.image.source=<repositorio>`, y exige ambas durante la certificación aislada contra SQL Server 2022. Un job separado —el único con `packages: write`— reconstruye y vuelve a certificar las imágenes exactas que publicará en un push a `Development`. Publica tags `sha-<commit>`/`development` y registra sus digests. Dokploy usa únicamente la referencia por digest:
 
 ```text
 ghcr.io/<namespace>/elevant-db-release@sha256:<digest>
