@@ -1,6 +1,6 @@
 # Implementación Development en VPS con Dokploy
 
-Estado: artefactos de base preparados; no se ha modificado ningún VPS ni se ha llamado a Dokploy. Esta guía se ejecuta después del review y merge manual de `feature/database-v1` en `Development`.
+Estado: DB v1 fue fusionada en `Development` y sus imágenes publicables quedaron certificadas. El VPS fue auditado en modo lectura; el hardening y el despliegue siguen pendientes y serán ejecutados manualmente por el operador. La secuencia con checkpoints y rollback está en [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
 
@@ -39,7 +39,7 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 ## Prerrequisitos que deben confirmarse
 
 - VPS Linux `amd64` con Dokploy, Docker y consola break-glass del proveedor.
-- Los tres desarrolladores y la tablet de pruebas pueden instalar Tailscale actualizado (1.94+ recomendado para Services).
+- Los tres desarrolladores y la tablet de pruebas pueden instalar Tailscale actualizado (1.94+ obligatorio para este contrato de Services).
 - Tailnet con MagicDNS, HTTPS y Services; host con identidad `tag:elevant-dev-host`.
 - Distinción de miembros `dev` y `ops` para grants de aplicación vs panel/SSH.
 - Namespace GHCR y credencial Dokploy `read:packages` si los packages son privados.
@@ -59,7 +59,7 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 5. Usar firewall del proveedor. Mantener 1433 y 18080-18082 cerrados siempre; cerrar 3000/80/443 públicos y SSH público después de comprobar acceso privado. Docker puede saltarse reglas UFW, por eso se valida externamente el firewall del proveedor.
 6. Mantener `tailscale funnel off`.
 
-No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria. Tailscale Serve debe apuntar solo a los cuatro loopbacks previstos.
+No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria. Tailscale Serve debe apuntar solo a los cinco loopbacks previstos: Dokploy, monitoreo y, cuando existan, API, AVIAM Web y Public Web.
 
 ## 2. Publicar imágenes aprobadas
 
@@ -87,7 +87,8 @@ Registre CIDR/gateway. El gateway exacto podrá usarse como proxy conocido en AP
 ## 4. Crear `elevant-dev-database`
 
 - Tipo: Docker Compose normal, no Swarm Stack.
-- Fuente: `backend/infrastructure/docker/compose.development.database.yml`.
+- Provider: Raw, pegado desde el commit aprobado y validado por SHA-256 según [Configuración de Dokploy](dokploy-configuration.md); no una rama mutable.
+- Fuente certificada: `backend/infrastructure/docker/compose.development.database.yml`.
 - AutoDeploy: desactivado.
 - Registry: GHCR configurado.
 - Variables: siete contraseñas diferentes y `ELEVANT_DB_OPS_IMAGE` con digest.
@@ -106,7 +107,8 @@ Validar tras el primer deploy desde un job/red privada:
 
 ## 5. Ejecutar `elevant-dev-database-release`
 
-- Fuente: `backend/infrastructure/docker/compose.development.release.yml`.
+- Provider: Raw, con la misma verificación de revisión, hash y Preview Compose.
+- Fuente certificada: `backend/infrastructure/docker/compose.development.release.yml`.
 - AutoDeploy: desactivado; cada promoción de esquema es una acción explícita.
 - Variables: imagen release con digest, cadena migrator, cadena seeder y password de cuenta demo.
 - El migrator usa `elevant_dev_migrator`; el seed usa `elevant_dev_seeder`.
@@ -123,7 +125,7 @@ Después valide migraciones aplicadas, seed sintético, idempotencia de un segun
 
 ## 6. Backup y restore-check
 
-Prerequisito de seguridad: verifique y registre la versión de Dokploy antes de habilitar Server Jobs. Debe ser posterior a `0.26.7`; el advisory crítico [GHSA-7wmr-57mg-h5q6](https://github.com/Dokploy/dokploy/security/advisories/GHSA-7wmr-57mg-h5q6) afecta `<=0.26.7` y permitía ejecución de schedules sin autorización suficiente. El panel, API, creación y ejecución de jobs quedan limitados al grupo `ops` aunque la versión esté corregida.
+Prerequisito de seguridad: antes de habilitar Server Jobs, el panel debe estar aislado por Tailscale, limitado a `ops` y la versión efectiva debe contrastarse contra **todos** los advisories vigentes. El VPS auditado usa Dokploy `v0.30.0`; no se acepta volver a una versión anterior. El umbral histórico `>0.26.7` no basta: `v0.29.13` todavía permitía un escape al host para un miembro autenticado con `domain:create`, corregido en `v0.30.0`. Consulte [GHSA-7wmr-57mg-h5q6](https://github.com/Dokploy/dokploy/security/advisories/GHSA-7wmr-57mg-h5q6), la [corrección posterior](https://github.com/Dokploy/dokploy/pull/4872) y el [release v0.30.0](https://github.com/Dokploy/dokploy/releases/tag/v0.30.0). La creación y ejecución de jobs continúa siendo exclusiva de `ops` aunque la versión esté corregida.
 
 Los servicios `backup` y `restore-check` son contenedores one-shot bajo el profile
 `operations`; no permanecen ejecutándose. No los programe como Compose Job: ese

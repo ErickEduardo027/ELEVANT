@@ -1,0 +1,26 @@
+[Unit]
+Description=Rollback the ELEVANT public-interface firewall policy
+Documentation=file:/usr/local/share/doc/elevant-firewall/README.md
+ConditionPathExists=/var/lib/elevant-firewall/rollback-armed
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /usr/local/sbin/elevant-firewall-rollback --config /etc/elevant/firewall.env
+ExecStartPost=/usr/bin/systemctl disable --now elevant-firewall-rollback.timer
+ExecStartPost=/usr/bin/rm -f /var/lib/elevant-firewall/rollback-armed
+TimeoutStartSec=60
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/elevant-firewall /run/lock -/run/xtables.lock
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

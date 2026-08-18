@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export LC_ALL=C
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+section() {
+  printf '\n=== %s ===\n' "$1"
+}
+
+try() {
+  "$@" 2>&1 || printf 'unavailable: %s\n' "$*"
+}
+
+section timestamp
+date -u --iso-8601=seconds
+
+section host
+try hostnamectl --static
+try uname -r
+if [[ -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  printf 'os=%s\n' "${PRETTY_NAME:-unknown}"
+fi
+
+section capacity
+try uptime
+try free -h
+try swapon --show
+try df -hT /
+
+section interfaces
+try ip -brief address show
+try ip -4 route show
+try ip -6 route show
+
+section services
+for unit in ssh docker containerd tailscaled elevant-firewall; do
+  state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+  printf '%s=%s\n' "$unit" "${state:-not-found}"
+done
+
+section listeners
+try ss -H -lntup
+
+section docker_version
+if command -v docker >/dev/null 2>&1; then
+  try docker version --format 'client={{.Client.Version}} server={{.Server.Version}} api={{.Server.APIVersion}}'
+  try docker info --format 'swarm={{.Swarm.LocalNodeState}} control={{.Swarm.ControlAvailable}}'
+
+  section docker_services
+  try docker service ls --format 'name={{.Name}} image={{.Image}} replicas={{.Replicas}} ports={{.Ports}}'
+
+  section docker_containers
+  try docker ps --format 'name={{.Names}} image={{.Image}} status={{.Status}} ports={{.Ports}}'
+
+  section docker_networks
+  while IFS= read -r network_id; do
+    [[ -n "$network_id" ]] || continue
+    try docker network inspect "$network_id" --format 'name={{.Name}} driver={{.Driver}} internal={{.Internal}} scope={{.Scope}} subnets={{range .IPAM.Config}}{{.Subnet}} {{end}}'
+  done < <(docker network ls -q 2>/dev/null || true)
+
+  section docker_volumes
+  try docker volume ls --format 'name={{.Name}} driver={{.Driver}}'
+else
+  printf 'unavailable: docker command not found\n'
+fi
+
+section firewall_ipv4
+try iptables -S INPUT
+if iptables -S DOCKER-USER >/dev/null 2>&1; then
+  try iptables -S DOCKER-USER
+else
+  printf 'DOCKER-USER=absent\n'
+fi
+
+section firewall_ipv6
+try ip6tables -S INPUT
+if ip6tables -S DOCKER-USER >/dev/null 2>&1; then
+  try ip6tables -S DOCKER-USER
+else
+  printf 'DOCKER-USER=absent\n'
+fi
+
+section tailscale
+if command -v tailscale >/dev/null 2>&1; then
+  try tailscale version
+  try tailscale status
+  try tailscale serve status
+  try tailscale funnel status
+else
+  printf 'tailscale=not-installed\n'
+fi
+
+section reboot
+if [[ -e /var/run/reboot-required ]]; then
+  printf 'reboot_required=yes\n'
+else
+  printf 'reboot_required=no\n'
+fi

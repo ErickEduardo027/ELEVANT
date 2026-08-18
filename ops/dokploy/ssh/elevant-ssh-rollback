@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export LC_ALL=C
+export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+
+readonly TARGET='/etc/ssh/sshd_config.d/00-elevant-hardening.conf'
+readonly MARKER='# Managed by ELEVANT. See ops/dokploy/ssh/README.md before editing.'
+
+die() {
+  printf 'elevant-ssh-rollback: ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+(( EUID == 0 )) || die 'must run as root'
+
+if [[ -e "$TARGET" ]]; then
+  [[ -f "$TARGET" && ! -L "$TARGET" ]] || \
+    die "refusing to remove non-regular or symlink target: $TARGET"
+  [[ "$(head -n 1 -- "$TARGET")" == "$MARKER" ]] || \
+    die "refusing to remove a file without the ELEVANT marker: $TARGET"
+  rm -- "$TARGET"
+fi
+
+/usr/sbin/sshd -t || \
+  die 'base SSH configuration is invalid after removing the ELEVANT drop-in'
+systemctl reload ssh.service
+printf 'elevant-ssh-rollback: ELEVANT drop-in removed and ssh reloaded\n'
