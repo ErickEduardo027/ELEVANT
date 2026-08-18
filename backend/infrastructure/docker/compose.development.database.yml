@@ -1,6 +1,30 @@
 name: elevant-dev-database
 
 services:
+  backup-storage-init:
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    user: "0:0"
+    command: ["initialize-backup-storage"]
+    volumes:
+      - sql-backups:/var/opt/mssql/backups
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.10
+    logging: &rotated-logs
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
     hostname: elevant-dev-sql
@@ -14,6 +38,9 @@ services:
     volumes:
       - sql-data:/var/opt/mssql
       - sql-backups:/var/opt/mssql/backups
+    depends_on:
+      backup-storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD-SHELL
@@ -31,11 +58,7 @@ services:
     mem_limit: 4g
     cpus: 1.25
     shm_size: 512m
-    logging: &rotated-logs
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
+    logging: *rotated-logs
     networks:
       data:
         aliases:
@@ -92,6 +115,24 @@ services:
       ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
     volumes:
       - sql-backups:/var/opt/mssql/backups:ro
+    restart: "no"
+    mem_limit: 512m
+    cpus: 0.50
+    logging: *rotated-logs
+    networks:
+      - data
+
+  verify-development:
+    profiles: ["operations"]
+    image: "${ELEVANT_DB_OPS_IMAGE:?Set an immutable GHCR db-ops image including @sha256 digest}"
+    pull_policy: always
+    command: ["verify-development"]
+    environment:
+      ELEVANT_SQL_SERVER: "elevant-dev-sql"
+      ELEVANT_DB_DBA_PASSWORD: "${ELEVANT_DB_DBA_PASSWORD:?ELEVANT_DB_DBA_PASSWORD must be set}"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
     restart: "no"
     mem_limit: 512m
     cpus: 0.50

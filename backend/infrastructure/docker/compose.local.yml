@@ -7,6 +7,26 @@ x-rotated-logs: &rotated-logs
     max-file: "3"
 
 services:
+  backup-storage-init:
+    build:
+      context: ../../database
+      dockerfile: Dockerfile.ops
+    image: elevant-db-ops:local
+    user: "0:0"
+    command: ["initialize-backup-storage"]
+    volumes:
+      - sql-local-backups:/var/opt/mssql/backups
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    logging: *rotated-logs
+
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
     hostname: elevant-local-sql
@@ -22,6 +42,9 @@ services:
     volumes:
       - sql-local-data:/var/opt/mssql
       - sql-local-backups:/var/opt/mssql/backups
+    depends_on:
+      backup-storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD-SHELL
