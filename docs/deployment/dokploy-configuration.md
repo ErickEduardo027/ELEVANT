@@ -43,7 +43,7 @@ retira en cuanto su Service privado queda validado.
 ### C. Firewall transitorio, parches y reboot
 
 1. Instalar los artefactos revisados de [`ops/dokploy/firewall`](../../ops/dokploy/firewall/README.md).
-2. Armar el rollback persistente de diez minutos y aplicar fase `transitional`: ICMP/ICMPv6, UDP 41641, TCP 22 y TCP 80; todo otro ingreso por la interfaz pública se rechaza, incluido tráfico DNAT de Docker.
+2. Armar el rollback persistente de diez minutos y aplicar fase `transitional`: ICMP/ICMPv6, UDP 41641, TCP 22 y TCP 80 al host; en forwarding solo continúa TCP nuevo con DNAT y puerto de destino original 80. Todo otro ingreso por la interfaz pública se rechaza antes de las reglas Docker/Tailscale.
 3. Confirmar que el perfil Hostinger ya quedó en su matriz transitoria sin `3000`; no ampliarlo al aplicar la segunda capa del host.
 4. Probar con conexiones nuevas IPv4 e IPv6: `3000`, `1433`, Docker API y Swarm deben estar bloqueados. Tailscale, SSH privado, Dokploy privado y landing HTTP deben conservar su resultado esperado.
 5. Cancelar y verificar el primer rollback. No ejecutar `apt` con ese plazo de diez minutos corriendo.
@@ -53,6 +53,24 @@ retira en cuanto su Service privado queda validado.
 9. Reiniciar. Dentro de los diez minutos posteriores al boot, repetir Tailscale, dos sesiones SSH nuevas, Dokploy, reglas host, perfil Hostinger y landing; solo entonces cancelar de nuevo el rollback.
 
 No desactive las reglas administradas por Docker/Tailscale, no guarde su ruleset completo y no cambie Docker al backend nftables experimental.
+
+El firewall del host usa exclusivamente `table inet elevant_firewall`, con base
+chains `public_input` (hook `input`) y `public_forward` (hook `forward`) a
+prioridad `filter - 10` y política `accept`. Los
+`drop` limitados a la interfaz pública son definitivos antes de la compatibilidad
+iptables-nft; los `accept` continúan hacia las reglas normales del host. Docker y
+Tailscale permanecen en iptables-nft/netfilter-mode `on` y pueden reordenar sus
+propios hooks sin desplazar la tabla ELEVANT. Aplicación y reemplazo son una sola
+transacción nft; cualquier drift de la tabla ELEVANT aborta antes de eliminarla.
+Un drop-in de `docker.service` ordena el arranque normal después de
+`elevant-firewall.service` y ejecuta un `--verify-active` read-only antes de cada
+start/restart. Docker falla cerrado si falta la tabla o no coincide exactamente
+con la fase configurada, sin enlazar los ciclos de vida de ambas unidades.
+Tailscale queda disponible como recuperación privada y el perfil Hostinger
+continúa protegiendo los servicios del host durante ese fallo.
+Después de cada boot se comprueban por separado
+`elevant-firewall.service` y `docker.service`; un target `active` no demuestra
+que sus unidades dependientes hayan arrancado correctamente.
 
 El perfil de Hostinger usa política implícita `DROP`: no añada reglas `Allow all` ni rangos de puertos. Durante el bootstrap, antes de que Dokploy exista por Tailscale, contiene exclusivamente:
 
@@ -214,7 +232,7 @@ Estos backups son suficientes solo mientras Development sea sintético y reconst
 
 ## Rollback
 
-- Firewall host: rollback temporizado que elimina solo chains `ELEVANT-*`.
+- Firewall host: rollback temporizado que valida y elimina solo `table inet elevant_firewall`.
 - Hostinger: desactivar el perfil.
 - SSH: retirar solo el drop-in desde Browser Terminal.
 - Traefik: recrear temporalmente con el digest auditado 3.6.7.

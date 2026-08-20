@@ -1,34 +1,68 @@
 # Firewall del VPS Development
 
-Estos artefactos protegen la interfaz pública del VPS sin modificar las reglas
-internas de Docker o Tailscale. Administran exclusivamente estas cadenas en las
-tablas `filter` de IPv4 e IPv6:
+Estos artefactos crean una sola tabla nativa de nftables, `inet
+elevant_firewall`, para proteger la interfaz pública del VPS en IPv4 e IPv6.
+La tabla contiene únicamente dos base chains propiedad de ELEVANT:
 
-- `ELEVANT-PUBLIC-IN`, enlazada desde `INPUT` solo para la interfaz pública.
-- `ELEVANT-DOCKER-PUBLIC`, enlazada desde `DOCKER-USER` en IPv4 e IPv6.
+- `public_input`, conectada al hook `input`.
+- `public_forward`, conectada al hook `forward`.
 
-Los scripts requieren Ubuntu 24.04 con `iptables` e `ip6tables` usando el backend
-`nf_tables`. Fallan antes de aplicar reglas si la configuración, la interfaz o el
-backend no son válidos. También rechazan el archivo de configuración si no es un
-archivo regular, pertenece a una UID distinta de `0` o su modo no es exactamente
-`0600`. Nunca ejecutan `iptables-save`, cambian políticas base ni vacían cadenas
-de Docker, Tailscale, `INPUT` o `FORWARD`.
+Ambas usan prioridad explícita `filter - 10`, anterior a la prioridad `filter`
+(`0`) usada por las reglas compatibles con iptables-nft. Su política base es
+`accept` y todas las reglas están limitadas con `iifname` a la interfaz pública.
+En nftables un `accept` permite continuar hacia chains posteriores, mientras un
+`drop` es definitivo. Por eso ELEVANT puede bloquear primero el tráfico público
+sin modificar ni depender del orden de `ts-input`, `ts-forward`, `DOCKER-USER` o
+las reglas internas de Docker.
 
-## Políticas
+Tailscale conserva `--netfilter-mode=on` y Docker conserva el backend
+iptables-nft. Los scripts nunca ejecutan `flush ruleset`, `iptables-save`,
+`nftables.service` ni escriben `/etc/nftables.conf`. Tampoco agregan, mueven,
+vacían o eliminan tablas/chains de Docker, Tailscale u otro propietario. Este
+diseño sigue el modelo de base chains independientes y prioridades documentado
+por [Netfilter](https://netfilter.org/projects/nftables/manpage.html)
+y [Docker](https://docs.docker.com/engine/network/firewall-nftables/).
 
-| Fase | Tráfico nuevo al host por la interfaz pública | Tráfico público reenviado a Docker |
+## Política
+
+| Fase | Tráfico nuevo al host por la interfaz pública | Tráfico público reenviado |
 | --- | --- | --- |
-| `transitional` | ICMP/ICMPv6, UDP `41641`, TCP `22` y TCP `80` | Solo conexiones cuyo puerto TCP de destino original sea `80` |
-| `final` | ICMP/ICMPv6 y UDP `41641` | Ninguno |
+| `transitional` | ICMP, ICMPv6, UDP `41641`, TCP `22` y TCP `80` | Solo una conexión TCP nueva con DNAT cuyo puerto de destino original sea `80` |
+| `final` | ICMP, ICMPv6 y UDP `41641` | Ninguno |
 
-En ambas fases se aceptan respuestas `ESTABLISHED,RELATED`, se descarta tráfico
-`INVALID` y todo lo demás termina en `DROP`. El tráfico recibido por `tailscale0`
-no atraviesa el salto, porque este queda limitado a la interfaz pública. Este
-paquete no configura Tailscale y presupone que Funnel permanece desactivado.
+En ambas fases se descarta primero `INVALID`, se deja continuar
+`ESTABLISHED,RELATED` y el último match de la interfaz pública es `drop`. La
+excepción transitoria de forwarding exige conjuntamente `ct state new`,
+dirección conntrack `original`, estado `dnat`, protocolo TCP y
+`ct original proto-dst 80`; no es una apertura general de TCP `80` hacia una
+ruta arbitraria. Un paquete público premarcado con el mark de Tailscale o
+encaminado hacia `tailscale0` sigue cayendo antes de `ts-forward` si no cumple
+esa tupla exacta.
 
-La fase transitoria existe únicamente para conservar SSH y HTTP mientras se
-valida Tailscale. SQL Server, Dokploy, Docker API, HTTPS público y los puertos de
-Swarm no reciben ninguna excepción.
+El tráfico recibido desde `tailscale0`, bridges Docker u otras interfaces no
+coincide con `iifname` y continúa intacto. Funnel permanece desactivado. SQL
+Server, Dokploy, Docker API, HTTPS público y los puertos de Swarm no reciben
+excepción.
+
+## Preflight y propiedad estricta
+
+Los scripts requieren Ubuntu 24.04, `nft`, `iptables` e `ip6tables`. Los dos
+wrappers de iptables deben reportar el backend `nf_tables`. El archivo de
+configuración debe ser regular, no symlink, propiedad de UID `0` y modo exacto
+`0600`. Todas las rutas por defecto IPv4 e IPv6 deben indicar la misma interfaz
+configurada; `lo` y `tailscale0` se rechazan.
+
+Si `inet elevant_firewall` ya existe, el aplicador y el rollback comparan toda su
+estructura —tabla, comentarios, chains, hooks, prioridad, políticas, orden y
+expresiones— contra las dos fases canónicas. Una regla, chain, familia, interfaz
+o comentario desconocido aborta antes de borrar nada. Un objeto homónimo en
+otra familia también aborta. Esto evita apropiarse de una tabla ajena.
+
+La actualización se envía como un único batch `nft -f`: si la tabla existe, la
+transacción contiene `delete table` y la definición completa nueva. nftables
+confirma todo o conserva la versión anterior; no hay un intervalo entre delete
+y add. `--dry-run` ejecuta solamente el check de la transacción y la imprime, sin
+mutar el host.
 
 ## Instalación
 
@@ -48,6 +82,9 @@ sudo install -D -o root -g root -m 0644 \
   ops/dokploy/firewall/elevant-firewall.service \
   /etc/systemd/system/elevant-firewall.service
 sudo install -D -o root -g root -m 0644 \
+  ops/dokploy/firewall/20-elevant-firewall-gate.conf \
+  /etc/systemd/system/docker.service.d/20-elevant-firewall-gate.conf
+sudo install -D -o root -g root -m 0644 \
   ops/dokploy/firewall/elevant-firewall-rollback.service \
   /etc/systemd/system/elevant-firewall-rollback.service
 sudo install -D -o root -g root -m 0644 \
@@ -59,37 +96,49 @@ sudo install -D -o root -g root -m 0644 \
 sudo install -d -o root -g root -m 0700 /var/lib/elevant-firewall
 ```
 
-Confirmar que todas las rutas por defecto IPv4 e IPv6 usan la misma interfaz
-pública antes de continuar:
+Verificar herramientas, rutas y configuración antes de habilitar la unidad:
 
 ```bash
+nft --version
+iptables --version
+ip6tables --version
 ip -4 route show default
 ip -6 route show default
 sudoedit /etc/elevant/firewall.env
+sudo rm -f \
+  /etc/systemd/system/docker.service.requires/elevant-firewall.service
 sudo systemctl daemon-reload
-sudo systemctl enable elevant-firewall.service
+sudo systemctl reenable elevant-firewall.service
+sudo systemctl cat docker.service
+sudo systemctl show docker.service \
+  --property=After --property=Requires --property=ExecStartPre
 ```
 
-El aplicador exige que Docker haya creado `DOCKER-USER` en IPv4 y en IPv6, y
-comprueba en ambas familias el salto incondicional `FORWARD` → `DOCKER-USER`. Así
-no acepta una cadena huérfana o residual que no proteja realmente el tráfico
-publicado. El salto debe ser la primera regla de `FORWARD` y su única referencia.
-Si falta cualquier ruta, falla antes de modificar reglas; no existe una opción
-que permita omitir silenciosamente la protección IPv6.
+El `rm` retira solamente el enlace `docker.service.requires` de una versión
+anterior; debe terminar con el path exacto mostrado. `reenable` deja la unidad
+ELEVANT habilitada de forma independiente por `multi-user.target`.
 
-El preflight también exige al menos una ruta por defecto de cada familia y que
-todas indiquen `ELEVANT_PUBLIC_INTERFACE`. La mera existencia de la interfaz no
-es suficiente: una ruta IPv6 por otra NIC aborta antes de cambiar reglas.
+El drop-in de Docker no contiene `Wants` ni `Requires`: ordena el arranque
+normal después de ELEVANT y, antes de cada start/restart de Docker, ejecuta
+`--verify-active`. Ese modo toma el mismo lock, repite todo el preflight y exige
+que la tabla esté presente y coincida exactamente con la fase configurada, sin
+mutar nftables. Si la aplicación de boot falla, Docker también falla cerrado; un
+restart manual queda protegido aunque la unidad ELEVANT no forme parte de esa
+transacción. Tailscale no queda bloqueado para conservar recuperación privada.
 
-La unidad se ordena después de red, Docker y Tailscale. Docker y Tailscale la
-incluyen como dependencia al habilitarla, pero la unidad ELEVANT no intenta
-arrancarlos: así no hay una dependencia `Wants` recíproca. `PartOf` propaga los
-reinicios y `ReloadPropagatedFrom` propaga las recargas. Un arranque independiente
-de Docker o Tailscale también solicita la unidad mediante sus enlaces `.wants`.
+Detener o recargar ELEVANT no cicla Docker, y detener Docker no altera ELEVANT.
+Reiniciar o reordenar reglas de Docker/Tailscale tampoco mueve ni elimina la
+tabla independiente. `systemctl cat docker.service` debe mostrar el drop-in y
+su `ExecStartPre`; si no aparece, no se continúa.
+
+Un target puede quedar `active` aunque una unidad en su transacción haya
+fallado. Después de cada boot se validan explícitamente ambas unidades con
+`systemctl is-active elevant-firewall.service docker.service` y se revisa el
+journal de cualquiera que no devuelva `active`.
 
 ## Aplicación segura con rollback de diez minutos
 
-Primero inspeccionar exactamente lo que se ejecutaría:
+Primero inspeccionar la transacción completa:
 
 ```bash
 sudo /usr/bin/bash /usr/local/sbin/elevant-firewall-apply \
@@ -97,8 +146,8 @@ sudo /usr/bin/bash /usr/local/sbin/elevant-firewall-apply \
 ```
 
 Desde el Browser Terminal de Hostinger, armar el rollback persistente y después
-aplicar. El orden `enable`, marcador y `restart` garantiza que un reinicio después
-de crear el marcador vuelva a programar la recuperación:
+aplicar. El marcador en `/var/lib` sobrevive un reboot y vuelve a programar la
+recuperación al arrancar:
 
 ```bash
 sudo systemctl enable elevant-firewall-rollback.timer
@@ -110,38 +159,37 @@ sudo systemctl is-active elevant-firewall-rollback.timer
 sudo systemctl list-timers elevant-firewall-rollback.timer --no-pager
 ```
 
-No se aplican reglas si el timer no figura `enabled`, `active` y con una próxima
-ejecución. Solo después de comprobarlo se aplica la política:
+No aplicar si el timer no aparece `enabled`, `active` y con próxima ejecución.
+`reload-or-restart` usa `ExecReload` si la oneshot ya está activa y la inicia si
+no lo está; ambos caminos ejecutan el mismo reemplazo atómico dentro del sandbox
+de systemd y no reinician Docker:
 
 ```bash
-sudo systemctl restart elevant-firewall.service
+sudo systemctl reload-or-restart elevant-firewall.service
 ```
 
-El marcador vive en `/var/lib`, por lo que sobrevive un reinicio. El
-timer vuelve a contar diez minutos desde su activación durante el nuevo arranque;
-no conserva el instante exacto del plazo anterior, pero la recuperación permanece
-armada. Al dispararse, deshabilita la unidad de aplicación antes de retirar reglas,
-se deshabilita a sí mismo y elimina el marcador únicamente si el rollback termina.
+Mantener abierta la consola del proveedor. Desde sesiones nuevas e
+independientes comprobar:
 
-Mantener abierta esa consola. Antes de cancelar el temporizador, abrir sesiones
-nuevas e independientes y comprobar:
-
-1. SSH a través de Tailscale y `sudo` con el usuario operativo.
-2. Dokploy mediante su URL HTTPS privada de Tailscale.
-3. Estado y reglas instaladas:
+1. SSH y `sudo` por Tailscale.
+2. Dokploy por su URL HTTPS privada de Tailscale.
+3. Tabla ELEVANT y reglas Docker/Tailscale intactas.
+4. Pruebas externas nuevas de IPv4 e IPv6.
 
 ```bash
 sudo systemctl status elevant-firewall.service --no-pager
+sudo systemctl status docker.service --no-pager
+sudo nft list table inet elevant_firewall
 sudo iptables -S INPUT
-sudo iptables -S ELEVANT-PUBLIC-IN
+sudo iptables -S FORWARD
 sudo iptables -S DOCKER-USER
-sudo iptables -S ELEVANT-DOCKER-PUBLIC
 sudo ip6tables -S INPUT
-sudo ip6tables -S ELEVANT-PUBLIC-IN
+sudo ip6tables -S FORWARD
+sudo ip6tables -S DOCKER-USER
 sudo ss -lntup
 ```
 
-Si las pruebas pasan, cancelar el rollback y verificar que no esté activo:
+Si todo pasa, cancelar el rollback:
 
 ```bash
 sudo rm -f /var/lib/elevant-firewall/rollback-armed
@@ -151,36 +199,20 @@ sudo systemctl is-enabled elevant-firewall-rollback.timer || true
 sudo test ! -e /var/lib/elevant-firewall/rollback-armed
 ```
 
-Las salidas esperadas son `inactive` y `disabled`, y el último comando debe
-terminar en cero. Si se pierde acceso, no se cancela nada: el temporizador
-deshabilitará la unidad principal y retirará únicamente las reglas ELEVANT al
-cumplirse los diez minutos. Este rollback no cambia el firewall de Hostinger;
-por eso el perfil **final** del proveedor se activa solo después de validar el
-firewall final del host. El perfil bootstrap/transitorio ya debe estar activo
-según el runbook canónico.
+Las salidas esperadas son `inactive` y `disabled`. No cancelar basándose solo
+en una conexión ya abierta: `ESTABLISHED` puede seguir funcionando aunque una
+conexión nueva falle. El timer no modifica el firewall de Hostinger.
 
 ## Paso de transitorio a final
 
-1. Verificar primero Tailscale, SSH privado, Dokploy privado y el Browser Terminal.
+1. Validar Tailscale, SSH privado, Dokploy privado y Browser Terminal.
 2. Cambiar `ELEVANT_FIREWALL_PHASE=final` en `/etc/elevant/firewall.env`.
-3. Repetir el dry-run y el procedimiento con rollback de diez minutos.
-4. Desde una red externa, comprobar que no respondan los puertos públicos de SSH,
-   HTTP, HTTPS, Dokploy, SQL Server, Docker API ni Docker Swarm.
-5. Solo entonces activar en Hostinger el perfil final que permita ICMP/ICMPv6 y
-   UDP `41641`, sin reglas públicas para esos servicios.
-
-El firewall administrado de Hostinger es `DROP` por defecto. El perfil de
-bootstrap pudo aceptar temporalmente `3000` solo desde la IP del operador, pero
-esa regla se elimina en cuanto Dokploy funciona por Tailscale. El perfil
-transitorio acepta ICMP desde cualquier origen, UDP `41641` desde cualquier
-origen, TCP `22` únicamente desde las direcciones `/32` y `/128` del operador y
-TCP `80` desde cualquier origen. El perfil final conserva solo ICMP y UDP
-`41641`; no se agrega una regla general de aceptación. Los cambios pueden tardar
-hasta dos minutos y las conexiones ya establecidas no prueban una regla nueva.
-
-No se debe cancelar el rollback basándose únicamente en una sesión que ya estaba
-abierta: las conexiones `ESTABLISHED` continúan funcionando aun cuando el acceso
-nuevo esté bloqueado.
+3. Repetir dry-run y armar un rollback nuevo de diez minutos.
+4. Ejecutar `systemctl reload-or-restart elevant-firewall.service`.
+5. Desde otra red, comprobar en IPv4 e IPv6 que fallen los puertos públicos de
+   SSH, HTTP, HTTPS, Dokploy, SQL Server, Docker API y Docker Swarm.
+6. Solo entonces activar el perfil final de Hostinger con ICMP/ICMPv6 y UDP
+   `41641`, sin TCP público.
 
 ## Rollback manual exacto
 
@@ -194,34 +226,54 @@ sudo /usr/bin/bash /usr/local/sbin/elevant-firewall-rollback \
   --config /etc/elevant/firewall.env
 ```
 
-Solo si el rollback termina en cero, limpiar cualquier recuperación que se
-hubiera armado manualmente:
+El rollback valida propiedad estricta y ejecuta `nft --check` antes de cambiar
+estado. Elimina y verifica exclusivamente `table inet elevant_firewall` mientras
+la unidad sigue habilitada; solo después deshabilita/detiene
+`elevant-firewall.service`. Así, un corte anterior al delete conserva la tabla;
+uno después del delete pero antes de iniciar la desactivación conserva la unidad
+habilitada y la reconstruye en el boot. Si el corte ocurre dentro de
+`disable --now` después de retirar el enlace, el drop-in impide que Docker
+arranque sin una tabla válida y Tailscale conserva la recuperación privada.
+Después de una desactivación exitosa el rollback ya es intencionalmente completo
+y no reaplica. Si la desactivación devuelve error, intenta restaurar
+inmediatamente la tabla validada y el lifecycle enabled/active anterior. Si
+detecta drift, no cambia unidad ni tabla. Nunca vacía el ruleset ni toca una
+tabla ajena. Al terminar correctamente, la unidad queda inactiva y deshabilitada
+para que la política no reaparezca silenciosamente al reiniciar.
+
+El drop-in de Docker se conserva intencionalmente. El Docker que ya estaba
+activo no se detiene durante el rollback, pero su próximo start/restart falla
+cerrado hasta que se vuelva a habilitar/aplicar ELEVANT y `--verify-active`
+termine en cero. No retire el gate para forzar un arranque; use la consola del
+proveedor para reparar o reaplicar la tabla.
+
+Solo si termina en cero, limpiar una recuperación armada manualmente:
 
 ```bash
 sudo rm -f /var/lib/elevant-firewall/rollback-armed
 sudo systemctl disable --now elevant-firewall-rollback.timer
 ```
 
-El rollback acepta únicamente una referencia exacta y no duplicada por cadena.
-Después de retirar esos saltos vuelve a comprobar que no quede referencia alguna;
-solo entonces vacía y elimina las dos cadenas `ELEVANT-*`. Si otra regla intenta
-referenciar una cadena ELEVANT, el script aborta antes de vaciarla. El aplicador
-realiza la misma comprobación antes de reconstruir una cadena existente. Antes de
-retirar reglas, el script ejecutable deshabilita y detiene
-`elevant-firewall.service`; por ello el rollback no deja un estado engañoso
-`active (exited)` ni permite que la política vuelva a aplicarse en el siguiente
-arranque. Para volver a aplicar, se debe habilitar de nuevo la unidad principal.
-
 ## Comportamiento ante errores
 
 - `flock` impide aplicar y revertir al mismo tiempo.
-- Al actualizar una cadena existente se inserta primero un `DROP` temporal. Las
-  reglas nuevas se preparan detrás de él y el guard se retira al final.
-- Cada salto ELEVANT se instala en la regla 1 de su cadena padre. Si otro servicio
-  lo desplaza, el preflight aborta antes de modificar reglas; no intenta borrar
-  por número mientras otra herramienta podría estar cambiando la misma cadena.
-- Si una orden falla durante esa sustitución, el guard permanece y el camino
-  afectado queda cerrado. Ejecutar el rollback auditado desde la consola del
-  proveedor; no vaciar manualmente `DOCKER-USER` ni reiniciar Docker a ciegas.
-- El firewall de Hostinger es una segunda capa independiente y nunca es cambiado
-  por estos scripts.
+- Los dos hooks y ambas familias se validan y cambian en una sola transacción.
+- Una transacción inválida conserva íntegra la política anterior.
+- Cualquier drift de la tabla ELEVANT aborta antes del `delete table`.
+- Docker y Tailscale pueden reiniciarse sin reconciliar orden de hooks.
+- El firewall de Hostinger es una capa independiente y nunca es cambiado por
+  estos scripts.
+
+## Prueba reproducible
+
+La regresión automatizada corre en un namespace de red aislado y cubre IPv4,
+IPv6, INPUT, DNAT transitorio, prioridad frente a Tailscale/Docker, paquetes
+premarcados, `--verify-active` ausente/válido/fase incorrecta/lock, drift,
+atomicidad, compensación de rollback e idempotencia:
+
+```bash
+sudo bash ops/dokploy/firewall/test-firewall
+```
+
+La prueba no debe ejecutarse durante el despliegue manual; pertenece a CI o a un
+host desechable con `unshare`, `nft`, iptables-nft, `python3` y `ping`.

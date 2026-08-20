@@ -15,7 +15,7 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | Ruta | Propósito |
 | --- | --- |
 | `preflight/` | Inventario read-only y saneado para validar cada checkpoint |
-| `firewall/` | Reglas idempotentes limitadas a chains `ELEVANT-*`, rollback y unidad systemd |
+| `firewall/` | Tabla nft `inet elevant_firewall` idempotente, rollback exacto y unidad systemd |
 | `host/` | Parches Ubuntu/Docker, swap y reboot con gates de recuperación |
 | `tailscale/` | Política deny-by-default y enrolamiento seguro del host |
 | `ssh/` | Drop-in key-only, verificación efectiva y rollback acotado |
