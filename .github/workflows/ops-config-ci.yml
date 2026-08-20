@@ -34,9 +34,17 @@ jobs:
 
           required_tools=(
             bash
+            ip
+            ip6tables
+            iptables
+            nft
+            ping
+            python3
             shellcheck
             sshd
+            sysctl
             systemd-analyze
+            unshare
             visudo
           )
 
@@ -50,6 +58,7 @@ jobs:
           scripts=(
             ops/dokploy/firewall/elevant-firewall-apply
             ops/dokploy/firewall/elevant-firewall-rollback
+            ops/dokploy/firewall/test-firewall
             ops/dokploy/preflight/collect-state
             ops/dokploy/ssh/elevant-ssh-rollback
             ops/dokploy/ssh/elevant-ssh-verify
@@ -57,6 +66,10 @@ jobs:
 
           bash -n "${scripts[@]}"
           shellcheck "${scripts[@]}"
+
+      - name: Validate isolated nft firewall lifecycle
+        shell: bash
+        run: sudo bash ops/dokploy/firewall/test-firewall
 
       - name: Validate systemd and OpenSSH contracts
         shell: bash
@@ -76,6 +89,34 @@ jobs:
             ops/dokploy/firewall/elevant-firewall.service \
             ops/dokploy/firewall/elevant-firewall-rollback.service \
             ops/dokploy/firewall/elevant-firewall-rollback.timer
+
+          unit_root="$RUNNER_TEMP/elevant-systemd-root"
+          sudo install -D -m 0644 \
+            ops/dokploy/firewall/elevant-firewall.service \
+            "$unit_root/etc/systemd/system/elevant-firewall.service"
+          sudo install -D -m 0644 \
+            ops/dokploy/firewall/20-elevant-firewall-gate.conf \
+            "$unit_root/etc/systemd/system/docker.service.d/20-elevant-firewall-gate.conf"
+          sudo systemctl --root="$unit_root" enable elevant-firewall.service
+          test -L \
+            "$unit_root/etc/systemd/system/multi-user.target.wants/elevant-firewall.service"
+          test ! -L \
+            "$unit_root/etc/systemd/system/docker.service.requires/elevant-firewall.service"
+
+          expected_dropin="$RUNNER_TEMP/20-elevant-firewall-gate.expected.conf"
+          cat > "$expected_dropin" <<'EOF'
+          [Unit]
+          # Order the normal boot transaction after the independently enabled firewall.
+          # This does not pull either service into a manual transaction.
+          After=elevant-firewall.service
+
+          [Service]
+          # Every Docker start/restart independently proves that the exact configured
+          # ELEVANT policy is active. The verifier is read-only and fail-closed.
+          ExecStartPre=/usr/local/sbin/elevant-firewall-apply --config /etc/elevant/firewall.env --verify-active
+          EOF
+          diff -u "$expected_dropin" \
+            ops/dokploy/firewall/20-elevant-firewall-gate.conf
 
           test ! -e /etc/ssh/sshd_config.d/00-elevant-hardening.conf
           sudo install -D -m 0644 \

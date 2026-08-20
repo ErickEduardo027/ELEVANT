@@ -3,17 +3,21 @@ set -Eeuo pipefail
 
 readonly PROGRAM_NAME="${0##*/}"
 readonly LOCK_FILE="/run/lock/elevant-firewall.lock"
-readonly WAIT_SECONDS="10"
-readonly PUBLIC_CHAIN="ELEVANT-PUBLIC-IN"
-readonly DOCKER_CHAIN="ELEVANT-DOCKER-PUBLIC"
-readonly PUBLIC_JUMP_COMMENT="elevant-managed-public-input"
-readonly DOCKER_JUMP_COMMENT="elevant-managed-docker-public"
-readonly UPDATE_GUARD_COMMENT="elevant-update-guard"
+readonly TABLE_FAMILY="inet"
+readonly TABLE_NAME="elevant_firewall"
+readonly TABLE_COMMENT="elevant-owned-firewall-v1"
+readonly INPUT_CHAIN="public_input"
+readonly FORWARD_CHAIN="public_forward"
+readonly INPUT_CHAIN_COMMENT="elevant-owned-public-input-v1"
+readonly FORWARD_CHAIN_COMMENT="elevant-owned-public-forward-v1"
 
 CONFIG_FILE="/etc/elevant/firewall.env"
 DRY_RUN=0
+VERIFY_ACTIVE=0
 PUBLIC_INTERFACE=""
 FIREWALL_PHASE=""
+TABLE_PRESENT=0
+NFT_BATCH=""
 
 log() {
   printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
@@ -26,26 +30,16 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: elevant-firewall-apply [--config ABSOLUTE_PATH] [--dry-run]
+Usage: elevant-firewall-apply [--config ABSOLUTE_PATH] [--dry-run | --verify-active]
 
-Applies the ELEVANT public-interface firewall policy without flushing built-in,
-Docker, or Tailscale chains. The configuration file must contain exactly the
-supported KEY=value settings documented in firewall.env.example.
+Atomically applies the ELEVANT public-interface policy in its own nftables
+inet table. It never changes Docker, Tailscale, iptables, or other nft tables.
+The configuration file must contain exactly the settings documented in
+firewall.env.example.
+
+--verify-active performs the same fail-closed preflight and requires the
+installed table to match the configured phase exactly. It never mutates nftables.
 EOF
-}
-
-print_command() {
-  printf 'DRY-RUN:'
-  printf ' %q' "$@"
-  printf '\n'
-}
-
-run() {
-  if (( DRY_RUN )); then
-    print_command "$@"
-  else
-    "$@"
-  fi
 }
 
 require_command() {
@@ -64,6 +58,10 @@ parse_args() {
         DRY_RUN=1
         shift
         ;;
+      --verify-active)
+        VERIFY_ACTIVE=1
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -73,6 +71,9 @@ parse_args() {
         ;;
     esac
   done
+
+  (( ! (DRY_RUN && VERIFY_ACTIVE) )) || \
+    die "--dry-run and --verify-active are mutually exclusive"
 }
 
 load_config() {
@@ -120,103 +121,19 @@ load_config() {
 
   (( seen_interface == 1 && seen_phase == 1 )) || \
     die "configuration is missing one or more required settings"
-
   [[ "$PUBLIC_INTERFACE" =~ ^[[:alnum:]_.:-]{1,15}$ ]] || \
     die "invalid public interface name"
+  [[ "$PUBLIC_INTERFACE" != "lo" && "$PUBLIC_INTERFACE" != "tailscale0" ]] || \
+    die "the public interface cannot be lo or tailscale0"
   [[ "$FIREWALL_PHASE" == "transitional" || "$FIREWALL_PHASE" == "final" ]] || \
     die "ELEVANT_FIREWALL_PHASE must be transitional or final"
 }
 
-check_nft_backend() {
+check_iptables_nft_backend() {
   local tool="$1" version
-  version="$("$tool" --version)"
+  version="$("$tool" --version)" || die "could not inspect $tool backend"
   [[ "$version" == *"(nf_tables)"* ]] || \
     die "$tool is not using the required iptables-nft backend: $version"
-}
-
-chain_exists() {
-  local tool="$1" chain="$2"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" >/dev/null 2>&1
-}
-
-rule_count() {
-  local tool="$1" chain="$2"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" |
-    awk -v chain="$chain" '$1 == "-A" && $2 == chain { count += 1 } END { print count + 0 }'
-}
-
-reference_count() {
-  local tool="$1" chain="$2"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S |
-    awk -v chain="$chain" '
-      $1 == "-A" {
-        for (field_no = 3; field_no <= NF; field_no += 1) {
-          if (($field_no == "-j" || $field_no == "--jump" ||
-               $field_no == "-g" || $field_no == "--goto") &&
-              $(field_no + 1) == chain) {
-            count += 1
-          }
-        }
-      }
-      END { print count + 0 }
-    '
-}
-
-jump_position() {
-  local tool="$1" parent="$2" child="$3"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S "$parent" |
-    awk -v parent="$parent" -v child="$child" '
-      $1 == "-A" && $2 == parent {
-        rule_no += 1
-        for (field_no = 3; field_no <= NF; field_no += 1) {
-          if (($field_no == "-j" || $field_no == "--jump" ||
-               $field_no == "-g" || $field_no == "--goto") &&
-              $(field_no + 1) == child) {
-            print rule_no
-            exit
-          }
-        }
-      }
-    '
-}
-
-validate_managed_references() {
-  local tool="$1" chain="$2" parent="$3" comment="$4"
-  local count position
-  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$chain")
-
-  chain_exists "$tool" "$chain" || return 0
-  count="$(reference_count "$tool" "$chain")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
-
-  if (( count == 0 )); then
-    return 0
-  fi
-
-  if (( count != 1 )) || \
-     ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
-    die "$tool chain $chain has an unknown or duplicate external reference"
-  fi
-
-  position="$(jump_position "$tool" "$parent" "$chain")"
-  [[ "$position" == "1" ]] || \
-    die "$tool managed jump from $parent to $chain is not rule 1"
-}
-
-require_docker_user_path() {
-  local tool="$1" family="$2"
-  local count position
-
-  chain_exists "$tool" FORWARD || die "$family FORWARD chain is unavailable"
-  chain_exists "$tool" DOCKER-USER || \
-    die "$family DOCKER-USER chain is required but unavailable; start Docker and retry"
-  "$tool" -w "$WAIT_SECONDS" -t filter -C FORWARD -j DOCKER-USER >/dev/null 2>&1 || \
-    die "$family FORWARD has no unconditional jump to DOCKER-USER"
-
-  count="$(reference_count "$tool" DOCKER-USER)"
-  position="$(jump_position "$tool" FORWARD DOCKER-USER)"
-  [[ "$count" == "1" && "$position" == "1" ]] || \
-    die "$family DOCKER-USER must have exactly one reference at FORWARD rule 1"
 }
 
 require_default_route_interface() {
@@ -251,134 +168,193 @@ require_default_route_interface() {
     die "every $family_name default route must use $PUBLIC_INTERFACE"
 }
 
-append_public_rules() {
-  local tool="$1" protocol="$2"
+render_table_definition() {
+  local phase="$1"
 
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-    -m conntrack --ctstate INVALID \
-    -m comment --comment "elevant-drop-invalid" -j DROP
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-    -m conntrack --ctstate ESTABLISHED,RELATED \
-    -m comment --comment "elevant-allow-established" -j ACCEPT
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-    -p "$protocol" -m comment --comment "elevant-allow-control-messages" -j ACCEPT
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-    -p udp --dport 41641 \
-    -m comment --comment "elevant-allow-tailscale-direct" -j ACCEPT
+  cat <<EOF
+table $TABLE_FAMILY $TABLE_NAME {
+  comment "$TABLE_COMMENT"
 
-  if [[ "$FIREWALL_PHASE" == "transitional" ]]; then
-    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-      -p tcp --dport 22 -m conntrack --ctstate NEW \
-      -m comment --comment "elevant-temporary-ssh" -j ACCEPT
-    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-      -p tcp --dport 80 -m conntrack --ctstate NEW \
-      -m comment --comment "elevant-temporary-http" -j ACCEPT
+  chain $INPUT_CHAIN {
+    type filter hook input priority filter - 10; policy accept;
+    comment "$INPUT_CHAIN_COMMENT"
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-allow-established"
+    iifname "$PUBLIC_INTERFACE" ip protocol icmp accept comment "elevant-allow-icmp"
+    iifname "$PUBLIC_INTERFACE" meta l4proto ipv6-icmp accept comment "elevant-allow-icmpv6"
+    iifname "$PUBLIC_INTERFACE" udp dport 41641 accept comment "elevant-allow-tailscale-direct"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new tcp dport { 22, 80 } accept comment "elevant-temporary-tcp"
+EOF
   fi
 
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$PUBLIC_CHAIN" \
-    -m comment --comment "elevant-public-default-deny" -j DROP
-}
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-public-default-deny"
+  }
 
-append_docker_rules() {
-  local tool="$1"
+  chain $FORWARD_CHAIN {
+    type filter hook forward priority filter - 10; policy accept;
+    comment "$FORWARD_CHAIN_COMMENT"
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-forward-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-forward-allow-established"
+EOF
 
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
-    -m conntrack --ctstate INVALID \
-    -m comment --comment "elevant-docker-drop-invalid" -j DROP
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
-    -m conntrack --ctstate ESTABLISHED,RELATED \
-    -m comment --comment "elevant-docker-allow-established" -j ACCEPT
-
-  if [[ "$FIREWALL_PHASE" == "transitional" ]]; then
-    run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
-      -p tcp -m conntrack --ctstate NEW --ctdir ORIGINAL --ctorigdstport 80 \
-      -m comment --comment "elevant-docker-temporary-http" -j ACCEPT
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80 accept comment "elevant-forward-temporary-http"
+EOF
   fi
 
-  run "$tool" -w "$WAIT_SECONDS" -t filter -A "$DOCKER_CHAIN" \
-    -m comment --comment "elevant-docker-public-default-deny" -j DROP
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-forward-default-deny"
+  }
+}
+EOF
 }
 
-rebuild_chain() {
-  local tool="$1" chain="$2" kind="$3" protocol="${4:-}"
-  local existed=0 old_count=0 index
+# nft list output is intentionally compared exactly after whitespace
+# normalization. This rejects unknown chains, hooks, rules, expressions,
+# comments, priorities, and policies before an existing table is replaced.
+render_canonical_listing() {
+  local phase="$1"
 
-  if chain_exists "$tool" "$chain"; then
-    existed=1
-    old_count="$(rule_count "$tool" "$chain")"
+  cat <<EOF
+table $TABLE_FAMILY $TABLE_NAME {
+  comment "$TABLE_COMMENT"
+  chain $INPUT_CHAIN {
+    comment "$INPUT_CHAIN_COMMENT"
+    type filter hook input priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-allow-established"
+    iifname "$PUBLIC_INTERFACE" ip protocol icmp accept comment "elevant-allow-icmp"
+    iifname "$PUBLIC_INTERFACE" meta l4proto ipv6-icmp accept comment "elevant-allow-icmpv6"
+    iifname "$PUBLIC_INTERFACE" udp dport 41641 accept comment "elevant-allow-tailscale-direct"
+EOF
 
-    # Keep the managed path closed while replacing its rules. If any later
-    # command fails, this guard deliberately remains in place (fail closed).
-    run "$tool" -w "$WAIT_SECONDS" -t filter -I "$chain" 1 \
-      -m comment --comment "$UPDATE_GUARD_COMMENT" -j DROP
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new tcp dport { 22, 80 } accept comment "elevant-temporary-tcp"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-public-default-deny"
+  }
+  chain $FORWARD_CHAIN {
+    comment "$FORWARD_CHAIN_COMMENT"
+    type filter hook forward priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-forward-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-forward-allow-established"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80 accept comment "elevant-forward-temporary-http"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-forward-default-deny"
+  }
+}
+EOF
+}
+
+normalize_listing() {
+  awk 'NF { $1 = $1; print }'
+}
+
+validate_owned_table() {
+  local tables current expected_transitional expected_final
+  local -a families=()
+
+  tables="$(nft list tables)" || die "could not list nft tables"
+  mapfile -t families < <(
+    awk -v table_name="$TABLE_NAME" '
+      $1 == "table" && $3 == table_name { print $2 }
+    ' <<< "$tables"
+  )
+  if (( ${#families[@]} == 0 )); then
+    TABLE_PRESENT=0
+    return 0
+  fi
+
+  if (( ${#families[@]} != 1 )) || [[ "${families[0]}" != "$TABLE_FAMILY" ]]; then
+    die "table name $TABLE_NAME exists in an unexpected family or more than once"
+  fi
+
+  current="$(nft list table "$TABLE_FAMILY" "$TABLE_NAME" | normalize_listing)" || \
+    die "could not inspect existing ELEVANT nft table"
+  expected_transitional="$(render_canonical_listing transitional | normalize_listing)"
+  expected_final="$(render_canonical_listing final | normalize_listing)"
+
+  if [[ "$current" != "$expected_transitional" && "$current" != "$expected_final" ]]; then
+    die "existing nft table $TABLE_FAMILY $TABLE_NAME is not an exact ELEVANT-owned policy; refusing to replace it"
+  fi
+
+  TABLE_PRESENT=1
+}
+
+build_batch() {
+  local definition
+  definition="$(render_table_definition "$FIREWALL_PHASE")"
+
+  if (( TABLE_PRESENT )); then
+    NFT_BATCH="delete table $TABLE_FAMILY $TABLE_NAME"$'\n'"$definition"
   else
-    run "$tool" -w "$WAIT_SECONDS" -t filter -N "$chain"
-  fi
-
-  case "$kind" in
-    public)
-      append_public_rules "$tool" "$protocol"
-      ;;
-    docker)
-      append_docker_rules "$tool"
-      ;;
-    *)
-      die "internal error: unsupported chain kind: $kind"
-      ;;
-  esac
-
-  if (( existed )); then
-    # Rule 1 is the update guard. Remove the old rules at position 2, leaving
-    # the newly appended rules untouched, then remove only the exact guard.
-    for (( index = 0; index < old_count; index += 1 )); do
-      run "$tool" -w "$WAIT_SECONDS" -t filter -D "$chain" 2
-    done
-    run "$tool" -w "$WAIT_SECONDS" -t filter -D "$chain" \
-      -m comment --comment "$UPDATE_GUARD_COMMENT" -j DROP
+    NFT_BATCH="$definition"
   fi
 }
 
-ensure_jump() {
-  local tool="$1" parent="$2" child="$3" comment="$4"
-  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$child")
+check_batch() {
+  printf '%s\n' "$NFT_BATCH" | nft --check -f - || \
+    die "nft rejected the complete policy transaction"
+}
 
-  validate_managed_references "$tool" "$child" "$parent" "$comment"
+print_batch() {
+  printf '%s\n' "DRY-RUN: validated atomic nft transaction follows"
+  printf '%s\n' "$NFT_BATCH"
+}
 
-  if ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
-    run "$tool" -w "$WAIT_SECONDS" -t filter -I "$parent" 1 "${rule[@]}"
-  fi
+validate_applied_phase() {
+  local current expected
+  current="$(nft list table "$TABLE_FAMILY" "$TABLE_NAME" | normalize_listing)" || \
+    die "applied nft table is unavailable"
+  expected="$(render_canonical_listing "$FIREWALL_PHASE" | normalize_listing)"
+  [[ "$current" == "$expected" ]] || \
+    die "applied nft table does not match the requested canonical phase"
 }
 
 preflight() {
   (( EUID == 0 )) || die "must run as root"
 
+  require_command awk
   require_command flock
   require_command ip
   require_command iptables
   require_command ip6tables
-  require_command awk
+  require_command nft
   require_command stat
 
-  check_nft_backend iptables
-  check_nft_backend ip6tables
+  check_iptables_nft_backend iptables
+  check_iptables_nft_backend ip6tables
   ip link show dev "$PUBLIC_INTERFACE" >/dev/null 2>&1 || \
     die "configured public interface does not exist: $PUBLIC_INTERFACE"
   require_default_route_interface -4 IPv4
   require_default_route_interface -6 IPv6
+  validate_owned_table
 
-  chain_exists iptables INPUT || die "IPv4 INPUT chain is unavailable"
-  chain_exists ip6tables INPUT || die "IPv6 INPUT chain is unavailable"
-
-  require_docker_user_path iptables IPv4
-  require_docker_user_path ip6tables IPv6
-
-  # An ELEVANT-owned chain may be rebuilt only when it is unreferenced or has
-  # exactly its expected managed parent jump. Validate every family before any
-  # rule is changed so a failure cannot leave a partially updated policy.
-  validate_managed_references iptables "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
-  validate_managed_references iptables "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
-  validate_managed_references ip6tables "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
-  validate_managed_references ip6tables "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
+  if (( VERIFY_ACTIVE )); then
+    (( TABLE_PRESENT )) || \
+      die "required nft table $TABLE_FAMILY $TABLE_NAME is absent"
+    validate_applied_phase
+  else
+    build_batch
+    check_batch
+  fi
 }
 
 main() {
@@ -392,23 +368,27 @@ main() {
   flock -n 9 || die "another ELEVANT firewall operation is running"
 
   preflight
-  trap 'status=$?; if (( status != 0 )); then log "apply failed; an update guard may be denying traffic. Use the audited rollback from the provider console."; fi' EXIT
+
+  if (( VERIFY_ACTIVE )); then
+    log "verified active phase=$FIREWALL_PHASE interface=$PUBLIC_INTERFACE"
+    return 0
+  fi
 
   log "applying phase=$FIREWALL_PHASE interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
 
-  rebuild_chain iptables "$PUBLIC_CHAIN" public icmp
-  ensure_jump iptables INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
+  if (( DRY_RUN )); then
+    print_batch
+  else
+    printf '%s\n' "$NFT_BATCH" | nft -f - || \
+      die "atomic nft transaction failed; the previous ruleset was retained"
+    validate_applied_phase
+  fi
 
-  rebuild_chain iptables "$DOCKER_CHAIN" docker
-  ensure_jump iptables DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
-
-  rebuild_chain ip6tables "$PUBLIC_CHAIN" public ipv6-icmp
-  ensure_jump ip6tables INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
-
-  rebuild_chain ip6tables "$DOCKER_CHAIN" docker
-  ensure_jump ip6tables DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
-
-  log "policy applied successfully"
+  if (( DRY_RUN )); then
+    log "policy dry-run completed successfully"
+  else
+    log "policy applied successfully"
+  fi
 }
 
 main "$@"

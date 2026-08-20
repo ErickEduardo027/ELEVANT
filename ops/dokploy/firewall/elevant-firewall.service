@@ -2,9 +2,8 @@
 Description=ELEVANT public-interface firewall policy
 Documentation=file:/usr/local/share/doc/elevant-firewall/README.md
 Wants=network-online.target
-After=network-online.target docker.service tailscaled.service
-PartOf=docker.service tailscaled.service
-ReloadPropagatedFrom=docker.service tailscaled.service
+After=network-online.target
+Before=docker.service tailscaled.service
 
 [Service]
 Type=oneshot
@@ -15,11 +14,11 @@ TimeoutStartSec=60
 UMask=0077
 
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/run/lock -/run/xtables.lock
+ReadWritePaths=/run/lock
 ProtectClock=yes
 ProtectControlGroups=yes
 ProtectKernelLogs=yes
@@ -28,4 +27,4 @@ MemoryDenyWriteExecute=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
-WantedBy=multi-user.target docker.service tailscaled.service
+WantedBy=multi-user.target

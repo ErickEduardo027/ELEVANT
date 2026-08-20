@@ -13,11 +13,11 @@ TimeoutStartSec=60
 UMask=0077
 
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/elevant-firewall /run/lock -/run/xtables.lock
+ReadWritePaths=/var/lib/elevant-firewall /run/lock
 ProtectClock=yes
 ProtectControlGroups=yes
 ProtectKernelLogs=yes

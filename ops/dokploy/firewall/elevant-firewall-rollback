@@ -3,17 +3,28 @@ set -Eeuo pipefail
 
 readonly PROGRAM_NAME="${0##*/}"
 readonly LOCK_FILE="/run/lock/elevant-firewall.lock"
-readonly WAIT_SECONDS="10"
-readonly PUBLIC_CHAIN="ELEVANT-PUBLIC-IN"
-readonly DOCKER_CHAIN="ELEVANT-DOCKER-PUBLIC"
-readonly PUBLIC_JUMP_COMMENT="elevant-managed-public-input"
-readonly DOCKER_JUMP_COMMENT="elevant-managed-docker-public"
+readonly TABLE_FAMILY="inet"
+readonly TABLE_NAME="elevant_firewall"
+readonly TABLE_COMMENT="elevant-owned-firewall-v1"
+readonly INPUT_CHAIN="public_input"
+readonly FORWARD_CHAIN="public_forward"
+readonly INPUT_CHAIN_COMMENT="elevant-owned-public-input-v1"
+readonly FORWARD_CHAIN_COMMENT="elevant-owned-public-forward-v1"
 readonly APPLY_UNIT="elevant-firewall.service"
 
 CONFIG_FILE="/etc/elevant/firewall.env"
 DRY_RUN=0
 PUBLIC_INTERFACE=""
 FIREWALL_PHASE=""
+TABLE_PRESENT=0
+NFT_BATCH=""
+RESTORE_BATCH=""
+APPLY_WAS_ENABLED=0
+APPLY_WAS_ACTIVE=0
+UNIT_STATE_CAPTURED=0
+DEACTIVATION_ATTEMPTED=0
+TABLE_DELETED=0
+ROLLBACK_COMPLETE=0
 
 log() {
   printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
@@ -28,23 +39,10 @@ usage() {
   cat <<'EOF'
 Usage: elevant-firewall-rollback [--config ABSOLUTE_PATH] [--dry-run]
 
-Removes only the exact ELEVANT jumps and the two ELEVANT-owned custom chains.
-It does not flush or save INPUT, FORWARD, DOCKER-USER, Docker, or Tailscale rules.
+Removes only the exact, canonical ELEVANT-owned nftables inet table, verifies
+its absence, and then disables the apply unit. It never flushes a ruleset or
+changes Docker, Tailscale, iptables, or another nft table.
 EOF
-}
-
-print_command() {
-  printf 'DRY-RUN:'
-  printf ' %q' "$@"
-  printf '\n'
-}
-
-run() {
-  if (( DRY_RUN )); then
-    print_command "$@"
-  else
-    "$@"
-  fi
 }
 
 require_command() {
@@ -121,120 +119,92 @@ load_config() {
     die "configuration is missing one or more required settings"
   [[ "$PUBLIC_INTERFACE" =~ ^[[:alnum:]_.:-]{1,15}$ ]] || \
     die "invalid public interface name"
+  [[ "$PUBLIC_INTERFACE" != "lo" && "$PUBLIC_INTERFACE" != "tailscale0" ]] || \
+    die "the public interface cannot be lo or tailscale0"
   [[ "$FIREWALL_PHASE" == "transitional" || "$FIREWALL_PHASE" == "final" ]] || \
     die "ELEVANT_FIREWALL_PHASE must be transitional or final"
 }
 
-check_nft_backend() {
-  local tool="$1" version
-  version="$("$tool" --version)"
-  [[ "$version" == *"(nf_tables)"* ]] || \
-    die "$tool is not using the required iptables-nft backend: $version"
+render_canonical_listing() {
+  local phase="$1"
+
+  cat <<EOF
+table $TABLE_FAMILY $TABLE_NAME {
+  comment "$TABLE_COMMENT"
+  chain $INPUT_CHAIN {
+    comment "$INPUT_CHAIN_COMMENT"
+    type filter hook input priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-allow-established"
+    iifname "$PUBLIC_INTERFACE" ip protocol icmp accept comment "elevant-allow-icmp"
+    iifname "$PUBLIC_INTERFACE" meta l4proto ipv6-icmp accept comment "elevant-allow-icmpv6"
+    iifname "$PUBLIC_INTERFACE" udp dport 41641 accept comment "elevant-allow-tailscale-direct"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new tcp dport { 22, 80 } accept comment "elevant-temporary-tcp"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-public-default-deny"
+  }
+  chain $FORWARD_CHAIN {
+    comment "$FORWARD_CHAIN_COMMENT"
+    type filter hook forward priority filter - 10; policy accept;
+    iifname "$PUBLIC_INTERFACE" ct state invalid drop comment "elevant-forward-drop-invalid"
+    iifname "$PUBLIC_INTERFACE" ct state { established, related } accept comment "elevant-forward-allow-established"
+EOF
+
+  if [[ "$phase" == "transitional" ]]; then
+    cat <<EOF
+    iifname "$PUBLIC_INTERFACE" ct state new ct direction original ct status dnat meta l4proto tcp ct original proto-dst 80 accept comment "elevant-forward-temporary-http"
+EOF
+  fi
+
+  cat <<EOF
+    iifname "$PUBLIC_INTERFACE" drop comment "elevant-forward-default-deny"
+  }
+}
+EOF
 }
 
-chain_exists() {
-  local tool="$1" chain="$2"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S "$chain" >/dev/null 2>&1
+normalize_listing() {
+  awk 'NF { $1 = $1; print }'
 }
 
-reference_count() {
-  local tool="$1" chain="$2"
-  "$tool" -w "$WAIT_SECONDS" -t filter -S |
-    awk -v chain="$chain" '
-      $1 == "-A" {
-        for (field_no = 3; field_no <= NF; field_no += 1) {
-          if (($field_no == "-j" || $field_no == "--jump" ||
-               $field_no == "-g" || $field_no == "--goto") &&
-              $(field_no + 1) == chain) {
-            count += 1
-          }
-        }
-      }
-      END { print count + 0 }
-    '
-}
+validate_owned_table() {
+  local tables current_raw current expected_transitional expected_final
+  local -a families=()
 
-validate_managed_references() {
-  local tool="$1" chain="$2" parent="$3" comment="$4"
-  local count
-  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$chain")
-
-  chain_exists "$tool" "$chain" || return 0
-  count="$(reference_count "$tool" "$chain")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
-
-  if (( count == 0 )); then
+  tables="$(nft list tables)" || die "could not list nft tables"
+  mapfile -t families < <(
+    awk -v table_name="$TABLE_NAME" '
+      $1 == "table" && $3 == table_name { print $2 }
+    ' <<< "$tables"
+  )
+  if (( ${#families[@]} == 0 )); then
+    TABLE_PRESENT=0
     return 0
   fi
 
-  if (( count != 1 )) || \
-     ! "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; then
-    die "$tool chain $chain has an unknown or duplicate external reference"
-  fi
-}
-
-assert_unreferenced() {
-  local tool="$1" chain="$2" count
-
-  chain_exists "$tool" "$chain" || return 0
-  count="$(reference_count "$tool" "$chain")"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "could not count references to $chain with $tool"
-  (( count == 0 )) || \
-    die "$tool chain $chain still has an external reference; refusing to flush it"
-}
-
-remove_exact_jump() {
-  local tool="$1" parent="$2" child="$3" comment="$4"
-  local -a rule=(-i "$PUBLIC_INTERFACE" -m comment --comment "$comment" -j "$child")
-
-  while "$tool" -w "$WAIT_SECONDS" -t filter -C "$parent" "${rule[@]}" >/dev/null 2>&1; do
-    run "$tool" -w "$WAIT_SECONDS" -t filter -D "$parent" "${rule[@]}"
-    if (( DRY_RUN )); then
-      break
-    fi
-  done
-}
-
-remove_owned_chain() {
-  local tool="$1" chain="$2"
-
-  if chain_exists "$tool" "$chain"; then
-    run "$tool" -w "$WAIT_SECONDS" -t filter -F "$chain"
-    run "$tool" -w "$WAIT_SECONDS" -t filter -X "$chain"
-  fi
-}
-
-remove_family_jumps() {
-  local tool="$1"
-
-  if chain_exists "$tool" INPUT; then
-    remove_exact_jump "$tool" INPUT "$PUBLIC_CHAIN" "$PUBLIC_JUMP_COMMENT"
-  fi
-  if chain_exists "$tool" DOCKER-USER; then
-    remove_exact_jump "$tool" DOCKER-USER "$DOCKER_CHAIN" "$DOCKER_JUMP_COMMENT"
+  if (( ${#families[@]} != 1 )) || [[ "${families[0]}" != "$TABLE_FAMILY" ]]; then
+    die "table name $TABLE_NAME exists in an unexpected family or more than once"
   fi
 
-}
+  current_raw="$(nft list table "$TABLE_FAMILY" "$TABLE_NAME")" || \
+    die "could not inspect existing ELEVANT nft table"
+  current="$(normalize_listing <<< "$current_raw")"
+  expected_transitional="$(render_canonical_listing transitional | normalize_listing)"
+  expected_final="$(render_canonical_listing final | normalize_listing)"
 
-validate_family_references() {
-  local tool="$1"
+  if [[ "$current" != "$expected_transitional" && "$current" != "$expected_final" ]]; then
+    die "existing nft table $TABLE_FAMILY $TABLE_NAME is not an exact ELEVANT-owned policy; refusing to delete it"
+  fi
 
-  validate_managed_references "$tool" "$PUBLIC_CHAIN" INPUT "$PUBLIC_JUMP_COMMENT"
-  validate_managed_references "$tool" "$DOCKER_CHAIN" DOCKER-USER "$DOCKER_JUMP_COMMENT"
-}
-
-assert_family_unreferenced() {
-  local tool="$1"
-
-  assert_unreferenced "$tool" "$PUBLIC_CHAIN"
-  assert_unreferenced "$tool" "$DOCKER_CHAIN"
-}
-
-remove_family_chains() {
-  local tool="$1"
-
-  remove_owned_chain "$tool" "$PUBLIC_CHAIN"
-  remove_owned_chain "$tool" "$DOCKER_CHAIN"
+  TABLE_PRESENT=1
+  RESTORE_BATCH="$current_raw"
 }
 
 query_unit_state() {
@@ -251,17 +221,18 @@ query_unit_state() {
   printf '%s\n' "$state"
 }
 
-deactivate_apply_unit() {
-  local active_state enabled_state needs_deactivation=0
+capture_apply_unit_state() {
+  local active_state enabled_state
 
   active_state="$(query_unit_state is-active)"
   enabled_state="$(query_unit_state is-enabled)"
+  UNIT_STATE_CAPTURED=1
 
   case "$active_state" in
     inactive|failed|unknown)
       ;;
     *)
-      needs_deactivation=1
+      APPLY_WAS_ACTIVE=1
       ;;
   esac
 
@@ -269,12 +240,28 @@ deactivate_apply_unit() {
     disabled|masked|masked-runtime|not-found)
       ;;
     *)
-      needs_deactivation=1
+      case "$enabled_state" in
+        enabled|enabled-runtime|linked|linked-runtime|alias)
+          APPLY_WAS_ENABLED=1
+          ;;
+      esac
       ;;
   esac
+}
+
+deactivate_apply_unit() {
+  local active_state enabled_state needs_deactivation=0
+
+  (( UNIT_STATE_CAPTURED )) || die "internal error: apply unit state was not captured"
+  (( APPLY_WAS_ACTIVE || APPLY_WAS_ENABLED )) && needs_deactivation=1
 
   if (( needs_deactivation )); then
-    run systemctl disable --now "$APPLY_UNIT"
+    if (( DRY_RUN )); then
+      printf 'DRY-RUN: systemctl disable --now %q\n' "$APPLY_UNIT"
+    else
+      DEACTIVATION_ATTEMPTED=1
+      systemctl disable --now "$APPLY_UNIT"
+    fi
   fi
 
   if (( ! DRY_RUN )); then
@@ -285,16 +272,74 @@ deactivate_apply_unit() {
       inactive|failed|unknown)
         ;;
       *)
-        die "$APPLY_UNIT remains $active_state; refusing to remove firewall rules"
+        die "$APPLY_UNIT remains $active_state; refusing to remove firewall policy"
         ;;
     esac
     case "$enabled_state" in
       disabled|masked|masked-runtime|not-found)
         ;;
       *)
-        die "$APPLY_UNIT remains $enabled_state; refusing to remove firewall rules"
+        die "$APPLY_UNIT remains $enabled_state; refusing to remove firewall policy"
         ;;
     esac
+  fi
+}
+
+recover_apply_unit_on_failure() {
+  local status=$?
+
+  trap - EXIT
+  if (( status == 0 || ROLLBACK_COMPLETE )); then
+    exit "$status"
+  fi
+
+  if (( TABLE_DELETED )); then
+    log "rollback failed after deleting the table; restoring the validated prior policy"
+    if ! printf '%s\n' "$RESTORE_BATCH" | nft --check -f - ||
+       ! printf '%s\n' "$RESTORE_BATCH" | nft -f -; then
+      log "CRITICAL: could not restore the ELEVANT nft table; repair it from the provider console"
+    fi
+  fi
+
+  if (( ! UNIT_STATE_CAPTURED || ! DEACTIVATION_ATTEMPTED )); then
+    exit "$status"
+  fi
+
+  log "restoring the apply unit's prior lifecycle state"
+  flock -u 9 || true
+
+  if (( APPLY_WAS_ENABLED )); then
+    if ! systemctl enable "$APPLY_UNIT"; then
+      log "CRITICAL: could not re-enable $APPLY_UNIT; repair it from the provider console"
+    fi
+  fi
+  if (( APPLY_WAS_ACTIVE )); then
+    if ! systemctl start "$APPLY_UNIT"; then
+      log "CRITICAL: could not restart $APPLY_UNIT; repair it from the provider console"
+    fi
+  fi
+
+  exit "$status"
+}
+
+build_batch() {
+  NFT_BATCH="delete table $TABLE_FAMILY $TABLE_NAME"
+}
+
+check_batch() {
+  printf '%s\n' "$NFT_BATCH" | nft --check -f - || \
+    die "nft rejected the exact rollback transaction"
+}
+
+assert_table_absent() {
+  local tables
+
+  tables="$(nft list tables)" || die "could not verify nft tables after rollback"
+  if awk -v table_name="$TABLE_NAME" '
+       $1 == "table" && $3 == table_name { found = 1 }
+       END { exit(found ? 0 : 1) }
+     ' <<< "$tables"; then
+    die "ELEVANT nft table name remains after rollback"
   fi
 }
 
@@ -304,38 +349,46 @@ main() {
   require_command stat
   load_config
 
-  require_command flock
-  require_command iptables
-  require_command ip6tables
   require_command awk
+  require_command flock
+  require_command nft
   require_command systemctl
-  check_nft_backend iptables
-  check_nft_backend ip6tables
 
   exec 9>"$LOCK_FILE"
   flock -n 9 || die "another ELEVANT firewall operation is running"
 
-  log "removing ELEVANT-managed rules for interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
-  # Reject unknown references in every family before removing anything.
-  validate_family_references iptables
-  validate_family_references ip6tables
+  validate_owned_table
+  log "removing ELEVANT nft policy for interface=$PUBLIC_INTERFACE dry_run=$DRY_RUN"
 
-  # A rollback must not leave the apply unit active(exited) or enabled for the
-  # next boot, otherwise the removed policy could be silently re-applied.
-  deactivate_apply_unit
+  # Prove the exact deletion transaction before changing service lifecycle.
+  if (( TABLE_PRESENT )); then
+    build_batch
+    check_batch
+  fi
+  capture_apply_unit_state
 
-  remove_family_jumps iptables
-  remove_family_jumps ip6tables
+  trap recover_apply_unit_on_failure EXIT
 
-  # In a real rollback, verify the exact managed jumps are now gone before any
-  # owned chain is flushed. Dry-run already proved all references were managed.
-  if (( ! DRY_RUN )); then
-    assert_family_unreferenced iptables
-    assert_family_unreferenced ip6tables
+  if (( TABLE_PRESENT )); then
+    if (( DRY_RUN )); then
+      printf 'DRY-RUN: %s\n' "$NFT_BATCH"
+    else
+      printf '%s\n' "$NFT_BATCH" | nft -f - || \
+        die "atomic nft rollback failed; the ELEVANT table was retained"
+      TABLE_DELETED=1
+      assert_table_absent
+    fi
+  else
+    log "ELEVANT nft table is already absent"
   fi
 
-  remove_family_chains iptables
-  remove_family_chains ip6tables
+  # Delete first while the unit is still enabled. A power loss at any earlier
+  # point therefore reapplies the policy at boot. If deactivation fails after
+  # deletion, the EXIT trap restores both table and lifecycle state.
+  deactivate_apply_unit
+
+  ROLLBACK_COMPLETE=1
+  trap - EXIT
   log "rollback completed successfully"
 }
 
