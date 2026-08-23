@@ -15,8 +15,10 @@ usage() {
 Usage: verify-runtime [--host-container NAME | --inside]
 
 The default verifies the runtime inside the local `dokploy` container from the
-Ubuntu host. --inside performs the same checks when already in that container.
-It is read-only and never installs a package.
+Ubuntu host. NAME may be either an exact container name/ID or a Swarm service
+name; a service must have exactly one running task. --inside performs the same
+checks when already in that container. It is read-only and never installs a
+package.
 EOF
 }
 
@@ -77,8 +79,33 @@ if [[ "$MODE" == "inside" ]]; then
   /bin/sh -c "$RUNTIME_CHECK"
 else
   command -v docker >/dev/null 2>&1 || die "host docker command is unavailable"
-  [[ "$CONTAINER" =~ ^[A-Za-z0-9_.-]+$ ]] || die "invalid container name"
-  [[ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER")" == "true" ]] || \
-    die "Dokploy container is not running"
-  docker exec "$CONTAINER" /bin/sh -c "$RUNTIME_CHECK"
+  [[ "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || \
+    die "invalid container or service name"
+
+  TARGET_CONTAINER=""
+  if exact_container="$(docker container inspect \
+      --format '{{.Id}} {{.State.Running}}' "$CONTAINER" 2>/dev/null)"; then
+    [[ "$exact_container" =~ ^([0-9a-f]{64})[[:space:]](true|false)$ ]] || \
+      die "Docker returned invalid exact-container state"
+    [[ "${BASH_REMATCH[2]}" == "true" ]] || \
+      die "exact Dokploy container is not running"
+    TARGET_CONTAINER="${BASH_REMATCH[1]}"
+  else
+    task_output="$(docker container ls --quiet --no-trunc \
+      --filter "label=com.docker.swarm.service.name=$CONTAINER" \
+      --filter status=running)" || \
+      die "could not enumerate Dokploy Swarm tasks"
+    running_tasks=()
+    while IFS= read -r task_id; do
+      [[ -n "$task_id" ]] || continue
+      [[ "$task_id" =~ ^[0-9a-f]{64}$ ]] || \
+        die "Docker returned an invalid running task ID"
+      running_tasks+=("$task_id")
+    done <<< "$task_output"
+    (( ${#running_tasks[@]} == 1 )) || \
+      die "Dokploy service must have exactly one running task"
+    TARGET_CONTAINER="${running_tasks[0]}"
+  fi
+
+  docker container exec "$TARGET_CONTAINER" /bin/sh -c "$RUNTIME_CHECK"
 fi
