@@ -240,17 +240,22 @@ Orden obligatorio:
 1. fusionar el PR y esperar el primer manifiesto
    `development-certified` completamente verde;
 2. exportar el paquete `ops/dokploy/database-cd` del commit aprobado, verificar
-   su hash y transferirlo desde **PowerShell del PC**;
+   su hash y transferirlo desde **PowerShell del PC**; el paquete debe conservar
+   finales de línea LF aunque se prepare en Windows;
 3. desde **SSH `elevant-ops` por Tailscale**, instalar en
    `/etc/dokploy/elevant/database-cd`, crear config/state/lock con permisos
-   root-only y ejecutar el preflight sin mostrar `.env`;
+   root-only y ejecutar el preflight sin mostrar `.env`; `verify-runtime`
+   resuelve el servicio Swarm `dokploy` únicamente cuando tiene una sola tarea
+   local activa;
 4. registrar los nombres y rutas exactos de los dos proyectos Raw existentes,
    los hashes Compose aprobados y los repositorios GHCR esperados;
 5. opcionalmente crear en GitHub un fine-grained PAT dedicado con solo
    `Metadata: read` y `Commit statuses: read and write`; guardarlo únicamente en
    el token file root-only indicado por el runbook;
-6. ejecutar `--dry-run` y `--adopt-current`; `--status` debe mostrar baseline
-   sin secretos y la DB v1 viva no se vuelve a migrar;
+6. resolver nuevamente el ID completo de la única tarea local activa de
+   `dokploy` antes de cada `docker container exec`, ejecutar `--dry-run` y
+   `--adopt-current`; `--status` debe mostrar baseline sin secretos y la DB v1
+   viva no se vuelve a migrar;
 7. crear en la página global **Schedules**, sin seleccionar servidor externo,
    un job interno `dokploy-server` de polling cada minuto, inicialmente
    disabled, cuyo script solo invoque `--poll`; no usar `server`, Application ni

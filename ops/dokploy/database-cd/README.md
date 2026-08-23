@@ -81,8 +81,21 @@ La ruta operativa normal empieza en **PowerShell local** y entra por SSH privado
 de Tailscale:
 
 ```powershell
+$commit = git rev-parse HEAD
+$archive = "ELEVANT-database-cd-$($commit.Substring(0, 12)).tar.gz"
+git -c core.autocrlf=false archive `
+  --format=tar.gz `
+  --prefix=database-cd/ `
+  --output=$archive `
+  "${commit}:ops/dokploy/database-cd"
+Get-FileHash -Algorithm SHA256 $archive
+
 ssh -i "$HOME/.ssh/elevant_ops_ed25519" elevant-ops@elevant-dev-host
 ```
+
+La exportación usa los blobs del commit aprobado, impone LF aunque el PC sea
+Windows y añade un único prefijo `database-cd/`. El hash se compara después de
+la transferencia y antes de extraer; no se empaqueta la copia de trabajo.
 
 Los comandos Linux siguientes se ejecutan dentro de esa **sesión SSH** con
 `sudo`. La terminal root de Hostinger queda exclusivamente como recuperación si
@@ -96,6 +109,8 @@ Tailscale u OpenSSH no están disponibles.
 
    El instalador solo copia el controlador, sus helpers y las plantillas de job
    a `/etc/dokploy/elevant/database-cd`; no habilita jobs ni despliega.
+   El paquete debe conservar finales de línea LF; un error `set: pipefail` al
+   instalar indica una exportación CRLF y detiene este checkpoint.
 
 2. Editar la copia `/etc/dokploy/elevant/database-cd/config.env`, sustituir cada
    `REPLACE_*`, mantener `root:root 0600` y comprobar que las rutas corresponden
@@ -121,18 +136,40 @@ Tailscale u OpenSSH no están disponibles.
    falta una dependencia, el poller **no se habilita**: se detiene el checkpoint
    y se prepara un runtime de controlador versionado; nunca se instala un paquete
    manual dentro del contenedor Dokploy porque desaparecería al actualizarlo.
+   El argumento puede ser un contenedor exacto o el nombre de un servicio
+   Swarm. Para un servicio, el verificador exige exactamente una tarea local
+   activa y ejecuta su ID completo; cero o varias tareas detienen el checkpoint.
 
-5. Dentro de esa misma **sesión SSH**, ejecutar el controlador en el contenedor
-   privado Dokploy:
+5. Dentro de esa misma **sesión SSH**, declarar este resolvedor *fail-closed* y
+   ejecutar el controlador en la única tarea local activa de Dokploy:
 
    ```bash
-   sudo docker exec dokploy /etc/dokploy/elevant/database-cd/elevant-database-cd --dry-run
+   resolve_dokploy_task() {
+     local task_id
+     task_id="$(sudo docker container ls --quiet --no-trunc \
+       --filter status=running \
+       --filter 'label=com.docker.swarm.service.name=dokploy')" || return 1
+     [[ "$task_id" =~ ^[0-9a-f]{64}$ ]] || {
+       printf '%s\n' 'Expected exactly one local running Dokploy task.' >&2
+       return 1
+     }
+     printf '%s\n' "$task_id"
+   }
+
+   DOKPLOY_CONTAINER_ID="$(resolve_dokploy_task)" &&
+   sudo docker container exec "$DOKPLOY_CONTAINER_ID" \
+     /etc/dokploy/elevant/database-cd/elevant-database-cd --dry-run
    ```
+
+   Se vuelve a resolver antes de cada checkpoint: una actualización de Swarm
+   puede reemplazar el contenedor y cambiar su ID.
 
 6. Para registrar la v1 ya desplegada, ejecutar conscientemente:
 
    ```bash
-   sudo docker exec dokploy /etc/dokploy/elevant/database-cd/elevant-database-cd --adopt-current
+   DOKPLOY_CONTAINER_ID="$(resolve_dokploy_task)" &&
+   sudo docker container exec "$DOKPLOY_CONTAINER_ID" \
+     /etc/dokploy/elevant/database-cd/elevant-database-cd --adopt-current
    ```
 
    Este comando **no consume el alias candidato**. Lee exclusivamente
@@ -159,14 +196,17 @@ Tailscale u OpenSSH no están disponibles.
 
 ## Operación
 
-Los comandos siguientes se ejecutan dentro del **contenedor Dokploy**, mediante
-`sudo docker exec dokploy ...` desde la sesión SSH:
+Los comandos siguientes se ejecutan dentro de la única tarea local activa de
+Dokploy desde la sesión SSH. Se declara `resolve_dokploy_task` como en el paso 5,
+se resuelve un ID nuevo antes de cada operación y luego se ejecuta:
 
 ```bash
-/etc/dokploy/elevant/database-cd/elevant-database-cd --status
-/etc/dokploy/elevant/database-cd/elevant-database-cd --pause
-/etc/dokploy/elevant/database-cd/elevant-database-cd --resume
-/etc/dokploy/elevant/database-cd/elevant-database-cd --retry sha256:REPLACE_FAILED_DIGEST
+DOKPLOY_CONTAINER_ID="$(resolve_dokploy_task)" &&
+sudo docker container exec "$DOKPLOY_CONTAINER_ID" \
+  /etc/dokploy/elevant/database-cd/elevant-database-cd --status
+
+# Sustituir --status por --pause, --resume o:
+# --retry sha256:REPLACE_FAILED_DIGEST
 ```
 
 `--retry` solo acepta el manifiesto fallido que todavía anuncia el alias. Si ya
@@ -187,11 +227,12 @@ ya aceptado sin repetir SQL, backup ni restore-check.
 En Ubuntu 24.04:
 
 ```bash
-bash -n elevant-database-cd install-controller verify-runtime jobs/*.sh tests/test-controller.sh
+bash -n elevant-database-cd install-controller verify-runtime jobs/*.sh tests/*.sh
 node --check manifest-tool.mjs
 node --check state-tool.mjs
-shellcheck elevant-database-cd install-controller verify-runtime jobs/*.sh tests/test-controller.sh
+shellcheck elevant-database-cd install-controller verify-runtime jobs/*.sh tests/*.sh
 bash tests/test-controller.sh
+bash tests/test-verify-runtime.sh
 ```
 
 La prueba usa Docker y curl simulados; no necesita SQL, GHCR, credenciales ni
