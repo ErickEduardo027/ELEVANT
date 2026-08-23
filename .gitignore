@@ -45,6 +45,8 @@ TestResults/
 *.coveragexml
 *.log
 logs/
+__pycache__/
+*.py[cod]
 
 # Database, uploads and backups
 *.bak

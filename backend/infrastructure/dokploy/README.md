@@ -5,7 +5,7 @@ La guía canónica es `docs/deployment/dokploy.md` y la secuencia operativa audi
 ## Ciclos de vida separados
 
 1. `elevant-dev-database`: Compose manual, sin AutoDeploy; SQL, volúmenes y provisioner.
-2. `elevant-dev-database-release`: jobs migrator + seeder Development por release.
+2. `elevant-dev-database-release`: jobs migrator + seeder Development por release; después del bootstrap los invoca el controlador pull-based.
 3. `elevant-dev-api`: imagen API futura, desplegable solo después de release DB sano.
 4. `elevant-dev-aviam-web`: Vite compilado y Nginx no-root.
 5. `elevant-dev-public-web`: Next standalone/Node no-root.
@@ -18,7 +18,11 @@ Solo API se conecta a la red de datos. Las webs llaman a API por HTTPS y jamás 
 
 Están implementados y validados los dos primeros Compose y las imágenes de base. El run de publicación del merge de DB v1 certificó las referencias inmutables que registra la guía operativa. Los Dockerfiles/Compose de API y frontends se crearán al comenzar su integración real; la documentación reserva puertos, recursos y fronteras para evitar decisiones incompatibles.
 
-Nada en estos artefactos llama a la API de Dokploy ni modifica el VPS automáticamente. El push a `Development` publica imágenes probadas en GHCR, pero el operador elige el digest y ejecuta manualmente el despliegue inicial con validación entre pasos.
+Nada en estos Compose llama a la API de Dokploy ni recrea SQL. El despliegue
+inicial continúa siendo manual con validación entre pasos. Después de adoptar la
+versión viva, el controlador de `ops/dokploy/database-cd` consulta desde el
+plano privado el manifiesto certificado de GHCR y ejecuta el release one-shot.
+GitHub nunca abre una conexión al VPS.
 
 ## Acceso Development
 

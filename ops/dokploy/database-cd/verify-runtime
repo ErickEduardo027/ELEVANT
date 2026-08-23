@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROGRAM_NAME="${0##*/}"
+MODE="host"
+CONTAINER="dokploy"
+
+die() {
+  printf '%s: ERROR: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: verify-runtime [--host-container NAME | --inside]
+
+The default verifies the runtime inside the local `dokploy` container from the
+Ubuntu host. --inside performs the same checks when already in that container.
+It is read-only and never installs a package.
+EOF
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --host-container)
+      (( $# >= 2 )) || die "--host-container requires a name"
+      MODE=host
+      CONTAINER="$2"
+      shift 2
+      ;;
+    --inside)
+      MODE=inside
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+# Expansion is intentionally deferred until /bin/sh runs inside Dokploy.
+# shellcheck disable=SC2016
+readonly RUNTIME_CHECK='set -eu
+for command_name in bash docker node curl flock sha256sum stat install awk chmod date dirname id mktemp mv rm touch; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    printf "missing runtime command: %s\n" "$command_name" >&2
+    exit 1
+  }
+done
+docker version >/dev/null
+docker compose version >/dev/null
+test -d /etc/dokploy
+test ! -L /etc/dokploy
+test -d /root/.docker
+test ! -L /root/.docker
+for runtime_file in \
+  /etc/dokploy/elevant/database-cd/elevant-database-cd \
+  /etc/dokploy/elevant/database-cd/manifest-tool.mjs \
+  /etc/dokploy/elevant/database-cd/state-tool.mjs \
+  /etc/dokploy/elevant/database-cd/jobs/poll.job.sh \
+  /etc/dokploy/elevant/database-cd/jobs/backup.job.sh \
+  /etc/dokploy/elevant/database-cd/jobs/restore-check.job.sh; do
+  test -f "$runtime_file"
+  test ! -L "$runtime_file"
+done
+bash -n /etc/dokploy/elevant/database-cd/elevant-database-cd
+node --check /etc/dokploy/elevant/database-cd/manifest-tool.mjs >/dev/null
+node --check /etc/dokploy/elevant/database-cd/state-tool.mjs >/dev/null
+/bin/sh -n /etc/dokploy/elevant/database-cd/jobs/poll.job.sh
+/bin/sh -n /etc/dokploy/elevant/database-cd/jobs/backup.job.sh
+/bin/sh -n /etc/dokploy/elevant/database-cd/jobs/restore-check.job.sh
+printf "%s\n" RUNTIME_OK'
+
+if [[ "$MODE" == "inside" ]]; then
+  /bin/sh -c "$RUNTIME_CHECK"
+else
+  command -v docker >/dev/null 2>&1 || die "host docker command is unavailable"
+  [[ "$CONTAINER" =~ ^[A-Za-z0-9_.-]+$ ]] || die "invalid container name"
+  [[ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER")" == "true" ]] || \
+    die "Dokploy container is not running"
+  docker exec "$CONTAINER" /bin/sh -c "$RUNTIME_CHECK"
+fi

@@ -50,19 +50,38 @@ No elimine/recree esos recursos en un deploy. El stack no usa AutoDeploy.
 
 ### 2. Release DB: por versión
 
-`compose.development.release.yml` ejecuta `migrate` y luego `seed-development`. Ambos usan `elevant-db-release@sha256:...`, credenciales distintas y la red de datos. El fallo de migración impide el seed y debe impedir desplegar la API nueva.
+`compose.development.release.yml` ejecuta `migrate` y luego
+`seed-development`. Ambos usan `elevant-db-release@sha256:...`, credenciales
+distintas y la red de datos. El fallo de migración impide el seed y debe impedir
+desplegar la API nueva. El Compose sigue separado del ciclo de vida de SQL,
+aunque el controlador Development lo invoque automáticamente.
 
 No hay Compose Production en esta fase: su licencia, host, backup off-host y credenciales todavía deben aprobarse. Production aplicará la misma imagen/migraciones con su guard y jamás incluirá el servicio seeder.
 
-## Imágenes inmutables
+## Imágenes y manifiesto inmutables
 
-CI construye `elevant-db-ops:ci` y `elevant-db-release:ci` con las etiquetas OCI `org.opencontainers.image.revision=<commit>` y `org.opencontainers.image.source=<repositorio>`, y exige ambas durante la certificación aislada contra SQL Server 2022. Un job separado —el único con `packages: write`— reconstruye y vuelve a certificar las imágenes exactas que publicará en un push a `Development`. Publica tags `sha-<commit>`/`development` y registra sus digests. Dokploy usa únicamente la referencia por digest:
+CI construye `elevant-db-ops:ci` y `elevant-db-release:ci` con las etiquetas OCI
+`org.opencontainers.image.revision=<commit>` y
+`org.opencontainers.image.source=<repositorio>`, y exige ambas durante la
+certificación aislada contra SQL Server 2022. Un job separado —el único con
+`packages: write`— reconstruye y vuelve a certificar las imágenes exactas que
+publicará en un push DB-owned a `Development`. Publica tags
+`sha-<commit>`/`development` y registra sus digests.
+
+Después genera un manifiesto JSON con las dos referencias, hashes de Compose y
+fingerprints de migraciones/modelo/seed. El manifiesto se valida, se empaqueta
+como artefacto OCI privado y se publica al final con tag por commit; solo
+entonces se mueve `development-certified`. Dokploy descubre ese alias, pero usa
+únicamente las identidades por digest:
 
 ```text
+ghcr.io/<namespace>/elevant-db-ops@sha256:<digest>
 ghcr.io/<namespace>/elevant-db-release@sha256:<digest>
+ghcr.io/<namespace>/elevant-db-release-manifest@sha256:<digest>
 ```
 
-El alias mutable no se usa directamente en un deployment. Dokploy requiere una credencial de registro con `read:packages` si los packages son privados.
+Los aliases mutables no se usan directamente en un deployment. Dokploy requiere
+una credencial de registro con `read:packages` si los packages son privados.
 
 ## Variables remotas
 
@@ -83,4 +102,8 @@ docker compose --profile operations -f compose.development.database.yml run --rm
 docker compose --profile operations -f compose.development.database.yml run --rm restore-check
 ```
 
-Dokploy puede programarlas con su scheduler: backup nocturno y restore-check semanal. Primero verifique espacio libre; no elimine la última copia válida antes de crear/verificar la nueva.
+En el VPS compartido, los jobs programados no llaman Compose directamente: se
+redirigen a `ops/dokploy/database-cd/elevant-database-cd --backup` y
+`--restore-check`. Así comparten el mismo lock que una promoción y usan el
+último digest ops aceptado. Primero verifique espacio libre; no elimine la
+última copia válida antes de crear/verificar la nueva.

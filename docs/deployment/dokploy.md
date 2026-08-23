@@ -1,6 +1,11 @@
 # Implementación Development en VPS con Dokploy
 
-Estado: DB v1 fue fusionada en `Development` y sus imágenes publicables quedaron certificadas. El VPS fue auditado en modo lectura; el hardening y el despliegue siguen pendientes y serán ejecutados manualmente por el operador. La secuencia con checkpoints y rollback está en [Configuración de Dokploy](dokploy-configuration.md).
+Estado: DB v1 está desplegada y verificada en el VPS Development privado. El
+hardening, Tailscale, observabilidad, backup/restore programados y snapshot frío
+fueron aceptados el 2026-08-23. El controlador pull-based está versionado como
+el siguiente cambio, pero su instalación sigue siendo manual por el operador.
+La secuencia con checkpoints y rollback está en
+[Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
 
@@ -61,16 +66,37 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 
 No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria. Tailscale Serve debe apuntar solo a los cinco loopbacks previstos: Dokploy, monitoreo y, cuando existan, API, AVIAM Web y Public Web.
 
-## 2. Publicar imágenes aprobadas
+## 2. Publicar imágenes y manifiesto aprobados
 
-`backend-ci.yml` restaura dependencias bloqueadas, compila, prueba SQL real, comprueba drift, genera SQL revisable, valida Compose y construye ambas imágenes con la revisión OCI del commit. Después ejecuta el mismo certificador publicable: Production limpio y sin seed, upgrade Development conservando un centinela, reprovisionamiento, seed idempotente, permisos, backup, restore con `DBCC CHECKDB` y persistencia al recrear SQL Server 2022. En push a `Development`, un job separado con permiso GHCR reconstruye y vuelve a certificar exactamente lo que publicará:
+`backend-ci.yml` restaura dependencias bloqueadas, compila, prueba SQL real,
+comprueba drift, genera SQL revisable, valida Compose y construye ambas imágenes
+con la revisión OCI del commit. Después ejecuta el mismo certificador
+publicable: Production limpio y sin seed, upgrade Development conservando un
+centinela, reprovisionamiento, seed idempotente, permisos, backup, restore con
+`DBCC CHECKDB` y persistencia al recrear SQL Server 2022.
+
+En un push DB-owned a `Development`, un job separado con permiso GHCR
+reconstruye y vuelve a certificar exactamente lo que publicará:
 
 ```text
 ghcr.io/<namespace>/elevant-db-ops:sha-<commit>
 ghcr.io/<namespace>/elevant-db-release:sha-<commit>
 ```
 
-También existe alias `development`, pero es mutable. El summary de CI registra las dos referencias `@sha256:...` certificadas y Dokploy usa esas, nunca el alias ni el tag como identidad final. No se construye .NET/Next/Vite en el KVM.
+CI obtiene los dos digests, genera un manifiesto estricto con la revisión,
+ejecución, hashes de Compose y fingerprints de migraciones/modelo/seed, y lo
+publica como un tercer artefacto privado:
+
+```text
+ghcr.io/<namespace>/elevant-db-release-manifest:sha-<commit>-run-<run>-attempt-<intento>
+ghcr.io/<namespace>/elevant-db-release-manifest:development-certified
+```
+
+`development-certified` se mueve como último paso. Si build, certificación,
+publicación o validación falla, el controlador no descubre una entrega parcial.
+Los aliases son mutables y sirven solo para descubrimiento; el controlador
+resuelve el digest del manifiesto y ejecuta las dos referencias `@sha256:...`
+incluidas. No se construye .NET/Next/Vite en el KVM.
 
 ## 3. Crear almacenamiento/red una sola vez
 
@@ -109,7 +135,7 @@ Validar tras el primer deploy desde un job/red privada:
 
 - Provider: Raw, con la misma verificación de revisión, hash y Preview Compose.
 - Fuente certificada: `backend/infrastructure/docker/compose.development.release.yml`.
-- AutoDeploy: desactivado; cada promoción de esquema es una acción explícita.
+- AutoDeploy: desactivado; Git/Dokploy no reconstruye este Compose ni SQL.
 - Variables: imagen release con digest, cadena migrator, cadena seeder y password de cuenta demo.
 - El migrator usa `elevant_dev_migrator`; el seed usa `elevant_dev_seeder`.
 - Ambos declaran Development y validan marcador; el seeder depende del migrator exitoso.
@@ -123,65 +149,53 @@ fallo no se repara editando `__EFMigrationsHistory`.
 
 Después valide migraciones aplicadas, seed sintético, idempotencia de un segundo seed y ausencia de datos del prototipo.
 
+Este procedimiento manual establece/adopta la primera versión viva. Para las
+versiones posteriores, instale el controlador de
+[`ops/dokploy/database-cd`](../../ops/dokploy/database-cd/README.md) y registre
+los paths/proyectos exactos de ambos Compose. El controlador no pulsa Deploy ni
+edita el provider Raw: invoca los servicios one-shot con variables de imagen
+por digest, conserva separado el contenedor SQL y registra el último manifiesto
+aceptado.
+
 ## 6. Backup y restore-check
 
-Prerequisito de seguridad: antes de habilitar Server Jobs, el panel debe estar aislado por Tailscale, limitado a `ops` y la versión efectiva debe contrastarse contra **todos** los advisories vigentes. El VPS auditado usa Dokploy `v0.30.0`; no se acepta volver a una versión anterior. El umbral histórico `>0.26.7` no basta: `v0.29.13` todavía permitía un escape al host para un miembro autenticado con `domain:create`, corregido en `v0.30.0`. Consulte [GHSA-7wmr-57mg-h5q6](https://github.com/Dokploy/dokploy/security/advisories/GHSA-7wmr-57mg-h5q6), la [corrección posterior](https://github.com/Dokploy/dokploy/pull/4872) y el [release v0.30.0](https://github.com/Dokploy/dokploy/releases/tag/v0.30.0). La creación y ejecución de jobs continúa siendo exclusiva de `ops` aunque la versión esté corregida.
+Prerequisito de seguridad: antes de habilitar jobs internos `dokploy-server`, el panel debe estar aislado por Tailscale, limitado a `ops` y la versión efectiva debe contrastarse contra **todos** los advisories vigentes. El VPS auditado usa Dokploy `v0.30.0`; no se acepta volver a una versión anterior. El umbral histórico `>0.26.7` no basta: `v0.29.13` todavía permitía un escape al host para un miembro autenticado con `domain:create`, corregido en `v0.30.0`. Consulte [GHSA-7wmr-57mg-h5q6](https://github.com/Dokploy/dokploy/security/advisories/GHSA-7wmr-57mg-h5q6), la [corrección posterior](https://github.com/Dokploy/dokploy/pull/4872) y el [release v0.30.0](https://github.com/Dokploy/dokploy/releases/tag/v0.30.0). La creación y ejecución de jobs continúa siendo exclusiva de `ops` aunque la versión esté corregida.
 
 Los servicios `backup` y `restore-check` son contenedores one-shot bajo el profile
 `operations`; no permanecen ejecutándose. No los programe como Compose Job: ese
-tipo de job usa `docker exec` y exige un contenedor activo. Use dos **Dokploy
-Server Jobs** que invoquen `docker compose run --rm` mediante el socket Docker
-del nodo.
+tipo de job usa `docker exec` y exige un contenedor activo. En la página global
+**Schedules**, deje el filtro sin servidor externo y use jobs internos
+`dokploy-server`; así el script corre dentro del contenedor Dokploy e invoca
+`docker compose run --rm` mediante el socket Docker del nodo.
 
 Después del primer deploy, copie del log de despliegue los valores exactos de
-`-p` y `-f`. La UI de Environment mantiene el `.env` junto al Compose; el job
-reutiliza ese archivo y no duplica contraseñas. Configure este cuerpo, cambiando
-solo los tres placeholders no secretos y `operation`:
+proyecto, Compose y `.env` de ambos recursos. Instálelos una sola vez en el
+archivo root-only del controlador y ejecute `--adopt-current`; no copie
+contraseñas ni connection strings a sus scripts.
+
+Los tres jobs internos `dokploy-server` llaman el mismo ejecutable persistente que está
+montado dentro del contenedor Dokploy:
 
 ```bash
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-project='<COMPOSE_PROJECT_NAME_EXACTO>'
-compose_file='<RUTA_ABSOLUTA_COMPOSE_DEL_DEPLOY>'
-env_file='<RUTA_ABSOLUTA_ENV_DEL_DEPLOY>'
-operation='backup' # use restore-check en el job semanal
-
-case "$operation" in
-  backup|restore-check) ;;
-  *) echo 'Operación DB no permitida.' >&2; exit 2 ;;
-esac
-
-test -r "$compose_file"
-test -r "$env_file"
-
-compose() {
-  docker compose \
-    --env-file "$env_file" \
-    -p "$project" \
-    -f "$compose_file" \
-    --profile operations \
-    "$@"
-}
-
-images="$(compose config --images)"
-if grep -Ev '@sha256:[0-9a-f]{64}$' <<<"$images" >/dev/null; then
-  echo 'Se rechazó una imagen no fijada por digest.' >&2
-  exit 1
-fi
-
-compose pull "$operation"
-compose run --rm --no-deps "$operation"
+/etc/dokploy/elevant/database-cd/elevant-database-cd --poll
+/etc/dokploy/elevant/database-cd/elevant-database-cd --backup
+/etc/dokploy/elevant/database-cd/elevant-database-cd --restore-check
 ```
+
+`--poll` se programa cada minuto. El job de backup conserva 02:15 UTC y el de
+restore-check domingo 04:30 UTC. Los tres comparten `flock` y el estado
+persistente: si una promoción está activa, la operación programada no puede
+solaparse. Backup/restore usan la imagen ops de la última entrega aceptada, no
+un alias mutable ni un candidato fallido.
 
 Reglas del scheduler:
 
-- nocturno, fuera del horario de trabajo: `operation='backup'`;
-- semanal y sin solaparse con el backup: `operation='restore-check'`;
+- nocturno, fuera del horario de trabajo: `--backup`;
+- semanal y sin solaparse con el backup: `--restore-check`;
 - no activar `set -x`, no pegar secretos en el script y limitar la inspección
   de configuración a `compose config --images`;
-- mantener `ELEVANT_DB_OPS_IMAGE` con `@sha256:<digest>` en Environment y
-  restringir los logs/jobs a operadores;
+- mantener todos los valores de imagen con `@sha256:<digest>` y restringir
+  configuración, logs/jobs y token de commit status a operadores;
 - alertas de disco 70/80/90 %, manteniendo al menos 15 GB libres.
 
 Primero ejecute ambos jobs manualmente y exija código cero. `restore-check`

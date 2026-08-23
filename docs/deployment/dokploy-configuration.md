@@ -1,15 +1,24 @@
 # Configuración de Dokploy
 
-Esta guía convierte el VPS Development auditado en un plano de control privado y despliega DB v1. El operador realiza todos los cambios manualmente. El agente entrega un bloque corto, identifica si corresponde a PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de avanzar.
+Esta guía registra cómo se convirtió el VPS Development en un plano de control
+privado, cómo se desplegó DB v1 y cómo se habilita su CD pull-based. El operador
+realiza todos los cambios remotos manualmente. El agente entrega un bloque
+corto, identifica si corresponde a PowerShell, hPanel, VPS o Dokploy y valida la
+evidencia antes de avanzar.
 
 ## Estado aprobado
 
-- Base: commit `1281bd139709898f220c90f12ff27036a6a83b93` de `Development`.
+- DB v1 inicial: commit `1281bd139709898f220c90f12ff27036a6a83b93` de `Development`.
+- Control plane versionado: `86555b61b0ff17b4a42f5e51fe2055000e90664f`.
 - Dokploy: mantener `v0.30.0` o una revisión posterior expresamente auditada.
 - Traefik objetivo: `traefik:v3.6.25@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d`.
 - SQL: Development sintético únicamente; Production no se crea en este VPS.
 - Landing existente: se preserva, se deshabilita su Domain y se detiene; no se elimina.
 - Acceso inicial: un operador `elevant-ops`; los desarrolladores solo recibirán acceso a API/webs cuando existan.
+- Evidencia 2026-08-23: SQL healthy/privado, cinco migraciones, seed
+  idempotente, permisos mínimos, backup + restore-check y schedules validados.
+- El controlador CD de este cambio todavía requiere instalación y aceptación
+  manual; versionarlo no autoriza modificar el host.
 
 No continúe si aparece una identidad, servicio, integración o volumen no reconocido.
 
@@ -219,6 +228,53 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 
 Estos backups son suficientes solo mientras Development sea sintético y reconstruible.
 
+## Handoff: activar CD automático de la base Development
+
+El repositorio entrega el controlador y sus pruebas, pero no lo instala por sí
+solo. El operador aplica
+[`ops/dokploy/database-cd/README.md`](../../ops/dokploy/database-cd/README.md)
+en checkpoints y conserva AutoDeploy desactivado en ambos Compose.
+
+Orden obligatorio:
+
+1. fusionar el PR y esperar el primer manifiesto
+   `development-certified` completamente verde;
+2. exportar el paquete `ops/dokploy/database-cd` del commit aprobado, verificar
+   su hash y transferirlo desde **PowerShell del PC**;
+3. desde **SSH `elevant-ops` por Tailscale**, instalar en
+   `/etc/dokploy/elevant/database-cd`, crear config/state/lock con permisos
+   root-only y ejecutar el preflight sin mostrar `.env`;
+4. registrar los nombres y rutas exactos de los dos proyectos Raw existentes,
+   los hashes Compose aprobados y los repositorios GHCR esperados;
+5. opcionalmente crear en GitHub un fine-grained PAT dedicado con solo
+   `Metadata: read` y `Commit statuses: read and write`; guardarlo únicamente en
+   el token file root-only indicado por el runbook;
+6. ejecutar `--dry-run` y `--adopt-current`; `--status` debe mostrar baseline
+   sin secretos y la DB v1 viva no se vuelve a migrar;
+7. crear en la página global **Schedules**, sin seleccionar servidor externo,
+   un job interno `dokploy-server` de polling cada minuto, inicialmente
+   disabled, cuyo script solo invoque `--poll`; no usar `server`, Application ni
+   Compose Job;
+8. reemplazar los cuerpos de backup/restore existentes por `--backup` y
+   `--restore-check`, manteniendo sus horarios inicialmente disabled;
+9. ejecutar manualmente el poll del manifiesto generado por el commit aprobado,
+   seguido de backup y restore-check; comprobar la secuencia completa, lock
+   común, códigos cero, estado, logs sanitizados y SQL healthy;
+10. habilitar los tres jobs y verificar una entrega de prueba aditiva. Reiniciar
+    el VPS solo después de terminar esa aceptación y confirmar persistencia.
+
+Si una etapa falla, el mismo manifiesto queda bloqueado. No pulse Deploy, no
+edite Environment para apuntar al candidato fallido y no programe retry. Primero
+investigue; una corrección normal llega con otro digest. `--retry` exige decisión
+manual explícita cuando la causa era externa y ya fue corregida.
+
+GitHub Free no permite imponer branch protection a este repositorio privado.
+Por decisión del equipo, cualquier push directo DB-owned a `Development` puede
+publicar candidato. Los gates inmutables/fail-stop reducen el riesgo, pero no
+reemplazan una aprobación obligatoria; active las reglas documentadas en
+[`.github/BRANCH_PROTECTION.md`](../../.github/BRANCH_PROTECTION.md) cuando el
+plan lo permita.
+
 ## Aceptación
 
 - Dokploy y monitoreo funcionan solo por Tailscale.
@@ -228,6 +284,9 @@ Estos backups son suficientes solo mientras Development sea sintético y reconst
 - Firewall, Serve y Docker sobreviven un reboot.
 - SQL está healthy, sin puerto público y solo en `elevant-dev-data`.
 - Migración, seed idempotente, permisos, backup y restore-check pasan.
+- El controlador adoptó la baseline, solo ejecuta digests, serializa promoción y
+  schedules, y registra el mismo resultado en Dokploy/GitHub cuando el token
+  opcional existe.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback

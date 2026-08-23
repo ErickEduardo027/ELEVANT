@@ -56,12 +56,26 @@ El bootstrap crea la base y su marcador antes de EF. No adopta silenciosamente u
 
 1. CI prueba migraciones contra SQL Server 2022 y construye el bundle.
 2. CI ejecuta provisionamiento -> migración -> seed en una instancia efímera.
-3. En un push válido a `Development`, publica imágenes GHCR con tag SHA.
-4. El operador resuelve ese tag a digest y actualiza `ELEVANT_DB_RELEASE_IMAGE`.
-5. Dokploy ejecuta `compose.development.release.yml`: migrator y luego seeder.
-6. Solo tras ambos códigos cero se despliega/actualiza la API compatible.
+3. En un push DB-owned válido a `Development`, publica ambas imágenes GHCR y
+   registra referencias inmutables por digest.
+4. CI genera y valida un manifiesto de entrega con esos digests, hashes de
+   Compose y fingerprints de cadena de migraciones/modelo/seed.
+5. Solo después de publicar todo lo anterior mueve el alias OCI
+   `development-certified`; el alias es descubrimiento, no identidad de
+   ejecución.
+6. El controlador privado resuelve el digest del manifiesto y, bajo lock
+   exclusivo, ejecuta backup -> migrator -> seeder -> verify -> backup ->
+   restore-check usando solo referencias `@sha256:`.
+7. Solo tras todos los códigos cero registra la entrega como aceptada. La futura
+   API compatible puede desplegarse después por su carril independiente.
 
-La referencia mutable `:development` sirve para descubrimiento; Dokploy debe fijar `@sha256:...`.
+Las referencias mutables `:development` y `:development-certified` sirven para
+descubrimiento. Los contenedores ejecutados siempre quedan fijados a
+`@sha256:...`.
+
+Un fallo queda bloqueado y no se reintenta por polling. Corrija el código y
+publique otro manifiesto o use el retry manual explícito solo después de
+resolver una causa externa. No haga retry editando la base.
 
 ## Cambios incompatibles
 

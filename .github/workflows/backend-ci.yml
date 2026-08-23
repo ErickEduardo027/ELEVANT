@@ -20,10 +20,74 @@ permissions:
   contents: read
 
 concurrency:
-  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: backend-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  classify_database_changes:
+    name: Classify Development database changes
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      database_owned: ${{ steps.classify.outputs.database_owned }}
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect database-owned paths
+        id: classify
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -Eeuo pipefail
+
+          changed_file_list="$(mktemp)"
+          trap 'rm -f "$changed_file_list"' EXIT
+
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git ls-tree -r --name-only -z "$GITHUB_SHA" > "$changed_file_list"
+          else
+            git diff --name-only --no-renames -z "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_file_list"
+          fi
+
+          database_owned=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/workflows/backend-ci.yml | \
+              backend/.dockerignore | \
+              backend/Directory.Build.props | \
+              backend/Directory.Packages.props | \
+              backend/Dockerfile.database-release | \
+              backend/Elevant.sln | \
+              backend/NuGet.config | \
+              backend/dotnet-tools.json | \
+              backend/global.json | \
+              backend/database/* | \
+              backend/infrastructure/docker/compose.development.database.yml | \
+              backend/infrastructure/docker/compose.development.release.yml | \
+              backend/scripts/certify-database-containers.ps1 | \
+              backend/scripts/deployment/* | \
+              backend/src/Elevant.Application/* | \
+              backend/src/Elevant.DatabaseTool/* | \
+              backend/src/Elevant.Domain/* | \
+              backend/src/Elevant.Infrastructure/* | \
+              backend/src/Elevant.Api/Elevant.Api.csproj | \
+              backend/src/Elevant.Api/packages.lock.json | \
+              backend/tests/scripts/*)
+                database_owned=true
+                break
+                ;;
+            esac
+          done < "$changed_file_list"
+
+          echo "database_owned=$database_owned" >> "$GITHUB_OUTPUT"
+          echo "Database-owned push: $database_owned" >> "$GITHUB_STEP_SUMMARY"
+
   build-and-test:
     name: Restore, build and test
     runs-on: ubuntu-latest
@@ -54,6 +118,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -64,6 +130,29 @@ jobs:
 
       - name: Restore local tools
         run: dotnet tool restore
+
+      - name: Test database release manifest tooling
+        run: python3 -m unittest discover -s tests/scripts -p 'test_*.py' -v
+
+      - name: Validate checked-out database manifest inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          manifest_path="$(mktemp)"
+          trap 'rm -f "$manifest_path"' EXIT
+          python3 scripts/deployment/database_release_manifest.py generate \
+            --backend-root . \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref refs/heads/Development \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --operations-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-ops@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
+            --release-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-release@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
+            --output "$manifest_path"
+          python3 scripts/deployment/database_release_manifest.py validate \
+            --manifest "$manifest_path" \
+            --backend-root .
 
       - name: Restore locked dependencies
         run: dotnet restore Elevant.sln --locked-mode
@@ -154,10 +243,18 @@ jobs:
 
   publish-database-images:
     name: Rebuild, certify and publish database images
-    if: github.event_name == 'push' && github.ref == 'refs/heads/Development'
-    needs: build-and-test
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/Development' &&
+      needs.classify_database_changes.outputs.database_owned == 'true'
+    needs:
+      - build-and-test
+      - classify_database_changes
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    concurrency:
+      group: development-database-manifest-publication
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -167,6 +264,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Build publishable database images
         run: |
@@ -201,7 +301,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish and record immutable digests
+      - name: Publish and record immutable image digests
+        id: publish_images
         shell: bash
         env:
           OPS_REPO: ${{ steps.images.outputs.ops_repo }}
@@ -245,5 +346,164 @@ jobs:
             echo "## Certified database images"
             echo "- \`${OPS_REPO}@${ops_digest}\` (tag \`${OPS_SHA}\`)"
             echo "- \`${RELEASE_REPO}@${release_digest}\` (tag \`${RELEASE_SHA}\`)"
-            echo "Configure Dokploy only with the digest references above."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "ops_ref=${OPS_REPO}@${ops_digest}" >> "$GITHUB_OUTPUT"
+          echo "release_ref=${RELEASE_REPO}@${release_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and validate Development release manifest
+        shell: bash
+        env:
+          OPS_IMAGE: ${{ steps.publish_images.outputs.ops_ref }}
+          RELEASE_IMAGE: ${{ steps.publish_images.outputs.release_ref }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/deployment/database_release_manifest.py generate \
+            --backend-root . \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF" \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --operations-image "$OPS_IMAGE" \
+            --release-image "$RELEASE_IMAGE" \
+            --output artifacts/database/database-release-manifest.json
+          python3 scripts/deployment/database_release_manifest.py validate \
+            --manifest artifacts/database/database-release-manifest.json \
+            --backend-root .
+
+      - name: Upload certified release manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: database-release-manifest-${{ github.run_id }}
+          path: backend/artifacts/database/database-release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Refuse a superseded database publication
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          authorization="$(printf 'x-access-token:%s' "$REPOSITORY_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $authorization" \
+            fetch --no-tags origin \
+            '+refs/heads/Development:refs/remotes/origin/Development'
+          unset authorization REPOSITORY_TOKEN
+          development_tip="$(git rev-parse refs/remotes/origin/Development)"
+          if [[ "$development_tip" == "$GITHUB_SHA" ]]; then
+            exit 0
+          fi
+          git merge-base --is-ancestor "$GITHUB_SHA" "$development_tip" || {
+            echo "Development no longer contains this workflow revision." >&2
+            exit 1
+          }
+
+          changed_file_list="$(mktemp)"
+          trap 'rm -f "$changed_file_list"' EXIT
+          git diff --name-only --no-renames -z \
+            "$GITHUB_SHA" "$development_tip" > "$changed_file_list"
+
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/workflows/backend-ci.yml | \
+              backend/.dockerignore | \
+              backend/Directory.Build.props | \
+              backend/Directory.Packages.props | \
+              backend/Dockerfile.database-release | \
+              backend/Elevant.sln | \
+              backend/NuGet.config | \
+              backend/dotnet-tools.json | \
+              backend/global.json | \
+              backend/database/* | \
+              backend/infrastructure/docker/compose.development.database.yml | \
+              backend/infrastructure/docker/compose.development.release.yml | \
+              backend/scripts/certify-database-containers.ps1 | \
+              backend/scripts/deployment/* | \
+              backend/src/Elevant.Application/* | \
+              backend/src/Elevant.DatabaseTool/* | \
+              backend/src/Elevant.Domain/* | \
+              backend/src/Elevant.Infrastructure/* | \
+              backend/src/Elevant.Api/Elevant.Api.csproj | \
+              backend/src/Elevant.Api/packages.lock.json | \
+              backend/tests/scripts/*)
+                echo "A newer Development commit changes database-owned path: $path" >&2
+                echo "This older run will not move development-certified." >&2
+                exit 1
+                ;;
+            esac
+          done < "$changed_file_list"
+
+          echo "Newer Development commits do not change database-owned inputs." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish certified manifest alias last
+        shell: bash
+        env:
+          MANIFEST_JSON: artifacts/database/database-release-manifest.json
+        run: |
+          set -Eeuo pipefail
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          manifest_repo="ghcr.io/${owner}/elevant-db-release-manifest"
+          manifest_version="${manifest_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          manifest_alias="${manifest_repo}:development-certified"
+          published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$MANIFEST_JSON")"
+          artifact_context="$(mktemp -d)"
+          trap 'rm -rf "$artifact_context"' EXIT
+
+          cp "$MANIFEST_JSON" "$artifact_context/manifest.json"
+          printf '%s\n' \
+            'FROM scratch' \
+            'ARG VCS_REF' \
+            'ARG OCI_SOURCE' \
+            'ARG OCI_CREATED' \
+            'LABEL org.opencontainers.image.title="ELEVANT Development database release manifest"' \
+            'LABEL org.opencontainers.image.description="Certified immutable inputs for ELEVANT Development database promotion"' \
+            'LABEL org.opencontainers.image.revision="${VCS_REF}"' \
+            'LABEL org.opencontainers.image.source="${OCI_SOURCE}"' \
+            'LABEL org.opencontainers.image.created="${OCI_CREATED}"' \
+            'LABEL org.elevant.database.environment="Development"' \
+            'LABEL org.elevant.database.manifest.schema="1"' \
+            'LABEL io.elevant.database-release.schema-version="1"' \
+            'LABEL io.elevant.database-release.media-type="application/vnd.elevant.database-release-manifest.v1+json"' \
+            'COPY manifest.json /manifest.json' \
+            'CMD ["/manifest.json"]' \
+            > "$artifact_context/Dockerfile"
+
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg OCI_SOURCE="https://github.com/$GITHUB_REPOSITORY" \
+            --build-arg OCI_CREATED="$published_at" \
+            --tag "$manifest_version" \
+            "$artifact_context"
+
+          push_and_digest() {
+            local ref="$1"
+            local output digest
+            output="$(docker push "$ref")"
+            printf '%s\n' "$output" >&2
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Could not resolve pushed digest for $ref." >&2
+              exit 1
+            fi
+            printf '%s' "$digest"
+          }
+
+          manifest_digest="$(push_and_digest "$manifest_version")"
+          docker tag "$manifest_version" "$manifest_alias"
+          alias_digest="$(push_and_digest "$manifest_alias")"
+          if [[ "$manifest_digest" != "$alias_digest" ]]; then
+            echo "The certified alias does not resolve to the immutable manifest image." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Certified Development database release"
+            echo "- \`${manifest_repo}@${manifest_digest}\`"
+            echo "- Discovery alias: \`${manifest_alias}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"

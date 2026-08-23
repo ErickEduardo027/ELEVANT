@@ -1,0 +1,1006 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly MANIFEST_TOOL="$SCRIPT_DIR/manifest-tool.mjs"
+readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
+
+CONFIG_FILE="${ELEVANT_CD_CONFIG:-/etc/dokploy/elevant/database-cd/config.env}"
+COMMAND=""
+REQUESTED_DIGEST=""
+TEST_MODE="${ELEVANT_CD_TEST_MODE:-0}"
+DOCKER_BIN="${ELEVANT_CD_DOCKER_BIN:-docker}"
+NODE_BIN="${ELEVANT_CD_NODE_BIN:-node}"
+
+CD_MANIFEST_REPOSITORY=""
+CD_MANIFEST_ALIAS=""
+CD_EXPECTED_REPOSITORY=""
+CD_EXPECTED_REF=""
+CD_OPS_REPOSITORY=""
+CD_RELEASE_REPOSITORY=""
+CD_DOCKER_CONFIG=""
+CD_DATABASE_PROJECT=""
+CD_DATABASE_COMPOSE=""
+CD_DATABASE_ENV=""
+CD_RELEASE_PROJECT=""
+CD_RELEASE_COMPOSE=""
+CD_RELEASE_ENV=""
+CD_STATE_DIR=""
+CD_LOG_DIR=""
+CD_LOCK_FILE=""
+CD_GITHUB_TOKEN_FILE=""
+CD_GITHUB_API_URL=""
+
+CURRENT_MANIFEST_DIGEST=""
+CURRENT_SOURCE_COMMIT=""
+CURRENT_SOURCE_RUN_ID=""
+CURRENT_SOURCE_RUN_ATTEMPT=""
+CURRENT_OPS_IMAGE=""
+CURRENT_RELEASE_IMAGE=""
+CURRENT_DATABASE_COMPOSE_SHA256=""
+CURRENT_RELEASE_COMPOSE_SHA256=""
+CURRENT_WORKFLOW_URL=""
+CURRENT_STAGE="idle"
+MANIFEST_PATH=""
+GITHUB_HEADER_PATH=""
+GITHUB_PAYLOAD_PATH=""
+LOG_READY=0
+
+log() {
+  local message timestamp log_size
+  message="$*"
+  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf '%s %s: %s\n' "$timestamp" "$PROGRAM_NAME" "$message" >&2
+  if (( LOG_READY )); then
+    log_size="$(stat -c '%s' -- "$CD_LOG_DIR/controller.log")"
+    if (( log_size >= 10485760 )); then
+      mv -fT -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+      touch -- "$CD_LOG_DIR/controller.log"
+      chmod 0600 -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+    fi
+    printf '%s %s: %s\n' "$timestamp" "$PROGRAM_NAME" "$message" \
+      >> "$CD_LOG_DIR/controller.log"
+  fi
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  elevant-database-cd [--config ABSOLUTE_PATH] --poll
+  elevant-database-cd [--config ABSOLUTE_PATH] --dry-run
+  elevant-database-cd [--config ABSOLUTE_PATH] --retry sha256:DIGEST
+  elevant-database-cd [--config ABSOLUTE_PATH] --adopt-current
+  elevant-database-cd [--config ABSOLUTE_PATH] --backup
+  elevant-database-cd [--config ABSOLUTE_PATH] --restore-check
+  elevant-database-cd [--config ABSOLUTE_PATH] --status
+  elevant-database-cd [--config ABSOLUTE_PATH] --pause
+  elevant-database-cd [--config ABSOLUTE_PATH] --resume
+
+--poll discovers the certified Development alias, resolves it to an immutable
+manifest digest, and promotes a never-attempted release. A failed or interrupted
+manifest is never retried automatically.
+
+--dry-run validates the current manifest, image identities, live Compose hashes,
+and rendered Compose configurations without running a database operation.
+
+--retry requires the exact failed digest still advertised by the alias.
+--adopt-current reads only the two pinned image variables from the live restricted
+.env files, verifies the existing Development database, and records that baseline
+without consuming the candidate manifest alias.
+
+All mutating and scheduled operations share one non-blocking flock. There is no
+automatic schema rollback, database restore, retry, volume deletion, or SQL port
+publication.
+EOF
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+set_command() {
+  [[ -z "$COMMAND" ]] || die "only one command may be selected"
+  COMMAND="$1"
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config)
+        (( $# >= 2 )) || die "--config requires a path"
+        CONFIG_FILE="$2"
+        shift 2
+        ;;
+      --poll|--dry-run|--adopt-current|--backup|--restore-check|--status|--pause|--resume)
+        set_command "${1#--}"
+        shift
+        ;;
+      --retry)
+        (( $# >= 2 )) || die "$1 requires a sha256 digest"
+        set_command "${1#--}"
+        REQUESTED_DIGEST="$2"
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown argument: $1"
+        ;;
+    esac
+  done
+
+  [[ -n "$COMMAND" ]] || die "a command is required"
+  if [[ -n "$REQUESTED_DIGEST" ]]; then
+    [[ "$REQUESTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+      die "requested manifest digest has an invalid format"
+  fi
+}
+
+assign_config_value() {
+  local key="$1" value="$2"
+  case "$key" in
+    ELEVANT_CD_MANIFEST_REPOSITORY) CD_MANIFEST_REPOSITORY="$value" ;;
+    ELEVANT_CD_MANIFEST_ALIAS) CD_MANIFEST_ALIAS="$value" ;;
+    ELEVANT_CD_EXPECTED_REPOSITORY) CD_EXPECTED_REPOSITORY="$value" ;;
+    ELEVANT_CD_EXPECTED_REF) CD_EXPECTED_REF="$value" ;;
+    ELEVANT_CD_OPS_REPOSITORY) CD_OPS_REPOSITORY="$value" ;;
+    ELEVANT_CD_RELEASE_REPOSITORY) CD_RELEASE_REPOSITORY="$value" ;;
+    ELEVANT_CD_DOCKER_CONFIG) CD_DOCKER_CONFIG="$value" ;;
+    ELEVANT_CD_DATABASE_PROJECT) CD_DATABASE_PROJECT="$value" ;;
+    ELEVANT_CD_DATABASE_COMPOSE) CD_DATABASE_COMPOSE="$value" ;;
+    ELEVANT_CD_DATABASE_ENV) CD_DATABASE_ENV="$value" ;;
+    ELEVANT_CD_RELEASE_PROJECT) CD_RELEASE_PROJECT="$value" ;;
+    ELEVANT_CD_RELEASE_COMPOSE) CD_RELEASE_COMPOSE="$value" ;;
+    ELEVANT_CD_RELEASE_ENV) CD_RELEASE_ENV="$value" ;;
+    ELEVANT_CD_STATE_DIR) CD_STATE_DIR="$value" ;;
+    ELEVANT_CD_LOG_DIR) CD_LOG_DIR="$value" ;;
+    ELEVANT_CD_LOCK_FILE) CD_LOCK_FILE="$value" ;;
+    ELEVANT_CD_GITHUB_TOKEN_FILE) CD_GITHUB_TOKEN_FILE="$value" ;;
+    ELEVANT_CD_GITHUB_API_URL) CD_GITHUB_API_URL="$value" ;;
+    *) die "unsupported configuration setting: $key" ;;
+  esac
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* ]] || die "configuration path must be absolute"
+  [[ -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || \
+    die "configuration must be a regular, non-symlink file"
+  [[ -r "$CONFIG_FILE" ]] || die "configuration is not readable"
+
+  local metadata expected_uid
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")" || \
+    die "could not inspect configuration ownership and mode"
+  expected_uid=0
+  if [[ "$TEST_MODE" == "1" ]]; then
+    expected_uid="$(id -u)"
+  fi
+  [[ "$metadata" == "$expected_uid:600" ]] || \
+    die "configuration must be owned by the controller UID with exact mode 0600"
+
+  local line key value line_number=0
+  declare -A seen=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 ))
+    line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]*)$ ]]; then
+      die "invalid configuration syntax at line $line_number"
+    fi
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    [[ -z "${seen[$key]:-}" ]] || die "duplicate configuration setting: $key"
+    seen[$key]=1
+    assign_config_value "$key" "$value"
+  done < "$CONFIG_FILE"
+
+  local required_key
+  for required_key in \
+    ELEVANT_CD_MANIFEST_REPOSITORY ELEVANT_CD_MANIFEST_ALIAS \
+    ELEVANT_CD_EXPECTED_REPOSITORY ELEVANT_CD_EXPECTED_REF \
+    ELEVANT_CD_OPS_REPOSITORY ELEVANT_CD_RELEASE_REPOSITORY \
+    ELEVANT_CD_DOCKER_CONFIG ELEVANT_CD_DATABASE_PROJECT \
+    ELEVANT_CD_DATABASE_COMPOSE ELEVANT_CD_DATABASE_ENV \
+    ELEVANT_CD_RELEASE_PROJECT ELEVANT_CD_RELEASE_COMPOSE \
+    ELEVANT_CD_RELEASE_ENV ELEVANT_CD_STATE_DIR ELEVANT_CD_LOG_DIR \
+    ELEVANT_CD_LOCK_FILE ELEVANT_CD_GITHUB_TOKEN_FILE ELEVANT_CD_GITHUB_API_URL; do
+    [[ -n "${seen[$required_key]:-}" ]] || \
+      die "configuration is missing required setting: $required_key"
+  done
+
+  [[ "$CD_MANIFEST_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._/-]+$ ]] || \
+    die "invalid manifest repository"
+  [[ "$CD_OPS_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._/-]+$ ]] || \
+    die "invalid ops image repository"
+  [[ "$CD_RELEASE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._/-]+$ ]] || \
+    die "invalid release image repository"
+  [[ "$CD_MANIFEST_ALIAS" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]] || \
+    die "invalid manifest alias"
+  [[ "$CD_EXPECTED_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || \
+    die "invalid expected GitHub repository"
+  [[ "$CD_EXPECTED_REF" == "refs/heads/Development" ]] || \
+    die "only refs/heads/Development is supported"
+  [[ "$CD_DATABASE_PROJECT" =~ ^[a-z0-9][a-z0-9_-]+$ ]] || \
+    die "invalid database Compose project"
+  [[ "$CD_RELEASE_PROJECT" =~ ^[a-z0-9][a-z0-9_-]+$ ]] || \
+    die "invalid release Compose project"
+  [[ "$CD_GITHUB_API_URL" == "https://api.github.com" ]] || \
+    die "only the canonical GitHub API URL is supported"
+
+  local absolute_path
+  for absolute_path in "$CD_DOCKER_CONFIG" "$CD_DATABASE_COMPOSE" \
+    "$CD_DATABASE_ENV" "$CD_RELEASE_COMPOSE" "$CD_RELEASE_ENV" \
+    "$CD_STATE_DIR" "$CD_LOG_DIR" "$CD_LOCK_FILE"; do
+    [[ "$absolute_path" == /* ]] || die "every configured filesystem path must be absolute"
+  done
+  if [[ -n "$CD_GITHUB_TOKEN_FILE" && "$CD_GITHUB_TOKEN_FILE" != /* ]]; then
+    die "GitHub token file path must be empty or absolute"
+  fi
+  [[ "$(dirname -- "$CD_LOCK_FILE")" == "$CD_STATE_DIR" ]] || \
+    die "lock file must be stored directly inside the restricted state directory"
+}
+
+ensure_runtime_directories() {
+  local owner_uid=0 directory metadata
+  if [[ "$TEST_MODE" == "1" ]]; then
+    owner_uid="$(id -u)"
+  fi
+  for directory in "$CD_STATE_DIR" "$CD_STATE_DIR/attempts" "$CD_STATE_DIR/tmp" "$CD_LOG_DIR"; do
+    if [[ ! -e "$directory" ]]; then
+      install -d -m 0700 -- "$directory"
+    fi
+    [[ -d "$directory" && ! -L "$directory" ]] || \
+      die "runtime path must be a non-symlink directory: $directory"
+    metadata="$(stat -c '%u:%a' -- "$directory")" || \
+      die "could not inspect runtime directory"
+    [[ "$metadata" == "$owner_uid:700" ]] || \
+      die "runtime directories must be owned by the controller UID with mode 0700"
+  done
+  if [[ -e "$CD_LOG_DIR/controller.log" || -L "$CD_LOG_DIR/controller.log" ]]; then
+    [[ -f "$CD_LOG_DIR/controller.log" && ! -L "$CD_LOG_DIR/controller.log" ]] || \
+      die "controller log must be a regular, non-symlink file"
+  else
+    touch -- "$CD_LOG_DIR/controller.log"
+  fi
+  chmod 0600 -- "$CD_LOG_DIR/controller.log"
+  LOG_READY=1
+}
+
+validate_runtime_files() {
+  local path secret_metadata secret_mode expected_uid=0
+  for path in "$MANIFEST_TOOL" "$STATE_TOOL" "$CD_DATABASE_COMPOSE" \
+    "$CD_DATABASE_ENV" "$CD_RELEASE_COMPOSE" "$CD_RELEASE_ENV"; do
+    [[ -f "$path" && ! -L "$path" ]] || \
+      die "required runtime file must be a regular, non-symlink file: $path"
+  done
+  [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || \
+    die "Docker configuration directory is unavailable"
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  for path in "$CD_DATABASE_ENV" "$CD_RELEASE_ENV"; do
+    secret_metadata="$(stat -c '%u:%a' -- "$path")" || \
+      die "could not inspect a restricted environment file"
+    secret_mode="${secret_metadata#*:}"
+    [[ "${secret_metadata%%:*}" == "$expected_uid" && "$secret_mode" == "600" ]] || \
+      die "restricted environment files must be owned by the controller UID with mode 0600"
+  done
+  if [[ -n "$CD_GITHUB_TOKEN_FILE" ]]; then
+    [[ -f "$CD_GITHUB_TOKEN_FILE" && ! -L "$CD_GITHUB_TOKEN_FILE" ]] || \
+      die "configured GitHub token file is unavailable"
+    local token_metadata
+    token_metadata="$(stat -c '%u:%a' -- "$CD_GITHUB_TOKEN_FILE")" || \
+      die "could not inspect GitHub token file"
+    [[ "$token_metadata" == "$expected_uid:600" ]] || \
+      die "GitHub token file must be owned by the controller UID with mode 0600"
+  fi
+  docker_command version >/dev/null || die "Docker daemon is unavailable"
+  docker_command compose version >/dev/null || \
+    die "Docker Compose plugin is unavailable"
+}
+
+acquire_lock() {
+  local lock_parent lock_metadata expected_uid=0
+  lock_parent="$(dirname -- "$CD_LOCK_FILE")"
+  [[ -d "$lock_parent" && ! -L "$lock_parent" ]] || \
+    die "lock parent directory is unavailable"
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  if [[ -e "$CD_LOCK_FILE" || -L "$CD_LOCK_FILE" ]]; then
+    [[ -f "$CD_LOCK_FILE" && ! -L "$CD_LOCK_FILE" ]] || \
+      die "lock path must be a regular, non-symlink file"
+    lock_metadata="$(stat -c '%u:%a' -- "$CD_LOCK_FILE")" || \
+      die "could not inspect lock file"
+    [[ "$lock_metadata" == "$expected_uid:600" ]] || \
+      die "lock file must be owned by the controller UID with mode 0600"
+  else
+    (umask 077; : > "$CD_LOCK_FILE") || die "could not create lock file"
+  fi
+  exec 9<>"$CD_LOCK_FILE"
+  flock -n 9 || die "another ELEVANT database operation is running"
+}
+
+docker_command() {
+  DOCKER_CONFIG="$CD_DOCKER_CONFIG" "$DOCKER_BIN" "$@"
+}
+
+manifest_ref() {
+  printf '%s:%s\n' "$CD_MANIFEST_REPOSITORY" "$CD_MANIFEST_ALIAS"
+}
+
+resolve_alias_digest() {
+  local alias_ref inspect_output candidate match=""
+  alias_ref="$(manifest_ref)"
+  docker_command pull "$alias_ref" >/dev/null || \
+    die "could not pull the certified manifest alias"
+  inspect_output="$(docker_command image inspect \
+    --format '{{range .RepoDigests}}{{println .}}{{end}}' "$alias_ref")" || \
+    die "could not inspect the certified manifest alias"
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$CD_MANIFEST_REPOSITORY@"* ]] || continue
+    [[ "${candidate#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+    [[ -z "$match" || "$match" == "$candidate" ]] || \
+      die "manifest alias resolved to multiple repository digests"
+    match="$candidate"
+  done <<< "$inspect_output"
+  [[ -n "$match" ]] || die "manifest alias did not resolve to an immutable digest"
+  printf '%s\n' "${match#*@}"
+}
+
+image_label() {
+  local image_ref="$1" label="$2"
+  docker_command image inspect \
+    --format "{{index .Config.Labels \"$label\"}}" "$image_ref"
+}
+
+extract_manifest() {
+  local digest="$1" image_ref container_id="" output_path
+  image_ref="$CD_MANIFEST_REPOSITORY@$digest"
+  output_path="$(mktemp "$CD_STATE_DIR/tmp/manifest.XXXXXX.json")" || \
+    die "could not allocate manifest staging file"
+  chmod 0600 -- "$output_path"
+  container_id="$(docker_command create "$image_ref")" || {
+    rm -f -- "$output_path"
+    die "could not create an extraction container for the immutable manifest"
+  }
+  if ! docker_command cp "$container_id:/manifest.json" "$output_path" >/dev/null; then
+    docker_command rm -f "$container_id" >/dev/null 2>&1 || true
+    rm -f -- "$output_path"
+    die "could not extract manifest.json from the immutable artifact"
+  fi
+  docker_command rm -f "$container_id" >/dev/null || {
+    rm -f -- "$output_path"
+    die "could not remove the manifest extraction container"
+  }
+  MANIFEST_PATH="$output_path"
+}
+
+manifest_tool() {
+  "$NODE_BIN" "$MANIFEST_TOOL" validate \
+    --file "$MANIFEST_PATH" \
+    --expected-repository "$CD_EXPECTED_REPOSITORY" \
+    --expected-ref "$CD_EXPECTED_REF" \
+    --ops-repository "$CD_OPS_REPOSITORY" \
+    --release-repository "$CD_RELEASE_REPOSITORY" "$@"
+}
+
+manifest_get() {
+  manifest_tool --get "$1"
+}
+
+validate_artifact_labels() {
+  local manifest_image expected_source
+  manifest_image="$CD_MANIFEST_REPOSITORY@$CURRENT_MANIFEST_DIGEST"
+  expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$(image_label "$manifest_image" org.opencontainers.image.revision)" == \
+      "$CURRENT_SOURCE_COMMIT" ]] || die "manifest artifact revision label mismatch"
+  [[ "$(image_label "$manifest_image" org.opencontainers.image.source)" == \
+      "$expected_source" ]] || die "manifest artifact source label mismatch"
+  [[ "$(image_label "$manifest_image" org.elevant.database.environment)" == \
+      "Development" ]] || die "manifest artifact environment label mismatch"
+  [[ "$(image_label "$manifest_image" org.elevant.database.manifest.schema)" == \
+      "1" ]] || die "manifest artifact canonical schema label mismatch"
+  [[ "$(image_label "$manifest_image" io.elevant.database-release.schema-version)" == \
+      "1" ]] || die "manifest artifact schema label mismatch"
+  [[ "$(image_label "$manifest_image" io.elevant.database-release.media-type)" == \
+      "application/vnd.elevant.database-release-manifest.v1+json" ]] || \
+    die "manifest artifact media-type label mismatch"
+}
+
+load_and_validate_manifest() {
+  local digest="$1"
+  CURRENT_MANIFEST_DIGEST="$digest"
+  extract_manifest "$digest"
+  manifest_tool >/dev/null || die "certified manifest validation failed"
+  CURRENT_SOURCE_COMMIT="$(manifest_get source.commit)"
+  CURRENT_SOURCE_RUN_ID="$(manifest_get source.runId)"
+  CURRENT_SOURCE_RUN_ATTEMPT="$(manifest_get source.runAttempt)"
+  CURRENT_OPS_IMAGE="$(manifest_get images.ops)"
+  CURRENT_RELEASE_IMAGE="$(manifest_get images.release)"
+  CURRENT_DATABASE_COMPOSE_SHA256="$(manifest_get compose.databaseSha256)"
+  CURRENT_RELEASE_COMPOSE_SHA256="$(manifest_get compose.releaseSha256)"
+  CURRENT_WORKFLOW_URL="$(manifest_get source.workflowUrl)"
+  validate_artifact_labels
+}
+
+validate_release_image() {
+  local image_ref="$1" expected_repository="$2"
+  local expected_commit="${3:-$CURRENT_SOURCE_COMMIT}" expected_source
+  [[ "$image_ref" == "$expected_repository@"* ]] || \
+    die "release image reference is not the configured immutable repository"
+  [[ "${image_ref#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+    die "release image reference is not the configured immutable repository"
+  docker_command pull "$image_ref" >/dev/null || \
+    die "could not pull an immutable certified database image"
+  expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$(image_label "$image_ref" org.opencontainers.image.revision)" == \
+      "$expected_commit" ]] || die "database image revision label mismatch"
+  [[ "$(image_label "$image_ref" org.opencontainers.image.source)" == \
+      "$expected_source" ]] || die "database image source label mismatch"
+}
+
+read_env_value() {
+  local file="$1" key="$2" line value="" found=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" == "$key="* ]] || continue
+    (( found += 1 ))
+    value="${line#*=}"
+  done < "$file"
+  [[ "$found" == "1" ]] || \
+    die "restricted environment file must define $key exactly once"
+  [[ -n "$value" && ! "$value" =~ [[:space:]#] ]] || \
+    die "restricted environment value for $key has an invalid format"
+  printf '%s\n' "$value"
+}
+
+load_and_validate_live_baseline() {
+  local ops_revision release_revision
+  CURRENT_MANIFEST_DIGEST=""
+  CURRENT_WORKFLOW_URL=""
+  CURRENT_SOURCE_RUN_ID=""
+  CURRENT_SOURCE_RUN_ATTEMPT=""
+  CURRENT_OPS_IMAGE="$(read_env_value "$CD_DATABASE_ENV" ELEVANT_DB_OPS_IMAGE)"
+  CURRENT_RELEASE_IMAGE="$(read_env_value "$CD_RELEASE_ENV" ELEVANT_DB_RELEASE_IMAGE)"
+
+  [[ "$CURRENT_OPS_IMAGE" == "$CD_OPS_REPOSITORY@"* && \
+      "${CURRENT_OPS_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+    die "live baseline ops image is not an expected immutable reference"
+  [[ "$CURRENT_RELEASE_IMAGE" == "$CD_RELEASE_REPOSITORY@"* && \
+      "${CURRENT_RELEASE_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+    die "live baseline release image is not an expected immutable reference"
+  docker_command pull "$CURRENT_OPS_IMAGE" >/dev/null || \
+    die "could not pull the live baseline ops image by digest"
+  docker_command pull "$CURRENT_RELEASE_IMAGE" >/dev/null || \
+    die "could not pull the live baseline release image by digest"
+  ops_revision="$(image_label "$CURRENT_OPS_IMAGE" org.opencontainers.image.revision)"
+  release_revision="$(image_label "$CURRENT_RELEASE_IMAGE" org.opencontainers.image.revision)"
+  [[ "$ops_revision" =~ ^[0-9a-f]{40}$ && "$release_revision" == "$ops_revision" ]] || \
+    die "live baseline image revisions are invalid or inconsistent"
+  CURRENT_SOURCE_COMMIT="$ops_revision"
+  validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
+  validate_release_image "$CURRENT_RELEASE_IMAGE" "$CD_RELEASE_REPOSITORY"
+
+  CURRENT_DATABASE_COMPOSE_SHA256="$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')"
+  CURRENT_RELEASE_COMPOSE_SHA256="$(sha256sum -- "$CD_RELEASE_COMPOSE" | awk '{print $1}')"
+  validate_compose_hashes
+  database_compose config --quiet
+  release_compose config --quiet
+}
+
+validate_compose_hashes() {
+  local actual_database actual_release
+  [[ "$CURRENT_DATABASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "expected database Compose hash is invalid"
+  [[ "$CURRENT_RELEASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "expected release Compose hash is invalid"
+  actual_database="$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')"
+  actual_release="$(sha256sum -- "$CD_RELEASE_COMPOSE" | awk '{print $1}')"
+  [[ "$actual_database" == "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
+    die "live database Compose hash does not match the expected immutable input"
+  [[ "$actual_release" == "$CURRENT_RELEASE_COMPOSE_SHA256" ]] || \
+    die "live release Compose hash does not match the expected immutable input"
+}
+
+database_compose_with_ops() {
+  local ops_image="$1"
+  shift
+  ELEVANT_DB_OPS_IMAGE="$ops_image" \
+    docker_command compose --env-file "$CD_DATABASE_ENV" \
+      -p "$CD_DATABASE_PROJECT" -f "$CD_DATABASE_COMPOSE" \
+      --profile operations "$@"
+}
+
+database_compose() {
+  database_compose_with_ops "$CURRENT_OPS_IMAGE" "$@"
+}
+
+release_compose() {
+  ELEVANT_DB_RELEASE_IMAGE="$CURRENT_RELEASE_IMAGE" \
+    docker_command compose --env-file "$CD_RELEASE_ENV" \
+      -p "$CD_RELEASE_PROJECT" -f "$CD_RELEASE_COMPOSE" "$@"
+}
+
+preflight_release() {
+  validate_compose_hashes
+  validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
+  validate_release_image "$CURRENT_RELEASE_IMAGE" "$CD_RELEASE_REPOSITORY"
+  database_compose config --quiet || return 1
+  release_compose config --quiet || return 1
+}
+
+state_get() {
+  local file="$1" field="$2"
+  "$NODE_BIN" "$STATE_TOOL" get --file "$file" --field "$field"
+}
+
+attempt_file() {
+  local digest="$1"
+  printf '%s/attempts/%s.json\n' "$CD_STATE_DIR" "${digest#sha256:}"
+}
+
+write_state_file() {
+  local file="$1" status="$2" stage="$3" message_code="$4"
+  "$NODE_BIN" "$STATE_TOOL" write --file "$file" \
+    --set "status=$status" \
+    --set "stage=$stage" \
+    --set "manifestDigest=$CURRENT_MANIFEST_DIGEST" \
+    --set "sourceCommit=$CURRENT_SOURCE_COMMIT" \
+    --set "sourceRunId=$CURRENT_SOURCE_RUN_ID" \
+    --set "sourceRunAttempt=$CURRENT_SOURCE_RUN_ATTEMPT" \
+    --set "opsImage=$CURRENT_OPS_IMAGE" \
+    --set "releaseImage=$CURRENT_RELEASE_IMAGE" \
+    --set "databaseComposeSha256=$CURRENT_DATABASE_COMPOSE_SHA256" \
+    --set "releaseComposeSha256=$CURRENT_RELEASE_COMPOSE_SHA256" \
+    --set "messageCode=$message_code" \
+    --set "updatedAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --set "workflowUrl=$CURRENT_WORKFLOW_URL"
+}
+
+persist_attempt_state() {
+  local status="$1" stage="$2" message_code="$3" attempt
+  attempt="$(attempt_file "$CURRENT_MANIFEST_DIGEST")" || return 1
+  write_state_file "$CD_STATE_DIR/current.json" "$status" "$stage" \
+    "$message_code" || return 1
+  write_state_file "$attempt" "$status" "$stage" "$message_code"
+}
+
+report_github_status() {
+  local state="$1" description="$2"
+  [[ -n "$CD_GITHUB_TOKEN_FILE" ]] || return 0
+  local token url
+  token="$(<"$CD_GITHUB_TOKEN_FILE")"
+  [[ "$token" =~ ^[A-Za-z0-9_]+$ ]] || {
+    log "WARNING: GitHub status token has an invalid local format"
+    return 0
+  }
+  GITHUB_HEADER_PATH="$(mktemp "$CD_STATE_DIR/tmp/github-header.XXXXXX")" || return 0
+  GITHUB_PAYLOAD_PATH="$(mktemp "$CD_STATE_DIR/tmp/github-payload.XXXXXX")" || {
+    rm -f -- "$GITHUB_HEADER_PATH"
+    GITHUB_HEADER_PATH=""
+    return 0
+  }
+  chmod 0600 -- "$GITHUB_HEADER_PATH" "$GITHUB_PAYLOAD_PATH"
+  printf 'Authorization: Bearer %s\n' "$token" > "$GITHUB_HEADER_PATH"
+  printf '{"state":"%s","context":"elevant/database-development-cd","description":"%s","target_url":"%s"}\n' \
+    "$state" "$description" "$CURRENT_WORKFLOW_URL" > "$GITHUB_PAYLOAD_PATH"
+  token=""
+  url="$CD_GITHUB_API_URL/repos/$CD_EXPECTED_REPOSITORY/statuses/$CURRENT_SOURCE_COMMIT"
+  if ! curl --silent --show-error --fail-with-body \
+      --request POST --header "@$GITHUB_HEADER_PATH" \
+      --header 'Accept: application/vnd.github+json' \
+      --header 'X-GitHub-Api-Version: 2022-11-28' \
+      --header 'Content-Type: application/json' \
+      --data-binary "@$GITHUB_PAYLOAD_PATH" "$url" >/dev/null; then
+    log "WARNING: optional GitHub commit status could not be reported"
+  fi
+  rm -f -- "$GITHUB_HEADER_PATH" "$GITHUB_PAYLOAD_PATH"
+  GITHUB_HEADER_PATH=""
+  GITHUB_PAYLOAD_PATH=""
+}
+
+begin_stage() {
+  CURRENT_STAGE="$1"
+  persist_attempt_state running "$CURRENT_STAGE" "stage_running" || return 1
+  log "stage=$CURRENT_STAGE started"
+}
+
+complete_stage() {
+  log "stage=$CURRENT_STAGE completed"
+}
+
+fail_attempt() {
+  local stage="$1"
+  persist_attempt_state failed "$stage" "stage_failed"
+  report_github_status failure "Development DB promotion failed at $stage"
+  log "promotion stopped at stage=$stage; explicit retry is required"
+}
+
+run_stage() {
+  local stage="$1"
+  shift
+  if ! begin_stage "$stage"; then
+    log "ERROR: promotion state could not be persisted before stage=$stage"
+    return 1
+  fi
+  if "$@"; then
+    complete_stage
+    return 0
+  fi
+  fail_attempt "$stage"
+  return 1
+}
+
+run_backup() {
+  database_compose run --rm --no-deps backup
+}
+
+run_pre_backup() {
+  local state_file="$CD_STATE_DIR/last-success.json"
+  local accepted_status accepted_commit accepted_ops_image
+  [[ -f "$state_file" && ! -L "$state_file" ]] || \
+    die "pre-migration backup requires an adopted or successful baseline"
+  accepted_status="$(state_get "$state_file" status)"
+  [[ "$accepted_status" == "adopted" || "$accepted_status" == "succeeded" ]] || \
+    die "pre-migration backup baseline state is invalid"
+  accepted_commit="$(state_get "$state_file" sourceCommit)"
+  accepted_ops_image="$(state_get "$state_file" opsImage)"
+  validate_release_image "$accepted_ops_image" "$CD_OPS_REPOSITORY" \
+    "$accepted_commit"
+  database_compose_with_ops "$accepted_ops_image" config --quiet || return 1
+  database_compose_with_ops "$accepted_ops_image" \
+    run --rm --no-deps backup || return 1
+}
+
+run_migrate() {
+  release_compose run --rm --no-deps migrator
+}
+
+run_seed() {
+  release_compose run --rm --no-deps seeder-development
+}
+
+run_verify() {
+  database_compose run --rm --no-deps verify-development
+}
+
+run_restore_check() {
+  database_compose run --rm --no-deps restore-check
+}
+
+promote_current_manifest() {
+  log "promotion accepted commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+  report_github_status pending "Promoting Development database"
+
+  if ! run_stage preflight preflight_release; then return 1; fi
+  if ! run_stage pre-backup run_pre_backup; then return 1; fi
+  if ! run_stage migrate run_migrate; then return 1; fi
+  if ! run_stage seed-development run_seed; then return 1; fi
+  if ! run_stage verify-development run_verify; then return 1; fi
+  if ! run_stage post-backup run_backup; then return 1; fi
+  if ! run_stage restore-check run_restore_check; then return 1; fi
+
+  CURRENT_STAGE=complete
+  write_state_file "$CD_STATE_DIR/last-success.json" succeeded complete \
+    "promotion_succeeded"
+  persist_attempt_state succeeded complete "promotion_succeeded"
+  report_github_status success "Development DB promotion succeeded"
+  log "promotion completed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+
+is_paused() {
+  [[ -e "$CD_STATE_DIR/paused" ]]
+}
+
+load_last_success() {
+  local state_file="$CD_STATE_DIR/last-success.json" accepted_status
+  [[ -f "$state_file" && ! -L "$state_file" ]] || \
+    die "no adopted or successful manifest is available for scheduled operations"
+  CURRENT_MANIFEST_DIGEST="$(state_get "$state_file" manifestDigest)"
+  CURRENT_SOURCE_COMMIT="$(state_get "$state_file" sourceCommit)"
+  CURRENT_SOURCE_RUN_ID="$(state_get "$state_file" sourceRunId)"
+  CURRENT_SOURCE_RUN_ATTEMPT="$(state_get "$state_file" sourceRunAttempt)"
+  CURRENT_OPS_IMAGE="$(state_get "$state_file" opsImage)"
+  CURRENT_RELEASE_IMAGE="$(state_get "$state_file" releaseImage)"
+  CURRENT_DATABASE_COMPOSE_SHA256="$(state_get "$state_file" databaseComposeSha256)"
+  CURRENT_RELEASE_COMPOSE_SHA256="$(state_get "$state_file" releaseComposeSha256)"
+  CURRENT_WORKFLOW_URL="$(state_get "$state_file" workflowUrl)"
+  accepted_status="$(state_get "$state_file" status)"
+  [[ "$accepted_status" == "adopted" || "$accepted_status" == "succeeded" ]] || \
+    die "last-success state is not adopted or successful"
+  [[ "$CURRENT_OPS_IMAGE" == "$CD_OPS_REPOSITORY@"* ]] || \
+    die "last-success state contains an invalid ops image"
+  [[ "${CURRENT_OPS_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+    die "last-success state contains an invalid ops image"
+  [[ "$CURRENT_DATABASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ && \
+      "$CURRENT_RELEASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "last-success state contains invalid Compose hashes"
+}
+
+candidate_is_newer_than_last_success() {
+  local state_file="$CD_STATE_DIR/last-success.json"
+  local accepted_run_id accepted_digest
+  [[ -f "$state_file" && ! -L "$state_file" ]] || return 0
+  accepted_digest="$(state_get "$state_file" manifestDigest)"
+  [[ "$accepted_digest" != "$CURRENT_MANIFEST_DIGEST" ]] || return 0
+  accepted_run_id="$(state_get "$state_file" sourceRunId)"
+
+  # A manually adopted v1 predates the manifest protocol and has no run ID.
+  # The first certified candidate is therefore accepted after the operator's
+  # explicit dry-run. Every subsequent candidate must advance the workflow run.
+  [[ -n "$accepted_run_id" ]] || return 0
+  [[ "$CURRENT_SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || \
+    die "candidate manifest has no canonical source run ID"
+  (( 10#$CURRENT_SOURCE_RUN_ID > 10#$accepted_run_id ))
+}
+
+reconcile_accepted_manifest() {
+  local accepted_file="$CD_STATE_DIR/last-success.json"
+  local accepted_digest accepted_status accepted_stage
+  local attempt record_file record_digest record_status
+  local needs_reconciliation=0
+
+  [[ -e "$accepted_file" ]] || return 1
+  [[ -f "$accepted_file" && ! -L "$accepted_file" ]] || \
+    die "last-success state must be a regular, non-symlink file"
+  accepted_digest="$(state_get "$accepted_file" manifestDigest)"
+  [[ "$accepted_digest" == "$CURRENT_MANIFEST_DIGEST" ]] || return 1
+  accepted_status="$(state_get "$accepted_file" status)"
+  [[ "$accepted_status" == "adopted" || "$accepted_status" == "succeeded" ]] || \
+    die "last-success state matching the advertised manifest is invalid"
+  accepted_stage="$(state_get "$accepted_file" stage)"
+  [[ -n "$accepted_stage" ]] || die "accepted manifest state has an empty stage"
+
+  attempt="$(attempt_file "$CURRENT_MANIFEST_DIGEST")"
+  for record_file in "$CD_STATE_DIR/current.json" "$attempt"; do
+    if [[ ! -e "$record_file" ]]; then
+      needs_reconciliation=1
+      continue
+    fi
+    [[ -f "$record_file" && ! -L "$record_file" ]] || \
+      die "accepted manifest record must be a regular, non-symlink file"
+    record_digest="$(state_get "$record_file" manifestDigest)"
+    record_status="$(state_get "$record_file" status)"
+    if [[ "$record_digest" != "$CURRENT_MANIFEST_DIGEST" || \
+          "$record_status" != "$accepted_status" ]]; then
+      needs_reconciliation=1
+    fi
+  done
+
+  if (( needs_reconciliation )); then
+    CURRENT_STAGE="$accepted_stage"
+    persist_attempt_state "$accepted_status" "$accepted_stage" \
+      "accepted_state_reconciled"
+    if [[ "$accepted_status" == "adopted" ]]; then
+      report_github_status success "Development DB baseline adopted"
+    else
+      report_github_status success "Development DB promotion succeeded"
+    fi
+    log "reconciled accepted manifest state without running a database operation"
+  fi
+  log "manifest=$CURRENT_MANIFEST_DIGEST is already accepted; poll is a no-op"
+  return 0
+}
+
+command_poll() {
+  if is_paused; then
+    log "controller is paused; poll skipped"
+    return 0
+  fi
+  local digest attempt status=""
+  digest="$(resolve_alias_digest)"
+  load_and_validate_manifest "$digest"
+  if reconcile_accepted_manifest; then
+    return 0
+  fi
+  if ! candidate_is_newer_than_last_success; then
+    log "manifest=$digest is older than or equal to the accepted workflow run; poll is a no-op"
+    return 0
+  fi
+  attempt="$(attempt_file "$digest")"
+  if [[ -f "$attempt" ]]; then
+    status="$(state_get "$attempt" status)"
+    case "$status" in
+      succeeded|adopted)
+        log "manifest=$digest is already accepted; poll is a no-op"
+        return 0
+        ;;
+      failed)
+        log "manifest=$digest previously failed; automatic retry is disabled"
+        return 0
+        ;;
+      running)
+        persist_attempt_state failed interrupted "interrupted_attempt"
+        report_github_status failure "Development DB promotion was interrupted"
+        log "manifest=$digest had an interrupted attempt; explicit retry is required"
+        return 0
+        ;;
+      *) die "attempt state contains an unsupported status" ;;
+    esac
+  fi
+  promote_current_manifest
+}
+
+command_dry_run() {
+  local digest
+  digest="$(resolve_alias_digest)"
+  load_and_validate_manifest "$digest"
+  preflight_release
+  log "dry-run passed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+
+command_retry() {
+  is_paused && die "controller is paused"
+  local advertised attempt status
+  advertised="$(resolve_alias_digest)"
+  [[ "$advertised" == "$REQUESTED_DIGEST" ]] || \
+    die "retry digest is not the manifest currently advertised by the alias"
+  load_and_validate_manifest "$REQUESTED_DIGEST"
+  candidate_is_newer_than_last_success || \
+    die "retry manifest is older than or equal to the accepted workflow run"
+  attempt="$(attempt_file "$REQUESTED_DIGEST")"
+  [[ -f "$attempt" ]] || die "retry digest has no recorded failed attempt"
+  status="$(state_get "$attempt" status)"
+  [[ "$status" == "failed" ]] || die "only a failed manifest may be retried"
+  promote_current_manifest
+}
+
+command_adopt_current() {
+  is_paused && die "controller is paused"
+  [[ ! -e "$CD_STATE_DIR/last-success.json" ]] || \
+    die "an adopted or successful database baseline already exists"
+  load_and_validate_live_baseline
+
+  log "live baseline verification started"
+  database_compose run --rm --no-deps verify-development || \
+    die "live baseline verification failed"
+  log "live baseline backup started"
+  run_backup || die "live baseline backup failed"
+  log "live baseline restore-check started"
+  run_restore_check || die "live baseline restore-check failed"
+
+  CURRENT_STAGE=adopted-current
+  write_state_file "$CD_STATE_DIR/last-success.json" adopted adopted-current \
+    "baseline_adopted"
+  write_state_file "$CD_STATE_DIR/current.json" adopted adopted-current \
+    "baseline_adopted"
+  log "live baseline adopted commit=$CURRENT_SOURCE_COMMIT"
+}
+
+command_backup() {
+  if is_paused; then
+    log "controller is paused; scheduled backup skipped"
+    return 0
+  fi
+  load_last_success
+  validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
+  [[ "$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')" == \
+      "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
+    die "scheduled backup refused database Compose drift"
+  database_compose config --quiet
+  log "scheduled backup started"
+  run_backup
+  log "scheduled backup completed"
+}
+
+command_restore_check() {
+  if is_paused; then
+    log "controller is paused; scheduled restore-check skipped"
+    return 0
+  fi
+  load_last_success
+  validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
+  [[ "$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')" == \
+      "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
+    die "scheduled restore-check refused database Compose drift"
+  database_compose config --quiet
+  log "scheduled restore-check started"
+  run_restore_check
+  log "scheduled restore-check completed"
+}
+
+command_pause() {
+  local temporary
+  temporary="$(mktemp "$CD_STATE_DIR/.paused.XXXXXX")"
+  chmod 0600 -- "$temporary"
+  printf 'paused\n' > "$temporary"
+  mv -fT -- "$temporary" "$CD_STATE_DIR/paused"
+  log "controller paused"
+}
+
+command_resume() {
+  rm -f -- "$CD_STATE_DIR/paused"
+  log "controller resumed"
+}
+
+command_status() {
+  if is_paused; then
+    printf 'paused=true\n'
+  else
+    printf 'paused=false\n'
+  fi
+  printf '%s\n' 'current:'
+  "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/current.json"
+  printf '%s\n' 'last-success:'
+  "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/last-success.json"
+}
+
+cleanup() {
+  if [[ -n "$MANIFEST_PATH" ]]; then
+    rm -f -- "$MANIFEST_PATH"
+  fi
+  [[ -z "$GITHUB_HEADER_PATH" ]] || rm -f -- "$GITHUB_HEADER_PATH"
+  [[ -z "$GITHUB_PAYLOAD_PATH" ]] || rm -f -- "$GITHUB_PAYLOAD_PATH"
+}
+
+on_exit() {
+  local exit_code="$?" attempt status=""
+  set +e
+  if (( exit_code != 0 )) && [[ -n "$CURRENT_MANIFEST_DIGEST" ]]; then
+    attempt="$(attempt_file "$CURRENT_MANIFEST_DIGEST")"
+    if [[ -f "$attempt" ]]; then
+      status="$(state_get "$attempt" status 2>/dev/null)"
+      if [[ "$status" == "running" ]]; then
+        persist_attempt_state failed "$CURRENT_STAGE" "stage_failed"
+        report_github_status failure \
+          "Development DB promotion failed at $CURRENT_STAGE"
+        log "promotion stopped at stage=$CURRENT_STAGE; explicit retry is required"
+      fi
+    fi
+  fi
+  cleanup
+  return "$exit_code"
+}
+
+main() {
+  trap on_exit EXIT
+  parse_args "$@"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    (( EUID == 0 )) || die "must run as root inside the private Dokploy container"
+  fi
+  require_command "$DOCKER_BIN"
+  require_command "$NODE_BIN"
+  require_command awk
+  require_command chmod
+  require_command curl
+  require_command date
+  require_command dirname
+  require_command flock
+  require_command id
+  require_command install
+  require_command mktemp
+  require_command mv
+  require_command rm
+  require_command sha256sum
+  require_command stat
+  require_command touch
+  load_config
+  ensure_runtime_directories
+  validate_runtime_files
+
+  case "$COMMAND" in
+    status) command_status ;;
+    *)
+      acquire_lock
+      case "$COMMAND" in
+        poll) command_poll ;;
+        dry-run) command_dry_run ;;
+        retry) command_retry ;;
+        adopt-current) command_adopt_current ;;
+        backup) command_backup ;;
+        restore-check) command_restore_check ;;
+        pause) command_pause ;;
+        resume) command_resume ;;
+        *) die "internal command dispatch error" ;;
+      esac
+      ;;
+  esac
+}
+
+main "$@"
