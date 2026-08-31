@@ -2,9 +2,11 @@
 
 Estado: DB v1 está desplegada y verificada en el VPS Development privado. El
 hardening, Tailscale, observabilidad, backup/restore programados y snapshot frío
-fueron aceptados el 2026-08-23. El controlador pull-based está versionado como
-el siguiente cambio, pero su instalación sigue siendo manual por el operador.
-La secuencia con checkpoints y rollback está en
+fueron aceptados el 2026-08-23. El controlador pull-based fue instalado y
+aceptado manualmente por el operador el 2026-08-31 UTC; desde entonces promueve
+automáticamente bundles DB certificados de `Development`. La API y los tres
+frontends continúan fuera del VPS. La secuencia reproducible con checkpoints y
+rollback está en
 [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
@@ -210,7 +212,9 @@ Reglas del scheduler:
   de configuración a `compose config --images`;
 - mantener todos los valores de imagen con `@sha256:<digest>` y restringir
   configuración, logs/jobs y token de commit status a operadores;
-- alertas de disco 70/80/90 %, manteniendo al menos 15 GB libres.
+- mientras las alertas estén diferidas, revisar disco diariamente; al aprobarlas,
+  usar un único umbral mayor a 80 % durante 10 minutos y mantener al menos
+  15 GB libres.
 
 Primero ejecute ambos jobs manualmente y exija código cero. `restore-check`
 restaura una base temporal, valida su marcador, ejecuta `DBCC CHECKDB` y la
