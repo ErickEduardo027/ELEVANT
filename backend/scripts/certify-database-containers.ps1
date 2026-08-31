@@ -4,14 +4,61 @@ param(
     [string]$OpsImage = 'elevant-db-ops:cert-candidate',
     [string]$ReleaseImage = 'elevant-db-release:cert-candidate',
     [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ExpectedRevision,
-    [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ExpectedSource
+    [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ExpectedSource,
+    [string]$ProductionBootstrapPath
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $backendRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$productionBootstrap = (Resolve-Path (Join-Path $backendRoot 'database/scripts/bootstrap/initialize-production.sql')).Path
+$repositoryRoot = (Resolve-Path (Join-Path $backendRoot '..')).Path
+$defaultProductionBootstrap = Join-Path $backendRoot 'database/scripts/bootstrap/initialize-production.sql'
+
+if ([string]::IsNullOrWhiteSpace($ProductionBootstrapPath)) {
+    $productionBootstrapCandidate = $defaultProductionBootstrap
+}
+elseif ([System.IO.Path]::IsPathRooted($ProductionBootstrapPath)) {
+    $productionBootstrapCandidate = $ProductionBootstrapPath
+}
+else {
+    # Explicit relative paths are repository-relative so callers do not depend on
+    # the workflow working directory while the monorepo layout is reorganized.
+    $productionBootstrapCandidate = Join-Path $repositoryRoot $ProductionBootstrapPath
+}
+
+if (-not (Test-Path -LiteralPath $productionBootstrapCandidate -PathType Leaf)) {
+    throw "Production certification bootstrap fixture was not found: $productionBootstrapCandidate"
+}
+
+$productionBootstrap = (Resolve-Path -LiteralPath $productionBootstrapCandidate).Path
+$pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+    [System.StringComparison]::OrdinalIgnoreCase
+}
+else {
+    [System.StringComparison]::Ordinal
+}
+$repositoryPrefix = $repositoryRoot.TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar
+) + [System.IO.Path]::DirectorySeparatorChar
+if (-not $productionBootstrap.StartsWith($repositoryPrefix, $pathComparison)) {
+    throw 'Production certification bootstrap fixture must be a file inside the repository.'
+}
+if ([System.IO.Path]::GetExtension($productionBootstrap) -ne '.sql') {
+    throw 'Production certification bootstrap fixture must have the .sql extension.'
+}
+
+$productionDirectory = [System.IO.Path]::GetFullPath(
+    (Join-Path $repositoryRoot 'database/ProductionDB')
+).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar
+) + [System.IO.Path]::DirectorySeparatorChar
+if ($productionBootstrap.StartsWith($productionDirectory, $pathComparison)) {
+    throw 'Production certification fixtures must not be stored in database/ProductionDB.'
+}
+
 $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $resourcePrefix = "elevant-cert-$suffix"
 $networkName = "$resourcePrefix-data"

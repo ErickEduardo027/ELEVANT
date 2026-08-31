@@ -39,10 +39,13 @@ La certificación publicable se ejecuta desde la raíz del repositorio después 
   -OpsImage elevant-db-ops:ci `
   -ReleaseImage elevant-db-release:ci `
   -ExpectedRevision <commit> `
-  -ExpectedSource https://github.com/ErickEduardo027/ELEVANT
+  -ExpectedSource https://github.com/ErickEduardo027/ELEVANT `
+  -ProductionBootstrapPath backend/database/scripts/bootstrap/initialize-production.sql
 ```
 
 La prueba crea y elimina su propia red, volúmenes y SQL Server; cubre instalación limpia Production sin datos, rechazo del seed, upgrade Development con dato centinela, reprovisionamiento con `sa` deshabilitado, seed doble, permisos, backup, restore + `DBCC CHECKDB` y persistencia al recrear SQL. CI ejecuta exactamente este gate antes de publicar GHCR.
+
+`ProductionBootstrapPath` es opcional mientras se conserve la ubicación anterior. Cuando cambie la estructura del monorepo, permite indicar una fixture SQL de certificación mediante una ruta absoluta o relativa a la raíz del repositorio, sin depender del directorio de trabajo de CI. La ruta se valida como archivo `.sql` dentro del repositorio y se rechaza si apunta a `database/ProductionDB`: esa carpeta representa el futuro producto Production y debe permanecer vacía hasta que exista un plan aprobado. La fixture solo crea una base Production efímera dentro del Docker aislado de certificación; no provisiona ni despliega Production.
 
 ## Identidades de Development
 

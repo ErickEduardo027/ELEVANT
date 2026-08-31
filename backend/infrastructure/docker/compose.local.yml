@@ -9,8 +9,8 @@ x-rotated-logs: &rotated-logs
 services:
   backup-storage-init:
     build:
-      context: ../../database
-      dockerfile: Dockerfile.ops
+      context: ../../..
+      dockerfile: backend/database/Dockerfile.ops
     image: elevant-db-ops:local
     user: "0:0"
     command: ["initialize-backup-storage"]
@@ -69,8 +69,8 @@ services:
 
   provisioner:
     build:
-      context: ../../database
-      dockerfile: Dockerfile.ops
+      context: ../../..
+      dockerfile: backend/database/Dockerfile.ops
     image: elevant-db-ops:local
     command: ["provision-development"]
     environment: &database-credentials
@@ -92,8 +92,8 @@ services:
 
   migrator:
     build:
-      context: ../..
-      dockerfile: Dockerfile.database-release
+      context: ../../..
+      dockerfile: backend/Dockerfile.database-release
     image: elevant-db-release:local
     command: ["migrate"]
     environment:
@@ -124,8 +124,8 @@ services:
 
   api:
     build:
-      context: ../..
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: backend/Dockerfile
     image: elevant-api:local
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"

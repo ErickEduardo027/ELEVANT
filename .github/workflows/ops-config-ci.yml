@@ -92,20 +92,124 @@ jobs:
           bash ops/dokploy/database-cd/tests/test-controller.sh
           bash ops/dokploy/database-cd/tests/test-verify-runtime.sh
 
+      - name: Resolve one database source layout
+        id: database_layout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          legacy_paths=(
+            backend/scripts/deployment/database_release_manifest.py
+            backend/infrastructure/docker/compose.development.database.yml
+            backend/infrastructure/docker/compose.development.release.yml
+            backend/src/Elevant.Infrastructure/Persistence/Migrations
+            backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs
+            backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs
+          )
+          future_paths=(
+            database/DevelopmentDB/scripts/deployment/database_release_manifest.py
+            database/DevelopmentDB/compose.development.database.yml
+            database/DevelopmentDB/compose.development.release.yml
+            database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations
+            database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/ElevantDbContextModelSnapshot.cs
+            database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
+          )
+
+          count_existing() {
+            local existing=0
+            local candidate
+            for candidate in "$@"; do
+              if [[ -e "$candidate" ]]; then
+                existing=$((existing + 1))
+              fi
+            done
+            printf '%s\n' "$existing"
+          }
+
+          legacy_existing="$(count_existing "${legacy_paths[@]}")"
+          future_existing="$(count_existing "${future_paths[@]}")"
+          legacy_total="${#legacy_paths[@]}"
+          future_total="${#future_paths[@]}"
+
+          if (( legacy_existing > 0 && legacy_existing < legacy_total )); then
+            printf 'Legacy database source layout is partial (%d/%d paths).\n' \
+              "$legacy_existing" "$legacy_total" >&2
+            exit 1
+          fi
+          if (( future_existing > 0 && future_existing < future_total )); then
+            printf 'Future database source layout is partial (%d/%d paths).\n' \
+              "$future_existing" "$future_total" >&2
+            exit 1
+          fi
+
+          complete_layouts=0
+          if (( legacy_existing == legacy_total )); then
+            complete_layouts=$((complete_layouts + 1))
+            layout=legacy
+          fi
+          if (( future_existing == future_total )); then
+            complete_layouts=$((complete_layouts + 1))
+            layout=future
+          fi
+          if (( complete_layouts != 1 )); then
+            printf 'Expected exactly one complete database source layout; found %d.\n' \
+              "$complete_layouts" >&2
+            exit 1
+          fi
+
+          if [[ "$layout" == legacy ]]; then
+            manifest_producer="${legacy_paths[0]}"
+            database_compose="${legacy_paths[1]}"
+            release_compose="${legacy_paths[2]}"
+            migrations_directory="${legacy_paths[3]}"
+            model_snapshot="${legacy_paths[4]}"
+            development_seed="${legacy_paths[5]}"
+          else
+            manifest_producer="${future_paths[0]}"
+            database_compose="${future_paths[1]}"
+            release_compose="${future_paths[2]}"
+            migrations_directory="${future_paths[3]}"
+            model_snapshot="${future_paths[4]}"
+            development_seed="${future_paths[5]}"
+          fi
+
+          {
+            echo "layout=$layout"
+            echo "manifest_producer=$manifest_producer"
+            echo "database_compose=$database_compose"
+            echo "release_compose=$release_compose"
+            echo "migrations_directory=$migrations_directory"
+            echo "model_snapshot=$model_snapshot"
+            echo "development_seed=$development_seed"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved database source layout: $layout" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Validate database manifest producer-consumer compatibility
         shell: bash
+        env:
+          MANIFEST_PRODUCER: ${{ steps.database_layout.outputs.manifest_producer }}
+          DATABASE_COMPOSE: ${{ steps.database_layout.outputs.database_compose }}
+          RELEASE_COMPOSE: ${{ steps.database_layout.outputs.release_compose }}
+          MIGRATIONS_DIRECTORY: ${{ steps.database_layout.outputs.migrations_directory }}
+          MODEL_SNAPSHOT: ${{ steps.database_layout.outputs.model_snapshot }}
+          DEVELOPMENT_SEED: ${{ steps.database_layout.outputs.development_seed }}
         run: |
           set -Eeuo pipefail
           bundle_root="$(mktemp -d)"
           manifest_path="$bundle_root/manifest.json"
           trap 'rm -rf "$bundle_root"' EXIT
-          cp backend/infrastructure/docker/compose.development.database.yml \
+          cp "$DATABASE_COMPOSE" \
             "$bundle_root/compose.development.database.yml"
-          cp backend/infrastructure/docker/compose.development.release.yml \
+          cp "$RELEASE_COMPOSE" \
             "$bundle_root/compose.development.release.yml"
           PYTHONDONTWRITEBYTECODE=1 \
-            python3 backend/scripts/deployment/database_release_manifest.py generate \
-              --backend-root backend \
+            python3 "$MANIFEST_PRODUCER" generate \
+              --repository-root . \
+              --database-compose "$DATABASE_COMPOSE" \
+              --release-compose "$RELEASE_COMPOSE" \
+              --migrations-directory "$MIGRATIONS_DIRECTORY" \
+              --model-snapshot "$MODEL_SNAPSHOT" \
+              --development-seed "$DEVELOPMENT_SEED" \
               --repository "$GITHUB_REPOSITORY" \
               --ref refs/heads/Development \
               --commit "$GITHUB_SHA" \
@@ -114,6 +218,15 @@ jobs:
               --operations-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-ops@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
               --release-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-release@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
               --output "$manifest_path"
+          PYTHONDONTWRITEBYTECODE=1 \
+            python3 "$MANIFEST_PRODUCER" validate \
+              --manifest "$manifest_path" \
+              --repository-root . \
+              --database-compose "$DATABASE_COMPOSE" \
+              --release-compose "$RELEASE_COMPOSE" \
+              --migrations-directory "$MIGRATIONS_DIRECTORY" \
+              --model-snapshot "$MODEL_SNAPSHOT" \
+              --development-seed "$DEVELOPMENT_SEED"
           node ops/dokploy/database-cd/manifest-tool.mjs validate \
             --file "$manifest_path" \
             --bundle-root "$bundle_root" \
@@ -439,13 +552,22 @@ jobs:
 
       - name: Validate immutable database handoff
         shell: bash
+        env:
+          DATABASE_COMPOSE: ${{ steps.database_layout.outputs.database_compose }}
+          RELEASE_COMPOSE: ${{ steps.database_layout.outputs.release_compose }}
         run: |
           set -Eeuo pipefail
-          sha256sum --check --strict <<'EOF'
-          dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee  backend/infrastructure/docker/compose.development.database.yml
-          bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07  backend/infrastructure/docker/compose.development.release.yml
-          408a76510e6ffa9b7fc9119b88313f7d9eb5683bf8e68ebd0f323dbda2115034  ops/dokploy/observability/compose.yml
-          EOF
+          {
+            printf '%s  %s\n' \
+              dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee \
+              "$DATABASE_COMPOSE"
+            printf '%s  %s\n' \
+              bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07 \
+              "$RELEASE_COMPOSE"
+            printf '%s  %s\n' \
+              408a76510e6ffa9b7fc9119b88313f7d9eb5683bf8e68ebd0f323dbda2115034 \
+              ops/dokploy/observability/compose.yml
+          } | sha256sum --check --strict
 
       - name: Scan repository for committed secrets
         shell: pwsh

@@ -130,7 +130,7 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 
 ## Docker y SQL Server
 
-- `backend/Dockerfile` usa `backend/` como contexto, restaura con locks, publica Release, usa SDK/runtime .NET 10, escucha en 8080 y ejecuta con el usuario no root de la imagen.
+- `backend/Dockerfile` usa la raíz del repositorio como contexto (`docker build -f backend/Dockerfile .`), restaura con locks, publica Release, usa SDK/runtime .NET 10, escucha en 8080 y ejecuta con el usuario no root de la imagen.
 - Compose local contiene API, SQL Server, volumen persistente, health check, red interna y liga SQL a `127.0.0.1`.
 - Development y Production reciben una cadena de conexión propia y nunca publican el puerto 1433. Development puede usar `sa` temporalmente hasta provisionar una identidad de mínimo privilegio.
 - Las migraciones deben ejecutarse explícitamente mediante scripts y proceso controlado; no se aplican al inicio de producción.

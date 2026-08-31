@@ -5,31 +5,31 @@ ARG DOTNET_VERSION=10.0
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS restore
 WORKDIR /src
 
-COPY ["Elevant.sln", "./"]
-COPY ["Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config", "./"]
-COPY ["src/Elevant.Api/Elevant.Api.csproj", "src/Elevant.Api/"]
-COPY ["src/Elevant.Api/packages.lock.json", "src/Elevant.Api/"]
-COPY ["src/Elevant.Application/Elevant.Application.csproj", "src/Elevant.Application/"]
-COPY ["src/Elevant.Application/packages.lock.json", "src/Elevant.Application/"]
-COPY ["src/Elevant.Contracts/Elevant.Contracts.csproj", "src/Elevant.Contracts/"]
-COPY ["src/Elevant.Contracts/packages.lock.json", "src/Elevant.Contracts/"]
-COPY ["src/Elevant.DatabaseTool/Elevant.DatabaseTool.csproj", "src/Elevant.DatabaseTool/"]
-COPY ["src/Elevant.DatabaseTool/packages.lock.json", "src/Elevant.DatabaseTool/"]
-COPY ["src/Elevant.Domain/Elevant.Domain.csproj", "src/Elevant.Domain/"]
-COPY ["src/Elevant.Domain/packages.lock.json", "src/Elevant.Domain/"]
-COPY ["src/Elevant.Infrastructure/Elevant.Infrastructure.csproj", "src/Elevant.Infrastructure/"]
-COPY ["src/Elevant.Infrastructure/packages.lock.json", "src/Elevant.Infrastructure/"]
-COPY ["tests/Elevant.ArchitectureTests/Elevant.ArchitectureTests.csproj", "tests/Elevant.ArchitectureTests/"]
-COPY ["tests/Elevant.ArchitectureTests/packages.lock.json", "tests/Elevant.ArchitectureTests/"]
-COPY ["tests/Elevant.IntegrationTests/Elevant.IntegrationTests.csproj", "tests/Elevant.IntegrationTests/"]
-COPY ["tests/Elevant.IntegrationTests/packages.lock.json", "tests/Elevant.IntegrationTests/"]
-COPY ["tests/Elevant.UnitTests/Elevant.UnitTests.csproj", "tests/Elevant.UnitTests/"]
-COPY ["tests/Elevant.UnitTests/packages.lock.json", "tests/Elevant.UnitTests/"]
+COPY ["backend/Elevant.sln", "./"]
+COPY ["backend/Directory.Build.props", "backend/Directory.Packages.props", "backend/global.json", "backend/NuGet.config", "./"]
+COPY ["backend/src/Elevant.Api/Elevant.Api.csproj", "src/Elevant.Api/"]
+COPY ["backend/src/Elevant.Api/packages.lock.json", "src/Elevant.Api/"]
+COPY ["backend/src/Elevant.Application/Elevant.Application.csproj", "src/Elevant.Application/"]
+COPY ["backend/src/Elevant.Application/packages.lock.json", "src/Elevant.Application/"]
+COPY ["backend/src/Elevant.Contracts/Elevant.Contracts.csproj", "src/Elevant.Contracts/"]
+COPY ["backend/src/Elevant.Contracts/packages.lock.json", "src/Elevant.Contracts/"]
+COPY ["backend/src/Elevant.DatabaseTool/Elevant.DatabaseTool.csproj", "src/Elevant.DatabaseTool/"]
+COPY ["backend/src/Elevant.DatabaseTool/packages.lock.json", "src/Elevant.DatabaseTool/"]
+COPY ["backend/src/Elevant.Domain/Elevant.Domain.csproj", "src/Elevant.Domain/"]
+COPY ["backend/src/Elevant.Domain/packages.lock.json", "src/Elevant.Domain/"]
+COPY ["backend/src/Elevant.Infrastructure/Elevant.Infrastructure.csproj", "src/Elevant.Infrastructure/"]
+COPY ["backend/src/Elevant.Infrastructure/packages.lock.json", "src/Elevant.Infrastructure/"]
+COPY ["backend/tests/Elevant.ArchitectureTests/Elevant.ArchitectureTests.csproj", "tests/Elevant.ArchitectureTests/"]
+COPY ["backend/tests/Elevant.ArchitectureTests/packages.lock.json", "tests/Elevant.ArchitectureTests/"]
+COPY ["backend/tests/Elevant.IntegrationTests/Elevant.IntegrationTests.csproj", "tests/Elevant.IntegrationTests/"]
+COPY ["backend/tests/Elevant.IntegrationTests/packages.lock.json", "tests/Elevant.IntegrationTests/"]
+COPY ["backend/tests/Elevant.UnitTests/Elevant.UnitTests.csproj", "tests/Elevant.UnitTests/"]
+COPY ["backend/tests/Elevant.UnitTests/packages.lock.json", "tests/Elevant.UnitTests/"]
 
 RUN dotnet restore "Elevant.sln" --locked-mode
 
 FROM restore AS publish
-COPY src/ src/
+COPY backend/src/ src/
 RUN dotnet publish "src/Elevant.Api/Elevant.Api.csproj" \
     --configuration Release \
     --no-restore \
