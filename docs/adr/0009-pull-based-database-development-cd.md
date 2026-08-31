@@ -47,8 +47,10 @@ directo a `Development`.
 - Los jobs programados de backup y restore-check usan el mismo controlador y
   lock. Nunca se solapan con una promoción.
 - El estado aceptado/fallido se escribe atómicamente en almacenamiento
-  persistente. Un manifiesto fallido no se reintenta automáticamente; requiere
-  una entrega corregida con otro digest o un retry manual explícito.
+  persistente. Una promoción que ya creó su intento y falla no se reintenta
+  automáticamente; requiere una entrega corregida con otro digest o un retry
+  manual explícito. Los errores de descubrimiento/extracción/validación anteriores
+  al intento pueden evaluarse otra vez por el poll, siempre antes de ejecutar SQL.
 - Tras adoptar la v1, el controlador exige que el `runId` avance respecto del
   último manifiesto aceptado. Un rerun antiguo que repunte el alias se ignora sin
   ejecutar SQL.

@@ -115,24 +115,27 @@ Apruebe el host del Service si la consola lo solicita. Funnel debe permanecer si
 4. Termine el alta en **Add System**. El sistema debe ponerse verde y el log del agente debe mostrar conexión WebSocket; no debe aparecer `Starting SSH server`.
 5. Compruebe en el dashboard que CPU, RAM, load, disco y red corresponden al VPS. La ausencia de contenedores es intencional en esta versión. Si el filesystem raíz es incorrecto, obtenga el dispositivo con `findmnt -no SOURCE /`, guárdelo como `BESZEL_FILESYSTEM` y redespliegue. No adivine el dispositivo.
 
-## Telegram, heartbeat y alertas
+## Heartbeat base y alertas opcionales
 
 En Healthchecks.io cree un check exclusivo para el Hub:
 
 - periodo esperado: 2 minutos;
 - gracia: 3 minutos;
-- notificación: Telegram;
+- notificación externa: opcional y diferida hasta aprobación del operador;
 - ping URL guardada como `BESZEL_HEARTBEAT_URL`.
 
 El Hub envía un `HEAD` cada 60 segundos. Así el dead-man confirma que Beszel y la salida de red siguen vivos sin transmitir el inventario del servidor al proveedor.
 
-En **Beszel > Settings > Notifications**, agregue y pruebe una URL con el formato oficial:
+Cuando el operador apruebe alertas externas, en
+**Beszel > Settings > Notifications** agregue y pruebe una URL con el formato
+oficial:
 
 ```text
 telegram://REPLACE_WITH_BOT_TOKEN@telegram?chats=REPLACE_WITH_CHAT_ID
 ```
 
-La URL real es secreta y queda en el volumen del Hub, no en este repositorio. Después habilite para `ELEVANT Development VPS`:
+La URL real es secreta y queda en el volumen del Hub, no en este repositorio.
+Solo después de activar ese canal habilite para `ELEVANT Development VPS`:
 
 | Alerta Beszel v0.18.8 | Umbral | Persistencia |
 | --- | --- | --- |
@@ -142,7 +145,7 @@ La URL real es secreta y queda en el volumen del Hub, no en este repositorio. De
 | LoadAvg5 | mayor a 1.8 | 10 minutos |
 | Disk | mayor a 80% | 10 minutos |
 
-Beszel v0.18.8 permite un solo umbral por usuario, sistema y métrica; por eso no se configuran simultáneamente niveles 70/80/90. Esta plantilla tampoco entrega datos de contenedores porque el acceso Docker está desactivado por seguridad. Al desplegar la DB, los jobs de SQL health, backup y restore-check deben tener checks independientes en Healthchecks.io; no se debe declarar esa cobertura antes de implementarlos.
+Beszel v0.18.8 permite un solo umbral por usuario, sistema y métrica; por eso no se configuran simultáneamente niveles 70/80/90. Esta plantilla tampoco entrega datos de contenedores porque el acceso Docker está desactivado por seguridad. Los jobs de SQL health, backup y restore-check deberán tener checks independientes en Healthchecks.io cuando el operador apruebe esa integración. Mientras siga diferida, el operador revisa diariamente Beszel para estado/recursos del host y Dokploy Schedules/`controller.log` para SQL y jobs; no se debe declarar cobertura de alertas automáticas de DB.
 
 ## Validación y aceptación
 
@@ -197,7 +200,8 @@ La primera prueba exige exactamente una red para el Hub y, por tanto, también f
 - Agent conectado por WebSocket y sistema verde;
 - Service accesible desde `group:elevant-ops` y denegado desde `group:elevant-dev`;
 - URL pública/IP pública incapaz de alcanzar el Hub por IPv4 e IPv6;
-- heartbeat reciente y prueba Telegram recibida;
+- heartbeat base reciente y, solo si se habilitó un canal externo, prueba de
+  notificación recibida;
 - estado conservado después de reiniciar los contenedores y, en el checkpoint final, el VPS.
 
 La suma de límites persistentes es `384 MB` y `0.30 CPU`. El init es transitorio y dispone de `32 MB`/`0.05 CPU` solo mientras corrige permisos.

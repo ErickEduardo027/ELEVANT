@@ -18,8 +18,10 @@ valida su checkpoint.
   cualquier operación se compara su modelo renderizado con el de los archivos
   Raw vivos en Dokploy: se toleran comentarios/formato, no drift semántico.
 - Un lock compartido serializa promoción, backup y restore-check. Los estados se
-  escriben con `fsync` y reemplazo atómico. Un bundle fallido o interrumpido
-  no se reintenta automáticamente. El lock vive dentro del directorio de estado
+  escriben con `fsync` y reemplazo atómico. Una promoción fallida o interrumpida
+  después de crear su intento no se reintenta automáticamente. Un fallo previo
+  de resolución/extracción/validación se rechaza antes de SQL y puede evaluarse
+  otra vez en el siguiente poll. El lock vive dentro del directorio de estado
   `0700`, no en un path público de `/run/lock`.
 - Después de la adopción inicial, el `runId` de cada candidato debe ser mayor
   que el último aceptado. Reejecutar un workflow antiguo puede mover un alias
@@ -227,9 +229,12 @@ recuperación si Tailscale u OpenSSH no están disponibles.
    externo— y crear, todavía deshabilitados, tres jobs internos
    `dokploy-server`:
 
-   - `jobs/backup.job.sh`, cron `15 2 * * *` UTC;
-   - `jobs/restore-check.job.sh`, cron `30 4 * * 0` UTC;
-   - `jobs/poll.job.sh`, cron `* * * * *` UTC.
+   - `ELEVANT Database CD - Backup`: `jobs/backup.job.sh`, cron
+     `15 2 * * *` UTC;
+   - `ELEVANT Database CD - Restore Check`:
+     `jobs/restore-check.job.sh`, cron `30 4 * * 0` UTC;
+   - `ELEVANT Database CD - Poll`: `jobs/poll.job.sh`, cron
+     `* * * * *` UTC.
 
    No usar `server`, Application ni Compose Job: cada script debe ejecutarse
    dentro del contenedor Dokploy, donde están montados `/etc/dokploy`,
@@ -242,6 +247,10 @@ recuperación si Tailscale u OpenSSH no están disponibles.
    comandos, `--status` y los logs sanitizados pasen, habilitar en la
    **interfaz web privada de Dokploy** los jobs en este orden: backup,
    restore-check y, al final, poll.
+
+   Tras el reboot, exigir un poll automático *no-op*. Conservar deshabilitados
+   los dos schedules legacy hasta observar una ejecución natural correcta del
+   backup nuevo y otra del restore-check nuevo; solo entonces pueden eliminarse.
 
 ## Contrato del rollout
 
@@ -311,7 +320,20 @@ Estados terminales explícitos de una entrega:
 Un candidato con `runId` anterior o igual, un digest ya aceptado, un digest ya
 fallido o un controlador pausado terminan como *no-op* sin SQL. Un error al
 validar el bundle antes de crear el intento devuelve error y tampoco cambia la
-baseline aceptada.
+baseline aceptada; como no existe todavía un intento terminal, el poll periódico
+puede volver a descargar y validar ese candidato. Investigue el alias si el
+mismo error se repite.
+
+## Estado vivo de referencia
+
+El rollout Development fue aceptado manualmente el 2026-08-31 UTC con el
+controlador del merge `e4ae11c7bb8ba8f9c75d8f3d82c199736dc57878` y el bundle
+`sha256:bd385ea1bd736d9ecd58fb3deddb75f50eb5a51755e34e4c857546bc21d4cd26`
+del commit fuente `5c6af693f4fc80e9cccabdb1b0fc0aefd865e20f`. La promoción, los dos jobs
+operativos, los *no-op* periódicos y la persistencia tras reboot pasaron. El PAT
+opcional de commit status y los heartbeats externos específicos de DB no están
+configurados; el heartbeat base de Beszel continúa activo y la revisión diaria
+de Dokploy/Beszel es el control temporal acordado.
 
 ## Validación local
 

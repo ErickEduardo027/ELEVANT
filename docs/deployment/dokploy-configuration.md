@@ -9,7 +9,20 @@ evidencia antes de avanzar.
 ## Estado aprobado
 
 - DB v1 inicial: commit `1281bd139709898f220c90f12ff27036a6a83b93` de `Development`.
-- Control plane versionado: `86555b61b0ff17b4a42f5e51fe2055000e90664f`.
+- Base de hardening del control plane: `86555b61b0ff17b4a42f5e51fe2055000e90664f`.
+- Controlador Database CD instalado: merge
+  `e4ae11c7bb8ba8f9c75d8f3d82c199736dc57878`.
+- Entrega DB automática aceptada: commit fuente
+  `5c6af693f4fc80e9cccabdb1b0fc0aefd865e20f`, bundle
+  `sha256:bd385ea1bd736d9ecd58fb3deddb75f50eb5a51755e34e4c857546bc21d4cd26`.
+- Imágenes aceptadas: ops
+  `sha256:d511be817e8840dfbcf822eed7a427491b5e8d41291603a1086f670754be162f`
+  y release
+  `sha256:bed4a78e1e810c59cd396c4be3f381b7779af8c9be6fc9162b73ad8ef7d891be`.
+- Compose aceptados: database
+  `dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee`
+  y release
+  `bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07`.
 - Dokploy: mantener `v0.30.0` o una revisión posterior expresamente auditada.
 - Traefik objetivo: `traefik:v3.6.25@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d`.
 - SQL: Development sintético únicamente; Production no se crea en este VPS.
@@ -17,8 +30,13 @@ evidencia antes de avanzar.
 - Acceso inicial: un operador `elevant-ops`; los desarrolladores solo recibirán acceso a API/webs cuando existan.
 - Evidencia 2026-08-23: SQL healthy/privado, cinco migraciones, seed
   idempotente, permisos mínimos, backup + restore-check y schedules validados.
-- El controlador CD de este cambio todavía requiere instalación y aceptación
-  manual; versionarlo no autoriza modificar el host.
+- Evidencia 2026-08-31 UTC: adopción, primera promoción, backup, restore-check,
+  poll periódico, estado `succeeded/complete` y persistencia tras reboot
+  validados. Instalar una revisión futura continúa siendo una operación manual;
+  versionarla no autoriza modificar el host.
+- Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
+  se configuren, el operador revisa diariamente Beszel, Schedules y
+  `controller.log`; no se debe afirmar que existe notificación automática.
 
 No continúe si aparece una identidad, servicio, integración o volumen no reconocido.
 
@@ -122,12 +140,18 @@ En fase final se eliminan las dos reglas TCP y permanecen solo ICMP y UDP `41641
 3. Terminar/eliminar `elevant-audit`, su home y `/tmp/elevant-audit-psql`; nunca ejecutar `pkill -u root`.
 4. Verificar la revocación y entonces borrar la clave privada temporal del PC.
 5. Revocar la auth key de enrolamiento Tailscale sin eliminar la máquina tagged.
-6. Desplegar `elevant-dev-observability`, publicar solo `svc:elevant-dev-monitoring` y probar Telegram/Healthchecks.
+6. Desplegar `elevant-dev-observability`, publicar solo
+   `svc:elevant-dev-monitoring`, comprobar sus métricas privadas y el heartbeat
+   base obligatorio del Hub. Telegram, alertas de umbral y checks separados de
+   DB se activan en un cambio posterior cuando el operador lo apruebe.
 7. Crear el snapshot post-hardening.
 
-La observabilidad v1 no recibe `docker.sock`: muestra métricas del host, no
-secretos ni inventario de contenedores. SQL health, backup y restore-check usan
-heartbeats separados cuando se despliega DB.
+La observabilidad v1 no recibe `docker.sock`: Beszel muestra estado y métricas
+del host, no health, logs ni inventario de contenedores. El heartbeat base del
+Hub está activo. En el estado aceptado del 2026-08-31, SQL health, backup y
+restore-check se revisan en Containers, Schedules y `controller.log` de Dokploy;
+todavía no envían heartbeats DB independientes ni alertas externas. Es una
+mejora explícitamente diferida.
 
 ## Handoff: despliegue manual DB v1
 
@@ -230,7 +254,9 @@ Estos backups son suficientes solo mientras Development sea sintético y reconst
 
 ## Handoff: activar CD automático de la base Development
 
-El repositorio entrega el controlador y sus pruebas, pero no lo instala por sí
+El rollout inicial descrito aquí quedó aceptado el 2026-08-31 UTC. Esta sección
+permanece como runbook para reconstruir, auditar o actualizar el controlador: el
+repositorio entrega el controlador y sus pruebas, pero nunca lo instala por sí
 solo. El operador aplica
 [`ops/dokploy/database-cd/README.md`](../../ops/dokploy/database-cd/README.md)
 en checkpoints y conserva AutoDeploy desactivado en ambos Compose.
@@ -275,9 +301,18 @@ Orden obligatorio:
    `source`/`eval` ni interpretación de escapes; repositorio y digest continúan
    validándose de forma exacta antes de cualquier operación SQL.
 9. En la **interfaz web privada de Dokploy**, página global **Schedules** y sin
-   seleccionar servidor externo, crear deshabilitados tres jobs internos
-   `dokploy-server`: backup `15 2 * * *`, restore-check `30 4 * * 0` y poll
-   `* * * * *`, todos UTC. No usar `server`, Application ni Compose Job.
+   seleccionar servidor externo, crear deshabilitados estos tres jobs internos
+   `dokploy-server`, todos en UTC:
+
+   | Nombre exacto | Cron | Script versionado |
+   | --- | --- | --- |
+   | `ELEVANT Database CD - Backup` | `15 2 * * *` | `jobs/backup.job.sh` |
+   | `ELEVANT Database CD - Restore Check` | `30 4 * * 0` | `jobs/restore-check.job.sh` |
+   | `ELEVANT Database CD - Poll` | `* * * * *` | `jobs/poll.job.sh` |
+
+   El contenido del campo Script debe coincidir con el archivo indicado y
+   ejecutar el controlador/config mediante paths absolutos. No usar `server`,
+   Application ni Compose Job.
 10. En la **terminal SSH**, ejecutar un único `--poll` manual para el bundle del
     commit aprobado. Exigir `succeeded/complete`, la secuencia completa, lock
     común, cache íntegro, códigos cero, logs sanitizados y SQL healthy. Ejecutar
@@ -287,7 +322,18 @@ Orden obligatorio:
     entrega de prueba aditiva. Reiniciar el VPS solo después de terminar la
     aceptación y confirmar persistencia.
 
-Si una etapa falla, el mismo bundle queda bloqueado. No pulse Deploy, no
+Estado vivo aceptado el 2026-08-31 UTC: los tres jobs anteriores están
+habilitados, el poll posterior al reboot es *no-op* sobre el bundle ya aceptado y
+los dos schedules legacy permanecen deshabilitados. No borrar los legacy hasta
+observar al menos una ejecución natural correcta del backup nuevo y otra del
+restore-check nuevo. No hay token de commit status ni heartbeat externo
+específico de DB configurado en esta fase; el heartbeat base del Hub permanece
+activo.
+
+Si una promoción ya registrada entra en una etapa y falla, el mismo bundle queda
+bloqueado. Un error anterior a crear el intento —resolución, descarga, extracción
+o validación del bundle— falla antes de ejecutar SQL y puede volver a evaluarse
+en el poll siguiente. No pulse Deploy, no
 edite Environment para apuntar al candidato fallido y no programe retry. Primero
 investigue; una corrección normal llega con otro digest. `--retry` exige decisión
 manual explícita cuando la causa era externa y ya fue corregida.
