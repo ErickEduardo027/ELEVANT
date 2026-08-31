@@ -269,7 +269,11 @@ Orden obligatorio:
 8. En la **terminal SSH**, ejecutar `--adopt-current` y después `--status`. Debe
    mostrar `adopted/adopted-current`, cachear ambos Compose vivos con modo `0600`
    y no volver a migrar DB v1. Si falla, no avanzar: conservar evidencia y
-   reactivar los schedules manuales anteriores.
+   reactivar los schedules manuales anteriores. El lector de las referencias
+   OCI acepta el formato `.env` real de Dokploy: valor sin comillas o con un
+   único par de comillas dobles exteriores. Solo retira ese par, sin
+   `source`/`eval` ni interpretación de escapes; repositorio y digest continúan
+   validándose de forma exacta antes de cualquier operación SQL.
 9. En la **interfaz web privada de Dokploy**, página global **Schedules** y sin
    seleccionar servidor externo, crear deshabilitados tres jobs internos
    `dokploy-server`: backup `15 2 * * *`, restore-check `30 4 * * 0` y poll

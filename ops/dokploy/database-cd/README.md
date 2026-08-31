@@ -211,6 +211,11 @@ recuperación si Tailscale u OpenSSH no están disponibles.
    coherentes, calcula los hashes de ambos Compose vivos, los almacena por
    contenido y ejecuta `verify-development`, backup y restore-check. Solo
    después guarda el baseline.
+   Los valores pueden estar sin comillas o con el único par de comillas dobles
+   exteriores que genera Dokploy. El lector estricto de estas dos referencias
+   retira solo ese par: no ejecuta `source`/`eval`, interpreta escapes ni
+   permite comentarios, espacios o comillas internas en una referencia de
+   imagen.
    Por eso el primer `--poll` posterior sí promueve el primer bundle nuevo.
    Ejecutar inmediatamente `--status` y exigir
    `adopted/adopted-current`. Si la adopción falla, no crear jobs nuevos:
