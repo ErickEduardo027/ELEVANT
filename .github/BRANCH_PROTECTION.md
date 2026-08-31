@@ -35,9 +35,10 @@ Hasta actualizar a GitHub Pro/Team o hacer público el repositorio:
   automática de Development después de superar CI;
 - la revisión humana de migraciones es una norma de equipo, no un control
   obligatorio del proveedor;
-- la entrega compensa parcialmente el riesgo con artefactos inmutables,
-  manifiesto publicado al final, backup previo, verificación posterior, lock
-  exclusivo y ausencia de reintento/rollback destructivo automático.
+- la entrega compensa parcialmente el riesgo con imágenes inmutables, un bundle
+  OCI v1 de manifiesto + dos Compose publicado al final, backup previo,
+  verificación posterior, lock exclusivo y ausencia de reintento/rollback
+  destructivo automático.
 
 Esta compensación no equivale a branch protection. Al habilitar un plan que la
 soporte, se deben activar las reglas anteriores sin cambiar el contrato de

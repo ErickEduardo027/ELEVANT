@@ -53,6 +53,16 @@ for command_name in bash docker node curl flock sha256sum stat install awk chmod
 done
 docker version >/dev/null
 docker compose version >/dev/null
+compose_config_help="$(docker compose config --help)"
+for compose_option in --format --no-env-resolution --no-interpolate --no-path-resolution; do
+  case "$compose_config_help" in
+    *"$compose_option"*) ;;
+    *)
+      printf "missing Docker Compose config option: %s\n" "$compose_option" >&2
+      exit 1
+      ;;
+  esac
+done
 test -d /etc/dokploy
 test ! -L /etc/dokploy
 test -d /root/.docker
@@ -60,6 +70,7 @@ test ! -L /root/.docker
 for runtime_file in \
   /etc/dokploy/elevant/database-cd/elevant-database-cd \
   /etc/dokploy/elevant/database-cd/manifest-tool.mjs \
+  /etc/dokploy/elevant/database-cd/compose-model-tool.mjs \
   /etc/dokploy/elevant/database-cd/state-tool.mjs \
   /etc/dokploy/elevant/database-cd/jobs/poll.job.sh \
   /etc/dokploy/elevant/database-cd/jobs/backup.job.sh \
@@ -69,6 +80,7 @@ for runtime_file in \
 done
 bash -n /etc/dokploy/elevant/database-cd/elevant-database-cd
 node --check /etc/dokploy/elevant/database-cd/manifest-tool.mjs >/dev/null
+node --check /etc/dokploy/elevant/database-cd/compose-model-tool.mjs >/dev/null
 node --check /etc/dokploy/elevant/database-cd/state-tool.mjs >/dev/null
 /bin/sh -n /etc/dokploy/elevant/database-cd/jobs/poll.job.sh
 /bin/sh -n /etc/dokploy/elevant/database-cd/jobs/backup.job.sh

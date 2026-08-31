@@ -134,12 +134,34 @@ jobs:
       - name: Test database release manifest tooling
         run: python3 -m unittest discover -s tests/scripts -p 'test_*.py' -v
 
+      - name: Test database publication guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/deployment/guard-database-publication.sh
+          bash -n tests/scripts/test_guard_database_publication.sh
+          bash tests/scripts/test_guard_database_publication.sh
+
       - name: Validate checked-out database manifest inputs
         shell: bash
         run: |
           set -Eeuo pipefail
-          manifest_path="$(mktemp)"
-          trap 'rm -f "$manifest_path"' EXIT
+          bundle_root="$(mktemp -d)"
+          extracted_bundle="$(mktemp -d)"
+          bundle_container=""
+          cleanup() {
+            if [[ -n "$bundle_container" ]]; then
+              docker rm -f "$bundle_container" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$bundle_root" "$extracted_bundle"
+          }
+          trap cleanup EXIT
+          manifest_path="$bundle_root/manifest.json"
+          install -d "$bundle_root/compose"
+          cp infrastructure/docker/compose.development.database.yml \
+            "$bundle_root/compose/compose.development.database.yml"
+          cp infrastructure/docker/compose.development.release.yml \
+            "$bundle_root/compose/compose.development.release.yml"
           python3 scripts/deployment/database_release_manifest.py generate \
             --backend-root . \
             --repository "$GITHUB_REPOSITORY" \
@@ -153,6 +175,30 @@ jobs:
           python3 scripts/deployment/database_release_manifest.py validate \
             --manifest "$manifest_path" \
             --backend-root .
+
+          published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$manifest_path")"
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg OCI_SOURCE="https://github.com/$GITHUB_REPOSITORY" \
+            --build-arg OCI_CREATED="$published_at" \
+            --file scripts/deployment/Dockerfile.database-release-bundle \
+            --tag elevant-db-release-bundle:ci \
+            "$bundle_root"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.elevant.database-release.bundle-version"}}' elevant-db-release-bundle:ci)" = 1
+          test "$(docker image inspect --format '{{index .Config.Labels "io.elevant.database-release.media-type"}}' elevant-db-release-bundle:ci)" = application/vnd.elevant.database-release-bundle.v1
+          bundle_container="$(docker create elevant-db-release-bundle:ci)"
+          docker cp "$bundle_container:/manifest.json" "$extracted_bundle/manifest.json"
+          docker cp "$bundle_container:/compose/compose.development.database.yml" \
+            "$extracted_bundle/compose.development.database.yml"
+          docker cp "$bundle_container:/compose/compose.development.release.yml" \
+            "$extracted_bundle/compose.development.release.yml"
+          docker rm "$bundle_container" >/dev/null
+          bundle_container=""
+          cmp -s "$manifest_path" "$extracted_bundle/manifest.json"
+          cmp -s "$bundle_root/compose/compose.development.database.yml" \
+            "$extracted_bundle/compose.development.database.yml"
+          cmp -s "$bundle_root/compose/compose.development.release.yml" \
+            "$extracted_bundle/compose.development.release.yml"
 
       - name: Restore locked dependencies
         run: dotnet restore Elevant.sln --locked-mode
@@ -307,10 +353,8 @@ jobs:
         env:
           OPS_REPO: ${{ steps.images.outputs.ops_repo }}
           OPS_SHA: ${{ steps.images.outputs.ops_sha }}
-          OPS_ALIAS: ${{ steps.images.outputs.ops_alias }}
           RELEASE_REPO: ${{ steps.images.outputs.release_repo }}
           RELEASE_SHA: ${{ steps.images.outputs.release_sha }}
-          RELEASE_ALIAS: ${{ steps.images.outputs.release_alias }}
         run: |
           set -Eeuo pipefail
 
@@ -328,28 +372,21 @@ jobs:
           }
 
           docker tag elevant-db-ops:publish "$OPS_SHA"
-          docker tag elevant-db-ops:publish "$OPS_ALIAS"
           docker tag elevant-db-release:publish "$RELEASE_SHA"
-          docker tag elevant-db-release:publish "$RELEASE_ALIAS"
 
           ops_digest="$(push_and_digest "$OPS_SHA")"
-          ops_alias_digest="$(push_and_digest "$OPS_ALIAS")"
           release_digest="$(push_and_digest "$RELEASE_SHA")"
-          release_alias_digest="$(push_and_digest "$RELEASE_ALIAS")"
-
-          if [[ "$ops_digest" != "$ops_alias_digest" || "$release_digest" != "$release_alias_digest" ]]; then
-            echo "A mutable alias does not resolve to the certified SHA image." >&2
-            exit 1
-          fi
 
           {
-            echo "## Certified database images"
+            echo "## Immutable certified database images"
             echo "- \`${OPS_REPO}@${ops_digest}\` (tag \`${OPS_SHA}\`)"
             echo "- \`${RELEASE_REPO}@${release_digest}\` (tag \`${RELEASE_SHA}\`)"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "ops_ref=${OPS_REPO}@${ops_digest}" >> "$GITHUB_OUTPUT"
+          echo "ops_digest=${ops_digest}" >> "$GITHUB_OUTPUT"
           echo "release_ref=${RELEASE_REPO}@${release_digest}" >> "$GITHUB_OUTPUT"
+          echo "release_digest=${release_digest}" >> "$GITHUB_OUTPUT"
 
       - name: Generate and validate Development release manifest
         shell: bash
@@ -371,75 +408,38 @@ jobs:
           python3 scripts/deployment/database_release_manifest.py validate \
             --manifest artifacts/database/database-release-manifest.json \
             --backend-root .
+          install -d artifacts/database/compose
+          cp infrastructure/docker/compose.development.database.yml \
+            artifacts/database/compose/compose.development.database.yml
+          cp infrastructure/docker/compose.development.release.yml \
+            artifacts/database/compose/compose.development.release.yml
 
       - name: Upload certified release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: database-release-manifest-${{ github.run_id }}
-          path: backend/artifacts/database/database-release-manifest.json
+          path: |
+            backend/artifacts/database/database-release-manifest.json
+            backend/artifacts/database/compose/compose.development.database.yml
+            backend/artifacts/database/compose/compose.development.release.yml
           if-no-files-found: error
           retention-days: 30
 
       - name: Refuse a superseded database publication
+        id: publication_gate
         shell: bash
         env:
           REPOSITORY_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-
-          authorization="$(printf 'x-access-token:%s' "$REPOSITORY_TOKEN" | base64 -w 0)"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $authorization" \
-            fetch --no-tags origin \
-            '+refs/heads/Development:refs/remotes/origin/Development'
-          unset authorization REPOSITORY_TOKEN
-          development_tip="$(git rev-parse refs/remotes/origin/Development)"
-          if [[ "$development_tip" == "$GITHUB_SHA" ]]; then
-            exit 0
-          fi
-          git merge-base --is-ancestor "$GITHUB_SHA" "$development_tip" || {
-            echo "Development no longer contains this workflow revision." >&2
-            exit 1
-          }
-
-          changed_file_list="$(mktemp)"
-          trap 'rm -f "$changed_file_list"' EXIT
-          git diff --name-only --no-renames -z \
-            "$GITHUB_SHA" "$development_tip" > "$changed_file_list"
-
-          while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/workflows/backend-ci.yml | \
-              backend/.dockerignore | \
-              backend/Directory.Build.props | \
-              backend/Directory.Packages.props | \
-              backend/Dockerfile.database-release | \
-              backend/Elevant.sln | \
-              backend/NuGet.config | \
-              backend/dotnet-tools.json | \
-              backend/global.json | \
-              backend/database/* | \
-              backend/infrastructure/docker/compose.development.database.yml | \
-              backend/infrastructure/docker/compose.development.release.yml | \
-              backend/scripts/certify-database-containers.ps1 | \
-              backend/scripts/deployment/* | \
-              backend/src/Elevant.Application/* | \
-              backend/src/Elevant.DatabaseTool/* | \
-              backend/src/Elevant.Domain/* | \
-              backend/src/Elevant.Infrastructure/* | \
-              backend/src/Elevant.Api/Elevant.Api.csproj | \
-              backend/src/Elevant.Api/packages.lock.json | \
-              backend/tests/scripts/*)
-                echo "A newer Development commit changes database-owned path: $path" >&2
-                echo "This older run will not move development-certified." >&2
-                exit 1
-                ;;
-            esac
-          done < "$changed_file_list"
-
+          development_tip="$(bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA")"
+          unset REPOSITORY_TOKEN
           echo "Newer Development commits do not change database-owned inputs." \
             >> "$GITHUB_STEP_SUMMARY"
+          echo "development_tip=${development_tip}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish certified manifest alias last
+      - name: Publish and verify immutable certified release bundle
+        id: publish_bundle
         shell: bash
         env:
           MANIFEST_JSON: artifacts/database/database-release-manifest.json
@@ -449,36 +449,57 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           manifest_repo="ghcr.io/${owner}/elevant-db-release-manifest"
           manifest_version="${manifest_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
-          manifest_alias="${manifest_repo}:development-certified"
           published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$MANIFEST_JSON")"
           artifact_context="$(mktemp -d)"
-          trap 'rm -rf "$artifact_context"' EXIT
+          extracted_bundle="$(mktemp -d)"
+          bundle_container=""
+          cleanup() {
+            if [[ -n "$bundle_container" ]]; then
+              docker rm -f "$bundle_container" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$artifact_context" "$extracted_bundle"
+          }
+          trap cleanup EXIT
 
           cp "$MANIFEST_JSON" "$artifact_context/manifest.json"
-          printf '%s\n' \
-            'FROM scratch' \
-            'ARG VCS_REF' \
-            'ARG OCI_SOURCE' \
-            'ARG OCI_CREATED' \
-            'LABEL org.opencontainers.image.title="ELEVANT Development database release manifest"' \
-            'LABEL org.opencontainers.image.description="Certified immutable inputs for ELEVANT Development database promotion"' \
-            'LABEL org.opencontainers.image.revision="${VCS_REF}"' \
-            'LABEL org.opencontainers.image.source="${OCI_SOURCE}"' \
-            'LABEL org.opencontainers.image.created="${OCI_CREATED}"' \
-            'LABEL org.elevant.database.environment="Development"' \
-            'LABEL org.elevant.database.manifest.schema="1"' \
-            'LABEL io.elevant.database-release.schema-version="1"' \
-            'LABEL io.elevant.database-release.media-type="application/vnd.elevant.database-release-manifest.v1+json"' \
-            'COPY manifest.json /manifest.json' \
-            'CMD ["/manifest.json"]' \
-            > "$artifact_context/Dockerfile"
+          install -d "$artifact_context/compose"
+          cp artifacts/database/compose/compose.development.database.yml \
+            "$artifact_context/compose/compose.development.database.yml"
+          cp artifacts/database/compose/compose.development.release.yml \
+            "$artifact_context/compose/compose.development.release.yml"
 
           docker build \
             --build-arg VCS_REF="$GITHUB_SHA" \
             --build-arg OCI_SOURCE="https://github.com/$GITHUB_REPOSITORY" \
             --build-arg OCI_CREATED="$published_at" \
+            --file scripts/deployment/Dockerfile.database-release-bundle \
             --tag "$manifest_version" \
             "$artifact_context"
+
+          bundle_container="$(docker create "$manifest_version")"
+          docker cp "$bundle_container:/manifest.json" \
+            "$extracted_bundle/manifest.json"
+          docker cp "$bundle_container:/compose/compose.development.database.yml" \
+            "$extracted_bundle/compose.development.database.yml"
+          docker cp "$bundle_container:/compose/compose.development.release.yml" \
+            "$extracted_bundle/compose.development.release.yml"
+          docker rm "$bundle_container" >/dev/null
+          bundle_container=""
+
+          cmp -s "$MANIFEST_JSON" "$extracted_bundle/manifest.json" || {
+            echo "The OCI bundle changed manifest.json." >&2
+            exit 1
+          }
+          cmp -s artifacts/database/compose/compose.development.database.yml \
+            "$extracted_bundle/compose.development.database.yml" || {
+            echo "The OCI bundle changed the Development database Compose payload." >&2
+            exit 1
+          }
+          cmp -s artifacts/database/compose/compose.development.release.yml \
+            "$extracted_bundle/compose.development.release.yml" || {
+            echo "The OCI bundle changed the Development release Compose payload." >&2
+            exit 1
+          }
 
           push_and_digest() {
             local ref="$1"
@@ -494,16 +515,120 @@ jobs:
           }
 
           manifest_digest="$(push_and_digest "$manifest_version")"
-          docker tag "$manifest_version" "$manifest_alias"
-          alias_digest="$(push_and_digest "$manifest_alias")"
-          if [[ "$manifest_digest" != "$alias_digest" ]]; then
-            echo "The certified alias does not resolve to the immutable manifest image." >&2
+          immutable_manifest_ref="${manifest_repo}@${manifest_digest}"
+          docker pull "$immutable_manifest_ref" >/dev/null
+          test "$(docker image inspect --format '{{index .Config.Labels "io.elevant.database-release.bundle-version"}}' "$immutable_manifest_ref")" = 1
+          test "$(docker image inspect --format '{{index .Config.Labels "io.elevant.database-release.media-type"}}' "$immutable_manifest_ref")" = application/vnd.elevant.database-release-bundle.v1
+          rm -rf "$extracted_bundle"
+          install -d "$extracted_bundle"
+          bundle_container="$(docker create "$immutable_manifest_ref")"
+          docker cp "$bundle_container:/manifest.json" \
+            "$extracted_bundle/manifest.json"
+          docker cp "$bundle_container:/compose/compose.development.database.yml" \
+            "$extracted_bundle/compose.development.database.yml"
+          docker cp "$bundle_container:/compose/compose.development.release.yml" \
+            "$extracted_bundle/compose.development.release.yml"
+          docker rm "$bundle_container" >/dev/null
+          bundle_container=""
+          cmp -s "$MANIFEST_JSON" "$extracted_bundle/manifest.json"
+          cmp -s artifacts/database/compose/compose.development.database.yml \
+            "$extracted_bundle/compose.development.database.yml"
+          cmp -s artifacts/database/compose/compose.development.release.yml \
+            "$extracted_bundle/compose.development.release.yml"
+
+          {
+            echo "## Immutable certified Development database release"
+            echo "- \`${manifest_repo}@${manifest_digest}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "manifest_ref=${immutable_manifest_ref}" >> "$GITHUB_OUTPUT"
+          echo "manifest_digest=${manifest_digest}" >> "$GITHUB_OUTPUT"
+          echo "manifest_alias=${manifest_repo}:development-certified" >> "$GITHUB_OUTPUT"
+
+      - name: Publish and verify certified database image aliases
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+          OPS_REF: ${{ steps.publish_images.outputs.ops_ref }}
+          OPS_DIGEST: ${{ steps.publish_images.outputs.ops_digest }}
+          OPS_ALIAS: ${{ steps.images.outputs.ops_alias }}
+          RELEASE_REF: ${{ steps.publish_images.outputs.release_ref }}
+          RELEASE_DIGEST: ${{ steps.publish_images.outputs.release_digest }}
+          RELEASE_ALIAS: ${{ steps.images.outputs.release_alias }}
+        run: |
+          set -Eeuo pipefail
+
+          push_and_digest() {
+            local ref="$1"
+            local output digest
+            output="$(docker push "$ref")"
+            printf '%s\n' "$output" >&2
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Could not resolve pushed digest for $ref." >&2
+              exit 1
+            fi
+            printf '%s' "$digest"
+          }
+
+          docker pull "$OPS_REF" >/dev/null
+          docker pull "$RELEASE_REF" >/dev/null
+          docker tag "$OPS_REF" "$OPS_ALIAS"
+          docker tag "$RELEASE_REF" "$RELEASE_ALIAS"
+
+          bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
+          unset REPOSITORY_TOKEN
+
+          ops_alias_digest="$(push_and_digest "$OPS_ALIAS")"
+          release_alias_digest="$(push_and_digest "$RELEASE_ALIAS")"
+          if [[ "$ops_alias_digest" != "$OPS_DIGEST" || "$release_alias_digest" != "$RELEASE_DIGEST" ]]; then
+            echo "A mutable image alias does not resolve to its certified immutable image." >&2
+            exit 1
+          fi
+
+          {
+            echo "## Certified database image aliases"
+            echo "- \`${OPS_ALIAS}\` -> \`${OPS_REF}\`"
+            echo "- \`${RELEASE_ALIAS}\` -> \`${RELEASE_REF}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish and verify certified manifest alias last
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+          MANIFEST_REF: ${{ steps.publish_bundle.outputs.manifest_ref }}
+          MANIFEST_DIGEST: ${{ steps.publish_bundle.outputs.manifest_digest }}
+          MANIFEST_ALIAS: ${{ steps.publish_bundle.outputs.manifest_alias }}
+        run: |
+          set -Eeuo pipefail
+
+          push_and_digest() {
+            local ref="$1"
+            local output digest
+            output="$(docker push "$ref")"
+            printf '%s\n' "$output" >&2
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Could not resolve pushed digest for $ref." >&2
+              exit 1
+            fi
+            printf '%s' "$digest"
+          }
+
+          docker pull "$MANIFEST_REF" >/dev/null
+          docker tag "$MANIFEST_REF" "$MANIFEST_ALIAS"
+          bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
+          unset REPOSITORY_TOKEN
+          alias_digest="$(push_and_digest "$MANIFEST_ALIAS")"
+          if [[ "$alias_digest" != "$MANIFEST_DIGEST" ]]; then
+            echo "The certified alias does not resolve to the immutable release bundle." >&2
             exit 1
           fi
 
           {
             echo "## Certified Development database release"
-            echo "- \`${manifest_repo}@${manifest_digest}\`"
-            echo "- Discovery alias: \`${manifest_alias}\`"
+            echo "- Immutable bundle: \`${MANIFEST_REF}\`"
+            echo "- Discovery alias: \`${MANIFEST_ALIAS}\`"
             echo "- Source commit: \`${GITHUB_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"

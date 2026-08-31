@@ -58,7 +58,7 @@ aunque el controlador Development lo invoque automáticamente.
 
 No hay Compose Production en esta fase: su licencia, host, backup off-host y credenciales todavía deben aprobarse. Production aplicará la misma imagen/migraciones con su guard y jamás incluirá el servicio seeder.
 
-## Imágenes y manifiesto inmutables
+## Imágenes y bundle inmutables
 
 CI construye `elevant-db-ops:ci` y `elevant-db-release:ci` con las etiquetas OCI
 `org.opencontainers.image.revision=<commit>` y
@@ -69,10 +69,12 @@ publicará en un push DB-owned a `Development`. Publica tags
 `sha-<commit>`/`development` y registra sus digests.
 
 Después genera un manifiesto JSON con las dos referencias, hashes de Compose y
-fingerprints de migraciones/modelo/seed. El manifiesto se valida, se empaqueta
-como artefacto OCI privado y se publica al final con tag por commit; solo
-entonces se mueve `development-certified`. Dokploy descubre ese alias, pero usa
-únicamente las identidades por digest:
+fingerprints de migraciones/modelo/seed. CI lo empaqueta junto con los bytes
+exactos de `compose.development.database.yml` y
+`compose.development.release.yml` como los tres payloads del bundle OCI v1. Los
+extrae y compara antes y después de publicar por digest; solo entonces mueve
+`development-certified`. Dokploy descubre ese alias, pero usa únicamente las
+identidades por digest:
 
 ```text
 ghcr.io/<namespace>/elevant-db-ops@sha256:<digest>
@@ -82,6 +84,10 @@ ghcr.io/<namespace>/elevant-db-release-manifest@sha256:<digest>
 
 Los aliases mutables no se usan directamente en un deployment. Dokploy requiere
 una credencial de registro con `read:packages` si los packages son privados.
+El controlador valida `bundle-version=1`, el media type v1 y los hashes de los
+Compose, y los almacena por contenido bajo su estado root-only. Ejecuta esas
+copias certificadas y compara su render JSON canónico con el de los Raw vivos;
+comentarios/formato no cuentan como drift, una diferencia semántica sí.
 
 ## Variables remotas
 
@@ -104,6 +110,7 @@ docker compose --profile operations -f compose.development.database.yml run --rm
 
 En el VPS compartido, los jobs programados no llaman Compose directamente: se
 redirigen a `ops/dokploy/database-cd/elevant-database-cd --backup` y
-`--restore-check`. Así comparten el mismo lock que una promoción y usan el
-último digest ops aceptado. Primero verifique espacio libre; no elimine la
-última copia válida antes de crear/verificar la nueva.
+`--restore-check`. Así comparten el mismo lock que una promoción y usan la
+última imagen ops y el Compose database cacheado aceptados. Primero verifique
+espacio libre; no elimine la última copia válida antes de crear/verificar la
+nueva.

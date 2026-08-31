@@ -62,7 +62,8 @@ DOKPLOY_ROOT="$(dirname -- "$(dirname -- "$DESTINATION")")"
 [[ -d "$DOKPLOY_ROOT" && ! -L "$DOKPLOY_ROOT" ]] || \
   die "Dokploy persistent bind is unavailable"
 
-for source_file in elevant-database-cd manifest-tool.mjs state-tool.mjs \
+for source_file in elevant-database-cd manifest-tool.mjs compose-model-tool.mjs \
+  state-tool.mjs \
   verify-runtime config.env.example README.md jobs/poll.job.sh \
   jobs/backup.job.sh jobs/restore-check.job.sh; do
   [[ -f "$SCRIPT_DIR/$source_file" && ! -L "$SCRIPT_DIR/$source_file" ]] || \
@@ -99,6 +100,8 @@ install_file() {
 ELEVANT_ROOT="$DOKPLOY_ROOT/elevant"
 for runtime_directory in "$ELEVANT_ROOT" "$DESTINATION" "$DESTINATION/state" \
   "$DESTINATION/state/attempts" "$DESTINATION/state/tmp" \
+  "$DESTINATION/state/compose" "$DESTINATION/state/compose/database" \
+  "$DESTINATION/state/compose/release" \
   "$DESTINATION/log" "$DESTINATION/jobs"; do
   install_directory "$runtime_directory"
 done
@@ -106,6 +109,8 @@ install_file 0555 "$SCRIPT_DIR/elevant-database-cd" \
   "$DESTINATION/elevant-database-cd"
 install_file 0555 "$SCRIPT_DIR/manifest-tool.mjs" \
   "$DESTINATION/manifest-tool.mjs"
+install_file 0555 "$SCRIPT_DIR/compose-model-tool.mjs" \
+  "$DESTINATION/compose-model-tool.mjs"
 install_file 0555 "$SCRIPT_DIR/state-tool.mjs" "$DESTINATION/state-tool.mjs"
 install_file 0555 "$SCRIPT_DIR/verify-runtime" "$DESTINATION/verify-runtime"
 install_file 0444 "$SCRIPT_DIR/config.env.example" \
@@ -150,10 +155,13 @@ verify_installed() {
 
 for runtime_directory in "$ELEVANT_ROOT" "$DESTINATION" "$DESTINATION/state" \
   "$DESTINATION/state/attempts" "$DESTINATION/state/tmp" \
+  "$DESTINATION/state/compose" "$DESTINATION/state/compose/database" \
+  "$DESTINATION/state/compose/release" \
   "$DESTINATION/log" "$DESTINATION/jobs"; do
   verify_installed directory 700 "$runtime_directory"
 done
-for executable_file in elevant-database-cd manifest-tool.mjs state-tool.mjs \
+for executable_file in elevant-database-cd manifest-tool.mjs compose-model-tool.mjs \
+  state-tool.mjs \
   verify-runtime jobs/poll.job.sh jobs/backup.job.sh jobs/restore-check.job.sh; do
   verify_installed file 555 "$DESTINATION/$executable_file"
 done

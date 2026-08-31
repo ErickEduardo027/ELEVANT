@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import crypto from "node:crypto";
+import path from "node:path";
 import process from "node:process";
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -9,6 +11,11 @@ const COMMIT = /^[0-9a-f]{40}$/;
 const IMAGE_REF = /^(ghcr\.io\/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+)@(sha256:[0-9a-f]{64})$/;
 const MIGRATION_ID = /^[0-9]{14}_[A-Za-z0-9_]+$/;
 const RUN_NUMBER = /^[1-9][0-9]*$/;
+const BUNDLE_FILES = [
+  "compose.development.database.yml",
+  "compose.development.release.yml",
+  "manifest.json",
+];
 
 function fail(message) {
   process.stderr.write(`manifest-tool: ERROR: ${message}\n`);
@@ -23,13 +30,13 @@ function parseArgs(argv) {
     const value = argv[index + 1];
     if (!option?.startsWith("--") || value === undefined) fail("invalid arguments");
     const key = option.slice(2);
-    if (!["file", "expected-repository", "expected-ref", "ops-repository", "release-repository", "get"].includes(key)) {
+    if (!["file", "bundle-root", "expected-repository", "expected-ref", "ops-repository", "release-repository", "get"].includes(key)) {
       fail(`unsupported option: ${option}`);
     }
     if (Object.hasOwn(result, key)) fail(`duplicate option: ${option}`);
     result[key] = value;
   }
-  for (const key of ["file", "expected-repository", "expected-ref", "ops-repository", "release-repository"]) {
+  for (const key of ["file", "bundle-root", "expected-repository", "expected-ref", "ops-repository", "release-repository"]) {
     if (!result[key]) fail(`--${key} is required`);
   }
   return result;
@@ -78,7 +85,37 @@ function loadManifest(path) {
   return JSON.parse(text);
 }
 
+function loadBundle(args) {
+  const rootStat = fs.lstatSync(args["bundle-root"]);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("bundle root must be a non-symlink directory");
+  }
+  const actualFiles = fs.readdirSync(args["bundle-root"]).sort();
+  if (JSON.stringify(actualFiles) !== JSON.stringify(BUNDLE_FILES)) {
+    throw new Error("bundle root must contain exactly the three protocol payloads");
+  }
+  const expectedManifest = path.resolve(args["bundle-root"], "manifest.json");
+  if (path.resolve(args.file) !== expectedManifest) {
+    throw new Error("--file must identify manifest.json inside the bundle root");
+  }
+  for (const name of BUNDLE_FILES) {
+    const payload = path.resolve(args["bundle-root"], name);
+    const stat = fs.lstatSync(payload);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`bundle payload must be a regular, non-symlink file: ${name}`);
+    }
+    if (stat.size < 1 || stat.size > 1024 * 1024) {
+      throw new Error(`bundle payload size must be between 1 byte and 1 MiB: ${name}`);
+    }
+  }
+}
+
+function sha256File(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
 function validate(args) {
+  loadBundle(args);
   const manifest = exactKeys(loadManifest(args.file), [
     "schemaVersion", "environment", "source", "images", "compose", "database", "publishedAt",
   ], "$");
@@ -103,6 +140,14 @@ function validate(args) {
   const compose = exactKeys(manifest.compose, ["databaseSha256", "releaseSha256"], "compose");
   patterned(compose.databaseSha256, SHA256_HEX, "compose.databaseSha256");
   patterned(compose.releaseSha256, SHA256_HEX, "compose.releaseSha256");
+  const databasePayload = path.join(args["bundle-root"], "compose.development.database.yml");
+  const releasePayload = path.join(args["bundle-root"], "compose.development.release.yml");
+  if (sha256File(databasePayload) !== compose.databaseSha256) {
+    throw new Error("database Compose payload hash mismatch");
+  }
+  if (sha256File(releasePayload) !== compose.releaseSha256) {
+    throw new Error("release Compose payload hash mismatch");
+  }
 
   const database = exactKeys(manifest.database, ["migrationIds", "migrationFingerprint", "modelFingerprint", "seedFingerprint"], "database");
   if (!Array.isArray(database.migrationIds) || database.migrationIds.length === 0) {
