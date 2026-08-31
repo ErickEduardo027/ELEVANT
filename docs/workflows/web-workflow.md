@@ -2,7 +2,7 @@
 
 Existen dos aplicaciones:
 
-- `frontend/web`: AVIAM interno, Vite 6 + React 18.
+- `frontend/private-web`: AVIAM interno, Vite 6 + React 18.
 - `frontend/public-web`: clientes/aerolíneas, Next.js 16 + React 19.
 
 Ambas usan npm/`package-lock.json` y la misma Elevant API. No comparten necesariamente framework, sesión UI o ciclo de deployment.

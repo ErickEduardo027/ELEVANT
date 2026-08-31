@@ -178,13 +178,13 @@ New-Item -ItemType Directory -Path $exportDirectory | Out-Null
 
 git cat-file -e "$approvedRevision^{commit}"
 git archive --format=zip --output=$archivePath $approvedRevision -- `
-  backend/infrastructure/docker/compose.development.database.yml `
-  backend/infrastructure/docker/compose.development.release.yml
+  database/DevelopmentDB/compose.development.database.yml `
+  database/DevelopmentDB/compose.development.release.yml
 Expand-Archive -LiteralPath $archivePath -DestinationPath $exportDirectory
 
 Get-FileHash -Algorithm SHA256 `
-  (Join-Path $exportDirectory 'backend/infrastructure/docker/compose.development.database.yml'), `
-  (Join-Path $exportDirectory 'backend/infrastructure/docker/compose.development.release.yml')
+  (Join-Path $exportDirectory 'database/DevelopmentDB/compose.development.database.yml'), `
+  (Join-Path $exportDirectory 'database/DevelopmentDB/compose.development.release.yml')
 ```
 
 Los hashes deben coincidir exactamente con los registrados más abajo. En cada
@@ -229,7 +229,7 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 ### Proyecto `elevant-dev-database`
 
 - Provider Raw, Docker Compose normal, manual, sin AutoDeploy, Domain, ports o `dokploy-network`.
-- Fuente: `backend/infrastructure/docker/compose.development.database.yml`.
+- Fuente: `database/DevelopmentDB/compose.development.database.yml`.
 - SHA-256: `dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee`.
 - Resultado: storage init/provisioner `Exit 0`, SQL healthy, marker Development singleton, `sa` deshabilitado y ningún 1433 público.
 - Ejecutar backup y restore-check manuales antes de migrar; ambos deben terminar cero.
@@ -237,7 +237,7 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 ### Proyecto `elevant-dev-database-release`
 
 - Provider Raw, Compose separado, manual, sin AutoDeploy, Domain o `dokploy-network`.
-- Fuente: `backend/infrastructure/docker/compose.development.release.yml`.
+- Fuente: `database/DevelopmentDB/compose.development.release.yml`.
 - SHA-256: `bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07`.
 - `migrator Exit 0` precede a `seeder-development Exit 0`.
 - Repetir seed para idempotencia y ejecutar `verify-development`, backup y restore-check.

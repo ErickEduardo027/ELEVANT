@@ -8,7 +8,6 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$backendRoot = Join-Path $repositoryRoot 'backend'
 $failures = New-Object System.Collections.Generic.List[string]
 
 function Test-CommandAvailable {
@@ -30,14 +29,14 @@ if (-not (Test-CommandAvailable -Name 'dotnet')) {
     $failures.Add('.NET SDK no esta disponible en PATH.')
 }
 else {
-    Push-Location $backendRoot
+    Push-Location $repositoryRoot
     try {
         $dotnetVersion = (& dotnet --version)
         if ($LASTEXITCODE -ne 0) {
-            $failures.Add('No se pudo resolver el SDK definido por backend/global.json.')
+            $failures.Add('No se pudo resolver el SDK definido por global.json.')
         }
         elseif ($dotnetVersion -notmatch '^10\.') {
-            $failures.Add("backend/global.json resolvio .NET $dotnetVersion; se requiere .NET 10.x.")
+            $failures.Add("global.json resolvio .NET $dotnetVersion; se requiere .NET 10.x.")
         }
         else {
             Write-Host ("[OK] .NET SDK: {0}" -f $dotnetVersion)

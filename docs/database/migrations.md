@@ -1,6 +1,6 @@
 # Migraciones de base de datos
 
-EF Core es la única fuente del esquema normal. Las migraciones residen en `backend/src/Elevant.Infrastructure/Persistence/Migrations`; la API nunca ejecuta `Migrate`, `EnsureCreated` ni seed al arrancar.
+EF Core es la única fuente del esquema normal. Las migraciones residen en `database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations`; la API nunca ejecuta `Migrate`, `EnsureCreated` ni seed al arrancar.
 
 Development y Production aplican la misma cadena. Se separan por instancia, nombre, marcador, credenciales, volumen, datos y backups. Una migración no contiene DML de negocio; Production queda vacía salvo marcador e historial técnicos.
 
@@ -11,7 +11,7 @@ Desde la raíz:
 ```powershell
 $env:ELEVANT_DATABASE_ENVIRONMENT = 'Development'
 $env:ConnectionStrings__ElevantDatabase = 'Server=localhost;Initial Catalog=ElevantDevelopmentDb;Integrated Security=True;TrustServerCertificate=True'
-./backend/scripts/add-migration.ps1 -Name V1_06_DescriptiveName
+./database/DevelopmentDB/scripts/add-migration.ps1 -Name V1_06_DescriptiveName
 ```
 
 El script fuerza Development y comprueba que no quede drift. Después:
@@ -30,27 +30,25 @@ No se edita `infra.__EFMigrationsHistory` a mano ni se reutiliza el nombre/ID de
 Primero compile Release. Configure una cadena con credenciales de migración y el nombre exacto. Development:
 
 ```powershell
-Push-Location backend
-dotnet build Elevant.sln --configuration Release
+dotnet build backend/Elevant.sln --configuration Release
 $env:ConnectionStrings__ElevantDatabase = 'REPLACE_WITH_DEVELOPMENT_MIGRATOR_CONNECTION'
-./scripts/update-database.ps1 -Environment Development
-Pop-Location
+./database/DevelopmentDB/scripts/update-database.ps1 -Environment Development
 ```
 
 Production requiere además `-AllowProduction` y escribir exactamente `MIGRATE ElevantProductionDb SCHEMA ONLY`. El script configura la segunda guarda, verifica nombre + marcador antes y después, y no ejecuta seed:
 
 ```powershell
-./backend/scripts/update-database.ps1 -Environment Production -AllowProduction
+./database/DevelopmentDB/scripts/update-database.ps1 -Environment Production -AllowProduction
 ```
 
 Esto es una herramienta de administrador local. En Dokploy se usa la imagen `elevant-db-release` con bundle EF inmutable, no el SDK ni el checkout del repositorio.
 
 ## Bootstrap
 
-- Development: `database/scripts/bootstrap/provision-development.sql`, ejecutado por `elevant-db-ops`.
-- Production futura: `database/scripts/bootstrap/initialize-production.sql`, manual, con `sqlcmd -b -v CONFIRM_PRODUCTION_DATABASE=ElevantProductionDb`.
+- Development: `database/DevelopmentDB/scripts/bootstrap/provision-development.sql`, ejecutado por `elevant-db-ops`.
+- Production futura: no tiene bootstrap desplegable todavía. `database/ProductionDB` permanece vacío hasta aprobar su diseño.
 
-El bootstrap crea la base y su marcador antes de EF. No adopta silenciosamente una base existente sin marcador. El registro técnico de `database_instances` no es un seed de negocio.
+El bootstrap de Development crea la base y su marcador antes de EF. No adopta silenciosamente una base existente sin marcador. El registro técnico de `database_instances` no es un seed de negocio. El SQL de `DevelopmentDB/tests/scripts/fixtures` se usa únicamente en certificación efímera y no autoriza Production.
 
 ## Release remoto Development
 

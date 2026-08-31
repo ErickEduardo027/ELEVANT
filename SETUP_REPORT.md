@@ -15,7 +15,7 @@ Se creó la base completa del monorepositorio privado Elevant con una única sol
 
 El backend usa `net10.0` y compila en Release sin advertencias. Las pruebas pasan. No se detectaron secretos y los archivos Compose son sintácticamente válidos. Web y móvil quedan preparados para consumir la API remota de Development sin ejecutar el backend ni SQL Server localmente.
 
-La carpeta maestra se denomina `ELEVANT`. El backend es autónomo bajo `backend/`: allí se encuentran la solución, proyectos, pruebas, configuración .NET, base de datos, infraestructura, Docker y scripts operativos. Las aplicaciones consumidoras están agrupadas bajo `frontend/web` y `frontend/mobile-agent`. La raíz conserva únicamente elementos compartidos como CI, documentación global, paquetes y herramientas del repositorio.
+La carpeta maestra se denomina `ELEVANT`. El backend plano vive bajo `backend/`; la persistencia y operación se separan en `database/DevelopmentDB`, mientras `database/ProductionDB` queda reservada. Las aplicaciones consumidoras están agrupadas bajo `frontend/private-web`, `frontend/public-web` y `frontend/mobile-agent`. La raíz contiene la configuración .NET compartida, CI, documentación, paquetes y herramientas del repositorio.
 
 ## Compatibilidad con .NET 10
 
@@ -23,7 +23,7 @@ Se mantiene .NET 10; no existe una razón técnica para bajar a .NET 9:
 
 - .NET 10 es una versión LTS activa. .NET 9 es STS y tiene una ventana de soporte menor, según la [política oficial de soporte de .NET](https://dotnet.microsoft.com/en-us/platform/support/policy).
 - EF Core 10 es LTS, requiere .NET 10 y está alineado con el TFM elegido, según la [documentación oficial de EF Core 10](https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-10.0/whatsnew).
-- `backend/global.json` solicita el SDK estable `10.0.300` con `rollForward: latestFeature`; en esta máquina seleccionó `10.0.302`.
+- `global.json` solicita el SDK estable `10.0.300` con `rollForward: latestFeature`; en esta máquina seleccionó `10.0.302`.
 - El runtime seleccionado fue `10.0.10`. Aunque existe un SDK RC antiguo instalado globalmente en la máquina, el repositorio no lo selecciona ni contiene referencias preview.
 - EF Core, ASP.NET Core Testing y Microsoft.Extensions usan la línea estable `10.0.10`.
 - Swashbuckle `10.2.3` publica destino `net10.0`, y Asp.Versioning `10.0.0` restauró y compiló correctamente.
@@ -33,11 +33,11 @@ La decisión debe reevaluarse únicamente si el entorno definitivo de Dokploy no
 
 ## Estructura creada
 
-- `frontend/web`: estructura neutral para Laisha, sin elegir Next.js ni Astro.
+- `frontend/private-web`: aplicación interna AVIAM en Vite/React.
 - `frontend/mobile-agent`: estructura neutral para Eliezer, sin ejecutar `create-expo-app`.
-- `backend/src`: cinco proyectos productivos organizados mediante Clean Architecture.
+- `backend/Elevant.*`: cinco proyectos productivos planos organizados mediante Clean Architecture.
 - `backend/tests`: pruebas unitarias, de integración y de arquitectura.
-- `backend/database`: documentación, administración, backup, diagnóstico, recovery, seeds y datos de prueba.
+- `database/DevelopmentDB`: Persistence, DatabaseTool, administración, backup, diagnóstico, recovery, seed y certificación.
 - `backend/infrastructure`: Docker, Dokploy, proxy, monitoreo, backups y ambientes.
 - `backend/scripts`: utilidades PowerShell de restore, build, migraciones, base de datos y despliegue.
 - `packages`: cliente API futuro y configuraciones compartidas pendientes.
@@ -80,7 +80,7 @@ Los ocho proyectos están incluidos en `backend/Elevant.sln` y cada uno dispone 
 | xunit.v3 | 3.2.2 |
 | xunit.runner.visualstudio | 3.1.5 |
 
-La herramienta local `dotnet-ef` está fijada en `10.0.10` mediante `backend/dotnet-tools.json`. No se añadieron MediatR, FluentValidation, AutoMapper, Serilog, Hangfire ni Quartz.
+La herramienta local `dotnet-ef` está fijada en `10.0.10` mediante `dotnet-tools.json`. No se añadieron MediatR, FluentValidation, AutoMapper, Serilog, Hangfire ni Quartz.
 
 ## Backend implementado
 
@@ -148,15 +148,15 @@ Durante la primera reorganización de carpetas, las pruebas de arquitectura dete
 
 1. Docker Desktop estaba instalado pero su daemon no estaba activo. Por ello no fue posible construir la imagen ni arrancar contenedores para probarlos en ejecución. La expansión y validación sintáctica de los tres Compose sí pasó.
 2. `pnpm` no está instalado globalmente. Node 24.18.0 y Corepack 0.35.0 están disponibles; no se necesita pnpm hasta que web o móvil se inicialicen y se elija una versión de package manager.
-3. La máquina conserva un SDK `10.0.100-rc.1` antiguo. `backend/global.json` selecciona de forma comprobada el SDK estable 10.0.302, por lo que no afecta al repositorio.
+3. La máquina conserva un SDK `10.0.100-rc.1` antiguo. `global.json` selecciona de forma comprobada el SDK estable 10.0.302, por lo que no afecta al repositorio.
 4. No se realizó despliegue real, migración, generación de cliente API, inicialización web/móvil, commit, push, creación de ramas ni configuración de remote, conforme a las restricciones.
 5. Las CI de web y móvil son plantillas `.template` y permanecerán inactivas hasta que cada aplicación tenga comandos reales.
 
 ## Placeholders que deben reemplazarse
 
 - `.github/CODEOWNERS.template`: sustituir `@REPLACE_ERICK`, `@REPLACE_LAISHA` y `@REPLACE_ELIEZER`, luego renombrar a `CODEOWNERS`.
-- `backend/.env.example` y `backend/src/Elevant.Api/.env.example`: contraseña local, cadenas de conexión, CORS, autenticación y FlightAware desde almacenes seguros.
-- `frontend/web/.env.example` y `frontend/mobile-agent/.env.example`: cambiar dominios `.example` por los endpoints reales del ambiente.
+- `database/DevelopmentDB/.env.example` y `backend/Elevant.Api/.env.example`: contraseña local, cadenas de conexión, CORS, autenticación y FlightAware desde almacenes seguros.
+- `frontend/private-web/.env.example` y `frontend/mobile-agent/.env.example`: cambiar dominios `.example` por los endpoints reales del ambiente.
 - Compose Development, plantilla Production y documentación Dokploy: nombres de proyectos, dominios, redes, volúmenes y secretos reales.
 - `Authentication__Issuer`, `Authentication__Audience` y `Authentication__SigningKey`: definir únicamente al implementar autenticación.
 - `FlightAware__ApiKey`: secreto exclusivo del backend, separado por ambiente.

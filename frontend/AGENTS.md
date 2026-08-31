@@ -2,7 +2,7 @@
 
 The three applications have different audiences but one API and one logical database per environment:
 
-- `web`: internal AVIAM staff, including OCC, administration and departments.
+- `private-web`: internal AVIAM staff, including OCC, administration and departments.
 - `public-web`: airline customers; all operational data must be restricted to the authenticated organization and allowed stations by the server.
 - `mobile-agent`: native ramp-agent tablet application for Android/iOS; the initial distributable is an APK and a later Production release may use Play Store/App Store channels.
 

@@ -10,7 +10,7 @@ El entorno dispone de un SDK estable .NET 10 y el proyecto comienza sin una depe
 
 ## Decisión
 
-Apuntar los proyectos productivos y de prueba a `net10.0`. Fijar la línea base del SDK mediante `backend/global.json`, permitir roll-forward a revisiones estables compatibles y bloquear paquetes con administración central y archivos lock dentro de `backend`.
+Apuntar los proyectos productivos y de prueba a `net10.0`. Fijar la línea base del SDK mediante `global.json`, permitir roll-forward a revisiones estables compatibles y bloquear paquetes con administración central y archivos lock junto a cada proyecto de `backend` y `database/DevelopmentDB`.
 
 Solo se reconsiderará `net9.0` si una dependencia indispensable presenta un fallo reproducible sin alternativa compatible con .NET 10 y el costo de sustituirla supera temporalmente el de bajar el target.
 

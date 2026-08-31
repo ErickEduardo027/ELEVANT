@@ -6,7 +6,7 @@ Todos los scripts son compatibles con Windows PowerShell 5.1 y PowerShell 7, se 
 - `repository/show-tree.ps1`: muestra el árbol sin artefactos generados.
 - `repository/check-secrets.ps1`: revisa archivos no ignorados, incluye self-tests para credenciales DB/Tailscale/Beszel/Telegram/Healthchecks y nunca imprime los valores detectados.
 
-Los scripts propios del servidor están en `backend/scripts`: allí se encuentran
-`restore-build-test.ps1`, `add-migration.ps1` y `update-database.ps1`. Ningún script
-aplica migraciones por sí solo. Ejecutar una actualización de base constituye una
-acción manual y deliberada.
+El backend conserva `backend/scripts/restore-build-test.ps1`. Las operaciones de
+esquema y certificación viven junto a DevelopmentDB en
+`database/DevelopmentDB/scripts`. Ningún script aplica migraciones por sí solo;
+una actualización de base sigue siendo una acción manual y deliberada.

@@ -13,7 +13,7 @@ La documentación vive con el código. Cuando cambia un contrato técnico u oper
 ## Índice
 
 - `architecture`: límites, dependencias, monolito modular, modelo v1 e integraciones.
-- `database`: propiedad, inventario y migraciones. Scripts ejecutables están en `backend/database`.
+- `database`: propiedad, inventario y migraciones. Los ejecutables de Development están en `database/DevelopmentDB`.
 - `deployment`: ambientes, Dokploy, capacidad del KVM y rollback.
 - `api`: HTTP, errores, OpenAPI y consumidores.
 - `workflows`: Git, desarrollo local y flujos por plataforma.

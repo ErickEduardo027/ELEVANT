@@ -2,8 +2,10 @@
 
 ## Directorios principales
 
-- `backend`: unidad autónoma .NET/SQL; incluye solución, migraciones, tests, Docker y operación.
-- `frontend/web`: AVIAM Web interno en Vite/React.
+- `backend`: solución .NET plana con API, Domain, Application, Contracts, Infrastructure y tests.
+- `database/DevelopmentDB`: EF Core, migraciones, DatabaseTool, Compose y operación SQL de Development.
+- `database/ProductionDB`: límite futuro reservado; vacío salvo `.gitkeep`.
+- `frontend/private-web`: AVIAM Web interno en Vite/React.
 - `frontend/public-web`: landing/portal de clientes en Next/React.
 - `frontend/mobile-agent`: app nativa Expo/React Native para agentes.
 - `packages/api-client`: entrada OpenAPI/salida generada cuando se habilite.
@@ -14,7 +16,7 @@
 
 ## Reglas de ubicación backend
 
-Entidad/regla/evento puro -> Domain. Caso de uso/puerto -> Application. Contrato HTTP -> Contracts. EF/SQL/proveedores -> Infrastructure. Controllers/middleware/hubs/composición -> Api. Tarea DB one-shot -> DatabaseTool o `backend/database` según sea .NET/SQL operativo.
+Entidad/regla/evento puro -> Domain. Caso de uso/puerto -> Application. Contrato HTTP -> Contracts. Proveedores externos -> Infrastructure. Controllers/middleware/hubs/composición -> Api. EF/SQL -> `database/DevelopmentDB/Elevant.Persistence`. Tarea DB one-shot -> `database/DevelopmentDB/Elevant.DatabaseTool` o sus scripts operativos.
 
 ## Reglas de ubicación frontend
 

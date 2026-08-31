@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 call :run "backend-prototipo" "npm test" || goto :failed
-call :run "frontend\web" "npm test" || goto :failed
+call :run "frontend\private-web" "npm test" || goto :failed
 call :run "frontend\public-web" "npm run typecheck" || goto :failed
 call :run "frontend\mobile-agent" "npx tsc --noEmit" || goto :failed
 

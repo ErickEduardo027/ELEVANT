@@ -151,23 +151,25 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
-          global-json-file: backend/global.json
+          global-json-file: global.json
           cache: true
-          cache-dependency-path: "backend/**/packages.lock.json"
+          cache-dependency-path: |
+            backend/**/packages.lock.json
+            database/**/packages.lock.json
 
       - name: Restore local tools
-        run: dotnet tool restore
+        run: dotnet tool restore --tool-manifest ../dotnet-tools.json
 
       - name: Test database release manifest tooling
-        run: python3 -m unittest discover -s tests/scripts -p 'test_*.py' -v
+        run: python3 -m unittest discover -s ../database/DevelopmentDB/tests/scripts -p 'test_*.py' -v
 
       - name: Test database publication guard
         shell: bash
         run: |
           set -Eeuo pipefail
-          bash -n scripts/deployment/guard-database-publication.sh
-          bash -n tests/scripts/test_guard_database_publication.sh
-          bash tests/scripts/test_guard_database_publication.sh
+          bash -n ../database/DevelopmentDB/scripts/deployment/guard-database-publication.sh
+          bash -n ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
+          bash ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
 
       - name: Validate checked-out database manifest inputs
         shell: bash
@@ -185,17 +187,17 @@ jobs:
           trap cleanup EXIT
           manifest_path="$bundle_root/manifest.json"
           install -d "$bundle_root/compose"
-          cp infrastructure/docker/compose.development.database.yml \
+          cp ../database/DevelopmentDB/compose.development.database.yml \
             "$bundle_root/compose/compose.development.database.yml"
-          cp infrastructure/docker/compose.development.release.yml \
+          cp ../database/DevelopmentDB/compose.development.release.yml \
             "$bundle_root/compose/compose.development.release.yml"
-          python3 scripts/deployment/database_release_manifest.py generate \
+          python3 ../database/DevelopmentDB/scripts/deployment/database_release_manifest.py generate \
             --repository-root .. \
-            --database-compose backend/infrastructure/docker/compose.development.database.yml \
-            --release-compose backend/infrastructure/docker/compose.development.release.yml \
-            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
-            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
-            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs \
+            --database-compose database/DevelopmentDB/compose.development.database.yml \
+            --release-compose database/DevelopmentDB/compose.development.release.yml \
+            --migrations-directory database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations \
+            --model-snapshot database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs \
             --repository "$GITHUB_REPOSITORY" \
             --ref refs/heads/Development \
             --commit "$GITHUB_SHA" \
@@ -204,21 +206,21 @@ jobs:
             --operations-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-ops@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
             --release-image "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-release@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
             --output "$manifest_path"
-          python3 scripts/deployment/database_release_manifest.py validate \
+          python3 ../database/DevelopmentDB/scripts/deployment/database_release_manifest.py validate \
             --manifest "$manifest_path" \
             --repository-root .. \
-            --database-compose backend/infrastructure/docker/compose.development.database.yml \
-            --release-compose backend/infrastructure/docker/compose.development.release.yml \
-            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
-            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
-            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs
+            --database-compose database/DevelopmentDB/compose.development.database.yml \
+            --release-compose database/DevelopmentDB/compose.development.release.yml \
+            --migrations-directory database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations \
+            --model-snapshot database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
 
           published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$manifest_path")"
           docker build \
             --build-arg VCS_REF="$GITHUB_SHA" \
             --build-arg OCI_SOURCE="https://github.com/$GITHUB_REPOSITORY" \
             --build-arg OCI_CREATED="$published_at" \
-            --file scripts/deployment/Dockerfile.database-release-bundle \
+            --file ../database/DevelopmentDB/scripts/deployment/Dockerfile.database-release-bundle \
             --tag elevant-db-release-bundle:ci \
             "$bundle_root"
           test "$(docker image inspect --format '{{index .Config.Labels "io.elevant.database-release.bundle-version"}}' elevant-db-release-bundle:ci)" = 1
@@ -252,8 +254,8 @@ jobs:
           ELEVANT_DATABASE_ENVIRONMENT: Development
         run: >-
           dotnet ef migrations has-pending-model-changes
-          --project src/Elevant.Infrastructure
-          --startup-project src/Elevant.Api
+          --project ../database/DevelopmentDB/Elevant.Persistence
+          --startup-project Elevant.Api
           --context ElevantDbContext
           --configuration Release
           --no-build
@@ -264,12 +266,12 @@ jobs:
           ELEVANT_DATABASE_ENVIRONMENT: Development
         run: >-
           dotnet ef migrations script --idempotent
-          --project src/Elevant.Infrastructure
-          --startup-project src/Elevant.Api
+          --project ../database/DevelopmentDB/Elevant.Persistence
+          --startup-project Elevant.Api
           --context ElevantDbContext
           --configuration Release
           --no-build
-          --output artifacts/database/elevant-v1-idempotent.sql
+          --output ../database/DevelopmentDB/artifacts/elevant-v1-idempotent.sql
 
       - name: Validate Development database Compose files
         env:
@@ -286,13 +288,13 @@ jobs:
           ELEVANT_SEEDER_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=CI-Only_SeederPassword!2026;Encrypt=True;TrustServerCertificate=True"
           ELEVANT_DEV_SEED_ACCOUNT_PASSWORD: "CI-Only_AccountPassword!2026"
         run: |
-          docker compose -f infrastructure/docker/compose.development.database.yml config --quiet
-          docker compose -f infrastructure/docker/compose.development.release.yml config --quiet
+          docker compose -f ../database/DevelopmentDB/compose.development.database.yml config --quiet
+          docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet
 
       - name: Build deployable images
         run: |
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:ci ..
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:ci ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.ops --tag elevant-db-ops:ci ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.database-release --tag elevant-db-release:ci ..
           docker build --file Dockerfile --tag elevant-api:ci ..
 
       - name: Stop integration SQL Server before isolated certification
@@ -302,11 +304,12 @@ jobs:
       - name: Certify database containers end to end
         shell: pwsh
         run: >-
-          ./scripts/certify-database-containers.ps1
+          ../database/DevelopmentDB/scripts/certify-database-containers.ps1
           -OpsImage elevant-db-ops:ci
           -ReleaseImage elevant-db-release:ci
           -ExpectedRevision $env:GITHUB_SHA
           -ExpectedSource "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          -ProductionBootstrapPath database/DevelopmentDB/tests/scripts/fixtures/initialize-production.sql
 
       - name: Upload test results
         if: always()
@@ -321,7 +324,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: database-migration-sql-${{ github.run_id }}
-          path: backend/artifacts/database/elevant-v1-idempotent.sql
+          path: database/DevelopmentDB/artifacts/elevant-v1-idempotent.sql
           if-no-files-found: error
           retention-days: 14
 
@@ -354,17 +357,18 @@ jobs:
 
       - name: Build publishable database images
         run: |
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:publish ..
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:publish ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.ops --tag elevant-db-ops:publish ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.database-release --tag elevant-db-release:publish ..
 
       - name: Certify the exact publishable images
         shell: pwsh
         run: >-
-          ./scripts/certify-database-containers.ps1
+          ../database/DevelopmentDB/scripts/certify-database-containers.ps1
           -OpsImage elevant-db-ops:publish
           -ReleaseImage elevant-db-release:publish
           -ExpectedRevision $env:GITHUB_SHA
           -ExpectedSource "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          -ProductionBootstrapPath database/DevelopmentDB/tests/scripts/fixtures/initialize-production.sql
 
       - name: Compute GHCR references
         id: images
@@ -433,13 +437,13 @@ jobs:
           RELEASE_IMAGE: ${{ steps.publish_images.outputs.release_ref }}
         run: |
           set -Eeuo pipefail
-          python3 scripts/deployment/database_release_manifest.py generate \
+          python3 ../database/DevelopmentDB/scripts/deployment/database_release_manifest.py generate \
             --repository-root .. \
-            --database-compose backend/infrastructure/docker/compose.development.database.yml \
-            --release-compose backend/infrastructure/docker/compose.development.release.yml \
-            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
-            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
-            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs \
+            --database-compose database/DevelopmentDB/compose.development.database.yml \
+            --release-compose database/DevelopmentDB/compose.development.release.yml \
+            --migrations-directory database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations \
+            --model-snapshot database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs \
             --repository "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF" \
             --commit "$GITHUB_SHA" \
@@ -447,29 +451,29 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --operations-image "$OPS_IMAGE" \
             --release-image "$RELEASE_IMAGE" \
-            --output artifacts/database/database-release-manifest.json
-          python3 scripts/deployment/database_release_manifest.py validate \
-            --manifest artifacts/database/database-release-manifest.json \
+            --output ../database/DevelopmentDB/artifacts/database-release-manifest.json
+          python3 ../database/DevelopmentDB/scripts/deployment/database_release_manifest.py validate \
+            --manifest ../database/DevelopmentDB/artifacts/database-release-manifest.json \
             --repository-root .. \
-            --database-compose backend/infrastructure/docker/compose.development.database.yml \
-            --release-compose backend/infrastructure/docker/compose.development.release.yml \
-            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
-            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
-            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs
-          install -d artifacts/database/compose
-          cp infrastructure/docker/compose.development.database.yml \
-            artifacts/database/compose/compose.development.database.yml
-          cp infrastructure/docker/compose.development.release.yml \
-            artifacts/database/compose/compose.development.release.yml
+            --database-compose database/DevelopmentDB/compose.development.database.yml \
+            --release-compose database/DevelopmentDB/compose.development.release.yml \
+            --migrations-directory database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations \
+            --model-snapshot database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
+          install -d ../database/DevelopmentDB/artifacts/compose
+          cp ../database/DevelopmentDB/compose.development.database.yml \
+            ../database/DevelopmentDB/artifacts/compose/compose.development.database.yml
+          cp ../database/DevelopmentDB/compose.development.release.yml \
+            ../database/DevelopmentDB/artifacts/compose/compose.development.release.yml
 
       - name: Upload certified release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: database-release-manifest-${{ github.run_id }}
           path: |
-            backend/artifacts/database/database-release-manifest.json
-            backend/artifacts/database/compose/compose.development.database.yml
-            backend/artifacts/database/compose/compose.development.release.yml
+            database/DevelopmentDB/artifacts/database-release-manifest.json
+            database/DevelopmentDB/artifacts/compose/compose.development.database.yml
+            database/DevelopmentDB/artifacts/compose/compose.development.release.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -480,7 +484,7 @@ jobs:
           REPOSITORY_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          development_tip="$(bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA")"
+          development_tip="$(bash ../database/DevelopmentDB/scripts/deployment/guard-database-publication.sh "$GITHUB_SHA")"
           unset REPOSITORY_TOKEN
           echo "Newer Development commits do not change database-owned inputs." \
             >> "$GITHUB_STEP_SUMMARY"
@@ -490,7 +494,7 @@ jobs:
         id: publish_bundle
         shell: bash
         env:
-          MANIFEST_JSON: artifacts/database/database-release-manifest.json
+          MANIFEST_JSON: ../database/DevelopmentDB/artifacts/database-release-manifest.json
         run: |
           set -Eeuo pipefail
 
@@ -511,16 +515,16 @@ jobs:
 
           cp "$MANIFEST_JSON" "$artifact_context/manifest.json"
           install -d "$artifact_context/compose"
-          cp artifacts/database/compose/compose.development.database.yml \
+          cp ../database/DevelopmentDB/artifacts/compose/compose.development.database.yml \
             "$artifact_context/compose/compose.development.database.yml"
-          cp artifacts/database/compose/compose.development.release.yml \
+          cp ../database/DevelopmentDB/artifacts/compose/compose.development.release.yml \
             "$artifact_context/compose/compose.development.release.yml"
 
           docker build \
             --build-arg VCS_REF="$GITHUB_SHA" \
             --build-arg OCI_SOURCE="https://github.com/$GITHUB_REPOSITORY" \
             --build-arg OCI_CREATED="$published_at" \
-            --file scripts/deployment/Dockerfile.database-release-bundle \
+            --file ../database/DevelopmentDB/scripts/deployment/Dockerfile.database-release-bundle \
             --tag "$manifest_version" \
             "$artifact_context"
 
@@ -538,12 +542,12 @@ jobs:
             echo "The OCI bundle changed manifest.json." >&2
             exit 1
           }
-          cmp -s artifacts/database/compose/compose.development.database.yml \
+          cmp -s ../database/DevelopmentDB/artifacts/compose/compose.development.database.yml \
             "$extracted_bundle/compose.development.database.yml" || {
             echo "The OCI bundle changed the Development database Compose payload." >&2
             exit 1
           }
-          cmp -s artifacts/database/compose/compose.development.release.yml \
+          cmp -s ../database/DevelopmentDB/artifacts/compose/compose.development.release.yml \
             "$extracted_bundle/compose.development.release.yml" || {
             echo "The OCI bundle changed the Development release Compose payload." >&2
             exit 1
@@ -579,9 +583,9 @@ jobs:
           docker rm "$bundle_container" >/dev/null
           bundle_container=""
           cmp -s "$MANIFEST_JSON" "$extracted_bundle/manifest.json"
-          cmp -s artifacts/database/compose/compose.development.database.yml \
+          cmp -s ../database/DevelopmentDB/artifacts/compose/compose.development.database.yml \
             "$extracted_bundle/compose.development.database.yml"
-          cmp -s artifacts/database/compose/compose.development.release.yml \
+          cmp -s ../database/DevelopmentDB/artifacts/compose/compose.development.release.yml \
             "$extracted_bundle/compose.development.release.yml"
 
           {
@@ -625,7 +629,7 @@ jobs:
           docker tag "$OPS_REF" "$OPS_ALIAS"
           docker tag "$RELEASE_REF" "$RELEASE_ALIAS"
 
-          bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
+          bash ../database/DevelopmentDB/scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
           unset REPOSITORY_TOKEN
 
           ops_alias_digest="$(push_and_digest "$OPS_ALIAS")"
@@ -666,7 +670,7 @@ jobs:
 
           docker pull "$MANIFEST_REF" >/dev/null
           docker tag "$MANIFEST_REF" "$MANIFEST_ALIAS"
-          bash scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
+          bash ../database/DevelopmentDB/scripts/deployment/guard-database-publication.sh "$GITHUB_SHA" >/dev/null
           unset REPOSITORY_TOKEN
           alias_digest="$(push_and_digest "$MANIFEST_ALIAS")"
           if [[ "$alias_digest" != "$MANIFEST_DIGEST" ]]; then

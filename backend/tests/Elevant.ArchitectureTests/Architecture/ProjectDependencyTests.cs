@@ -4,6 +4,20 @@ namespace Elevant.ArchitectureTests.Architecture;
 
 public sealed class ProjectDependencyTests
 {
+    private static readonly Dictionary<string, string> ProjectPaths =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Elevant.Domain"] = "backend/Elevant.Domain/Elevant.Domain.csproj",
+            ["Elevant.Application"] = "backend/Elevant.Application/Elevant.Application.csproj",
+            ["Elevant.Contracts"] = "backend/Elevant.Contracts/Elevant.Contracts.csproj",
+            ["Elevant.Infrastructure"] = "backend/Elevant.Infrastructure/Elevant.Infrastructure.csproj",
+            ["Elevant.Api"] = "backend/Elevant.Api/Elevant.Api.csproj",
+            ["Elevant.Persistence"] =
+                "database/DevelopmentDB/Elevant.Persistence/Elevant.Persistence.csproj",
+            ["Elevant.DatabaseTool"] =
+                "database/DevelopmentDB/Elevant.DatabaseTool/Elevant.DatabaseTool.csproj",
+        };
+
     private static readonly Dictionary<string, IReadOnlySet<string>> ExpectedReferences =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
         {
@@ -13,9 +27,17 @@ public sealed class ProjectDependencyTests
             ["Elevant.Infrastructure"] = new HashSet<string>(
                 ["Elevant.Application", "Elevant.Domain"],
                 StringComparer.Ordinal),
+            ["Elevant.Persistence"] = new HashSet<string>(["Elevant.Domain"], StringComparer.Ordinal),
             ["Elevant.Api"] = new HashSet<string>(
-                ["Elevant.Application", "Elevant.Contracts", "Elevant.Infrastructure"],
+                [
+                    "Elevant.Application",
+                    "Elevant.Contracts",
+                    "Elevant.Infrastructure",
+                    "Elevant.Persistence",
+                ],
                 StringComparer.Ordinal),
+            ["Elevant.DatabaseTool"] =
+                new HashSet<string>(["Elevant.Persistence"], StringComparer.Ordinal),
         };
 
     [Fact]
@@ -34,8 +56,16 @@ public sealed class ProjectDependencyTests
         AssertProjectReferences("Elevant.Infrastructure");
 
     [Fact]
-    public void ApiDependsOnlyOnApplicationContractsAndInfrastructure() =>
+    public void PersistenceDependsOnlyOnDomain() =>
+        AssertProjectReferences("Elevant.Persistence");
+
+    [Fact]
+    public void ApiDependsOnlyOnApplicationContractsInfrastructureAndPersistence() =>
         AssertProjectReferences("Elevant.Api");
+
+    [Fact]
+    public void DatabaseToolDependsOnlyOnPersistence() =>
+        AssertProjectReferences("Elevant.DatabaseTool");
 
     [Fact]
     public void ProductProjectGraphHasNoCycles()
@@ -65,12 +95,10 @@ public sealed class ProjectDependencyTests
 
     private static HashSet<string> ReadProjectReferences(string projectName)
     {
-        var backendRoot = FindBackendRoot();
+        var repositoryRoot = FindRepositoryRoot();
         var projectPath = Path.Combine(
-            backendRoot,
-            "src",
-            projectName,
-            $"{projectName}.csproj");
+            repositoryRoot,
+            ProjectPaths[projectName].Replace('/', Path.DirectorySeparatorChar));
         var document = XDocument.Load(projectPath);
 
         return document
@@ -82,13 +110,14 @@ public sealed class ProjectDependencyTests
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static string FindBackendRoot()
+    private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Elevant.sln")))
+            if (File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")) &&
+                File.Exists(Path.Combine(directory.FullName, "backend", "Elevant.sln")))
             {
                 return directory.FullName;
             }
@@ -96,7 +125,8 @@ public sealed class ProjectDependencyTests
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException("Could not find the backend root containing Elevant.sln.");
+        throw new DirectoryNotFoundException(
+            "Could not find the repository root containing backend/Elevant.sln.");
     }
 
     private static void Visit(

@@ -13,8 +13,8 @@ Explique qué cambia, por qué y qué resultado obtiene el usuario o el equipo.
 
 ## Carpeta afectada
 
-Indique las áreas principales, por ejemplo `backend/src`, `frontend/web` o
-`frontend/mobile-agent`.
+Indique las áreas principales, por ejemplo `backend`, `database/DevelopmentDB`,
+`frontend/private-web` o `frontend/mobile-agent`.
 
 ## Evidencia
 

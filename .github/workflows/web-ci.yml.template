@@ -6,14 +6,14 @@ on:
   push:
     branches: [main, Development]
     paths:
-      - "frontend/web/**"
+      - "frontend/private-web/**"
       - "frontend/public-web/**"
       - "packages/api-client/**"
       - ".github/workflows/web-ci.yml"
   pull_request:
     branches: [main, Development]
     paths:
-      - "frontend/web/**"
+      - "frontend/private-web/**"
       - "frontend/public-web/**"
       - "packages/api-client/**"
       - ".github/workflows/web-ci.yml"
@@ -26,14 +26,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend/web
+        working-directory: frontend/private-web
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/web/package-lock.json
+          cache-dependency-path: frontend/private-web/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run build

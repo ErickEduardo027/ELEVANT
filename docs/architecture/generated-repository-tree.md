@@ -13,26 +13,28 @@ ELEVANT
 |   |-- AGENTS.md
 |   |-- Elevant.sln
 |   |-- Dockerfile
-|   |-- Dockerfile.database-release
-|   |-- database
-|   |   |-- Dockerfile.ops
-|   |   `-- scripts
-|   |-- infrastructure
-|   |   `-- docker
-|   |       |-- compose.local.yml
-|   |       |-- compose.development.database.yml
-|   |       `-- compose.development.release.yml
-|   |-- src
-|   |   |-- Elevant.Api
-|   |   |-- Elevant.Application
-|   |   |-- Elevant.Contracts
-|   |   |-- Elevant.DatabaseTool
-|   |   |-- Elevant.Domain
-|   |   `-- Elevant.Infrastructure
+|   |-- Elevant.Api
+|   |-- Elevant.Application
+|   |-- Elevant.Contracts
+|   |-- Elevant.Domain
+|   |-- Elevant.Infrastructure
 |   `-- tests
+|-- database
+|   |-- AGENTS.md
+|   |-- README.md
+|   |-- DevelopmentDB
+|   |   |-- Elevant.Persistence
+|   |   |-- Elevant.DatabaseTool
+|   |   |-- Dockerfile.ops
+|   |   |-- Dockerfile.database-release
+|   |   |-- compose.local.yml
+|   |   |-- compose.development.database.yml
+|   |   |-- compose.development.release.yml
+|   |   `-- scripts
+|   `-- ProductionDB
 |-- frontend
 |   |-- AGENTS.md
-|   |-- web
+|   |-- private-web
 |   |-- public-web
 |   `-- mobile-agent
 |-- packages
