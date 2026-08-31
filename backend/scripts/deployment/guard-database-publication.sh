@@ -37,6 +37,12 @@ git diff --name-only --no-renames -z \
 while IFS= read -r -d '' path; do
   case "$path" in
     .github/workflows/backend-ci.yml | \
+    .dockerignore | \
+    Directory.Build.props | \
+    Directory.Packages.props | \
+    NuGet.config | \
+    dotnet-tools.json | \
+    global.json | \
     backend/.dockerignore | \
     backend/Directory.Build.props | \
     backend/Directory.Packages.props | \
@@ -46,6 +52,7 @@ while IFS= read -r -d '' path; do
     backend/dotnet-tools.json | \
     backend/global.json | \
     backend/database/* | \
+    database/* | \
     backend/infrastructure/docker/compose.development.database.yml | \
     backend/infrastructure/docker/compose.development.release.yml | \
     backend/scripts/certify-database-containers.ps1 | \
@@ -56,6 +63,12 @@ while IFS= read -r -d '' path; do
     backend/src/Elevant.Infrastructure/* | \
     backend/src/Elevant.Api/Elevant.Api.csproj | \
     backend/src/Elevant.Api/packages.lock.json | \
+    backend/Elevant.Application/* | \
+    backend/Elevant.DatabaseTool/* | \
+    backend/Elevant.Domain/* | \
+    backend/Elevant.Infrastructure/* | \
+    backend/Elevant.Api/Elevant.Api.csproj | \
+    backend/Elevant.Api/packages.lock.json | \
     backend/tests/scripts/*)
       echo "A newer Development commit changes database-owned path: $path" >&2
       echo "This older run will not move mutable Development aliases." >&2

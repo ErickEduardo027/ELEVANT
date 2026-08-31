@@ -1,6 +1,6 @@
 # Infraestructura de Elevant
 
-Esta área contiene plantillas operativas; no crea recursos externos ni despliega automáticamente. El backend se empaqueta desde `backend/Dockerfile` usando `backend/` como contexto de construcción y escucha HTTP en el puerto interno `8080`.
+Esta área contiene plantillas operativas; no crea recursos externos ni despliega automáticamente. El backend se empaqueta desde `backend/Dockerfile` usando la raíz del repositorio como contexto de construcción (`docker build -f backend/Dockerfile .`) y escucha HTTP en el puerto interno `8080`. El contexto común permite que la estructura actual y la separación futura `backend`/`database` se certifiquen con la misma frontera Docker.
 
 ## Principios
 

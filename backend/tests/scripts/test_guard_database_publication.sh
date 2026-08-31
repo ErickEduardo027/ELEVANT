@@ -91,25 +91,82 @@ test_non_database_advance() {
   pass 'newer non-database Development commit is accepted'
 }
 
-test_database_owned_advance() {
+assert_database_owned_advance_is_rejected() {
+  local name="$1"
+  local path="$2"
   local work source output error
-  work="$(new_repository database-owned-advance)"
+  work="$(new_repository "$name")"
   source="$(git -C "$work" rev-parse HEAD)"
-  mkdir -p "$work/backend/database"
-  printf 'database input\n' > "$work/backend/database/change.sql"
-  git -C "$work" add backend/database/change.sql
+  mkdir -p "$(dirname -- "$work/$path")"
+  printf 'database input\n' > "$work/$path"
+  git -C "$work" add "$path"
   git -C "$work" commit --quiet -m 'test: change database-owned input'
   git -C "$work" push --quiet origin Development
-  output="$TEST_ROOT/database-owned-advance.stdout"
-  error="$TEST_ROOT/database-owned-advance.stderr"
+  output="$TEST_ROOT/$name.stdout"
+  error="$TEST_ROOT/$name.stderr"
 
   if run_guard "$work" "$source" "$output" "$error"; then
-    fail 'a newer database-owned Development commit should be rejected'
+    fail "a newer database-owned Development commit should be rejected: $path"
   fi
   grep -Fq \
-    'A newer Development commit changes database-owned path: backend/database/change.sql' \
-    "$error" || fail 'database-owned rejection should name the changed path'
-  pass 'newer database-owned Development commit is rejected'
+    "A newer Development commit changes database-owned path: $path" \
+    "$error" || fail "database-owned rejection should name the changed path: $path"
+  pass "newer database-owned Development commit is rejected: $path"
+}
+
+test_legacy_database_owned_advance() {
+  assert_database_owned_advance_is_rejected \
+    legacy-database-owned-advance \
+    backend/database/change.sql
+}
+
+test_top_level_database_owned_advance() {
+  assert_database_owned_advance_is_rejected \
+    top-level-database-owned-advance \
+    database/DevelopmentDB/scripts/change.sql
+}
+
+test_flat_backend_project_advance() {
+  assert_database_owned_advance_is_rejected \
+    flat-backend-project-advance \
+    backend/Elevant.Infrastructure/Persistence/change.cs
+}
+
+test_root_build_inputs_advance() {
+  local path name
+  for path in \
+    .dockerignore \
+    Directory.Build.props \
+    Directory.Packages.props \
+    NuGet.config \
+    dotnet-tools.json \
+    global.json
+  do
+    name="root-build-input-${path//[^A-Za-z0-9]/-}"
+    assert_database_owned_advance_is_rejected "$name" "$path"
+  done
+}
+
+test_frontend_advance() {
+  local work source tip output error
+  work="$(new_repository frontend-advance)"
+  source="$(git -C "$work" rev-parse HEAD)"
+  mkdir -p "$work/frontend/private-web"
+  printf 'frontend only\n' > "$work/frontend/private-web/change.ts"
+  git -C "$work" add frontend/private-web/change.ts
+  git -C "$work" commit --quiet -m 'test: change private frontend'
+  git -C "$work" push --quiet origin Development
+  tip="$(git -C "$work" rev-parse HEAD)"
+  output="$TEST_ROOT/frontend-advance.stdout"
+  error="$TEST_ROOT/frontend-advance.stderr"
+
+  run_guard "$work" "$source" "$output" "$error" ||
+    fail 'a newer frontend-only Development commit should be accepted'
+  [[ "$(<"$output")" == "$tip" ]] ||
+    fail 'frontend-only advance should print the current Development tip'
+  [[ ! -s "$error" ]] ||
+    fail 'frontend-only advance should not emit an error'
+  pass 'newer frontend-only Development commit is accepted'
 }
 
 test_source_is_not_ancestor() {
@@ -143,7 +200,11 @@ test_source_is_not_ancestor() {
 
 test_tip_equals_source
 test_non_database_advance
-test_database_owned_advance
+test_legacy_database_owned_advance
+test_top_level_database_owned_advance
+test_flat_backend_project_advance
+test_root_build_inputs_advance
+test_frontend_advance
 test_source_is_not_ancestor
 
 printf 'All %d database publication guard tests passed.\n' "$pass_count"

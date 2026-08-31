@@ -7,6 +7,13 @@ on:
       - Development
     paths:
       - "backend/**"
+      - "database/**"
+      - ".dockerignore"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "dotnet-tools.json"
+      - "global.json"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches:
@@ -14,6 +21,13 @@ on:
       - Development
     paths:
       - "backend/**"
+      - "database/**"
+      - ".dockerignore"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "dotnet-tools.json"
+      - "global.json"
       - ".github/workflows/backend-ci.yml"
 
 permissions:
@@ -59,6 +73,12 @@ jobs:
           while IFS= read -r -d '' path; do
             case "$path" in
               .github/workflows/backend-ci.yml | \
+              .dockerignore | \
+              Directory.Build.props | \
+              Directory.Packages.props | \
+              NuGet.config | \
+              dotnet-tools.json | \
+              global.json | \
               backend/.dockerignore | \
               backend/Directory.Build.props | \
               backend/Directory.Packages.props | \
@@ -72,13 +92,20 @@ jobs:
               backend/infrastructure/docker/compose.development.release.yml | \
               backend/scripts/certify-database-containers.ps1 | \
               backend/scripts/deployment/* | \
+              backend/Elevant.Application/* | \
+              backend/Elevant.DatabaseTool/* | \
+              backend/Elevant.Domain/* | \
+              backend/Elevant.Infrastructure/* | \
+              backend/Elevant.Api/Elevant.Api.csproj | \
+              backend/Elevant.Api/packages.lock.json | \
               backend/src/Elevant.Application/* | \
               backend/src/Elevant.DatabaseTool/* | \
               backend/src/Elevant.Domain/* | \
               backend/src/Elevant.Infrastructure/* | \
               backend/src/Elevant.Api/Elevant.Api.csproj | \
               backend/src/Elevant.Api/packages.lock.json | \
-              backend/tests/scripts/*)
+              backend/tests/scripts/* | \
+              database/*)
                 database_owned=true
                 break
                 ;;
@@ -163,7 +190,12 @@ jobs:
           cp infrastructure/docker/compose.development.release.yml \
             "$bundle_root/compose/compose.development.release.yml"
           python3 scripts/deployment/database_release_manifest.py generate \
-            --backend-root . \
+            --repository-root .. \
+            --database-compose backend/infrastructure/docker/compose.development.database.yml \
+            --release-compose backend/infrastructure/docker/compose.development.release.yml \
+            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
+            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs \
             --repository "$GITHUB_REPOSITORY" \
             --ref refs/heads/Development \
             --commit "$GITHUB_SHA" \
@@ -174,7 +206,12 @@ jobs:
             --output "$manifest_path"
           python3 scripts/deployment/database_release_manifest.py validate \
             --manifest "$manifest_path" \
-            --backend-root .
+            --repository-root .. \
+            --database-compose backend/infrastructure/docker/compose.development.database.yml \
+            --release-compose backend/infrastructure/docker/compose.development.release.yml \
+            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
+            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs
 
           published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$manifest_path")"
           docker build \
@@ -252,10 +289,11 @@ jobs:
           docker compose -f infrastructure/docker/compose.development.database.yml config --quiet
           docker compose -f infrastructure/docker/compose.development.release.yml config --quiet
 
-      - name: Build database images
+      - name: Build deployable images
         run: |
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:ci database
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:ci .
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:ci ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:ci ..
+          docker build --file Dockerfile --tag elevant-api:ci ..
 
       - name: Stop integration SQL Server before isolated certification
         run: |
@@ -316,8 +354,8 @@ jobs:
 
       - name: Build publishable database images
         run: |
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:publish database
-          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:publish .
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file database/Dockerfile.ops --tag elevant-db-ops:publish ..
+          docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file Dockerfile.database-release --tag elevant-db-release:publish ..
 
       - name: Certify the exact publishable images
         shell: pwsh
@@ -396,7 +434,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 scripts/deployment/database_release_manifest.py generate \
-            --backend-root . \
+            --repository-root .. \
+            --database-compose backend/infrastructure/docker/compose.development.database.yml \
+            --release-compose backend/infrastructure/docker/compose.development.release.yml \
+            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
+            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs \
             --repository "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF" \
             --commit "$GITHUB_SHA" \
@@ -407,7 +450,12 @@ jobs:
             --output artifacts/database/database-release-manifest.json
           python3 scripts/deployment/database_release_manifest.py validate \
             --manifest artifacts/database/database-release-manifest.json \
-            --backend-root .
+            --repository-root .. \
+            --database-compose backend/infrastructure/docker/compose.development.database.yml \
+            --release-compose backend/infrastructure/docker/compose.development.release.yml \
+            --migrations-directory backend/src/Elevant.Infrastructure/Persistence/Migrations \
+            --model-snapshot backend/src/Elevant.Infrastructure/Persistence/Migrations/ElevantDbContextModelSnapshot.cs \
+            --development-seed backend/src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs
           install -d artifacts/database/compose
           cp infrastructure/docker/compose.development.database.yml \
             artifacts/database/compose/compose.development.database.yml

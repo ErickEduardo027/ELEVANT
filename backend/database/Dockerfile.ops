@@ -10,16 +10,16 @@ LABEL org.opencontainers.image.revision=${VCS_REF} \
 USER root
 WORKDIR /opt/elevant-db-ops
 RUN install -d -m 0555 /opt/elevant-db-ops/sql
-COPY --chmod=0444 scripts/bootstrap/provision-development.sql ./sql/provision-development.sql
-COPY --chmod=0444 scripts/backup/backup-development.sql ./sql/backup-development.sql
-COPY --chmod=0444 scripts/recovery/restore-check-development.sql ./sql/restore-check-development.sql
-COPY --chmod=0444 scripts/diagnostics/verify-development.sql ./sql/verify-development.sql
-COPY --chmod=0555 scripts/container/entrypoint.sh ./entrypoint.sh
-COPY --chmod=0555 scripts/container/initialize-backup-storage.sh ./initialize-backup-storage.sh
-COPY --chmod=0555 scripts/container/provision-development.sh ./provision-development.sh
-COPY --chmod=0555 scripts/container/backup-development.sh ./backup-development.sh
-COPY --chmod=0555 scripts/container/restore-check-development.sh ./restore-check-development.sh
-COPY --chmod=0555 scripts/container/verify-development.sh ./verify-development.sh
+COPY --chmod=0444 backend/database/scripts/bootstrap/provision-development.sql ./sql/provision-development.sql
+COPY --chmod=0444 backend/database/scripts/backup/backup-development.sql ./sql/backup-development.sql
+COPY --chmod=0444 backend/database/scripts/recovery/restore-check-development.sql ./sql/restore-check-development.sql
+COPY --chmod=0444 backend/database/scripts/diagnostics/verify-development.sql ./sql/verify-development.sql
+COPY --chmod=0555 backend/database/scripts/container/entrypoint.sh ./entrypoint.sh
+COPY --chmod=0555 backend/database/scripts/container/initialize-backup-storage.sh ./initialize-backup-storage.sh
+COPY --chmod=0555 backend/database/scripts/container/provision-development.sh ./provision-development.sh
+COPY --chmod=0555 backend/database/scripts/container/backup-development.sh ./backup-development.sh
+COPY --chmod=0555 backend/database/scripts/container/restore-check-development.sh ./restore-check-development.sh
+COPY --chmod=0555 backend/database/scripts/container/verify-development.sh ./verify-development.sh
 USER mssql
 
 ENTRYPOINT ["/opt/elevant-db-ops/entrypoint.sh"]
