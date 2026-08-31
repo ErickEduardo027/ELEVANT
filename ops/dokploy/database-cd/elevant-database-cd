@@ -507,7 +507,14 @@ read_env_value() {
   done < "$file"
   [[ "$found" == "1" ]] || \
     die "restricted environment file must define $key exactly once"
-  [[ -n "$value" && ! "$value" =~ [[:space:]#] ]] || \
+  if [[ "$value" == \"* || "$value" == *\" ]]; then
+    [[ ${#value} -ge 2 && "${value:0:1}" == '"' && \
+       "${value: -1}" == '"' ]] || \
+      die "restricted environment value for $key has an invalid quoting format"
+    value="${value:1:${#value}-2}"
+  fi
+  [[ -n "$value" && "$value" != *\"* && \
+     ! "$value" =~ [[:space:]#] ]] || \
     die "restricted environment value for $key has an invalid format"
   printf '%s\n' "$value"
 }

@@ -534,6 +534,33 @@ printf '%s\n' "ELEVANT_DB_OPS_IMAGE=$baseline_ops" \
   'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
 chmod 0600 "$DATABASE_ENV"
 
+printf '%s\n' 'ELEVANT_DB_OPS_IMAGE="unterminated' \
+  'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
+assert_failure_without_database_operation \
+  "baseline adoption accepted an unmatched opening quote" \
+  controller --adopt-current
+printf '%s\n' "ELEVANT_DB_OPS_IMAGE=$baseline_ops\"" \
+  'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
+assert_failure_without_database_operation \
+  "baseline adoption accepted an unmatched closing quote" \
+  controller --adopt-current
+printf '%s\n' "ELEVANT_DB_OPS_IMAGE=\"$baseline_ops\" suffix" \
+  'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
+assert_failure_without_database_operation \
+  "baseline adoption accepted content after a quoted value" \
+  controller --adopt-current
+printf '%s\n' "ELEVANT_DB_OPS_IMAGE=\"$baseline_ops\"" \
+  "ELEVANT_DB_OPS_IMAGE=\"$baseline_ops\"" \
+  'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
+assert_failure_without_database_operation \
+  "baseline adoption accepted a duplicate image definition" \
+  controller --adopt-current
+printf '%s\n' "ELEVANT_DB_OPS_IMAGE=\"$baseline_ops\"" \
+  'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
+printf '%s\n' "ELEVANT_DB_RELEASE_IMAGE=$baseline_release" \
+  'OTHER_SECRET=not-a-real-secret' > "$RELEASE_ENV"
+chmod 0600 "$DATABASE_ENV" "$RELEASE_ENV"
+
 assert_success "live baseline adoption failed" controller --adopt-current
 assert_equal adopted "$("$NODE_BIN" "$STATE_TOOL" get \
   --file "$STATE_DIR/last-success.json" --field status)" \
@@ -543,7 +570,10 @@ assert_equal "" "$("$NODE_BIN" "$STATE_TOOL" get \
   "live baseline incorrectly consumed the candidate manifest"
 assert_equal "$baseline_ops" "$("$NODE_BIN" "$STATE_TOOL" get \
   --file "$STATE_DIR/last-success.json" --field opsImage)" \
-  "adoption did not capture the live immutable ops image"
+  "adoption did not normalize the live quoted immutable ops image"
+assert_equal "$baseline_release" "$("$NODE_BIN" "$STATE_TOOL" get \
+  --file "$STATE_DIR/last-success.json" --field releaseImage)" \
+  "adoption did not preserve the live unquoted immutable release image"
 assert_equal 3 "$(grep -c ' run --rm --no-deps ' "$MOCK_LOG")" \
   "adoption did not run verify, backup, and restore-check exactly once"
 assert_failure "baseline adoption was not one-time" controller --adopt-current
