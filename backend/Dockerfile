@@ -1,8 +1,10 @@
-# syntax=docker/dockerfile:1
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0e53453ccfc8ff2d51319fe80c678971c6d0f8008dff3565fa88e15840b69854
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1dcd9841b075d1d1013caa170b86ae58b8a8a563de9a3e319fd46a45e7ecc130
+ARG VCS_REF=unknown
+ARG OCI_CREATED=unknown
+ARG OCI_SOURCE=https://github.com/ErickEduardo027/ELEVANT
 
-ARG DOTNET_VERSION=10.0
-
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS restore
+FROM ${DOTNET_SDK_IMAGE} AS restore
 WORKDIR /src
 
 COPY ["Directory.Build.props", "Directory.Packages.props", "global.json", "NuGet.config", "dotnet-tools.json", "./"]
@@ -43,11 +45,22 @@ RUN dotnet publish "backend/Elevant.Api/Elevant.Api.csproj" \
     --output /app/publish \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS final
+FROM ${DOTNET_ASPNET_IMAGE} AS final
+ARG VCS_REF
+ARG OCI_CREATED
+ARG OCI_SOURCE
+LABEL org.opencontainers.image.title="Elevant API" \
+      org.opencontainers.image.description="Shared Elevant HTTP API" \
+      org.opencontainers.image.revision=${VCS_REF} \
+      org.opencontainers.image.created=${OCI_CREATED} \
+      org.opencontainers.image.source=${OCI_SOURCE} \
+      org.elevant.api.environment="Development"
 WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_EnableDiagnostics=0
 EXPOSE 8080
-COPY --from=publish /app/publish .
+COPY --from=publish --chown=$APP_UID:$APP_UID /app/publish .
 USER $APP_UID
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=4 \
+    CMD ["dotnet", "Elevant.Api.dll", "--health-probe"]
 ENTRYPOINT ["dotnet", "Elevant.Api.dll"]

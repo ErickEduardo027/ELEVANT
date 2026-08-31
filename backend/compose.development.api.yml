@@ -1,0 +1,58 @@
+name: elevant-dev-api
+
+services:
+  api:
+    image: "${ELEVANT_API_IMAGE:?Set an immutable GHCR API image including @sha256 digest}"
+    pull_policy: always
+    init: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      DOTNET_EnableDiagnostics: "0"
+      AllowedHosts: "${ELEVANT_API_ALLOWED_HOSTS:?Set the private Tailscale API host plus localhost and 127.0.0.1}"
+      ELEVANT_DATABASE_ENVIRONMENT: "Development"
+      ConnectionStrings__ElevantDatabase: "${ELEVANT_API_DATABASE_CONNECTION_STRING:?Set the elevant_dev_app connection string}"
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+      Cors__AllowedOrigins__1: "http://localhost:3000"
+      Cors__AllowedOrigins__2: "http://localhost:8081"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__KnownProxies__0: "${ELEVANT_API_TRUSTED_PROXY:?Set the exact runtime network gateway IP}"
+      ForwardedHeaders__ForwardLimit: "1"
+      HttpsRedirection__Enabled: "false"
+      Swagger__Enabled: "true"
+    ports:
+      - "127.0.0.1:18080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 0.60
+    healthcheck:
+      test: ["CMD", "dotnet", "Elevant.Api.dll", "--health-probe"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    networks:
+      - runtime
+      - data
+
+networks:
+  runtime:
+    external: true
+    name: elevant-dev-api-runtime
+  data:
+    external: true
+    name: elevant-dev-data

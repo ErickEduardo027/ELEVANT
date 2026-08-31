@@ -39,11 +39,13 @@ Antes de cargar la politica, abra **Admin console > Services > Advertised > Defi
 | --- | --- |
 | `svc:elevant-dev-dokploy` | panel Dokploy |
 | `svc:elevant-dev-monitoring` | Beszel |
-| `svc:elevant-dev-api` | API futura |
+| `svc:elevant-dev-api` | API Development privada |
 | `svc:elevant-dev-aviam-web` | frontend interno AVIAM futuro |
 | `svc:elevant-dev-public-web` | frontend publico Development futuro |
 
-No defina Services para SQL Server, Docker, Swarm o el puerto `3000`. Los tres Services futuros pueden permanecer en estado **Needs configuration** u **Offline** hasta que existan sus workloads.
+No defina Services para SQL Server, Docker, Swarm o el puerto `3000`. Un
+Service puede permanecer en estado **Needs configuration** u **Offline** hasta
+que exista su workload.
 
 ## 3. Aplicar la politica
 
@@ -176,11 +178,11 @@ sudo tailscale serve \
   http://127.0.0.1:18083
 ```
 
-Las plantillas futuras requieren sustituir el puerto local, no el nombre del Service:
+Los targets usan puertos loopback, no el nombre interno del contenedor:
 
 ```bash
 sudo tailscale serve --service=svc:elevant-dev-api --https=443 \
-  http://127.0.0.1:<API_LOOPBACK_PORT>
+  http://127.0.0.1:18080
 
 sudo tailscale serve --service=svc:elevant-dev-aviam-web --https=443 \
   http://127.0.0.1:<AVIAM_WEB_LOOPBACK_PORT>

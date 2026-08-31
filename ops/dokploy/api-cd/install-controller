@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+DESTINATION="/etc/dokploy/elevant/api-cd"
+TEST_MODE="${ELEVANT_API_CD_INSTALL_TEST_MODE:-0}"
+TEST_ROOT="${ELEVANT_API_CD_INSTALL_TEST_ROOT:-}"
+EXPECTED_UID=0
+EXPECTED_GID=0
+PERMISSIONS_EMULATED=0
+
+die() { printf '%s: ERROR: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+Usage: install-controller [--destination ABSOLUTE_PATH]
+
+Installs the reviewed API CD controller under Dokploy's persistent bind. It
+does not configure secrets, create a Dokploy resource, enable a schedule, or
+deploy an image. Existing config.env and runtime state are preserved.
+EOF
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --destination) (( $# >= 2 )) || die "--destination requires a path"; DESTINATION="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+if [[ "$TEST_MODE" == 1 ]]; then
+  [[ "$TEST_ROOT" == /* && -d "$TEST_ROOT" && ! -L "$TEST_ROOT" ]] || die "test root must be an existing absolute, non-symlink directory"
+  [[ "$DESTINATION" == "$TEST_ROOT/etc/dokploy/elevant/api-cd" ]] || die "test destination must remain below the explicit test root"
+  EXPECTED_UID="$(id -u)"; EXPECTED_GID="$(id -g)"
+  case "$(uname -s)" in MINGW*|MSYS*) PERMISSIONS_EMULATED=1 ;; esac
+else
+  (( EUID == 0 )) || die "must run as root on the Development VPS"
+  [[ "$DESTINATION" == /etc/dokploy/elevant/api-cd ]] || die "destination must be /etc/dokploy/elevant/api-cd"
+fi
+
+DOKPLOY_ROOT="$(dirname -- "$(dirname -- "$DESTINATION")")"
+[[ -d "$DOKPLOY_ROOT" && ! -L "$DOKPLOY_ROOT" ]] || die "Dokploy persistent bind is unavailable"
+
+readonly FILES=(elevant-api-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs env-tool.mjs verify-runtime config.env.example README.md jobs/poll.job.sh)
+for file in "${FILES[@]}"; do [[ -f "$SCRIPT_DIR/$file" && ! -L "$SCRIPT_DIR/$file" ]] || die "missing installation source: $file"; done
+
+install_directory() {
+  if [[ -e "$1" || -L "$1" ]]; then [[ -d "$1" && ! -L "$1" ]] || die "refusing unsafe installation directory: $1"; fi
+  if [[ "$TEST_MODE" == 1 ]]; then mkdir -p -- "$1"; chmod 0700 -- "$1"; else install -d -o root -g root -m 0700 -- "$1"; fi
+}
+install_file() {
+  local mode="$1" source="$2" destination="$3"
+  if [[ -e "$destination" || -L "$destination" ]]; then [[ -f "$destination" && ! -L "$destination" ]] || die "refusing unsafe installation file: $destination"; fi
+  if [[ "$TEST_MODE" == 1 ]]; then install -m "$mode" -- "$source" "$destination"; else install -o root -g root -m "$mode" -- "$source" "$destination"; fi
+}
+
+for directory in "$(dirname -- "$DESTINATION")" "$DESTINATION" "$DESTINATION/state" "$DESTINATION/state/attempts" "$DESTINATION/state/tmp" "$DESTINATION/state/compose" "$DESTINATION/state/compose/api" "$DESTINATION/log" "$DESTINATION/jobs"; do install_directory "$directory"; done
+for file in elevant-api-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs env-tool.mjs verify-runtime jobs/poll.job.sh; do install_file 0555 "$SCRIPT_DIR/$file" "$DESTINATION/$file"; done
+install_file 0444 "$SCRIPT_DIR/config.env.example" "$DESTINATION/config.env.example"
+install_file 0444 "$SCRIPT_DIR/README.md" "$DESTINATION/README.md"
+
+if [[ ! -e "$DESTINATION/config.env" ]]; then
+  install_file 0600 "$SCRIPT_DIR/config.env.example" "$DESTINATION/config.env"
+  printf '%s\n' 'Installed placeholder config.env; replace every REPLACE_* value before validation.'
+else
+  [[ -f "$DESTINATION/config.env" && ! -L "$DESTINATION/config.env" ]] || die "existing config.env is unsafe"
+  if (( ! PERMISSIONS_EMULATED )); then [[ "$(stat -c '%u:%g:%a' -- "$DESTINATION/config.env")" == "$EXPECTED_UID:$EXPECTED_GID:600" ]] || die "existing config.env has invalid ownership or mode"; fi
+  printf '%s\n' 'Preserved existing config.env.'
+fi
+
+verify_item() {
+  local kind="$1" mode="$2" path="$3"
+  if [[ "$kind" == directory ]]; then [[ -d "$path" && ! -L "$path" ]] || die "installed directory is unavailable"; else [[ -f "$path" && ! -L "$path" ]] || die "installed file is unavailable"; fi
+  (( PERMISSIONS_EMULATED )) || [[ "$(stat -c '%u:%g:%a' -- "$path")" == "$EXPECTED_UID:$EXPECTED_GID:$mode" ]] || die "installed inventory has invalid ownership or mode: $path"
+}
+for directory in "$(dirname -- "$DESTINATION")" "$DESTINATION" "$DESTINATION/state" "$DESTINATION/state/attempts" "$DESTINATION/state/tmp" "$DESTINATION/state/compose" "$DESTINATION/state/compose/api" "$DESTINATION/log" "$DESTINATION/jobs"; do verify_item directory 700 "$directory"; done
+for file in elevant-api-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs env-tool.mjs verify-runtime jobs/poll.job.sh; do verify_item file 555 "$DESTINATION/$file"; done
+verify_item file 444 "$DESTINATION/config.env.example"; verify_item file 444 "$DESTINATION/README.md"; verify_item file 600 "$DESTINATION/config.env"
+
+bash -n "$DESTINATION/elevant-api-cd"
+/bin/sh -n "$DESTINATION/jobs/poll.job.sh"
+node --check "$DESTINATION/manifest-tool.mjs" >/dev/null
+node --check "$DESTINATION/state-tool.mjs" >/dev/null
+node --check "$DESTINATION/compose-model-tool.mjs" >/dev/null
+node --check "$DESTINATION/env-tool.mjs" >/dev/null
+printf '%s\n' 'API controller files installed; run verify-runtime next. No schedule or deployment was enabled.'

@@ -8,6 +8,7 @@ on:
     paths:
       - "backend/**"
       - "database/**"
+      - "ops/dokploy/api-cd/**"
       - ".dockerignore"
       - "Directory.Build.props"
       - "Directory.Packages.props"
@@ -22,6 +23,7 @@ on:
     paths:
       - "backend/**"
       - "database/**"
+      - "ops/dokploy/api-cd/**"
       - ".dockerignore"
       - "Directory.Build.props"
       - "Directory.Packages.props"
@@ -39,12 +41,12 @@ concurrency:
 
 jobs:
   classify_database_changes:
-    name: Classify Development database changes
-    if: github.event_name == 'push'
+    name: Classify deployable Development changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       database_owned: ${{ steps.classify.outputs.database_owned }}
+      api_owned: ${{ steps.classify.outputs.api_owned }}
     steps:
       - name: Checkout complete history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -52,11 +54,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Detect database-owned paths
+      - name: Detect deployable paths
         id: classify
         shell: bash
         env:
-          BEFORE_SHA: ${{ github.event.before }}
+          BEFORE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -Eeuo pipefail
 
@@ -70,6 +72,7 @@ jobs:
           fi
 
           database_owned=false
+          api_owned=false
           while IFS= read -r -d '' path; do
             case "$path" in
               .github/workflows/backend-ci.yml | \
@@ -87,16 +90,40 @@ jobs:
               backend/Elevant.Api/packages.lock.json | \
               database/DevelopmentDB/*)
                 database_owned=true
-                break
+                ;;
+            esac
+
+            case "$path" in
+              .github/workflows/backend-ci.yml | \
+              .dockerignore | \
+              Directory.Build.props | \
+              Directory.Packages.props | \
+              NuGet.config | \
+              dotnet-tools.json | \
+              global.json | \
+              backend/Dockerfile | \
+              backend/compose.development.api.yml | \
+              backend/Elevant.sln | \
+              backend/Elevant.Api/* | \
+              backend/Elevant.Application/* | \
+              backend/Elevant.Contracts/* | \
+              backend/Elevant.Domain/* | \
+              backend/Elevant.Infrastructure/* | \
+              backend/scripts/deployment/* | \
+              database/DevelopmentDB/Elevant.Persistence/*)
+                api_owned=true
                 ;;
             esac
           done < "$changed_file_list"
 
           echo "database_owned=$database_owned" >> "$GITHUB_OUTPUT"
+          echo "api_owned=$api_owned" >> "$GITHUB_OUTPUT"
           echo "Database-owned push: $database_owned" >> "$GITHUB_STEP_SUMMARY"
+          echo "API-owned push: $api_owned" >> "$GITHUB_STEP_SUMMARY"
 
   build-and-test:
     name: Restore, build and test
+    needs: classify_database_changes
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
@@ -150,6 +177,48 @@ jobs:
           bash -n ../database/DevelopmentDB/scripts/deployment/guard-database-publication.sh
           bash -n ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
           bash ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
+
+      - name: Test API release manifest tooling
+        run: python3 -m unittest discover -s tests/scripts -p 'test_*.py' -v
+
+      - name: Test API deployment shell tooling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/deployment/guard-api-publication.sh
+          bash -n scripts/deployment/certify-api-image.sh
+          bash -n scripts/deployment/resolve-database-release.sh
+          bash -n tests/scripts/test_guard_api_publication.sh
+          bash tests/scripts/test_guard_api_publication.sh
+
+      - name: Test private API CD controller tooling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for script in \
+            ../ops/dokploy/api-cd/elevant-api-cd \
+            ../ops/dokploy/api-cd/install-controller \
+            ../ops/dokploy/api-cd/verify-runtime \
+            ../ops/dokploy/api-cd/jobs/poll.job.sh \
+            ../ops/dokploy/api-cd/tests/test-controller.sh \
+            ../ops/dokploy/api-cd/tests/test-install-controller.sh \
+            ../ops/dokploy/api-cd/tests/test-tools.sh \
+            ../ops/dokploy/api-cd/tests/test-verify-runtime.sh
+          do
+            bash -n "$script"
+          done
+          for module in \
+            ../ops/dokploy/api-cd/compose-model-tool.mjs \
+            ../ops/dokploy/api-cd/env-tool.mjs \
+            ../ops/dokploy/api-cd/manifest-tool.mjs \
+            ../ops/dokploy/api-cd/state-tool.mjs
+          do
+            node --check "$module"
+          done
+          bash ../ops/dokploy/api-cd/tests/test-tools.sh
+          bash ../ops/dokploy/api-cd/tests/test-install-controller.sh
+          bash ../ops/dokploy/api-cd/tests/test-verify-runtime.sh
+          bash ../ops/dokploy/api-cd/tests/test-controller.sh
 
       - name: Validate checked-out database manifest inputs
         shell: bash
@@ -271,11 +340,51 @@ jobs:
           docker compose -f ../database/DevelopmentDB/compose.development.database.yml config --quiet
           docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet
 
+      - name: Validate Development API Compose file
+        env:
+          ELEVANT_API_IMAGE: "ghcr.io/example/elevant-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ELEVANT_API_ALLOWED_HOSTS: "elevant-dev-api.example.ts.net;localhost;127.0.0.1"
+          ELEVANT_API_DATABASE_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_app;Password=CI-Only_AppPassword!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_API_TRUSTED_PROXY: "172.30.241.1"
+        run: docker compose -f compose.development.api.yml config --quiet
+
       - name: Build deployable images
         run: |
           docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.ops --tag elevant-db-ops:ci ..
           docker build --build-arg VCS_REF="$GITHUB_SHA" --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --file ../database/DevelopmentDB/Dockerfile.database-release --tag elevant-db-release:ci ..
-          docker build --file Dockerfile --tag elevant-api:ci ..
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --build-arg OCI_CREATED="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --file Dockerfile \
+            --tag elevant-api:ci \
+            ..
+
+      - name: Certify the exact API image
+        shell: bash
+        run: >-
+          bash scripts/deployment/certify-api-image.sh
+          elevant-api:ci
+          "$GITHUB_SHA"
+          "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+
+      - name: Export the exact certified API image
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/Development' &&
+          needs.classify_database_changes.outputs.api_owned == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d artifacts/api-image
+          docker save elevant-api:ci | zstd --threads=0 -19 \
+            --output artifacts/api-image/elevant-api-image.tar.zst
+          (
+            cd artifacts/api-image
+            sha256sum elevant-api-image.tar.zst > elevant-api-image.tar.zst.sha256
+          )
+          docker image inspect --format '{{.Id}}' elevant-api:ci \
+            > artifacts/api-image/elevant-api-image.id
 
       - name: Stop integration SQL Server before isolated certification
         run: |
@@ -295,7 +404,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: backend-test-results-${{ github.run_id }}
+          name: backend-test-results-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: backend/TestResults/**/*.trx
           if-no-files-found: error
           retention-days: 14
@@ -303,10 +412,26 @@ jobs:
       - name: Upload migration review artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: database-migration-sql-${{ github.run_id }}
+          name: database-migration-sql-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: database/DevelopmentDB/artifacts/elevant-v1-idempotent.sql
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload exact certified API image
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/Development' &&
+          needs.classify_database_changes.outputs.api_owned == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: api-image-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            backend/artifacts/api-image/elevant-api-image.tar.zst
+            backend/artifacts/api-image/elevant-api-image.tar.zst.sha256
+            backend/artifacts/api-image/elevant-api-image.id
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   publish-database-images:
     name: Rebuild, certify and publish database images
@@ -325,6 +450,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      manifest_ref: ${{ steps.publish_bundle.outputs.manifest_ref }}
+      manifest_digest: ${{ steps.publish_bundle.outputs.manifest_digest }}
     defaults:
       run:
         working-directory: backend
@@ -449,7 +577,7 @@ jobs:
       - name: Upload certified release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: database-release-manifest-${{ github.run_id }}
+          name: database-release-manifest-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: |
             database/DevelopmentDB/artifacts/database-release-manifest.json
             database/DevelopmentDB/artifacts/compose/compose.development.database.yml
@@ -660,6 +788,286 @@ jobs:
 
           {
             echo "## Certified Development database release"
+            echo "- Immutable bundle: \`${MANIFEST_REF}\`"
+            echo "- Discovery alias: \`${MANIFEST_ALIAS}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-api-image:
+    name: Publish certified Development API release
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/Development' &&
+      needs.classify_database_changes.result == 'success' &&
+      needs.classify_database_changes.outputs.api_owned == 'true' &&
+      needs.build-and-test.result == 'success' &&
+      (needs.publish-database-images.result == 'success' ||
+       needs.publish-database-images.result == 'skipped')
+    needs:
+      - classify_database_changes
+      - build-and-test
+      - publish-database-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    concurrency:
+      group: development-api-manifest-publication
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the exact certified API image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: api-image-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: backend/artifacts/api-image
+
+      - name: Verify and import the exact certified API image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          (
+            cd artifacts/api-image
+            sha256sum --check elevant-api-image.tar.zst.sha256
+          )
+          zstd --decompress --stdout artifacts/api-image/elevant-api-image.tar.zst |
+            docker load
+          expected_image_id="$(<artifacts/api-image/elevant-api-image.id)"
+          loaded_image_id="$(docker image inspect --format '{{.Id}}' elevant-api:ci)"
+          [[ "$loaded_image_id" == "$expected_image_id" ]] || {
+            echo "The transferred API image ID changed between CI jobs." >&2
+            exit 1
+          }
+          bash scripts/deployment/certify-api-image.sh \
+            elevant-api:ci \
+            "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish and verify the immutable API image
+        id: publish_api
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          api_repo="ghcr.io/${owner}/elevant-api"
+          api_version="${api_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          docker tag elevant-api:ci "$api_version"
+
+          output="$(docker push "$api_version")"
+          printf '%s\n' "$output" >&2
+          api_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$api_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Could not resolve the pushed API image digest." >&2
+            exit 1
+          }
+          api_ref="${api_repo}@${api_digest}"
+          docker pull "$api_ref" >/dev/null
+          bash scripts/deployment/certify-api-image.sh \
+            "$api_ref" \
+            "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+
+          {
+            echo "## Immutable certified Development API image"
+            echo "- \`${api_ref}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "api_ref=${api_ref}" >> "$GITHUB_OUTPUT"
+          echo "api_digest=${api_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve a compatible certified database release
+        id: database
+        shell: bash
+        env:
+          SAME_RUN_DATABASE_MANIFEST: ${{ needs.publish-database-images.outputs.manifest_ref }}
+          ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
+          ELEVANT_DATABASE_WAIT_SECONDS: "1800"
+          ELEVANT_DATABASE_POLL_SECONDS: "15"
+        run: |
+          set -Eeuo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          database_reference="${SAME_RUN_DATABASE_MANIFEST:-ghcr.io/${owner}/elevant-db-release-manifest:development-certified}"
+          install -d -m 0700 artifacts/api-release/database
+          bash scripts/deployment/resolve-database-release.sh \
+            "$database_reference" \
+            "$GITHUB_SHA" \
+            artifacts/api-release/database
+          immutable_reference="$(<artifacts/api-release/database/database-release-manifest-reference.txt)"
+          echo "manifest_ref=${immutable_reference}" >> "$GITHUB_OUTPUT"
+          echo "Compatible database bundle: \`${immutable_reference}\`" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate and validate the API release manifest
+        shell: bash
+        env:
+          API_IMAGE: ${{ steps.publish_api.outputs.api_ref }}
+          DATABASE_MANIFEST_REF: ${{ steps.database.outputs.manifest_ref }}
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/deployment/api_release_manifest.py generate \
+            --repository-root .. \
+            --api-compose backend/compose.development.api.yml \
+            --database-manifest artifacts/api-release/database/database-release-manifest.json \
+            --database-manifest-reference "$DATABASE_MANIFEST_REF" \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF" \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --api-image "$API_IMAGE" \
+            --output artifacts/api-release/api-release-manifest.json
+          python3 scripts/deployment/api_release_manifest.py validate \
+            --manifest artifacts/api-release/api-release-manifest.json \
+            --repository-root .. \
+            --api-compose backend/compose.development.api.yml
+          install -d artifacts/api-release/compose
+          cp compose.development.api.yml \
+            artifacts/api-release/compose/compose.development.api.yml
+
+      - name: Upload the certified API release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: api-release-manifest-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            backend/artifacts/api-release/api-release-manifest.json
+            backend/artifacts/api-release/compose/compose.development.api.yml
+            backend/artifacts/api-release/database/database-release-manifest.json
+            backend/artifacts/api-release/database/database-release-manifest-reference.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Refuse an already superseded API publication
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/deployment/guard-api-publication.sh "$GITHUB_SHA" >/dev/null
+          unset REPOSITORY_TOKEN
+
+      - name: Publish and verify the immutable API release bundle
+        id: publish_bundle
+        shell: bash
+        env:
+          MANIFEST_JSON: artifacts/api-release/api-release-manifest.json
+        run: |
+          set -Eeuo pipefail
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          bundle_repo="ghcr.io/${owner}/elevant-api-release-manifest"
+          bundle_version="${bundle_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$MANIFEST_JSON")"
+          artifact_context="$(mktemp -d)"
+          extracted_bundle="$(mktemp -d)"
+          bundle_container=""
+          cleanup() {
+            if [[ -n "$bundle_container" ]]; then
+              docker rm -f "$bundle_container" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$artifact_context" "$extracted_bundle"
+          }
+          trap cleanup EXIT
+
+          cp "$MANIFEST_JSON" "$artifact_context/manifest.json"
+          install -d "$artifact_context/compose"
+          cp artifacts/api-release/compose/compose.development.api.yml \
+            "$artifact_context/compose/compose.development.api.yml"
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --build-arg OCI_CREATED="$published_at" \
+            --file scripts/deployment/Dockerfile.api-release-bundle \
+            --tag "$bundle_version" \
+            "$artifact_context"
+
+          [[ "$(docker image inspect --format '{{index .Config.Labels "org.elevant.api.environment"}}' "$bundle_version")" == Development ]]
+          [[ "$(docker image inspect --format '{{index .Config.Labels "org.elevant.api.manifest.schema"}}' "$bundle_version")" == 1 ]]
+          [[ "$(docker image inspect --format '{{index .Config.Labels "io.elevant.api-release.bundle-version"}}' "$bundle_version")" == 1 ]]
+          [[ "$(docker image inspect --format '{{index .Config.Labels "io.elevant.api-release.media-type"}}' "$bundle_version")" == application/vnd.elevant.api-release-bundle.v1 ]]
+
+          verify_payloads() {
+            local reference="$1"
+            local destination="$2"
+            install -d "$destination"
+            bundle_container="$(docker create "$reference")"
+            docker cp "$bundle_container:/manifest.json" "$destination/manifest.json"
+            docker cp "$bundle_container:/compose/compose.development.api.yml" \
+              "$destination/compose.development.api.yml"
+            docker rm "$bundle_container" >/dev/null
+            bundle_container=""
+            cmp -s "$MANIFEST_JSON" "$destination/manifest.json"
+            cmp -s artifacts/api-release/compose/compose.development.api.yml \
+              "$destination/compose.development.api.yml"
+          }
+          verify_payloads "$bundle_version" "$extracted_bundle/local"
+
+          output="$(docker push "$bundle_version")"
+          printf '%s\n' "$output" >&2
+          bundle_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$bundle_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Could not resolve the pushed API release bundle digest." >&2
+            exit 1
+          }
+          bundle_ref="${bundle_repo}@${bundle_digest}"
+          docker pull "$bundle_ref" >/dev/null
+          verify_payloads "$bundle_ref" "$extracted_bundle/remote"
+          python3 scripts/deployment/api_release_manifest.py validate \
+            --manifest "$extracted_bundle/remote/manifest.json" \
+            --repository-root .. \
+            --api-compose backend/compose.development.api.yml
+
+          {
+            echo "## Immutable certified Development API release"
+            echo "- \`${bundle_ref}\`"
+            echo "- API image: \`${{ steps.publish_api.outputs.api_ref }}\`"
+            echo "- Required database: \`${{ steps.database.outputs.manifest_ref }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "manifest_ref=${bundle_ref}" >> "$GITHUB_OUTPUT"
+          echo "manifest_digest=${bundle_digest}" >> "$GITHUB_OUTPUT"
+          echo "manifest_alias=${bundle_repo}:development-certified" >> "$GITHUB_OUTPUT"
+
+      - name: Publish and verify the certified API manifest alias last
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+          MANIFEST_REF: ${{ steps.publish_bundle.outputs.manifest_ref }}
+          MANIFEST_DIGEST: ${{ steps.publish_bundle.outputs.manifest_digest }}
+          MANIFEST_ALIAS: ${{ steps.publish_bundle.outputs.manifest_alias }}
+        run: |
+          set -Eeuo pipefail
+          docker pull "$MANIFEST_REF" >/dev/null
+          docker tag "$MANIFEST_REF" "$MANIFEST_ALIAS"
+
+          bash scripts/deployment/guard-api-publication.sh "$GITHUB_SHA" >/dev/null
+          unset REPOSITORY_TOKEN
+
+          output="$(docker push "$MANIFEST_ALIAS")"
+          printf '%s\n' "$output" >&2
+          alias_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$alias_digest" == "$MANIFEST_DIGEST" ]] || {
+            echo "The API discovery alias does not resolve to its certified bundle." >&2
+            exit 1
+          }
+          {
+            echo "## Certified Development API release"
             echo "- Immutable bundle: \`${MANIFEST_REF}\`"
             echo "- Discovery alias: \`${MANIFEST_ALIAS}\`"
             echo "- Source commit: \`${GITHUB_SHA}\`"

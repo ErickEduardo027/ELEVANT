@@ -1,0 +1,672 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly MANIFEST_TOOL="$SCRIPT_DIR/manifest-tool.mjs"
+readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
+readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
+readonly ENV_TOOL="$SCRIPT_DIR/env-tool.mjs"
+readonly OCI_API_COMPOSE="/compose/compose.development.api.yml"
+
+CONFIG_FILE="${ELEVANT_API_CD_CONFIG:-/etc/dokploy/elevant/api-cd/config.env}"
+COMMAND=""
+REQUESTED_DIGEST=""
+TEST_MODE="${ELEVANT_API_CD_TEST_MODE:-0}"
+DOCKER_BIN="${ELEVANT_API_CD_DOCKER_BIN:-docker}"
+NODE_BIN="${ELEVANT_API_CD_NODE_BIN:-node}"
+WAIT_ATTEMPTS="${ELEVANT_API_CD_WAIT_ATTEMPTS:-60}"
+WAIT_INTERVAL="${ELEVANT_API_CD_WAIT_INTERVAL:-2}"
+
+CD_MANIFEST_REPOSITORY=""
+CD_MANIFEST_ALIAS=""
+CD_EXPECTED_REPOSITORY=""
+CD_EXPECTED_REF=""
+CD_API_REPOSITORY=""
+CD_DATABASE_MANIFEST_REPOSITORY=""
+CD_DATABASE_OPS_REPOSITORY=""
+CD_DATABASE_RELEASE_REPOSITORY=""
+CD_DATABASE_STATE=""
+CD_DATABASE_LOCK=""
+CD_DATABASE_MANIFEST_TOOL=""
+CD_DOCKER_CONFIG=""
+CD_PROJECT=""
+CD_COMPOSE=""
+CD_ENV=""
+CD_STATE_DIR=""
+CD_LOG_DIR=""
+CD_LOCK_FILE=""
+
+CURRENT_MANIFEST_DIGEST=""
+CURRENT_SOURCE_COMMIT=""
+CURRENT_SOURCE_RUN_ID=""
+CURRENT_SOURCE_RUN_ATTEMPT=""
+CURRENT_API_IMAGE=""
+CURRENT_API_COMPOSE_SHA256=""
+CURRENT_API_COMPOSE_PATH=""
+CURRENT_DATABASE_MANIFEST=""
+CURRENT_DATABASE_RUN_ID=""
+CURRENT_MIGRATION_FINGERPRINT=""
+CURRENT_MODEL_FINGERPRINT=""
+CURRENT_WORKFLOW_URL=""
+CURRENT_STAGE="idle"
+CURRENT_ROLLBACK_STATUS="not-required"
+MANIFEST_PATH=""
+ARTIFACT_STAGING_DIR=""
+DATABASE_STAGING_DIR=""
+LOG_READY=0
+
+log() {
+  local timestamp message log_size
+  message="$*"
+  timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf '%s %s: %s\n' "$timestamp" "$PROGRAM_NAME" "$message" >&2
+  if (( LOG_READY )); then
+    log_size="$(stat -c '%s' -- "$CD_LOG_DIR/controller.log")"
+    if (( log_size >= 10485760 )); then
+      mv -fT -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+      touch -- "$CD_LOG_DIR/controller.log"
+      chmod 0600 -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+    fi
+    printf '%s %s: %s\n' "$timestamp" "$PROGRAM_NAME" "$message" >> "$CD_LOG_DIR/controller.log"
+  fi
+}
+
+die() { log "ERROR: $*"; exit 1; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
+set_command() { [[ -z "$COMMAND" ]] || die "only one command may be selected"; COMMAND="$1"; }
+
+usage() {
+  cat <<'EOF'
+Usage:
+  elevant-api-cd [--config ABSOLUTE_PATH] --poll
+  elevant-api-cd [--config ABSOLUTE_PATH] --dry-run
+  elevant-api-cd [--config ABSOLUTE_PATH] --retry sha256:DIGEST
+  elevant-api-cd [--config ABSOLUTE_PATH] --adopt-current
+  elevant-api-cd [--config ABSOLUTE_PATH] --status
+  elevant-api-cd [--config ABSOLUTE_PATH] --pause
+  elevant-api-cd [--config ABSOLUTE_PATH] --resume
+
+The controller pulls a certified Development API bundle, gates it against the
+accepted database release, and deploys only an immutable API digest. A failed
+attempt is never retried automatically. Deployment failure rolls back to the
+last healthy API; rollback failure pauses the controller.
+EOF
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --config) (( $# >= 2 )) || die "--config requires a path"; CONFIG_FILE="$2"; shift 2 ;;
+      --poll|--dry-run|--adopt-current|--status|--pause|--resume) set_command "${1#--}"; shift ;;
+      --retry) (( $# >= 2 )) || die "--retry requires a sha256 digest"; set_command retry; REQUESTED_DIGEST="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown argument: $1" ;;
+    esac
+  done
+  [[ -n "$COMMAND" ]] || die "a command is required"
+  if [[ -n "$REQUESTED_DIGEST" ]]; then
+    [[ "$REQUESTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "requested manifest digest has an invalid format"
+  fi
+}
+
+assign_config_value() {
+  local key="$1" value="$2"
+  case "$key" in
+    ELEVANT_API_CD_MANIFEST_REPOSITORY) CD_MANIFEST_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_MANIFEST_ALIAS) CD_MANIFEST_ALIAS="$value" ;;
+    ELEVANT_API_CD_EXPECTED_REPOSITORY) CD_EXPECTED_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_EXPECTED_REF) CD_EXPECTED_REF="$value" ;;
+    ELEVANT_API_CD_API_REPOSITORY) CD_API_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_DATABASE_MANIFEST_REPOSITORY) CD_DATABASE_MANIFEST_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_DATABASE_OPS_REPOSITORY) CD_DATABASE_OPS_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_DATABASE_RELEASE_REPOSITORY) CD_DATABASE_RELEASE_REPOSITORY="$value" ;;
+    ELEVANT_API_CD_DATABASE_STATE) CD_DATABASE_STATE="$value" ;;
+    ELEVANT_API_CD_DATABASE_LOCK) CD_DATABASE_LOCK="$value" ;;
+    ELEVANT_API_CD_DATABASE_MANIFEST_TOOL) CD_DATABASE_MANIFEST_TOOL="$value" ;;
+    ELEVANT_API_CD_DOCKER_CONFIG) CD_DOCKER_CONFIG="$value" ;;
+    ELEVANT_API_CD_PROJECT) CD_PROJECT="$value" ;;
+    ELEVANT_API_CD_COMPOSE) CD_COMPOSE="$value" ;;
+    ELEVANT_API_CD_ENV) CD_ENV="$value" ;;
+    ELEVANT_API_CD_STATE_DIR) CD_STATE_DIR="$value" ;;
+    ELEVANT_API_CD_LOG_DIR) CD_LOG_DIR="$value" ;;
+    ELEVANT_API_CD_LOCK_FILE) CD_LOCK_FILE="$value" ;;
+    *) die "unsupported configuration setting: $key" ;;
+  esac
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* && -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || die "configuration must be an absolute regular, non-symlink file"
+  local expected_uid=0 metadata line key value line_number=0
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")" || die "could not inspect configuration"
+  [[ "$metadata" == "$expected_uid:600" ]] || die "configuration must be owned by the controller UID with exact mode 0600"
+  declare -A seen=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 )); line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]*)$ ]] || die "invalid configuration syntax at line $line_number"
+    key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
+    [[ -z "${seen[$key]:-}" ]] || die "duplicate configuration setting: $key"
+    seen[$key]=1; assign_config_value "$key" "$value"
+  done < "$CONFIG_FILE"
+  local required
+  for required in CD_MANIFEST_REPOSITORY CD_MANIFEST_ALIAS CD_EXPECTED_REPOSITORY CD_EXPECTED_REF CD_API_REPOSITORY CD_DATABASE_MANIFEST_REPOSITORY CD_DATABASE_OPS_REPOSITORY CD_DATABASE_RELEASE_REPOSITORY CD_DATABASE_STATE CD_DATABASE_LOCK CD_DATABASE_MANIFEST_TOOL CD_DOCKER_CONFIG CD_PROJECT CD_COMPOSE CD_ENV CD_STATE_DIR CD_LOG_DIR CD_LOCK_FILE; do
+    [[ -n "${!required}" ]] || die "missing required configuration value: $required"
+    [[ "${!required}" != *REPLACE_* ]] || die "configuration still contains a placeholder"
+  done
+  [[ "$CD_MANIFEST_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid API manifest repository"
+  [[ "$CD_API_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid API image repository"
+  [[ "$CD_DATABASE_MANIFEST_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid database manifest repository"
+  [[ "$CD_DATABASE_OPS_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid database ops repository"
+  [[ "$CD_DATABASE_RELEASE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid database release repository"
+  [[ "$CD_MANIFEST_ALIAS" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "invalid manifest alias"
+  [[ "$CD_EXPECTED_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "invalid expected GitHub repository"
+  [[ "$CD_EXPECTED_REF" == refs/heads/Development ]] || die "only refs/heads/Development is supported"
+  [[ "$CD_PROJECT" =~ ^[a-z0-9][a-z0-9_-]+$ ]] || die "invalid API Compose project"
+  local absolute
+  for absolute in "$CD_DATABASE_STATE" "$CD_DATABASE_LOCK" "$CD_DATABASE_MANIFEST_TOOL" "$CD_DOCKER_CONFIG" "$CD_COMPOSE" "$CD_ENV" "$CD_STATE_DIR" "$CD_LOG_DIR" "$CD_LOCK_FILE"; do
+    [[ "$absolute" == /* ]] || die "every configured filesystem path must be absolute"
+  done
+  [[ "$(dirname -- "$CD_LOCK_FILE")" == "$CD_STATE_DIR" ]] || die "API lock must live directly in the API state directory"
+  [[ "$CD_DATABASE_LOCK" != "$CD_LOCK_FILE" ]] || die "database and API locks must be distinct"
+  [[ "$WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ && "$WAIT_INTERVAL" =~ ^[0-9]+$ ]] || die "invalid health wait configuration"
+}
+
+ensure_runtime_directories() {
+  local expected_uid=0 directory metadata
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  for directory in "$CD_STATE_DIR" "$CD_STATE_DIR/attempts" "$CD_STATE_DIR/tmp" "$CD_STATE_DIR/compose" "$CD_STATE_DIR/compose/api" "$CD_LOG_DIR"; do
+    [[ -e "$directory" ]] || install -d -m 0700 -- "$directory"
+    [[ -d "$directory" && ! -L "$directory" ]] || die "runtime path must be a non-symlink directory: $directory"
+    metadata="$(stat -c '%u:%a' -- "$directory")"
+    [[ "$metadata" == "$expected_uid:700" ]] || die "runtime directories must be owned by the controller UID with mode 0700"
+  done
+  if [[ ! -e "$CD_LOG_DIR/controller.log" ]]; then touch -- "$CD_LOG_DIR/controller.log"; fi
+  [[ -f "$CD_LOG_DIR/controller.log" && ! -L "$CD_LOG_DIR/controller.log" ]] || die "controller log is unsafe"
+  chmod 0600 -- "$CD_LOG_DIR/controller.log"; LOG_READY=1
+}
+
+validate_restricted_file() {
+  local path="$1" expected_uid=0 metadata
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  [[ -f "$path" && ! -L "$path" ]] || die "restricted file must be regular and non-symlink: $path"
+  metadata="$(stat -c '%u:%a' -- "$path")"
+  [[ "$metadata" == "$expected_uid:600" ]] || die "restricted file must be owned by the controller UID with mode 0600: $path"
+}
+
+validate_runtime_files() {
+  local path
+  for path in "$STATE_TOOL" "$MANIFEST_TOOL" "$COMPOSE_MODEL_TOOL" "$ENV_TOOL"; do
+    [[ -f "$path" && ! -L "$path" ]] || die "required runtime helper is unavailable"
+  done
+  case "$COMMAND" in
+    status|pause|resume) return ;;
+  esac
+  [[ -f "$CD_COMPOSE" && ! -L "$CD_COMPOSE" ]] || die "live API Compose is unavailable"
+  [[ -f "$CD_DATABASE_MANIFEST_TOOL" && ! -L "$CD_DATABASE_MANIFEST_TOOL" ]] || die "database manifest validator is unavailable"
+  validate_restricted_file "$CD_ENV"
+  validate_restricted_file "$CD_DATABASE_STATE"
+  [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || die "Docker configuration directory is unavailable"
+  docker_command version >/dev/null || die "Docker daemon is unavailable"
+  docker_command compose version >/dev/null || die "Docker Compose plugin is unavailable"
+}
+
+ensure_lock_file() {
+  local path="$1" expected_uid=0 metadata
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  [[ -d "$(dirname -- "$path")" && ! -L "$(dirname -- "$path")" ]] || die "lock parent directory is unavailable"
+  if [[ ! -e "$path" ]]; then (umask 077; : > "$path") || die "could not create lock file"; fi
+  [[ -f "$path" && ! -L "$path" ]] || die "lock path must be a regular, non-symlink file"
+  metadata="$(stat -c '%u:%a' -- "$path")"
+  [[ "$metadata" == "$expected_uid:600" ]] || die "lock file must be owned by the controller UID with mode 0600"
+}
+
+acquire_locks() {
+  # Lock ordering is protocol: database first, then API. Never invert it.
+  ensure_lock_file "$CD_DATABASE_LOCK"; exec 8<>"$CD_DATABASE_LOCK"
+  flock -n 8 || die "another ELEVANT database operation is running"
+  ensure_lock_file "$CD_LOCK_FILE"; exec 9<>"$CD_LOCK_FILE"
+  flock -n 9 || die "another ELEVANT API operation is running"
+}
+
+docker_command() { DOCKER_CONFIG="$CD_DOCKER_CONFIG" "$DOCKER_BIN" "$@"; }
+manifest_ref() { printf '%s:%s\n' "$CD_MANIFEST_REPOSITORY" "$CD_MANIFEST_ALIAS"; }
+image_label() { docker_command image inspect --format "{{index .Config.Labels \"$2\"}}" "$1"; }
+
+resolve_alias_digest() {
+  local alias_ref output candidate match=""
+  alias_ref="$(manifest_ref)"
+  docker_command pull "$alias_ref" >/dev/null || die "could not pull the certified API manifest alias"
+  output="$(docker_command image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$alias_ref")" || die "could not inspect the API manifest alias"
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$CD_MANIFEST_REPOSITORY@"* && "${candidate#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+    [[ -z "$match" || "$match" == "$candidate" ]] || die "manifest alias resolved to multiple repository digests"
+    match="$candidate"
+  done <<< "$output"
+  [[ -n "$match" ]] || die "manifest alias did not resolve to an immutable digest"
+  printf '%s\n' "${match#*@}"
+}
+
+extract_api_bundle() {
+  local digest="$1" image_ref container_id staging path size
+  image_ref="$CD_MANIFEST_REPOSITORY@$digest"
+  docker_command pull "$image_ref" >/dev/null || die "could not pull the immutable API bundle"
+  staging="$(mktemp -d "$CD_STATE_DIR/tmp/api-bundle.XXXXXX")" || die "could not allocate API bundle staging"
+  chmod 0700 -- "$staging"; ARTIFACT_STAGING_DIR="$staging"
+  container_id="$(docker_command create "$image_ref")" || die "could not create API bundle extraction container"
+  if ! docker_command cp "$container_id:/manifest.json" "$staging/manifest.json" >/dev/null || ! docker_command cp "$container_id:$OCI_API_COMPOSE" "$staging/compose.development.api.yml" >/dev/null; then
+    docker_command rm -f "$container_id" >/dev/null 2>&1 || true; die "could not extract every API bundle payload"
+  fi
+  docker_command rm -f "$container_id" >/dev/null || die "could not remove API bundle extraction container"
+  for path in "$staging/manifest.json" "$staging/compose.development.api.yml"; do
+    [[ -f "$path" && ! -L "$path" ]] || die "API bundle payload is unsafe"
+    size="$(stat -c '%s' -- "$path")"; (( size >= 1 && size <= 1048576 )) || die "API bundle payload size is invalid"
+    chmod 0600 -- "$path"
+  done
+  MANIFEST_PATH="$staging/manifest.json"; CURRENT_API_COMPOSE_PATH="$staging/compose.development.api.yml"
+}
+
+manifest_tool() {
+  "$NODE_BIN" "$MANIFEST_TOOL" validate --file "$MANIFEST_PATH" --bundle-root "$ARTIFACT_STAGING_DIR" \
+    --expected-repository "$CD_EXPECTED_REPOSITORY" --expected-ref "$CD_EXPECTED_REF" \
+    --api-repository "$CD_API_REPOSITORY" --database-manifest-repository "$CD_DATABASE_MANIFEST_REPOSITORY" "$@"
+}
+manifest_get() { manifest_tool --get "$1"; }
+
+validate_bundle_labels() {
+  local ref="$CD_MANIFEST_REPOSITORY@$CURRENT_MANIFEST_DIGEST" expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$(image_label "$ref" org.opencontainers.image.revision)" == "$CURRENT_SOURCE_COMMIT" ]] || die "API bundle revision label mismatch"
+  [[ "$(image_label "$ref" org.opencontainers.image.source)" == "$expected_source" ]] || die "API bundle source label mismatch"
+  [[ "$(image_label "$ref" org.elevant.api.environment)" == Development ]] || die "API bundle environment label mismatch"
+  [[ "$(image_label "$ref" org.elevant.api.manifest.schema)" == 1 ]] || die "API bundle schema label mismatch"
+  [[ "$(image_label "$ref" io.elevant.api-release.bundle-version)" == 1 ]] || die "API bundle version label mismatch"
+  [[ "$(image_label "$ref" io.elevant.api-release.media-type)" == application/vnd.elevant.api-release-bundle.v1 ]] || die "API bundle media-type label mismatch"
+}
+
+validate_api_image() {
+  local image="$1" commit="$2" expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$image" == "$CD_API_REPOSITORY@"* && "${image#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "API image is not the configured immutable repository"
+  docker_command pull "$image" >/dev/null || die "could not pull the immutable API image"
+  [[ "$(image_label "$image" org.opencontainers.image.revision)" == "$commit" ]] || die "API image revision label mismatch"
+  [[ "$(image_label "$image" org.opencontainers.image.source)" == "$expected_source" ]] || die "API image source label mismatch"
+  [[ "$(image_label "$image" org.elevant.api.environment)" == Development ]] || die "API image environment label mismatch"
+}
+
+cached_compose_path() { printf '%s/compose/api/%s.yml\n' "$CD_STATE_DIR" "$1"; }
+validate_cached_compose() {
+  local file="$1" hash="$2" expected_uid=0 metadata
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  [[ -f "$file" && ! -L "$file" ]] || die "cached API Compose is unavailable"
+  metadata="$(stat -c '%u:%a' -- "$file")"; [[ "$metadata" == "$expected_uid:600" ]] || die "cached API Compose ownership or mode is invalid"
+  [[ "$(sha256sum -- "$file" | awk '{print $1}')" == "$hash" ]] || die "cached API Compose hash mismatch"
+}
+
+cache_compose() {
+  local source="$1" hash="$2" target temporary
+  [[ "$(sha256sum -- "$source" | awk '{print $1}')" == "$hash" ]] || die "API Compose payload hash mismatch"
+  target="$(cached_compose_path "$hash")"
+  if [[ -e "$target" ]]; then validate_cached_compose "$target" "$hash"; CURRENT_API_COMPOSE_PATH="$target"; return; fi
+  temporary="$(mktemp "$CD_STATE_DIR/compose/api/.compose.XXXXXX")" || die "could not stage API Compose"
+  install -m 0600 -- "$source" "$temporary"; mv -T -- "$temporary" "$target"
+  validate_cached_compose "$target" "$hash"; CURRENT_API_COMPOSE_PATH="$target"
+}
+
+load_manifest() {
+  CURRENT_MANIFEST_DIGEST="$1"; extract_api_bundle "$1"
+  manifest_tool >/dev/null || die "certified API manifest validation failed"
+  CURRENT_SOURCE_COMMIT="$(manifest_get source.commit)"
+  CURRENT_SOURCE_RUN_ID="$(manifest_get source.runId)"
+  CURRENT_SOURCE_RUN_ATTEMPT="$(manifest_get source.runAttempt)"
+  CURRENT_API_IMAGE="$(manifest_get images.api)"
+  CURRENT_API_COMPOSE_SHA256="$(manifest_get compose.apiSha256)"
+  CURRENT_DATABASE_MANIFEST="$(manifest_get database.requiredManifest)"
+  CURRENT_DATABASE_RUN_ID="$(manifest_get database.requiredRunId)"
+  CURRENT_MIGRATION_FINGERPRINT="$(manifest_get database.migrationFingerprint)"
+  CURRENT_MODEL_FINGERPRINT="$(manifest_get database.modelFingerprint)"
+  CURRENT_WORKFLOW_URL="$(manifest_get source.workflowUrl)"
+  validate_bundle_labels; validate_api_image "$CURRENT_API_IMAGE" "$CURRENT_SOURCE_COMMIT"
+  cache_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_COMPOSE_SHA256"
+}
+
+extract_database_bundle() {
+  local digest="$1" ref container_id staging path
+  ref="$CD_DATABASE_MANIFEST_REPOSITORY@$digest"
+  if [[ -n "$DATABASE_STAGING_DIR" ]]; then
+    case "$DATABASE_STAGING_DIR" in
+      "$CD_STATE_DIR"/tmp/database-bundle.*) rm -rf -- "$DATABASE_STAGING_DIR" ;;
+      *) die "refused unsafe previous database bundle cleanup" ;;
+    esac
+    DATABASE_STAGING_DIR=""
+  fi
+  docker_command pull "$ref" >/dev/null || die "could not pull accepted database bundle"
+  staging="$(mktemp -d "$CD_STATE_DIR/tmp/database-bundle.XXXXXX")" || die "could not allocate database bundle staging"
+  chmod 0700 -- "$staging"; DATABASE_STAGING_DIR="$staging"
+  container_id="$(docker_command create "$ref")" || die "could not create database bundle extraction container"
+  for path in manifest.json compose/compose.development.database.yml compose/compose.development.release.yml; do
+    docker_command cp "$container_id:/$path" "$staging/$(basename -- "$path")" >/dev/null || { docker_command rm -f "$container_id" >/dev/null 2>&1 || true; die "could not extract accepted database bundle"; }
+  done
+  docker_command rm -f "$container_id" >/dev/null || die "could not remove database bundle extraction container"
+  chmod 0600 -- "$staging"/*
+}
+
+database_manifest_get() {
+  "$NODE_BIN" "$CD_DATABASE_MANIFEST_TOOL" validate --file "$DATABASE_STAGING_DIR/manifest.json" --bundle-root "$DATABASE_STAGING_DIR" \
+    --expected-repository "$CD_EXPECTED_REPOSITORY" --expected-ref "$CD_EXPECTED_REF" \
+    --ops-repository "$CD_DATABASE_OPS_REPOSITORY" --release-repository "$CD_DATABASE_RELEASE_REPOSITORY" --get "$1"
+}
+
+validate_database_bundle_labels() {
+  local digest="$1" commit="$2" ref expected_source
+  ref="$CD_DATABASE_MANIFEST_REPOSITORY@$digest"
+  expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$(image_label "$ref" org.opencontainers.image.revision)" == "$commit" ]] || die "accepted database bundle revision label mismatch"
+  [[ "$(image_label "$ref" org.opencontainers.image.source)" == "$expected_source" ]] || die "accepted database bundle source label mismatch"
+  [[ "$(image_label "$ref" org.elevant.database.environment)" == Development ]] || die "accepted database bundle environment label mismatch"
+  [[ "$(image_label "$ref" org.elevant.database.manifest.schema)" == 1 ]] || die "accepted database bundle schema label mismatch"
+  [[ "$(image_label "$ref" io.elevant.database-release.schema-version)" == 1 ]] || die "accepted database bundle protocol schema mismatch"
+  [[ "$(image_label "$ref" io.elevant.database-release.bundle-version)" == 1 ]] || die "accepted database bundle version mismatch"
+  [[ "$(image_label "$ref" io.elevant.database-release.media-type)" == application/vnd.elevant.database-release-bundle.v1 ]] || die "accepted database bundle media-type mismatch"
+}
+
+database_gate() {
+  local metadata expected_uid=0 state_values db_digest db_run required_digest
+  local manifest_run manifest_commit current_migration current_model
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  metadata="$(stat -c '%u:%a' -- "$CD_DATABASE_STATE")"; [[ "$metadata" == "$expected_uid:600" ]] || die "database state ownership or mode is invalid"
+  state_values="$("$NODE_BIN" "$STATE_TOOL" validate-database-state --file "$CD_DATABASE_STATE")" || die "accepted database state is invalid"
+  IFS=$'\t' read -r db_digest db_run <<< "$state_values"
+  required_digest="${CURRENT_DATABASE_MANIFEST#*@}"
+  (( 10#$db_run >= 10#$CURRENT_DATABASE_RUN_ID )) || { log "database run is older than API requirement; deployment deferred"; return 2; }
+  extract_database_bundle "$db_digest"
+  manifest_run="$(database_manifest_get source.runId)" || die "accepted database manifest validation failed"
+  manifest_commit="$(database_manifest_get source.commit)" || die "accepted database manifest validation failed"
+  current_migration="$(database_manifest_get database.migrationFingerprint)" || die "accepted database manifest validation failed"
+  current_model="$(database_manifest_get database.modelFingerprint)" || die "accepted database manifest validation failed"
+  [[ "$manifest_run" == "$db_run" ]] || die "accepted database state and bundle run IDs differ"
+  validate_database_bundle_labels "$db_digest" "$manifest_commit"
+  if [[ "$db_digest" == "$required_digest" ]]; then
+    [[ "$db_run" == "$CURRENT_DATABASE_RUN_ID" ]] || die "required database digest has an inconsistent run ID"
+    [[ "$current_migration" == "$CURRENT_MIGRATION_FINGERPRINT" && "$current_model" == "$CURRENT_MODEL_FINGERPRINT" ]] || die "API database fingerprints differ from its exact required bundle"
+    return 0
+  fi
+  (( 10#$db_run > 10#$CURRENT_DATABASE_RUN_ID )) || { log "database digest differs at the required run; deployment deferred"; return 2; }
+  [[ "$current_migration" == "$CURRENT_MIGRATION_FINGERPRINT" && "$current_model" == "$CURRENT_MODEL_FINGERPRINT" ]] || { log "accepted database schema differs from API requirement; deployment deferred"; return 2; }
+  CURRENT_DATABASE_MANIFEST="$CD_DATABASE_MANIFEST_REPOSITORY@$db_digest"
+  CURRENT_DATABASE_RUN_ID="$db_run"
+}
+
+render_compose_hash() {
+  local file="$1" output digest
+  output="$(mktemp "$CD_STATE_DIR/tmp/compose-model.XXXXXX.json")" || die "could not allocate Compose model"
+  chmod 0600 -- "$output"
+  if ! docker_command compose --env-file /dev/null --project-directory "$(dirname -- "$CD_COMPOSE")" -p "$CD_PROJECT" -f "$file" --profile '*' config --format json --no-interpolate --no-env-resolution --no-path-resolution > "$output"; then rm -f -- "$output"; return 1; fi
+  digest="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$output")" || { rm -f -- "$output"; return 1; }
+  rm -f -- "$output"; printf '%s\n' "$digest"
+}
+
+validate_live_compose_semantics() {
+  local certified live
+  certified="$(render_compose_hash "$CURRENT_API_COMPOSE_PATH")" || die "could not render certified API Compose"
+  live="$(render_compose_hash "$CD_COMPOSE")" || die "could not render live API Compose"
+  [[ "$certified" == "$live" ]] || die "live API Compose semantics differ from the certified payload"
+}
+
+api_compose() {
+  local file="$1" image="$2"; shift 2
+  ELEVANT_API_IMAGE="$image" docker_command compose --env-file "$CD_ENV" --project-directory "$(dirname -- "$CD_COMPOSE")" -p "$CD_PROJECT" -f "$file" "$@"
+}
+
+read_env_image() {
+  local line value="" count=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"; [[ "$line" == ELEVANT_API_IMAGE=* ]] || continue
+    (( count += 1 )); value="${line#*=}"
+  done < "$CD_ENV"
+  [[ "$count" == 1 ]] || die "API environment must define ELEVANT_API_IMAGE exactly once"
+  if [[ "$value" == \"*\" ]]; then value="${value:1:${#value}-2}"; fi
+  [[ "$value" == "$CD_API_REPOSITORY@"* && "${value#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "live API image is not an expected immutable reference"
+  printf '%s\n' "$value"
+}
+
+set_env_image() { "$NODE_BIN" "$ENV_TOOL" set --file "$CD_ENV" --key ELEVANT_API_IMAGE --value "$1"; }
+
+container_id() {
+  local output
+  output="$(docker_command container ls --all --quiet --no-trunc --filter "label=com.docker.compose.project=$CD_PROJECT" --filter 'label=com.docker.compose.service=api')" || return 1
+  [[ "$output" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$output"
+}
+
+wait_healthy() {
+  local attempt id inspect status health restarts
+  for (( attempt=1; attempt<=WAIT_ATTEMPTS; attempt+=1 )); do
+    id="$(container_id 2>/dev/null || true)"
+    if [[ -n "$id" ]]; then
+      inspect="$(docker_command container inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}} {{.RestartCount}}' "$id" 2>/dev/null || true)"
+      read -r status health restarts <<< "$inspect"
+      [[ "$status" == running && "$health" == healthy && "$restarts" == 0 ]] && return 0
+      [[ "$status" == exited || "$status" == dead || "$health" == unhealthy ]] && return 1
+    fi
+    (( WAIT_INTERVAL == 0 )) || sleep "$WAIT_INTERVAL"
+  done
+  return 1
+}
+
+smoke_api() {
+  local id
+  id="$(container_id)" || return 1
+  docker_command container exec "$id" dotnet Elevant.Api.dll --smoke-probe
+}
+
+preflight() {
+  validate_cached_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_COMPOSE_SHA256"
+  validate_api_image "$CURRENT_API_IMAGE" "$CURRENT_SOURCE_COMMIT"
+  validate_live_compose_semantics
+  api_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_IMAGE" config --quiet
+  database_gate
+}
+
+state_get() { "$NODE_BIN" "$STATE_TOOL" get --file "$1" --field "$2"; }
+attempt_file() { printf '%s/attempts/%s.json\n' "$CD_STATE_DIR" "${1#sha256:}"; }
+
+write_state_file() {
+  "$NODE_BIN" "$STATE_TOOL" write --file "$1" \
+    --set "status=$2" --set "stage=$3" --set "manifestDigest=$CURRENT_MANIFEST_DIGEST" \
+    --set "sourceCommit=$CURRENT_SOURCE_COMMIT" --set "sourceRunId=$CURRENT_SOURCE_RUN_ID" \
+    --set "sourceRunAttempt=$CURRENT_SOURCE_RUN_ATTEMPT" --set "apiImage=$CURRENT_API_IMAGE" \
+    --set "apiComposeSha256=$CURRENT_API_COMPOSE_SHA256" --set "databaseManifest=$CURRENT_DATABASE_MANIFEST" \
+    --set "databaseRunId=$CURRENT_DATABASE_RUN_ID" --set "migrationFingerprint=$CURRENT_MIGRATION_FINGERPRINT" \
+    --set "modelFingerprint=$CURRENT_MODEL_FINGERPRINT" --set "rollbackStatus=$CURRENT_ROLLBACK_STATUS" \
+    --set "messageCode=$4" --set "updatedAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --set "workflowUrl=$CURRENT_WORKFLOW_URL"
+}
+
+persist_attempt() { write_state_file "$CD_STATE_DIR/current.json" "$1" "$2" "$3"; write_state_file "$(attempt_file "$CURRENT_MANIFEST_DIGEST")" "$1" "$2" "$3"; }
+begin_stage() { CURRENT_STAGE="$1"; persist_attempt running "$1" stage_running; log "stage=$1 started"; }
+complete_stage() { log "stage=$CURRENT_STAGE completed"; }
+is_paused() { [[ -e "$CD_STATE_DIR/paused" ]]; }
+
+load_last_success() {
+  local file="$CD_STATE_DIR/last-success.json" status
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  status="$(state_get "$file" status)"; [[ "$status" == succeeded || "$status" == adopted ]] || die "last-success API state is invalid"
+  LAST_API_IMAGE="$(state_get "$file" apiImage)"
+  LAST_API_COMPOSE_SHA256="$(state_get "$file" apiComposeSha256)"
+  LAST_SOURCE_COMMIT="$(state_get "$file" sourceCommit)"
+  LAST_API_COMPOSE_PATH="$(cached_compose_path "$LAST_API_COMPOSE_SHA256")"
+  [[ "$LAST_API_IMAGE" == "$CD_API_REPOSITORY@"* && "${LAST_API_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "last-success API image is invalid"
+  validate_cached_compose "$LAST_API_COMPOSE_PATH" "$LAST_API_COMPOSE_SHA256"
+}
+
+rollback() {
+  log "rollback started"
+  if (
+    # The subshell is the condition of this `if`, so Bash does not guarantee
+    # errexit for every command in its body. Keep every boundary explicit.
+    load_last_success || exit 1
+    validate_api_image "$LAST_API_IMAGE" "$LAST_SOURCE_COMMIT" || exit 1
+    set_env_image "$LAST_API_IMAGE" || exit 1
+    api_compose "$LAST_API_COMPOSE_PATH" "$LAST_API_IMAGE" config --quiet || exit 1
+    api_compose "$LAST_API_COMPOSE_PATH" "$LAST_API_IMAGE" pull api || exit 1
+    api_compose "$LAST_API_COMPOSE_PATH" "$LAST_API_IMAGE" up -d --no-build --no-deps --force-recreate api || exit 1
+    wait_healthy || exit 1
+    smoke_api || exit 1
+  ); then
+    CURRENT_ROLLBACK_STATUS=succeeded
+    log "rollback completed"
+    return 0
+  fi
+  CURRENT_ROLLBACK_STATUS=failed
+  return 1
+}
+
+fail_deployment() {
+  local stage="$1"
+  if rollback; then
+    persist_attempt failed "$stage" deployment_failed_rolled_back
+    log "deployment failed at stage=$stage; rollback succeeded; explicit retry is required"
+  else
+    CURRENT_ROLLBACK_STATUS=failed; command_pause_internal
+    persist_attempt failed "$stage" deployment_and_rollback_failed
+    log "deployment and rollback failed; controller paused"
+  fi
+  return 1
+}
+
+deploy() {
+  log "promotion accepted commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+  begin_stage preflight
+  if ! preflight; then persist_attempt failed preflight preflight_failed; return 1; fi
+  complete_stage
+  begin_stage deploy
+  set_env_image "$CURRENT_API_IMAGE" || { fail_deployment deploy; return 1; }
+  api_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_IMAGE" pull api || { fail_deployment deploy; return 1; }
+  api_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_IMAGE" up -d --no-build --no-deps --force-recreate api || { fail_deployment deploy; return 1; }
+  complete_stage
+  begin_stage health
+  wait_healthy || { fail_deployment health; return 1; }
+  complete_stage
+  begin_stage smoke
+  smoke_api || { fail_deployment smoke; return 1; }
+  complete_stage
+  CURRENT_STAGE=complete; CURRENT_ROLLBACK_STATUS=not-required
+  write_state_file "$CD_STATE_DIR/last-success.json" succeeded complete promotion_succeeded
+  persist_attempt succeeded complete promotion_succeeded
+  log "promotion completed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+
+candidate_is_newer() {
+  [[ -f "$CD_STATE_DIR/last-success.json" ]] || return 0
+  local accepted
+  accepted="$(state_get "$CD_STATE_DIR/last-success.json" sourceRunId)"
+  [[ -z "$accepted" ]] || (( 10#$CURRENT_SOURCE_RUN_ID > 10#$accepted ))
+}
+
+command_poll() {
+  is_paused && { log "controller is paused; poll skipped"; return 0; }
+  local digest attempt status gate_status
+  digest="$(resolve_alias_digest)"; load_manifest "$digest"
+  if [[ -f "$CD_STATE_DIR/last-success.json" && "$(state_get "$CD_STATE_DIR/last-success.json" manifestDigest)" == "$digest" ]]; then log "manifest=$digest is already accepted; poll is a no-op"; return 0; fi
+  candidate_is_newer || { log "manifest=$digest is older than or equal to the accepted workflow run; poll is a no-op"; return 0; }
+  attempt="$(attempt_file "$digest")"
+  if [[ -f "$attempt" ]]; then
+    status="$(state_get "$attempt" status)"
+    case "$status" in
+      succeeded|adopted) log "manifest=$digest is already accepted; poll is a no-op"; return 0 ;;
+      failed) log "manifest=$digest previously failed; automatic retry is disabled"; return 0 ;;
+      running)
+        if rollback; then persist_attempt failed interrupted interrupted_attempt_rolled_back; else CURRENT_ROLLBACK_STATUS=failed; command_pause_internal; persist_attempt failed interrupted interrupted_attempt_rollback_failed; fi
+        log "manifest=$digest had an interrupted attempt; explicit retry is required"; return 0 ;;
+      *) die "attempt state contains an unsupported status" ;;
+    esac
+  fi
+  if database_gate; then :; else gate_status=$?; [[ "$gate_status" == 2 ]] && return 0; return "$gate_status"; fi
+  deploy
+}
+
+command_dry_run() {
+  local digest gate_status
+  digest="$(resolve_alias_digest)"; load_manifest "$digest"
+  if preflight; then
+    :
+  else
+    gate_status=$?
+    return "$gate_status"
+  fi
+  log "dry-run passed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+
+command_retry() {
+  is_paused && die "controller is paused"
+  local advertised attempt
+  advertised="$(resolve_alias_digest)"; [[ "$advertised" == "$REQUESTED_DIGEST" ]] || die "retry digest is not currently advertised"
+  load_manifest "$REQUESTED_DIGEST"; candidate_is_newer || die "retry manifest is not newer than last success"
+  attempt="$(attempt_file "$REQUESTED_DIGEST")"; [[ -f "$attempt" && "$(state_get "$attempt" status)" == failed ]] || die "only a recorded failed manifest may be retried"
+  database_gate || die "database compatibility gate did not pass"
+  deploy
+}
+
+command_adopt_current() {
+  is_paused && die "controller is paused"
+  [[ ! -e "$CD_STATE_DIR/last-success.json" ]] || die "an API baseline already exists"
+  CURRENT_API_IMAGE="$(read_env_image)"
+  CURRENT_SOURCE_COMMIT="$(image_label "$CURRENT_API_IMAGE" org.opencontainers.image.revision)"
+  [[ "$CURRENT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "live API revision is invalid"
+  validate_api_image "$CURRENT_API_IMAGE" "$CURRENT_SOURCE_COMMIT"
+  CURRENT_API_COMPOSE_SHA256="$(sha256sum -- "$CD_COMPOSE" | awk '{print $1}')"; CURRENT_API_COMPOSE_PATH="$CD_COMPOSE"; cache_compose "$CD_COMPOSE" "$CURRENT_API_COMPOSE_SHA256"
+  api_compose "$CURRENT_API_COMPOSE_PATH" "$CURRENT_API_IMAGE" config --quiet
+  wait_healthy && smoke_api || die "live API baseline is not healthy"
+  local values db_digest db_run db_manifest_run db_manifest_commit
+  values="$("$NODE_BIN" "$STATE_TOOL" validate-database-state --file "$CD_DATABASE_STATE")" || die "database baseline is not successful"
+  IFS=$'\t' read -r db_digest db_run <<< "$values"
+  extract_database_bundle "$db_digest"
+  db_manifest_run="$(database_manifest_get source.runId)"
+  db_manifest_commit="$(database_manifest_get source.commit)"
+  [[ "$db_manifest_run" == "$db_run" ]] || die "database state and bundle run IDs differ"
+  validate_database_bundle_labels "$db_digest" "$db_manifest_commit"
+  CURRENT_DATABASE_MANIFEST="$CD_DATABASE_MANIFEST_REPOSITORY@$db_digest"; CURRENT_DATABASE_RUN_ID="$db_run"
+  CURRENT_MIGRATION_FINGERPRINT="$(database_manifest_get database.migrationFingerprint)"; CURRENT_MODEL_FINGERPRINT="$(database_manifest_get database.modelFingerprint)"
+  CURRENT_STAGE=adopted-current; CURRENT_ROLLBACK_STATUS=not-required
+  write_state_file "$CD_STATE_DIR/last-success.json" adopted adopted-current baseline_adopted
+  write_state_file "$CD_STATE_DIR/current.json" adopted adopted-current baseline_adopted
+  log "live API baseline adopted commit=$CURRENT_SOURCE_COMMIT"
+}
+
+command_pause_internal() {
+  local temporary
+  temporary="$(mktemp "$CD_STATE_DIR/.paused.XXXXXX")"
+  chmod 0600 -- "$temporary"; printf 'paused\n' > "$temporary"; mv -fT -- "$temporary" "$CD_STATE_DIR/paused"
+}
+command_pause() { command_pause_internal; log "controller paused"; }
+command_resume() { rm -f -- "$CD_STATE_DIR/paused"; log "controller resumed"; }
+command_status() {
+  is_paused && printf 'paused=true\n' || printf 'paused=false\n'
+  printf 'current:\n'; "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/current.json"
+  printf 'last-success:\n'; "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/last-success.json"
+}
+
+cleanup() {
+  if [[ -n "$ARTIFACT_STAGING_DIR" ]]; then case "$ARTIFACT_STAGING_DIR" in "$CD_STATE_DIR"/tmp/api-bundle.*) rm -rf -- "$ARTIFACT_STAGING_DIR" ;; *) log "WARNING: refused unsafe API bundle cleanup" ;; esac; fi
+  if [[ -n "$DATABASE_STAGING_DIR" ]]; then case "$DATABASE_STAGING_DIR" in "$CD_STATE_DIR"/tmp/database-bundle.*) rm -rf -- "$DATABASE_STAGING_DIR" ;; *) log "WARNING: refused unsafe database bundle cleanup" ;; esac; fi
+}
+on_exit() { local result=$?; set +e; cleanup; return "$result"; }
+
+main() {
+  trap on_exit EXIT; parse_args "$@"
+  [[ "$TEST_MODE" == 1 ]] || (( EUID == 0 )) || die "must run as root inside the private Dokploy container"
+  for command in "$DOCKER_BIN" "$NODE_BIN" awk chmod date dirname flock id install mktemp mv rm sha256sum sleep stat touch; do require_command "$command"; done
+  load_config; ensure_runtime_directories
+  if [[ "$COMMAND" == status ]]; then validate_runtime_files; command_status; return; fi
+  acquire_locks
+  if [[ "$COMMAND" == poll && -e "$CD_STATE_DIR/paused" ]]; then log "controller is paused; poll skipped"; return; fi
+  validate_runtime_files
+  case "$COMMAND" in
+    poll) command_poll ;; dry-run) command_dry_run ;; retry) command_retry ;;
+    adopt-current) command_adopt_current ;; pause) command_pause ;; resume) command_resume ;;
+    *) die "internal command dispatch error" ;;
+  esac
+}
+
+main "$@"

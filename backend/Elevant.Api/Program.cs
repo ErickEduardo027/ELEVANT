@@ -1,7 +1,20 @@
 using Elevant.Api.Extensions;
+using Elevant.Api.HealthChecks;
 using Elevant.Application;
 using Elevant.Infrastructure;
 using Elevant.Persistence;
+
+if (ContainerHealthProbe.IsRequested(args))
+{
+    Environment.ExitCode = await ContainerHealthProbe.RunAsync();
+    return;
+}
+
+if (ContainerHealthProbe.IsSmokeRequested(args))
+{
+    Environment.ExitCode = await ContainerHealthProbe.RunSmokeAsync();
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 

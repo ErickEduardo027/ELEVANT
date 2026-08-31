@@ -48,6 +48,33 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
     }
 
     [Fact]
+    public async Task ReadinessRejectsAnUnavailableOrIncorrectDatabaseTarget()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/health/ready",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        await using var body = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var document = await JsonDocument.ParseAsync(
+            body,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal("unhealthy", document.RootElement.GetProperty("status").GetString());
+        var checks = document.RootElement.GetProperty("checks")
+            .EnumerateArray()
+            .ToDictionary(
+                check => check.GetProperty("name").GetString()!,
+                check => check.GetProperty("status").GetString());
+
+        Assert.Equal("unhealthy", checks["database-target"]);
+        Assert.Equal("unhealthy", checks["sql-server"]);
+    }
+
+    [Fact]
     public async Task TestingEnvironmentPublishesVersionOneOpenApiDocument()
     {
         using var client = factory.CreateClient();
