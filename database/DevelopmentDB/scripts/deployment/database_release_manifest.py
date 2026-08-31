@@ -18,12 +18,27 @@ SCHEMA_VERSION = 1
 DEVELOPMENT_REF = "refs/heads/Development"
 DEVELOPMENT_ENVIRONMENT = "Development"
 
-DATABASE_COMPOSE = Path("infrastructure/docker/compose.development.database.yml")
-RELEASE_COMPOSE = Path("infrastructure/docker/compose.development.release.yml")
-MIGRATIONS_DIRECTORY = Path("src/Elevant.Infrastructure/Persistence/Migrations")
+DEVELOPMENT_DATABASE_ROOT = Path("database/DevelopmentDB")
+DATABASE_COMPOSE = DEVELOPMENT_DATABASE_ROOT / "compose.development.database.yml"
+RELEASE_COMPOSE = DEVELOPMENT_DATABASE_ROOT / "compose.development.release.yml"
+MIGRATIONS_DIRECTORY = (
+    DEVELOPMENT_DATABASE_ROOT
+    / "Elevant.Persistence"
+    / "Persistence"
+    / "Migrations"
+)
 MODEL_SNAPSHOT = MIGRATIONS_DIRECTORY / "ElevantDbContextModelSnapshot.cs"
-DEVELOPMENT_SEED = Path(
-    "src/Elevant.Infrastructure/Persistence/Seed/DevelopmentDataSeeder.cs"
+DEVELOPMENT_SEED = (
+    DEVELOPMENT_DATABASE_ROOT
+    / "Elevant.Persistence"
+    / "Persistence"
+    / "Seed"
+    / "DevelopmentDataSeeder.cs"
+)
+# Schema v1 fingerprints intentionally retain the pre-reorganization logical
+# migration label. Published manifests treat physical moves as fingerprint-neutral.
+MIGRATION_FINGERPRINT_DIRECTORY = Path(
+    "src/Elevant.Infrastructure/Persistence/Migrations"
 )
 
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -75,16 +90,10 @@ def _sha256_file(path: Path) -> str:
         raise ManifestError(f"Required source file is missing: {path}") from error
 
 
-def _select_source_root(
-    backend_root: Path | None,
-    repository_root: Path | None,
-) -> Path:
-    if backend_root is not None and repository_root is not None:
-        _fail("Specify exactly one source root: backend_root or repository_root.")
-    selected_root = repository_root if repository_root is not None else backend_root
-    if selected_root is None:
-        _fail("A source root is required to fingerprint checked-out sources.")
-    resolved_root = selected_root.resolve()
+def _select_source_root(repository_root: Path | None) -> Path:
+    if repository_root is None:
+        _fail("A repository root is required to fingerprint checked-out sources.")
+    resolved_root = repository_root.resolve()
     if not resolved_root.is_dir():
         _fail(f"Source root is missing or is not a directory: {resolved_root}")
     return resolved_root
@@ -210,7 +219,11 @@ def _migration_sources(
 
     source_files: list[Path] = []
     for migration_file in migration_files:
-        designer_file = migration_file.with_name(f"{migration_file.stem}.Designer.cs")
+        designer_file = _resolve_within_source_root(
+            source_root,
+            migration_file.with_name(f"{migration_file.stem}.Designer.cs"),
+            f"migration designer {migration_file.stem}.Designer.cs",
+        )
         if not designer_file.is_file():
             _fail(f"Migration designer is missing: {designer_file}")
         source_files.extend((migration_file, designer_file))
@@ -221,10 +234,10 @@ def _migration_sources(
 def _migration_fingerprint(source_files: list[Path]) -> str:
     digest = hashlib.sha256()
     for source_file in source_files:
-        # Keep the historical logical label so moving an unchanged migration chain
-        # from the legacy backend layout to the split database layout is fingerprint
-        # neutral. Physical source paths are deliberately not part of schema v1.
-        logical_path = (MIGRATIONS_DIRECTORY / source_file.name).as_posix()
+        # Physical source paths are deliberately not part of schema v1.
+        logical_path = (
+            MIGRATION_FINGERPRINT_DIRECTORY / source_file.name
+        ).as_posix()
         digest.update(logical_path.encode("utf-8"))
         digest.update(b"\0")
         digest.update(source_file.read_bytes())
@@ -285,13 +298,10 @@ def _validate_image_reference(value: Any, location: str, expected_repository: st
 
 def validate_manifest(
     document: Any,
-    backend_root: Path | None = None,
     *,
     repository_root: Path | None = None,
     source_paths: ManifestSourcePaths | None = None,
 ) -> dict[str, Any]:
-    if repository_root is not None and source_paths is None:
-        _fail("repository_root requires explicit manifest source paths.")
     manifest = _expect_object(
         document,
         "manifest",
@@ -376,8 +386,8 @@ def validate_manifest(
             database[fingerprint_name], f"database.{fingerprint_name}", SHA256_RE
         )
 
-    if backend_root is not None or repository_root is not None:
-        source_root = _select_source_root(backend_root, repository_root)
+    if repository_root is not None:
+        source_root = _select_source_root(repository_root)
         expected = _source_fingerprints(
             source_root,
             source_paths or ManifestSourcePaths(),
@@ -392,8 +402,7 @@ def validate_manifest(
 
 def generate_manifest(
     *,
-    backend_root: Path | None = None,
-    repository_root: Path | None = None,
+    repository_root: Path,
     source_paths: ManifestSourcePaths | None = None,
     repository: str,
     ref: str,
@@ -404,9 +413,7 @@ def generate_manifest(
     release_image: str,
     published_at: str | None = None,
 ) -> dict[str, Any]:
-    if repository_root is not None and source_paths is None:
-        _fail("repository_root requires explicit manifest source paths.")
-    source_root = _select_source_root(backend_root, repository_root)
+    source_root = _select_source_root(repository_root)
     selected_source_paths = source_paths or ManifestSourcePaths()
     fingerprints = _source_fingerprints(source_root, selected_source_paths)
     document: dict[str, Any] = {
@@ -506,9 +513,7 @@ def _source_paths_from_arguments(arguments: argparse.Namespace) -> ManifestSourc
     )
 
 
-def _require_complete_repository_layout(arguments: argparse.Namespace) -> None:
-    if arguments.repository_root is None:
-        return
+def _require_complete_source_layout(arguments: argparse.Namespace) -> None:
     required_paths = {
         "--database-compose": arguments.database_compose,
         "--release-compose": arguments.release_compose,
@@ -516,10 +521,14 @@ def _require_complete_repository_layout(arguments: argparse.Namespace) -> None:
         "--model-snapshot": arguments.model_snapshot,
         "--development-seed": arguments.development_seed,
     }
+    if all(value is None for value in required_paths.values()):
+        return
+    if arguments.repository_root is None:
+        _fail("Explicit source paths require --repository-root.")
     missing = [flag for flag, value in required_paths.items() if value is None]
     if missing:
         _fail(
-            "--repository-root requires a complete explicit source layout; "
+            "Source path overrides must describe one complete layout; "
             f"missing={missing}."
         )
 
@@ -529,16 +538,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate = subparsers.add_parser("generate", help="Generate a validated manifest.")
-    generate_root = generate.add_mutually_exclusive_group(required=True)
-    generate_root.add_argument(
-        "--backend-root",
-        type=Path,
-        help="Legacy backend checkout root.",
-    )
-    generate_root.add_argument(
+    generate.add_argument(
         "--repository-root",
         type=Path,
-        help="Repository root for an explicitly configured split layout.",
+        required=True,
+        help="Repository root containing the canonical DevelopmentDB layout.",
     )
     _add_source_path_arguments(generate)
     generate.add_argument("--repository", required=True)
@@ -553,16 +557,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     validate = subparsers.add_parser("validate", help="Validate an existing manifest.")
     validate.add_argument("--manifest", type=Path, required=True)
-    validate_root = validate.add_mutually_exclusive_group()
-    validate_root.add_argument(
-        "--backend-root",
-        type=Path,
-        help="Also require all source fingerprints to match this backend checkout.",
-    )
-    validate_root.add_argument(
+    validate.add_argument(
         "--repository-root",
         type=Path,
-        help="Also require fingerprints to match an explicitly configured repository checkout.",
+        help="Also require fingerprints to match the repository checkout.",
     )
     _add_source_path_arguments(validate)
     return parser
@@ -572,11 +570,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     arguments = parser.parse_args(argv)
     try:
-        _require_complete_repository_layout(arguments)
+        _require_complete_source_layout(arguments)
         source_paths = _source_paths_from_arguments(arguments)
         if arguments.command == "generate":
             document = generate_manifest(
-                backend_root=arguments.backend_root,
                 repository_root=arguments.repository_root,
                 source_paths=source_paths,
                 repository=arguments.repository,
@@ -591,17 +588,8 @@ def main(argv: list[str] | None = None) -> int:
             _write_json(arguments.output, document)
             print(f"Generated validated database release manifest: {arguments.output}")
         else:
-            if (
-                arguments.backend_root is None
-                and arguments.repository_root is None
-                and source_paths != ManifestSourcePaths()
-            ):
-                _fail(
-                    "Explicit source paths require --backend-root or --repository-root."
-                )
             validate_manifest(
                 _read_json(arguments.manifest),
-                arguments.backend_root,
                 repository_root=arguments.repository_root,
                 source_paths=source_paths,
             )

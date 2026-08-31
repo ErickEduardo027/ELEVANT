@@ -44,6 +44,12 @@ Antes de habilitar Production se decide como mínimo:
 - autenticación, autorización tenant y auditoría completas;
 - prueba de carga, restore y rollback.
 
+Los backups de Production usan credenciales distintas de la API y de la
+administración ordinaria de SQL Server. Cada fallo tiene un responsable, las
+restauraciones se ensayan periódicamente en un ambiente aislado y se conserva
+evidencia del resultado y del tiempo empleado. La rotación nunca elimina la
+última copia verificada.
+
 ## Promoción
 
 Se promueve el mismo artefacto inmutable probado, no se reconstruye para Production. Un release coordinado sigue `migración compatible -> API -> clientes`. Los cambios deben ser backward-compatible porque API, ambas webs y Mobile tienen ciclos independientes.

@@ -36,12 +36,13 @@ La interfaz completa se consulta con:
 python database/DevelopmentDB/scripts/deployment/database_release_manifest.py --help
 ```
 
-`--backend-root` conserva la interfaz histórica. Para la estructura separada,
-`--repository-root` exige declarar las cinco rutas de origen de forma explícita
-(`--database-compose`, `--release-compose`, `--migrations-directory`,
-`--model-snapshot` y `--development-seed`). Las rutas deben permanecer dentro
-del checkout seleccionado. El cambio físico de ubicación no altera las huellas
-de migraciones de schema v1 cuando los bytes y la cadena lógica son idénticos.
+`--repository-root` selecciona el checkout que contiene
+`database/DevelopmentDB`. Las cinco rutas canónicas se usan por defecto; si se
+personaliza una, deben declararse también `--database-compose`,
+`--release-compose`, `--migrations-directory`, `--model-snapshot` y
+`--development-seed`. Todas deben permanecer dentro del checkout seleccionado.
+La huella de migraciones de schema v1 conserva su etiqueta lógica histórica,
+por lo que un cambio físico de ubicación no altera el contrato publicado.
 
 Las pruebas unitarias viven en
 `database/DevelopmentDB/tests/scripts/test_database_release_manifest.py`.
@@ -53,9 +54,10 @@ helper actualiza `origin/Development` y solo autoriza la publicación cuando el
 commit de la ejecución sigue siendo el tip, o cuando los commits posteriores no
 modifican ninguna entrada propiedad de la base de datos. Rechaza revisiones que
 ya no son ancestros de Development y avances que cambian rutas de base de datos.
-Durante la reorganización reconoce tanto las rutas históricas bajo `backend`
-como `database/**` y los proyectos .NET aplanados, sin clasificar los frontends
-como entradas de publicación de base de datos.
+La clasificación cubre únicamente los insumos canónicos: la toolchain .NET de
+la raíz, los proyectos del backend que requiere el bundle y
+`database/DevelopmentDB/**`. Los frontends y la frontera futura
+`database/ProductionDB` no son entradas de publicación de Development.
 
 La suite determinista usa repositorios Git temporales y un `origin` local, por
 lo que valida el `fetch`, la ascendencia y la clasificación de rutas sin acceder
