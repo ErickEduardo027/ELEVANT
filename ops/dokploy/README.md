@@ -21,12 +21,14 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | `ssh/` | Drop-in key-only, verificación efectiva y rollback acotado |
 | `traefik/` | Reconciliación manual y rollback a partir del contrato auditado |
 | `observability/` | Compose privado de Beszel y contrato de alertas |
-| `database-cd/` | Controlador pull-based, lock y estado persistente para promover la DB Development |
+| `database-cd/` | Controlador pull-based, bundle OCI v1, cache Compose, lock y estado persistente para promover la DB Development |
 
-Los Compose certificados de SQL permanecen en `backend/infrastructure/docker`.
-`database-cd` solo los orquesta por sus rutas y digests aprobados; no posee el
-esquema, secretos ni volúmenes. Separar estos artefactos evita que una
-actualización del control plane cambie el ciclo de vida de la base.
+Las fuentes Compose certificadas de SQL permanecen en
+`backend/infrastructure/docker` y cada entrega incluye sus bytes exactos en el
+bundle OCI. `database-cd` los valida, cachea por hash y compara semánticamente
+con los Raw vivos; no posee el esquema, secretos ni volúmenes. Separar estos
+artefactos evita que una actualización del control plane cambie el ciclo de
+vida de la base.
 
 ## Validación mínima
 

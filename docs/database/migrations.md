@@ -59,22 +59,27 @@ El bootstrap crea la base y su marcador antes de EF. No adopta silenciosamente u
 3. En un push DB-owned válido a `Development`, publica ambas imágenes GHCR y
    registra referencias inmutables por digest.
 4. CI genera y valida un manifiesto de entrega con esos digests, hashes de
-   Compose y fingerprints de cadena de migraciones/modelo/seed.
-5. Solo después de publicar todo lo anterior mueve el alias OCI
+   Compose y fingerprints de cadena de migraciones/modelo/seed, y crea el bundle
+   OCI v1 con ese JSON y los dos Compose exactos.
+5. CI extrae y compara los tres payloads. Solo después de publicar todo lo
+   anterior mueve el alias OCI
    `development-certified`; el alias es descubrimiento, no identidad de
    ejecución.
-6. El controlador privado resuelve el digest del manifiesto y, bajo lock
-   exclusivo, ejecuta backup -> migrator -> seeder -> verify -> backup ->
-   restore-check usando solo referencias `@sha256:`.
+6. El controlador privado resuelve el digest del bundle, valida sus labels,
+   manifiesto y hashes, cachea ambos Compose y exige equivalencia semántica con
+   los Raw vivos. Bajo lock exclusivo ejecuta backup -> migrator -> seeder ->
+   verify -> backup -> restore-check usando solo imágenes `@sha256:` y Compose
+   certificados.
 7. Solo tras todos los códigos cero registra la entrega como aceptada. La futura
    API compatible puede desplegarse después por su carril independiente.
 
 Las referencias mutables `:development` y `:development-certified` sirven para
 descubrimiento. Los contenedores ejecutados siempre quedan fijados a
-`@sha256:...`.
+`@sha256:...`; sus definiciones Compose se cargan desde el cache content-addressed
+de la entrega aceptada, no desde un tag ni desde el Raw vivo.
 
 Un fallo queda bloqueado y no se reintenta por polling. Corrija el código y
-publique otro manifiesto o use el retry manual explícito solo después de
+publique otro bundle o use el retry manual explícito solo después de
 resolver una causa externa. No haga retry editando la base.
 
 ## Cambios incompatibles

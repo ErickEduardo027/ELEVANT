@@ -237,38 +237,53 @@ en checkpoints y conserva AutoDeploy desactivado en ambos Compose.
 
 Orden obligatorio:
 
-1. fusionar el PR y esperar el primer manifiesto
-   `development-certified` completamente verde;
-2. exportar el paquete `ops/dokploy/database-cd` del commit aprobado, verificar
-   su hash y transferirlo desde **PowerShell del PC**; el paquete debe conservar
-   finales de línea LF aunque se prepare en Windows;
-3. desde **SSH `elevant-ops` por Tailscale**, instalar en
+1. En **GitHub desde el navegador del operador**, fusionar el PR y esperar el
+   primer bundle OCI v1 `development-certified` completamente verde. Debe
+   contener `/manifest.json` y los dos Compose, y declarar
+   `bundle-version=1` y el media type v1; un artefacto de solo manifiesto no es
+   candidato para este rollout.
+2. En **PowerShell local del PC**, exportar el paquete
+   `ops/dokploy/database-cd` del commit aprobado, verificar su hash y
+   transferirlo; el paquete debe conservar finales de línea LF aunque se prepare
+   en Windows.
+3. En la **terminal SSH `elevant-ops` por Tailscale**, instalar en
    `/etc/dokploy/elevant/database-cd`, crear config/state/lock con permisos
-   root-only y ejecutar el preflight sin mostrar `.env`; `verify-runtime`
-   resuelve el servicio Swarm `dokploy` únicamente cuando tiene una sola tarea
-   local activa;
-4. registrar los nombres y rutas exactos de los dos proyectos Raw existentes,
-   los hashes Compose aprobados y los repositorios GHCR esperados;
-5. opcionalmente crear en GitHub un fine-grained PAT dedicado con solo
+   root-only y ejecutar `verify-runtime` sin mostrar `.env`. El verificador
+   exige `compose config` con las opciones de render semántico y resuelve el
+   servicio Swarm `dokploy` únicamente cuando tiene una sola tarea local activa.
+4. En esa misma **terminal SSH**, registrar los nombres y rutas exactos de los
+   dos proyectos Raw existentes, sus `.env`, los hashes Compose aprobados y los
+   repositorios GHCR esperados.
+5. Opcionalmente, en **GitHub desde el navegador del operador**, crear un
+   fine-grained PAT dedicado con solo
    `Metadata: read` y `Commit statuses: read and write`; guardarlo únicamente en
-   el token file root-only indicado por el runbook;
-6. resolver nuevamente el ID completo de la única tarea local activa de
-   `dokploy` antes de cada `docker container exec`, ejecutar `--dry-run` y
-   `--adopt-current`; `--status` debe mostrar baseline sin secretos y la DB v1
-   viva no se vuelve a migrar;
-7. crear en la página global **Schedules**, sin seleccionar servidor externo,
-   un job interno `dokploy-server` de polling cada minuto, inicialmente
-   disabled, cuyo script solo invoque `--poll`; no usar `server`, Application ni
-   Compose Job;
-8. reemplazar los cuerpos de backup/restore existentes por `--backup` y
-   `--restore-check`, manteniendo sus horarios inicialmente disabled;
-9. ejecutar manualmente el poll del manifiesto generado por el commit aprobado,
-   seguido de backup y restore-check; comprobar la secuencia completa, lock
-   común, códigos cero, estado, logs sanitizados y SQL healthy;
-10. habilitar los tres jobs y verificar una entrega de prueba aditiva. Reiniciar
-    el VPS solo después de terminar esa aceptación y confirmar persistencia.
+   el token file root-only indicado por el runbook.
+6. En la **terminal SSH**, resolver nuevamente el ID completo de la única tarea
+   local activa de `dokploy` antes de cada `docker container exec` y ejecutar
+   `--dry-run`. Debe extraer y validar los tres payloads, cachear por hash y
+   comprobar equivalencia semántica con los Raw vivos sin ejecutar SQL.
+7. Justo antes de adoptar, abrir la ventana: en la **interfaz web privada de
+   Dokploy**, deshabilitar los schedules manuales anteriores de backup y
+   restore-check y comprobar que ninguno esté activo. No se deshabilitan antes
+   de completar `verify-runtime` y `--dry-run`.
+8. En la **terminal SSH**, ejecutar `--adopt-current` y después `--status`. Debe
+   mostrar `adopted/adopted-current`, cachear ambos Compose vivos con modo `0600`
+   y no volver a migrar DB v1. Si falla, no avanzar: conservar evidencia y
+   reactivar los schedules manuales anteriores.
+9. En la **interfaz web privada de Dokploy**, página global **Schedules** y sin
+   seleccionar servidor externo, crear deshabilitados tres jobs internos
+   `dokploy-server`: backup `15 2 * * *`, restore-check `30 4 * * 0` y poll
+   `* * * * *`, todos UTC. No usar `server`, Application ni Compose Job.
+10. En la **terminal SSH**, ejecutar un único `--poll` manual para el bundle del
+    commit aprobado. Exigir `succeeded/complete`, la secuencia completa, lock
+    común, cache íntegro, códigos cero, logs sanitizados y SQL healthy. Ejecutar
+    después `--backup` y `--restore-check` manuales.
+11. En la **interfaz web privada de Dokploy**, habilitar los jobs nuevos solo
+    tras esa validación y en orden backup → restore-check → poll. Verificar una
+    entrega de prueba aditiva. Reiniciar el VPS solo después de terminar la
+    aceptación y confirmar persistencia.
 
-Si una etapa falla, el mismo manifiesto queda bloqueado. No pulse Deploy, no
+Si una etapa falla, el mismo bundle queda bloqueado. No pulse Deploy, no
 edite Environment para apuntar al candidato fallido y no programe retry. Primero
 investigue; una corrección normal llega con otro digest. `--retry` exige decisión
 manual explícita cuando la causa era externa y ya fue corregida.
@@ -289,9 +304,12 @@ plan lo permita.
 - Firewall, Serve y Docker sobreviven un reboot.
 - SQL está healthy, sin puerto público y solo en `elevant-dev-data`.
 - Migración, seed idempotente, permisos, backup y restore-check pasan.
-- El controlador adoptó la baseline, solo ejecuta digests, serializa promoción y
+- El controlador adoptó la baseline, ejecuta imágenes y Compose certificados
+  por digest/hash, compara semántica con los Raw vivos, serializa promoción y
   schedules, y registra el mismo resultado en Dokploy/GitHub cuando el token
   opcional existe.
+- Los caches `state/compose/database` y `state/compose/release` son root-only,
+  modo `0600`, y contienen las entradas referenciadas por `last-success.json`.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback

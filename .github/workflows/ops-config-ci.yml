@@ -87,6 +87,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           node --check ops/dokploy/database-cd/manifest-tool.mjs
+          node --check ops/dokploy/database-cd/compose-model-tool.mjs
           node --check ops/dokploy/database-cd/state-tool.mjs
           bash ops/dokploy/database-cd/tests/test-controller.sh
           bash ops/dokploy/database-cd/tests/test-verify-runtime.sh
@@ -95,8 +96,13 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          manifest_path="$(mktemp)"
-          trap 'rm -f "$manifest_path"' EXIT
+          bundle_root="$(mktemp -d)"
+          manifest_path="$bundle_root/manifest.json"
+          trap 'rm -rf "$bundle_root"' EXIT
+          cp backend/infrastructure/docker/compose.development.database.yml \
+            "$bundle_root/compose.development.database.yml"
+          cp backend/infrastructure/docker/compose.development.release.yml \
+            "$bundle_root/compose.development.release.yml"
           PYTHONDONTWRITEBYTECODE=1 \
             python3 backend/scripts/deployment/database_release_manifest.py generate \
               --backend-root backend \
@@ -110,6 +116,7 @@ jobs:
               --output "$manifest_path"
           node ops/dokploy/database-cd/manifest-tool.mjs validate \
             --file "$manifest_path" \
+            --bundle-root "$bundle_root" \
             --expected-repository "$GITHUB_REPOSITORY" \
             --expected-ref refs/heads/Development \
             --ops-repository "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/elevant-db-ops" \

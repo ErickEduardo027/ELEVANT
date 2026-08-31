@@ -8,6 +8,8 @@ readonly SCRIPT_DIR
 ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 readonly ROOT_DIR
 readonly CONTROLLER="$ROOT_DIR/elevant-database-cd"
+readonly MANIFEST_TOOL="$ROOT_DIR/manifest-tool.mjs"
+readonly COMPOSE_MODEL_TOOL="$ROOT_DIR/compose-model-tool.mjs"
 readonly STATE_TOOL="$ROOT_DIR/state-tool.mjs"
 
 fail() {
@@ -35,6 +37,36 @@ assert_failure() {
   fi
 }
 
+database_operation_count() {
+  if [[ ! -f "$MOCK_LOG" ]]; then
+    printf '0\n'
+    return
+  fi
+  grep -c ' run --rm --no-deps ' "$MOCK_LOG" || true
+}
+
+assert_failure_without_database_operation() {
+  local message="$1" before after
+  shift
+  before="$(database_operation_count)"
+  if "$@" >/dev/null 2>&1; then
+    fail "$message"
+  fi
+  after="$(database_operation_count)"
+  assert_equal "$before" "$after" \
+    "$message; rejection occurred after a database operation"
+}
+
+assert_success_with_one_database_operation() {
+  local message="$1" before after
+  shift
+  before="$(database_operation_count)"
+  "$@" || fail "$message"
+  after="$(database_operation_count)"
+  assert_equal "$((before + 1))" "$after" \
+    "$message; command did not execute exactly one database operation"
+}
+
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 [[ -n "$NODE_BIN" ]] || fail "node is required"
 
@@ -53,7 +85,8 @@ ELEVANT_CD_INSTALL_TEST_MODE=1 \
 ELEVANT_CD_INSTALL_TEST_ROOT="$INSTALL_ROOT" \
   bash "$ROOT_DIR/install-controller" --destination "$INSTALL_DESTINATION" \
   >/dev/null
-for installed_file in elevant-database-cd manifest-tool.mjs state-tool.mjs \
+for installed_file in elevant-database-cd manifest-tool.mjs compose-model-tool.mjs \
+  state-tool.mjs \
   verify-runtime jobs/poll.job.sh jobs/backup.job.sh jobs/restore-check.job.sh \
   config.env.example README.md config.env; do
   [[ -f "$INSTALL_DESTINATION/$installed_file" && \
@@ -63,7 +96,8 @@ done
 case "$(uname -s)" in
   MINGW*|MSYS*) ;;
   *)
-    for installed_file in elevant-database-cd manifest-tool.mjs state-tool.mjs \
+    for installed_file in elevant-database-cd manifest-tool.mjs \
+      compose-model-tool.mjs state-tool.mjs \
       verify-runtime jobs/poll.job.sh jobs/backup.job.sh jobs/restore-check.job.sh; do
       assert_equal "$(id -u):$(id -g):555" \
         "$(stat -c '%u:%g:%a' -- "$INSTALL_DESTINATION/$installed_file")" \
@@ -84,6 +118,8 @@ MOCK_BIN="$TEST_TMP/bin"
 MOCK_LOG="$TEST_TMP/docker.log"
 MOCK_OPS_LOG="$TEST_TMP/docker-ops.log"
 MOCK_MANIFEST_FILE="$TEST_TMP/manifest.json"
+MOCK_DATABASE_PAYLOAD="$TEST_TMP/compose.development.database.yml"
+MOCK_RELEASE_PAYLOAD="$TEST_TMP/compose.development.release.yml"
 MOCK_IMAGE_REVISIONS="$TEST_TMP/image-revisions.txt"
 DOCKER_CONFIG_DIR="$TEST_TMP/docker-config"
 STATE_DIR="$TEST_TMP/state"
@@ -94,24 +130,40 @@ RELEASE_COMPOSE="$TEST_TMP/release-compose.yml"
 RELEASE_ENV="$TEST_TMP/release.env"
 CONFIG_FILE="$TEST_TMP/config.env"
 mkdir -p "$MOCK_BIN" "$DOCKER_CONFIG_DIR" "$STATE_DIR/attempts" \
-  "$STATE_DIR/tmp" "$LOG_DIR"
+  "$STATE_DIR/tmp" "$STATE_DIR/compose/database" \
+  "$STATE_DIR/compose/release" "$LOG_DIR"
 chmod 0700 "$DOCKER_CONFIG_DIR" "$STATE_DIR" "$STATE_DIR/attempts" \
-  "$STATE_DIR/tmp" "$LOG_DIR"
-printf '%s\n' 'services: {sqlserver: {image: example.invalid/sql:immutable}}' \
+  "$STATE_DIR/tmp" "$STATE_DIR/compose" "$STATE_DIR/compose/database" \
+  "$STATE_DIR/compose/release" "$LOG_DIR"
+printf '%s\n' '# Dokploy formatting' 'x-elevant-test-semantic: stable' \
+  'services: {sqlserver: {image: example.invalid/sql:immutable}}' \
   > "$DATABASE_COMPOSE"
-printf '%s\n' 'services: {migrator: {image: example.invalid/release:immutable}}' \
+printf '%s\n' '# Dokploy formatting' 'x-elevant-test-semantic: stable' \
+  'services: {migrator: {image: example.invalid/release:immutable}}' \
   > "$RELEASE_COMPOSE"
+printf '%s\n' 'services:' '  sqlserver:' \
+  '    image: example.invalid/sql:immutable' 'x-elevant-test-semantic: stable' \
+  > "$MOCK_DATABASE_PAYLOAD"
+printf '%s\n' 'services:' '  migrator:' \
+  '    image: example.invalid/release:immutable' 'x-elevant-test-semantic: stable' \
+  > "$MOCK_RELEASE_PAYLOAD"
 printf '%s\n' 'SECRET_VALUE=not-a-real-secret' > "$DATABASE_ENV"
 printf '%s\n' 'OTHER_SECRET=not-a-real-secret' > "$RELEASE_ENV"
 chmod 0600 "$DATABASE_ENV" "$RELEASE_ENV"
 
-export MOCK_LOG MOCK_OPS_LOG MOCK_MANIFEST_FILE MOCK_IMAGE_REVISIONS
+export MOCK_LOG MOCK_OPS_LOG MOCK_MANIFEST_FILE MOCK_DATABASE_PAYLOAD \
+  MOCK_RELEASE_PAYLOAD MOCK_IMAGE_REVISIONS
 export MOCK_MANIFEST_REPOSITORY="ghcr.io/example/elevant-db-release-manifest"
 export MOCK_OPS_REPOSITORY="ghcr.io/example/elevant-db-ops"
 export MOCK_RELEASE_REPOSITORY="ghcr.io/example/elevant-db-release"
 export MOCK_SOURCE="https://github.com/Example/ELEVANT"
 export MOCK_FAIL_MATCH=""
+export MOCK_FAIL_ALL=0
 export MOCK_FLOCK_FAIL=0
+export MOCK_MANIFEST_SCHEMA_LABEL=1
+export MOCK_RELEASE_SCHEMA_LABEL=1
+export MOCK_BUNDLE_VERSION_LABEL=1
+export MOCK_MEDIA_TYPE_LABEL=application/vnd.elevant.database-release-bundle.v1
 
 cat > "$MOCK_BIN/docker" <<'MOCK'
 #!/usr/bin/env bash
@@ -120,6 +172,9 @@ printf '%s\n' "$*" >> "$MOCK_LOG"
 joined="$*"
 if [[ "$joined" == *"run --rm --no-deps backup"* ]]; then
   printf '%s\n' "${ELEVANT_DB_OPS_IMAGE:-missing}" >> "$MOCK_OPS_LOG"
+fi
+if [[ "${MOCK_FAIL_ALL:-0}" == "1" ]]; then
+  exit 42
 fi
 if [[ -n "${MOCK_FAIL_MATCH:-}" && "$joined" == *"$MOCK_FAIL_MATCH"* ]]; then
   exit 42
@@ -146,11 +201,13 @@ case "${1:-}" in
     elif [[ "$format" == *org.elevant.database.environment* ]]; then
       printf '%s\n' Development
     elif [[ "$format" == *org.elevant.database.manifest.schema* ]]; then
-      printf '%s\n' 1
+      printf '%s\n' "${MOCK_MANIFEST_SCHEMA_LABEL-1}"
     elif [[ "$format" == *io.elevant.database-release.schema-version* ]]; then
-      printf '%s\n' 1
+      printf '%s\n' "${MOCK_RELEASE_SCHEMA_LABEL-1}"
+    elif [[ "$format" == *io.elevant.database-release.bundle-version* ]]; then
+      printf '%s\n' "${MOCK_BUNDLE_VERSION_LABEL-1}"
     elif [[ "$format" == *io.elevant.database-release.media-type* ]]; then
-      printf '%s\n' application/vnd.elevant.database-release-manifest.v1+json
+      printf '%s\n' "${MOCK_MEDIA_TYPE_LABEL-application/vnd.elevant.database-release-bundle.v1}"
     else
       printf 'unexpected image inspect format: %s\n' "$format" >&2
       exit 64
@@ -161,12 +218,38 @@ case "${1:-}" in
     printf '%s\n' manifest-container
     ;;
   cp)
-    command cp -- "$MOCK_MANIFEST_FILE" "${3:?destination required}"
+    case "${2:-}" in
+      *:/manifest.json)
+        command cp -- "$MOCK_MANIFEST_FILE" "${3:?destination required}"
+        ;;
+      *:/compose/compose.development.database.yml)
+        command cp -- "$MOCK_DATABASE_PAYLOAD" "${3:?destination required}"
+        ;;
+      *:/compose/compose.development.release.yml)
+        command cp -- "$MOCK_RELEASE_PAYLOAD" "${3:?destination required}"
+        ;;
+      *) exit 66 ;;
+    esac
     ;;
   rm)
     exit 0
     ;;
   compose)
+    if [[ "$joined" == *" config "* && "$joined" == *"--format json"* ]]; then
+      compose_file=""
+      previous=""
+      for argument in "$@"; do
+        if [[ "$previous" == "-f" ]]; then
+          compose_file="$argument"
+          break
+        fi
+        previous="$argument"
+      done
+      [[ -n "$compose_file" ]] || exit 67
+      semantic="$(awk -F ': *' '/^x-elevant-test-semantic:/{print $2; exit}' \
+        "$compose_file")"
+      printf '{"x-elevant-test-semantic":"%s"}\n' "$semantic"
+    fi
     exit 0
     ;;
   *)
@@ -183,8 +266,10 @@ cat > "$MOCK_BIN/flock" <<'MOCK'
 MOCK
 chmod 0755 "$MOCK_BIN/flock"
 
-database_hash="$(sha256sum -- "$DATABASE_COMPOSE" | awk '{print $1}')"
-release_hash="$(sha256sum -- "$RELEASE_COMPOSE" | awk '{print $1}')"
+database_hash="$(sha256sum -- "$MOCK_DATABASE_PAYLOAD" | awk '{print $1}')"
+release_hash="$(sha256sum -- "$MOCK_RELEASE_PAYLOAD" | awk '{print $1}')"
+CACHED_DATABASE_COMPOSE="$STATE_DIR/compose/database/$database_hash.yml"
+CACHED_RELEASE_COMPOSE="$STATE_DIR/compose/release/$release_hash.yml"
 
 repeat_hex() {
   local character="$1"
@@ -259,11 +344,136 @@ controller() {
     bash "$CONTROLLER" --config "$CONFIG_FILE" "$@"
 }
 
+manifest_validate_fixture() {
+  "$NODE_BIN" "$MANIFEST_TOOL" validate \
+    --file "$MANIFEST_TEST_BUNDLE/manifest.json" \
+    --bundle-root "$MANIFEST_TEST_BUNDLE" \
+    --expected-repository Example/ELEVANT \
+    --expected-ref refs/heads/Development \
+    --ops-repository "$MOCK_OPS_REPOSITORY" \
+    --release-repository "$MOCK_RELEASE_REPOSITORY" "$@"
+}
+
 commit_one="$(printf '1%.0s' {1..40})"
 export MOCK_COMMIT="$commit_one"
 MOCK_DIGEST="sha256:$(repeat_hex a)"
 export MOCK_DIGEST
 make_manifest "$commit_one" "$(repeat_hex 1)" "$(repeat_hex 2)" 1001
+
+# The JSON model hash is stable across formatting and recursively reordered
+# object keys. Array order remains semantically significant.
+COMPOSE_MODEL_A="$TEST_TMP/compose-model-a.json"
+COMPOSE_MODEL_B="$TEST_TMP/compose-model-b.json"
+COMPOSE_MODEL_CHANGED="$TEST_TMP/compose-model-changed.json"
+cat > "$COMPOSE_MODEL_A" <<'EOF'
+{
+  "services": {
+    "migrator": {
+      "replicas": 1,
+      "profiles": ["operations", "maintenance"],
+      "environment": {"B": "two", "A": "one"}
+    }
+  },
+  "name": "elevant"
+}
+EOF
+cat > "$COMPOSE_MODEL_B" <<'EOF'
+{"name":"elevant","services":{"migrator":{"environment":{"A":"one","B":"two"},"profiles":["operations","maintenance"],"replicas":1.0}}}
+EOF
+cat > "$COMPOSE_MODEL_CHANGED" <<'EOF'
+{"services":{"migrator":{"profiles":["maintenance","operations"],"replicas":1,"environment":{"B":"two","A":"one"}}},"name":"elevant"}
+EOF
+canonical_model='{"name":"elevant","services":{"migrator":{"environment":{"A":"one","B":"two"},"profiles":["operations","maintenance"],"replicas":1}}}'
+expected_model_hash="$(printf '%s' "$canonical_model" | sha256sum | awk '{print $1}')"
+model_hash_a="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$COMPOSE_MODEL_A")"
+model_hash_b="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$COMPOSE_MODEL_B")"
+model_hash_changed="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash \
+  --file "$COMPOSE_MODEL_CHANGED")"
+assert_equal "$expected_model_hash" "$model_hash_a" \
+  "Compose model hash is not based on the canonical JSON representation"
+assert_equal "$model_hash_a" "$model_hash_b" \
+  "Compose model hash changed across equivalent JSON formatting or key order"
+[[ "$model_hash_a" != "$model_hash_changed" ]] || \
+  fail "Compose model hash ignored semantically significant array order"
+EMPTY_COMPOSE_MODEL="$TEST_TMP/compose-model-empty.json"
+: > "$EMPTY_COMPOSE_MODEL"
+assert_failure "Compose model tool accepted an empty input" \
+  "$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$EMPTY_COMPOSE_MODEL"
+assert_failure "Compose model tool accepted unsupported arguments" \
+  "$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash "$COMPOSE_MODEL_A"
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    ln -s -- "$COMPOSE_MODEL_A" "$TEST_TMP/compose-model-link.json"
+    assert_failure "Compose model tool accepted a symlink" \
+      "$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash \
+      --file "$TEST_TMP/compose-model-link.json"
+    ;;
+esac
+
+# Exercise the manifest validator independently so malformed bundles cannot be
+# hidden by controller, Docker, or label validation failures.
+MANIFEST_TEST_BUNDLE="$TEST_TMP/manifest-tool-bundle"
+mkdir -p "$MANIFEST_TEST_BUNDLE"
+cp -- "$MOCK_MANIFEST_FILE" "$MANIFEST_TEST_BUNDLE/manifest.json"
+cp -- "$MOCK_DATABASE_PAYLOAD" \
+  "$MANIFEST_TEST_BUNDLE/compose.development.database.yml"
+cp -- "$MOCK_RELEASE_PAYLOAD" \
+  "$MANIFEST_TEST_BUNDLE/compose.development.release.yml"
+assert_success "manifest tool rejected a valid immutable bundle" \
+  manifest_validate_fixture
+assert_equal "$commit_one" "$(manifest_validate_fixture --get source.commit)" \
+  "manifest tool returned the wrong nested field"
+printf '%s\n' unexpected > "$MANIFEST_TEST_BUNDLE/unexpected.txt"
+assert_failure "manifest tool accepted an unexpected bundle payload" \
+  manifest_validate_fixture
+rm -f -- "$MANIFEST_TEST_BUNDLE/unexpected.txt"
+mv -- "$MANIFEST_TEST_BUNDLE/compose.development.release.yml" \
+  "$TEST_TMP/missing-release-payload"
+assert_failure "manifest tool accepted a bundle with a missing payload" \
+  manifest_validate_fixture
+mv -- "$TEST_TMP/missing-release-payload" \
+  "$MANIFEST_TEST_BUNDLE/compose.development.release.yml"
+cp -- "$MANIFEST_TEST_BUNDLE/manifest.json" "$TEST_TMP/outside-manifest.json"
+assert_failure "manifest tool accepted a manifest outside its bundle root" \
+  "$NODE_BIN" "$MANIFEST_TOOL" validate \
+  --file "$TEST_TMP/outside-manifest.json" \
+  --bundle-root "$MANIFEST_TEST_BUNDLE" \
+  --expected-repository Example/ELEVANT \
+  --expected-ref refs/heads/Development \
+  --ops-repository "$MOCK_OPS_REPOSITORY" \
+  --release-repository "$MOCK_RELEASE_REPOSITORY"
+cp -- "$MANIFEST_TEST_BUNDLE/compose.development.database.yml" \
+  "$TEST_TMP/database-payload.backup"
+printf '%s\n' '# tampered' >> \
+  "$MANIFEST_TEST_BUNDLE/compose.development.database.yml"
+assert_failure "manifest tool accepted a database Compose hash mismatch" \
+  manifest_validate_fixture
+mv -f -- "$TEST_TMP/database-payload.backup" \
+  "$MANIFEST_TEST_BUNDLE/compose.development.database.yml"
+cp -- "$MANIFEST_TEST_BUNDLE/manifest.json" "$TEST_TMP/manifest.backup"
+sed -i 's/"schemaVersion": 1,/"schemaVersion": 1, "unexpected": true,/' \
+  "$MANIFEST_TEST_BUNDLE/manifest.json"
+assert_failure "manifest tool accepted an unexpected manifest field" \
+  manifest_validate_fixture
+mv -f -- "$TEST_TMP/manifest.backup" "$MANIFEST_TEST_BUNDLE/manifest.json"
+assert_failure "manifest tool accepted a duplicate option" \
+  manifest_validate_fixture --get source.commit --get source.ref
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    mv -- "$MANIFEST_TEST_BUNDLE/compose.development.release.yml" \
+      "$TEST_TMP/release-payload.symlink-target"
+    ln -s -- "$TEST_TMP/release-payload.symlink-target" \
+      "$MANIFEST_TEST_BUNDLE/compose.development.release.yml"
+    assert_failure "manifest tool accepted a symlinked bundle payload" \
+      manifest_validate_fixture
+    rm -f -- "$MANIFEST_TEST_BUNDLE/compose.development.release.yml"
+    mv -- "$TEST_TMP/release-payload.symlink-target" \
+      "$MANIFEST_TEST_BUNDLE/compose.development.release.yml"
+    ;;
+esac
+
 baseline_commit="$(printf '0%.0s' {1..40})"
 baseline_ops="$MOCK_OPS_REPOSITORY@sha256:$(repeat_hex 9)"
 baseline_release="$MOCK_RELEASE_REPOSITORY@sha256:$(repeat_hex a)"
@@ -274,6 +484,31 @@ printf '%s\n' "ELEVANT_DB_OPS_IMAGE=$baseline_ops" \
 printf '%s\n' "ELEVANT_DB_RELEASE_IMAGE=$baseline_release" \
   'OTHER_SECRET=not-a-real-secret' > "$RELEASE_ENV"
 chmod 0600 "$DATABASE_ENV" "$RELEASE_ENV"
+
+# An artifact carrying only earlier schema labels, omitting the bundle label,
+# or advertising the legacy manifest media type must fail before any SQL.
+export MOCK_MANIFEST_SCHEMA_LABEL=""
+assert_failure_without_database_operation \
+  "controller accepted legacy-only artifact schema labels" \
+  controller --dry-run
+export MOCK_MANIFEST_SCHEMA_LABEL=1
+export MOCK_BUNDLE_VERSION_LABEL=""
+assert_failure_without_database_operation \
+  "controller accepted an artifact without the bundle-version label" \
+  controller --dry-run
+export MOCK_BUNDLE_VERSION_LABEL=1
+export MOCK_MEDIA_TYPE_LABEL=application/vnd.elevant.database-release-manifest.v1+json
+assert_failure_without_database_operation \
+  "controller accepted the legacy manifest media type" \
+  controller --dry-run
+export MOCK_MEDIA_TYPE_LABEL=application/vnd.elevant.database-release-bundle.v1
+
+cp -- "$MOCK_RELEASE_PAYLOAD" "$TEST_TMP/release-payload.backup"
+printf '%s\n' '# tampered' >> "$MOCK_RELEASE_PAYLOAD"
+assert_failure_without_database_operation \
+  "controller accepted a tampered release Compose payload" \
+  controller --dry-run
+mv -f -- "$TEST_TMP/release-payload.backup" "$MOCK_RELEASE_PAYLOAD"
 
 assert_success "valid dry-run failed" controller --dry-run
 assert_equal 0 "$(grep -c ' run --rm --no-deps ' "$MOCK_LOG" || true)" \
@@ -321,7 +556,7 @@ export MOCK_COMMIT="$commit_two"
 MOCK_DIGEST="sha256:$(repeat_hex b)"
 export MOCK_DIGEST
 make_manifest "$commit_two" "$(repeat_hex 3)" "$(repeat_hex 4)" 1002
-export MOCK_FAIL_MATCH="-p elevant-dev-database-test -f $DATABASE_COMPOSE --profile operations config --quiet"
+export MOCK_FAIL_MATCH="--profile operations config --quiet"
 assert_failure "database Compose preflight failure was masked" controller --poll
 preflight_attempt="$STATE_DIR/attempts/${MOCK_DIGEST#sha256:}.json"
 assert_equal failed "$("$NODE_BIN" "$STATE_TOOL" get \
@@ -361,15 +596,113 @@ assert_equal succeeded "$("$NODE_BIN" "$STATE_TOOL" get \
 assert_equal 6 "$(grep -c ' run --rm --no-deps ' "$MOCK_LOG")" \
   "second poll repeated an accepted manifest"
 
-assert_success "scheduled backup wrapper failed" controller --backup
-assert_success "scheduled restore wrapper failed" controller --restore-check
-assert_equal 8 "$(grep -c ' run --rm --no-deps ' "$MOCK_LOG")" \
-  "scheduled operations did not use controller wrappers"
+for cached_compose in "$CACHED_DATABASE_COMPOSE" "$CACHED_RELEASE_COMPOSE"; do
+  [[ -f "$cached_compose" && ! -L "$cached_compose" ]] || \
+    fail "promotion did not retain a regular immutable Compose cache entry"
+done
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    for cached_compose in "$CACHED_DATABASE_COMPOSE" "$CACHED_RELEASE_COMPOSE"; do
+      assert_equal "$(id -u):600" "$(stat -c '%u:%a' -- "$cached_compose")" \
+        "cached Compose payload ownership or mode is incorrect"
+    done
+    ;;
+esac
+
+# Scheduled operations depend only on the accepted, content-addressed database
+# Compose. Invalid database entries fail closed; release cache state is ignored.
+mv -- "$CACHED_DATABASE_COMPOSE" "$TEST_TMP/cached-database.backup"
+assert_failure_without_database_operation \
+  "scheduled backup accepted a missing database Compose cache entry" \
+  controller --backup
+assert_failure_without_database_operation \
+  "scheduled restore-check accepted a missing database Compose cache entry" \
+  controller --restore-check
+mv -- "$TEST_TMP/cached-database.backup" "$CACHED_DATABASE_COMPOSE"
+
+cp -- "$CACHED_DATABASE_COMPOSE" "$TEST_TMP/cached-database.backup"
+printf '%s\n' '# tampered' >> "$CACHED_DATABASE_COMPOSE"
+assert_failure_without_database_operation \
+  "scheduled backup accepted a tampered database Compose cache entry" \
+  controller --backup
+assert_failure_without_database_operation \
+  "scheduled restore-check accepted a tampered database Compose cache entry" \
+  controller --restore-check
+mv -f -- "$TEST_TMP/cached-database.backup" "$CACHED_DATABASE_COMPOSE"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    chmod 0644 "$CACHED_DATABASE_COMPOSE"
+    assert_failure_without_database_operation \
+      "scheduled backup accepted an over-permissive Compose cache entry" \
+      controller --backup
+    assert_failure_without_database_operation \
+      "scheduled restore-check accepted an over-permissive Compose cache entry" \
+      controller --restore-check
+    chmod 0600 "$CACHED_DATABASE_COMPOSE"
+    ;;
+esac
+
+mv -- "$CACHED_RELEASE_COMPOSE" "$TEST_TMP/cached-release.backup"
+assert_success_with_one_database_operation \
+  "scheduled backup depended on a missing release Compose cache entry" \
+  controller --backup
+assert_success_with_one_database_operation \
+  "scheduled restore-check depended on a missing release Compose cache entry" \
+  controller --restore-check
+mv -- "$TEST_TMP/cached-release.backup" "$CACHED_RELEASE_COMPOSE"
+
+cp -- "$CACHED_RELEASE_COMPOSE" "$TEST_TMP/cached-release.backup"
+printf '%s\n' '# tampered' >> "$CACHED_RELEASE_COMPOSE"
+assert_success_with_one_database_operation \
+  "scheduled backup depended on release Compose cache integrity" \
+  controller --backup
+assert_success_with_one_database_operation \
+  "scheduled restore-check depended on release Compose cache integrity" \
+  controller --restore-check
+mv -f -- "$TEST_TMP/cached-release.backup" "$CACHED_RELEASE_COMPOSE"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    chmod 0644 "$CACHED_RELEASE_COMPOSE"
+    assert_success_with_one_database_operation \
+      "scheduled backup depended on release Compose cache permissions" \
+      controller --backup
+    assert_success_with_one_database_operation \
+      "scheduled restore-check depended on release Compose cache permissions" \
+      controller --restore-check
+    chmod 0600 "$CACHED_RELEASE_COMPOSE"
+    ;;
+esac
+
+assert_success_with_one_database_operation \
+  "scheduled backup wrapper failed" controller --backup
+assert_success_with_one_database_operation \
+  "scheduled restore wrapper failed" controller --restore-check
+after_scheduled_operations="$(database_operation_count)"
 
 assert_success "pause failed" controller --pause
+before_paused_docker_commands="$(wc -l < "$MOCK_LOG")"
+mv -- "$DATABASE_COMPOSE" "$TEST_TMP/paused-database-compose.backup"
+mv -- "$DATABASE_ENV" "$TEST_TMP/paused-database-env.backup"
+mv -- "$RELEASE_COMPOSE" "$TEST_TMP/paused-release-compose.backup"
+mv -- "$RELEASE_ENV" "$TEST_TMP/paused-release-env.backup"
+export MOCK_FAIL_ALL=1
 assert_success "paused poll failed" controller --poll
-assert_equal 8 "$(grep -c ' run --rm --no-deps ' "$MOCK_LOG")" \
-  "paused poll executed SQL"
+assert_success "paused backup failed" controller --backup
+assert_success "paused restore-check failed" controller --restore-check
+assert_equal "$after_scheduled_operations" "$(database_operation_count)" \
+  "paused command executed SQL"
+assert_equal "$before_paused_docker_commands" "$(wc -l < "$MOCK_LOG")" \
+  "paused command contacted Docker"
+export MOCK_FAIL_ALL=0
+mv -- "$TEST_TMP/paused-database-compose.backup" "$DATABASE_COMPOSE"
+mv -- "$TEST_TMP/paused-database-env.backup" "$DATABASE_ENV"
+mv -- "$TEST_TMP/paused-release-compose.backup" "$RELEASE_COMPOSE"
+mv -- "$TEST_TMP/paused-release-env.backup" "$RELEASE_ENV"
 assert_success "resume failed" controller --resume
 
 commit_three="$(printf '3%.0s' {1..40})"
@@ -438,12 +771,57 @@ assert_failure "manifest validator accepted a mutable database image" \
   controller --dry-run
 make_manifest "$commit_four" "$(repeat_hex 7)" "$(repeat_hex 8)" 1004
 
-# Live Compose drift is fail-closed.
+# Dokploy-only formatting changes are tolerated, but semantic drift is fail-closed.
 printf '%s\n' '# drift' >> "$DATABASE_COMPOSE"
-assert_failure "dry-run accepted live Compose drift" controller --dry-run
-assert_failure "scheduled backup accepted live Compose drift" controller --backup
-printf '%s\n' 'services: {sqlserver: {image: example.invalid/sql:immutable}}' \
-  > "$DATABASE_COMPOSE"
+assert_success "dry-run rejected formatting-only Compose drift" controller --dry-run
+assert_success_with_one_database_operation \
+  "scheduled backup rejected formatting-only database Compose drift" \
+  controller --backup
+sed -i 's/x-elevant-test-semantic: stable/x-elevant-test-semantic: changed/' \
+  "$DATABASE_COMPOSE"
+assert_failure_without_database_operation \
+  "dry-run accepted semantic live database Compose drift" \
+  controller --dry-run
+assert_failure_without_database_operation \
+  "scheduled backup accepted semantic live database Compose drift" \
+  controller --backup
+assert_failure_without_database_operation \
+  "scheduled restore-check accepted semantic live database Compose drift" \
+  controller --restore-check
+sed -i 's/x-elevant-test-semantic: changed/x-elevant-test-semantic: stable/' \
+  "$DATABASE_COMPOSE"
+
+printf '%s\n' '# drift' >> "$RELEASE_COMPOSE"
+assert_success "dry-run rejected formatting-only release Compose drift" \
+  controller --dry-run
+sed -i 's/x-elevant-test-semantic: stable/x-elevant-test-semantic: changed/' \
+  "$RELEASE_COMPOSE"
+assert_failure_without_database_operation \
+  "dry-run accepted semantic live release Compose drift" \
+  controller --dry-run
+assert_success_with_one_database_operation \
+  "scheduled backup depended on live release Compose semantics" \
+  controller --backup
+assert_success_with_one_database_operation \
+  "scheduled restore-check depended on live release Compose semantics" \
+  controller --restore-check
+sed -i 's/x-elevant-test-semantic: changed/x-elevant-test-semantic: stable/' \
+  "$RELEASE_COMPOSE"
+
+# Database-only scheduled commands do not require a live release deployment.
+mv -- "$RELEASE_COMPOSE" "$TEST_TMP/live-release-compose.backup"
+mv -- "$RELEASE_ENV" "$TEST_TMP/live-release-env.backup"
+assert_failure_without_database_operation \
+  "dry-run accepted missing live release Compose and environment files" \
+  controller --dry-run
+assert_success_with_one_database_operation \
+  "scheduled backup required live release Compose or environment files" \
+  controller --backup
+assert_success_with_one_database_operation \
+  "scheduled restore-check required live release Compose or environment files" \
+  controller --restore-check
+mv -- "$TEST_TMP/live-release-compose.backup" "$RELEASE_COMPOSE"
+mv -- "$TEST_TMP/live-release-env.backup" "$RELEASE_ENV"
 
 export MOCK_FLOCK_FAIL=1
 assert_failure "controller ignored lock contention" controller --backup

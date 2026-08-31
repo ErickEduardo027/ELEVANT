@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly SCRIPT_DIR
 readonly MANIFEST_TOOL="$SCRIPT_DIR/manifest-tool.mjs"
 readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
+readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
+readonly OCI_DATABASE_COMPOSE="/compose/compose.development.database.yml"
+readonly OCI_RELEASE_COMPOSE="/compose/compose.development.release.yml"
 
 CONFIG_FILE="${ELEVANT_CD_CONFIG:-/etc/dokploy/elevant/database-cd/config.env}"
 COMMAND=""
@@ -42,9 +45,12 @@ CURRENT_OPS_IMAGE=""
 CURRENT_RELEASE_IMAGE=""
 CURRENT_DATABASE_COMPOSE_SHA256=""
 CURRENT_RELEASE_COMPOSE_SHA256=""
+CURRENT_DATABASE_COMPOSE_PATH=""
+CURRENT_RELEASE_COMPOSE_PATH=""
 CURRENT_WORKFLOW_URL=""
 CURRENT_STAGE="idle"
 MANIFEST_PATH=""
+ARTIFACT_STAGING_DIR=""
 GITHUB_HEADER_PATH=""
 GITHUB_PAYLOAD_PATH=""
 LOG_READY=0
@@ -88,8 +94,8 @@ Usage:
 manifest digest, and promotes a never-attempted release. A failed or interrupted
 manifest is never retried automatically.
 
---dry-run validates the current manifest, image identities, live Compose hashes,
-and rendered Compose configurations without running a database operation.
+--dry-run validates the current manifest, its bundled Compose payloads, image
+identities, and semantic equivalence with Dokploy without running SQL.
 
 --retry requires the exact failed digest still advertised by the alias.
 --adopt-current reads only the two pinned image variables from the live restricted
@@ -254,7 +260,9 @@ ensure_runtime_directories() {
   if [[ "$TEST_MODE" == "1" ]]; then
     owner_uid="$(id -u)"
   fi
-  for directory in "$CD_STATE_DIR" "$CD_STATE_DIR/attempts" "$CD_STATE_DIR/tmp" "$CD_LOG_DIR"; do
+  for directory in "$CD_STATE_DIR" "$CD_STATE_DIR/attempts" "$CD_STATE_DIR/tmp" \
+    "$CD_STATE_DIR/compose" "$CD_STATE_DIR/compose/database" \
+    "$CD_STATE_DIR/compose/release" "$CD_LOG_DIR"; do
     if [[ ! -e "$directory" ]]; then
       install -d -m 0700 -- "$directory"
     fi
@@ -276,23 +284,43 @@ ensure_runtime_directories() {
 }
 
 validate_runtime_files() {
-  local path secret_metadata secret_mode expected_uid=0
-  for path in "$MANIFEST_TOOL" "$STATE_TOOL" "$CD_DATABASE_COMPOSE" \
-    "$CD_DATABASE_ENV" "$CD_RELEASE_COMPOSE" "$CD_RELEASE_ENV"; do
+  local path secret_metadata secret_mode expected_uid=0 requires_docker=0
+  local validates_github_token=0
+  local -a required_paths=("$STATE_TOOL")
+  local -a restricted_envs=()
+  case "$COMMAND" in
+    status|pause|resume) ;;
+    backup|restore-check)
+      required_paths+=("$COMPOSE_MODEL_TOOL" "$CD_DATABASE_COMPOSE" \
+        "$CD_DATABASE_ENV")
+      restricted_envs+=("$CD_DATABASE_ENV")
+      requires_docker=1
+      ;;
+    poll|dry-run|retry|adopt-current)
+      required_paths+=("$MANIFEST_TOOL" "$COMPOSE_MODEL_TOOL" \
+        "$CD_DATABASE_COMPOSE" "$CD_DATABASE_ENV" \
+        "$CD_RELEASE_COMPOSE" "$CD_RELEASE_ENV")
+      restricted_envs+=("$CD_DATABASE_ENV" "$CD_RELEASE_ENV")
+      requires_docker=1
+      if [[ "$COMMAND" == "poll" || "$COMMAND" == "retry" ]]; then
+        validates_github_token=1
+      fi
+      ;;
+    *) die "internal command validation error" ;;
+  esac
+  for path in "${required_paths[@]}"; do
     [[ -f "$path" && ! -L "$path" ]] || \
       die "required runtime file must be a regular, non-symlink file: $path"
   done
-  [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || \
-    die "Docker configuration directory is unavailable"
   [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
-  for path in "$CD_DATABASE_ENV" "$CD_RELEASE_ENV"; do
+  for path in "${restricted_envs[@]}"; do
     secret_metadata="$(stat -c '%u:%a' -- "$path")" || \
       die "could not inspect a restricted environment file"
     secret_mode="${secret_metadata#*:}"
     [[ "${secret_metadata%%:*}" == "$expected_uid" && "$secret_mode" == "600" ]] || \
       die "restricted environment files must be owned by the controller UID with mode 0600"
   done
-  if [[ -n "$CD_GITHUB_TOKEN_FILE" ]]; then
+  if (( validates_github_token )) && [[ -n "$CD_GITHUB_TOKEN_FILE" ]]; then
     [[ -f "$CD_GITHUB_TOKEN_FILE" && ! -L "$CD_GITHUB_TOKEN_FILE" ]] || \
       die "configured GitHub token file is unavailable"
     local token_metadata
@@ -301,9 +329,13 @@ validate_runtime_files() {
     [[ "$token_metadata" == "$expected_uid:600" ]] || \
       die "GitHub token file must be owned by the controller UID with mode 0600"
   fi
-  docker_command version >/dev/null || die "Docker daemon is unavailable"
-  docker_command compose version >/dev/null || \
-    die "Docker Compose plugin is unavailable"
+  if (( requires_docker )); then
+    [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || \
+      die "Docker configuration directory is unavailable"
+    docker_command version >/dev/null || die "Docker daemon is unavailable"
+    docker_command compose version >/dev/null || \
+      die "Docker Compose plugin is unavailable"
+  fi
 }
 
 acquire_lock() {
@@ -359,31 +391,48 @@ image_label() {
     --format "{{index .Config.Labels \"$label\"}}" "$image_ref"
 }
 
-extract_manifest() {
-  local digest="$1" image_ref container_id="" output_path
+extract_bundle() {
+  local digest="$1" image_ref container_id="" staging_dir
+  local manifest_path database_path release_path path size
   image_ref="$CD_MANIFEST_REPOSITORY@$digest"
-  output_path="$(mktemp "$CD_STATE_DIR/tmp/manifest.XXXXXX.json")" || \
-    die "could not allocate manifest staging file"
-  chmod 0600 -- "$output_path"
+  staging_dir="$(mktemp -d "$CD_STATE_DIR/tmp/bundle.XXXXXX")" || \
+    die "could not allocate bundle staging directory"
+  chmod 0700 -- "$staging_dir"
+  ARTIFACT_STAGING_DIR="$staging_dir"
+  manifest_path="$staging_dir/manifest.json"
+  database_path="$staging_dir/compose.development.database.yml"
+  release_path="$staging_dir/compose.development.release.yml"
   container_id="$(docker_command create "$image_ref")" || {
-    rm -f -- "$output_path"
-    die "could not create an extraction container for the immutable manifest"
+    die "could not create an extraction container for the immutable bundle"
   }
-  if ! docker_command cp "$container_id:/manifest.json" "$output_path" >/dev/null; then
+  if ! docker_command cp "$container_id:/manifest.json" "$manifest_path" >/dev/null || \
+      ! docker_command cp "$container_id:$OCI_DATABASE_COMPOSE" \
+        "$database_path" >/dev/null || \
+      ! docker_command cp "$container_id:$OCI_RELEASE_COMPOSE" \
+        "$release_path" >/dev/null; then
     docker_command rm -f "$container_id" >/dev/null 2>&1 || true
-    rm -f -- "$output_path"
-    die "could not extract manifest.json from the immutable artifact"
+    die "could not extract every required payload from the immutable bundle"
   fi
   docker_command rm -f "$container_id" >/dev/null || {
-    rm -f -- "$output_path"
-    die "could not remove the manifest extraction container"
+    die "could not remove the bundle extraction container"
   }
-  MANIFEST_PATH="$output_path"
+  for path in "$manifest_path" "$database_path" "$release_path"; do
+    [[ -f "$path" && ! -L "$path" ]] || \
+      die "bundle payload must be a regular, non-symlink file"
+    size="$(stat -c '%s' -- "$path")" || die "could not inspect bundle payload size"
+    (( size >= 1 && size <= 1048576 )) || \
+      die "bundle payload size must be between 1 byte and 1 MiB"
+    chmod 0600 -- "$path"
+  done
+  MANIFEST_PATH="$manifest_path"
+  CURRENT_DATABASE_COMPOSE_PATH="$database_path"
+  CURRENT_RELEASE_COMPOSE_PATH="$release_path"
 }
 
 manifest_tool() {
   "$NODE_BIN" "$MANIFEST_TOOL" validate \
     --file "$MANIFEST_PATH" \
+    --bundle-root "$ARTIFACT_STAGING_DIR" \
     --expected-repository "$CD_EXPECTED_REPOSITORY" \
     --expected-ref "$CD_EXPECTED_REF" \
     --ops-repository "$CD_OPS_REPOSITORY" \
@@ -408,15 +457,17 @@ validate_artifact_labels() {
       "1" ]] || die "manifest artifact canonical schema label mismatch"
   [[ "$(image_label "$manifest_image" io.elevant.database-release.schema-version)" == \
       "1" ]] || die "manifest artifact schema label mismatch"
+  [[ "$(image_label "$manifest_image" io.elevant.database-release.bundle-version)" == \
+      "1" ]] || die "manifest artifact bundle label mismatch"
   [[ "$(image_label "$manifest_image" io.elevant.database-release.media-type)" == \
-      "application/vnd.elevant.database-release-manifest.v1+json" ]] || \
+      "application/vnd.elevant.database-release-bundle.v1" ]] || \
     die "manifest artifact media-type label mismatch"
 }
 
 load_and_validate_manifest() {
   local digest="$1"
   CURRENT_MANIFEST_DIGEST="$digest"
-  extract_manifest "$digest"
+  extract_bundle "$digest"
   manifest_tool >/dev/null || die "certified manifest validation failed"
   CURRENT_SOURCE_COMMIT="$(manifest_get source.commit)"
   CURRENT_SOURCE_RUN_ID="$(manifest_get source.runId)"
@@ -427,6 +478,7 @@ load_and_validate_manifest() {
   CURRENT_RELEASE_COMPOSE_SHA256="$(manifest_get compose.releaseSha256)"
   CURRENT_WORKFLOW_URL="$(manifest_get source.workflowUrl)"
   validate_artifact_labels
+  cache_current_compose_payloads
 }
 
 validate_release_image() {
@@ -489,50 +541,211 @@ load_and_validate_live_baseline() {
 
   CURRENT_DATABASE_COMPOSE_SHA256="$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')"
   CURRENT_RELEASE_COMPOSE_SHA256="$(sha256sum -- "$CD_RELEASE_COMPOSE" | awk '{print $1}')"
-  validate_compose_hashes
+  CURRENT_DATABASE_COMPOSE_PATH="$CD_DATABASE_COMPOSE"
+  CURRENT_RELEASE_COMPOSE_PATH="$CD_RELEASE_COMPOSE"
+  cache_current_compose_payloads
+  validate_current_compose_payloads
   database_compose config --quiet
   release_compose config --quiet
+  validate_live_compose_semantics
 }
 
-validate_compose_hashes() {
-  local actual_database actual_release
+cached_compose_path() {
+  local kind="$1" digest="$2"
+  [[ "$kind" == "database" || "$kind" == "release" ]] || \
+    die "invalid cached Compose kind"
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || die "invalid cached Compose digest"
+  printf '%s/compose/%s/%s.yml\n' "$CD_STATE_DIR" "$kind" "$digest"
+}
+
+validate_cached_compose() {
+  local path="$1" expected_hash="$2" expected_uid=0 metadata actual_hash
+  [[ -f "$path" && ! -L "$path" ]] || \
+    die "cached Compose payload must be a regular, non-symlink file"
+  [[ "$TEST_MODE" != "1" ]] || expected_uid="$(id -u)"
+  metadata="$(stat -c '%u:%a' -- "$path")" || \
+    die "could not inspect cached Compose payload"
+  [[ "$metadata" == "$expected_uid:600" ]] || \
+    die "cached Compose payload must be owned by the controller UID with mode 0600"
+  actual_hash="$(sha256sum -- "$path" | awk '{print $1}')"
+  [[ "$actual_hash" == "$expected_hash" ]] || \
+    die "cached Compose payload hash mismatch"
+}
+
+cache_compose_payload() {
+  local source="$1" kind="$2" expected_hash="$3" directory target temporary
+  [[ -f "$source" && ! -L "$source" ]] || \
+    die "Compose payload source must be a regular, non-symlink file"
+  directory="$CD_STATE_DIR/compose/$kind"
+  target="$(cached_compose_path "$kind" "$expected_hash")"
+  if [[ -e "$target" || -L "$target" ]]; then
+    validate_cached_compose "$target" "$expected_hash"
+    printf '%s\n' "$target"
+    return 0
+  fi
+  temporary="$(mktemp "$directory/.compose.XXXXXX")" || \
+    die "could not allocate cached Compose staging file"
+  if ! install -m 0600 -- "$source" "$temporary"; then
+    rm -f -- "$temporary"
+    die "could not stage cached Compose payload"
+  fi
+  if [[ "$(sha256sum -- "$temporary" | awk '{print $1}')" != "$expected_hash" ]]; then
+    rm -f -- "$temporary"
+    die "staged Compose payload hash mismatch"
+  fi
+  mv -T -- "$temporary" "$target" || {
+    rm -f -- "$temporary"
+    die "could not publish cached Compose payload atomically"
+  }
+  validate_cached_compose "$target" "$expected_hash"
+  printf '%s\n' "$target"
+}
+
+cache_current_compose_payloads() {
+  local database_source="$CURRENT_DATABASE_COMPOSE_PATH"
+  local release_source="$CURRENT_RELEASE_COMPOSE_PATH"
+  validate_current_compose_payloads
+  CURRENT_DATABASE_COMPOSE_PATH="$(cache_compose_payload "$database_source" \
+    database "$CURRENT_DATABASE_COMPOSE_SHA256")"
+  CURRENT_RELEASE_COMPOSE_PATH="$(cache_compose_payload "$release_source" \
+    release "$CURRENT_RELEASE_COMPOSE_SHA256")"
+}
+
+select_cached_compose_payloads() {
+  select_cached_database_compose_payload
+  CURRENT_RELEASE_COMPOSE_PATH="$(cached_compose_path release \
+    "$CURRENT_RELEASE_COMPOSE_SHA256")"
+  validate_cached_compose "$CURRENT_RELEASE_COMPOSE_PATH" \
+    "$CURRENT_RELEASE_COMPOSE_SHA256"
+}
+
+select_cached_database_compose_payload() {
+  CURRENT_DATABASE_COMPOSE_PATH="$(cached_compose_path database \
+    "$CURRENT_DATABASE_COMPOSE_SHA256")"
+  validate_cached_compose "$CURRENT_DATABASE_COMPOSE_PATH" \
+    "$CURRENT_DATABASE_COMPOSE_SHA256"
+}
+
+validate_current_database_compose_payload() {
+  local actual_database
   [[ "$CURRENT_DATABASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
     die "expected database Compose hash is invalid"
+  [[ -f "$CURRENT_DATABASE_COMPOSE_PATH" && ! -L "$CURRENT_DATABASE_COMPOSE_PATH" ]] || \
+    die "current database Compose payload is unavailable"
+  actual_database="$(sha256sum -- "$CURRENT_DATABASE_COMPOSE_PATH" | awk '{print $1}')"
+  [[ "$actual_database" == "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
+    die "database Compose payload does not match the expected immutable input"
+}
+
+validate_current_release_compose_payload() {
+  local actual_release
   [[ "$CURRENT_RELEASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
     die "expected release Compose hash is invalid"
-  actual_database="$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')"
-  actual_release="$(sha256sum -- "$CD_RELEASE_COMPOSE" | awk '{print $1}')"
-  [[ "$actual_database" == "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
-    die "live database Compose hash does not match the expected immutable input"
+  [[ -f "$CURRENT_RELEASE_COMPOSE_PATH" && ! -L "$CURRENT_RELEASE_COMPOSE_PATH" ]] || \
+    die "current release Compose payload is unavailable"
+  actual_release="$(sha256sum -- "$CURRENT_RELEASE_COMPOSE_PATH" | awk '{print $1}')"
   [[ "$actual_release" == "$CURRENT_RELEASE_COMPOSE_SHA256" ]] || \
-    die "live release Compose hash does not match the expected immutable input"
+    die "release Compose payload does not match the expected immutable input"
+}
+
+validate_current_compose_payloads() {
+  validate_current_database_compose_payload
+  validate_current_release_compose_payload
+}
+
+database_compose_file_with_ops() {
+  local compose_path="$1" ops_image="$2"
+  shift 2
+  ELEVANT_DB_OPS_IMAGE="$ops_image" \
+    docker_command compose --env-file "$CD_DATABASE_ENV" \
+      --project-directory "$(dirname -- "$CD_DATABASE_COMPOSE")" \
+      -p "$CD_DATABASE_PROJECT" -f "$compose_path" \
+      --profile operations "$@"
 }
 
 database_compose_with_ops() {
   local ops_image="$1"
   shift
-  ELEVANT_DB_OPS_IMAGE="$ops_image" \
-    docker_command compose --env-file "$CD_DATABASE_ENV" \
-      -p "$CD_DATABASE_PROJECT" -f "$CD_DATABASE_COMPOSE" \
-      --profile operations "$@"
+  database_compose_file_with_ops "$CURRENT_DATABASE_COMPOSE_PATH" \
+    "$ops_image" "$@"
 }
 
 database_compose() {
   database_compose_with_ops "$CURRENT_OPS_IMAGE" "$@"
 }
 
-release_compose() {
-  ELEVANT_DB_RELEASE_IMAGE="$CURRENT_RELEASE_IMAGE" \
+release_compose_file_with_image() {
+  local compose_path="$1" release_image="$2"
+  shift 2
+  ELEVANT_DB_RELEASE_IMAGE="$release_image" \
     docker_command compose --env-file "$CD_RELEASE_ENV" \
-      -p "$CD_RELEASE_PROJECT" -f "$CD_RELEASE_COMPOSE" "$@"
+      --project-directory "$(dirname -- "$CD_RELEASE_COMPOSE")" \
+      -p "$CD_RELEASE_PROJECT" -f "$compose_path" "$@"
+}
+
+release_compose() {
+  release_compose_file_with_image "$CURRENT_RELEASE_COMPOSE_PATH" \
+    "$CURRENT_RELEASE_IMAGE" "$@"
+}
+
+render_compose_model_hash() {
+  local compose_path="$1" project="$2" project_directory="$3" output digest
+  output="$(mktemp "$CD_STATE_DIR/tmp/compose-model.XXXXXX.json")" || \
+    die "could not allocate Compose model staging file"
+  chmod 0600 -- "$output"
+  if ! docker_command compose --env-file /dev/null \
+      --project-directory "$project_directory" -p "$project" \
+      -f "$compose_path" --profile "*" config --format json \
+      --no-interpolate --no-env-resolution --no-path-resolution > "$output"; then
+    rm -f -- "$output"
+    return 1
+  fi
+  digest="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$output")" || {
+    rm -f -- "$output"
+    return 1
+  }
+  rm -f -- "$output"
+  printf '%s\n' "$digest"
+}
+
+validate_live_database_compose_semantics() {
+  local canonical live project_directory
+  project_directory="$(dirname -- "$CD_DATABASE_COMPOSE")"
+  canonical="$(render_compose_model_hash "$CURRENT_DATABASE_COMPOSE_PATH" \
+    "$CD_DATABASE_PROJECT" "$project_directory")" || \
+    die "could not render the certified database Compose model"
+  live="$(render_compose_model_hash "$CD_DATABASE_COMPOSE" \
+    "$CD_DATABASE_PROJECT" "$project_directory")" || \
+    die "could not render the live database Compose model"
+  [[ "$canonical" == "$live" ]] || \
+    die "live database Compose semantics differ from the certified payload"
+}
+
+validate_live_release_compose_semantics() {
+  local canonical live project_directory
+  project_directory="$(dirname -- "$CD_RELEASE_COMPOSE")"
+  canonical="$(render_compose_model_hash "$CURRENT_RELEASE_COMPOSE_PATH" \
+    "$CD_RELEASE_PROJECT" "$project_directory")" || \
+    die "could not render the certified release Compose model"
+  live="$(render_compose_model_hash "$CD_RELEASE_COMPOSE" \
+    "$CD_RELEASE_PROJECT" "$project_directory")" || \
+    die "could not render the live release Compose model"
+  [[ "$canonical" == "$live" ]] || \
+    die "live release Compose semantics differ from the certified payload"
+}
+
+validate_live_compose_semantics() {
+  validate_live_database_compose_semantics
+  validate_live_release_compose_semantics
 }
 
 preflight_release() {
-  validate_compose_hashes
+  validate_current_compose_payloads
   validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
   validate_release_image "$CURRENT_RELEASE_IMAGE" "$CD_RELEASE_REPOSITORY"
   database_compose config --quiet || return 1
   release_compose config --quiet || return 1
+  validate_live_compose_semantics
 }
 
 state_get() {
@@ -643,7 +856,8 @@ run_backup() {
 
 run_pre_backup() {
   local state_file="$CD_STATE_DIR/last-success.json"
-  local accepted_status accepted_commit accepted_ops_image
+  local accepted_status accepted_commit accepted_ops_image accepted_database_hash
+  local accepted_database_compose
   [[ -f "$state_file" && ! -L "$state_file" ]] || \
     die "pre-migration backup requires an adopted or successful baseline"
   accepted_status="$(state_get "$state_file" status)"
@@ -651,10 +865,15 @@ run_pre_backup() {
     die "pre-migration backup baseline state is invalid"
   accepted_commit="$(state_get "$state_file" sourceCommit)"
   accepted_ops_image="$(state_get "$state_file" opsImage)"
+  accepted_database_hash="$(state_get "$state_file" databaseComposeSha256)"
+  accepted_database_compose="$(cached_compose_path database \
+    "$accepted_database_hash")"
+  validate_cached_compose "$accepted_database_compose" "$accepted_database_hash"
   validate_release_image "$accepted_ops_image" "$CD_OPS_REPOSITORY" \
     "$accepted_commit"
-  database_compose_with_ops "$accepted_ops_image" config --quiet || return 1
-  database_compose_with_ops "$accepted_ops_image" \
+  database_compose_file_with_ops "$accepted_database_compose" \
+    "$accepted_ops_image" config --quiet || return 1
+  database_compose_file_with_ops "$accepted_database_compose" "$accepted_ops_image" \
     run --rm --no-deps backup || return 1
 }
 
@@ -699,7 +918,10 @@ is_paused() {
 }
 
 load_last_success() {
+  local scope="${1:-all}"
   local state_file="$CD_STATE_DIR/last-success.json" accepted_status
+  [[ "$scope" == "all" || "$scope" == "database" ]] || \
+    die "invalid last-success cache scope"
   [[ -f "$state_file" && ! -L "$state_file" ]] || \
     die "no adopted or successful manifest is available for scheduled operations"
   CURRENT_MANIFEST_DIGEST="$(state_get "$state_file" manifestDigest)"
@@ -718,9 +940,18 @@ load_last_success() {
     die "last-success state contains an invalid ops image"
   [[ "${CURRENT_OPS_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
     die "last-success state contains an invalid ops image"
-  [[ "$CURRENT_DATABASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ && \
-      "$CURRENT_RELEASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
-    die "last-success state contains invalid Compose hashes"
+  [[ "$CURRENT_DATABASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "last-success state contains an invalid database Compose hash"
+  if [[ "$scope" == "database" ]]; then
+    select_cached_database_compose_payload
+    return 0
+  fi
+  [[ "$CURRENT_RELEASE_IMAGE" == "$CD_RELEASE_REPOSITORY@"* && \
+      "${CURRENT_RELEASE_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+    die "last-success state contains an invalid release image"
+  [[ "$CURRENT_RELEASE_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+    die "last-success state contains an invalid release Compose hash"
+  select_cached_compose_payloads
 }
 
 candidate_is_newer_than_last_success() {
@@ -743,6 +974,8 @@ candidate_is_newer_than_last_success() {
 reconcile_accepted_manifest() {
   local accepted_file="$CD_STATE_DIR/last-success.json"
   local accepted_digest accepted_status accepted_stage
+  local accepted_database_hash accepted_release_hash
+  local accepted_database_compose accepted_release_compose
   local attempt record_file record_digest record_status
   local needs_reconciliation=0
 
@@ -756,6 +989,15 @@ reconcile_accepted_manifest() {
     die "last-success state matching the advertised manifest is invalid"
   accepted_stage="$(state_get "$accepted_file" stage)"
   [[ -n "$accepted_stage" ]] || die "accepted manifest state has an empty stage"
+  accepted_database_hash="$(state_get "$accepted_file" databaseComposeSha256)"
+  accepted_release_hash="$(state_get "$accepted_file" releaseComposeSha256)"
+  [[ "$accepted_database_hash" == "$CURRENT_DATABASE_COMPOSE_SHA256" && \
+     "$accepted_release_hash" == "$CURRENT_RELEASE_COMPOSE_SHA256" ]] || \
+    die "accepted manifest Compose hashes differ from the certified bundle"
+  accepted_database_compose="$(cached_compose_path database "$accepted_database_hash")"
+  accepted_release_compose="$(cached_compose_path release "$accepted_release_hash")"
+  validate_cached_compose "$accepted_database_compose" "$accepted_database_hash"
+  validate_cached_compose "$accepted_release_compose" "$accepted_release_hash"
 
   attempt="$(attempt_file "$CURRENT_MANIFEST_DIGEST")"
   for record_file in "$CD_STATE_DIR/current.json" "$attempt"; do
@@ -864,6 +1106,7 @@ command_adopt_current() {
   run_backup || die "live baseline backup failed"
   log "live baseline restore-check started"
   run_restore_check || die "live baseline restore-check failed"
+  validate_live_compose_semantics
 
   CURRENT_STAGE=adopted-current
   write_state_file "$CD_STATE_DIR/last-success.json" adopted adopted-current \
@@ -878,11 +1121,10 @@ command_backup() {
     log "controller is paused; scheduled backup skipped"
     return 0
   fi
-  load_last_success
+  load_last_success database
   validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
-  [[ "$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')" == \
-      "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
-    die "scheduled backup refused database Compose drift"
+  validate_current_database_compose_payload
+  validate_live_database_compose_semantics
   database_compose config --quiet
   log "scheduled backup started"
   run_backup
@@ -894,11 +1136,10 @@ command_restore_check() {
     log "controller is paused; scheduled restore-check skipped"
     return 0
   fi
-  load_last_success
+  load_last_success database
   validate_release_image "$CURRENT_OPS_IMAGE" "$CD_OPS_REPOSITORY"
-  [[ "$(sha256sum -- "$CD_DATABASE_COMPOSE" | awk '{print $1}')" == \
-      "$CURRENT_DATABASE_COMPOSE_SHA256" ]] || \
-    die "scheduled restore-check refused database Compose drift"
+  validate_current_database_compose_payload
+  validate_live_database_compose_semantics
   database_compose config --quiet
   log "scheduled restore-check started"
   run_restore_check
@@ -932,8 +1173,11 @@ command_status() {
 }
 
 cleanup() {
-  if [[ -n "$MANIFEST_PATH" ]]; then
-    rm -f -- "$MANIFEST_PATH"
+  if [[ -n "$ARTIFACT_STAGING_DIR" ]]; then
+    case "$ARTIFACT_STAGING_DIR" in
+      "$CD_STATE_DIR"/tmp/bundle.*) rm -rf -- "$ARTIFACT_STAGING_DIR" ;;
+      *) log "WARNING: refused unsafe bundle staging cleanup path" ;;
+    esac
   fi
   [[ -z "$GITHUB_HEADER_PATH" ]] || rm -f -- "$GITHUB_HEADER_PATH"
   [[ -z "$GITHUB_PAYLOAD_PATH" ]] || rm -f -- "$GITHUB_PAYLOAD_PATH"
@@ -982,12 +1226,20 @@ main() {
   require_command touch
   load_config
   ensure_runtime_directories
-  validate_runtime_files
 
   case "$COMMAND" in
-    status) command_status ;;
+    status)
+      validate_runtime_files
+      command_status
+      ;;
     *)
       acquire_lock
+      if [[ "$COMMAND" == "poll" || "$COMMAND" == "backup" || \
+            "$COMMAND" == "restore-check" ]] && is_paused; then
+        log "controller is paused; $COMMAND skipped"
+        return 0
+      fi
+      validate_runtime_files
       case "$COMMAND" in
         poll) command_poll ;;
         dry-run) command_dry_run ;;

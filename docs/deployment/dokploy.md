@@ -66,7 +66,7 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 
 No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria. Tailscale Serve debe apuntar solo a los cinco loopbacks previstos: Dokploy, monitoreo y, cuando existan, API, AVIAM Web y Public Web.
 
-## 2. Publicar imágenes y manifiesto aprobados
+## 2. Publicar imágenes y bundle aprobados
 
 `backend-ci.yml` restaura dependencias bloqueadas, compila, prueba SQL real,
 comprueba drift, genera SQL revisable, valida Compose y construye ambas imágenes
@@ -83,8 +83,10 @@ ghcr.io/<namespace>/elevant-db-ops:sha-<commit>
 ghcr.io/<namespace>/elevant-db-release:sha-<commit>
 ```
 
-CI obtiene los dos digests, genera un manifiesto estricto con la revisión,
-ejecución, hashes de Compose y fingerprints de migraciones/modelo/seed, y lo
+CI obtiene los dos digests y genera un manifiesto estricto con la revisión,
+ejecución, hashes de Compose y fingerprints de migraciones/modelo/seed. Después
+empaqueta en un único bundle OCI v1 el manifiesto y los bytes exactos de
+`compose.development.database.yml` y `compose.development.release.yml`, y lo
 publica como un tercer artefacto privado:
 
 ```text
@@ -92,11 +94,19 @@ ghcr.io/<namespace>/elevant-db-release-manifest:sha-<commit>-run-<run>-attempt-<
 ghcr.io/<namespace>/elevant-db-release-manifest:development-certified
 ```
 
-`development-certified` se mueve como último paso. Si build, certificación,
-publicación o validación falla, el controlador no descubre una entrega parcial.
-Los aliases son mutables y sirven solo para descubrimiento; el controlador
-resuelve el digest del manifiesto y ejecuta las dos referencias `@sha256:...`
-incluidas. No se construye .NET/Next/Vite en el KVM.
+El bundle expone `/manifest.json` y ambos Compose bajo `/compose/`, declara
+`bundle-version=1` y el media type
+`application/vnd.elevant.database-release-bundle.v1`. CI vuelve a extraer los
+tres payloads y exige igualdad byte a byte. `development-certified` se mueve
+como último paso. Si build, certificación, publicación o validación falla, el
+controlador no descubre una entrega parcial.
+
+Los aliases son mutables y sirven solo para descubrimiento. El controlador
+resuelve el digest del bundle, valida etiquetas, manifiesto y hashes, guarda los
+Compose por contenido y ejecuta las dos referencias `@sha256:...` incluidas con
+los Compose certificados. Antes de SQL compara el modelo Compose canónico con
+los Raw vivos de Dokploy: formato y comentarios pueden variar, la semántica no.
+No se construye .NET/Next/Vite en el KVM.
 
 ## 3. Crear almacenamiento/red una sola vez
 
@@ -153,9 +163,10 @@ Este procedimiento manual establece/adopta la primera versión viva. Para las
 versiones posteriores, instale el controlador de
 [`ops/dokploy/database-cd`](../../ops/dokploy/database-cd/README.md) y registre
 los paths/proyectos exactos de ambos Compose. El controlador no pulsa Deploy ni
-edita el provider Raw: invoca los servicios one-shot con variables de imagen
-por digest, conserva separado el contenedor SQL y registra el último manifiesto
-aceptado.
+edita el provider Raw: usa esos paths para el gate semántico, pero invoca los
+servicios one-shot desde los Compose cacheados por hash y con variables de
+imagen por digest. Conserva separado el contenedor SQL y registra el último
+bundle aceptado.
 
 ## 6. Backup y restore-check
 
@@ -170,8 +181,10 @@ tipo de job usa `docker exec` y exige un contenedor activo. En la página global
 
 Después del primer deploy, copie del log de despliegue los valores exactos de
 proyecto, Compose y `.env` de ambos recursos. Instálelos una sola vez en el
-archivo root-only del controlador y ejecute `--adopt-current`; no copie
-contraseñas ni connection strings a sus scripts.
+archivo root-only del controlador, valide el bundle con `--dry-run` y ejecute
+`--adopt-current`; no copie contraseñas ni connection strings a sus scripts. La
+adopción guarda los Compose vivos por hash en `state/compose/` antes de aceptar
+la baseline.
 
 Los tres jobs internos `dokploy-server` llaman el mismo ejecutable persistente que está
 montado dentro del contenedor Dokploy:
@@ -185,8 +198,9 @@ montado dentro del contenedor Dokploy:
 `--poll` se programa cada minuto. El job de backup conserva 02:15 UTC y el de
 restore-check domingo 04:30 UTC. Los tres comparten `flock` y el estado
 persistente: si una promoción está activa, la operación programada no puede
-solaparse. Backup/restore usan la imagen ops de la última entrega aceptada, no
-un alias mutable ni un candidato fallido.
+solaparse. Backup/restore usan la imagen ops y el Compose database cacheado de
+la última entrega aceptada, no un alias mutable, el Raw vivo ni un candidato
+fallido.
 
 Reglas del scheduler:
 

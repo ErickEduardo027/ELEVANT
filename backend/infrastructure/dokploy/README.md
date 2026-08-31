@@ -21,8 +21,10 @@ Están implementados y validados los dos primeros Compose y las imágenes de bas
 Nada en estos Compose llama a la API de Dokploy ni recrea SQL. El despliegue
 inicial continúa siendo manual con validación entre pasos. Después de adoptar la
 versión viva, el controlador de `ops/dokploy/database-cd` consulta desde el
-plano privado el manifiesto certificado de GHCR y ejecuta el release one-shot.
-GitHub nunca abre una conexión al VPS.
+plano privado el bundle OCI v1 certificado de GHCR. Valida su manifiesto y sus
+dos Compose, cachea estos últimos por hash, exige equivalencia semántica con los
+Raw vivos y ejecuta el release one-shot desde las entradas certificadas. GitHub
+nunca abre una conexión al VPS.
 
 ## Acceso Development
 

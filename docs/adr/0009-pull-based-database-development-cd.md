@@ -5,6 +5,11 @@
 Accepted — 2026-08-23. Solo aplica a la base sintética de Development;
 Production, API y clientes quedan fuera de esta decisión.
 
+El empaquetado de solo `/manifest.json` y la comparación de Compose descritos
+en esta decisión fueron sustituidos por el bundle OCI v1 de
+[ADR-0010](0010-package-development-database-release-as-oci-bundle-v1.md). El
+modelo pull-based y la secuencia de promoción permanecen vigentes.
+
 ## Contexto
 
 DB v1 ya corre en el VPS privado de Development con SQL Server, migraciones EF,
