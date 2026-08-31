@@ -345,6 +345,43 @@ reemplazan una aprobación obligatoria; active las reglas documentadas en
 [`.github/BRANCH_PROTECTION.md`](../../.github/BRANCH_PROTECTION.md) cuando el
 plan lo permita.
 
+## Handoff: publicar API Development y activar su CD
+
+La API conserva un recurso Docker Compose normal y un controlador separado. El
+procedimiento ejecutable completo está en
+[`ops/dokploy/api-cd/README.md`](../../ops/dokploy/api-cd/README.md). Ninguno de
+los pasos siguientes autoriza al agente a modificar el host: el operador los
+ejecuta y entrega evidencia sanitizada antes de avanzar.
+
+1. Fusionar la implementación aprobada en `Development` y exigir CI verde,
+   imagen API por digest y bundle `elevant-api-release-manifest` certificado.
+2. Comprobar DB-CD `succeeded/complete`, SQL healthy, backups recientes,
+   `systemctl --failed` vacío, recursos disponibles y puerto `18080` libre.
+3. Crear una bridge externa exclusiva de runtime con CIDR libre y gateway fijo.
+   No convertir `elevant-dev-data` en red de salida ni unir la API a
+   `dokploy-network`.
+4. Crear `elevant-dev-api` como **Docker Compose / Raw**, sin Domain y con
+   AutoDeploy desactivado. Guardar Environment `root:root 0600`, registrar los
+   paths reales y desplegar solo la referencia `@sha256` certificada.
+5. Exigir UID no-root, hardening, límites, redes exactas, listener únicamente
+   `127.0.0.1:18080`, health/readiness/ping/Swagger correctos y ausencia de
+   migración/seed en logs.
+6. Publicar `svc:elevant-dev-api` con Tailscale Serve hacia el loopback. Probar
+   acceso de `group:elevant-dev` y `group:elevant-ops`, denegación pública y
+   Funnel vacío.
+7. Transferir el paquete LF de `api-cd` desde el commit aprobado, validar su
+   SHA-256, instalarlo pausado y ejecutar `verify-runtime`, `--dry-run` y
+   `--adopt-current` sin mostrar Environment.
+8. Crear deshabilitado el único schedule `ELEVANT API CD - Poll`, UTC
+   `* * * * *`, ejecutar primero un no-op manual y habilitarlo después.
+9. Validar la siguiente entrega API-only, rollback de aplicación y persistencia
+   tras un reboot controlado. Nunca hacer rollback de esquema como respuesta a
+   un fallo API.
+
+La credencial runtime es exclusivamente `elevant_dev_app`. JWT/RBAC/tenant y
+endpoints de negocio quedan fuera de este scaffold inicial; hasta implementarlos
+la API permanece 100 % tailnet-only y con datos sintéticos.
+
 ## Aceptación
 
 - Dokploy y monitoreo funcionan solo por Tailscale.
@@ -360,6 +397,9 @@ plan lo permita.
   opcional existe.
 - Los caches `state/compose/database` y `state/compose/release` son root-only,
   modo `0600`, y contienen las entradas referenciadas por `last-success.json`.
+- Tras el rollout API, el servicio está healthy por digest, API-CD está
+  `succeeded/complete`, el poll aceptado es no-op y Tailscale es la única vía de
+  acceso a `18080`.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback
@@ -369,5 +409,9 @@ plan lo permita.
 - SSH: retirar solo el drop-in desde Browser Terminal.
 - Traefik: recrear temporalmente con el digest auditado 3.6.7.
 - Landing: Start Application y habilitar Domain.
+- API: pausar `api-cd`, deshabilitar su schedule y restaurar juntos la imagen y
+  el Compose/hash registrados en `last-success`; si no existe baseline sana,
+  drenar/limpiar solo `svc:elevant-dev-api` y detener su Compose sin tocar
+  SQL/red/volúmenes.
 - DB: detener Compose conservando red y volúmenes.
 - Snapshot: último recurso; restaura todo el VPS y pierde cambios posteriores.

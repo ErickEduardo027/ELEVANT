@@ -2,7 +2,13 @@
 
 ## URL y versión
 
-La URL base llega desde configuración pública del cliente. Los endpoints de negocio se consumen bajo `/api/v1`; no se codifican hosts en fuente. Development usará `https://elevant-dev-api.<tailnet>.ts.net` cuando se configure Tailscale Services. Local/prototipo conserva su URL explícita por ambiente.
+La URL base llega desde configuración pública del cliente. Los endpoints de negocio se consumen bajo `/api/v1`; no se codifican hosts en fuente. Tras completar su handoff, Development usará `https://elevant-dev-api.<tailnet>.ts.net` mediante Tailscale Services. Local/prototipo conserva su URL explícita por ambiente.
+
+La primera entrega remota es deliberadamente un scaffold técnico. Expone
+`/api/v1/system/ping`, `/health`, `/health/ready` y Swagger dentro del tailnet;
+todavía no contiene endpoints de negocio ni autenticación funcional. Tailscale
+limita quién alcanza el host, pero no reemplaza JWT, RBAC ni el scope tenant que
+deberán proteger los contratos de negocio.
 
 ## Solicitudes
 

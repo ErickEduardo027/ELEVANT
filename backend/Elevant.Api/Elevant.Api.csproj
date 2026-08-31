@@ -17,4 +17,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Elevant.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

@@ -5,7 +5,9 @@ hardening, Tailscale, observabilidad, backup/restore programados y snapshot frí
 fueron aceptados el 2026-08-23. El controlador pull-based fue instalado y
 aceptado manualmente por el operador el 2026-08-31 UTC; desde entonces promueve
 automáticamente bundles DB certificados de `Development`. La API y los tres
-frontends continúan fuera del VPS. La secuencia reproducible con checkpoints y
+frontends continúan fuera del VPS hasta completar sus handoffs. La imagen,
+bundle y controlador pull-based de la API se versionan por separado y no
+autorizan su instalación remota. La secuencia reproducible con checkpoints y
 rollback está en
 [Configuración de Dokploy](dokploy-configuration.md).
 
@@ -21,12 +23,12 @@ SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops ent
 Tailscale HTTPS Services
   ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (futuro)
   ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (futuro)
-  ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API (futuro)
+  ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API
   └─ Dokploy       -> 127.0.0.1:3000
 
                                      red elevant-dev-data (internal)
 db release migrator/seeder ───────────────────┐
-future Elevant API ───────────────────────────┼─> elevant-dev-sql:1433
+Elevant API ──────────────────────────────────┼─> elevant-dev-sql:1433
 db ops ───────────────────────────────────────┘          │
                                             named volume data + backups
 
@@ -37,7 +39,7 @@ Deployables separados:
 
 1. `elevant-dev-database`: manual, sin AutoDeploy.
 2. `elevant-dev-database-release`: one-shot por versión.
-3. `elevant-dev-api`: futuro, auto-deploy controlado.
+3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
 4. `elevant-dev-aviam-web`: futuro, Vite estático/Nginx.
 5. `elevant-dev-public-web`: futuro, Next standalone.
 
@@ -225,9 +227,12 @@ Backup usa full nativo `CHECKSUM + COMPRESSION`, escribe primero `.partial`, eje
 
 Sin copia off-host, una pérdida total del VPS solo se recupera con migraciones + seed. Esto es aceptable únicamente mientras Development sea descartable y sintético.
 
-## 7. Publicar API y webs en una fase posterior
+## 7. Publicar la API Development
 
-Cuando sus contratos estén listos:
+La API se prepara antes que los clientes para que el equipo pueda desarrollar
+contra una URL compartida. La primera entrega es un scaffold privado: health,
+readiness, ping, Swagger y hubs aún sin operaciones de negocio. No se publica a
+Internet ni se considera autenticada por estar detrás de Tailscale.
 
 | Deployable | Imagen/runtime | Bind host | Red de datos | Límite inicial |
 | --- | --- | --- | --- | --- |
@@ -235,19 +240,39 @@ Cuando sus contratos estén listos:
 | AVIAM Web | build Vite + Nginx unprivileged | `127.0.0.1:18081:8080` | no | 128 MB / 0.15 CPU |
 | Public Web | Next `standalone`, Node no-root | `127.0.0.1:18082:3000` | no | 512 MB / 0.35 CPU |
 
-API usa `ASPNETCORE_ENVIRONMENT=Development`, health `/health`, readiness `/health/ready`, Swagger explícito y HTTPS redirection desactivado detrás de Serve. CORS contiene solo los dos orígenes HTTPS de las webs y localhost autorizado. Los valores `VITE_`/`NEXT_PUBLIC_` se hornean durante build y no son secretos.
+GitHub Actions construye y prueba la imagen API una sola vez, la publica por
+digest y mueve al final el alias de un bundle OCI certificado. Ese bundle fija
+el Compose y la compatibilidad DB. El controlador privado
+[`ops/dokploy/api-cd`](../../ops/dokploy/api-cd/README.md) espera primero el
+estado aceptado por `database-cd`, despliega el digest y valida health,
+readiness, ping y Swagger. Dokploy usa Compose Raw con AutoDeploy desactivado;
+no usa el provider GitHub para compilar o desplegar en el VPS.
+
+API usa `ASPNETCORE_ENVIRONMENT=Development`, health `/health`, readiness
+`/health/ready`, Swagger habilitado y HTTPS redirection desactivado detrás de
+Serve. Usa únicamente el login `elevant_dev_app`. CORS contiene localhost
+autorizado; los orígenes HTTPS de las webs se agregan cuando estas existan. Una
+red bridge propia proporciona salida y `elevant-dev-data` conserva SQL aislado.
+
+## 8. Publicar las webs en una fase posterior
+
+Los valores `VITE_`/`NEXT_PUBLIC_` se hornean durante build y no son secretos.
+Las webs no se conectan a `elevant-dev-data` y quedan fuera del rollout API.
 
 Configure Services:
 
 ```bash
-tailscale serve --service=svc:elevant-dev-api --https=443 127.0.0.1:18080
-tailscale serve --service=svc:elevant-dev-aviam-web --https=443 127.0.0.1:18081
-tailscale serve --service=svc:elevant-dev-public-web --https=443 127.0.0.1:18082
-tailscale serve --service=svc:elevant-dev-dokploy --https=443 127.0.0.1:3000
+tailscale serve --service=svc:elevant-dev-api --https=443 http://127.0.0.1:18080
+tailscale serve --service=svc:elevant-dev-aviam-web --https=443 http://127.0.0.1:18081
+tailscale serve --service=svc:elevant-dev-public-web --https=443 http://127.0.0.1:18082
+tailscale serve --service=svc:elevant-dev-dokploy --https=443 http://127.0.0.1:3000
 tailscale serve status --json
 ```
 
-El host debe estar etiquetado y los anuncios aprobados/auto-aprobados. No use headers de identidad Tailscale como autenticación funcional; API mantiene JWT/RBAC/tenant.
+El host debe estar etiquetado y los anuncios aprobados/auto-aprobados. No use
+headers de identidad Tailscale como autenticación funcional. El scaffold actual
+aún no implementa JWT/RBAC/tenant y por eso permanece estrictamente privado;
+esos controles serán obligatorios antes de exponer contratos de negocio.
 
 ## Producción queda fuera de este VPS
 

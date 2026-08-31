@@ -19,6 +19,7 @@ public sealed class ElevantApiFactory : WebApplicationFactory<Program>
             {
                 ["ConnectionStrings:ElevantDatabase"] = TestConnectionString,
                 ["Cors:AllowedOrigins:1"] = "",
+                ["ELEVANT_DATABASE_ENVIRONMENT"] = "Development",
                 ["ForwardedHeaders:Enabled"] = "false",
                 ["HttpsRedirection:Enabled"] = "false",
                 ["Swagger:Enabled"] = "true",

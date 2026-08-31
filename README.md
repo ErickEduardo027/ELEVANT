@@ -59,12 +59,22 @@ Cada frontend se instala y valida dentro de su propia carpeta con npm y su `pack
 ## Ramas y despliegue
 
 - `Development` es la rama de integración.
-- `feature/database-v1` es la rama de entrega de esta primera base; sus subramas separan módulos y se integran allí.
 - `main` representa Production cuando su promoción esté habilitada.
 
-No se fusiona ni despliega automáticamente una rama feature. Tras revisión y merge manual en `Development`, CI valida SQL Server 2022, el esquema, upgrades, ausencia de seed en Production y las imágenes. Solo en un push válido a `Development` publica `elevant-db-ops` y `elevant-db-release` en GHCR; no llama a Dokploy.
+No se fusiona ni despliega automáticamente una rama feature. Tras revisión y
+merge manual en `Development`, CI valida SQL Server 2022, el esquema, upgrades,
+ausencia de seed en Production y la imagen API. Los cambios de base publican
+`elevant-db-ops`, `elevant-db-release` y su bundle certificado; los cambios del
+backend publican la API y su propio bundle certificado. GitHub no inicia una
+conexión hacia Dokploy.
 
-En el VPS de Development, SQL Server/volúmenes tienen un stack manual separado del release de migraciones. Más adelante API, AVIAM Web y Public Web serán deployables independientes; la tablet consumirá esa misma API. La arquitectura está en [dokploy.md](docs/deployment/dokploy.md) y el bootstrap manual con checkpoints en [Configuración de Dokploy](docs/deployment/dokploy-configuration.md).
+En el diseño del VPS de Development, SQL Server/volúmenes, migraciones y API
+conservan recursos separados. Tras completar el handoff manual de la API, los
+controladores privados consultarán GHCR y mantendrán el orden
+`migración compatible -> API`; AVIAM Web y Public Web serán deployables
+posteriores y la tablet consumirá esa misma API. La arquitectura está en
+[dokploy.md](docs/deployment/dokploy.md) y el bootstrap manual con checkpoints
+en [Configuración de Dokploy](docs/deployment/dokploy-configuration.md).
 
 ## Guía para personas y agentes
 

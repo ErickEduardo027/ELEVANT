@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Api.ExceptionHandling;
+using Elevant.Api.HealthChecks;
 using Elevant.Api.OpenApi;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
@@ -57,6 +58,12 @@ public static class ServiceCollectionExtensions
         AddCors(services, configuration);
         AddRateLimiting(services, configuration);
         AddForwardedHeaders(services, configuration);
+        services
+            .AddHealthChecks()
+            .AddCheck<DatabaseReadinessHealthCheck>(
+                name: "database-target",
+                failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy,
+                tags: ["ready"]);
         services.AddElevantOpenApi();
 
         return services;

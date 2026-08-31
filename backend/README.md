@@ -33,6 +33,27 @@ dotnet ef migrations has-pending-model-changes `
 
 Las pruebas SQL usan `ELEVANT_TEST_SQLSERVER_MASTER`. Si no está definida, intentan LocalDB en Windows; CI usa SQL Server 2022 fijado por digest.
 
+## Entrega remota de Development
+
+`compose.development.api.yml` define únicamente la API compartida. Usa una
+imagen GHCR inmutable, publica `127.0.0.1:18080`, se conecta a la red privada de
+SQL y a una red de runtime separada, y ejecuta con usuario no-root, filesystem
+read-only y límites de recursos. Sus valores sensibles se guardan en el
+Environment root-only de Dokploy; no se copian al Compose ni al repositorio.
+
+- `/health` comprueba solo que el proceso HTTP está vivo.
+- `/health/ready` comprueba SQL, el catálogo exacto y el marcador inmutable de
+  `ElevantDevelopmentDb`.
+- `/api/v1/system/ping` y `/swagger/v1/swagger.json` son los únicos contratos
+  HTTP útiles del scaffold actual.
+
+GitHub Actions construye y certifica la imagen una sola vez. El controlador
+privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
+su digest después de que el controlador de base haya aceptado una versión
+compatible. El bootstrap inicial del VPS sigue siendo manual y verificable.
+La API aún no implementa autenticación ni endpoints de negocio, por lo que debe
+permanecer exclusivamente dentro del tailnet.
+
 ## Entorno local completo
 
 ```powershell
