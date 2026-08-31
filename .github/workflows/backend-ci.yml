@@ -377,8 +377,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           install -d artifacts/api-image
-          docker save elevant-api:ci | zstd --threads=0 -19 \
-            --output artifacts/api-image/elevant-api-image.tar.zst
+          docker save elevant-api:ci | zstd -T0 -19 \
+            -o artifacts/api-image/elevant-api-image.tar.zst
           (
             cd artifacts/api-image
             sha256sum elevant-api-image.tar.zst > elevant-api-image.tar.zst.sha256
@@ -840,7 +840,7 @@ jobs:
             cd artifacts/api-image
             sha256sum --check elevant-api-image.tar.zst.sha256
           )
-          zstd --decompress --stdout artifacts/api-image/elevant-api-image.tar.zst |
+          zstd -d -c artifacts/api-image/elevant-api-image.tar.zst |
             docker load
           expected_image_id="$(<artifacts/api-image/elevant-api-image.id)"
           loaded_image_id="$(docker image inspect --format '{{.Id}}' elevant-api:ci)"
