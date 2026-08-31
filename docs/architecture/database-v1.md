@@ -8,7 +8,7 @@ ELEVANT posee tres clientes y una sola fuente de verdad por ambiente:
 
 | Cliente | Audiencia | Frontera de datos |
 | --- | --- | --- |
-| `frontend/web` | Equipos internos AVIAM | Acceso entre aerolíneas solo con rol y scope de estación explícitos |
+| `frontend/private-web` | Equipos internos AVIAM | Acceso entre aerolíneas solo con rol y scope de estación explícitos |
 | `frontend/public-web` | Clientes/aerolíneas | Tenant derivado por la API desde la membresía autenticada |
 | `frontend/mobile-agent` | Agentes de rampa | Agente/estación derivados por la API; comandos offline idempotentes |
 

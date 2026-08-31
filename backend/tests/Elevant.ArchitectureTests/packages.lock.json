@@ -573,6 +573,7 @@
           "Elevant.Application": "[1.0.0, )",
           "Elevant.Contracts": "[1.0.0, )",
           "Elevant.Infrastructure": "[1.0.0, )",
+          "Elevant.Persistence": "[1.0.0, )",
           "Swashbuckle.AspNetCore": "[10.2.3, )"
         }
       },
@@ -594,12 +595,20 @@
         "dependencies": {
           "Elevant.Application": "[1.0.0, )",
           "Elevant.Domain": "[1.0.0, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.10, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.10, )"
+        }
+      },
+      "elevant.persistence": {
+        "type": "Project",
+        "dependencies": {
+          "Elevant.Domain": "[1.0.0, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.10, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
-          "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.10, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.10, )"
+          "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.10, )"
         }
       },
       "Asp.Versioning.Mvc": {

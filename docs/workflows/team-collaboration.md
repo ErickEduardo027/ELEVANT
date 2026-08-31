@@ -7,7 +7,7 @@ El trabajo se coordina mediante issues, ramas cortas y pull requests revisables.
 - Erick mantiene `backend` y `.github`, además de SQL Server, secretos y
   despliegues. La solución, código, pruebas, infraestructura y automatización del
   servidor permanecen juntos dentro de `backend`.
-- Laisha mantiene `frontend/web` y consume la API remota de Development sin instalar SQL
+- Laisha mantiene `frontend/private-web` y consume la API remota de Development sin instalar SQL
   Server ni ejecutar el backend localmente.
 - Eliezer mantiene `frontend/mobile-agent` y consume la API remota de Development sin
   instalar SQL Server ni ejecutar el backend localmente.

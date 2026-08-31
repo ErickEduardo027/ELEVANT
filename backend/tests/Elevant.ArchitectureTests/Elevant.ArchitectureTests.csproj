@@ -18,11 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Elevant.Api\Elevant.Api.csproj" />
-    <ProjectReference Include="..\..\src\Elevant.Application\Elevant.Application.csproj" />
-    <ProjectReference Include="..\..\src\Elevant.Contracts\Elevant.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\Elevant.Domain\Elevant.Domain.csproj" />
-    <ProjectReference Include="..\..\src\Elevant.Infrastructure\Elevant.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Elevant.Api\Elevant.Api.csproj" />
+    <ProjectReference Include="..\..\Elevant.Application\Elevant.Application.csproj" />
+    <ProjectReference Include="..\..\Elevant.Contracts\Elevant.Contracts.csproj" />
+    <ProjectReference Include="..\..\Elevant.Domain\Elevant.Domain.csproj" />
+    <ProjectReference Include="..\..\Elevant.Infrastructure\Elevant.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\database\DevelopmentDB\Elevant.Persistence\Elevant.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

@@ -24,7 +24,7 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | `database-cd/` | Controlador pull-based, bundle OCI v1, cache Compose, lock y estado persistente para promover la DB Development |
 
 Las fuentes Compose certificadas de SQL permanecen en
-`backend/infrastructure/docker` y cada entrega incluye sus bytes exactos en el
+`database/DevelopmentDB` y cada entrega incluye sus bytes exactos en el
 bundle OCI. `database-cd` los valida, cachea por hash y compara semánticamente
 con los Raw vivos; no posee el esquema, secretos ni volúmenes. Separar estos
 artefactos evita que una actualización del control plane cambie el ciclo de

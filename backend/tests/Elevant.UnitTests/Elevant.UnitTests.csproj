@@ -18,8 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Elevant.Application\Elevant.Application.csproj" />
-    <ProjectReference Include="..\..\src\Elevant.Domain\Elevant.Domain.csproj" />
+    <ProjectReference Include="..\..\Elevant.Application\Elevant.Application.csproj" />
+    <ProjectReference Include="..\..\Elevant.Domain\Elevant.Domain.csproj" />
   </ItemGroup>
 
 </Project>

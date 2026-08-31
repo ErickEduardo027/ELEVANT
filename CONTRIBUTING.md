@@ -2,9 +2,10 @@
 
 ## Responsabilidades
 
-- Erick: `backend` y `.github`. La solución, código, pruebas, SQL Server,
-  infraestructura y scripts del servidor viven dentro de `backend`.
-- Laisha: `frontend/web`, coordinando con Erick cuando cambie el contrato HTTP.
+- Erick: `backend`, `database`, `ops/dokploy` y `.github`. La solución, código y
+  pruebas viven en `backend`; SQL Server y sus scripts en `database`; las
+  plantillas revisadas del servidor en `ops/dokploy`.
+- Laisha: `frontend/private-web`, coordinando con Erick cuando cambie el contrato HTTP.
 - Eliezer: `frontend/mobile-agent`, coordinando con Erick cuando cambie el contrato HTTP
   o SignalR.
 

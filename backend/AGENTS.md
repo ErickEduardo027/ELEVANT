@@ -1,15 +1,16 @@
 # Backend agent guide
 
-This directory owns Elevant's .NET 10 modular monolith, SQL Server model, migrations, database tooling and deployment artifacts. The API is shared by AVIAM Web, Public Web and Mobile Agent.
+This directory owns Elevant's .NET 10 modular monolith and shared API. The SQL Server model, migrations and database release tooling live separately in `database/DevelopmentDB` and are included by `Elevant.sln`.
 
 ## Architecture boundaries
 
 - `Elevant.Domain` has no framework dependency.
 - `Elevant.Application` owns use cases and ports.
 - `Elevant.Contracts` owns public HTTP contracts, not EF entities.
-- `Elevant.Infrastructure` owns EF Core, SQL Server and provider adapters.
+- `Elevant.Infrastructure` owns provider adapters and other non-persistence infrastructure.
+- `Elevant.Persistence` under `database/DevelopmentDB` owns EF Core and SQL Server access.
 - `Elevant.Api` is the composition root. It must not contain domain rules or run migrations/seeds at startup.
-- `Elevant.DatabaseTool` is a one-shot deployment utility, never part of the API request path.
+- `Elevant.DatabaseTool` under `database/DevelopmentDB` is a one-shot deployment utility, never part of the API request path.
 
 Do not expose EF entities directly over HTTP. Public airline access must derive organization and station scope from the authenticated server-side membership. Internal cross-airline access requires explicit role and station scopes. Mobile commands require a device-scoped idempotency key; retries must return the stored result instead of duplicating work.
 
@@ -31,20 +32,20 @@ Schemas are `infra`, `iam`, `ref`, `hr`, `commercial`, `ops`, `integration` and 
 
 ## Migration workflow
 
-Create migrations only with `scripts/add-migration.ps1`; apply locally only with `scripts/update-database.ps1`. Review the generated operations and idempotent SQL. Test a clean database and an upgrade from the previous schema. Use expand/contract for changes consumed by independently deployed clients.
+Create migrations only with `database/DevelopmentDB/scripts/add-migration.ps1`; apply locally only with `database/DevelopmentDB/scripts/update-database.ps1`. Review the generated operations and idempotent SQL. Test a clean database and an upgrade from the previous schema. Use expand/contract for changes consumed by independently deployed clients.
 
-Deployment uses the EF migration bundle in `Dockerfile.database-release`. The release order is target verification, migration, Development-only seed, then API. SQL Server and its named volumes have a separate manual lifecycle and are never recreated by an application redeploy.
+Deployment uses the EF migration bundle in `database/DevelopmentDB/Dockerfile.database-release`. The release order is target verification, migration, Development-only seed, then API. SQL Server and its named volumes have a separate manual lifecycle and are never recreated by an application redeploy.
 
 ## Required validation
 
-From `backend`:
+From the repository root:
 
 ```powershell
 dotnet tool restore
-dotnet restore Elevant.sln --locked-mode
-dotnet build Elevant.sln --configuration Release --no-restore
-dotnet test Elevant.sln --configuration Release --no-build
-dotnet ef migrations has-pending-model-changes --project src/Elevant.Infrastructure --startup-project src/Elevant.Api --context ElevantDbContext --configuration Release --no-build
+dotnet restore backend/Elevant.sln --locked-mode
+dotnet build backend/Elevant.sln --configuration Release --no-restore
+dotnet test backend/Elevant.sln --configuration Release --no-build
+dotnet ef migrations has-pending-model-changes --project database/DevelopmentDB/Elevant.Persistence --startup-project backend/Elevant.Api --context ElevantDbContext --configuration Release --no-build
 ```
 
 The SQL integration tests use `ELEVANT_TEST_SQLSERVER_MASTER` when a real SQL Server is available. CI is the authority for SQL Server 2022 container and Docker image validation when Docker is unavailable locally.

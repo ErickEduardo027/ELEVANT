@@ -11,16 +11,18 @@ Mobile Agent nativo ─────┘                  │
 
 | Aplicación | Usuarios | Tecnología actual |
 | --- | --- | --- |
-| `frontend/web` | Personal interno de AVIAM: OCC, administración y departamentos | Vite 6, React 18 |
+| `frontend/private-web` | Personal interno de AVIAM: OCC, administración y departamentos | Vite 6, React 18 |
 | `frontend/public-web` | Visitantes y clientes/aerolíneas con aislamiento por organización y estación | Next.js 16, React 19 |
 | `frontend/mobile-agent` | Agentes de rampa en tablet Android/iOS | Expo 54, React Native |
-| `backend` | API compartida, dominio, persistencia y tareas de base | .NET 10, EF Core 10, SQL Server 2022 |
+| `backend` | API compartida, dominio, aplicación e infraestructura | .NET 10 |
+| `database/DevelopmentDB` | Persistencia, migraciones y operación de Development | EF Core 10, SQL Server 2022 |
+| `database/ProductionDB` | Límite futuro reservado; todavía no desplegado | Vacío |
 
 Ningún cliente accede directamente a SQL Server ni a FlightAware. La autorización de tenant, rol, estación y agente siempre se resuelve en la API; los mocks y `localStorage` no son fronteras de seguridad.
 
 ## Estado de la primera base de datos
 
-La v1 de persistencia modela plataforma, identidad, catálogos, personal, habilitaciones, contratos versionados, turnarounds/vuelos, operación en rampa, checklists, incidencias, revisión OCC, idempotencia móvil y auditoría. Las migraciones viven en `backend/src/Elevant.Infrastructure/Persistence/Migrations`.
+La v1 de persistencia modela plataforma, identidad, catálogos, personal, habilitaciones, contratos versionados, turnarounds/vuelos, operación en rampa, checklists, incidencias, revisión OCC, idempotencia móvil y auditoría. Las migraciones viven en `database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations`.
 
 Development y Production son bases físicas distintas:
 
@@ -36,20 +38,18 @@ Lea [database-v1.md](docs/architecture/database-v1.md) y [schema-v1.md](docs/dat
 Backend sin Docker:
 
 ```powershell
-Push-Location backend
 dotnet tool restore
-dotnet restore Elevant.sln --locked-mode
-dotnet build Elevant.sln --configuration Release --no-restore
-dotnet test Elevant.sln --configuration Release --no-build
-Pop-Location
+dotnet restore backend/Elevant.sln --locked-mode
+dotnet build backend/Elevant.sln --configuration Release --no-restore
+dotnet test backend/Elevant.sln --configuration Release --no-build
 ```
 
 Entorno local completo con SQL Server, bootstrap, migraciones, seed y API:
 
 ```powershell
-Copy-Item backend/.env.example backend/.env
+Copy-Item database/DevelopmentDB/.env.example database/DevelopmentDB/.env
 # Sustituir todos los valores REPLACE_ME.
-docker compose --env-file backend/.env -f backend/infrastructure/docker/compose.local.yml up --build
+docker compose --env-file database/DevelopmentDB/.env -f database/DevelopmentDB/compose.local.yml up --build
 ```
 
 La API queda ligada a `http://127.0.0.1:8080` y SQL Server a `127.0.0.1:1433`. El puerto SQL solo existe para desarrollo local. El Compose remoto nunca publica 1433.
@@ -76,6 +76,7 @@ En el VPS de Development, SQL Server/volúmenes tienen un stack manual separado 
 Documentación principal:
 
 - [Backend](backend/README.md)
+- [Bases de datos](database/README.md)
 - [Frontends](frontend/README.md)
 - [Migraciones](docs/database/migrations.md)
 - [Ambientes](docs/deployment/environments.md)

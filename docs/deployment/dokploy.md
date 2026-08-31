@@ -126,7 +126,7 @@ Registre CIDR/gateway. El gateway exacto podrá usarse como proxy conocido en AP
 
 - Tipo: Docker Compose normal, no Swarm Stack.
 - Provider: Raw, pegado desde el commit aprobado y validado por SHA-256 según [Configuración de Dokploy](dokploy-configuration.md); no una rama mutable.
-- Fuente certificada: `backend/infrastructure/docker/compose.development.database.yml`.
+- Fuente certificada: `database/DevelopmentDB/compose.development.database.yml`.
 - AutoDeploy: desactivado.
 - Registry: GHCR configurado.
 - Variables: siete contraseñas diferentes y `ELEVANT_DB_OPS_IMAGE` con digest.
@@ -146,7 +146,7 @@ Validar tras el primer deploy desde un job/red privada:
 ## 5. Ejecutar `elevant-dev-database-release`
 
 - Provider: Raw, con la misma verificación de revisión, hash y Preview Compose.
-- Fuente certificada: `backend/infrastructure/docker/compose.development.release.yml`.
+- Fuente certificada: `database/DevelopmentDB/compose.development.release.yml`.
 - AutoDeploy: desactivado; Git/Dokploy no reconstruye este Compose ni SQL.
 - Variables: imagen release con digest, cadena migrator, cadena seeder y password de cuenta demo.
 - El migrator usa `elevant_dev_migrator`; el seed usa `elevant_dev_seeder`.

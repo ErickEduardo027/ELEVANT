@@ -8,6 +8,8 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $backendRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repositoryRoot = (Resolve-Path (Join-Path $backendRoot '..')).Path
+$solution = 'backend/Elevant.sln'
 
 function Invoke-DotNet {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -18,11 +20,11 @@ function Invoke-DotNet {
     }
 }
 
-Push-Location $backendRoot
+Push-Location $repositoryRoot
 try {
     Invoke-DotNet -Arguments @('tool', 'restore')
-    Invoke-DotNet -Arguments @('restore', 'Elevant.sln', '--locked-mode')
-    Invoke-DotNet -Arguments @('build', 'Elevant.sln', '--configuration', $Configuration, '--no-restore')
+    Invoke-DotNet -Arguments @('restore', $solution, '--locked-mode')
+    Invoke-DotNet -Arguments @('build', $solution, '--configuration', $Configuration, '--no-restore')
 
     $testResults = Join-Path $backendRoot 'TestResults'
     if (-not (Test-Path -LiteralPath $testResults)) {
@@ -31,7 +33,7 @@ try {
 
     Invoke-DotNet -Arguments @(
         'test',
-        'Elevant.sln',
+        $solution,
         '--configuration', $Configuration,
         '--no-build',
         '--logger', 'trx',

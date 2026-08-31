@@ -2,9 +2,10 @@
 # CODEOWNERS exige revisiones; no oculta carpetas ni código a integrantes del repositorio.
 
 /backend/                  @REPLACE_ERICK
+/database/                 @REPLACE_ERICK
 /.github/                  @REPLACE_ERICK
 
-/frontend/web/             @REPLACE_ERICK @REPLACE_LAISHA
+/frontend/private-web/     @REPLACE_ERICK @REPLACE_LAISHA
 /frontend/mobile-agent/    @REPLACE_ERICK @REPLACE_ELIEZER
 
 /packages/api-client/      @REPLACE_ERICK

@@ -4,7 +4,7 @@ Los tres clientes comparten `Elevant.Api` y la base lógica de su ambiente. Sus 
 
 | Carpeta | Audiencia | Ejecución/entrega |
 | --- | --- | --- |
-| `web` | Personal interno AVIAM | Vite/React; sitio desplegable en Development |
+| `private-web` | Personal interno AVIAM | Vite/React; sitio desplegable en Development |
 | `public-web` | Visitantes y clientes/aerolíneas | Next.js; sitio desplegable en Development |
 | `mobile-agent` | Agentes de rampa | Expo/React Native; APK inicial y tiendas más adelante |
 
