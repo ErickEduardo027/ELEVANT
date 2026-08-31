@@ -43,33 +43,13 @@ while IFS= read -r -d '' path; do
     NuGet.config | \
     dotnet-tools.json | \
     global.json | \
-    backend/.dockerignore | \
-    backend/Directory.Build.props | \
-    backend/Directory.Packages.props | \
-    backend/Dockerfile.database-release | \
     backend/Elevant.sln | \
-    backend/NuGet.config | \
-    backend/dotnet-tools.json | \
-    backend/global.json | \
-    backend/database/* | \
-    database/* | \
-    backend/infrastructure/docker/compose.development.database.yml | \
-    backend/infrastructure/docker/compose.development.release.yml | \
-    backend/scripts/certify-database-containers.ps1 | \
-    backend/scripts/deployment/* | \
-    backend/src/Elevant.Application/* | \
-    backend/src/Elevant.DatabaseTool/* | \
-    backend/src/Elevant.Domain/* | \
-    backend/src/Elevant.Infrastructure/* | \
-    backend/src/Elevant.Api/Elevant.Api.csproj | \
-    backend/src/Elevant.Api/packages.lock.json | \
     backend/Elevant.Application/* | \
-    backend/Elevant.DatabaseTool/* | \
     backend/Elevant.Domain/* | \
     backend/Elevant.Infrastructure/* | \
     backend/Elevant.Api/Elevant.Api.csproj | \
     backend/Elevant.Api/packages.lock.json | \
-    backend/tests/scripts/*)
+    database/DevelopmentDB/*)
       echo "A newer Development commit changes database-owned path: $path" >&2
       echo "This older run will not move mutable Development aliases." >&2
       exit 1

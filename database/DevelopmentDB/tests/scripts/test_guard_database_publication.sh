@@ -114,10 +114,10 @@ assert_database_owned_advance_is_rejected() {
   pass "newer database-owned Development commit is rejected: $path"
 }
 
-test_legacy_database_owned_advance() {
+test_backend_database_dependency_advance() {
   assert_database_owned_advance_is_rejected \
-    legacy-database-owned-advance \
-    backend/database/change.sql
+    backend-database-dependency-advance \
+    backend/Elevant.Domain/change.cs
 }
 
 test_top_level_database_owned_advance() {
@@ -126,15 +126,15 @@ test_top_level_database_owned_advance() {
     database/DevelopmentDB/scripts/change.sql
 }
 
-test_split_persistence_project_advance() {
+test_persistence_project_advance() {
   assert_database_owned_advance_is_rejected \
-    split-persistence-project-advance \
+    persistence-project-advance \
     database/DevelopmentDB/Elevant.Persistence/Persistence/change.cs
 }
 
-test_moved_publication_producer_advance() {
+test_publication_producer_advance() {
   assert_database_owned_advance_is_rejected \
-    moved-publication-producer-advance \
+    publication-producer-advance \
     database/DevelopmentDB/scripts/deployment/database_release_manifest.py
 }
 
@@ -175,6 +175,28 @@ test_frontend_advance() {
   pass 'newer frontend-only Development commit is accepted'
 }
 
+test_production_database_boundary_advance() {
+  local work source tip output error
+  work="$(new_repository production-database-boundary-advance)"
+  source="$(git -C "$work" rev-parse HEAD)"
+  mkdir -p "$work/database/ProductionDB"
+  printf 'future production documentation only\n' > "$work/database/ProductionDB/note.md"
+  git -C "$work" add database/ProductionDB/note.md
+  git -C "$work" commit --quiet -m 'test: change future ProductionDB boundary'
+  git -C "$work" push --quiet origin Development
+  tip="$(git -C "$work" rev-parse HEAD)"
+  output="$TEST_ROOT/production-database-boundary-advance.stdout"
+  error="$TEST_ROOT/production-database-boundary-advance.stderr"
+
+  run_guard "$work" "$source" "$output" "$error" ||
+    fail 'a newer ProductionDB-only Development commit should be accepted'
+  [[ "$(<"$output")" == "$tip" ]] ||
+    fail 'ProductionDB-only advance should print the current Development tip'
+  [[ ! -s "$error" ]] ||
+    fail 'ProductionDB-only advance should not emit an error'
+  pass 'newer ProductionDB-only Development commit does not publish DevelopmentDB'
+}
+
 test_source_is_not_ancestor() {
   local work base source output error
   work="$(new_repository source-not-ancestor)"
@@ -206,12 +228,13 @@ test_source_is_not_ancestor() {
 
 test_tip_equals_source
 test_non_database_advance
-test_legacy_database_owned_advance
+test_backend_database_dependency_advance
 test_top_level_database_owned_advance
-test_split_persistence_project_advance
-test_moved_publication_producer_advance
+test_persistence_project_advance
+test_publication_producer_advance
 test_root_build_inputs_advance
 test_frontend_advance
+test_production_database_boundary_advance
 test_source_is_not_ancestor
 
 printf 'All %d database publication guard tests passed.\n' "$pass_count"
