@@ -202,6 +202,7 @@ jobs:
             ../ops/dokploy/api-cd/jobs/poll.job.sh \
             ../ops/dokploy/api-cd/tests/test-controller.sh \
             ../ops/dokploy/api-cd/tests/test-install-controller.sh \
+            ../ops/dokploy/api-cd/tests/test-poll-job.sh \
             ../ops/dokploy/api-cd/tests/test-tools.sh \
             ../ops/dokploy/api-cd/tests/test-verify-runtime.sh
           do
@@ -217,6 +218,7 @@ jobs:
           done
           bash ../ops/dokploy/api-cd/tests/test-tools.sh
           bash ../ops/dokploy/api-cd/tests/test-install-controller.sh
+          bash ../ops/dokploy/api-cd/tests/test-poll-job.sh
           bash ../ops/dokploy/api-cd/tests/test-verify-runtime.sh
           bash ../ops/dokploy/api-cd/tests/test-controller.sh
 

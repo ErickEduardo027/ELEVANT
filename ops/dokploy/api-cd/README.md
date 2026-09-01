@@ -17,6 +17,10 @@ VPS. El operador instala y valida cada checkpoint manualmente por SSH privado.
   antigua o incompatible deja el candidato esperando, sin modificar Compose.
 - El lock de Database CD se adquiere antes del lock de API CD. Así una
   migración, backup o restore-check nunca corre a la vez que un rollout API.
+  El job programado espera 15 segundos después del inicio del minuto para que
+  el poll normal de Database CD tome y libere primero ese lock. Si una operación
+  DB dura más, el lock sigue cerrando el paso y API CD reevalúa al minuto
+  siguiente.
 - El Compose certificado debe ser semánticamente idéntico al Raw revisado en
   Dokploy. Los secretos permanecen en su `.env` `root:root 0600`; el controlador
   solo reemplaza atómicamente `ELEVANT_API_IMAGE` y nunca imprime el archivo.
@@ -102,7 +106,9 @@ ser `root:root 0600`. El Compose publica solamente
    ```
 
    El instalador preserva `config.env` y estado existentes. Nunca crea un job
-   ni despliega.
+   ni despliega. Tampoco requiere Node.js en el host: limita su validación local
+   a inventario, permisos y sintaxis shell. Los `node --check` se ejecutan en el
+   runtime privado de Dokploy mediante `verify-runtime` en el paso siguiente.
 
 3. Completar `/etc/dokploy/elevant/api-cd/config.env` sin incluir secretos y
    mantenerlo `root:root 0600`. Las rutas Database deben apuntar al controlador
@@ -142,6 +148,9 @@ ser `root:root 0600`. El Compose publica solamente
    - cron: `* * * * *`, UTC;
    - script: contenido exacto de `jobs/poll.job.sh`;
    - servidor: `dokploy-server`, no Application/Compose Job.
+
+   El script versionado aplica un desfase fijo de 15 segundos frente al poll de
+   Database CD, que también inicia en `:00`. No añada otro `sleep` en la UI.
 
 8. Ejecutar `--poll` manual. El bundle actual debe ser no-op o completar un
    rollout. Revisar `--status`, logs, contenedor healthy y listener loopback.
@@ -183,6 +192,7 @@ node --check env-tool.mjs
 shellcheck elevant-api-cd install-controller verify-runtime jobs/*.sh tests/*.sh
 bash tests/test-tools.sh
 bash tests/test-install-controller.sh
+bash tests/test-poll-job.sh
 bash tests/test-verify-runtime.sh
 ```
 

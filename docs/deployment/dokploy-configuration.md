@@ -373,7 +373,10 @@ ejecuta y entrega evidencia sanitizada antes de avanzar.
    SHA-256, instalarlo pausado y ejecutar `verify-runtime`, `--dry-run` y
    `--adopt-current` sin mostrar Environment.
 8. Crear deshabilitado el único schedule `ELEVANT API CD - Poll`, UTC
-   `* * * * *`, ejecutar primero un no-op manual y habilitarlo después.
+   `* * * * *`, con el contenido exacto del job versionado. Ese job espera 15
+   segundos para no competir sistemáticamente en `:00` con Database CD; los
+   locks siguen siendo la protección definitiva si una operación DB dura más.
+   Ejecutar primero un no-op manual y habilitarlo después.
 9. Validar la siguiente entrega API-only, rollback de aplicación y persistencia
    tras un reboot controlado. Nunca hacer rollback de esquema como respuesta a
    un fallo API.
