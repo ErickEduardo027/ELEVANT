@@ -43,6 +43,10 @@ chmod 0555 "$TMP/bin/docker"
 
 verify() { MOCK_SCENARIO="$1" MOCK_LOG="$TMP/log" PATH="$TMP/bin:$PATH" "$ROOT/verify-runtime" --host-container "$2"; }
 verify exact dokploy-exact | grep -q RUNTIME_OK || fail "exact running container was rejected"
+for module in manifest-tool.mjs state-tool.mjs compose-model-tool.mjs env-tool.mjs; do
+  grep -Fq "node --check /etc/dokploy/elevant/api-cd/$module" "$TMP/log" || \
+    fail "inside-Dokploy Node validation is missing for $module"
+done
 if verify stopped dokploy-stopped >/dev/null 2>&1; then fail "stopped exact container was accepted"; fi
 verify service-one dokploy | grep -q RUNTIME_OK || fail "single Swarm task was rejected"
 if verify service-two dokploy >/dev/null 2>&1; then fail "multiple Swarm tasks were accepted"; fi

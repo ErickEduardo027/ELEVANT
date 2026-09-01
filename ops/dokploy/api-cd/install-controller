@@ -82,8 +82,4 @@ verify_item file 444 "$DESTINATION/config.env.example"; verify_item file 444 "$D
 
 bash -n "$DESTINATION/elevant-api-cd"
 /bin/sh -n "$DESTINATION/jobs/poll.job.sh"
-node --check "$DESTINATION/manifest-tool.mjs" >/dev/null
-node --check "$DESTINATION/state-tool.mjs" >/dev/null
-node --check "$DESTINATION/compose-model-tool.mjs" >/dev/null
-node --check "$DESTINATION/env-tool.mjs" >/dev/null
 printf '%s\n' 'API controller files installed; run verify-runtime next. No schedule or deployment was enabled.'

@@ -10,8 +10,20 @@ fail() { printf '%s: FAIL: %s\n' "$PROGRAM_NAME" "$*" >&2; exit 1; }
 
 mkdir -p "$TMP/etc/dokploy"
 DEST="$TMP/etc/dokploy/elevant/api-cd"
-ELEVANT_API_CD_INSTALL_TEST_MODE=1 ELEVANT_API_CD_INSTALL_TEST_ROOT="$TMP" \
-  "$ROOT/install-controller" --destination "$DEST" > "$TMP/first.out"
+mkdir "$TMP/no-node-bin"
+cat > "$TMP/no-node-bin/node" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' invoked > "$NODE_SENTINEL"
+exit 127
+MOCK
+chmod 0555 "$TMP/no-node-bin/node"
+if ! NODE_SENTINEL="$TMP/node-invoked" PATH="$TMP/no-node-bin:$PATH" \
+    ELEVANT_API_CD_INSTALL_TEST_MODE=1 ELEVANT_API_CD_INSTALL_TEST_ROOT="$TMP" \
+    "$ROOT/install-controller" --destination "$DEST" > "$TMP/first.out"; then
+  fail "installer required a working host Node runtime"
+fi
+[[ ! -e "$TMP/node-invoked" ]] || fail "installer invoked Node on the host"
 grep -q 'No schedule or deployment was enabled' "$TMP/first.out" || fail "installer did not state its safe boundary"
 for file in elevant-api-cd manifest-tool.mjs state-tool.mjs compose-model-tool.mjs env-tool.mjs verify-runtime jobs/poll.job.sh; do [[ -x "$DEST/$file" && ! -L "$DEST/$file" ]] || fail "missing executable $file"; done
 [[ "$(stat -c '%a' "$DEST/config.env")" == 600 ]] || fail "config.env mode is not 0600"
