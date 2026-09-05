@@ -120,7 +120,7 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
     }
 
     [Fact]
-    public async Task TestingEnvironmentPublishesVersionOneOpenApiDocument()
+    public async Task TestingEnvironmentPublishesStableVersionOneOpenApiContract()
     {
         using var client = factory.CreateClient();
 
@@ -136,10 +136,57 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
             cancellationToken: TestContext.Current.CancellationToken);
         var root = document.RootElement;
         Assert.Equal("Elevant API", root.GetProperty("info").GetProperty("title").GetString());
-        Assert.True(root.GetProperty("paths").TryGetProperty("/api/v1/system/ping", out _));
+        var pingOperation = root
+            .GetProperty("paths")
+            .GetProperty("/api/v1/system/ping")
+            .GetProperty("get");
+        Assert.Equal("GetSystemPing", pingOperation.GetProperty("operationId").GetString());
 
-        var bearerScheme = root
-            .GetProperty("components")
+        var responses = pingOperation.GetProperty("responses");
+        Assert.Equal(
+            ["200", "429", "500"],
+            responses.EnumerateObject().Select(response => response.Name).Order().ToArray());
+        AssertResponseContent(
+            responses,
+            "200",
+            "application/json",
+            "#/components/schemas/SystemPingResponse");
+        AssertResponseContent(
+            responses,
+            "429",
+            "application/problem+json",
+            "#/components/schemas/ProblemDetails");
+        AssertResponseContent(
+            responses,
+            "500",
+            "application/problem+json",
+            "#/components/schemas/ProblemDetails");
+
+        var components = root.GetProperty("components");
+        var pingSchema = components
+            .GetProperty("schemas")
+            .GetProperty("SystemPingResponse");
+        var requiredProperties = pingSchema
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(property => property.GetString()
+                ?? throw new InvalidOperationException("OpenAPI required property cannot be null."))
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.True(requiredProperties.SetEquals(
+            ["application", "status", "environment", "timestampUtc"]));
+
+        var properties = pingSchema.GetProperty("properties");
+        var propertyNames = properties
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.True(propertyNames.SetEquals(requiredProperties));
+        AssertStringProperty(properties, "application");
+        AssertStringProperty(properties, "status");
+        AssertStringProperty(properties, "environment");
+        AssertStringProperty(properties, "timestampUtc", "date-time");
+
+        var bearerScheme = components
             .GetProperty("securitySchemes")
             .GetProperty("Bearer");
         Assert.Equal("http", bearerScheme.GetProperty("type").GetString());
@@ -155,4 +202,40 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
                 ',',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static void AssertResponseContent(
+        JsonElement responses,
+        string statusCode,
+        string mediaType,
+        string schemaReference)
+    {
+        var content = responses
+            .GetProperty(statusCode)
+            .GetProperty("content");
+        Assert.Equal(
+            [mediaType],
+            content.EnumerateObject().Select(entry => entry.Name).ToArray());
+        Assert.Equal(
+            schemaReference,
+            content
+                .GetProperty(mediaType)
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString());
+    }
+
+    private static void AssertStringProperty(
+        JsonElement properties,
+        string propertyName,
+        string? expectedFormat = null)
+    {
+        var property = properties.GetProperty(propertyName);
+        Assert.Equal("string", property.GetProperty("type").GetString());
+        Assert.Equal(
+            expectedFormat,
+            property.TryGetProperty("format", out var format) ? format.GetString() : null);
+        Assert.False(
+            property.TryGetProperty("nullable", out var nullable) && nullable.GetBoolean(),
+            $"{propertyName} must remain non-nullable in OpenAPI.");
+    }
 }
