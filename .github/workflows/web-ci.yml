@@ -1,0 +1,792 @@
+name: Web clients CI and Development delivery
+
+on:
+  push:
+    branches:
+      - main
+      - Development
+    paths:
+      - "frontend/private-web/**"
+      - "frontend/public-web/**"
+      - "frontend/scripts/deployment/**"
+      - "frontend/tests/deployment/**"
+      - "packages/api-client/**"
+      - "ops/dokploy/web-cd/**"
+      - ".github/workflows/web-ci.yml"
+  pull_request:
+    branches:
+      - main
+      - Development
+    paths:
+      - "frontend/private-web/**"
+      - "frontend/public-web/**"
+      - "frontend/scripts/deployment/**"
+      - "frontend/tests/deployment/**"
+      - "packages/api-client/**"
+      - "ops/dokploy/web-cd/**"
+      - ".github/workflows/web-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  classify:
+    name: Classify Development web release inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      aviam_owned: ${{ steps.paths.outputs.aviam_owned }}
+      public_owned: ${{ steps.paths.outputs.public_owned }}
+      any_owned: ${{ steps.paths.outputs.any_owned }}
+      release_matrix: ${{ steps.paths.outputs.release_matrix }}
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect independently deployable paths
+        id: paths
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -Eeuo pipefail
+
+          changed_file_list="$(mktemp)"
+          trap 'rm -f -- "$changed_file_list"' EXIT
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            git ls-tree -r --name-only -z "$GITHUB_SHA" > "$changed_file_list"
+          else
+            git diff --name-only --no-renames -z "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_file_list"
+          fi
+
+          aviam_owned=false
+          public_owned=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/workflows/web-ci.yml | \
+              frontend/scripts/deployment/* | \
+              frontend/tests/deployment/* | \
+              packages/api-client/* )
+                aviam_owned=true
+                public_owned=true
+                ;;
+              frontend/private-web/* )
+                aviam_owned=true
+                ;;
+              frontend/public-web/* )
+                public_owned=true
+                ;;
+            esac
+          done < "$changed_file_list"
+
+          matrix='{"include":[]}'
+          if [[ "$aviam_owned" == true && "$public_owned" == true ]]; then
+            matrix='{"include":[{"application":"aviam-web","directory":"frontend/private-web","imageName":"elevant-private-web","bundleName":"elevant-aviam-web-release-manifest","compose":"frontend/private-web/compose.development.aviam-web.yml"},{"application":"public-web","directory":"frontend/public-web","imageName":"elevant-public-web","bundleName":"elevant-public-web-release-manifest","compose":"frontend/public-web/compose.development.public-web.yml"}]}'
+          elif [[ "$aviam_owned" == true ]]; then
+            matrix='{"include":[{"application":"aviam-web","directory":"frontend/private-web","imageName":"elevant-private-web","bundleName":"elevant-aviam-web-release-manifest","compose":"frontend/private-web/compose.development.aviam-web.yml"}]}'
+          elif [[ "$public_owned" == true ]]; then
+            matrix='{"include":[{"application":"public-web","directory":"frontend/public-web","imageName":"elevant-public-web","bundleName":"elevant-public-web-release-manifest","compose":"frontend/public-web/compose.development.public-web.yml"}]}'
+          fi
+          any_owned=false
+          [[ "$aviam_owned" == true || "$public_owned" == true ]] && any_owned=true
+
+          {
+            echo "aviam_owned=$aviam_owned"
+            echo "public_owned=$public_owned"
+            echo "any_owned=$any_owned"
+            echo "release_matrix=$matrix"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "- AVIAM Web release input changed: \`$aviam_owned\`"
+            echo "- Public Web release input changed: \`$public_owned\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  validate_delivery_tooling:
+    name: Validate web release producer and controller
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/api-client/package-lock.json
+
+      - name: Validate the shared generated API client in this release DAG
+        working-directory: packages/api-client
+        run: |
+          npm ci --no-audit --no-fund
+          npm run check
+
+      - name: Validate syntax and release manifest producer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m unittest discover -s frontend/tests/deployment -p 'test_*.py' -v
+          scripts=(
+            frontend/private-web/scripts/certify-image.sh
+            frontend/public-web/scripts/certify-image.sh
+            frontend/scripts/deployment/guard-web-publication.sh
+            frontend/scripts/deployment/resolve-api-release.sh
+            frontend/tests/deployment/test_guard_web_publication.sh
+            frontend/tests/deployment/test_resolve_api_release.sh
+          )
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+          modules=(
+            frontend/scripts/deployment/csp-tool.mjs
+            frontend/scripts/deployment/web-compose-tool.mjs
+            frontend/tests/deployment/test-csp-tool.mjs
+            frontend/tests/deployment/test-web-compose-tool.mjs
+          )
+          for module in "${modules[@]}"; do node --check "$module"; done
+          node --test \
+            frontend/tests/deployment/test-csp-tool.mjs \
+            frontend/tests/deployment/test-web-compose-tool.mjs
+          bash frontend/tests/deployment/test_guard_web_publication.sh
+          bash frontend/tests/deployment/test_resolve_api_release.sh
+
+      - name: Render and validate both reviewed Development web Compose files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          node frontend/scripts/deployment/web-compose-tool.mjs validate \
+            --application aviam-web \
+            --compose frontend/private-web/compose.development.aviam-web.yml
+          node frontend/scripts/deployment/web-compose-tool.mjs validate \
+            --application public-web \
+            --compose frontend/public-web/compose.development.public-web.yml
+
+      - name: Validate private web CD controller
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          scripts=(
+            ops/dokploy/web-cd/elevant-web-cd
+            ops/dokploy/web-cd/install-controller
+            ops/dokploy/web-cd/verify-runtime
+            ops/dokploy/web-cd/jobs/aviam-web-poll.job.sh
+            ops/dokploy/web-cd/jobs/public-web-poll.job.sh
+            ops/dokploy/web-cd/tests/test-controller.sh
+            ops/dokploy/web-cd/tests/test-install-controller.sh
+            ops/dokploy/web-cd/tests/test-poll-jobs.sh
+            ops/dokploy/web-cd/tests/test-public-profile.sh
+            ops/dokploy/web-cd/tests/test-tools.sh
+            ops/dokploy/web-cd/tests/test-verify-runtime.sh
+          )
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+          modules=(
+            ops/dokploy/web-cd/compose-model-tool.mjs
+            ops/dokploy/web-cd/env-tool.mjs
+            ops/dokploy/web-cd/manifest-tool.mjs
+            ops/dokploy/web-cd/openapi-tool.mjs
+            ops/dokploy/web-cd/state-tool.mjs
+          )
+          for module in "${modules[@]}"; do node --check "$module"; done
+          bash ops/dokploy/web-cd/tests/test-tools.sh
+          bash ops/dokploy/web-cd/tests/test-install-controller.sh
+          bash ops/dokploy/web-cd/tests/test-poll-jobs.sh
+          bash ops/dokploy/web-cd/tests/test-verify-runtime.sh
+          bash ops/dokploy/web-cd/tests/test-public-profile.sh
+          bash ops/dokploy/web-cd/tests/test-controller.sh
+
+  build_and_certify:
+    name: Build and certify ${{ matrix.application }}
+    needs:
+      - classify
+      - validate_delivery_tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - application: aviam-web
+            directory: frontend/private-web
+            image_name: elevant-private-web
+          - application: public-web
+            directory: frontend/public-web
+            image_name: elevant-public-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+
+      - name: Select and validate public Development origins
+        shell: bash
+        env:
+          CONFIG_API_ORIGIN: ${{ vars.ELEVANT_DEV_API_ORIGIN }}
+          CONFIG_AVIAM_ORIGIN: ${{ vars.ELEVANT_DEV_AVIAM_WEB_ORIGIN }}
+          CONFIG_PUBLIC_ORIGIN: ${{ vars.ELEVANT_DEV_PUBLIC_WEB_ORIGIN }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/Development ]]; then
+            api_origin="$CONFIG_API_ORIGIN"
+            aviam_origin="$CONFIG_AVIAM_ORIGIN"
+            public_origin="$CONFIG_PUBLIC_ORIGIN"
+            [[ -n "$api_origin" && -n "$aviam_origin" && -n "$public_origin" ]] || {
+              echo "Define ELEVANT_DEV_API_ORIGIN, ELEVANT_DEV_AVIAM_WEB_ORIGIN and ELEVANT_DEV_PUBLIC_WEB_ORIGIN as repository variables before publishing Development." >&2
+              exit 1
+            }
+          else
+            api_origin=https://api.elevant.test
+            aviam_origin=https://aviam.elevant.test
+            public_origin=https://public.elevant.test
+          fi
+          node - "$api_origin" "$aviam_origin" "$public_origin" <<'NODE'
+          const { isIP } = require("node:net");
+          const origins = process.argv.slice(2);
+          for (const value of origins) {
+            const url = new URL(value);
+            const hostname = url.hostname.replace(/^\[(.*)\]$/, "$1");
+            if (url.protocol !== "https:" || url.origin !== value || url.username || url.password || !hostname.includes(".") || isIP(hostname) !== 0) {
+              throw new Error(`Invalid exact HTTPS origin: ${value}`);
+            }
+          }
+          if (new Set(origins).size !== origins.length) {
+            throw new Error("Development API, AVIAM Web and Public Web must use distinct origins.");
+          }
+          NODE
+          {
+            echo "WEB_API_ORIGIN=$api_origin"
+            echo "WEB_AVIAM_ORIGIN=$aviam_origin"
+            echo "WEB_PUBLIC_ORIGIN=$public_origin"
+            echo "OCI_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR for the certified API prerequisite
+        if: github.event_name == 'push' && github.ref == 'refs/heads/Development'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the exact API prerequisite
+        id: api
+        shell: bash
+        env:
+          ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
+          ELEVANT_API_WAIT_SECONDS: "1800"
+          ELEVANT_API_POLL_SECONDS: "15"
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0700 artifacts/api-required
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/Development ]]; then
+            owner="${GITHUB_REPOSITORY_OWNER,,}"
+            ELEVANT_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
+              bash frontend/scripts/deployment/resolve-api-release.sh \
+                "ghcr.io/${owner}/elevant-api-release-manifest:development-certified" \
+                "$GITHUB_WORKSPACE/artifacts/api-required"
+            api_reference="$(<artifacts/api-required/api-release-manifest-reference.txt)"
+            openapi_sha="$(<artifacts/api-required/openapi.sha256)"
+          else
+            owner="${GITHUB_REPOSITORY_OWNER,,}"
+            api_reference="ghcr.io/${owner}/elevant-api-release-manifest@sha256:$(printf '0%.0s' {1..64})"
+            openapi_sha="$(node ops/dokploy/web-cd/openapi-tool.mjs hash --file packages/api-client/openapi/elevant-v1.json)"
+          fi
+          echo "reference=$api_reference" >> "$GITHUB_OUTPUT"
+          echo "openapi_sha=$openapi_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create the public build configuration proof
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+        run: |
+          set -Eeuo pipefail
+          python3 - "$APPLICATION" "$WEB_API_ORIGIN" "$WEB_AVIAM_ORIGIN" "$WEB_PUBLIC_ORIGIN" <<'PY'
+          import json, pathlib, sys
+          application, api, aviam, public = sys.argv[1:]
+          document = {
+              "apiOrigin": api,
+              "application": application,
+              "applicationOrigin": aviam if application == "aviam-web" else public,
+              "previewMode": True,
+              "prototypeApiOrigin": api,
+          }
+          path = pathlib.Path("artifacts/build-configuration.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8", newline="\n")
+          PY
+
+      - name: Install and test the web application
+        working-directory: ${{ matrix.directory }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          export VITE_ELEVANT_API_URL="$WEB_API_ORIGIN"
+          export VITE_PROTOTYPE_API_URL="$WEB_API_ORIGIN"
+          export VCS_REF="$GITHUB_SHA"
+          export OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          export REQUIRED_API_MANIFEST="${{ steps.api.outputs.reference }}"
+          export OPENAPI_SHA256="${{ steps.api.outputs.openapi_sha }}"
+          export SOURCE_RUN_ID="$GITHUB_RUN_ID"
+          export ELEVANT_DEPLOYMENT_ID="$GITHUB_SHA"
+          export NEXT_PUBLIC_SITE_URL="$([[ '${{ matrix.application }}' == public-web ]] && echo "$WEB_PUBLIC_ORIGIN" || echo "$WEB_AVIAM_ORIGIN")"
+          export NEXT_PUBLIC_ELEVANT_API_URL="$WEB_API_ORIGIN"
+          export NEXT_PUBLIC_PROTOTYPE_API_URL="$WEB_API_ORIGIN"
+          export NEXT_PUBLIC_DEMO_FORM_MODE=preview
+          export NEXT_TELEMETRY_DISABLED=1
+          npm ci --no-audit --no-fund
+          if [[ "${{ matrix.application }}" == aviam-web ]]; then
+            npm run test:delivery
+            npm test -- --reporter=dot
+            npm run build
+          else
+            npm run validate:development-env
+            npm run lint
+            npm run typecheck
+            npm test
+            npm run build
+          fi
+
+      - name: Build the deployable image
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+          API_MANIFEST: ${{ steps.api.outputs.reference }}
+          OPENAPI_SHA: ${{ steps.api.outputs.openapi_sha }}
+        run: |
+          set -Eeuo pipefail
+          common_args=(
+            --build-arg "VCS_REF=$GITHUB_SHA"
+            --build-arg "OCI_CREATED=$OCI_CREATED"
+            --build-arg "OCI_SOURCE=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            --build-arg "SOURCE_RUN_ID=$GITHUB_RUN_ID"
+            --build-arg "REQUIRED_API_MANIFEST=$API_MANIFEST"
+            --build-arg "OPENAPI_SHA256=$OPENAPI_SHA"
+          )
+          if [[ "$APPLICATION" == aviam-web ]]; then
+            docker build "${common_args[@]}" \
+              --build-arg "VITE_ELEVANT_API_URL=$WEB_API_ORIGIN" \
+              --build-arg "VITE_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
+              --file frontend/private-web/Dockerfile \
+              --tag "$LOCAL_IMAGE" .
+          else
+            docker build "${common_args[@]}" \
+              --build-arg "ELEVANT_DEPLOYMENT_ID=$GITHUB_SHA" \
+              --build-arg "NEXT_PUBLIC_SITE_URL=$WEB_PUBLIC_ORIGIN" \
+              --build-arg "NEXT_PUBLIC_ELEVANT_API_URL=$WEB_API_ORIGIN" \
+              --build-arg "NEXT_PUBLIC_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
+              --build-arg NEXT_PUBLIC_DEMO_FORM_MODE=preview \
+              --file frontend/public-web/Dockerfile \
+              --tag "$LOCAL_IMAGE" .
+          fi
+
+      - name: Certify the exact image
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+          API_MANIFEST: ${{ steps.api.outputs.reference }}
+          OPENAPI_SHA: ${{ steps.api.outputs.openapi_sha }}
+        run: |
+          set -Eeuo pipefail
+          bash "frontend/${{ matrix.application == 'aviam-web' && 'private-web' || 'public-web' }}/scripts/certify-image.sh" \
+            "$LOCAL_IMAGE" \
+            "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            "$WEB_API_ORIGIN" \
+            "$API_MANIFEST" \
+            "$OPENAPI_SHA" \
+            "$GITHUB_RUN_ID"
+
+      - name: Export the exact certified image and prerequisites
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/Development' &&
+          ((matrix.application == 'aviam-web' && needs.classify.outputs.aviam_owned == 'true') ||
+           (matrix.application == 'public-web' && needs.classify.outputs.public_owned == 'true'))
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+        run: |
+          set -Eeuo pipefail
+          root="artifacts/web-image-$APPLICATION"
+          install -d "$root/api"
+          docker save "$LOCAL_IMAGE" | zstd -T0 -19 -o "$root/image.tar.zst"
+          (cd "$root" && sha256sum image.tar.zst > image.tar.zst.sha256)
+          docker image inspect --format '{{.Id}}' "$LOCAL_IMAGE" > "$root/image.id"
+          cp artifacts/build-configuration.json "$root/build-configuration.json"
+          cp artifacts/api-required/api-release-manifest.json "$root/api/api-release-manifest.json"
+          cp artifacts/api-required/api-release-manifest-reference.txt "$root/api/api-release-manifest-reference.txt"
+          cp artifacts/api-required/openapi.sha256 "$root/api/openapi.sha256"
+
+      - name: Upload the exact certified image
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/Development' &&
+          ((matrix.application == 'aviam-web' && needs.classify.outputs.aviam_owned == 'true') ||
+           (matrix.application == 'public-web' && needs.classify.outputs.public_owned == 'true'))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-image-${{ matrix.application }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: artifacts/web-image-${{ matrix.application }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish_development_release:
+    name: Publish ${{ matrix.application }} Development release
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/Development' &&
+      needs.classify.outputs.any_owned == 'true' &&
+      needs.build_and_certify.result == 'success'
+    needs:
+      - classify
+      - validate_delivery_tooling
+      - build_and_certify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    concurrency:
+      group: development-${{ matrix.application }}-manifest-publication
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.classify.outputs.release_matrix) }}
+    steps:
+      - name: Checkout exact source with complete history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Download the exact certified image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: web-image-${{ matrix.application }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: artifacts/web-image-${{ matrix.application }}
+
+      - name: Verify and import the exact certified image
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          LOCAL_IMAGE: ${{ matrix.imageName }}:ci
+        run: |
+          set -Eeuo pipefail
+          root="artifacts/web-image-$APPLICATION"
+          (cd "$root" && sha256sum --check image.tar.zst.sha256)
+          zstd -d -c "$root/image.tar.zst" | docker load
+          expected_id="$(<"$root/image.id")"
+          actual_id="$(docker image inspect --format '{{.Id}}' "$LOCAL_IMAGE")"
+          [[ "$actual_id" == "$expected_id" ]] || {
+            echo "The certified web image changed while crossing the job boundary." >&2
+            exit 1
+          }
+
+          python3 - "$root/build-configuration.json" "$APPLICATION" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              data = json.load(stream)
+          expected = {"apiOrigin", "application", "applicationOrigin", "previewMode", "prototypeApiOrigin"}
+          if set(data) != expected or data["application"] != sys.argv[2] or data["previewMode"] is not True:
+              raise SystemExit("Transferred web build configuration has an invalid shape.")
+          if data["prototypeApiOrigin"] != data["apiOrigin"]:
+              raise SystemExit("Prototype adapter origin must equal the real Development API origin.")
+          PY
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-resolve and compare the immutable API prerequisite
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
+          ELEVANT_API_WAIT_SECONDS: "0"
+          ELEVANT_API_POLL_SECONDS: "1"
+        run: |
+          set -Eeuo pipefail
+          transferred="artifacts/web-image-$APPLICATION/api"
+          api_reference="$(<"$transferred/api-release-manifest-reference.txt")"
+          ELEVANT_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
+            bash frontend/scripts/deployment/resolve-api-release.sh \
+              "$api_reference" \
+              "$GITHUB_WORKSPACE/artifacts/resolved-api"
+          cmp -s "$transferred/api-release-manifest.json" \
+            artifacts/resolved-api/api-release-manifest.json
+          cmp -s "$transferred/api-release-manifest-reference.txt" \
+            artifacts/resolved-api/api-release-manifest-reference.txt
+          cmp -s "$transferred/openapi.sha256" artifacts/resolved-api/openapi.sha256
+
+      - name: Re-certify, publish and verify the immutable web image
+        id: web_image
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          IMAGE_NAME: ${{ matrix.imageName }}
+          LOCAL_IMAGE: ${{ matrix.imageName }}:ci
+        run: |
+          set -Eeuo pipefail
+          root="artifacts/web-image-$APPLICATION"
+          api_origin="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["apiOrigin"])' "$root/build-configuration.json")"
+          api_reference="$(<"$root/api/api-release-manifest-reference.txt")"
+          openapi_sha="$(<"$root/api/openapi.sha256")"
+          certifier="frontend/$([[ "$APPLICATION" == aviam-web ]] && echo private-web || echo public-web)/scripts/certify-image.sh"
+          bash "$certifier" "$LOCAL_IMAGE" "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$api_origin" \
+            "$api_reference" "$openapi_sha" "$GITHUB_RUN_ID"
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          image_repo="ghcr.io/${owner}/${IMAGE_NAME}"
+          image_version="${image_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          docker tag "$LOCAL_IMAGE" "$image_version"
+          output="$(docker push "$image_version")"
+          printf '%s\n' "$output" >&2
+          image_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Could not resolve the pushed web image digest." >&2
+            exit 1
+          }
+          image_ref="${image_repo}@${image_digest}"
+          docker pull "$image_ref" >/dev/null
+          bash "$certifier" "$image_ref" "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$api_origin" \
+            "$api_reference" "$openapi_sha" "$GITHUB_RUN_ID"
+          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse an already superseded web publication
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          bash frontend/scripts/deployment/guard-web-publication.sh \
+            "${{ matrix.application }}" "$GITHUB_SHA" >/dev/null
+
+      - name: Generate and cross-validate the web release manifest
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          COMPOSE_FILE: ${{ matrix.compose }}
+          WEB_IMAGE: ${{ steps.web_image.outputs.image_ref }}
+        run: |
+          set -Eeuo pipefail
+          input_root="artifacts/web-image-$APPLICATION"
+          release_root="artifacts/web-release-$APPLICATION"
+          install -d "$release_root/compose"
+          cp "$COMPOSE_FILE" "$release_root/compose/compose.development.web.yml"
+          api_reference="$(<"$input_root/api/api-release-manifest-reference.txt")"
+          openapi_sha="$(<"$input_root/api/openapi.sha256")"
+          python3 frontend/scripts/deployment/web_release_manifest.py generate \
+            --repository-root . \
+            --compose "$COMPOSE_FILE" \
+            --application "$APPLICATION" \
+            --api-manifest "$input_root/api/api-release-manifest.json" \
+            --api-manifest-reference "$api_reference" \
+            --api-client-source packages/api-client/openapi/source.json \
+            --openapi packages/api-client/openapi/elevant-v1.json \
+            --openapi-tool ops/dokploy/web-cd/openapi-tool.mjs \
+            --openapi-sha256 "$openapi_sha" \
+            --configuration-file "$input_root/build-configuration.json" \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF" \
+            --commit "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --web-image "$WEB_IMAGE" \
+            --output "$release_root/manifest.json"
+          python3 frontend/scripts/deployment/web_release_manifest.py validate \
+            --manifest "$release_root/manifest.json" \
+            --application "$APPLICATION" \
+            --repository-root . \
+            --compose "$COMPOSE_FILE" \
+            --configuration-file "$input_root/build-configuration.json"
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          consumer_root="artifacts/web-consumer-$APPLICATION"
+          install -d "$consumer_root"
+          cp "$release_root/manifest.json" "$consumer_root/manifest.json"
+          cp "$release_root/compose/compose.development.web.yml" \
+            "$consumer_root/compose.development.web.yml"
+          node ops/dokploy/web-cd/manifest-tool.mjs validate \
+            --file "$consumer_root/manifest.json" \
+            --bundle-root "$consumer_root" \
+            --application "$APPLICATION" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-ref "$GITHUB_REF" \
+            --web-repository "ghcr.io/${owner}/${{ matrix.imageName }}" \
+            --api-manifest-repository "ghcr.io/${owner}/elevant-api-release-manifest" \
+            --api-image-repository "ghcr.io/${owner}/elevant-api"
+
+      - name: Upload immutable web release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-release-${{ matrix.application }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            artifacts/web-release-${{ matrix.application }}/manifest.json
+            artifacts/web-release-${{ matrix.application }}/compose/compose.development.web.yml
+            artifacts/web-image-${{ matrix.application }}/build-configuration.json
+            artifacts/web-image-${{ matrix.application }}/api/api-release-manifest.json
+            artifacts/web-image-${{ matrix.application }}/api/api-release-manifest-reference.txt
+            artifacts/web-image-${{ matrix.application }}/api/openapi.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish and verify the immutable web release bundle
+        id: web_bundle
+        shell: bash
+        env:
+          APPLICATION: ${{ matrix.application }}
+          BUNDLE_NAME: ${{ matrix.bundleName }}
+        run: |
+          set -Eeuo pipefail
+          release_root="artifacts/web-release-$APPLICATION"
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          bundle_repo="ghcr.io/${owner}/${BUNDLE_NAME}"
+          bundle_version="${bundle_repo}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          published_at="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["publishedAt"])' "$release_root/manifest.json")"
+          api_reference="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["api"]["requiredManifest"])' "$release_root/manifest.json")"
+          openapi_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["api"]["openApiSha256"])' "$release_root/manifest.json")"
+
+          bundle_context="$(mktemp -d)"
+          extracted="$(mktemp -d)"
+          bundle_container=""
+          cleanup() {
+            if [[ -n "$bundle_container" ]]; then docker rm -f "$bundle_container" >/dev/null 2>&1 || true; fi
+            rm -rf -- "$bundle_context" "$extracted"
+          }
+          trap cleanup EXIT
+          cp "$release_root/manifest.json" "$bundle_context/manifest.json"
+          install -d "$bundle_context/compose"
+          cp "$release_root/compose/compose.development.web.yml" \
+            "$bundle_context/compose/compose.development.web.yml"
+
+          docker build \
+            --build-arg "VCS_REF=$GITHUB_SHA" \
+            --build-arg "OCI_SOURCE=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --build-arg "OCI_CREATED=$published_at" \
+            --build-arg "APPLICATION=$APPLICATION" \
+            --build-arg "SOURCE_RUN_ID=$GITHUB_RUN_ID" \
+            --build-arg "API_MANIFEST=$api_reference" \
+            --build-arg "OPENAPI_SHA256=$openapi_sha" \
+            --file frontend/scripts/deployment/Dockerfile.web-release-bundle \
+            --tag "$bundle_version" \
+            "$bundle_context"
+
+          expected_source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          check_label() {
+            local reference="$1" label="$2" expected="$3"
+            [[ "$(docker image inspect --format "{{index .Config.Labels \"$label\"}}" "$reference")" == "$expected" ]]
+          }
+          check_labels() {
+            local reference="$1"
+            check_label "$reference" org.opencontainers.image.revision "$GITHUB_SHA"
+            check_label "$reference" org.opencontainers.image.source "$expected_source"
+            check_label "$reference" io.elevant.application "$APPLICATION"
+            check_label "$reference" io.elevant.environment Development
+            check_label "$reference" io.elevant.source.run-id "$GITHUB_RUN_ID"
+            check_label "$reference" io.elevant.api.required-manifest "$api_reference"
+            check_label "$reference" io.elevant.openapi.sha256 "$openapi_sha"
+            check_label "$reference" io.elevant.web-release.schema-version 1
+            check_label "$reference" io.elevant.web-release.bundle-version 1
+            check_label "$reference" io.elevant.web-release.media-type application/vnd.elevant.web-release-bundle.v1
+          }
+          extract_and_validate() {
+            local reference="$1" destination="$2"
+            install -d "$destination"
+            bundle_container="$(docker create "$reference")"
+            docker cp "$bundle_container:/manifest.json" "$destination/manifest.json"
+            docker cp "$bundle_container:/compose/compose.development.web.yml" \
+              "$destination/compose.development.web.yml"
+            docker rm "$bundle_container" >/dev/null
+            bundle_container=""
+            [[ "$(find "$destination" -maxdepth 1 -type f -printf '%f\n' | sort)" == $'compose.development.web.yml\nmanifest.json' ]]
+            cmp -s "$release_root/manifest.json" "$destination/manifest.json"
+            cmp -s "$release_root/compose/compose.development.web.yml" \
+              "$destination/compose.development.web.yml"
+            node ops/dokploy/web-cd/manifest-tool.mjs validate \
+              --file "$destination/manifest.json" \
+              --bundle-root "$destination" \
+              --application "$APPLICATION" \
+              --expected-repository "$GITHUB_REPOSITORY" \
+              --expected-ref "$GITHUB_REF" \
+              --web-repository "ghcr.io/${owner}/${{ matrix.imageName }}" \
+              --api-manifest-repository "ghcr.io/${owner}/elevant-api-release-manifest" \
+              --api-image-repository "ghcr.io/${owner}/elevant-api"
+          }
+
+          check_labels "$bundle_version"
+          extract_and_validate "$bundle_version" "$extracted/local"
+          output="$(docker push "$bundle_version")"
+          printf '%s\n' "$output" >&2
+          bundle_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$bundle_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Could not resolve the pushed web release bundle digest." >&2
+            exit 1
+          }
+          bundle_ref="${bundle_repo}@${bundle_digest}"
+          docker pull "$bundle_ref" >/dev/null
+          check_labels "$bundle_ref"
+          extract_and_validate "$bundle_ref" "$extracted/remote"
+          echo "bundle_ref=$bundle_ref" >> "$GITHUB_OUTPUT"
+          echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
+          echo "bundle_alias=${bundle_repo}:development-certified" >> "$GITHUB_OUTPUT"
+
+      - name: Move and verify the Development discovery alias last
+        shell: bash
+        env:
+          REPOSITORY_TOKEN: ${{ github.token }}
+          BUNDLE_REF: ${{ steps.web_bundle.outputs.bundle_ref }}
+          BUNDLE_DIGEST: ${{ steps.web_bundle.outputs.bundle_digest }}
+          BUNDLE_ALIAS: ${{ steps.web_bundle.outputs.bundle_alias }}
+        run: |
+          set -Eeuo pipefail
+          bash frontend/scripts/deployment/guard-web-publication.sh \
+            "${{ matrix.application }}" "$GITHUB_SHA" >/dev/null
+          docker pull "$BUNDLE_REF" >/dev/null
+          docker tag "$BUNDLE_REF" "$BUNDLE_ALIAS"
+          output="$(docker push "$BUNDLE_ALIAS")"
+          printf '%s\n' "$output" >&2
+          alias_digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$output" | tail -n 1)"
+          [[ "$alias_digest" == "$BUNDLE_DIGEST" ]] || {
+            echo "The web discovery alias does not resolve to the certified bundle." >&2
+            exit 1
+          }
+          {
+            echo "## Certified Development ${{ matrix.application }} release"
+            echo "- Immutable bundle: \`$BUNDLE_REF\`"
+            echo "- Discovery alias: \`$BUNDLE_ALIAS\`"
+            echo "- Immutable web image: \`${{ steps.web_image.outputs.image_ref }}\`"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"

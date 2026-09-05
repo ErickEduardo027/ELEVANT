@@ -1,0 +1,28 @@
+FROM scratch
+
+ARG VCS_REF
+ARG OCI_SOURCE
+ARG OCI_CREATED
+ARG APPLICATION
+ARG SOURCE_RUN_ID
+ARG API_MANIFEST
+ARG OPENAPI_SHA256
+
+LABEL org.opencontainers.image.title="ELEVANT Development web release bundle" \
+      org.opencontainers.image.description="Certified immutable inputs for an ELEVANT Development web promotion" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${OCI_SOURCE}" \
+      org.opencontainers.image.created="${OCI_CREATED}" \
+      io.elevant.application="${APPLICATION}" \
+      io.elevant.environment="Development" \
+      io.elevant.source.run-id="${SOURCE_RUN_ID}" \
+      io.elevant.api.required-manifest="${API_MANIFEST}" \
+      io.elevant.openapi.sha256="${OPENAPI_SHA256}" \
+      io.elevant.web-release.schema-version="1" \
+      io.elevant.web-release.bundle-version="1" \
+      io.elevant.web-release.media-type="application/vnd.elevant.web-release-bundle.v1"
+
+COPY manifest.json /manifest.json
+COPY compose/compose.development.web.yml /compose/compose.development.web.yml
+
+CMD ["/manifest.json"]

@@ -1,7 +1,6 @@
 import type { MockAirlineSession } from "@/lib/mock-auth";
 import type { CreateServiceRequestInput, ServiceRequest } from "@/lib/portal";
-
-const API_URL = (process.env.NEXT_PUBLIC_PROTOTYPE_API_URL || "http://localhost:4310").replace(/\/$/, "");
+import { getPrototypeApiUrl } from "@/lib/prototype-api";
 
 interface BackendServiceRequest {
   id: string;
@@ -71,13 +70,13 @@ function toPortalRequest(item: BackendServiceRequest, session: MockAirlineSessio
 async function request(path: string, options: RequestInit = {}) {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${getPrototypeApiUrl()}${path}`, {
       ...options,
       headers: { "Content-Type": "application/json", ...options.headers },
       cache: "no-store",
     });
   } catch {
-    throw new Error("No fue posible conectar con el backend del prototipo.");
+    throw new Error("No fue posible conectar con la API de Development.");
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "No fue posible completar la solicitud.");

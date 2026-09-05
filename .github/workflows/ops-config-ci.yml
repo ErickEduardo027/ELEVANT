@@ -92,6 +92,36 @@ jobs:
           bash ops/dokploy/database-cd/tests/test-controller.sh
           bash ops/dokploy/database-cd/tests/test-verify-runtime.sh
 
+      - name: Validate independent web CD controller profiles
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          scripts=(
+            ops/dokploy/web-cd/elevant-web-cd
+            ops/dokploy/web-cd/install-controller
+            ops/dokploy/web-cd/verify-runtime
+            ops/dokploy/web-cd/jobs/aviam-web-poll.job.sh
+            ops/dokploy/web-cd/jobs/public-web-poll.job.sh
+            ops/dokploy/web-cd/tests/*.sh
+          )
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+          for module in \
+            ops/dokploy/web-cd/compose-model-tool.mjs \
+            ops/dokploy/web-cd/env-tool.mjs \
+            ops/dokploy/web-cd/manifest-tool.mjs \
+            ops/dokploy/web-cd/openapi-tool.mjs \
+            ops/dokploy/web-cd/state-tool.mjs
+          do
+            node --check "$module"
+          done
+          bash ops/dokploy/web-cd/tests/test-tools.sh
+          bash ops/dokploy/web-cd/tests/test-install-controller.sh
+          bash ops/dokploy/web-cd/tests/test-poll-jobs.sh
+          bash ops/dokploy/web-cd/tests/test-verify-runtime.sh
+          bash ops/dokploy/web-cd/tests/test-public-profile.sh
+          bash ops/dokploy/web-cd/tests/test-controller.sh
+
       - name: Validate database manifest producer-consumer compatibility
         shell: bash
         env:

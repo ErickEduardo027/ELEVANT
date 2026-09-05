@@ -1,14 +1,13 @@
 # Implementación Development en VPS con Dokploy
 
-Estado: DB v1 está desplegada y verificada en el VPS Development privado. El
-hardening, Tailscale, observabilidad, backup/restore programados y snapshot frío
-fueron aceptados el 2026-08-23. El controlador pull-based fue instalado y
-aceptado manualmente por el operador el 2026-08-31 UTC; desde entonces promueve
-automáticamente bundles DB certificados de `Development`. La API y los tres
-frontends continúan fuera del VPS hasta completar sus handoffs. La imagen,
-bundle y controlador pull-based de la API se versionan por separado y no
-autorizan su instalación remota. La secuencia reproducible con checkpoints y
-rollback está en
+Estado: DB v1 y la API están desplegadas y verificadas en el VPS Development
+privado, cada una con su CD pull-based activo. El hardening, Tailscale,
+observabilidad, backup/restore programados y snapshot frío ya fueron aceptados.
+AVIAM Web y Public Web entran ahora en la fase de implementación de sus
+artefactos y controladores de entrega; todavía no se declaran desplegadas. El
+primer rollout de cada web será manual y separado después de revisar el PR y
+sus bundles certificados. Mobile Agent continúa fuera del VPS. La secuencia
+reproducible con checkpoints y rollback está en
 [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
@@ -21,8 +20,8 @@ SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops ent
 
 ```text
 Tailscale HTTPS Services
-  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (futuro)
-  ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (futuro)
+  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (rollout pendiente)
+  ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (rollout pendiente)
   ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API
   └─ Dokploy       -> 127.0.0.1:3000
 
@@ -40,8 +39,8 @@ Deployables separados:
 1. `elevant-dev-database`: manual, sin AutoDeploy.
 2. `elevant-dev-database-release`: one-shot por versión.
 3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
-4. `elevant-dev-aviam-web`: futuro, Vite estático/Nginx.
-5. `elevant-dev-public-web`: futuro, Next standalone.
+4. `elevant-dev-aviam-web`: Vite estático/Nginx, rollout manual pendiente.
+5. `elevant-dev-public-web`: Next standalone, rollout manual pendiente.
 
 Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se compila/distribuye, no es un stack.
 
@@ -63,7 +62,8 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 4. Configurar grants deny-by-default:
    - `dev` -> API, AVIAM Web y Public Web `tcp:443`;
    - `ops` -> esos servicios + Dokploy `tcp:443` + host SSH;
-   - CI futuro -> endpoints de deploy/smoke estrictamente necesarios;
+   - GitHub Actions/CI -> ningún acceso al tailnet o al VPS; los controladores
+     privados descubren los artefactos por pull;
    - nadie -> SQL.
 5. Usar firewall del proveedor. Mantener 1433 y 18080-18082 cerrados siempre; cerrar 3000/80/443 públicos y SSH público después de comprobar acceso privado. Docker puede saltarse reglas UFW, por eso se valida externamente el firewall del proveedor.
 6. Mantener `tailscale funnel off`.
@@ -257,25 +257,86 @@ final, más los puertos locales `5173` y `3000`; Mobile Agent no necesita CORS.
 `AllowedHosts` contiene el host de API, no los hosts cliente. Una red bridge
 propia proporciona salida y `elevant-dev-data` conserva SQL aislado.
 
-## 8. Publicar las webs en una fase posterior
+## 8. Publicar las webs Development
 
-Los valores `VITE_`/`NEXT_PUBLIC_` se hornean durante build y no son secretos.
-Las webs no se conectan a `elevant-dev-data` y quedan fuera del rollout API.
+Esta sección define el rollout próximo; no registra que ya haya ocurrido. Se
+despliega y acepta primero AVIAM Web y después Public Web, sin agruparlas en un
+solo Compose o estado.
 
-Configure Services:
+Los valores `VITE_*`/`NEXT_PUBLIC_*` se hornean durante build, son públicos y no
+pueden contener secretos. GitHub Actions toma los orígenes HTTPS exactos de
+estas variables de repositorio, sin escribir nombres vivos en las plantillas:
 
-```bash
-tailscale serve --service=svc:elevant-dev-api --https=443 http://127.0.0.1:18080
-tailscale serve --service=svc:elevant-dev-aviam-web --https=443 http://127.0.0.1:18081
-tailscale serve --service=svc:elevant-dev-public-web --https=443 http://127.0.0.1:18082
-tailscale serve --service=svc:elevant-dev-dokploy --https=443 http://127.0.0.1:3000
-tailscale serve status --json
+```text
+ELEVANT_DEV_API_ORIGIN
+ELEVANT_DEV_AVIAM_WEB_ORIGIN
+ELEVANT_DEV_PUBLIC_WEB_ORIGIN
 ```
 
-El host debe estar etiquetado y los anuncios aprobados/auto-aprobados. No use
-headers de identidad Tailscale como autenticación funcional. El scaffold actual
-aún no implementa JWT/RBAC/tenant y por eso permanece estrictamente privado;
-esos controles serán obligatorios antes de exponer contratos de negocio.
+CI construye/certifica fuera del VPS y publica dos imágenes independientes por
+digest, más un bundle OCI v1 por aplicación:
+
+```text
+elevant-private-web  -> elevant-aviam-web-release-manifest
+elevant-public-web   -> elevant-public-web-release-manifest
+```
+
+Cada bundle contiene `/manifest.json` y
+`/compose/compose.development.web.yml`, fija la imagen web, hashes de Compose y
+configuración, y la entrega API exacta usada durante build. Su alias
+`development-certified` solo se mueve después de extraer y comparar ambos
+payloads; nunca es identidad de despliegue.
+
+El operador aplica el runbook de
+[`ops/dokploy/web-cd`](../../ops/dokploy/web-cd/README.md) una aplicación a la
+vez:
+
+1. Esperar el PR fusionado, CI verde, imagen y bundle certificado del carril.
+2. Confirmar DB/API saludables, API-CD `succeeded/complete`, locks libres,
+   recursos suficientes y el puerto loopback objetivo libre.
+3. Crear una bridge externa runtime exclusiva para esa web. No reutilizar
+   `elevant-dev-data`, `dokploy-network` ni la red de la otra web.
+4. Crear un recurso **Docker Compose / Raw**, sin Domain y con AutoDeploy
+   desactivado; guardar su Environment root-only y desplegar inicialmente solo
+   la referencia de imagen certificada `@sha256:`.
+5. Exigir runtime no-root, filesystem read-only, límites, una sola red runtime,
+   health/smoke y listener exacto:
+   - AVIAM Web: `127.0.0.1:18081:8080`;
+   - Public Web: `127.0.0.1:18082:3000`.
+6. Publicar el Service Tailscale ya reservado hacia ese loopback, probar acceso
+   de los grupos autorizados, denegación pública y Funnel desactivado.
+7. Instalar/actualizar manualmente el paquete genérico `web-cd`, configurar el
+   perfil root-only, ejecutar `verify-runtime`, `--dry-run` y
+   `--adopt-current`. La adopción no vuelve a desplegar la baseline.
+8. Crear el schedule deshabilitado, ejecutar un poll/no-op manual, probar una
+   promoción y su rollback, y solo entonces habilitarlo. Repetir el proceso
+   completo para la segunda web y validar persistencia tras reboot.
+
+Los perfiles `aviam-web` y `public-web` conservan estado, cache, pausa y
+rollback separados. Ambos exigen que digest de bundle, `runId`, imagen y hash
+OpenAPI coincidan con la API activa. Un candidato que requiere otra API se
+difiere sin mutar el servicio. Los polls son cada minuto con offset de 30
+segundos para AVIAM Web y 45 para Public Web; la jerarquía de locks
+`database -> API -> web común -> perfil` sigue siendo autoritativa.
+
+Los Services se configuran solo después de validar el listener local:
+
+```bash
+tailscale serve --service=svc:elevant-dev-aviam-web --https=443 http://127.0.0.1:18081
+tailscale serve --service=svc:elevant-dev-public-web --https=443 http://127.0.0.1:18082
+tailscale serve status --json
+tailscale funnel status
+```
+
+No use headers de identidad Tailscale como autenticación funcional. El rollout
+inicial ofrece previews técnicos: la API todavía no implementa todos los
+endpoints de autenticación y negocio usados por los prototipos. Una shell o
+health saludable no demuestra que esos flujos sean funcionales. Los adaptadores
+pendientes apuntan a la API real para fallar de forma visible; nunca se despliega
+`backend-prototipo` ni se usa el localhost del navegador como backend remoto.
+
+Mobile Agent no se instala en el VPS. Se prueba en emulador/tablet y se
+distribuye por APK/EAS en su ciclo propio.
 
 ## Producción queda fuera de este VPS
 
@@ -285,10 +346,12 @@ No copie el Compose Development, no incluya seeder y no comparta host/volumen/se
 
 ## Referencias oficiales
 
+- [Decisión ELEVANT: CD pull-based web Development](../adr/0012-pull-based-web-development-cd.md)
 - [Dokploy: Docker Compose y named volumes](https://docs.dokploy.com/docs/core/docker-compose)
 - [Dokploy: acceso privado con Tailscale y advertencia Docker/UFW](https://docs.dokploy.com/docs/core/guides/tailscale)
 - [Tailscale Services](https://tailscale.com/docs/features/tailscale-services)
 - [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve)
+- [Next.js: despliegue `standalone`](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
 - [Microsoft: aplicar migraciones y crear bundles EF](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying)
 - [Microsoft Artifact Registry: SQL Server Linux](https://mcr.microsoft.com/en-us/artifact/mar/mssql/server)
 - [Microsoft: SQL Server en contenedores y licencias Production](https://learn.microsoft.com/en-us/sql/linux/containers/deploy?view=sql-server-ver17)
