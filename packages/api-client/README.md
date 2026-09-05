@@ -1,25 +1,56 @@
 # Cliente API compartido
 
-Espacio reservado para un cliente TypeScript generado desde el documento OpenAPI de Elevant. Todavía no se publica ni contiene una implementación manual porque la herramienta de generación se decidirá en ADR-0007.
+`@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
+ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
+genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores
+importan TypeScript fuente y configuran una instancia por contexto o petición.
 
-## Flujo esperado
+## Uso
 
-1. Compilar y arrancar la API en un ambiente de desarrollo controlado.
-2. Descargar `/swagger/v1/swagger.json` o recuperar el artefacto OpenAPI producido por CI.
-3. Validar que el documento corresponda a la versión esperada.
-4. Guardar la entrada reproducible en `openapi`.
-5. Ejecutar el generador con versión fijada y salida en `generated`.
-6. Ejecutar format, type-check y pruebas de consumidores.
-7. Revisar el diff del contrato y del código generado.
+```ts
+import { createElevantApiClient } from "@elevant/api-client";
 
-## Reglas
+const api = createElevantApiClient({
+  baseUrl: "https://api.example.test",
+  getAccessToken: async () => session.accessToken,
+});
 
-- `generated` es solo salida: no se edita manualmente.
-- Los errores se modelan a partir de RFC Problem Details expuesto por la API.
-- La URL del servidor se inyecta en tiempo de ejecución; no se hornea una URL de Production.
-- Los tokens se reciben mediante un callback o middleware del consumidor y nunca se almacenan en el paquete.
-- Un cambio incompatible exige versionar el endpoint o coordinar una migración de consumidores.
-- El documento OpenAPI no debe contener ejemplos con datos personales, claves o hosts internos sensibles.
+const status = await api.getSystemPing({ signal: abortController.signal });
+```
 
-Las alternativas iniciales son Kiota, NSwag y Orval. La selección debe medir soporte del documento generado por ASP.NET, ergonomía para web y Expo, reproducibilidad, tamaño de salida y mantenimiento; no se decide por preferencia sin una prueba pequeña.
+`baseUrl` debe ser un origen HTTP(S) absoluto sin ruta final. El callback de
+token se ejecuta para cada petición; el cliente no persiste ni registra el
+valor. `fetch` y `defaultHeaders` se pueden inyectar para SSR, Expo y pruebas.
+Los encabezados `Authorization` duraderos se rechazan: use `getAccessToken`.
 
+Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
+error expone solo `status`, un `title` saneado y el `traceId` opcional. Su
+mensaje nunca incorpora el token, URL, cuerpo crudo ni `ProblemDetails.detail`.
+Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
+
+## Contrato y generación
+
+- `openapi/elevant-v1.json`: snapshot canónico certificado.
+- `openapi/source.json`: commit, ejecución e imagen inmutable de procedencia.
+- `generated/elevant-api.ts`: salida determinista de Orval; no se edita a mano.
+- `src`: fábrica y transporte compartido, sin dependencias de ejecución.
+
+La generación requiere Node.js 24 y npm:
+
+```bash
+npm ci
+npm run generate
+npm run check
+```
+
+Para comparar estructuralmente el snapshot con un archivo o una API local:
+
+```bash
+npm run check:openapi -- ./swagger.json
+npm run check:openapi -- http://127.0.0.1:8080/swagger/v1/swagger.json
+```
+
+La comparación ignora espacios y el orden de propiedades JSON, pero detecta
+cualquier otra deriva. CI no usa Tailscale: compila el backend del commit, lo
+inicia localmente en `Testing` y compara su documento. Un cambio incompatible
+exige versionar el endpoint o coordinar la migración de los tres consumidores.

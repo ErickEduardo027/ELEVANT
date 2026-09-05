@@ -24,10 +24,11 @@ Variables públicas actuales:
 ```text
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_DEMO_FORM_MODE=preview
+NEXT_PUBLIC_ELEVANT_API_URL=https://elevant-dev-api.taild2f562.ts.net
 NEXT_PUBLIC_PROTOTYPE_API_URL=http://localhost:4310
 ```
 
-`NEXT_PUBLIC_*` queda incorporado al bundle y nunca puede contener secretos. Antes de cambiar código, lea el `AGENTS.md` de esta carpeta y la documentación incluida en la versión instalada de Next.
+`NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido. La variable del prototipo se conserva para migrar sus adaptadores gradualmente. Todo valor `NEXT_PUBLIC_*` queda incorporado al bundle y nunca puede contener secretos. Antes de cambiar código, lea el `AGENTS.md` de esta carpeta y la documentación incluida en la versión instalada de Next.
 
 ## Rutas observadas
 

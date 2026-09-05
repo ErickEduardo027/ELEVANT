@@ -1,9 +1,20 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const sharedApiClientRoot = fileURLToPath(
+  new URL('../../packages/api-client/', import.meta.url)
+);
 
 // Dev preview only — not the project's chosen framework (see README.md).
 export default defineConfig({
   plugins: [react()],
+  server: {
+    fs: {
+      allow: [projectRoot, sharedApiClientRoot],
+    },
+  },
   // maplibre-gl loads its worker chunk via `new Worker(url)` (a runtime string, not a static
   // import), so Vite's dependency crawler never discovers it and only pre-bundles maplibre-gl.js
   // itself into .vite/deps — the sibling *-worker.mjs it then requests 404s there, silently
