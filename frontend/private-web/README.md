@@ -18,10 +18,11 @@ Vite sirve por defecto en `http://localhost:5173`. Las entradas históricas `das
 Copie `.env.example` a `.env.local` y configure:
 
 ```text
+VITE_ELEVANT_API_URL=https://elevant-dev-api.taild2f562.ts.net
 VITE_PROTOTYPE_API_URL=http://localhost:4310
 ```
 
-La variable es pública y actualmente apunta al backend prototipo. Cuando los contratos .NET estén disponibles se cambiará por la URL de `Elevant.Api` en Development. Nunca incluya tokens, contraseñas o cadenas SQL en una variable `VITE_*`.
+Ambas variables son públicas. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` conserva los adaptadores existentes mientras se migran por módulo. Nunca incluya tokens, contraseñas o cadenas SQL en una variable `VITE_*`.
 
 ## Frontera de seguridad
 

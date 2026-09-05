@@ -7,9 +7,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test:api-client-bundle": "expo export:embed --platform android --entry-file frontend/mobile-agent/tests/api-client.metro-smoke.ts --bundle-output .expo/api-client-smoke.android.js --assets-dest .expo/api-client-smoke-assets --dev false --minify false"
   },
   "dependencies": {
+    "@elevant/api-client": "file:../../packages/api-client",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",

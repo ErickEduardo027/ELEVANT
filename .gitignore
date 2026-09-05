@@ -74,7 +74,7 @@ backups/
 Thumbs.db
 Desktop.ini
 
-# El versionado de packages/api-client/generated se decidirá en el ADR 0007.
+# packages/api-client/generated se versiona deliberadamente según ADR-0007.
 
 .fake
 .worktrees/

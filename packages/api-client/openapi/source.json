@@ -1,0 +1,6 @@
+{
+  "sourceCommit": "8c88685de9f878471e7eb6c6b4bc699f30880a26",
+  "sourceRunId": "33967705254",
+  "apiImage": "ghcr.io/erickeduardo027/elevant-api@sha256:25cbb2399bef8f40f5062d28ad8615ba2767f2f499f8b4f336e4572f1a3989a5",
+  "swaggerPath": "/swagger/v1/swagger.json"
+}

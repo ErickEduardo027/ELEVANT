@@ -2,7 +2,10 @@
 
 ## Cliente a backend
 
-Web y móvil consumen contratos publicados por Api. No importan ensamblados .NET, no conocen tablas y no llaman al proveedor de vuelos. El cliente TypeScript se genera desde OpenAPI cuando ADR-0007 sea aceptado.
+Web y móvil consumen contratos publicados por Api. No importan ensamblados
+.NET, no conocen tablas y no llaman al proveedor de vuelos. Según ADR-0007, los
+tres clientes usan `@elevant/api-client`, generado desde el snapshot OpenAPI
+versionado y adaptado mediante una capa `fetch` común y sin estado global.
 
 ## Backend a SQL Server
 
@@ -24,4 +27,3 @@ Api publica hubs SignalR. Los mensajes tienen contratos versionados y autorizaci
 - métricas por resultado y latencia, no por datos personales;
 - pruebas con dobles o servidores simulados en CI;
 - configuración separada por ambiente.
-

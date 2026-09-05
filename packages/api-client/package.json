@@ -1,0 +1,45 @@
+{
+  "name": "@elevant/api-client",
+  "version": "0.0.0-private",
+  "private": true,
+  "description": "Cliente TypeScript compartido para la API versionada de ELEVANT.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "generated",
+    "openapi",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.0.0",
+      "onFail": "error"
+    }
+  },
+  "scripts": {
+    "generate": "orval --config ./orval.config.ts",
+    "check:generated": "node ./scripts/check-generated.mjs",
+    "check:openapi": "node ./scripts/check-openapi.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run check:generated && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "orval": "8.27.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "license": "UNLICENSED"
+}

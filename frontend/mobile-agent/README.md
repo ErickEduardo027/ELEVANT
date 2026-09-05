@@ -23,6 +23,9 @@ Desde `frontend/mobile-agent`:
 ```powershell
 npm install
 npm run start
+npm run lint
+npm run typecheck
+npm run test:api-client-bundle
 ```
 
 También puede usar `npm run android`, `npm run ios` o `npm run web` para desarrollo. Expo Go sirve para la exploración temprana, pero las capacidades y permisos finales deben verificarse en un development build/app firmada.
@@ -30,10 +33,11 @@ También puede usar `npm run android`, `npm run ios` o `npm run web` para desarr
 Copie `.env.example` a su archivo local y use una URL alcanzable desde la tablet:
 
 ```text
+EXPO_PUBLIC_ELEVANT_API_URL=https://elevant-dev-api.taild2f562.ts.net
 EXPO_PUBLIC_API_URL=http://192.168.1.100:4310
 ```
 
-`localhost` desde la tablet se refiere a la propia tablet. En el VPS Development, la app apuntará a la URL HTTPS privada de la misma Elevant API que usan las dos webs. La tablet de prueba deberá poder acceder a esa red privada. `EXPO_PUBLIC_*` se incluye en el binario y nunca contiene secretos.
+`EXPO_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `EXPO_PUBLIC_API_URL` conserva temporalmente los adaptadores del prototipo. `localhost` desde la tablet se refiere a la propia tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca contiene secretos.
 
 ## Autorización y almacenamiento
 
