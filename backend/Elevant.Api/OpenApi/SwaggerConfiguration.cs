@@ -14,6 +14,9 @@ public static class SwaggerConfiguration
 
         services.AddSwaggerGen(options =>
         {
+            options.SupportNonNullableReferenceTypes();
+            options.NonNullableReferenceTypesAsRequired();
+
             options.SwaggerDoc(ApiConfiguration.ApiVersion, new OpenApiInfo
             {
                 Title = "Elevant API",

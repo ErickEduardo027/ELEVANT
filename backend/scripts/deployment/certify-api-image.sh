@@ -178,11 +178,81 @@ python3 - "$response_root/swagger.json" <<'PY'
 import json
 import sys
 
+
+def require_object(value, location):
+    if not isinstance(value, dict):
+        raise SystemExit(f"OpenAPI {location} must be an object.")
+    return value
+
+
 with open(sys.argv[1], encoding="utf-8") as stream:
     document = json.load(stream)
-paths = document.get("paths")
-if not isinstance(paths, dict) or "/api/v1/system/ping" not in paths:
-    raise SystemExit("OpenAPI document does not contain the system ping path.")
+
+ping_path = "/api/v1/system/ping"
+paths = require_object(document.get("paths"), "paths")
+path_item = require_object(paths.get(ping_path), f"path {ping_path}")
+operation = require_object(path_item.get("get"), f"GET {ping_path}")
+if operation.get("operationId") != "GetSystemPing":
+    raise SystemExit("OpenAPI system ping operationId must be GetSystemPing.")
+
+responses = require_object(operation.get("responses"), "system ping responses")
+expected_responses = {
+    "200": ("application/json", "#/components/schemas/SystemPingResponse"),
+    "429": ("application/problem+json", "#/components/schemas/ProblemDetails"),
+    "500": ("application/problem+json", "#/components/schemas/ProblemDetails"),
+}
+if set(responses) != set(expected_responses):
+    raise SystemExit(
+        "OpenAPI system ping responses must be exactly 200, 429 and 500."
+    )
+
+for status_code, (media_type, schema_reference) in expected_responses.items():
+    response = require_object(responses[status_code], f"system ping {status_code} response")
+    content = require_object(response.get("content"), f"system ping {status_code} content")
+    if set(content) != {media_type}:
+        raise SystemExit(
+            f"OpenAPI system ping {status_code} media type must be exactly {media_type}."
+        )
+    media = require_object(content[media_type], f"system ping {status_code} {media_type}")
+    schema = require_object(media.get("schema"), f"system ping {status_code} schema")
+    if schema.get("$ref") != schema_reference:
+        raise SystemExit(
+            f"OpenAPI system ping {status_code} schema must reference {schema_reference}."
+        )
+
+components = require_object(document.get("components"), "components")
+schemas = require_object(components.get("schemas"), "component schemas")
+ping_schema = require_object(schemas.get("SystemPingResponse"), "SystemPingResponse schema")
+if ping_schema.get("type") != "object":
+    raise SystemExit("OpenAPI SystemPingResponse must be an object.")
+
+expected_properties = {
+    "application": ("string", None),
+    "status": ("string", None),
+    "environment": ("string", None),
+    "timestampUtc": ("string", "date-time"),
+}
+properties = require_object(ping_schema.get("properties"), "SystemPingResponse properties")
+if set(properties) != set(expected_properties):
+    raise SystemExit("OpenAPI SystemPingResponse properties changed unexpectedly.")
+
+required = ping_schema.get("required")
+if (
+    not isinstance(required, list)
+    or not all(isinstance(name, str) for name in required)
+    or len(required) != len(expected_properties)
+    or set(required) != set(expected_properties)
+):
+    raise SystemExit("Every SystemPingResponse property must be required exactly once.")
+
+for name, (expected_type, expected_format) in expected_properties.items():
+    property_schema = require_object(properties[name], f"SystemPingResponse.{name}")
+    if property_schema.get("type") != expected_type:
+        raise SystemExit(f"OpenAPI SystemPingResponse.{name} has an unexpected type.")
+    if property_schema.get("format") != expected_format:
+        raise SystemExit(f"OpenAPI SystemPingResponse.{name} has an unexpected format.")
+    if property_schema.get("nullable", False) is not False:
+        raise SystemExit(f"OpenAPI SystemPingResponse.{name} must be non-nullable.")
 PY
 
 if docker logs "$container" 2>&1 | grep -Eq \

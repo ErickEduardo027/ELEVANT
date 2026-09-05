@@ -13,8 +13,10 @@ public sealed class SystemController(
     TimeProvider timeProvider) : ControllerBase
 {
     /// <summary>Confirms that the HTTP process is responding.</summary>
-    [HttpGet("ping")]
-    [ProducesResponseType<SystemPingResponse>(StatusCodes.Status200OK)]
+    [HttpGet("ping", Name = "GetSystemPing")]
+    [ProducesResponseType<SystemPingResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
     public ActionResult<SystemPingResponse> Ping(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
