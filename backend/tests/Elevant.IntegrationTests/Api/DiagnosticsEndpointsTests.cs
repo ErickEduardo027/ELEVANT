@@ -5,28 +5,73 @@ namespace Elevant.IntegrationTests.Api;
 
 public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClassFixture<ElevantApiFactory>
 {
-    [Fact]
-    public async Task CorsAllowsConfiguredOriginAndRejectsUnknownOrigin()
+    [Theory]
+    [InlineData(ElevantApiFactory.PrivateWebOrigin)]
+    [InlineData(ElevantApiFactory.PublicWebOrigin)]
+    public async Task CorsAllowsEachConfiguredHttpsOrigin(string origin)
     {
         using var client = factory.CreateClient();
         using var allowedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/system/ping");
-        allowedRequest.Headers.Add("Origin", "http://localhost");
+        allowedRequest.Headers.Add("Origin", origin);
 
         using var allowedResponse = await client.SendAsync(
             allowedRequest,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal("http://localhost", allowedResponse.Headers.GetValues(
+        Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+        Assert.Equal(origin, allowedResponse.Headers.GetValues(
             "Access-Control-Allow-Origin").Single());
+        Assert.Equal("true", allowedResponse.Headers.GetValues(
+            "Access-Control-Allow-Credentials").Single());
+    }
 
-        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/system/ping");
-        rejectedRequest.Headers.Add("Origin", "https://untrusted.example");
+    [Theory]
+    [InlineData(ElevantApiFactory.PrivateWebOrigin)]
+    [InlineData(ElevantApiFactory.PublicWebOrigin)]
+    public async Task CorsPreflightAllowsAuthorizationAndContentType(string origin)
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/system/ping");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+        request.Headers.Add("Access-Control-Request-Headers", "Authorization, Content-Type");
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(origin, response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+        Assert.Equal("true", response.Headers.GetValues(
+            "Access-Control-Allow-Credentials").Single());
+
+        var allowedMethods = GetCommaSeparatedHeaderValues(response, "Access-Control-Allow-Methods");
+        var allowedHeaders = GetCommaSeparatedHeaderValues(response, "Access-Control-Allow-Headers");
+        Assert.Contains("GET", allowedMethods);
+        Assert.Contains("Authorization", allowedHeaders);
+        Assert.Contains("Content-Type", allowedHeaders);
+    }
+
+    [Fact]
+    public async Task CorsPreflightRejectsUnknownOrigin()
+    {
+        using var client = factory.CreateClient();
+        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Options, "/api/v1/system/ping");
+        rejectedRequest.Headers.Add(
+            "Origin",
+            $"{ElevantApiFactory.PrivateWebOrigin}.attacker.example");
+        rejectedRequest.Headers.Add("Access-Control-Request-Method", "GET");
+        rejectedRequest.Headers.Add(
+            "Access-Control-Request-Headers",
+            "Authorization, Content-Type");
 
         using var rejectedResponse = await client.SendAsync(
             rejectedRequest,
             TestContext.Current.CancellationToken);
 
+        Assert.Equal(HttpStatusCode.NoContent, rejectedResponse.StatusCode);
         Assert.False(rejectedResponse.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.False(rejectedResponse.Headers.Contains("Access-Control-Allow-Credentials"));
     }
 
     [Fact]
@@ -100,4 +145,14 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Equal("http", bearerScheme.GetProperty("type").GetString());
         Assert.Equal("bearer", bearerScheme.GetProperty("scheme").GetString());
     }
+
+    private static HashSet<string> GetCommaSeparatedHeaderValues(
+        HttpResponseMessage response,
+        string headerName) =>
+        response.Headers
+            .GetValues(headerName)
+            .SelectMany(value => value.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

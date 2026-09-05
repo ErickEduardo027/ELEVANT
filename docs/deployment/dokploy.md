@@ -250,9 +250,12 @@ no usa el provider GitHub para compilar o desplegar en el VPS.
 
 API usa `ASPNETCORE_ENVIRONMENT=Development`, health `/health`, readiness
 `/health/ready`, Swagger habilitado y HTTPS redirection desactivado detrás de
-Serve. Usa únicamente el login `elevant_dev_app`. CORS contiene localhost
-autorizado; los orígenes HTTPS de las webs se agregan cuando estas existan. Una
-red bridge propia proporciona salida y `elevant-dev-data` conserva SQL aislado.
+Serve. Usa únicamente el login `elevant_dev_app`. CORS acepta los orígenes
+HTTPS exactos de AVIAM Web y Public Web mediante
+`ELEVANT_API_PRIVATE_WEB_ORIGIN` y `ELEVANT_API_PUBLIC_WEB_ORIGIN`, sin `/`
+final, más los puertos locales `5173` y `3000`; Mobile Agent no necesita CORS.
+`AllowedHosts` contiene el host de API, no los hosts cliente. Una red bridge
+propia proporciona salida y `elevant-dev-data` conserva SQL aislado.
 
 ## 8. Publicar las webs en una fase posterior
 

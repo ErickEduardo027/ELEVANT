@@ -25,7 +25,10 @@ Una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Agent dentro de
 - SQL Server 2022 Developer Edition: uso exclusivo de desarrollo/pruebas, sin usuarios ni datos reales.
 - Base, volumen, credenciales, claves JWT, FlightAware y backups propios.
 - Acceso HTTPS privado mediante Tailscale Services; Tailscale no reemplaza autenticación/RBAC/tenant.
-- CORS de API permite solo los dos orígenes web Development y, si se necesitan, `http://localhost:5173`/`http://localhost:3000`.
+- CORS de API permite exactamente los dos orígenes HTTPS web Development,
+  configurados sin `/` final mediante `ELEVANT_API_PRIVATE_WEB_ORIGIN` y
+  `ELEVANT_API_PUBLIC_WEB_ORIGIN`, además de
+  `http://localhost:5173`/`http://localhost:3000` para desarrollo local.
 - Aplicaciones nativas no dependen de CORS, pero sí de TLS y autenticación.
 - No se habilitan uploads reales sin object storage y política de retención.
 

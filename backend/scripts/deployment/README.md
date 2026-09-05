@@ -28,8 +28,8 @@ fails immediately; a discovery alias is polled for at most 30 minutes.
 
 `certify-api-image.sh` validates the exact image transferred between CI jobs. It
 checks OCI provenance, the non-root runtime, liveness, unavailable-database
-readiness behavior, ping, OpenAPI, and the invariant that API startup does not
-invoke migrations.
+readiness behavior, ping, OpenAPI, exact positive/negative CORS preflights, and
+the invariant that API startup does not invoke migrations.
 
 `guard-api-publication.sh` fetches the current `Development` tip immediately
 before a mutable alias is moved. It rejects divergent history and any newer

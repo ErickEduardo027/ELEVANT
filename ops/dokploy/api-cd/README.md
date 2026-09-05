@@ -178,6 +178,25 @@ solo etapas e identidades no secretas. `--retry` funciona únicamente para el
 digest fallido que aún anuncia el alias; un bundle corregido se procesa con el
 poll normal.
 
+### Cambio del Compose certificado
+
+El Raw vivo y el Compose del bundle deben tener la misma semántica. Antes de
+fusionar un cambio de Compose:
+
+1. Deshabilitar `ELEVANT API CD - Poll` y ejecutar `--pause`.
+2. Agregar primero las variables nuevas al `.env` root-only, sin imprimirlo.
+3. Guardar en Dokploy Raw el Compose exacto revisado, con AutoDeploy todavía
+   desactivado. No desplegar manualmente una imagen distinta.
+4. Fusionar solo cuando CI y la revisión del Raw hayan pasado.
+5. Cuando el nuevo bundle esté publicado, ejecutar `--dry-run`, luego
+   `--resume` y un solo `--poll` manual.
+6. Verificar estado, digest, health y smokes; habilitar el schedule y confirmar
+   al menos dos polls naturales no-op.
+
+Si el poll ve primero el bundle nuevo con el Raw anterior, registra
+`preflight_failed` y no lo reintenta automáticamente. No use `--retry` para
+ocultar una preconfiguración incompleta.
+
 ## Validación local
 
 En Ubuntu 24.04:

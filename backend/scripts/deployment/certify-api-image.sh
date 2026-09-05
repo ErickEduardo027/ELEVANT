@@ -4,6 +4,8 @@ set -Eeuo pipefail
 readonly IMAGE="${1:-}"
 readonly EXPECTED_REVISION="${2:-}"
 readonly EXPECTED_SOURCE="${3:-}"
+readonly PRIVATE_WEB_ORIGIN="https://private-web.elevant.test"
+readonly PUBLIC_WEB_ORIGIN="https://public-web.elevant.test"
 
 [[ -n "$IMAGE" ]] || {
   echo "An API image reference is required." >&2
@@ -60,6 +62,8 @@ container="$(docker run --detach --rm \
   --env ASPNETCORE_ENVIRONMENT=Development \
   --env ELEVANT_DATABASE_ENVIRONMENT=Development \
   --env 'ConnectionStrings__ElevantDatabase=Server=127.0.0.1,1;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_app;Password=CI-Only_AppPassword!2026;Encrypt=True;TrustServerCertificate=True;Connect Timeout=1' \
+  --env "Cors__AllowedOrigins__0=$PRIVATE_WEB_ORIGIN" \
+  --env "Cors__AllowedOrigins__1=$PUBLIC_WEB_ORIGIN" \
   "$IMAGE")"
 
 container_uid="$(docker exec "$container" id -u)"
@@ -108,6 +112,67 @@ done
   echo "Development OpenAPI document did not return HTTP 200." >&2
   exit 1
 }
+
+for origin in "$PRIVATE_WEB_ORIGIN" "$PUBLIC_WEB_ORIGIN"; do
+  headers="$response_root/cors-$(basename -- "$origin").headers"
+  status="$(curl --silent --output /dev/null --dump-header "$headers" \
+    --write-out '%{http_code}' --max-time 5 --request OPTIONS \
+    --header "Origin: $origin" \
+    --header 'Access-Control-Request-Method: GET' \
+    --header 'Access-Control-Request-Headers: Authorization, Content-Type' \
+    "$base_url/api/v1/system/ping")"
+  [[ "$status" == 204 ]] || {
+    echo "API CORS preflight did not return HTTP 204 for an allowed origin." >&2
+    exit 1
+  }
+  python3 - "$headers" "$origin" <<'PY'
+from pathlib import Path
+import sys
+
+headers: dict[str, list[str]] = {}
+for raw_line in Path(sys.argv[1]).read_text(encoding="iso-8859-1").splitlines():
+    if ":" not in raw_line:
+        continue
+    name, value = raw_line.split(":", 1)
+    headers.setdefault(name.casefold(), []).append(value.strip())
+
+expected_origin = sys.argv[2]
+if headers.get("access-control-allow-origin") != [expected_origin]:
+    raise SystemExit("CORS allow-origin is not the exact requested origin.")
+if headers.get("access-control-allow-credentials") != ["true"]:
+    raise SystemExit("CORS credentials response is missing.")
+
+methods = {
+    item.strip().casefold()
+    for value in headers.get("access-control-allow-methods", [])
+    for item in value.split(",")
+}
+allowed_headers = {
+    item.strip().casefold()
+    for value in headers.get("access-control-allow-headers", [])
+    for item in value.split(",")
+}
+if "get" not in methods:
+    raise SystemExit("CORS preflight did not allow GET.")
+if not {"authorization", "content-type"}.issubset(allowed_headers):
+    raise SystemExit("CORS preflight did not allow the required headers.")
+PY
+done
+
+unknown_headers="$response_root/cors-unknown.headers"
+unknown_status="$(curl --silent --output /dev/null --dump-header "$unknown_headers" \
+  --write-out '%{http_code}' --max-time 5 --request OPTIONS \
+  --header "Origin: $PRIVATE_WEB_ORIGIN.attacker.example" \
+  --header 'Access-Control-Request-Method: GET' \
+  "$base_url/api/v1/system/ping")"
+[[ "$unknown_status" == 204 ]] || {
+  echo "API CORS middleware did not handle the rejected preflight safely." >&2
+  exit 1
+}
+if grep -Eqi '^access-control-allow-(origin|credentials):' "$unknown_headers"; then
+  echo "API CORS preflight allowed an unknown origin." >&2
+  exit 1
+fi
 
 python3 - "$response_root/swagger.json" <<'PY'
 import json
