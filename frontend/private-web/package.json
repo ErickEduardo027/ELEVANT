@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --configLoader runner",
+    "validate:development-env": "node ./scripts/validate-development-env.mjs",
+    "test:delivery": "node --test ./scripts/test-development-delivery.mjs",
+    "build": "npm run validate:development-env && vite build --configLoader runner",
     "preview": "vite preview",
     "test": "vitest run --configLoader runner"
   },

@@ -1,0 +1,740 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly PROGRAM_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly MANIFEST_TOOL="$SCRIPT_DIR/manifest-tool.mjs"
+readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
+readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
+readonly OPENAPI_TOOL="$SCRIPT_DIR/openapi-tool.mjs"
+readonly ENV_TOOL="$SCRIPT_DIR/env-tool.mjs"
+readonly OCI_WEB_COMPOSE="/compose/compose.development.web.yml"
+
+APPLICATION=""
+CONFIG_FILE=""
+COMMAND=""
+REQUESTED_DIGEST=""
+TEST_MODE="${ELEVANT_WEB_CD_TEST_MODE:-0}"
+DOCKER_BIN="${ELEVANT_WEB_CD_DOCKER_BIN:-docker}"
+NODE_BIN="${ELEVANT_WEB_CD_NODE_BIN:-node}"
+WAIT_ATTEMPTS="${ELEVANT_WEB_CD_WAIT_ATTEMPTS:-60}"
+WAIT_INTERVAL="${ELEVANT_WEB_CD_WAIT_INTERVAL:-2}"
+CANONICAL_DATABASE_LOCK=/etc/dokploy/elevant/database-cd/state/controller.lock
+CANONICAL_API_LOCK=/etc/dokploy/elevant/api-cd/state/controller.lock
+CANONICAL_GLOBAL_LOCK=/etc/dokploy/elevant/web-cd/state/controller.lock
+if [[ "$TEST_MODE" == 1 ]]; then
+  if [[ -n "${ELEVANT_WEB_CD_TEST_DATABASE_LOCK:-}" ]]; then CANONICAL_DATABASE_LOCK="$ELEVANT_WEB_CD_TEST_DATABASE_LOCK"; fi
+  if [[ -n "${ELEVANT_WEB_CD_TEST_API_LOCK:-}" ]]; then CANONICAL_API_LOCK="$ELEVANT_WEB_CD_TEST_API_LOCK"; fi
+  if [[ -n "${ELEVANT_WEB_CD_TEST_GLOBAL_LOCK:-}" ]]; then CANONICAL_GLOBAL_LOCK="$ELEVANT_WEB_CD_TEST_GLOBAL_LOCK"; fi
+fi
+
+CD_APPLICATION=""
+CD_MANIFEST_REPOSITORY=""
+CD_MANIFEST_ALIAS=""
+CD_EXPECTED_REPOSITORY=""
+CD_EXPECTED_REF=""
+CD_WEB_REPOSITORY=""
+CD_API_MANIFEST_REPOSITORY=""
+CD_API_IMAGE_REPOSITORY=""
+CD_API_STATE=""
+CD_API_LOCK=""
+CD_API_PROJECT=""
+CD_API_SERVICE=""
+CD_API_CONTAINER_PORT=""
+CD_API_OPENAPI_PATH=""
+CD_HTTP_PROBE_IMAGE=""
+CD_EXPECTED_API_ORIGIN=""
+CD_DATABASE_LOCK=""
+CD_DOCKER_CONFIG=""
+CD_PROJECT=""
+CD_COMPOSE=""
+CD_ENV=""
+CD_SERVICE=""
+CD_IMAGE_ENV=""
+CD_STATE_DIR=""
+CD_LOG_DIR=""
+CD_GLOBAL_LOCK=""
+CD_LOCK_FILE=""
+
+CURRENT_MANIFEST_DIGEST=""
+CURRENT_SOURCE_COMMIT=""
+CURRENT_SOURCE_RUN_ID=""
+CURRENT_SOURCE_RUN_ATTEMPT=""
+CURRENT_WEB_IMAGE=""
+CURRENT_WEB_COMPOSE_SHA256=""
+CURRENT_WEB_COMPOSE_PATH=""
+CURRENT_API_MANIFEST=""
+CURRENT_API_RUN_ID=""
+CURRENT_API_IMAGE=""
+CURRENT_OPENAPI_SHA256=""
+CURRENT_CONFIGURATION_SHA256=""
+CURRENT_CONTAINER_PORT=""
+CURRENT_HEALTH_PATH=""
+CURRENT_SMOKE_PATHS=""
+CURRENT_WORKFLOW_URL=""
+CURRENT_STAGE="idle"
+CURRENT_ROLLBACK_STATUS="not-required"
+PROFILE_CONTAINER_PORT=""
+PROFILE_HEALTH_PATH=""
+PROFILE_SMOKE_PATHS=""
+MANIFEST_PATH=""
+ARTIFACT_STAGING_DIR=""
+LOG_READY=0
+
+log() {
+  local timestamp message log_size identity="$PROGRAM_NAME${APPLICATION:+[$APPLICATION]}"
+  message="$*"; timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf '%s %s: %s\n' "$timestamp" "$identity" "$message" >&2
+  if (( LOG_READY )); then
+    log_size="$(stat -c '%s' -- "$CD_LOG_DIR/controller.log")"
+    if (( log_size >= 10485760 )); then
+      mv -fT -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+      touch -- "$CD_LOG_DIR/controller.log"
+      chmod 0600 -- "$CD_LOG_DIR/controller.log" "$CD_LOG_DIR/controller.log.1"
+    fi
+    printf '%s %s: %s\n' "$timestamp" "$identity" "$message" >> "$CD_LOG_DIR/controller.log"
+  fi
+}
+
+die() { log "ERROR: $*"; exit 1; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
+set_command() { [[ -z "$COMMAND" ]] || die "only one command may be selected"; COMMAND="$1"; }
+
+usage() {
+  cat <<'EOF'
+Usage:
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --poll
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --dry-run
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --retry sha256:DIGEST
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --adopt-current
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --status
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --pause
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --resume
+
+The controller deploys one certified Development web bundle by immutable digest.
+It requires the exact certified API manifest, image and OpenAPI contract. Failed
+digests stop automatically; deployment failure restores the last healthy image
+and certified Compose, and rollback failure pauses only the selected profile.
+EOF
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --app) (( $# >= 2 )) || die "--app requires a value"; [[ -z "$APPLICATION" ]] || die "--app may be supplied only once"; APPLICATION="$2"; shift 2 ;;
+      --config) (( $# >= 2 )) || die "--config requires a path"; [[ -z "$CONFIG_FILE" ]] || die "--config may be supplied only once"; CONFIG_FILE="$2"; shift 2 ;;
+      --poll|--dry-run|--adopt-current|--status|--pause|--resume) set_command "${1#--}"; shift ;;
+      --retry) (( $# >= 2 )) || die "--retry requires a sha256 digest"; set_command retry; REQUESTED_DIGEST="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown argument: $1" ;;
+    esac
+  done
+  [[ "$APPLICATION" == aviam-web || "$APPLICATION" == public-web ]] || die "--app must be aviam-web or public-web"
+  [[ -n "$COMMAND" ]] || die "a command is required"
+  [[ -n "$CONFIG_FILE" ]] || CONFIG_FILE="/etc/dokploy/elevant/web-cd/config.$APPLICATION.env"
+  if [[ -n "$REQUESTED_DIGEST" ]]; then
+    [[ "$REQUESTED_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "requested manifest digest has an invalid format"
+  fi
+}
+
+configure_profile_contract() {
+  case "$APPLICATION" in
+    aviam-web)
+      PROFILE_CONTAINER_PORT=8080
+      PROFILE_HEALTH_PATH=/healthz
+      PROFILE_SMOKE_PATHS='["/healthz","/","/dashboard"]'
+      ;;
+    public-web)
+      PROFILE_CONTAINER_PORT=3000
+      PROFILE_HEALTH_PATH=/health
+      PROFILE_SMOKE_PATHS='["/health","/","/login"]'
+      ;;
+    *) die "internal application profile error" ;;
+  esac
+}
+
+assign_config_value() {
+  local key="$1" value="$2"
+  case "$key" in
+    ELEVANT_WEB_CD_APPLICATION) CD_APPLICATION="$value" ;;
+    ELEVANT_WEB_CD_MANIFEST_REPOSITORY) CD_MANIFEST_REPOSITORY="$value" ;;
+    ELEVANT_WEB_CD_MANIFEST_ALIAS) CD_MANIFEST_ALIAS="$value" ;;
+    ELEVANT_WEB_CD_EXPECTED_REPOSITORY) CD_EXPECTED_REPOSITORY="$value" ;;
+    ELEVANT_WEB_CD_EXPECTED_REF) CD_EXPECTED_REF="$value" ;;
+    ELEVANT_WEB_CD_WEB_REPOSITORY) CD_WEB_REPOSITORY="$value" ;;
+    ELEVANT_WEB_CD_API_MANIFEST_REPOSITORY) CD_API_MANIFEST_REPOSITORY="$value" ;;
+    ELEVANT_WEB_CD_API_IMAGE_REPOSITORY) CD_API_IMAGE_REPOSITORY="$value" ;;
+    ELEVANT_WEB_CD_API_STATE) CD_API_STATE="$value" ;;
+    ELEVANT_WEB_CD_API_LOCK) CD_API_LOCK="$value" ;;
+    ELEVANT_WEB_CD_API_PROJECT) CD_API_PROJECT="$value" ;;
+    ELEVANT_WEB_CD_API_SERVICE) CD_API_SERVICE="$value" ;;
+    ELEVANT_WEB_CD_API_CONTAINER_PORT) CD_API_CONTAINER_PORT="$value" ;;
+    ELEVANT_WEB_CD_API_OPENAPI_PATH) CD_API_OPENAPI_PATH="$value" ;;
+    ELEVANT_WEB_CD_HTTP_PROBE_IMAGE) CD_HTTP_PROBE_IMAGE="$value" ;;
+    ELEVANT_WEB_CD_EXPECTED_API_ORIGIN) CD_EXPECTED_API_ORIGIN="$value" ;;
+    ELEVANT_WEB_CD_DATABASE_LOCK) CD_DATABASE_LOCK="$value" ;;
+    ELEVANT_WEB_CD_DOCKER_CONFIG) CD_DOCKER_CONFIG="$value" ;;
+    ELEVANT_WEB_CD_PROJECT) CD_PROJECT="$value" ;;
+    ELEVANT_WEB_CD_COMPOSE) CD_COMPOSE="$value" ;;
+    ELEVANT_WEB_CD_ENV) CD_ENV="$value" ;;
+    ELEVANT_WEB_CD_SERVICE) CD_SERVICE="$value" ;;
+    ELEVANT_WEB_CD_IMAGE_ENV) CD_IMAGE_ENV="$value" ;;
+    ELEVANT_WEB_CD_STATE_DIR) CD_STATE_DIR="$value" ;;
+    ELEVANT_WEB_CD_LOG_DIR) CD_LOG_DIR="$value" ;;
+    ELEVANT_WEB_CD_GLOBAL_LOCK) CD_GLOBAL_LOCK="$value" ;;
+    ELEVANT_WEB_CD_LOCK_FILE) CD_LOCK_FILE="$value" ;;
+    *) die "unsupported configuration setting: $key" ;;
+  esac
+}
+
+load_config() {
+  [[ "$CONFIG_FILE" == /* && -f "$CONFIG_FILE" && ! -L "$CONFIG_FILE" ]] || die "configuration must be an absolute regular, non-symlink file"
+  local expected_uid=0 metadata line key value line_number=0
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  metadata="$(stat -c '%u:%a' -- "$CONFIG_FILE")"
+  [[ "$metadata" == "$expected_uid:600" ]] || die "configuration must be owned by the controller UID with exact mode 0600"
+  declare -A seen=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    (( line_number += 1 )); line="${line%$'\r'}"
+    [[ "$line" =~ ^[[:space:]]*$ || "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=([^[:space:]#]*)$ ]] || die "invalid configuration syntax at line $line_number"
+    key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
+    [[ -z "${seen[$key]:-}" ]] || die "duplicate configuration setting: $key"
+    seen[$key]=1; assign_config_value "$key" "$value"
+  done < "$CONFIG_FILE"
+  local required
+  for required in CD_APPLICATION CD_MANIFEST_REPOSITORY CD_MANIFEST_ALIAS CD_EXPECTED_REPOSITORY CD_EXPECTED_REF CD_WEB_REPOSITORY CD_API_MANIFEST_REPOSITORY CD_API_IMAGE_REPOSITORY CD_API_STATE CD_API_LOCK CD_API_PROJECT CD_API_SERVICE CD_API_CONTAINER_PORT CD_API_OPENAPI_PATH CD_HTTP_PROBE_IMAGE CD_EXPECTED_API_ORIGIN CD_DATABASE_LOCK CD_DOCKER_CONFIG CD_PROJECT CD_COMPOSE CD_ENV CD_SERVICE CD_IMAGE_ENV CD_STATE_DIR CD_LOG_DIR CD_GLOBAL_LOCK CD_LOCK_FILE; do
+    [[ -n "${!required}" ]] || die "missing required configuration value: $required"
+    [[ "${!required}" != *REPLACE_* ]] || die "configuration still contains a placeholder"
+  done
+  [[ "$CD_APPLICATION" == "$APPLICATION" ]] || die "configuration application does not match --app"
+  local repository
+  for repository in "$CD_MANIFEST_REPOSITORY" "$CD_WEB_REPOSITORY" "$CD_API_MANIFEST_REPOSITORY" "$CD_API_IMAGE_REPOSITORY"; do
+    [[ "$repository" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._-]+$ ]] || die "invalid lowercase GHCR repository"
+  done
+  [[ "$CD_MANIFEST_ALIAS" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "invalid manifest alias"
+  [[ "$CD_EXPECTED_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "invalid expected GitHub repository"
+  [[ "$CD_EXPECTED_REF" == refs/heads/Development ]] || die "only refs/heads/Development is supported"
+  [[ "$CD_PROJECT" =~ ^[a-z0-9][a-z0-9_-]+$ ]] || die "invalid Compose project"
+  [[ "$CD_API_PROJECT" =~ ^[a-z0-9][a-z0-9_-]+$ ]] || die "invalid API Compose project"
+  [[ "$CD_API_SERVICE" == api ]] || die "API Compose service must be api"
+  [[ "$CD_API_CONTAINER_PORT" == 8080 ]] || die "API container port must be 8080"
+  [[ "$CD_API_OPENAPI_PATH" == /swagger/v1/swagger.json ]] || die "API OpenAPI path must be the v1 Swagger path"
+  [[ "$CD_HTTP_PROBE_IMAGE" =~ ^docker\.io/curlimages/curl@sha256:[0-9a-f]{64}$ ]] || die "HTTP probe image must be the reviewed curl image pinned by digest"
+  "$NODE_BIN" -e '
+    const raw = process.argv[1];
+    let value;
+    try { value = new URL(raw); } catch { process.exit(1); }
+    const host = value.hostname.toLowerCase().replace(/\.$/, "");
+    const loopback = host === "localhost" || host.endsWith(".localhost") ||
+      host === "127.0.0.1" || host.startsWith("127.") ||
+      host === "[::1]" || host === "::1" || host === "0.0.0.0" ||
+      host === "[::]" || host === "::";
+    if (value.protocol !== "https:" || value.username || value.password ||
+        value.pathname !== "/" || value.search || value.hash ||
+        value.origin !== raw || loopback) process.exit(1);
+  ' "$CD_EXPECTED_API_ORIGIN" || die "expected API origin must be one exact non-loopback HTTPS origin without a trailing slash"
+  local expected_service expected_key
+  if [[ "$APPLICATION" == aviam-web ]]; then expected_service=aviam-web; expected_key=ELEVANT_AVIAM_WEB_IMAGE; else expected_service=public-web; expected_key=ELEVANT_PUBLIC_WEB_IMAGE; fi
+  [[ "$CD_SERVICE" == "$expected_service" ]] || die "configured service does not match application"
+  [[ "$CD_IMAGE_ENV" == "$expected_key" ]] || die "configured image environment key does not match application"
+  local absolute
+  for absolute in "$CD_API_STATE" "$CD_API_LOCK" "$CD_DATABASE_LOCK" "$CD_DOCKER_CONFIG" "$CD_COMPOSE" "$CD_ENV" "$CD_STATE_DIR" "$CD_LOG_DIR" "$CD_GLOBAL_LOCK" "$CD_LOCK_FILE"; do
+    [[ "$absolute" == /* ]] || die "every configured filesystem path must be absolute"
+  done
+  [[ "$(basename -- "$CD_STATE_DIR")" == "$APPLICATION" ]] || die "profile state directory must end with the application name"
+  [[ "$CD_LOCK_FILE" == "$CD_STATE_DIR/controller.lock" ]] || die "profile lock must use its canonical state path"
+  [[ "$CD_DATABASE_LOCK" == "$CANONICAL_DATABASE_LOCK" ]] || die "database lock must use the canonical Database CD path"
+  [[ "$CD_API_LOCK" == "$CANONICAL_API_LOCK" ]] || die "API lock must use the canonical API CD path"
+  [[ "$CD_GLOBAL_LOCK" == "$CANONICAL_GLOBAL_LOCK" ]] || die "global web lock must use the canonical shared path"
+  local -a locks=("$CD_DATABASE_LOCK" "$CD_API_LOCK" "$CD_GLOBAL_LOCK" "$CD_LOCK_FILE")
+  local left right
+  for (( left=0; left<${#locks[@]}; left+=1 )); do
+    for (( right=left+1; right<${#locks[@]}; right+=1 )); do
+      [[ "${locks[$left]}" != "${locks[$right]}" ]] || die "all controller locks must be pairwise distinct"
+    done
+  done
+  [[ "$WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ && "$WAIT_INTERVAL" =~ ^[0-9]+$ ]] || die "invalid health wait configuration"
+}
+
+ensure_runtime_directories() {
+  local expected_uid=0 directory metadata
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  for directory in "$(dirname -- "$CD_STATE_DIR")" "$CD_STATE_DIR" "$CD_STATE_DIR/attempts" "$CD_STATE_DIR/tmp" "$CD_STATE_DIR/compose" "$CD_STATE_DIR/compose/web" "$CD_LOG_DIR"; do
+    [[ -e "$directory" ]] || install -d -m 0700 -- "$directory"
+    [[ -d "$directory" && ! -L "$directory" ]] || die "runtime path must be a non-symlink directory: $directory"
+    metadata="$(stat -c '%u:%a' -- "$directory")"
+    [[ "$metadata" == "$expected_uid:700" ]] || die "runtime directories must be owned by the controller UID with mode 0700"
+  done
+  [[ -e "$CD_LOG_DIR/controller.log" ]] || touch -- "$CD_LOG_DIR/controller.log"
+  [[ -f "$CD_LOG_DIR/controller.log" && ! -L "$CD_LOG_DIR/controller.log" ]] || die "controller log is unsafe"
+  chmod 0600 -- "$CD_LOG_DIR/controller.log"; LOG_READY=1
+}
+
+validate_restricted_file() {
+  local path="$1" expected_uid=0 metadata
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  [[ -f "$path" && ! -L "$path" ]] || die "restricted file must be regular and non-symlink: $path"
+  metadata="$(stat -c '%u:%a' -- "$path")"
+  [[ "$metadata" == "$expected_uid:600" ]] || die "restricted file must be owned by the controller UID with mode 0600: $path"
+}
+
+validate_runtime_files() {
+  local path
+  for path in "$STATE_TOOL" "$MANIFEST_TOOL" "$COMPOSE_MODEL_TOOL" "$OPENAPI_TOOL" "$ENV_TOOL"; do
+    [[ -f "$path" && ! -L "$path" ]] || die "required runtime helper is unavailable"
+  done
+  case "$COMMAND" in status|pause|resume) return ;; esac
+  [[ -f "$CD_COMPOSE" && ! -L "$CD_COMPOSE" ]] || die "live web Compose is unavailable"
+  validate_restricted_file "$CD_ENV"; validate_restricted_file "$CD_API_STATE"
+  [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || die "Docker configuration directory is unavailable"
+  docker_command version >/dev/null || die "Docker daemon is unavailable"
+  docker_command compose version >/dev/null || die "Docker Compose plugin is unavailable"
+}
+
+ensure_lock_file() {
+  local path="$1" expected_uid=0 metadata
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  [[ -d "$(dirname -- "$path")" && ! -L "$(dirname -- "$path")" ]] || die "lock parent directory is unavailable"
+  [[ -e "$path" ]] || (umask 077; : > "$path")
+  [[ -f "$path" && ! -L "$path" ]] || die "lock path must be a regular, non-symlink file"
+  metadata="$(stat -c '%u:%a' -- "$path")"; [[ "$metadata" == "$expected_uid:600" ]] || die "lock file must be owned by the controller UID with mode 0600"
+}
+
+acquire_locks() {
+  # Global protocol order: database -> API -> all-web -> selected profile.
+  ensure_lock_file "$CD_DATABASE_LOCK"; exec 7<>"$CD_DATABASE_LOCK"; flock -n 7 || die "another ELEVANT database operation is running"
+  ensure_lock_file "$CD_API_LOCK"; exec 8<>"$CD_API_LOCK"; flock -n 8 || die "another ELEVANT API operation is running"
+  ensure_lock_file "$CD_GLOBAL_LOCK"; exec 9<>"$CD_GLOBAL_LOCK"; flock -n 9 || die "another ELEVANT web operation is running"
+  ensure_lock_file "$CD_LOCK_FILE"; exec 10<>"$CD_LOCK_FILE"; flock -n 10 || die "another $APPLICATION operation is running"
+}
+
+docker_command() { DOCKER_CONFIG="$CD_DOCKER_CONFIG" "$DOCKER_BIN" "$@"; }
+manifest_ref() { printf '%s:%s\n' "$CD_MANIFEST_REPOSITORY" "$CD_MANIFEST_ALIAS"; }
+image_label() { docker_command image inspect --format "{{index .Config.Labels \"$2\"}}" "$1"; }
+
+resolve_alias_digest() {
+  local alias_ref output candidate match=""
+  alias_ref="$(manifest_ref)"; docker_command pull "$alias_ref" >/dev/null || die "could not pull the certified $APPLICATION manifest alias"
+  output="$(docker_command image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$alias_ref")" || die "could not inspect the web manifest alias"
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$CD_MANIFEST_REPOSITORY@"* && "${candidate#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || continue
+    [[ -z "$match" || "$match" == "$candidate" ]] || die "manifest alias resolved to multiple repository digests"
+    match="$candidate"
+  done <<< "$output"
+  [[ -n "$match" ]] || die "manifest alias did not resolve to an immutable digest"
+  printf '%s\n' "${match#*@}"
+}
+
+extract_web_bundle() {
+  local digest="$1" image_ref container_id staging path size
+  image_ref="$CD_MANIFEST_REPOSITORY@$digest"; docker_command pull "$image_ref" >/dev/null || die "could not pull the immutable web bundle"
+  staging="$(mktemp -d "$CD_STATE_DIR/tmp/web-bundle.XXXXXX")"; chmod 0700 -- "$staging"; ARTIFACT_STAGING_DIR="$staging"
+  container_id="$(docker_command create "$image_ref")" || die "could not create web bundle extraction container"
+  if [[ ! "$container_id" =~ ^[0-9a-f]{64}$ ]]; then
+    [[ -z "$container_id" ]] || docker_command rm -f "$container_id" >/dev/null 2>&1 || true
+    die "web bundle extraction returned an invalid container ID"
+  fi
+  if ! docker_command cp "$container_id:/manifest.json" "$staging/manifest.json" >/dev/null || ! docker_command cp "$container_id:$OCI_WEB_COMPOSE" "$staging/compose.development.web.yml" >/dev/null; then
+    docker_command rm -f "$container_id" >/dev/null 2>&1 || true; die "could not extract every web bundle payload"
+  fi
+  docker_command rm -f "$container_id" >/dev/null || die "could not remove web bundle extraction container"
+  for path in "$staging/manifest.json" "$staging/compose.development.web.yml"; do
+    [[ -f "$path" && ! -L "$path" ]] || die "web bundle payload is unsafe"
+    size="$(stat -c '%s' -- "$path")"; (( size >= 1 && size <= 1048576 )) || die "web bundle payload size is invalid"
+    chmod 0600 -- "$path"
+  done
+  MANIFEST_PATH="$staging/manifest.json"; CURRENT_WEB_COMPOSE_PATH="$staging/compose.development.web.yml"
+}
+
+manifest_tool() {
+  "$NODE_BIN" "$MANIFEST_TOOL" validate --file "$MANIFEST_PATH" --bundle-root "$ARTIFACT_STAGING_DIR" \
+    --application "$APPLICATION" --expected-repository "$CD_EXPECTED_REPOSITORY" --expected-ref "$CD_EXPECTED_REF" \
+    --web-repository "$CD_WEB_REPOSITORY" --api-manifest-repository "$CD_API_MANIFEST_REPOSITORY" \
+    --api-image-repository "$CD_API_IMAGE_REPOSITORY" "$@"
+}
+manifest_get() { manifest_tool --get "$1"; }
+
+validate_bundle_labels() {
+  local ref="$CD_MANIFEST_REPOSITORY@$CURRENT_MANIFEST_DIGEST" expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$(image_label "$ref" org.opencontainers.image.revision)" == "$CURRENT_SOURCE_COMMIT" ]] || die "web bundle revision label mismatch"
+  [[ "$(image_label "$ref" org.opencontainers.image.source)" == "$expected_source" ]] || die "web bundle source label mismatch"
+  [[ "$(image_label "$ref" io.elevant.application)" == "$APPLICATION" ]] || die "web bundle application label mismatch"
+  [[ "$(image_label "$ref" io.elevant.environment)" == Development ]] || die "web bundle environment label mismatch"
+  [[ "$(image_label "$ref" io.elevant.source.run-id)" == "$CURRENT_SOURCE_RUN_ID" ]] || die "web bundle run label mismatch"
+  [[ "$(image_label "$ref" io.elevant.api.required-manifest)" == "$CURRENT_API_MANIFEST" ]] || die "web bundle API label mismatch"
+  [[ "$(image_label "$ref" io.elevant.openapi.sha256)" == "$CURRENT_OPENAPI_SHA256" ]] || die "web bundle OpenAPI label mismatch"
+  [[ "$(image_label "$ref" io.elevant.web-release.schema-version)" == 1 ]] || die "web bundle schema label mismatch"
+  [[ "$(image_label "$ref" io.elevant.web-release.bundle-version)" == 1 ]] || die "web bundle version label mismatch"
+  [[ "$(image_label "$ref" io.elevant.web-release.media-type)" == application/vnd.elevant.web-release-bundle.v1 ]] || die "web bundle media-type label mismatch"
+}
+
+validate_web_image() {
+  local image="$1" commit="$2" source_run="$3" api_manifest="$4" openapi="$5" expected_source="https://github.com/$CD_EXPECTED_REPOSITORY"
+  [[ "$image" == "$CD_WEB_REPOSITORY@"* && "${image#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "web image is not the configured immutable repository"
+  [[ "$(image_label "$image" org.opencontainers.image.revision)" == "$commit" ]] || die "web image revision label mismatch"
+  [[ "$(image_label "$image" org.opencontainers.image.source)" == "$expected_source" ]] || die "web image source label mismatch"
+  [[ "$(image_label "$image" io.elevant.application)" == "$APPLICATION" ]] || die "web image application label mismatch"
+  [[ "$(image_label "$image" io.elevant.environment)" == Development ]] || die "web image environment label mismatch"
+  [[ "$(image_label "$image" io.elevant.source.run-id)" == "$source_run" ]] || die "web image source run label mismatch"
+  [[ "$(image_label "$image" io.elevant.api.required-manifest)" == "$api_manifest" ]] || die "web image API manifest label mismatch"
+  [[ "$(image_label "$image" io.elevant.openapi.sha256)" == "$openapi" ]] || die "web image OpenAPI label mismatch"
+  [[ "$(image_label "$image" io.elevant.web.api-origin)" == "$CD_EXPECTED_API_ORIGIN" ]] || die "web image API origin label mismatch"
+}
+
+pull_web_image() {
+  docker_command pull "$1" >/dev/null || die "could not pull the immutable web image"
+}
+
+cached_compose_path() { printf '%s/compose/web/%s.yml\n' "$CD_STATE_DIR" "$1"; }
+validate_cached_compose() {
+  local file="$1" hash="$2" expected_uid=0 metadata
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  [[ -f "$file" && ! -L "$file" ]] || die "cached web Compose is unavailable"
+  metadata="$(stat -c '%u:%a' -- "$file")"; [[ "$metadata" == "$expected_uid:600" ]] || die "cached web Compose ownership or mode is invalid"
+  [[ "$(sha256sum -- "$file" | awk '{print $1}')" == "$hash" ]] || die "cached web Compose hash mismatch"
+}
+cache_compose() {
+  local source="$1" hash="$2" target temporary
+  [[ "$(sha256sum -- "$source" | awk '{print $1}')" == "$hash" ]] || die "web Compose payload hash mismatch"
+  target="$(cached_compose_path "$hash")"
+  if [[ -e "$target" ]]; then validate_cached_compose "$target" "$hash"; CURRENT_WEB_COMPOSE_PATH="$target"; return; fi
+  temporary="$(mktemp "$CD_STATE_DIR/compose/web/.compose.XXXXXX")"
+  install -m 0600 -- "$source" "$temporary"; mv -T -- "$temporary" "$target"
+  validate_cached_compose "$target" "$hash"; CURRENT_WEB_COMPOSE_PATH="$target"
+}
+
+load_manifest() {
+  CURRENT_MANIFEST_DIGEST="$1"; extract_web_bundle "$1"
+  manifest_tool >/dev/null || die "certified web manifest validation failed"
+  CURRENT_SOURCE_COMMIT="$(manifest_get source.commit)"; CURRENT_SOURCE_RUN_ID="$(manifest_get source.runId)"
+  CURRENT_SOURCE_RUN_ATTEMPT="$(manifest_get source.runAttempt)"; CURRENT_WORKFLOW_URL="$(manifest_get source.workflowUrl)"
+  CURRENT_WEB_IMAGE="$(manifest_get images.web)"; CURRENT_WEB_COMPOSE_SHA256="$(manifest_get compose.webSha256)"
+  CURRENT_API_MANIFEST="$(manifest_get api.requiredManifest)"; CURRENT_API_RUN_ID="$(manifest_get api.requiredRunId)"
+  CURRENT_API_IMAGE="$(manifest_get api.requiredImage)"; CURRENT_OPENAPI_SHA256="$(manifest_get api.openApiSha256)"
+  CURRENT_CONFIGURATION_SHA256="$(manifest_get build.configurationSha256)"; CURRENT_CONTAINER_PORT="$(manifest_get endpoints.containerPort)"
+  CURRENT_HEALTH_PATH="$(manifest_get endpoints.healthPath)"; CURRENT_SMOKE_PATHS="$(manifest_get endpoints.smokePaths)"
+  [[ "$CURRENT_CONTAINER_PORT" == "$PROFILE_CONTAINER_PORT" && "$CURRENT_HEALTH_PATH" == "$PROFILE_HEALTH_PATH" && "$CURRENT_SMOKE_PATHS" == "$PROFILE_SMOKE_PATHS" ]] || die "web endpoint contract does not match the selected application profile"
+  validate_bundle_labels
+  pull_web_image "$CURRENT_WEB_IMAGE"
+  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256"
+  cache_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_COMPOSE_SHA256"
+}
+
+api_container_id() {
+  local output
+  output="$(docker_command container ls --all --quiet --no-trunc --filter status=running \
+    --filter "label=com.docker.compose.project=$CD_API_PROJECT" \
+    --filter "label=com.docker.compose.service=$CD_API_SERVICE")" || return 1
+  [[ "$output" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$output"
+}
+
+validate_api_container() {
+  local id="$1" expected_image="$2" inspect status health restarts image
+  inspect="$(docker_command container inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}|{{.RestartCount}}|{{.Config.Image}}' "$id")" || return 1
+  IFS='|' read -r status health restarts image <<< "$inspect"
+  [[ "$status" == running && "$health" == healthy && "$restarts" == 0 && "$image" == "$expected_image" ]]
+}
+
+retrieve_api_openapi() {
+  local api_id="$1" output="$2" url
+  url="http://127.0.0.1:$CD_API_CONTAINER_PORT$CD_API_OPENAPI_PATH"
+  docker_command pull "$CD_HTTP_PROBE_IMAGE" >/dev/null || return 1
+  # The short-lived probe shares only the already-validated API container's
+  # network namespace. Dokploy itself joins no API network and no host port is
+  # required. All other privileges and writes are denied.
+  docker_command run --rm --pull never \
+    --network "container:$api_id" \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --pids-limit 32 \
+    --memory 64m \
+    --cpus 0.10 \
+    --tmpfs /tmp:rw,noexec,nosuid,nodev,size=8m \
+    --log-driver none \
+    "$CD_HTTP_PROBE_IMAGE" \
+    --fail --silent --show-error --connect-timeout 5 --max-time 30 \
+    --max-filesize 4194304 --proto '=http' --header 'Accept: application/json' \
+    --output - "$url" > "$output"
+}
+
+api_gate() {
+  local metadata expected_uid=0 values active_digest active_run active_image required_digest
+  local openapi_file active_openapi api_id
+  [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
+  metadata="$(stat -c '%u:%a' -- "$CD_API_STATE")"; [[ "$metadata" == "$expected_uid:600" ]] || die "API state ownership or mode is invalid"
+  values="$("$NODE_BIN" "$STATE_TOOL" validate-api-state --file "$CD_API_STATE")" || die "accepted API state is invalid"
+  IFS=$'\t' read -r active_digest active_run active_image <<< "$values"
+  [[ "$active_image" == "$CD_API_IMAGE_REPOSITORY@"* && "${active_image#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "accepted API state uses an unexpected image repository"
+  required_digest="${CURRENT_API_MANIFEST#*@}"
+  if [[ "$active_digest" != "$required_digest" || "$active_run" != "$CURRENT_API_RUN_ID" || "$active_image" != "$CURRENT_API_IMAGE" ]]; then
+    log "exact required API release is not active; deployment deferred"; return 2
+  fi
+  api_id="$(api_container_id)" || die "expected exactly one running API Compose container"
+  validate_api_container "$api_id" "$active_image" || die "API container identity, image or health does not match accepted API state"
+  openapi_file="$(mktemp "$CD_STATE_DIR/tmp/openapi.XXXXXX.json")"; chmod 0600 -- "$openapi_file"
+  if ! retrieve_api_openapi "$api_id" "$openapi_file"; then rm -f -- "$openapi_file"; die "could not retrieve OpenAPI from the API container namespace"; fi
+  validate_api_container "$api_id" "$active_image" || { rm -f -- "$openapi_file"; die "API container changed while OpenAPI was being verified"; }
+  active_openapi="$("$NODE_BIN" "$OPENAPI_TOOL" hash --file "$openapi_file")" || { rm -f -- "$openapi_file"; die "live API OpenAPI is invalid"; }
+  rm -f -- "$openapi_file"
+  [[ "$active_openapi" == "$CURRENT_OPENAPI_SHA256" ]] || die "live API OpenAPI differs from the certified web requirement"
+}
+
+render_compose_hash() {
+  local file="$1" output digest
+  output="$(mktemp "$CD_STATE_DIR/tmp/compose-model.XXXXXX.json")"; chmod 0600 -- "$output"
+  if ! docker_command compose --env-file /dev/null --project-directory "$(dirname -- "$CD_COMPOSE")" -p "$CD_PROJECT" -f "$file" --profile '*' config --format json --no-interpolate --no-env-resolution --no-path-resolution > "$output"; then rm -f -- "$output"; return 1; fi
+  digest="$("$NODE_BIN" "$COMPOSE_MODEL_TOOL" hash --file "$output")" || { rm -f -- "$output"; return 1; }
+  rm -f -- "$output"; printf '%s\n' "$digest"
+}
+validate_live_compose_semantics() {
+  local certified live
+  certified="$(render_compose_hash "$CURRENT_WEB_COMPOSE_PATH")" || die "could not render certified web Compose"
+  live="$(render_compose_hash "$CD_COMPOSE")" || die "could not render live web Compose"
+  [[ "$certified" == "$live" ]] || die "live web Compose semantics differ from the certified payload"
+}
+web_compose() {
+  local file="$1" image="$2"; shift 2
+  env "$CD_IMAGE_ENV=$image" DOCKER_CONFIG="$CD_DOCKER_CONFIG" "$DOCKER_BIN" compose --env-file "$CD_ENV" --project-directory "$(dirname -- "$CD_COMPOSE")" -p "$CD_PROJECT" -f "$file" "$@"
+}
+
+read_env_image() {
+  local line value="" count=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"; [[ "$line" == "$CD_IMAGE_ENV="* ]] || continue
+    (( count += 1 )); value="${line#*=}"
+  done < "$CD_ENV"
+  [[ "$count" == 1 ]] || die "web environment must define $CD_IMAGE_ENV exactly once"
+  if [[ "$value" == \"*\" ]]; then value="${value:1:${#value}-2}"; fi
+  [[ "$value" == "$CD_WEB_REPOSITORY@"* && "${value#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "live web image is not an expected immutable reference"
+  printf '%s\n' "$value"
+}
+set_env_image() { "$NODE_BIN" "$ENV_TOOL" set --file "$CD_ENV" --key "$CD_IMAGE_ENV" --value "$1"; }
+
+container_id() {
+  local output
+  output="$(docker_command container ls --all --quiet --no-trunc --filter "label=com.docker.compose.project=$CD_PROJECT" --filter "label=com.docker.compose.service=$CD_SERVICE")" || return 1
+  [[ "$output" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$output"
+}
+wait_healthy() {
+  local expected_image="$1" attempt id inspect status health restarts image
+  for (( attempt=1; attempt<=WAIT_ATTEMPTS; attempt+=1 )); do
+    id="$(container_id 2>/dev/null || true)"
+    if [[ -n "$id" ]]; then
+      inspect="$(docker_command container inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}|{{.RestartCount}}|{{.Config.Image}}' "$id" 2>/dev/null || true)"
+      IFS='|' read -r status health restarts image <<< "$inspect"
+      [[ "$image" == "$expected_image" ]] || return 1
+      [[ "$status" == running && "$health" == healthy && "$restarts" == 0 ]] && return 0
+      [[ "$status" == exited || "$status" == dead || "$health" == unhealthy ]] && return 1
+    fi
+    (( WAIT_INTERVAL == 0 )) || sleep "$WAIT_INTERVAL"
+  done
+  return 1
+}
+smoke_web() {
+  local id path url
+  id="$(container_id)" || return 1
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue; url="http://127.0.0.1:$CURRENT_CONTAINER_PORT$path"
+    if [[ "$APPLICATION" == aviam-web ]]; then
+      docker_command container exec "$id" wget -q -T 10 -O /dev/null "$url" || return 1
+    else
+      docker_command container exec "$id" node -e 'fetch(process.argv[1]).then((r)=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))' "$url" || return 1
+    fi
+  done < <("$NODE_BIN" -e 'for (const value of JSON.parse(process.argv[1])) console.log(value)' "$CURRENT_SMOKE_PATHS")
+}
+preflight() {
+  validate_cached_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_COMPOSE_SHA256"
+  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256"
+  validate_live_compose_semantics
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" config --quiet
+  api_gate
+}
+
+state_get() { "$NODE_BIN" "$STATE_TOOL" get --file "$1" --field "$2"; }
+attempt_file() { printf '%s/attempts/%s.json\n' "$CD_STATE_DIR" "${1#sha256:}"; }
+write_state_file() {
+  "$NODE_BIN" "$STATE_TOOL" write --file "$1" \
+    --set "application=$APPLICATION" --set "status=$2" --set "stage=$3" --set "manifestDigest=$CURRENT_MANIFEST_DIGEST" \
+    --set "sourceCommit=$CURRENT_SOURCE_COMMIT" --set "sourceRunId=$CURRENT_SOURCE_RUN_ID" --set "sourceRunAttempt=$CURRENT_SOURCE_RUN_ATTEMPT" \
+    --set "webImage=$CURRENT_WEB_IMAGE" --set "webComposeSha256=$CURRENT_WEB_COMPOSE_SHA256" --set "apiManifest=$CURRENT_API_MANIFEST" \
+    --set "apiRunId=$CURRENT_API_RUN_ID" --set "apiImage=$CURRENT_API_IMAGE" --set "openApiSha256=$CURRENT_OPENAPI_SHA256" \
+    --set "configurationSha256=$CURRENT_CONFIGURATION_SHA256" --set "rollbackStatus=$CURRENT_ROLLBACK_STATUS" \
+    --set "messageCode=$4" --set "updatedAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --set "workflowUrl=$CURRENT_WORKFLOW_URL"
+}
+persist_attempt() { write_state_file "$CD_STATE_DIR/current.json" "$1" "$2" "$3"; write_state_file "$(attempt_file "$CURRENT_MANIFEST_DIGEST")" "$1" "$2" "$3"; }
+begin_stage() { CURRENT_STAGE="$1"; persist_attempt running "$1" stage_running; log "stage=$1 started"; }
+complete_stage() { log "stage=$CURRENT_STAGE completed"; }
+is_paused() { [[ -e "$CD_STATE_DIR/paused" ]]; }
+
+load_last_success() {
+  local file="$CD_STATE_DIR/last-success.json" status
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  status="$(state_get "$file" status)"; [[ "$status" == succeeded || "$status" == adopted ]] || die "last-success web state is invalid"
+  LAST_WEB_IMAGE="$(state_get "$file" webImage)"; LAST_WEB_COMPOSE_SHA256="$(state_get "$file" webComposeSha256)"
+  LAST_SOURCE_COMMIT="$(state_get "$file" sourceCommit)"; LAST_SOURCE_RUN_ID="$(state_get "$file" sourceRunId)"
+  LAST_API_MANIFEST="$(state_get "$file" apiManifest)"; LAST_OPENAPI_SHA256="$(state_get "$file" openApiSha256)"
+  LAST_WEB_COMPOSE_PATH="$(cached_compose_path "$LAST_WEB_COMPOSE_SHA256")"
+  [[ "$LAST_WEB_IMAGE" == "$CD_WEB_REPOSITORY@"* && "${LAST_WEB_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "last-success web image is invalid"
+  validate_cached_compose "$LAST_WEB_COMPOSE_PATH" "$LAST_WEB_COMPOSE_SHA256"
+}
+prepare_rollback_baseline() {
+  load_last_success || die "a certified last-success baseline is required before promotion"
+  # The candidate was pulled and certified while loading its bundle. Verify the
+  # rollback image and Compose are also already local before the live env can be
+  # mutated; every later Compose up is explicitly registry-independent.
+  validate_web_image "$LAST_WEB_IMAGE" "$LAST_SOURCE_COMMIT" "$LAST_SOURCE_RUN_ID" "$LAST_API_MANIFEST" "$LAST_OPENAPI_SHA256"
+  web_compose "$LAST_WEB_COMPOSE_PATH" "$LAST_WEB_IMAGE" config --quiet || die "last-success rollback Compose is invalid"
+}
+rollback() {
+  log "rollback started"
+  if (
+    load_last_success || exit 1
+    validate_web_image "$LAST_WEB_IMAGE" "$LAST_SOURCE_COMMIT" "$LAST_SOURCE_RUN_ID" "$LAST_API_MANIFEST" "$LAST_OPENAPI_SHA256" || exit 1
+    web_compose "$LAST_WEB_COMPOSE_PATH" "$LAST_WEB_IMAGE" config --quiet || exit 1
+    set_env_image "$LAST_WEB_IMAGE" || exit 1
+    web_compose "$LAST_WEB_COMPOSE_PATH" "$LAST_WEB_IMAGE" up -d --pull never --no-build --no-deps --force-recreate "$CD_SERVICE" || exit 1
+    wait_healthy "$LAST_WEB_IMAGE" || exit 1
+    CURRENT_CONTAINER_PORT="$PROFILE_CONTAINER_PORT"
+    CURRENT_HEALTH_PATH="$PROFILE_HEALTH_PATH"
+    CURRENT_SMOKE_PATHS="$PROFILE_SMOKE_PATHS"
+    smoke_web || exit 1
+  ); then CURRENT_ROLLBACK_STATUS=succeeded; log "rollback completed"; return 0; fi
+  CURRENT_ROLLBACK_STATUS=failed; return 1
+}
+fail_deployment() {
+  local stage="$1"
+  if rollback; then
+    persist_attempt failed "$stage" deployment_failed_rolled_back
+    log "deployment failed at stage=$stage; rollback succeeded; explicit retry is required"
+  else
+    CURRENT_ROLLBACK_STATUS=failed; command_pause_internal
+    persist_attempt failed "$stage" deployment_and_rollback_failed
+    log "deployment and rollback failed; controller paused"
+  fi
+  return 1
+}
+deploy() {
+  log "promotion accepted commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+  begin_stage preflight
+  if ! preflight; then persist_attempt failed preflight preflight_failed; return 1; fi
+  if ! (prepare_rollback_baseline); then persist_attempt failed preflight rollback_baseline_unavailable; return 1; fi
+  complete_stage; begin_stage deploy
+  set_env_image "$CURRENT_WEB_IMAGE" || { fail_deployment deploy; return 1; }
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" up -d --pull never --no-build --no-deps --force-recreate "$CD_SERVICE" || { fail_deployment deploy; return 1; }
+  complete_stage; begin_stage health; wait_healthy "$CURRENT_WEB_IMAGE" || { fail_deployment health; return 1; }
+  complete_stage; begin_stage smoke; smoke_web || { fail_deployment smoke; return 1; }
+  complete_stage; CURRENT_STAGE=complete; CURRENT_ROLLBACK_STATUS=not-required
+  write_state_file "$CD_STATE_DIR/last-success.json" succeeded complete promotion_succeeded
+  persist_attempt succeeded complete promotion_succeeded
+  log "promotion completed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+candidate_is_newer() {
+  [[ -f "$CD_STATE_DIR/last-success.json" ]] || return 0
+  local accepted; accepted="$(state_get "$CD_STATE_DIR/last-success.json" sourceRunId)"
+  [[ -z "$accepted" ]] || (( 10#$CURRENT_SOURCE_RUN_ID > 10#$accepted ))
+}
+command_poll() {
+  is_paused && { log "controller is paused; poll skipped"; return 0; }
+  local digest attempt status gate_status
+  digest="$(resolve_alias_digest)"; load_manifest "$digest"
+  if [[ -f "$CD_STATE_DIR/last-success.json" && "$(state_get "$CD_STATE_DIR/last-success.json" manifestDigest)" == "$digest" ]]; then log "manifest=$digest is already accepted; poll is a no-op"; return 0; fi
+  candidate_is_newer || { log "manifest=$digest is older than or equal to the accepted workflow run; poll is a no-op"; return 0; }
+  attempt="$(attempt_file "$digest")"
+  if [[ -f "$attempt" ]]; then
+    status="$(state_get "$attempt" status)"
+    case "$status" in
+      succeeded|adopted) log "manifest=$digest is already accepted; poll is a no-op"; return 0 ;;
+      failed) log "manifest=$digest previously failed; automatic retry is disabled"; return 0 ;;
+      running)
+        if rollback; then persist_attempt failed interrupted interrupted_attempt_rolled_back; else CURRENT_ROLLBACK_STATUS=failed; command_pause_internal; persist_attempt failed interrupted interrupted_attempt_rollback_failed; fi
+        log "manifest=$digest had an interrupted attempt; explicit retry is required"; return 0 ;;
+      *) die "attempt state contains an unsupported status" ;;
+    esac
+  fi
+  if api_gate; then :; else gate_status=$?; [[ "$gate_status" == 2 ]] && return 0; return "$gate_status"; fi
+  deploy
+}
+command_dry_run() {
+  local digest gate_status
+  digest="$(resolve_alias_digest)"; load_manifest "$digest"
+  if preflight; then :; else gate_status=$?; return "$gate_status"; fi
+  log "dry-run passed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
+}
+command_retry() {
+  is_paused && die "controller is paused"
+  local advertised attempt
+  advertised="$(resolve_alias_digest)"; [[ "$advertised" == "$REQUESTED_DIGEST" ]] || die "retry digest is not currently advertised"
+  load_manifest "$REQUESTED_DIGEST"; candidate_is_newer || die "retry manifest is not newer than last success"
+  attempt="$(attempt_file "$REQUESTED_DIGEST")"; [[ -f "$attempt" && "$(state_get "$attempt" status)" == failed ]] || die "only a recorded failed manifest may be retried"
+  api_gate || die "API compatibility gate did not pass"; deploy
+}
+command_adopt_current() {
+  is_paused && die "controller is paused"
+  [[ ! -e "$CD_STATE_DIR/last-success.json" ]] || die "a $APPLICATION baseline already exists"
+  CURRENT_WEB_IMAGE="$(read_env_image)"
+  CURRENT_SOURCE_COMMIT="$(image_label "$CURRENT_WEB_IMAGE" org.opencontainers.image.revision)"
+  CURRENT_SOURCE_RUN_ID="$(image_label "$CURRENT_WEB_IMAGE" io.elevant.source.run-id)"
+  CURRENT_API_MANIFEST="$(image_label "$CURRENT_WEB_IMAGE" io.elevant.api.required-manifest)"
+  CURRENT_OPENAPI_SHA256="$(image_label "$CURRENT_WEB_IMAGE" io.elevant.openapi.sha256)"
+  [[ "$CURRENT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ && "$CURRENT_SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "live web provenance is invalid"
+  local api_values active_digest
+  api_values="$("$NODE_BIN" "$STATE_TOOL" validate-api-state --file "$CD_API_STATE")" || die "accepted API state is invalid"
+  IFS=$'\t' read -r active_digest CURRENT_API_RUN_ID CURRENT_API_IMAGE <<< "$api_values"
+  [[ "$CURRENT_API_MANIFEST" == "$CD_API_MANIFEST_REPOSITORY@$active_digest" ]] || die "live web image does not require the active API"
+  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256"
+  CURRENT_WEB_COMPOSE_SHA256="$(sha256sum -- "$CD_COMPOSE" | awk '{print $1}')"; CURRENT_WEB_COMPOSE_PATH="$CD_COMPOSE"; cache_compose "$CD_COMPOSE" "$CURRENT_WEB_COMPOSE_SHA256"
+  CURRENT_CONTAINER_PORT="$PROFILE_CONTAINER_PORT"
+  CURRENT_HEALTH_PATH="$PROFILE_HEALTH_PATH"
+  CURRENT_SMOKE_PATHS="$PROFILE_SMOKE_PATHS"
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" config --quiet
+  api_gate
+  if ! wait_healthy "$CURRENT_WEB_IMAGE"; then
+    die "live $APPLICATION baseline is not healthy or does not use its configured image"
+  fi
+  if ! smoke_web; then die "live $APPLICATION baseline smoke failed"; fi
+  CURRENT_STAGE=adopted-current; CURRENT_ROLLBACK_STATUS=not-required
+  write_state_file "$CD_STATE_DIR/last-success.json" adopted adopted-current baseline_adopted
+  write_state_file "$CD_STATE_DIR/current.json" adopted adopted-current baseline_adopted
+  log "live $APPLICATION baseline adopted commit=$CURRENT_SOURCE_COMMIT"
+}
+command_pause_internal() {
+  local temporary; temporary="$(mktemp "$CD_STATE_DIR/.paused.XXXXXX")"
+  chmod 0600 -- "$temporary"; printf 'paused\n' > "$temporary"; mv -fT -- "$temporary" "$CD_STATE_DIR/paused"
+}
+command_pause() { command_pause_internal; log "controller paused"; }
+command_resume() { rm -f -- "$CD_STATE_DIR/paused"; log "controller resumed"; }
+command_status() {
+  if is_paused; then printf 'paused=true\n'; else printf 'paused=false\n'; fi
+  printf 'application=%s\n' "$APPLICATION"
+  printf 'current:\n'; "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/current.json"
+  printf 'last-success:\n'; "$NODE_BIN" "$STATE_TOOL" show --file "$CD_STATE_DIR/last-success.json"
+}
+cleanup() {
+  if [[ -n "$ARTIFACT_STAGING_DIR" ]]; then
+    case "$ARTIFACT_STAGING_DIR" in "$CD_STATE_DIR"/tmp/web-bundle.*) rm -rf -- "$ARTIFACT_STAGING_DIR" ;; *) log "WARNING: refused unsafe web bundle cleanup" ;; esac
+  fi
+}
+on_exit() { local result=$?; set +e; cleanup; return "$result"; }
+
+main() {
+  trap on_exit EXIT; parse_args "$@"; configure_profile_contract
+  [[ "$TEST_MODE" == 1 ]] || (( EUID == 0 )) || die "must run as root inside the private Dokploy container"
+  for command in "$DOCKER_BIN" "$NODE_BIN" awk basename chmod date dirname env flock id install mktemp mv rm sha256sum sleep stat touch; do require_command "$command"; done
+  load_config; ensure_runtime_directories
+  if [[ "$COMMAND" == status ]]; then validate_runtime_files; command_status; return; fi
+  acquire_locks
+  if [[ "$COMMAND" == poll && -e "$CD_STATE_DIR/paused" ]]; then log "controller is paused; poll skipped"; return; fi
+  validate_runtime_files
+  case "$COMMAND" in
+    poll) command_poll ;; dry-run) command_dry_run ;; retry) command_retry ;; adopt-current) command_adopt_current ;;
+    pause) command_pause ;; resume) command_resume ;; *) die "internal command dispatch error" ;;
+  esac
+}
+
+main "$@"

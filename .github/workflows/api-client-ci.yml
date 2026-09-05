@@ -211,6 +211,7 @@ jobs:
       - name: Build Private Web
         env:
           VITE_ELEVANT_API_URL: https://api.example.test
+          VITE_PROTOTYPE_API_URL: https://api.example.test
         run: npm run build
 
   public_web:
@@ -225,7 +226,10 @@ jobs:
 
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SITE_URL: https://public.example.test
       NEXT_PUBLIC_ELEVANT_API_URL: https://api.example.test
+      NEXT_PUBLIC_PROTOTYPE_API_URL: https://api.example.test
+      NEXT_PUBLIC_DEMO_FORM_MODE: preview
 
     steps:
       - name: Checkout

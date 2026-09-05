@@ -87,9 +87,12 @@ export function PortalRequests() {
   }, [session]);
 
   useEffect(() => {
-    void loadRequests();
+    const initialLoad = window.setTimeout(() => void loadRequests(), 0);
     const timer = window.setInterval(() => void loadRequests(true), 5_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(timer);
+    };
   }, [loadRequests]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {

@@ -1,7 +1,9 @@
 # Configuración de Dokploy
 
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
-privado, cómo se desplegó DB v1 y cómo se habilita su CD pull-based. El operador
+privado, cómo se desplegaron DB v1 y la API y cómo se habilitan sus carriles CD
+pull-based. También define el handoff posterior para AVIAM Web y Public Web;
+versionar sus artefactos no significa que ya estén instalados. El operador
 realiza todos los cambios remotos manualmente. El agente entrega un bloque
 corto, identifica si corresponde a PowerShell, hPanel, VPS o Dokploy y valida la
 evidencia antes de avanzar.
@@ -27,13 +29,22 @@ evidencia antes de avanzar.
 - Traefik objetivo: `traefik:v3.6.25@sha256:31267173a15b4944e797a76ffd9c419707c8d8b32fe5b610f80cd0cfa05f372d`.
 - SQL: Development sintético únicamente; Production no se crea en este VPS.
 - Landing existente: se preserva, se deshabilita su Domain y se detiene; no se elimina.
-- Acceso inicial: un operador `elevant-ops`; los desarrolladores solo recibirán acceso a API/webs cuando existan.
+- Acceso: operaciones administra el host/panel; los desarrolladores acceden
+  únicamente a los Services de aplicación que ya fueron aceptados. API está
+  habilitada; los Services web no implican un runtime hasta completar su
+  rollout individual.
 - Evidencia 2026-08-23: SQL healthy/privado, cinco migraciones, seed
   idempotente, permisos mínimos, backup + restore-check y schedules validados.
 - Evidencia 2026-08-31 UTC: adopción, primera promoción, backup, restore-check,
   poll periódico, estado `succeeded/complete` y persistencia tras reboot
   validados. Instalar una revisión futura continúa siendo una operación manual;
   versionarla no autoriza modificar el host.
+- Evidencia 2026-09-05 UTC: API por digest, API-CD `succeeded/complete`, health,
+  readiness, ping, Swagger, CORS exacto, poll no-op y recuperación tras reboot
+  validados. El acceso continúa exclusivamente por Tailscale.
+- Entrega web: las imágenes, bundles y el controlador genérico se preparan en
+  el repositorio. AVIAM Web y Public Web aún requieren sus dos rollouts manuales
+  e independientes antes de considerarse instaladas en el VPS.
 - Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
   se configuren, el operador revisa diariamente Beszel, Schedules y
   `controller.log`; no se debe afirmar que existe notificación automática.
@@ -394,6 +405,122 @@ La credencial runtime es exclusivamente `elevant_dev_app`. JWT/RBAC/tenant y
 endpoints de negocio quedan fuera de este scaffold inicial; hasta implementarlos
 la API permanece 100 % tailnet-only y con datos sintéticos.
 
+## Handoff: publicar las webs Development y activar su CD
+
+Este handoff comienza únicamente después de fusionar la implementación web y
+obtener sus artefactos certificados. En el estado documentado todavía está
+pendiente: no interprete la presencia de Compose, Dockerfiles o `web-cd` en el
+repositorio como autorización para cambiar el VPS. El procedimiento detallado
+del controlador está en
+[`ops/dokploy/web-cd/README.md`](../../ops/dokploy/web-cd/README.md).
+
+### Publicación en GitHub
+
+1. En **GitHub desde el navegador del operador**, registrar como variables de
+   repositorio los orígenes HTTPS exactos, sin `/` final:
+   `ELEVANT_DEV_API_ORIGIN`, `ELEVANT_DEV_AVIAM_WEB_ORIGIN` y
+   `ELEVANT_DEV_PUBLIC_WEB_ORIGIN`. No son secretos, pero sus valores vivos no
+   se copian a plantillas, documentación ni logs.
+2. Fusionar el PR aprobado en `Development` y exigir CI verde para cada carril
+   aplicable. GitHub Actions debe construir/certificar fuera del VPS y publicar
+   por digest:
+   - imagen `elevant-private-web` + bundle
+     `elevant-aviam-web-release-manifest`;
+   - imagen `elevant-public-web` + bundle
+     `elevant-public-web-release-manifest`.
+3. Para cada bundle, comprobar que `development-certified` se movió al final,
+   que contiene exactamente `/manifest.json` y
+   `/compose/compose.development.web.yml`, y que ambos payloads coinciden byte a
+   byte con la entrega. El alias es descubrimiento; registrar el digest
+   resuelto.
+4. Revisar el manifiesto cerrado: aplicación, commit/run, imagen web, hash
+   Compose, fingerprint de configuración y dependencia API exacta. Bundle,
+   `runId`, imagen y OpenAPI requeridos deben corresponder al estado API-CD
+   activo antes de desplegar.
+
+### Rollout manual, una web a la vez
+
+Aplicar primero `aviam-web` y aceptarla completamente antes de iniciar
+`public-web`:
+
+1. En la **terminal SSH privada**, comprobar DB-CD y API-CD
+   `succeeded/complete`, SQL y API healthy, locks libres, `systemctl --failed`
+   vacío, recursos disponibles y el puerto objetivo sin listener.
+2. Inventariar todas las redes Docker y elegir CIDR libres. Crear bridges
+   externas distintas: `elevant-dev-aviam-web-runtime` y
+   `elevant-dev-public-web-runtime`. No conectarlas a `elevant-dev-data`,
+   `dokploy-network` ni entre sí.
+3. En la **interfaz privada de Dokploy**, crear dos recursos Docker Compose
+   normales con provider **Raw**, AutoDeploy desactivado y sin Domain. Usar los
+   Compose certificados de:
+   - `frontend/private-web/compose.development.aviam-web.yml`;
+   - `frontend/public-web/compose.development.public-web.yml`.
+4. En cada Environment restringido guardar solo su referencia de imagen
+   `@sha256:` y configuración declarada por el Compose. Mantener archivo
+   `root:root 0600`; no mostrarlo ni duplicar secretos. Ejecutar Preview Compose
+   y comprobar que Dokploy no añadió red, labels, Domain o puerto.
+5. Desplegar manualmente la baseline certificada. Exigir un solo contenedor
+   healthy con cero reinicios, usuario no-root, rootfs read-only, límites y una
+   sola red runtime. Verificar listeners exactos:
+   - AVIAM Web: `127.0.0.1:18081 -> 8080`, `/healthz` y rutas shell/deep-link;
+   - Public Web: `127.0.0.1:18082 -> 3000`, `/health` y rutas/assets Next.
+6. Confirmar que ninguna web pertenece a una red SQL y que los puertos
+   `18081`/`18082` no responden por la IP pública. Publicar después los Services
+   Tailscale ya reservados hacia cada loopback, aprobar el anuncio y probar
+   HTTPS desde identidades autorizadas. Exigir `tailscale funnel status` sin
+   exposición pública.
+7. Transferir el paquete LF `ops/dokploy/web-cd` del commit aprobado, validar su
+   SHA-256 e instalarlo una vez en `/etc/dokploy/elevant/web-cd`. El instalador
+   debe preservar cualquier configuración/estado existente y dejar los dos
+   schedules desactivados; no despliega ninguna aplicación.
+8. Completar por separado `config.aviam-web.env` y
+   `config.public-web.env` con repositorios, proyectos y paths reales. Ambos
+   perfiles deben identificar el mismo proyecto/servicio Compose de API, su
+   puerto interno `8080`, el path Swagger v1 y una imagen
+   `docker.io/curlimages/curl` revisada e inmutable por digest. El controlador
+   consulta Swagger con un probe efímero dentro del namespace de red del
+   contenedor API exacto; `127.0.0.1:18080` desde Dokploy no representa el
+   loopback del VPS y no debe configurarse como origen. Mantener directorios
+   `0700`, ejecutables `0555` y configuración/estado/cache `0600`. Ejecutar
+   `verify-runtime` sin imprimir Environment.
+9. Para el perfil actual, ejecutar `--dry-run`, `--adopt-current` y `--status`.
+   Debe verificar el bundle, Compose, imagen, API exacta, OpenAPI, contenedor y
+   smokes antes de registrar `adopted-current`; nunca vuelve a desplegar ni toca
+   la otra web durante la adopción.
+10. En **Schedules** crear deshabilitados dos jobs internos
+    `dokploy-server`, UTC y cron `* * * * *`:
+
+    | Nombre exacto | Script versionado | Offset interno |
+    | --- | --- | --- |
+    | `ELEVANT AVIAM Web CD - Poll` | `jobs/aviam-web-poll.job.sh` | 30 segundos |
+    | `ELEVANT Public Web CD - Poll` | `jobs/public-web-poll.job.sh` | 45 segundos |
+
+    El script se copia exactamente y llama al path absoluto del controlador.
+    No usar Application, Compose Job ni servidor externo. Database inicia
+    normalmente en `:00` y API en `:15`; los locks siguen siendo la exclusión
+    definitiva.
+11. Ejecutar un poll/no-op manual, después una promoción certificada y un drill
+    de rollback del perfil. Confirmar que DB, API y la otra web no se recrearon.
+    Habilitar el schedule solo al terminar su aceptación y repetir desde el
+    paso 1 para la segunda web.
+12. Tras aceptar ambas, hacer un reboot controlado y verificar recuperación de
+    contenedores, health, Services, estados, no-op automáticos y Funnel apagado.
+
+Un candidato que no coincide exactamente con el bundle/run/imagen/OpenAPI de la
+API activa se difiere sin intento ni mutación. Si la promoción falla después de
+iniciar el deploy, el controlador restaura el último par imagen + Compose sano;
+si ese rollback falla, pausa solo el perfil afectado. Nunca ejecutar
+`docker compose down`, eliminar las redes o conectar las webs a SQL.
+
+### Alcance de aceptación
+
+La primera entrega es un preview técnico compartido. Health, HTML y navegación
+pueden pasar aunque los flujos prototipo todavía carezcan de endpoints reales de
+autenticación/negocio. Esas llamadas apuntan a la API Development y pueden
+responder error hasta su implementación; no se despliega `backend-prototipo`
+ni se usa localhost como backend remoto. Mobile Agent continúa únicamente en
+emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
+
 ## Aceptación
 
 - Dokploy y monitoreo funcionan solo por Tailscale.
@@ -414,6 +541,14 @@ la API permanece 100 % tailnet-only y con datos sintéticos.
   acceso a `18080`.
 - Los preflights CORS de ambos orígenes HTTPS exactos incluyen credenciales,
   `Authorization` y `Content-Type`; un origen similar no recibe headers CORS.
+- Tras cada rollout web, el perfil correspondiente de Web CD está
+  `succeeded/complete`, usa imagen/Compose por digest/hash, prueba la API exacta
+  y convierte el bundle aceptado en no-op; el otro perfil conserva su estado.
+- AVIAM Web escucha solo en `127.0.0.1:18081` y Public Web solo en
+  `127.0.0.1:18082`; ambas son no-root, healthy, visibles exclusivamente por su
+  Service Tailscale y no pertenecen a ninguna red SQL. Funnel continúa apagado.
+- La aceptación web se etiqueta como preview técnico y no como validación de
+  endpoints de autenticación/negocio aún inexistentes.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback
@@ -427,5 +562,9 @@ la API permanece 100 % tailnet-only y con datos sintéticos.
   el Compose/hash registrados en `last-success`; si no existe baseline sana,
   drenar/limpiar solo `svc:elevant-dev-api` y detener su Compose sin tocar
   SQL/red/volúmenes.
+- AVIAM/Public Web: pausar solo el perfil `web-cd` afectado, deshabilitar su
+  schedule y restaurar juntos imagen + Compose/hash de su `last-success`. Si no
+  existe baseline sana, drenar/limpiar únicamente su Service Tailscale y
+  detener ese Compose; no tocar API, SQL, redes ajenas ni el otro perfil.
 - DB: detener Compose conservando red y volúmenes.
 - Snapshot: último recurso; restaura todo el VPS y pierde cambios posteriores.

@@ -18,8 +18,9 @@
 5. desplegar AVIAM Web/Public Web; distribuir Mobile por su canal;
 6. observar errores, latencia y flujo crítico.
 
-SQL Server y sus volúmenes nunca participan del auto-deploy de API/web. Los
-cambios destructivos usan expand/contract en releases distintos.
+SQL Server y sus volúmenes nunca participan de una promoción API/web. Los
+recursos Dokploy conservan AutoDeploy desactivado y los cambios destructivos
+usan expand/contract en releases distintos.
 
 ## Entrega automática de base Development
 
@@ -73,23 +74,75 @@ directo de un colaborador con write pueda disparar esta secuencia; los gates de
 artefactos no equivalen a branch protection. Consulte
 [`BRANCH_PROTECTION.md`](../../.github/BRANCH_PROTECTION.md).
 
-## Carriles posteriores
+## Entrega automática de API Development
 
-1. terminar API y el flujo mínimo G.H. -> credenciales de agente -> login en
-   Mobile Agent, probado localmente con SQL local y emulador Android;
-2. publicar/desplegar API con su CI/CD propio, siempre después de una entrega DB
-   compatible;
-3. desplegar AVIAM Web y Public Web al final, cada uno con imagen y CI/CD
-   separados;
-4. Mobile Agent genera APK/EAS por su canal y nunca se despliega como servicio
-   Dokploy.
+La API tiene imagen, bundle OCI y controlador propios. Una entrega certificada
+fija su Compose y el estado DB compatible. `api-cd` resuelve el alias a digest,
+espera la base requerida, despliega la imagen inmutable y exige health,
+readiness, ping y Swagger. El recurso sigue siendo Compose Raw con AutoDeploy
+desactivado; GitHub Actions no inicia conexiones al VPS ni recompila en él.
+
+Cuando API y Persistence cambian juntos, Database CD promueve primero. Un fallo
+DB conserva la API anterior. Un fallo API no revierte el esquema y por eso las
+migraciones deben ser backward-compatible. Consulte
+[ADR-0011](../adr/0011-pull-based-api-development-cd.md).
+
+## Entrega automática de las webs Development
+
+AVIAM Web y Public Web son dos carriles independientes. En un pull request se
+validan y construyen con orígenes sintéticos; en un push relevante a
+`Development`, cada carril aplicable usa los orígenes HTTPS de las variables de
+repositorio, certifica una imagen y publica un bundle OCI v1 independiente:
+
+```text
+elevant-private-web       + elevant-aviam-web-release-manifest
+elevant-public-web        + elevant-public-web-release-manifest
+```
+
+El bundle contiene un manifiesto cerrado y el Compose exacto. Fija el digest de
+imagen, hash Compose, fingerprint de configuración y la entrega API exacta con
+la que se construyó: bundle, `runId`, imagen y hash OpenAPI. Solo después de
+volver a extraer y comparar el payload se mueve su alias
+`development-certified`.
+
+En el VPS, el mismo paquete `web-cd` ejecuta perfiles `aviam-web` y
+`public-web`, pero conserva configuración, estado, historia y rollback
+separados. Antes de mutar un servicio valida:
+
+1. identidad y labels OCI, esquema, paths y hashes del bundle;
+2. equivalencia semántica entre Compose certificado y Raw vivo;
+3. estado `succeeded/complete`, digest, `runId`, imagen y OpenAPI de la API
+   exacta;
+4. imagen web inmutable y procedencia del commit.
+
+Un candidato que espera otra API se difiere sin registrar intento. Una
+promoción fallida restaura el último par imagen/Compose sano; si el rollback
+falla, se pausa solo ese perfil. El controlador no ejecuta
+`docker compose down`, no toca SQL y no reescribe el Raw.
+
+Los polls comparten la jerarquía de locks `database -> API -> web -> perfil` y
+se escalonan cada minuto: DB `:00`, API `:15`, AVIAM Web `:30`, Public Web
+`:45`. Los sleeps reducen la contención ordinaria; los locks son la garantía de
+exclusión. El primer despliegue, la instalación, adopción y habilitación de jobs
+siguen siendo acciones manuales con evidencia por cada aplicación.
+
+Las webs permanecen tailnet-only, sin Domain/Funnel y sin red SQL. El rollout
+inicial es un preview técnico: una shell saludable no implica que ya existan en
+la API los endpoints de autenticación o negocio del prototipo. Consulte
+[ADR-0012](../adr/0012-pull-based-web-development-cd.md).
+
+## Carril Mobile Agent
+
+Mobile Agent se prueba localmente con emulador/tablet y consume la misma API
+Development por HTTPS/Tailscale. Genera APK/EAS por su propio canal y nunca se
+despliega como servicio Dokploy.
 
 ## Fallo
 
-Detenga la promoción. El controlador no vuelve a intentar automáticamente el
-mismo bundle. Una corrección publica otro digest; repetir exactamente el
-mismo artefacto exige `--retry` manual y evidencia de que la causa externa fue
-corregida.
+Detenga la promoción afectada. Los controladores no vuelven a intentar
+automáticamente un bundle que ya falló. Una corrección publica otro digest;
+repetir exactamente el mismo artefacto exige `--retry` manual y evidencia de
+que la causa externa fue corregida.
 
 Revertir imagen no revierte esquema. No edite `__EFMigrationsHistory`, no
 ejecute `Down` improvisado y no restaure automáticamente sobre la base origen.

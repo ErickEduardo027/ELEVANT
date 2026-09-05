@@ -13,6 +13,8 @@
     "lint": "eslint .",
     "pretypecheck": "next typegen",
     "typecheck": "tsc --noEmit",
+    "validate:development-env": "node ./scripts/validate-development-env.mjs",
+    "healthcheck": "node ./scripts/healthcheck.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"

@@ -1,34 +1,28 @@
-# Elevant AVIAM Web
+# ELEVANT AVIAM Web
 
-Aplicación interna que utilizará el personal de AVIAM: OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El proyecto actual sí es ejecutable y usa Vite 6, React 18, React Router y Tailwind; ya no es un esqueleto con framework pendiente.
+Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente actual usa Vite 6, React 18, React Router y Tailwind.
 
 ## Ejecutar y validar
 
 Desde `frontend/private-web`:
 
 ```powershell
-npm install
-npm run dev
+npm ci
 npm test
+npm run test:delivery
+$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
+$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
+npm run dev
 npm run build
 ```
 
-Vite sirve por defecto en `http://localhost:5173`. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan además de las rutas del router.
+Vite sirve localmente en `http://localhost:5173`. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
 
-Copie `.env.example` a `.env.local` y configure:
-
-```text
-VITE_ELEVANT_API_URL=https://elevant-dev-api.taild2f562.ts.net
-VITE_PROTOTYPE_API_URL=http://localhost:4310
-```
-
-Ambas variables son públicas. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` conserva los adaptadores existentes mientras se migran por módulo. Nunca incluya tokens, contraseñas o cadenas SQL en una variable `VITE_*`.
+Ambas variables `VITE_*` son públicas. El build falla si falta alguna, si no usa HTTPS, si apunta a localhost, si contiene una ruta o si no representan el mismo origen. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido. `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores, pero en una imagen certificada también apunta a la API real de Development. Nunca use tokens, contraseñas ni cadenas SQL en variables `VITE_*`.
 
 ## Frontera de seguridad
 
-La aplicación puede mostrar información de varias aerolíneas únicamente cuando la cuenta interna tenga roles y scopes de estación explícitos. Esos permisos se validan en el servidor. Filtros, menús ocultos y sesión del prototipo no autorizan datos.
-
-La web consume solo HTTPS/REST y, cuando se implemente, SignalR. No accede directamente a SQL Server, FlightAware ni almacenamiento de objetos. Los servicios en `src/services` mantienen la selección mock/remota fuera de los componentes.
+Los roles, tenants y scopes de estación se validan en el servidor. Filtros, menús ocultos y sesiones del prototipo no autorizan datos. La web solo consume la API HTTPS versionada; no accede directamente a SQL Server, proveedores de aviación ni almacenamiento de objetos.
 
 ## Módulos observados
 
@@ -37,10 +31,25 @@ La web consume solo HTTPS/REST y, cuando se implemente, SignalR. No accede direc
 - checklists, incidencias, evidencias y revisión;
 - contratos, solicitudes, servicios y tarifas;
 - gestión humana, turnos, disponibilidad, habilitaciones y permisos;
-- finanzas/reportes, notificaciones y chat aún sujetos a contratos definitivos.
+- finanzas, reportes, notificaciones y chat sujetos a contratos API definitivos.
 
-Los mocks de finanzas, notificaciones y chat no son diseño persistente. Facturación documental y comunicación fueron diferidas de DB v1 porque faltan reglas inequívocas.
+Los mocks describen flujos de producto, no contratos persistentes ni una frontera de autorización.
 
-## Despliegue previsto
+## Imagen de Development
 
-Development usará una imagen estática construida en CI y servida por Nginx sin privilegios; no se usará `vite preview` como servidor. La imagen se desplegará separada de API, Public Web y SQL, y consumirá la misma API privada de Development.
+La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:
+
+```powershell
+docker build --file frontend/private-web/Dockerfile `
+  --build-arg VITE_ELEVANT_API_URL=https://api.elevant.test `
+  --build-arg VITE_PROTOTYPE_API_URL=https://api.elevant.test `
+  --tag elevant-private-web:local .
+```
+
+El runtime usa Nginx sin privilegios, UID `101`, puerto `8080`, raíz de solo lectura y un archivo físico `/healthz`. Las rutas profundas del SPA vuelven a `index.html`; los recursos inexistentes bajo `/assets/` responden `404` y los recursos versionados usan caché inmutable.
+
+`compose.development.aviam-web.yml` exige `ELEVANT_AVIAM_WEB_IMAGE` por digest, publica únicamente `127.0.0.1:18081` y conecta solo la red externa `elevant-dev-aviam-web-runtime`. Tailscale termina HTTPS fuera del contenedor. La aplicación no comparte la red de SQL Server.
+
+CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API certificada y los dos proveedores de mapas revisados.
+
+Esta entrega es un **preview técnico de Development**. La API real solo tiene por ahora el contrato inicial del sistema; los adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.

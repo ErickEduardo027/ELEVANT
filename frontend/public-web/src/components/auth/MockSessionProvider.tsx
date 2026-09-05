@@ -23,6 +23,7 @@ import {
   type MockAffiliationInput,
   type MockAffiliationResult,
 } from "@/lib/mock-affiliation";
+import { getPrototypeApiUrl } from "@/lib/prototype-api";
 
 export type MockSessionStatus = "loading" | "anonymous" | "authenticated";
 
@@ -105,7 +106,7 @@ export function MockSessionProvider({
       const localResult = affiliationGateway.submit(input);
       if (!localResult.ok) return localResult;
       try {
-        const baseUrl = (process.env.NEXT_PUBLIC_PROTOTYPE_API_URL || "http://localhost:4310").replace(/\/$/, "");
+        const baseUrl = getPrototypeApiUrl();
         const response = await fetch(`${baseUrl}/api/public/service-requests`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -132,7 +133,7 @@ export function MockSessionProvider({
       } catch {
         return {
           ok: false as const,
-          message: "La solicitud se guardó localmente, pero no fue posible enviarla a Contratos. Verifica que el backend esté iniciado.",
+          message: "La solicitud se guardó localmente, pero el endpoint aún no está disponible en la API de Development.",
         };
       }
     },

@@ -22,6 +22,8 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | `traefik/` | Reconciliación manual y rollback a partir del contrato auditado |
 | `observability/` | Compose privado de Beszel y contrato de alertas |
 | `database-cd/` | Controlador pull-based, bundle OCI v1, cache Compose, lock y estado persistente para promover la DB Development |
+| `api-cd/` | Controlador pull-based de API, gate DB, rollback de imagen/Compose y estado persistente |
+| `web-cd/` | Controlador genérico con perfiles/estados separados para AVIAM Web y Public Web, gate API exacto y rollback por aplicación |
 
 Las fuentes Compose certificadas de SQL permanecen en
 `database/DevelopmentDB` y cada entrega incluye sus bytes exactos en el
@@ -29,6 +31,21 @@ bundle OCI. `database-cd` los valida, cachea por hash y compara semánticamente
 con los Raw vivos; no posee el esquema, secretos ni volúmenes. Separar estos
 artefactos evita que una actualización del control plane cambie el ciclo de
 vida de la base.
+
+Las fuentes Compose web permanecen junto a cada aplicación. GitHub Actions
+construye y certifica fuera del VPS una imagen y un bundle OCI independientes
+para `aviam-web` y `public-web`. `web-cd` usa el alias
+`development-certified` solo para resolver un digest, exige la entrega API
+exacta y cambia exclusivamente la variable de imagen del recurso Raw
+correspondiente. Los dos recursos mantienen AutoDeploy y Domain desactivados,
+publican solo loopback (`18081`/`18082`), no usan la red SQL y se exponen
+únicamente mediante Tailscale Serve con Funnel apagado.
+
+La instalación, baseline, adopción y activación de schedules continúan siendo
+acciones manuales. El rollout web no está implícito por agregar este directorio
+al repositorio. Sus jobs se escalonan a 30 y 45 segundos del minuto, pero los
+locks compartidos son la exclusión autoritativa frente a Database/API CD. Mobile
+Agent no forma parte de estos runtimes.
 
 ## Validación mínima
 
@@ -39,4 +56,7 @@ git diff --check
 git grep -n -I -E 'REPLACE_ME_WITH_REAL|tskey-|ghp_|github_pat_' -- ops/dokploy docs/deployment
 ```
 
-Ejecute además las validaciones específicas de cada subdirectorio. Los placeholders documentados como `REPLACE_*` no deben sustituirse dentro del repositorio.
+Ejecute además las validaciones específicas de cada subdirectorio. Los
+placeholders documentados como `REPLACE_*` no deben sustituirse dentro del
+repositorio. Las variables de repositorio que aportan los orígenes web guardan
+sus valores en GitHub; las plantillas solo nombran el contrato.
