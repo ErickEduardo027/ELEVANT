@@ -381,6 +381,15 @@ ejecuta y entrega evidencia sanitizada antes de avanzar.
    tras un reboot controlado. Nunca hacer rollback de esquema como respuesta a
    un fallo API.
 
+Cuando una entrega cambia el Compose certificado (por ejemplo, al registrar los
+orígenes CORS de las webs), hay un checkpoint adicional **antes del merge**:
+deshabilitar el schedule API, pausar `api-cd`, agregar al Environment root-only
+los nuevos valores y guardar en Raw el Compose exacto ya revisado, sin desplegar
+manualmente otra imagen. Solo después se fusiona y publica el bundle. Con el
+candidato disponible, ejecutar `--dry-run`, reanudar, hacer un `--poll` manual y
+validar la promoción antes de reactivar el schedule. Esto evita registrar un
+`preflight_failed` por divergencia entre el Raw vivo y el payload certificado.
+
 La credencial runtime es exclusivamente `elevant_dev_app`. JWT/RBAC/tenant y
 endpoints de negocio quedan fuera de este scaffold inicial; hasta implementarlos
 la API permanece 100 % tailnet-only y con datos sintéticos.
@@ -403,6 +412,8 @@ la API permanece 100 % tailnet-only y con datos sintéticos.
 - Tras el rollout API, el servicio está healthy por digest, API-CD está
   `succeeded/complete`, el poll aceptado es no-op y Tailscale es la única vía de
   acceso a `18080`.
+- Los preflights CORS de ambos orígenes HTTPS exactos incluyen credenciales,
+  `Authorization` y `Content-Type`; un origen similar no recibe headers CORS.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback

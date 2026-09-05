@@ -41,6 +41,13 @@ SQL y a una red de runtime separada, y ejecuta con usuario no-root, filesystem
 read-only y límites de recursos. Sus valores sensibles se guardan en el
 Environment root-only de Dokploy; no se copian al Compose ni al repositorio.
 
+El Compose exige `ELEVANT_API_PRIVATE_WEB_ORIGIN` y
+`ELEVANT_API_PUBLIC_WEB_ORIGIN` como orígenes HTTPS exactos, sin `/` final.
+También conserva `http://localhost:5173` y `http://localhost:3000` para el
+desarrollo local de ambas webs. `AllowedHosts` sigue describiendo únicamente el
+host de la API; no debe contener los hosts de los clientes. Mobile Agent no usa
+CORS porque es una aplicación nativa.
+
 - `/health` comprueba solo que el proceso HTTP está vivo.
 - `/health/ready` comprueba SQL, el catálogo exacto y el marcador inmutable de
   `ElevantDevelopmentDb`.
