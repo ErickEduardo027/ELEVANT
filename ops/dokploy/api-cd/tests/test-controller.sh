@@ -16,6 +16,9 @@ readonly BUNDLE_DIGEST="sha256:$(repeat a 64)"
 readonly API_DIGEST="sha256:$(repeat b 64)"
 readonly DB_DIGEST="sha256:$(repeat d 64)"
 readonly COMMIT="$(repeat c 40)"
+readonly FAILED_BUNDLE_DIGEST="sha256:$(repeat 7 64)"
+readonly FAILED_API_DIGEST="sha256:$(repeat 8 64)"
+readonly FAILED_COMMIT="$(repeat 9 40)"
 readonly DB_COMMIT="$(repeat 5 40)"
 readonly MIGRATION="sha256:$(repeat e 64)"
 readonly MODEL="sha256:$(repeat f 64)"
@@ -119,7 +122,7 @@ chmod 0600 "$TMP/config.env"
 cat > "$TMP/mock-bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
-printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+printf 'image=%s|%s\n' "${ELEVANT_API_IMAGE:-}" "$*" >> "$MOCK_DOCKER_LOG"
 case "${1:-} ${2:-}" in
   version*) exit 0 ;;
   pull*) exit 0 ;;
@@ -140,8 +143,14 @@ case "${1:-} ${2:-}" in
   "image inspect")
     format="$4"; reference="$5"
     case "$format" in
-      *RepoDigests*) printf '%s@%s\n' "$MOCK_API_MANIFEST_REPO" "$MOCK_BUNDLE_DIGEST" ;;
-      *org.opencontainers.image.revision*) case "$reference" in "$MOCK_DB_REPO@"*) printf '%s\n' "$MOCK_DB_COMMIT" ;; *) printf '%s\n' "$MOCK_COMMIT" ;; esac ;;
+      *RepoDigests*) printf '%s@%s\n' "$MOCK_API_MANIFEST_REPO" "$MOCK_ACTIVE_BUNDLE_DIGEST" ;;
+      *org.opencontainers.image.revision*)
+        case "$reference" in
+          "$MOCK_DB_REPO@"*) printf '%s\n' "$MOCK_DB_COMMIT" ;;
+          "$MOCK_BASELINE_API_IMAGE") printf '%s\n' "$MOCK_BASELINE_COMMIT" ;;
+          *) printf '%s\n' "$MOCK_ACTIVE_COMMIT" ;;
+        esac
+        ;;
       *org.opencontainers.image.source*) printf '%s\n' 'https://github.com/Example/ELEVANT' ;;
       *org.elevant.api.environment*) printf '%s\n' Development ;;
       *org.elevant.api.manifest.schema*) printf '%s\n' 1 ;;
@@ -158,7 +167,13 @@ case "${1:-} ${2:-}" in
     ;;
   "compose version") exit 0 ;;
   "container ls") printf '%064d\n' 9 ;;
-  "container inspect") printf '%s\n' 'running healthy 0' ;;
+  "container inspect")
+    if [[ -n "$MOCK_FAIL_HEALTH_IMAGE" && -f "$MOCK_RUNTIME_IMAGE" && "$(<"$MOCK_RUNTIME_IMAGE")" == "$MOCK_FAIL_HEALTH_IMAGE" ]]; then
+      printf '%s\n' 'running unhealthy 0'
+    else
+      printf '%s\n' 'running healthy 0'
+    fi
+    ;;
   "container exec")
     [[ "${4:-} ${5:-} ${6:-}" == 'dotnet Elevant.Api.dll --smoke-probe' ]] || exit 1
     printf '%s\n' SMOKE_PROBE_EXECUTED >> "$MOCK_DOCKER_LOG"
@@ -166,6 +181,7 @@ case "${1:-} ${2:-}" in
   compose*)
     case " $* " in
       *" --format json "*) printf '%s\n' '{"name":"test","services":{"api":{"image":"${ELEVANT_API_IMAGE}"}}}' ;;
+      *" up -d --no-build --no-deps --force-recreate api "*) printf '%s\n' "${ELEVANT_API_IMAGE:-}" > "$MOCK_RUNTIME_IMAGE" ;;
       *) exit 0 ;;
     esac
     ;;
@@ -184,8 +200,13 @@ controller() {
   MOCK_DOCKER_LOG="$TMP/docker.log" MOCK_BUNDLE="$TMP/bundle" \
   MOCK_DB_BUNDLE="$TMP/database-bundle" MOCK_DB_REPO="$DB_REPO" \
   MOCK_DB_COMMIT="$DB_COMMIT" MOCK_LAST_CREATED="$TMP/last-created" \
-  MOCK_API_MANIFEST_REPO="$API_MANIFEST_REPO" MOCK_BUNDLE_DIGEST="$BUNDLE_DIGEST" \
-  MOCK_COMMIT="$COMMIT" ELEVANT_API_CD_TEST_MODE=1 \
+  MOCK_API_MANIFEST_REPO="$API_MANIFEST_REPO" \
+  MOCK_ACTIVE_BUNDLE_DIGEST="${ACTIVE_BUNDLE_DIGEST:-$BUNDLE_DIGEST}" \
+  MOCK_ACTIVE_COMMIT="${ACTIVE_COMMIT:-$COMMIT}" \
+  MOCK_BASELINE_API_IMAGE="${BASELINE_API_IMAGE:-$API_REPO@$API_DIGEST}" \
+  MOCK_BASELINE_COMMIT="${BASELINE_COMMIT:-$COMMIT}" \
+  MOCK_FAIL_HEALTH_IMAGE="${FAIL_HEALTH_IMAGE:-}" \
+  MOCK_RUNTIME_IMAGE="$TMP/runtime-image" ELEVANT_API_CD_TEST_MODE=1 \
   ELEVANT_API_CD_DOCKER_BIN="$TMP/mock-bin/docker" \
   ELEVANT_API_CD_WAIT_ATTEMPTS=1 ELEVANT_API_CD_WAIT_INTERVAL=0 \
   PATH="$TMP/mock-bin:$PATH" \
@@ -245,16 +266,86 @@ assert_success "compatible API promotion failed" controller --poll
   fail "successful promotion did not persist last-success"
 grep -q SMOKE_PROBE_EXECUTED "$TMP/docker.log" || fail "promotion did not run the in-container smoke probe"
 
+# A newer API that becomes unhealthy must restore the exact prior image and
+# cached Compose. The failed digest remains recorded without pausing the
+# controller or changing the last healthy baseline, and poll may not retry it.
+baseline_state_hash="$(sha256sum "$TMP/runtime/state/last-success.json" | awk '{print $1}')"
+baseline_compose_path="$TMP/runtime/state/compose/api/$API_COMPOSE_SHA.yml"
+BASELINE_API_IMAGE="$API_REPO@$API_DIGEST"
+BASELINE_COMMIT="$COMMIT"
+ACTIVE_BUNDLE_DIGEST="$FAILED_BUNDLE_DIGEST"
+ACTIVE_COMMIT="$FAILED_COMMIT"
+FAIL_HEALTH_IMAGE="$API_REPO@$FAILED_API_DIGEST"
+printf '\n# byte-distinct candidate with the same runtime model\n' >> "$TMP/bundle/compose.development.api.yml"
+failed_api_compose_sha="$(sha256sum "$TMP/bundle/compose.development.api.yml" | awk '{print $1}')"
+failed_compose_path="$TMP/runtime/state/compose/api/$failed_api_compose_sha.yml"
+node -e '
+  const fs = require("fs");
+  const [path, commit, image, composeSha] = process.argv.slice(1);
+  const value = JSON.parse(fs.readFileSync(path));
+  value.source.commit = commit;
+  value.source.runId = "31";
+  value.source.workflowUrl = "https://github.com/Example/ELEVANT/actions/runs/31";
+  value.images.api = image;
+  value.compose.apiSha256 = composeSha;
+  fs.writeFileSync(path, JSON.stringify(value));
+' "$TMP/bundle/manifest.json" "$FAILED_COMMIT" "$FAIL_HEALTH_IMAGE" "$failed_api_compose_sha"
+: > "$TMP/docker.log"
+
+assert_failure "unhealthy API candidate did not fail its promotion" controller --poll
+grep -q 'rollback completed' "$TMP/error" || fail "successful rollback was not reported"
+grep -q 'rollback succeeded; explicit retry is required' "$TMP/error" ||
+  fail "failed promotion did not require an explicit retry"
+[[ ! -e "$TMP/runtime/state/paused" ]] || fail "successful rollback paused the controller"
+[[ "$(<"$TMP/runtime-image")" == "$BASELINE_API_IMAGE" ]] || fail "rollback did not restore the prior runtime image"
+grep -q "ELEVANT_API_IMAGE=\"$BASELINE_API_IMAGE\"" "$TMP/live/.env" || fail "rollback did not restore the prior environment image"
+grep -q 'never-print' "$TMP/live/.env" || fail "rollback damaged unrelated environment values"
+grep -F "image=$FAIL_HEALTH_IMAGE|" "$TMP/docker.log" | grep -Fq -- "-f $failed_compose_path" ||
+  fail "failed candidate did not deploy from its certified Compose"
+grep -F "image=$BASELINE_API_IMAGE|" "$TMP/docker.log" | grep -Fq -- "-f $baseline_compose_path" ||
+  fail "rollback did not deploy from the prior cached Compose"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field status)" == failed ]] ||
+  fail "failed promotion was not recorded in current state"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field stage)" == health ]] ||
+  fail "failed health stage was not recorded"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field rollbackStatus)" == succeeded ]] ||
+  fail "successful rollback status was not recorded"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field messageCode)" == deployment_failed_rolled_back ]] ||
+  fail "successful rollback message code was not recorded"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field manifestDigest)" == "$FAILED_BUNDLE_DIGEST" ]] ||
+  fail "failed manifest digest was not recorded"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field apiImage)" == "$FAIL_HEALTH_IMAGE" ]] ||
+  fail "current state lost the failed candidate image"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field sourceCommit)" == "$FAILED_COMMIT" ]] ||
+  fail "current state lost the failed candidate commit"
+failed_attempt="$TMP/runtime/state/attempts/${FAILED_BUNDLE_DIGEST#sha256:}.json"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$failed_attempt" --field status)" == failed ]] ||
+  fail "failed digest attempt status was not recorded"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$failed_attempt" --field rollbackStatus)" == succeeded ]] ||
+  fail "failed digest attempt did not record the successful rollback"
+[[ "$(sha256sum "$TMP/runtime/state/last-success.json" | awk '{print $1}')" == "$baseline_state_hash" ]] ||
+  fail "successful rollback changed last-success"
+
+up_count_before="$(grep -c ' up -d --no-build --no-deps --force-recreate api$' "$TMP/docker.log")"
+assert_success "failed digest poll was not safely suppressed" controller --poll
+up_count_after="$(grep -c ' up -d --no-build --no-deps --force-recreate api$' "$TMP/docker.log")"
+[[ "$up_count_before" == "$up_count_after" ]] || fail "failed digest was automatically redeployed"
+grep -q 'previously failed; automatic retry is disabled' "$TMP/error" ||
+  fail "failed digest poll did not explain retry suppression"
+[[ "$(<"$TMP/runtime-image")" == "$BASELINE_API_IMAGE" ]] || fail "suppressed retry changed the restored runtime"
+[[ "$(sha256sum "$TMP/runtime/state/last-success.json" | awk '{print $1}')" == "$baseline_state_hash" ]] ||
+  fail "suppressed retry changed last-success"
+
 # A corrupt last-success baseline must be contained as a rollback failure. It
 # may not terminate before recording the failure and pausing future polls.
 cat > "$TMP/runtime/state/last-success.json" <<'JSON'
 {}
 JSON
 chmod 0600 "$TMP/runtime/state/last-success.json"
-cat > "$TMP/runtime/state/attempts/${BUNDLE_DIGEST#sha256:}.json" <<'JSON'
+cat > "$TMP/runtime/state/attempts/${FAILED_BUNDLE_DIGEST#sha256:}.json" <<'JSON'
 {"status":"running"}
 JSON
-chmod 0600 "$TMP/runtime/state/attempts/${BUNDLE_DIGEST#sha256:}.json"
+chmod 0600 "$TMP/runtime/state/attempts/${FAILED_BUNDLE_DIGEST#sha256:}.json"
 assert_success "corrupt rollback baseline escaped failure containment" controller --poll
 [[ -f "$TMP/runtime/state/paused" ]] || fail "rollback failure did not pause the controller"
 [[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/runtime/state/current.json" --field rollbackStatus)" == failed ]] ||
