@@ -18,6 +18,12 @@ WEB_IMAGE="$WEB_REPO@sha256:$(repeat 3 64)"
 BUNDLE_DIGEST="sha256:$(repeat 4 64)"
 COMMIT="$(repeat 5 40)"
 INITIAL_COMMIT="$(repeat 8 40)"
+INITIAL_RUN=39
+RUN=40
+DRILL_WEB_IMAGE="$WEB_REPO@sha256:$(repeat c 64)"
+DRILL_BUNDLE_DIGEST="sha256:$(repeat d 64)"
+DRILL_COMMIT="$(repeat e 40)"
+DRILL_RUN=41
 PROBE_IMAGE="docker.io/curlimages/curl@sha256:$(repeat 9 64)"
 API_ORIGIN=https://api.example.test
 
@@ -38,9 +44,13 @@ services:
 YAML
 cp "$TMP/bundle/compose.development.web.yml" "$TMP/live/docker-compose.yml"
 COMPOSE_SHA="$(sha256sum "$TMP/bundle/compose.development.web.yml" | awk '{print $1}')"
-cat > "$TMP/bundle/manifest.json" <<JSON
-{"schemaVersion":1,"environment":"Development","application":"public-web","source":{"repository":"Example/ELEVANT","ref":"refs/heads/Development","commit":"$COMMIT","runId":"40","runAttempt":1,"workflowUrl":"https://github.com/Example/ELEVANT/actions/runs/40"},"images":{"web":"$WEB_IMAGE"},"compose":{"webSha256":"$COMPOSE_SHA"},"api":{"requiredManifest":"$API_BUNDLE","requiredRunId":"20","requiredImage":"$API_IMAGE","openApiSha256":"$OPENAPI_SHA"},"build":{"configurationSha256":"sha256:$(repeat 6 64)"},"endpoints":{"containerPort":3000,"healthPath":"/health","smokePaths":["/health","/","/login"]},"publishedAt":"2026-09-05T00:00:00Z"}
+write_manifest() {
+  local commit="$1" run="$2" image="$3"
+  cat > "$TMP/bundle/manifest.json" <<JSON
+{"schemaVersion":1,"environment":"Development","application":"public-web","source":{"repository":"Example/ELEVANT","ref":"refs/heads/Development","commit":"$commit","runId":"$run","runAttempt":1,"workflowUrl":"https://github.com/Example/ELEVANT/actions/runs/$run"},"images":{"web":"$image"},"compose":{"webSha256":"$COMPOSE_SHA"},"api":{"requiredManifest":"$API_BUNDLE","requiredRunId":"20","requiredImage":"$API_IMAGE","openApiSha256":"$OPENAPI_SHA"},"build":{"configurationSha256":"sha256:$(repeat 6 64)"},"endpoints":{"containerPort":3000,"healthPath":"/health","smokePaths":["/health","/","/login"]},"publishedAt":"2026-09-05T00:00:00Z"}
 JSON
+}
+write_manifest "$COMMIT" "$RUN" "$WEB_IMAGE"
 cat > "$TMP/live/.env" <<ENV
 ELEVANT_PUBLIC_WEB_IMAGE="$INITIAL_WEB_IMAGE"
 SENTINEL="preserve"
@@ -110,7 +120,7 @@ case "${1:-} ${2:-}" in
       *io.elevant.application*) printf '%s\n' public-web ;;
       *io.elevant.environment*) printf '%s\n' Development ;;
       *io.elevant.source.run-id*)
-        if [[ "$reference" == "$MOCK_BASELINE_WEB_IMAGE" ]]; then printf '%s\n' 39; else printf '%s\n' 40; fi ;;
+        if [[ "$reference" == "$MOCK_BASELINE_WEB_IMAGE" ]]; then printf '%s\n' "$MOCK_BASELINE_RUN"; else printf '%s\n' "$MOCK_RUN"; fi ;;
       *io.elevant.api.required-manifest*) printf '%s\n' "$MOCK_API_BUNDLE" ;;
       *io.elevant.openapi.sha256*) printf '%s\n' "$MOCK_OPENAPI_SHA" ;;
       *io.elevant.web.api-origin*) printf '%s\n' "$MOCK_API_ORIGIN" ;;
@@ -138,7 +148,10 @@ case "${1:-} ${2:-}" in
   compose*)
     case " $* " in
       *" --format json "*) printf '%s\n' '{"name":"test","services":{"public-web":{"image":"${ELEVANT_PUBLIC_WEB_IMAGE}"}}}' ;;
-      *" up -d --pull never --no-build --no-deps --force-recreate public-web "*) printf '%s\n' "${ELEVANT_PUBLIC_WEB_IMAGE:-}" > "$MOCK_RUNTIME_IMAGE" ;;
+      *" up -d --pull never --no-build --no-deps --force-recreate public-web "*)
+        printf 'PUBLIC_WEB_UP:%s\n' "${ELEVANT_PUBLIC_WEB_IMAGE:-}" >> "$MOCK_LOG"
+        printf '%s\n' "${ELEVANT_PUBLIC_WEB_IMAGE:-}" > "$MOCK_RUNTIME_IMAGE"
+        ;;
       *) : ;;
     esac ;;
   *) exit 1 ;;
@@ -147,36 +160,79 @@ MOCK
 chmod 0555 "$TMP/bin/docker" "$TMP/bin/flock"
 : > "$TMP/docker.log"
 
-MOCK_OPENAPI="$TMP/openapi.json" MOCK_BUNDLE="$TMP/bundle" MOCK_LOG="$TMP/docker.log" \
-MOCK_BUNDLE_REPO="$BUNDLE_REPO" MOCK_BUNDLE_DIGEST="$BUNDLE_DIGEST" MOCK_COMMIT="$COMMIT" \
-MOCK_BASELINE_WEB_IMAGE="$INITIAL_WEB_IMAGE" MOCK_BASELINE_COMMIT="$INITIAL_COMMIT" \
-MOCK_API_BUNDLE="$API_BUNDLE" MOCK_API_IMAGE="$API_IMAGE" MOCK_OPENAPI_SHA="$OPENAPI_SHA" MOCK_API_ORIGIN="$API_ORIGIN" \
-MOCK_RUNTIME_IMAGE="$TMP/runtime-image" \
-ELEVANT_WEB_CD_TEST_MODE=1 ELEVANT_WEB_CD_DOCKER_BIN="$TMP/bin/docker" \
-ELEVANT_WEB_CD_TEST_DATABASE_LOCK="$TMP/db.lock" ELEVANT_WEB_CD_TEST_API_LOCK="$TMP/api.lock" \
-ELEVANT_WEB_CD_TEST_GLOBAL_LOCK="$TMP/state/controller.lock" \
-ELEVANT_WEB_CD_WAIT_ATTEMPTS=1 ELEVANT_WEB_CD_WAIT_INTERVAL=0 PATH="$TMP/bin:$PATH" \
-  "$ROOT/elevant-web-cd" --app public-web --config "$TMP/config.env" --adopt-current >/dev/null
+ACTIVE_BUNDLE_DIGEST="$BUNDLE_DIGEST"
+ACTIVE_COMMIT="$COMMIT"
+ACTIVE_RUN="$RUN"
+BASELINE_WEB_IMAGE="$INITIAL_WEB_IMAGE"
+BASELINE_COMMIT="$INITIAL_COMMIT"
+BASELINE_RUN="$INITIAL_RUN"
+
+controller() {
+  MOCK_OPENAPI="$TMP/openapi.json" MOCK_BUNDLE="$TMP/bundle" MOCK_LOG="$TMP/docker.log" \
+  MOCK_BUNDLE_REPO="$BUNDLE_REPO" MOCK_BUNDLE_DIGEST="$ACTIVE_BUNDLE_DIGEST" MOCK_COMMIT="$ACTIVE_COMMIT" MOCK_RUN="$ACTIVE_RUN" \
+  MOCK_BASELINE_WEB_IMAGE="$BASELINE_WEB_IMAGE" MOCK_BASELINE_COMMIT="$BASELINE_COMMIT" MOCK_BASELINE_RUN="$BASELINE_RUN" \
+  MOCK_API_BUNDLE="$API_BUNDLE" MOCK_API_IMAGE="$API_IMAGE" MOCK_OPENAPI_SHA="$OPENAPI_SHA" MOCK_API_ORIGIN="$API_ORIGIN" \
+  MOCK_RUNTIME_IMAGE="$TMP/runtime-image" \
+  ELEVANT_WEB_CD_TEST_MODE=1 ELEVANT_WEB_CD_DOCKER_BIN="$TMP/bin/docker" \
+  ELEVANT_WEB_CD_TEST_DATABASE_LOCK="$TMP/db.lock" ELEVANT_WEB_CD_TEST_API_LOCK="$TMP/api.lock" \
+  ELEVANT_WEB_CD_TEST_GLOBAL_LOCK="$TMP/state/controller.lock" \
+  ELEVANT_WEB_CD_WAIT_ATTEMPTS=1 ELEVANT_WEB_CD_WAIT_INTERVAL=0 PATH="$TMP/bin:$PATH" \
+    "$ROOT/elevant-web-cd" --app public-web --config "$TMP/config.env" "$@"
+}
+
+controller --adopt-current >/dev/null
 grep -Fq 'PUBLIC_NODE_SMOKE:http://127.0.0.1:3000/login' "$TMP/docker.log" || fail "Public adoption omitted the login smoke route"
 : > "$TMP/docker.log"
 
-MOCK_OPENAPI="$TMP/openapi.json" MOCK_BUNDLE="$TMP/bundle" MOCK_LOG="$TMP/docker.log" \
-MOCK_BUNDLE_REPO="$BUNDLE_REPO" MOCK_BUNDLE_DIGEST="$BUNDLE_DIGEST" MOCK_COMMIT="$COMMIT" \
-MOCK_BASELINE_WEB_IMAGE="$INITIAL_WEB_IMAGE" MOCK_BASELINE_COMMIT="$INITIAL_COMMIT" \
-MOCK_API_BUNDLE="$API_BUNDLE" MOCK_API_IMAGE="$API_IMAGE" MOCK_OPENAPI_SHA="$OPENAPI_SHA" MOCK_API_ORIGIN="$API_ORIGIN" \
-MOCK_RUNTIME_IMAGE="$TMP/runtime-image" \
-ELEVANT_WEB_CD_TEST_MODE=1 ELEVANT_WEB_CD_DOCKER_BIN="$TMP/bin/docker" \
-ELEVANT_WEB_CD_TEST_DATABASE_LOCK="$TMP/db.lock" ELEVANT_WEB_CD_TEST_API_LOCK="$TMP/api.lock" \
-ELEVANT_WEB_CD_TEST_GLOBAL_LOCK="$TMP/state/controller.lock" \
-ELEVANT_WEB_CD_WAIT_ATTEMPTS=1 ELEVANT_WEB_CD_WAIT_INTERVAL=0 PATH="$TMP/bin:$PATH" \
-  "$ROOT/elevant-web-cd" --app public-web --config "$TMP/config.env" --poll >/dev/null
+controller --poll >/dev/null
 
 [[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/state/public-web/last-success.json" --field status)" == succeeded ]] || fail "Public profile did not persist success"
+[[ "$(node "$ROOT/state-tool.mjs" get --file "$TMP/state/public-web/last-success.json" --field sourceRunId)" == "$RUN" ]] || fail "Public poll did not accept the expected workflow run"
 grep -q PUBLIC_NODE_SMOKE "$TMP/docker.log" || fail "Public profile did not use Node in-container smoke"
 grep -Fq 'PUBLIC_NODE_SMOKE:http://127.0.0.1:3000/login' "$TMP/docker.log" || fail "Public promotion omitted the login smoke route"
 grep -Fq 'up -d --pull never --no-build --no-deps --force-recreate public-web' "$TMP/docker.log" || fail "Public promotion allowed an implicit pull"
 grep -Fq -- "--network container:$(printf '%064d' 9)" "$TMP/docker.log" || fail "Public profile did not probe the API namespace"
 [[ ! -e "$TMP/state/aviam-web" ]] || fail "Public profile created AVIAM state"
 grep -q 'SENTINEL="preserve"' "$TMP/live/.env" || fail "Public profile damaged unrelated environment"
+
+# Keep the successful poll candidate as A, then prove the manual public-web
+# rollback drill with a strictly newer B against the exact same API tuple.
+BASELINE_WEB_IMAGE="$WEB_IMAGE"
+BASELINE_COMMIT="$COMMIT"
+BASELINE_RUN="$RUN"
+ACTIVE_BUNDLE_DIGEST="$DRILL_BUNDLE_DIGEST"
+ACTIVE_COMMIT="$DRILL_COMMIT"
+ACTIVE_RUN="$DRILL_RUN"
+write_manifest "$DRILL_COMMIT" "$DRILL_RUN" "$DRILL_WEB_IMAGE"
+controller --pause >/dev/null
+[[ -f "$TMP/state/public-web/paused" ]] || fail "Public rollback drill profile was not paused"
+: > "$TMP/docker.log"
+
+controller --promote-with-rollback-drill "$DRILL_BUNDLE_DIGEST" >/dev/null
+
+mapfile -t drill_ups < <(sed -n 's/^PUBLIC_WEB_UP://p' "$TMP/docker.log")
+[[ "${#drill_ups[@]}" == 3 ]] || fail "Public rollback drill did not execute exactly three web replacements"
+[[ "${drill_ups[0]}" == "$DRILL_WEB_IMAGE" && "${drill_ups[1]}" == "$WEB_IMAGE" && "${drill_ups[2]}" == "$DRILL_WEB_IMAGE" ]] ||
+  fail "Public rollback drill did not execute B -> A -> B"
+[[ "$(grep -Fc 'PUBLIC_NODE_SMOKE:http://127.0.0.1:3000/login' "$TMP/docker.log")" == 4 ]] ||
+  fail "Public rollback drill did not smoke /login on port 3000 for every required leg"
+[[ "$(grep -Fc 'up -d --pull never --no-build --no-deps --force-recreate public-web' "$TMP/docker.log")" == 3 ]] ||
+  fail "Public rollback drill did not keep every replacement registry-independent"
+
+DRILL_ATTEMPT="$TMP/state/public-web/attempts/${DRILL_BUNDLE_DIGEST#sha256:}.json"
+for state_file in "$TMP/state/public-web/current.json" "$TMP/state/public-web/last-success.json" "$DRILL_ATTEMPT"; do
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field status)" == succeeded ]] || fail "Public rollback drill state was not succeeded"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field stage)" == complete ]] || fail "Public rollback drill state was not complete"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field rollbackStatus)" == succeeded ]] || fail "Public rollback drill lost rollback proof"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field sourceRunId)" == "$DRILL_RUN" ]] || fail "Public rollback drill did not accept strictly newer B"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field apiManifest)" == "$API_BUNDLE" ]] || fail "Public rollback drill changed the API manifest tuple"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field apiImage)" == "$API_IMAGE" ]] || fail "Public rollback drill changed the API image tuple"
+  [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field openApiSha256)" == "$OPENAPI_SHA" ]] || fail "Public rollback drill changed the OpenAPI tuple"
+done
+[[ -f "$TMP/state/public-web/paused" ]] || fail "Public rollback drill resumed the profile"
+grep -Fq "ELEVANT_PUBLIC_WEB_IMAGE=\"$DRILL_WEB_IMAGE\"" "$TMP/live/.env" || fail "Public rollback drill did not leave B in the public image key"
+! grep -q '^ELEVANT_AVIAM_WEB_IMAGE=' "$TMP/live/.env" || fail "Public rollback drill wrote the AVIAM image key"
+grep -q 'SENTINEL="preserve"' "$TMP/live/.env" || fail "Public rollback drill damaged unrelated environment"
+[[ ! -e "$TMP/state/aviam-web" ]] || fail "Public rollback drill created AVIAM state"
 
 printf '%s: PASS\n' "$PROGRAM_NAME"

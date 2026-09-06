@@ -3,11 +3,11 @@
 Estado: DB v1 y la API están desplegadas y verificadas en el VPS Development
 privado, cada una con su CD pull-based activo. El hardening, Tailscale,
 observabilidad, backup/restore programados y snapshot frío ya fueron aceptados.
-AVIAM Web y Public Web entran ahora en la fase de implementación de sus
-artefactos y controladores de entrega; todavía no se declaran desplegadas. El
-primer rollout de cada web será manual y separado después de revisar el PR y
-sus bundles certificados. Mobile Agent continúa fuera del VPS. La secuencia
-reproducible con checkpoints y rollback está en
+AVIAM Web ya tiene su runtime inicial healthy por Tailscale y su baseline A
+adoptada por Web CD; su schedule continúa deshabilitado hasta aceptar el drill
+B -> A -> B y el no-op posterior. Public Web aún requiere su rollout manual e
+independiente. Mobile Agent continúa fuera del VPS. La secuencia reproducible
+con checkpoints y rollback está en
 [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
@@ -20,7 +20,7 @@ SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops ent
 
 ```text
 Tailscale HTTPS Services
-  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (rollout pendiente)
+  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (live; aceptación CD pendiente)
   ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (rollout pendiente)
   ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API
   └─ Dokploy       -> 127.0.0.1:3000
@@ -39,7 +39,7 @@ Deployables separados:
 1. `elevant-dev-database`: manual, sin AutoDeploy.
 2. `elevant-dev-database-release`: one-shot por versión.
 3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
-4. `elevant-dev-aviam-web`: Vite estático/Nginx, rollout manual pendiente.
+4. `elevant-dev-aviam-web`: Vite estático/Nginx, runtime y baseline A activos; aceptación CD pendiente.
 5. `elevant-dev-public-web`: Next standalone, rollout manual pendiente.
 
 Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se compila/distribuye, no es un stack.
@@ -308,9 +308,30 @@ vez:
 7. Instalar/actualizar manualmente el paquete genérico `web-cd`, configurar el
    perfil root-only, ejecutar `verify-runtime`, `--dry-run` y
    `--adopt-current`. La adopción no vuelve a desplegar la baseline.
-8. Crear el schedule deshabilitado, ejecutar un poll/no-op manual, probar una
-   promoción y su rollback, y solo entonces habilitarlo. Repetir el proceso
-   completo para la segunda web y validar persistencia tras reboot.
+8. Crear el schedule deshabilitado y mantenerlo así. Con una entrega B
+   estrictamente posterior a la baseline A, instalar o actualizar el controlador
+   que incluye el drill seguro, validar runtime, pausar el perfil y ejecutar
+   `--dry-run`.
+9. Ejecutar contra el digest exacto anunciado
+   `--promote-with-rollback-drill sha256:<DIGEST_EXACTO>`. El comando precarga y
+   valida todo antes de mutar, exige la misma tupla API exacta en A/B/activa y
+   prueba B -> A -> B con `--pull never`, health y smokes en cada tramo.
+10. Exigir que el resultado conserve el perfil pausado y registre
+    `succeeded/complete` con `rollbackStatus=succeeded`; volver a comprobar
+    runtime, listener loopback, aislamiento de red y que DB, API y la otra web
+    no se recrearon. Un fallo queda pausado, restaura A cuando es posible y
+    requiere una decisión explícita del operador. Si la API exacta cambió, la
+    recuperación se difiere sin mutar la web; el mismo digest debe reintentarse
+    después de restaurar esa API y `--resume` continúa bloqueado entre tanto.
+    También bloquea cualquier rollback fallido o fallo terminal del drill. Una
+    promoción ordinaria interrumpida usa su recuperación ordinaria al primer
+    `--resume` o al siguiente `--poll` si todavía no estaba pausada. En ambos
+    casos permanece pausada para revisión y solo se reanuda con una invocación
+    posterior de `--resume`; todo poll posterior a la pausa es un no-op absoluto.
+11. Reanudar solo después de aceptar el drill, ejecutar manualmente el job aún
+    deshabilitado y exigir un no-op. Entonces habilitar el schedule, comprobar
+    su primer no-op automático, repetir el proceso completo para la segunda web
+    y validar persistencia tras reboot.
 
 Los perfiles `aviam-web` y `public-web` conservan estado, cache, pausa y
 rollback separados. Ambos exigen que digest de bundle, `runId`, imagen y hash
