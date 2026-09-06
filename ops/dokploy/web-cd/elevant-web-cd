@@ -962,8 +962,9 @@ last_success_is_completed_ordinary_candidate() {
 }
 
 select_finalization_recovery_state() {
-  local requested_attempt="$(attempt_file "$REQUESTED_DIGEST")" current="$CD_STATE_DIR/current.json"
+  local requested_attempt current="$CD_STATE_DIR/current.json"
   local file status digest message_code
+  requested_attempt="$(attempt_file "$REQUESTED_DIGEST")"
   FINALIZATION_RECOVERY_STATE=""
   for file in "$requested_attempt" "$current"; do
     [[ -e "$file" || -L "$file" ]] || continue
