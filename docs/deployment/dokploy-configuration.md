@@ -1,12 +1,12 @@
 # Configuración de Dokploy
 
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
-privado, cómo se desplegaron DB v1 y la API y cómo se habilitan sus carriles CD
-pull-based. También define el handoff posterior para AVIAM Web y Public Web;
-versionar sus artefactos no significa que ya estén instalados. El operador
-realiza todos los cambios remotos manualmente. El agente entrega un bloque
-corto, identifica si corresponde a PowerShell, hPanel, VPS o Dokploy y valida la
-evidencia antes de avanzar.
+privado, cómo se desplegaron DB v1, la API y el runtime inicial de AVIAM Web, y
+cómo se habilitan sus carriles CD pull-based. También define el handoff separado
+que aún completa AVIAM Web y despliega Public Web; versionar artefactos por sí
+solo no autoriza instalarlos. El operador realiza todos los cambios remotos
+manualmente. El agente entrega un bloque corto, identifica si corresponde a
+PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de avanzar.
 
 ## Estado aprobado
 
@@ -42,9 +42,10 @@ evidencia antes de avanzar.
 - Evidencia 2026-09-05 UTC: API por digest, API-CD `succeeded/complete`, health,
   readiness, ping, Swagger, CORS exacto, poll no-op y recuperación tras reboot
   validados. El acceso continúa exclusivamente por Tailscale.
-- Entrega web: las imágenes, bundles y el controlador genérico se preparan en
-  el repositorio. AVIAM Web y Public Web aún requieren sus dos rollouts manuales
-  e independientes antes de considerarse instaladas en el VPS.
+- Entrega web: AVIAM Web ya tiene runtime inicial healthy por Tailscale, imagen
+  inmutable y baseline A adoptada por Web CD. Su schedule permanece deshabilitado
+  hasta aceptar B -> A -> B y el no-op posterior. Public Web todavía requiere su
+  rollout manual e independiente.
 - Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
   se configuren, el operador revisa diariamente Beszel, Schedules y
   `controller.log`; no se debe afirmar que existe notificación automática.
@@ -408,10 +409,11 @@ la API permanece 100 % tailnet-only y con datos sintéticos.
 ## Handoff: publicar las webs Development y activar su CD
 
 Este handoff comienza únicamente después de fusionar la implementación web y
-obtener sus artefactos certificados. En el estado documentado todavía está
-pendiente: no interprete la presencia de Compose, Dockerfiles o `web-cd` en el
-repositorio como autorización para cambiar el VPS. El procedimiento detallado
-del controlador está en
+obtener sus artefactos certificados. AVIAM Web ya completó el despliegue de su
+runtime inicial y la adopción de A, pero aún debe aceptar el drill y activar su
+schedule; Public Web continúa pendiente desde el primer paso. No interprete la
+presencia de Compose, Dockerfiles o `web-cd` en el repositorio como autorización
+para cambiar el VPS. El procedimiento detallado del controlador está en
 [`ops/dokploy/web-cd/README.md`](../../ops/dokploy/web-cd/README.md).
 
 ### Publicación en GitHub
@@ -486,7 +488,7 @@ Aplicar primero `aviam-web` y aceptarla completamente antes de iniciar
 9. Para el perfil actual, ejecutar `--dry-run`, `--adopt-current` y `--status`.
    Debe verificar el bundle, Compose, imagen, API exacta, OpenAPI, contenedor y
    smokes antes de registrar `adopted-current`; nunca vuelve a desplegar ni toca
-   la otra web durante la adopción.
+   la otra web durante la adopción. Esta baseline sana es A.
 10. En **Schedules** crear deshabilitados dos jobs internos
     `dokploy-server`, UTC y cron `* * * * *`:
 
@@ -499,11 +501,44 @@ Aplicar primero `aviam-web` y aceptarla completamente antes de iniciar
     No usar Application, Compose Job ni servidor externo. Database inicia
     normalmente en `:00` y API en `:15`; los locks siguen siendo la exclusión
     definitiva.
-11. Ejecutar un poll/no-op manual, después una promoción certificada y un drill
-    de rollback del perfil. Confirmar que DB, API y la otra web no se recrearon.
-    Habilitar el schedule solo al terminar su aceptación y repetir desde el
-    paso 1 para la segunda web.
-12. Tras aceptar ambas, hacer un reboot controlado y verificar recuperación de
+11. Mantener el schedule **Disabled** y esperar un candidato certificado B cuyo
+    `runId` sea estrictamente posterior a A. Instalar o actualizar primero la
+    revisión del controlador que incorpora el drill seguro, volver a ejecutar
+    `verify-runtime`, pausar el perfil y ejecutar `--dry-run`. No ejecutar un
+    `--poll` normal una vez publicado B: debe seguir siendo nuevo para el drill.
+12. Con el digest exacto actualmente anunciado para B, ejecutar:
+
+    ```text
+    elevant-web-cd --app <aviam-web|public-web> \
+      --promote-with-rollback-drill sha256:<DIGEST_EXACTO>
+    ```
+
+    El comando exige el perfil pausado, una baseline A sana y la misma tupla
+    exacta `apiManifest`/`apiRunId`/`apiImage`/`openApiSha256` en A, B y la API
+    activa. Antes de la primera mutación precarga y valida todos los artefactos;
+    luego ejecuta B -> A -> B exclusivamente con `--pull never`, health y todos
+    los smokes certificados en cada tramo.
+13. En éxito, exigir que el perfil continúe pausado y que su estado sea
+    `succeeded/complete` con `rollbackStatus=succeeded`. Confirmar además imagen
+    y Compose finales de B, contenedor healthy con cero reinicios, listener
+    loopback, red runtime única, ausencia de red SQL y que DB, API y la otra web
+    no se recrearon. En cualquier fallo, dejar el schedule deshabilitado: el
+    perfil queda pausado, intenta restaurar A y requiere una acción explícita
+    del operador antes de continuar. Si la API exacta ya no está activa, la
+    recuperación se difiere sin mutar la web y conserva el intento como
+    `running/interrupted`; restaurar primero esa tupla API y volver a invocar el
+    digest pendiente. `--resume` permanece bloqueado mientras exista ese estado,
+    ante cualquier `rollbackStatus=failed` y después de cualquier fallo terminal
+    del drill. Una promoción ordinaria interrumpida se contiene o reconcilia con
+    un primer `--resume`, o con el siguiente `--poll` si el perfil todavía no
+    estaba pausado. En ambos casos continúa pausada, exige revisión y solo una
+    invocación posterior de `--resume` elimina la pausa; nunca se reclasifica
+    como drill y todo poll posterior a la pausa es un no-op absoluto.
+14. Solo tras esa aceptación, reanudar el perfil, ejecutar manualmente el job
+    todavía deshabilitado y exigir un no-op sobre B. Habilitar entonces su
+    schedule y comprobar el primer no-op automático. Repetir desde el paso 1
+    para la segunda web.
+15. Tras aceptar ambas, hacer un reboot controlado y verificar recuperación de
     contenedores, health, Services, estados, no-op automáticos y Funnel apagado.
 
 Un candidato que no coincide exactamente con el bundle/run/imagen/OpenAPI de la
@@ -541,9 +576,10 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
   acceso a `18080`.
 - Los preflights CORS de ambos orígenes HTTPS exactos incluyen credenciales,
   `Authorization` y `Content-Type`; un origen similar no recibe headers CORS.
-- Tras cada rollout web, el perfil correspondiente de Web CD está
-  `succeeded/complete`, usa imagen/Compose por digest/hash, prueba la API exacta
-  y convierte el bundle aceptado en no-op; el otro perfil conserva su estado.
+- Tras la aceptación inicial de cada perfil web, Web CD está
+  `succeeded/complete` con `rollbackStatus=succeeded`, usa imagen/Compose por
+  digest/hash, completó el drill pausado B -> A -> B contra la API exacta y
+  convierte el bundle aceptado en no-op; el otro perfil conserva su estado.
 - AVIAM Web escucha solo en `127.0.0.1:18081` y Public Web solo en
   `127.0.0.1:18082`; ambas son no-root, healthy, visibles exclusivamente por su
   Service Tailscale y no pertenecen a ninguna red SQL. Funnel continúa apagado.
@@ -566,5 +602,8 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
   schedule y restaurar juntos imagen + Compose/hash de su `last-success`. Si no
   existe baseline sana, drenar/limpiar únicamente su Service Tailscale y
   detener ese Compose; no tocar API, SQL, redes ajenas ni el otro perfil.
+  Un drill fallido ya deja el perfil pausado y restaura la baseline cuando es
+  posible; no reanudar ni habilitar el schedule hasta diagnosticar su estado y
+  decidir explícitamente la recuperación.
 - DB: detener Compose conservando red y volúmenes.
 - Snapshot: último recurso; restaura todo el VPS y pierde cambios posteriores.

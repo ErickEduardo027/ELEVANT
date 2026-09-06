@@ -76,6 +76,24 @@ CURRENT_SMOKE_PATHS=""
 CURRENT_WORKFLOW_URL=""
 CURRENT_STAGE="idle"
 CURRENT_ROLLBACK_STATUS="not-required"
+CURRENT_MESSAGE_CODE=""
+LAST_WEB_IMAGE=""
+LAST_WEB_COMPOSE_SHA256=""
+LAST_WEB_COMPOSE_PATH=""
+LAST_SOURCE_COMMIT=""
+LAST_SOURCE_RUN_ID=""
+LAST_API_MANIFEST=""
+LAST_API_RUN_ID=""
+LAST_API_IMAGE=""
+LAST_OPENAPI_SHA256=""
+DRILL_ACTIVE=0
+DRILL_MUTATED=0
+DRILL_SIGNAL_HANDLING=0
+RUNNING_ATTEMPT_STATE=""
+RUNNING_ATTEMPT_KIND=""
+LOADED_RUNNING_ATTEMPT_STATE=""
+TERMINAL_STATE_KIND=""
+FINALIZATION_RECOVERY_STATE=""
 PROFILE_CONTAINER_PORT=""
 PROFILE_HEALTH_PATH=""
 PROFILE_SMOKE_PATHS=""
@@ -108,6 +126,7 @@ Usage:
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --poll
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --dry-run
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --retry sha256:DIGEST
+  elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --promote-with-rollback-drill sha256:DIGEST
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --adopt-current
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --status
   elevant-web-cd --app aviam-web|public-web [--config ABSOLUTE_PATH] --pause
@@ -127,6 +146,7 @@ parse_args() {
       --config) (( $# >= 2 )) || die "--config requires a path"; [[ -z "$CONFIG_FILE" ]] || die "--config may be supplied only once"; CONFIG_FILE="$2"; shift 2 ;;
       --poll|--dry-run|--adopt-current|--status|--pause|--resume) set_command "${1#--}"; shift ;;
       --retry) (( $# >= 2 )) || die "--retry requires a sha256 digest"; set_command retry; REQUESTED_DIGEST="$2"; shift 2 ;;
+      --promote-with-rollback-drill) (( $# >= 2 )) || die "--promote-with-rollback-drill requires a sha256 digest"; set_command promote-with-rollback-drill; REQUESTED_DIGEST="$2"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown argument: $1" ;;
     esac
@@ -440,9 +460,10 @@ validate_api_container() {
 }
 
 retrieve_api_openapi() {
-  local api_id="$1" output="$2" url
+  local api_id="$1" output="$2" probe_mode="${3:-pull}" url
   url="http://127.0.0.1:$CD_API_CONTAINER_PORT$CD_API_OPENAPI_PATH"
-  docker_command pull "$CD_HTTP_PROBE_IMAGE" >/dev/null || return 1
+  [[ "$probe_mode" == pull || "$probe_mode" == local ]] || return 1
+  if [[ "$probe_mode" == pull ]]; then docker_command pull "$CD_HTTP_PROBE_IMAGE" >/dev/null || return 1; fi
   # The short-lived probe shares only the already-validated API container's
   # network namespace. Dokploy itself joins no API network and no host port is
   # required. All other privileges and writes are denied.
@@ -463,6 +484,7 @@ retrieve_api_openapi() {
 }
 
 api_gate() {
+  local probe_mode="${1:-pull}"
   local metadata expected_uid=0 values active_digest active_run active_image required_digest
   local openapi_file active_openapi api_id
   [[ "$TEST_MODE" != 1 ]] || expected_uid="$(id -u)"
@@ -477,7 +499,7 @@ api_gate() {
   api_id="$(api_container_id)" || die "expected exactly one running API Compose container"
   validate_api_container "$api_id" "$active_image" || die "API container identity, image or health does not match accepted API state"
   openapi_file="$(mktemp "$CD_STATE_DIR/tmp/openapi.XXXXXX.json")"; chmod 0600 -- "$openapi_file"
-  if ! retrieve_api_openapi "$api_id" "$openapi_file"; then rm -f -- "$openapi_file"; die "could not retrieve OpenAPI from the API container namespace"; fi
+  if ! retrieve_api_openapi "$api_id" "$openapi_file" "$probe_mode"; then rm -f -- "$openapi_file"; die "could not retrieve OpenAPI from the API container namespace"; fi
   validate_api_container "$api_id" "$active_image" || { rm -f -- "$openapi_file"; die "API container changed while OpenAPI was being verified"; }
   active_openapi="$("$NODE_BIN" "$OPENAPI_TOOL" hash --file "$openapi_file")" || { rm -f -- "$openapi_file"; die "live API OpenAPI is invalid"; }
   rm -f -- "$openapi_file"
@@ -549,10 +571,10 @@ smoke_web() {
   done < <("$NODE_BIN" -e 'for (const value of JSON.parse(process.argv[1])) console.log(value)' "$CURRENT_SMOKE_PATHS")
 }
 preflight() {
-  validate_cached_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_COMPOSE_SHA256"
-  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256"
-  validate_live_compose_semantics
-  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" config --quiet
+  validate_cached_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_COMPOSE_SHA256" || return 1
+  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256" || return 1
+  validate_live_compose_semantics || return 1
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" config --quiet || return 1
   api_gate
 }
 
@@ -567,18 +589,256 @@ write_state_file() {
     --set "configurationSha256=$CURRENT_CONFIGURATION_SHA256" --set "rollbackStatus=$CURRENT_ROLLBACK_STATUS" \
     --set "messageCode=$4" --set "updatedAt=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" --set "workflowUrl=$CURRENT_WORKFLOW_URL"
 }
-persist_attempt() { write_state_file "$CD_STATE_DIR/current.json" "$1" "$2" "$3"; write_state_file "$(attempt_file "$CURRENT_MANIFEST_DIGEST")" "$1" "$2" "$3"; }
+persist_attempt() {
+  write_state_file "$CD_STATE_DIR/current.json" "$1" "$2" "$3" || return 1
+  write_state_file "$(attempt_file "$CURRENT_MANIFEST_DIGEST")" "$1" "$2" "$3" || return 1
+}
 begin_stage() { CURRENT_STAGE="$1"; persist_attempt running "$1" stage_running; log "stage=$1 started"; }
 complete_stage() { log "stage=$CURRENT_STAGE completed"; }
 is_paused() { [[ -e "$CD_STATE_DIR/paused" ]]; }
 
+matching_state_field_equals() {
+  local current="$1" attempt="$2" field="$3" current_value attempt_value
+  current_value="$(state_get "$current" "$field")" || pause_and_die "could not read current web attempt $field"
+  attempt_value="$(state_get "$attempt" "$field")" || pause_and_die "could not read matching web attempt $field"
+  [[ "$current_value" == "$attempt_value" ]] ||
+    pause_and_die "current and matching web attempt $field values conflict"
+}
+
+validate_matching_attempt_invariants() {
+  local current="$1" attempt="$2" field
+  for field in application manifestDigest sourceCommit sourceRunId sourceRunAttempt \
+    webImage webComposeSha256 apiManifest apiRunId apiImage openApiSha256 \
+    configurationSha256 workflowUrl; do
+    matching_state_field_equals "$current" "$attempt" "$field"
+  done
+}
+
+select_running_attempt_state() {
+  local current="$CD_STATE_DIR/current.json" current_digest="" current_attempt="" requested_attempt application attempt_digest status
+  RUNNING_ATTEMPT_STATE=""
+  if [[ -e "$current" || -L "$current" ]]; then
+    if ! (validate_restricted_file "$current"); then pause_and_die "current web attempt state is unsafe"; fi
+    status="$(state_get "$current" status)" || pause_and_die "could not read current web attempt status"
+    application="$(state_get "$current" application)" || pause_and_die "could not read current web attempt application"
+    [[ "$application" == "$APPLICATION" ]] || pause_and_die "current web attempt application is invalid"
+    [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+      pause_and_die "current web attempt status is invalid"
+    if [[ "$status" == running ]]; then RUNNING_ATTEMPT_STATE="$current"; return 0; fi
+    current_digest="$(state_get "$current" manifestDigest)" || pause_and_die "could not read current web attempt digest"
+    [[ -z "$current_digest" || "$current_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || pause_and_die "current web attempt digest is invalid"
+    if [[ -n "$current_digest" ]]; then
+      current_attempt="$(attempt_file "$current_digest")"
+      if [[ -e "$current_attempt" || -L "$current_attempt" ]]; then
+        if ! (validate_restricted_file "$current_attempt"); then pause_and_die "current digest attempt state is unsafe"; fi
+        status="$(state_get "$current_attempt" status)" || pause_and_die "could not read current digest attempt status"
+        application="$(state_get "$current_attempt" application)" || pause_and_die "could not read current digest attempt application"
+        attempt_digest="$(state_get "$current_attempt" manifestDigest)" || pause_and_die "could not read current digest attempt manifest digest"
+        [[ "$application" == "$APPLICATION" ]] || pause_and_die "current digest attempt application is invalid"
+        [[ "$attempt_digest" == "$current_digest" ]] || pause_and_die "current digest attempt manifest digest does not match its state path"
+        [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+          pause_and_die "current digest attempt status is invalid"
+        validate_matching_attempt_invariants "$current" "$current_attempt"
+        if [[ "$status" == running ]]; then RUNNING_ATTEMPT_STATE="$current_attempt"; return 0; fi
+      fi
+    fi
+  fi
+  requested_attempt="$(attempt_file "$REQUESTED_DIGEST")"
+  [[ "$requested_attempt" != "$current_attempt" ]] || return 1
+  if [[ -e "$requested_attempt" || -L "$requested_attempt" ]]; then
+    if ! (validate_restricted_file "$requested_attempt"); then pause_and_die "requested web attempt state is unsafe"; fi
+    status="$(state_get "$requested_attempt" status)" || pause_and_die "could not read requested web attempt status"
+    application="$(state_get "$requested_attempt" application)" || pause_and_die "could not read requested web attempt application"
+    attempt_digest="$(state_get "$requested_attempt" manifestDigest)" || pause_and_die "could not read requested web attempt manifest digest"
+    [[ "$application" == "$APPLICATION" ]] || pause_and_die "requested web attempt application is invalid"
+    [[ "$attempt_digest" == "$REQUESTED_DIGEST" ]] || pause_and_die "requested web attempt manifest digest does not match its state path"
+    [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+      pause_and_die "requested web attempt status is invalid"
+    if [[ "$status" == running ]]; then RUNNING_ATTEMPT_STATE="$requested_attempt"; return 0; fi
+  fi
+  return 1
+}
+
+load_attempt_context() {
+  local file="$1" expected_status="$2" application status
+  [[ "$expected_status" == running || "$expected_status" == failed ]] || pause_and_die "internal attempt status expectation is invalid"
+  if ! (validate_restricted_file "$file"); then pause_and_die "web attempt state is unsafe"; fi
+  application="$(state_get "$file" application)" || pause_and_die "could not read web attempt application"
+  status="$(state_get "$file" status)" || pause_and_die "could not read web attempt status"
+  [[ "$application" == "$APPLICATION" && "$status" == "$expected_status" ]] || pause_and_die "web attempt scope or status is invalid"
+  CURRENT_STAGE="$(state_get "$file" stage)" || pause_and_die "could not read web attempt stage"
+  CURRENT_ROLLBACK_STATUS="$(state_get "$file" rollbackStatus)" || pause_and_die "could not read web attempt rollback status"
+  CURRENT_MESSAGE_CODE="$(state_get "$file" messageCode)" || pause_and_die "could not read web attempt message code"
+  [[ "$CURRENT_ROLLBACK_STATUS" == not-required || "$CURRENT_ROLLBACK_STATUS" == succeeded || "$CURRENT_ROLLBACK_STATUS" == failed ]] ||
+    pause_and_die "web attempt rollback status is invalid"
+  [[ -n "$CURRENT_STAGE" && -n "$CURRENT_MESSAGE_CODE" ]] || pause_and_die "web attempt stage or message code is invalid"
+  CURRENT_MANIFEST_DIGEST="$(state_get "$file" manifestDigest)" || pause_and_die "could not read web attempt manifest digest"
+  CURRENT_SOURCE_COMMIT="$(state_get "$file" sourceCommit)" || pause_and_die "could not read web attempt source commit"
+  CURRENT_SOURCE_RUN_ID="$(state_get "$file" sourceRunId)" || pause_and_die "could not read web attempt source run ID"
+  CURRENT_SOURCE_RUN_ATTEMPT="$(state_get "$file" sourceRunAttempt)" || pause_and_die "could not read web attempt source run attempt"
+  CURRENT_WEB_IMAGE="$(state_get "$file" webImage)" || pause_and_die "could not read web attempt image"
+  CURRENT_WEB_COMPOSE_SHA256="$(state_get "$file" webComposeSha256)" || pause_and_die "could not read web attempt Compose hash"
+  CURRENT_API_MANIFEST="$(state_get "$file" apiManifest)" || pause_and_die "could not read web attempt API manifest"
+  CURRENT_API_RUN_ID="$(state_get "$file" apiRunId)" || pause_and_die "could not read web attempt API run ID"
+  CURRENT_API_IMAGE="$(state_get "$file" apiImage)" || pause_and_die "could not read web attempt API image"
+  CURRENT_OPENAPI_SHA256="$(state_get "$file" openApiSha256)" || pause_and_die "could not read web attempt OpenAPI hash"
+  CURRENT_CONFIGURATION_SHA256="$(state_get "$file" configurationSha256)" || pause_and_die "could not read web attempt configuration hash"
+  CURRENT_WORKFLOW_URL="$(state_get "$file" workflowUrl)" || pause_and_die "could not read web attempt workflow URL"
+  [[ "$CURRENT_MANIFEST_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || pause_and_die "web attempt manifest digest is invalid"
+  [[ "$CURRENT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ && "$CURRENT_SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ && "$CURRENT_SOURCE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] ||
+    pause_and_die "web attempt source provenance is invalid"
+  [[ "$CURRENT_WEB_IMAGE" == "$CD_WEB_REPOSITORY@"* && "${CURRENT_WEB_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    pause_and_die "web attempt image is invalid"
+  [[ "$CURRENT_WEB_COMPOSE_SHA256" =~ ^[0-9a-f]{64}$ ]] || pause_and_die "web attempt Compose hash is invalid"
+  [[ "$CURRENT_API_MANIFEST" == "$CD_API_MANIFEST_REPOSITORY@"* && "${CURRENT_API_MANIFEST#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    pause_and_die "web attempt API manifest is invalid"
+  [[ "$CURRENT_API_RUN_ID" =~ ^[1-9][0-9]*$ ]] || pause_and_die "web attempt API run ID is invalid"
+  [[ "$CURRENT_API_IMAGE" == "$CD_API_IMAGE_REPOSITORY@"* && "${CURRENT_API_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    pause_and_die "web attempt API image is invalid"
+  [[ "$CURRENT_OPENAPI_SHA256" =~ ^sha256:[0-9a-f]{64}$ && "$CURRENT_CONFIGURATION_SHA256" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    pause_and_die "web attempt fingerprints are invalid"
+  [[ "$CURRENT_WORKFLOW_URL" == "https://github.com/$CD_EXPECTED_REPOSITORY/actions/runs/$CURRENT_SOURCE_RUN_ID" ]] ||
+    pause_and_die "web attempt workflow URL is invalid"
+  CURRENT_WEB_COMPOSE_PATH="$(cached_compose_path "$CURRENT_WEB_COMPOSE_SHA256")"
+  CURRENT_CONTAINER_PORT="$PROFILE_CONTAINER_PORT"
+  CURRENT_HEALTH_PATH="$PROFILE_HEALTH_PATH"
+  CURRENT_SMOKE_PATHS="$PROFILE_SMOKE_PATHS"
+}
+
+load_running_attempt_context() {
+  load_attempt_context "$1" running
+  LOADED_RUNNING_ATTEMPT_STATE="$1"
+}
+
+running_attempt_kind() {
+  case "$1:$2:$3" in
+    preflight:stage_running:not-required|deploy:stage_running:not-required|health:stage_running:not-required|smoke:stage_running:not-required)
+      printf 'ordinary\n'
+      ;;
+    drill-deploy:stage_running:not-required|drill-health:stage_running:not-required|drill-smoke:stage_running:not-required|drill-rollback:stage_running:not-required)
+      printf 'drill\n'
+      ;;
+    drill-repromote:stage_running:succeeded|drill-repromote-health:stage_running:succeeded|drill-repromote-smoke:stage_running:succeeded)
+      printf 'drill\n'
+      ;;
+    interrupted:rollback_drill_interrupted_recovery_deferred:not-required)
+      printf 'drill\n'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_matching_running_attempt_pair() {
+  local current="$CD_STATE_DIR/current.json" attempt status stage rollback_status message_code attempt_kind current_digest current_kind
+  if [[ "$LOADED_RUNNING_ATTEMPT_STATE" != "$current" ]]; then
+    [[ -e "$current" || -L "$current" ]] || return 0
+    if ! (validate_restricted_file "$current"); then pause_and_die "current web attempt state is unsafe"; fi
+    current_digest="$(state_get "$current" manifestDigest)" || pause_and_die "could not read current web attempt digest"
+    [[ "$current_digest" == "$CURRENT_MANIFEST_DIGEST" ]] || return 0
+    validate_matching_attempt_invariants "$current" "$LOADED_RUNNING_ATTEMPT_STATE"
+    status="$(state_get "$current" status)" || pause_and_die "could not read current web attempt status"
+    stage="$(state_get "$current" stage)" || pause_and_die "could not read current web attempt stage"
+    rollback_status="$(state_get "$current" rollbackStatus)" || pause_and_die "could not read current web attempt rollback status"
+    message_code="$(state_get "$current" messageCode)" || pause_and_die "could not read current web attempt message code"
+    [[ "$status" != running ]] || pause_and_die "multiple running web attempt states were selected inconsistently"
+    classify_terminal_pair_state "$status" "$stage" "$rollback_status" "$message_code" ||
+      pause_and_die "current terminal web attempt tuple conflicts with its matching running attempt"
+    current_kind="$TERMINAL_STATE_KIND"
+    [[ "$current_kind" == "$RUNNING_ATTEMPT_KIND" ]] ||
+      pause_and_die "current and matching running web attempt kinds conflict"
+    return 0
+  fi
+  attempt="$(attempt_file "$CURRENT_MANIFEST_DIGEST")"
+  [[ -e "$attempt" || -L "$attempt" ]] || return 0
+  if ! (validate_restricted_file "$attempt"); then pause_and_die "matching running web attempt state is unsafe"; fi
+  status="$(state_get "$attempt" status)" || pause_and_die "could not read matching running web attempt status"
+  [[ "$status" == running ]] || pause_and_die "current and matching web attempt statuses conflict"
+  validate_matching_attempt_invariants "$current" "$attempt"
+  stage="$(state_get "$attempt" stage)" || pause_and_die "could not read matching running web attempt stage"
+  rollback_status="$(state_get "$attempt" rollbackStatus)" || pause_and_die "could not read matching running web attempt rollback status"
+  message_code="$(state_get "$attempt" messageCode)" || pause_and_die "could not read matching running web attempt message code"
+  attempt_kind="$(running_attempt_kind "$stage" "$message_code" "$rollback_status")" ||
+    pause_and_die "matching running web attempt tuple is invalid"
+  [[ "$attempt_kind" == "$RUNNING_ATTEMPT_KIND" ]] || pause_and_die "current and matching running web attempt kinds conflict"
+}
+
+classify_loaded_running_attempt() {
+  RUNNING_ATTEMPT_KIND="$(running_attempt_kind "$CURRENT_STAGE" "$CURRENT_MESSAGE_CODE" "$CURRENT_ROLLBACK_STATUS")" || {
+    RUNNING_ATTEMPT_KIND=""
+    return 1
+  }
+  validate_matching_running_attempt_pair
+}
+
+classify_terminal_resume_state() {
+  local status="$1" stage="$2" rollback_status="$3" message_code="$4"
+  TERMINAL_STATE_KIND=""
+  case "$status:$stage:$rollback_status:$message_code" in
+    adopted:adopted-current:not-required:baseline_adopted)
+      TERMINAL_STATE_KIND=adopted
+      ;;
+    succeeded:complete:not-required:promotion_succeeded)
+      TERMINAL_STATE_KIND=ordinary
+      ;;
+    succeeded:complete:succeeded:promotion_with_rollback_drill_succeeded)
+      TERMINAL_STATE_KIND=drill
+      ;;
+    failed:preflight:not-required:preflight_failed|failed:preflight:not-required:rollback_baseline_unavailable)
+      TERMINAL_STATE_KIND=ordinary
+      ;;
+    failed:deploy:succeeded:deployment_failed_rolled_back|failed:health:succeeded:deployment_failed_rolled_back|failed:smoke:succeeded:deployment_failed_rolled_back)
+      TERMINAL_STATE_KIND=ordinary
+      ;;
+    failed:interrupted:succeeded:interrupted_attempt_rolled_back)
+      TERMINAL_STATE_KIND=ordinary
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+classify_terminal_pair_state() {
+  local status="$1" stage="$2" rollback_status="$3" message_code="$4"
+  if classify_terminal_resume_state "$status" "$stage" "$rollback_status" "$message_code"; then return 0; fi
+  TERMINAL_STATE_KIND=""
+  [[ "$status" == failed ]] || return 1
+  case "$rollback_status:$message_code" in
+    succeeded:rollback_drill_candidate_failed_rolled_back|failed:rollback_drill_candidate_and_rollback_failed)
+      [[ "$stage" == drill-deploy || "$stage" == drill-health || "$stage" == drill-smoke ]] || return 1
+      ;;
+    succeeded:rollback_drill_repromotion_failed_rolled_back|failed:rollback_drill_repromotion_and_rollback_failed)
+      [[ "$stage" == drill-repromote || "$stage" == drill-repromote-health || "$stage" == drill-repromote-smoke ]] || return 1
+      ;;
+    failed:rollback_drill_rollback_failed)
+      [[ "$stage" == rollback ]] || return 1
+      ;;
+    succeeded:rollback_drill_interrupted_rolled_back|failed:rollback_drill_interrupted_rollback_failed|not-required:rollback_drill_interrupted_at_safe_baseline|succeeded:rollback_drill_interrupted_at_safe_baseline|succeeded:rollback_drill_unexpected_error_rolled_back|failed:rollback_drill_unexpected_error_rollback_failed|not-required:rollback_drill_unexpected_error_at_safe_baseline|succeeded:rollback_drill_unexpected_error_at_safe_baseline)
+      case "$stage" in
+        drill-deploy|drill-health|drill-smoke|drill-rollback|drill-repromote|drill-repromote-health|drill-repromote-smoke|interrupted|complete) ;;
+        *) return 1 ;;
+      esac
+      ;;
+    failed:rollback_drill_finalization_recovery_failed)
+      [[ "$stage" == interrupted ]] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  TERMINAL_STATE_KIND=drill
+}
+
 load_last_success() {
   local file="$CD_STATE_DIR/last-success.json" status
-  [[ -f "$file" && ! -L "$file" ]] || return 1
-  status="$(state_get "$file" status)"; [[ "$status" == succeeded || "$status" == adopted ]] || die "last-success web state is invalid"
-  LAST_WEB_IMAGE="$(state_get "$file" webImage)"; LAST_WEB_COMPOSE_SHA256="$(state_get "$file" webComposeSha256)"
-  LAST_SOURCE_COMMIT="$(state_get "$file" sourceCommit)"; LAST_SOURCE_RUN_ID="$(state_get "$file" sourceRunId)"
-  LAST_API_MANIFEST="$(state_get "$file" apiManifest)"; LAST_OPENAPI_SHA256="$(state_get "$file" openApiSha256)"
+  [[ -e "$file" || -L "$file" ]] || return 1
+  validate_restricted_file "$file"
+  status="$(state_get "$file" status)" || die "could not read last-success web status"
+  [[ "$status" == succeeded || "$status" == adopted ]] || die "last-success web state is invalid"
+  LAST_WEB_IMAGE="$(state_get "$file" webImage)" || die "could not read last-success web image"
+  LAST_WEB_COMPOSE_SHA256="$(state_get "$file" webComposeSha256)" || die "could not read last-success Compose hash"
+  LAST_SOURCE_COMMIT="$(state_get "$file" sourceCommit)" || die "could not read last-success source commit"
+  LAST_SOURCE_RUN_ID="$(state_get "$file" sourceRunId)" || die "could not read last-success source run ID"
+  LAST_API_MANIFEST="$(state_get "$file" apiManifest)" || die "could not read last-success API manifest"
+  LAST_API_RUN_ID="$(state_get "$file" apiRunId)" || die "could not read last-success API run ID"
+  LAST_API_IMAGE="$(state_get "$file" apiImage)" || die "could not read last-success API image"
+  LAST_OPENAPI_SHA256="$(state_get "$file" openApiSha256)" || die "could not read last-success OpenAPI hash"
   LAST_WEB_COMPOSE_PATH="$(cached_compose_path "$LAST_WEB_COMPOSE_SHA256")"
   [[ "$LAST_WEB_IMAGE" == "$CD_WEB_REPOSITORY@"* && "${LAST_WEB_IMAGE#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "last-success web image is invalid"
   validate_cached_compose "$LAST_WEB_COMPOSE_PATH" "$LAST_WEB_COMPOSE_SHA256"
@@ -607,6 +867,262 @@ rollback() {
   ); then CURRENT_ROLLBACK_STATUS=succeeded; log "rollback completed"; return 0; fi
   CURRENT_ROLLBACK_STATUS=failed; return 1
 }
+
+drill_preflight() {
+  local probe_mode="${1:-pull}"
+  validate_cached_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_COMPOSE_SHA256"
+  validate_web_image "$CURRENT_WEB_IMAGE" "$CURRENT_SOURCE_COMMIT" "$CURRENT_SOURCE_RUN_ID" "$CURRENT_API_MANIFEST" "$CURRENT_OPENAPI_SHA256"
+  validate_live_compose_semantics
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" config --quiet || return 1
+  api_gate "$probe_mode"
+}
+
+validate_drill_baseline() {
+  local live_image
+  prepare_rollback_baseline
+  [[ "$LAST_API_MANIFEST" == "$CURRENT_API_MANIFEST" &&
+     "$LAST_API_RUN_ID" == "$CURRENT_API_RUN_ID" &&
+     "$LAST_API_IMAGE" == "$CURRENT_API_IMAGE" &&
+     "$LAST_OPENAPI_SHA256" == "$CURRENT_OPENAPI_SHA256" ]] ||
+    die "rollback drill requires the candidate and baseline to use the exact active API tuple"
+  live_image="$(read_env_image)"
+  [[ "$live_image" == "$LAST_WEB_IMAGE" ]] || die "rollback drill requires last-success to be the active web image"
+  wait_healthy "$LAST_WEB_IMAGE" || die "rollback drill baseline is not healthy or does not use the last-success image"
+  CURRENT_CONTAINER_PORT="$PROFILE_CONTAINER_PORT"
+  CURRENT_HEALTH_PATH="$PROFILE_HEALTH_PATH"
+  CURRENT_SMOKE_PATHS="$PROFILE_SMOKE_PATHS"
+  smoke_web || die "rollback drill baseline smoke failed"
+}
+
+validate_interrupted_drill_recovery() {
+  prepare_rollback_baseline
+  [[ "$LAST_API_MANIFEST" == "$CURRENT_API_MANIFEST" &&
+     "$LAST_API_RUN_ID" == "$CURRENT_API_RUN_ID" &&
+     "$LAST_API_IMAGE" == "$CURRENT_API_IMAGE" &&
+     "$LAST_OPENAPI_SHA256" == "$CURRENT_OPENAPI_SHA256" ]] ||
+    die "interrupted rollback drill candidate and last-success API tuples differ"
+  api_gate local
+}
+
+end_drill_tracking() {
+  DRILL_ACTIVE=0
+  DRILL_MUTATED=0
+  trap - ERR INT TERM
+}
+
+last_success_is_completed_candidate() {
+  local expected_rollback_status="$1" expected_message_code="$2"
+  local file="$CD_STATE_DIR/last-success.json" application status stage manifest_digest source_commit source_run_id
+  local source_run_attempt web_image compose_sha api_manifest api_run_id api_image openapi_sha configuration_sha
+  local rollback_status message_code workflow_url
+  [[ -e "$file" || -L "$file" ]] || return 1
+  validate_restricted_file "$file"
+  application="$(state_get "$file" application)" || die "could not read completed drill application"
+  status="$(state_get "$file" status)" || die "could not read completed drill status"
+  stage="$(state_get "$file" stage)" || die "could not read completed drill stage"
+  manifest_digest="$(state_get "$file" manifestDigest)" || die "could not read completed drill manifest digest"
+  source_commit="$(state_get "$file" sourceCommit)" || die "could not read completed drill source commit"
+  source_run_id="$(state_get "$file" sourceRunId)" || die "could not read completed drill source run ID"
+  source_run_attempt="$(state_get "$file" sourceRunAttempt)" || die "could not read completed drill source run attempt"
+  web_image="$(state_get "$file" webImage)" || die "could not read completed drill web image"
+  compose_sha="$(state_get "$file" webComposeSha256)" || die "could not read completed drill Compose hash"
+  api_manifest="$(state_get "$file" apiManifest)" || die "could not read completed drill API manifest"
+  api_run_id="$(state_get "$file" apiRunId)" || die "could not read completed drill API run ID"
+  api_image="$(state_get "$file" apiImage)" || die "could not read completed drill API image"
+  openapi_sha="$(state_get "$file" openApiSha256)" || die "could not read completed drill OpenAPI hash"
+  configuration_sha="$(state_get "$file" configurationSha256)" || die "could not read completed drill configuration hash"
+  rollback_status="$(state_get "$file" rollbackStatus)" || die "could not read completed drill rollback status"
+  message_code="$(state_get "$file" messageCode)" || die "could not read completed drill message code"
+  workflow_url="$(state_get "$file" workflowUrl)" || die "could not read completed drill workflow URL"
+  [[ "$application" == "$APPLICATION" &&
+     "$status" == succeeded &&
+     "$stage" == complete &&
+     "$manifest_digest" == "$CURRENT_MANIFEST_DIGEST" &&
+     "$source_commit" == "$CURRENT_SOURCE_COMMIT" &&
+     "$source_run_id" == "$CURRENT_SOURCE_RUN_ID" &&
+     "$source_run_attempt" == "$CURRENT_SOURCE_RUN_ATTEMPT" &&
+     "$web_image" == "$CURRENT_WEB_IMAGE" &&
+     "$compose_sha" == "$CURRENT_WEB_COMPOSE_SHA256" &&
+     "$api_manifest" == "$CURRENT_API_MANIFEST" &&
+     "$api_run_id" == "$CURRENT_API_RUN_ID" &&
+     "$api_image" == "$CURRENT_API_IMAGE" &&
+     "$openapi_sha" == "$CURRENT_OPENAPI_SHA256" &&
+     "$configuration_sha" == "$CURRENT_CONFIGURATION_SHA256" &&
+     "$rollback_status" == "$expected_rollback_status" &&
+     "$message_code" == "$expected_message_code" &&
+     "$workflow_url" == "$CURRENT_WORKFLOW_URL" ]]
+}
+
+last_success_is_completed_drill_candidate() {
+  last_success_is_completed_candidate succeeded promotion_with_rollback_drill_succeeded
+}
+
+last_success_is_completed_ordinary_candidate() {
+  last_success_is_completed_candidate not-required promotion_succeeded
+}
+
+select_finalization_recovery_state() {
+  local requested_attempt="$(attempt_file "$REQUESTED_DIGEST")" current="$CD_STATE_DIR/current.json"
+  local file status digest message_code
+  FINALIZATION_RECOVERY_STATE=""
+  for file in "$requested_attempt" "$current"; do
+    [[ -e "$file" || -L "$file" ]] || continue
+    validate_restricted_file "$file"
+    status="$(state_get "$file" status)" || die "could not read finalization recovery status"
+    [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+      die "finalization recovery state status is invalid"
+    digest="$(state_get "$file" manifestDigest)" || die "could not read finalization recovery digest"
+    [[ -z "$digest" || "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "finalization recovery state digest is invalid"
+    if [[ "$file" == "$requested_attempt" && "$digest" != "$REQUESTED_DIGEST" ]]; then
+      die "requested web attempt digest does not match its state path"
+    fi
+    message_code="$(state_get "$file" messageCode)" || die "could not read finalization recovery message code"
+    if [[ "$status" == failed && "$digest" == "$REQUESTED_DIGEST" &&
+          "$message_code" == rollback_drill_finalization_recovery_failed ]]; then
+      FINALIZATION_RECOVERY_STATE="$file"
+      return 0
+    fi
+  done
+  return 1
+}
+
+reconcile_completed_drill() {
+  local gate_status
+  command_pause_internal
+  log "reconciling a rollback drill interrupted during final state persistence"
+  if (( DRILL_ACTIVE == 0 )); then
+    if (drill_preflight local); then :; else
+      gate_status=$?
+      log "completed rollback drill state could not be reconciled because preflight no longer passes"
+      return "$gate_status"
+    fi
+  fi
+  if rollback; then
+    CURRENT_STAGE=complete
+    CURRENT_ROLLBACK_STATUS=succeeded
+    if ! persist_attempt succeeded complete promotion_with_rollback_drill_succeeded; then
+      log "completed rollback drill state reconciliation could not persist current and attempt state"
+      return 1
+    fi
+    log "completed rollback drill state reconciled; controller remains paused"
+    return 0
+  fi
+  CURRENT_ROLLBACK_STATUS=failed
+  command_pause_internal
+  persist_attempt failed interrupted rollback_drill_finalization_recovery_failed
+  log "completed rollback drill candidate could not be revalidated; controller remains paused"
+  return 1
+}
+
+recover_interrupted_drill() {
+  local gate_status
+  command_pause_internal
+  CURRENT_STAGE=interrupted
+  if (validate_interrupted_drill_recovery); then :; else
+    gate_status=$?
+    CURRENT_ROLLBACK_STATUS=not-required
+    command_pause_internal
+    persist_attempt running interrupted rollback_drill_interrupted_recovery_deferred
+    log "interrupted rollback drill recovery deferred without mutating the web; restore the exact API tuple and invoke the same digest again"
+    return "$gate_status"
+  fi
+  if rollback; then
+    persist_attempt failed interrupted rollback_drill_interrupted_rolled_back
+    log "interrupted rollback drill restored last-success; another explicit invocation is required"
+  else
+    CURRENT_ROLLBACK_STATUS=failed
+    command_pause_internal
+    persist_attempt failed interrupted rollback_drill_interrupted_rollback_failed
+    log "interrupted rollback drill could not restore last-success; controller remains paused"
+  fi
+  return 1
+}
+
+contain_failed_drill_leg() {
+  local stage="$1" recovered_code="$2" failed_code="$3" description="$4"
+  command_pause_internal
+  if rollback; then
+    persist_attempt failed "$stage" "$recovered_code"
+    log "$description failed at stage=$stage; last-success restored and controller remains paused"
+  else
+    CURRENT_ROLLBACK_STATUS=failed
+    command_pause_internal
+    persist_attempt failed "$stage" "$failed_code"
+    log "$description and containment rollback failed at stage=$stage; controller remains paused"
+  fi
+  end_drill_tracking
+  return 1
+}
+
+fail_drill_rollback() {
+  command_pause_internal
+  CURRENT_ROLLBACK_STATUS=failed
+  persist_attempt failed rollback rollback_drill_rollback_failed
+  log "rollback drill could not restore last-success; controller remains paused"
+  end_drill_tracking
+  return 1
+}
+
+handle_drill_signal() {
+  local signal="$1" exit_code="$2" message_code
+  (( DRILL_ACTIVE == 1 && DRILL_SIGNAL_HANDLING == 0 )) || exit "$exit_code"
+  DRILL_SIGNAL_HANDLING=1
+  trap - ERR INT TERM
+  set +e
+  command_pause_internal
+  if last_success_is_completed_drill_candidate; then
+    if reconcile_completed_drill; then
+      log "rollback drill interrupted by SIG$signal after final acceptance; completed state was reconciled"
+    else
+      log "rollback drill interrupted by SIG$signal after final acceptance; state reconciliation remains incomplete"
+    fi
+    exit "$exit_code"
+  fi
+  if (( DRILL_MUTATED == 1 )); then
+    if rollback; then
+      message_code=rollback_drill_interrupted_rolled_back
+    else
+      CURRENT_ROLLBACK_STATUS=failed
+      command_pause_internal
+      message_code=rollback_drill_interrupted_rollback_failed
+    fi
+  else
+    message_code=rollback_drill_interrupted_at_safe_baseline
+  fi
+  persist_attempt failed "${CURRENT_STAGE:-interrupted}" "$message_code"
+  log "rollback drill interrupted by SIG$signal; controller remains paused"
+  exit "$exit_code"
+}
+
+handle_drill_error() {
+  local exit_code="$1" message_code
+  (( DRILL_ACTIVE == 1 && DRILL_SIGNAL_HANDLING == 0 )) || return "$exit_code"
+  DRILL_SIGNAL_HANDLING=1
+  trap - ERR INT TERM
+  set +e
+  command_pause_internal
+  if last_success_is_completed_drill_candidate; then
+    if reconcile_completed_drill; then
+      log "rollback drill hit an unexpected error after final acceptance; completed state was reconciled"
+    fi
+    exit "$exit_code"
+  fi
+  if (( DRILL_MUTATED == 1 )); then
+    if rollback; then
+      message_code=rollback_drill_unexpected_error_rolled_back
+    else
+      CURRENT_ROLLBACK_STATUS=failed
+      command_pause_internal
+      message_code=rollback_drill_unexpected_error_rollback_failed
+    fi
+  else
+    message_code=rollback_drill_unexpected_error_at_safe_baseline
+  fi
+  persist_attempt failed "${CURRENT_STAGE:-interrupted}" "$message_code"
+  log "rollback drill stopped on an unexpected error; controller remains paused"
+  exit "$exit_code"
+}
+
 fail_deployment() {
   local stage="$1"
   if rollback; then
@@ -636,25 +1152,102 @@ deploy() {
 }
 candidate_is_newer() {
   [[ -f "$CD_STATE_DIR/last-success.json" ]] || return 0
-  local accepted; accepted="$(state_get "$CD_STATE_DIR/last-success.json" sourceRunId)"
+  local accepted
+  accepted="$(state_get "$CD_STATE_DIR/last-success.json" sourceRunId)" || die "could not read accepted web source run ID"
   [[ -z "$accepted" ]] || (( 10#$CURRENT_SOURCE_RUN_ID > 10#$accepted ))
 }
+
+recover_pending_attempt_before_poll() {
+  local current="$CD_STATE_DIR/current.json" application status stage digest rollback_status message_code
+  local attempt attempt_status attempt_digest current_kind
+  [[ -e "$current" || -L "$current" ]] || return 0
+  if ! (validate_restricted_file "$current"); then pause_and_die "current web state is unsafe for polling"; fi
+  application="$(state_get "$current" application)" || pause_and_die "could not read current web application before polling"
+  status="$(state_get "$current" status)" || pause_and_die "could not read current web status before polling"
+  [[ "$application" == "$APPLICATION" ]] || pause_and_die "current web state application is invalid for polling"
+  [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+    pause_and_die "current web state status is invalid for polling"
+
+  if [[ "$status" == running ]]; then
+    command_pause_internal
+    load_running_attempt_context "$current"
+    classify_loaded_running_attempt || pause_and_die "running web attempt tuple is invalid for polling"
+    if [[ "$RUNNING_ATTEMPT_KIND" == drill ]]; then
+      pause_and_die "poll found a running rollback drill; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+    fi
+    recover_or_reconcile_loaded_ordinary_attempt
+    return 1
+  fi
+
+  stage="$(state_get "$current" stage)" || pause_and_die "could not read current web stage before polling"
+  digest="$(state_get "$current" manifestDigest)" || pause_and_die "could not read current web digest before polling"
+  rollback_status="$(state_get "$current" rollbackStatus)" || pause_and_die "could not read current web rollback status before polling"
+  message_code="$(state_get "$current" messageCode)" || pause_and_die "could not read current web message code before polling"
+  [[ "$rollback_status" == not-required || "$rollback_status" == succeeded || "$rollback_status" == failed ]] ||
+    pause_and_die "current web rollback status is invalid for polling"
+  [[ -n "$stage" && -n "$message_code" ]] || pause_and_die "current web stage or message code is invalid for polling"
+  if [[ "$status" == adopted ]]; then
+    [[ -z "$digest" ]] || pause_and_die "adopted current web state has an unexpected manifest digest"
+  else
+    [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || pause_and_die "current web state digest is invalid for polling"
+  fi
+  [[ "$rollback_status" != failed ]] || pause_and_die "current web rollback status is failed; polling remains paused"
+  [[ "$message_code" != rollback_drill_* ]] || pause_and_die "failed rollback drill state must be resolved before polling"
+  classify_terminal_resume_state "$status" "$stage" "$rollback_status" "$message_code" ||
+    pause_and_die "current terminal web state tuple is invalid for polling"
+  current_kind="$TERMINAL_STATE_KIND"
+  [[ -n "$digest" ]] || return 0
+
+  attempt="$(attempt_file "$digest")"
+  [[ -e "$attempt" || -L "$attempt" ]] || return 0
+  if ! (validate_restricted_file "$attempt"); then pause_and_die "matching web attempt is unsafe for polling"; fi
+  attempt_status="$(state_get "$attempt" status)" || pause_and_die "could not read matching web attempt status before polling"
+  attempt_digest="$(state_get "$attempt" manifestDigest)" || pause_and_die "could not read matching web attempt digest before polling"
+  [[ "$attempt_status" == running || "$attempt_status" == succeeded || "$attempt_status" == failed ]] ||
+    pause_and_die "matching web attempt status is invalid for polling"
+  [[ "$attempt_digest" == "$digest" ]] || pause_and_die "matching web attempt digest conflicts with current state"
+  validate_matching_attempt_invariants "$current" "$attempt"
+  [[ "$attempt_status" == running ]] || return 0
+
+  command_pause_internal
+  load_running_attempt_context "$attempt"
+  classify_loaded_running_attempt || pause_and_die "matching running web attempt tuple is invalid for polling"
+  [[ "$RUNNING_ATTEMPT_KIND" == "$current_kind" ]] || pause_and_die "current and matching running web attempt kinds conflict during polling"
+  if [[ "$RUNNING_ATTEMPT_KIND" == drill ]]; then
+    pause_and_die "poll found a running rollback drill; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+  fi
+  recover_or_reconcile_loaded_ordinary_attempt
+  return 1
+}
+
 command_poll() {
   is_paused && { log "controller is paused; poll skipped"; return 0; }
-  local digest attempt status gate_status
+  local digest attempt application attempt_digest status gate_status
   digest="$(resolve_alias_digest)"; load_manifest "$digest"
   if [[ -f "$CD_STATE_DIR/last-success.json" && "$(state_get "$CD_STATE_DIR/last-success.json" manifestDigest)" == "$digest" ]]; then log "manifest=$digest is already accepted; poll is a no-op"; return 0; fi
   candidate_is_newer || { log "manifest=$digest is older than or equal to the accepted workflow run; poll is a no-op"; return 0; }
   attempt="$(attempt_file "$digest")"
-  if [[ -f "$attempt" ]]; then
-    status="$(state_get "$attempt" status)"
+  if [[ -e "$attempt" || -L "$attempt" ]]; then
+    if ! (validate_restricted_file "$attempt"); then pause_and_die "advertised web attempt state is unsafe"; fi
+    application="$(state_get "$attempt" application)" || pause_and_die "could not read advertised web attempt application"
+    attempt_digest="$(state_get "$attempt" manifestDigest)" || pause_and_die "could not read advertised web attempt digest"
+    status="$(state_get "$attempt" status)" || pause_and_die "could not read advertised web attempt status"
+    [[ "$application" == "$APPLICATION" && "$attempt_digest" == "$digest" ]] ||
+      pause_and_die "advertised web attempt scope or digest is invalid"
     case "$status" in
       succeeded|adopted) log "manifest=$digest is already accepted; poll is a no-op"; return 0 ;;
       failed) log "manifest=$digest previously failed; automatic retry is disabled"; return 0 ;;
       running)
-        if rollback; then persist_attempt failed interrupted interrupted_attempt_rolled_back; else CURRENT_ROLLBACK_STATUS=failed; command_pause_internal; persist_attempt failed interrupted interrupted_attempt_rollback_failed; fi
-        log "manifest=$digest had an interrupted attempt; explicit retry is required"; return 0 ;;
-      *) die "attempt state contains an unsupported status" ;;
+        command_pause_internal
+        load_running_attempt_context "$attempt"
+        classify_loaded_running_attempt || pause_and_die "advertised running web attempt tuple is invalid for polling"
+        if [[ "$RUNNING_ATTEMPT_KIND" == drill ]]; then
+          pause_and_die "poll found a running rollback drill; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+        fi
+        recover_or_reconcile_loaded_ordinary_attempt || return $?
+        return 1
+        ;;
+      *) pause_and_die "advertised web attempt state contains an unsupported status" ;;
     esac
   fi
   if api_gate; then :; else gate_status=$?; [[ "$gate_status" == 2 ]] && return 0; return "$gate_status"; fi
@@ -667,12 +1260,150 @@ command_dry_run() {
   log "dry-run passed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST"
 }
 command_retry() {
-  is_paused && die "controller is paused"
   local advertised attempt
+  if select_running_attempt_state; then
+    load_running_attempt_context "$RUNNING_ATTEMPT_STATE"
+    classify_loaded_running_attempt || pause_and_die "running web attempt tuple is invalid before retry"
+    if [[ "$RUNNING_ATTEMPT_KIND" == ordinary ]]; then
+      pause_and_die "an ordinary web promotion attempt is running; recover it first with --resume"
+    fi
+    pause_and_die "a rollback drill is running; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+  fi
+  is_paused && die "controller is paused"
   advertised="$(resolve_alias_digest)"; [[ "$advertised" == "$REQUESTED_DIGEST" ]] || die "retry digest is not currently advertised"
   load_manifest "$REQUESTED_DIGEST"; candidate_is_newer || die "retry manifest is not newer than last success"
   attempt="$(attempt_file "$REQUESTED_DIGEST")"; [[ -f "$attempt" && "$(state_get "$attempt" status)" == failed ]] || die "only a recorded failed manifest may be retried"
   api_gate || die "API compatibility gate did not pass"; deploy
+}
+command_promote_with_rollback_drill() {
+  is_paused || die "--promote-with-rollback-drill requires the selected profile to be paused"
+  local advertised attempt attempt_status="" baseline_digest gate_status
+  if select_running_attempt_state; then
+    load_running_attempt_context "$RUNNING_ATTEMPT_STATE"
+    if ! classify_loaded_running_attempt; then
+      command_pause_internal
+      die "running web attempt stage, message code or rollback status is invalid"
+    fi
+    if [[ "$RUNNING_ATTEMPT_KIND" == ordinary ]]; then
+      command_pause_internal
+      die "an ordinary web promotion attempt is running; recover it first with --resume"
+    fi
+    [[ "$CURRENT_MANIFEST_DIGEST" == "$REQUESTED_DIGEST" ]] ||
+      die "a different rollback drill digest is running; invoke --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST to recover it"
+    if last_success_is_completed_drill_candidate; then
+      reconcile_completed_drill
+      return
+    fi
+    recover_interrupted_drill
+    return 1
+  fi
+  if select_finalization_recovery_state; then
+    load_attempt_context "$FINALIZATION_RECOVERY_STATE" failed
+    [[ "$CURRENT_MANIFEST_DIGEST" == "$REQUESTED_DIGEST" ]] || die "finalization recovery digest does not match the explicit request"
+    [[ "$CURRENT_STAGE" == interrupted && "$CURRENT_ROLLBACK_STATUS" == failed &&
+       "$CURRENT_MESSAGE_CODE" == rollback_drill_finalization_recovery_failed ]] ||
+      die "rollback drill finalization recovery state is invalid"
+    last_success_is_completed_drill_candidate ||
+      die "finalization recovery state does not match the completed last-success candidate"
+    reconcile_completed_drill
+    return
+  fi
+
+  advertised="$(resolve_alias_digest)"
+  [[ "$advertised" == "$REQUESTED_DIGEST" ]] || die "rollback drill digest is not currently advertised"
+  load_manifest "$REQUESTED_DIGEST"
+
+  attempt="$(attempt_file "$REQUESTED_DIGEST")"
+  if [[ -f "$attempt" ]]; then attempt_status="$(state_get "$attempt" status)" || die "could not read rollback drill attempt status"; fi
+  case "$attempt_status" in
+    "") ;;
+    failed) log "explicit rollback drill retry accepted for manifest=$REQUESTED_DIGEST" ;;
+    succeeded|adopted) die "rollback drill manifest was already accepted" ;;
+    *) die "rollback drill attempt state contains an unsupported status" ;;
+  esac
+
+  load_last_success || die "rollback drill requires a certified last-success baseline"
+  [[ "$LAST_SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "rollback drill baseline run ID is invalid"
+  baseline_digest="$(state_get "$CD_STATE_DIR/last-success.json" manifestDigest)"
+  [[ -z "$baseline_digest" || "$baseline_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "rollback drill baseline manifest digest is invalid"
+  [[ "$baseline_digest" != "$REQUESTED_DIGEST" ]] ||
+    die "rollback drill candidate must differ from last-success"
+  (( 10#$CURRENT_SOURCE_RUN_ID > 10#$LAST_SOURCE_RUN_ID )) ||
+    die "rollback drill candidate is not strictly newer than last-success"
+  validate_drill_baseline
+  if (drill_preflight); then :; else
+    gate_status=$?
+    log "rollback drill preflight failed before live mutation"
+    return "$gate_status"
+  fi
+
+  DRILL_SIGNAL_HANDLING=0
+  DRILL_ACTIVE=1
+  DRILL_MUTATED=0
+  trap 'handle_drill_error $?' ERR
+  trap 'handle_drill_signal INT 130' INT
+  trap 'handle_drill_signal TERM 143' TERM
+
+  begin_stage drill-deploy
+  DRILL_MUTATED=1
+  set_env_image "$CURRENT_WEB_IMAGE" || {
+    contain_failed_drill_leg drill-deploy rollback_drill_candidate_failed_rolled_back rollback_drill_candidate_and_rollback_failed "rollback drill candidate deployment"
+    return 1
+  }
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" up -d --pull never --no-build --no-deps --force-recreate "$CD_SERVICE" || {
+    contain_failed_drill_leg drill-deploy rollback_drill_candidate_failed_rolled_back rollback_drill_candidate_and_rollback_failed "rollback drill candidate deployment"
+    return 1
+  }
+  complete_stage
+  begin_stage drill-health
+  wait_healthy "$CURRENT_WEB_IMAGE" || {
+    contain_failed_drill_leg drill-health rollback_drill_candidate_failed_rolled_back rollback_drill_candidate_and_rollback_failed "rollback drill candidate validation"
+    return 1
+  }
+  complete_stage
+  begin_stage drill-smoke
+  smoke_web || {
+    contain_failed_drill_leg drill-smoke rollback_drill_candidate_failed_rolled_back rollback_drill_candidate_and_rollback_failed "rollback drill candidate validation"
+    return 1
+  }
+
+  complete_stage
+  begin_stage drill-rollback
+  if ! rollback; then fail_drill_rollback; return 1; fi
+  DRILL_MUTATED=0
+
+  complete_stage
+  begin_stage drill-repromote
+  DRILL_MUTATED=1
+  set_env_image "$CURRENT_WEB_IMAGE" || {
+    contain_failed_drill_leg drill-repromote rollback_drill_repromotion_failed_rolled_back rollback_drill_repromotion_and_rollback_failed "rollback drill candidate re-promotion"
+    return 1
+  }
+  web_compose "$CURRENT_WEB_COMPOSE_PATH" "$CURRENT_WEB_IMAGE" up -d --pull never --no-build --no-deps --force-recreate "$CD_SERVICE" || {
+    contain_failed_drill_leg drill-repromote rollback_drill_repromotion_failed_rolled_back rollback_drill_repromotion_and_rollback_failed "rollback drill candidate re-promotion"
+    return 1
+  }
+  complete_stage
+  begin_stage drill-repromote-health
+  wait_healthy "$CURRENT_WEB_IMAGE" || {
+    contain_failed_drill_leg drill-repromote-health rollback_drill_repromotion_failed_rolled_back rollback_drill_repromotion_and_rollback_failed "rollback drill candidate re-promotion"
+    return 1
+  }
+  complete_stage
+  begin_stage drill-repromote-smoke
+  smoke_web || {
+    contain_failed_drill_leg drill-repromote-smoke rollback_drill_repromotion_failed_rolled_back rollback_drill_repromotion_and_rollback_failed "rollback drill candidate re-promotion"
+    return 1
+  }
+
+  complete_stage
+  CURRENT_STAGE=complete
+  CURRENT_ROLLBACK_STATUS=succeeded
+  write_state_file "$CD_STATE_DIR/last-success.json" succeeded complete promotion_with_rollback_drill_succeeded
+  persist_attempt succeeded complete promotion_with_rollback_drill_succeeded
+  end_drill_tracking
+  log "promotion with rollback drill completed commit=$CURRENT_SOURCE_COMMIT manifest=$CURRENT_MANIFEST_DIGEST; controller remains paused"
 }
 command_adopt_current() {
   is_paused && die "controller is paused"
@@ -708,7 +1439,179 @@ command_pause_internal() {
   chmod 0600 -- "$temporary"; printf 'paused\n' > "$temporary"; mv -fT -- "$temporary" "$CD_STATE_DIR/paused"
 }
 command_pause() { command_pause_internal; log "controller paused"; }
-command_resume() { rm -f -- "$CD_STATE_DIR/paused"; log "controller resumed"; }
+
+pause_and_die() {
+  command_pause_internal
+  die "$*"
+}
+
+validate_resume_recovery_runtime() {
+  [[ -f "$CD_COMPOSE" && ! -L "$CD_COMPOSE" ]] || die "live web Compose is unavailable"
+  validate_restricted_file "$CD_ENV"
+  validate_restricted_file "$CD_API_STATE"
+  [[ -d "$CD_DOCKER_CONFIG" && ! -L "$CD_DOCKER_CONFIG" ]] || die "Docker configuration directory is unavailable"
+  docker_command version >/dev/null || die "Docker daemon is unavailable"
+  docker_command compose version >/dev/null || die "Docker Compose plugin is unavailable"
+}
+
+recover_interrupted_ordinary_attempt() {
+  command_pause_internal
+  validate_resume_recovery_runtime
+  CURRENT_STAGE=interrupted
+  if rollback; then
+    if ! persist_attempt failed interrupted interrupted_attempt_rolled_back; then
+      log "interrupted ordinary promotion rollback succeeded but its state could not be persisted; controller remains paused"
+      return 1
+    fi
+    log "interrupted ordinary promotion restored last-success; invoke --resume again after reviewing the failed attempt"
+  else
+    CURRENT_ROLLBACK_STATUS=failed
+    command_pause_internal
+    if ! persist_attempt failed interrupted interrupted_attempt_rollback_failed; then
+      log "interrupted ordinary promotion rollback and failure-state persistence both failed; controller remains paused"
+      return 1
+    fi
+    log "interrupted ordinary promotion could not restore last-success; controller remains paused"
+  fi
+  return 1
+}
+
+reconcile_completed_ordinary_promotion() {
+  local gate_status
+  command_pause_internal
+  validate_resume_recovery_runtime
+  if (drill_preflight local); then :; else
+    gate_status=$?
+    log "completed ordinary promotion state could not be reconciled because local preflight no longer passes"
+    return "$gate_status"
+  fi
+  if rollback; then
+    CURRENT_STAGE=complete
+    CURRENT_ROLLBACK_STATUS=not-required
+    if ! persist_attempt succeeded complete promotion_succeeded; then
+      log "completed ordinary promotion state reconciliation could not persist current and attempt state"
+      return 1
+    fi
+    log "completed ordinary promotion state reconciled; invoke --resume again after reviewing it"
+    return 0
+  fi
+  CURRENT_ROLLBACK_STATUS=failed
+  command_pause_internal
+  if ! persist_attempt failed interrupted interrupted_attempt_rollback_failed; then
+    log "completed ordinary promotion revalidation and failure-state persistence both failed; controller remains paused"
+    return 1
+  fi
+  log "completed ordinary promotion could not be revalidated; controller remains paused"
+  return 1
+}
+
+recover_or_reconcile_loaded_ordinary_attempt() {
+  [[ "$RUNNING_ATTEMPT_KIND" == ordinary ]] || pause_and_die "internal ordinary promotion recovery classification is invalid"
+  if last_success_is_completed_ordinary_candidate; then
+    if reconcile_completed_ordinary_promotion; then :; fi
+    return 1
+  fi
+  recover_interrupted_ordinary_attempt
+  return 1
+}
+
+command_resume() {
+  local current="$CD_STATE_DIR/current.json" application status stage digest rollback_status message_code
+  local attempt attempt_application attempt_status attempt_stage attempt_digest attempt_rollback_status attempt_message_code
+  local current_kind attempt_kind
+  if [[ ! -e "$current" && ! -L "$current" ]]; then
+    rm -f -- "$CD_STATE_DIR/paused"
+    log "controller resumed"
+    return
+  fi
+
+  # Once state exists, create or retain the pause marker before parsing it. Any
+  # malformed or ambiguous tuple must fail closed even if --resume was invoked
+  # while the marker was accidentally absent.
+  command_pause_internal
+  validate_restricted_file "$current"
+  application="$(state_get "$current" application)" || die "could not read current web attempt application"
+  status="$(state_get "$current" status)" || die "could not read current web attempt status"
+  stage="$(state_get "$current" stage)" || die "could not read current web attempt stage"
+  digest="$(state_get "$current" manifestDigest)" || die "could not read current web attempt digest"
+  rollback_status="$(state_get "$current" rollbackStatus)" || die "could not read current web attempt rollback status"
+  message_code="$(state_get "$current" messageCode)" || die "could not read current web attempt message code"
+  [[ "$application" == "$APPLICATION" ]] || pause_and_die "current web attempt application is invalid"
+  [[ "$status" == running || "$status" == succeeded || "$status" == failed || "$status" == adopted ]] ||
+    pause_and_die "current web attempt status is invalid"
+  [[ "$rollback_status" == not-required || "$rollback_status" == succeeded || "$rollback_status" == failed ]] ||
+    pause_and_die "current web attempt rollback status is invalid"
+  [[ -n "$stage" && -n "$message_code" ]] || pause_and_die "current web attempt stage or message code is invalid"
+  if [[ "$status" == adopted ]]; then
+    [[ -z "$digest" ]] || pause_and_die "adopted current web state has an unexpected manifest digest"
+  else
+    [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || pause_and_die "current web attempt manifest digest is invalid"
+  fi
+
+  if [[ "$status" == running ]]; then
+    load_running_attempt_context "$current"
+    classify_loaded_running_attempt || pause_and_die "running web attempt stage, message code or rollback status is invalid"
+    if [[ "$RUNNING_ATTEMPT_KIND" == drill ]]; then
+      pause_and_die "controller has a running rollback drill; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+    fi
+    recover_or_reconcile_loaded_ordinary_attempt
+    return 1
+  fi
+
+  [[ "$rollback_status" != failed ]] || pause_and_die "current web rollback status is failed; manual recovery is required before resume"
+  [[ "$message_code" != rollback_drill_* ]] ||
+    pause_and_die "a failed rollback drill must be resolved with --promote-with-rollback-drill $digest before resume"
+  classify_terminal_resume_state "$status" "$stage" "$rollback_status" "$message_code" ||
+    pause_and_die "current web state stage, message code or rollback status is invalid for resume"
+  current_kind="$TERMINAL_STATE_KIND"
+
+  if [[ -n "$digest" ]]; then
+    attempt="$(attempt_file "$digest")"
+    if [[ -e "$attempt" || -L "$attempt" ]]; then
+      validate_restricted_file "$attempt"
+      attempt_application="$(state_get "$attempt" application)" || die "could not read matching web attempt application"
+      attempt_status="$(state_get "$attempt" status)" || die "could not read matching web attempt status"
+      attempt_stage="$(state_get "$attempt" stage)" || die "could not read matching web attempt stage"
+      attempt_digest="$(state_get "$attempt" manifestDigest)" || die "could not read matching web attempt digest"
+      attempt_rollback_status="$(state_get "$attempt" rollbackStatus)" || die "could not read matching web attempt rollback status"
+      attempt_message_code="$(state_get "$attempt" messageCode)" || die "could not read matching web attempt message code"
+      [[ "$attempt_application" == "$APPLICATION" && "$attempt_digest" == "$digest" ]] ||
+        pause_and_die "matching web attempt scope or digest is invalid"
+      validate_matching_attempt_invariants "$current" "$attempt"
+      [[ "$attempt_status" == running || "$attempt_status" == succeeded || "$attempt_status" == failed ]] ||
+        pause_and_die "matching web attempt status is invalid"
+      [[ "$attempt_rollback_status" == not-required || "$attempt_rollback_status" == succeeded || "$attempt_rollback_status" == failed ]] ||
+        pause_and_die "matching web attempt rollback status is invalid"
+      [[ -n "$attempt_stage" && -n "$attempt_message_code" ]] ||
+        pause_and_die "matching web attempt stage or message code is invalid"
+
+      if [[ "$attempt_status" == running ]]; then
+        load_running_attempt_context "$attempt"
+        classify_loaded_running_attempt || pause_and_die "running matching web attempt tuple is invalid"
+        attempt_kind="$RUNNING_ATTEMPT_KIND"
+        [[ "$attempt_kind" == "$current_kind" ]] || pause_and_die "current and matching running web attempt kinds conflict"
+        if [[ "$attempt_kind" == drill ]]; then
+          pause_and_die "controller has a running rollback drill; recover it with --promote-with-rollback-drill $CURRENT_MANIFEST_DIGEST"
+        fi
+        recover_or_reconcile_loaded_ordinary_attempt
+        return 1
+      fi
+
+      [[ "$attempt_rollback_status" != failed ]] || pause_and_die "matching web attempt rollback status is failed; manual recovery is required before resume"
+      [[ "$attempt_message_code" != rollback_drill_* ]] ||
+        pause_and_die "a matching failed rollback drill must be resolved before resume"
+      classify_terminal_resume_state "$attempt_status" "$attempt_stage" "$attempt_rollback_status" "$attempt_message_code" ||
+        pause_and_die "matching web attempt tuple is invalid for resume"
+      attempt_kind="$TERMINAL_STATE_KIND"
+      [[ "$attempt_kind" == "$current_kind" && "$attempt_status" == "$status" && "$attempt_stage" == "$stage" &&
+         "$attempt_rollback_status" == "$rollback_status" && "$attempt_message_code" == "$message_code" ]] ||
+        pause_and_die "current and matching terminal web attempt states conflict"
+    fi
+  fi
+
+  rm -f -- "$CD_STATE_DIR/paused"
+  log "controller resumed"
+}
 command_status() {
   if is_paused; then printf 'paused=true\n'; else printf 'paused=false\n'; fi
   printf 'application=%s\n' "$APPLICATION"
@@ -731,8 +1634,13 @@ main() {
   acquire_locks
   if [[ "$COMMAND" == poll && -e "$CD_STATE_DIR/paused" ]]; then log "controller is paused; poll skipped"; return; fi
   validate_runtime_files
+  if [[ "$COMMAND" == poll ]]; then
+    recover_pending_attempt_before_poll
+  fi
   case "$COMMAND" in
-    poll) command_poll ;; dry-run) command_dry_run ;; retry) command_retry ;; adopt-current) command_adopt_current ;;
+    poll) command_poll ;; dry-run) command_dry_run ;; retry) command_retry ;;
+    promote-with-rollback-drill) command_promote_with_rollback_drill ;;
+    adopt-current) command_adopt_current ;;
     pause) command_pause ;; resume) command_resume ;; *) die "internal command dispatch error" ;;
   esac
 }

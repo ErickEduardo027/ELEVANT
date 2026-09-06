@@ -171,10 +171,42 @@ Failure after deployment begins restores the prior immutable image with its
 cached certified Compose, then repeats health and baseline smoke checks. A
 successful rollback records the failed digest and disables automatic retries
 for it. A rollback failure writes the failure and pauses only that profile.
-Interrupted `running` attempts are also rolled back and require explicit retry.
-There is no image pull after `.env` changes: both deployment and rollback use
-only prevalidated local images with `--pull never`, so a registry outage cannot
-turn an otherwise viable local rollback into `rollback_failed`.
+Interrupted rollback-drill attempts are recovered only when the operator
+supplies that same digest. Recovery validates the persisted A/B API tuple
+against the active API using the already-local probe before restoring A. If
+that gate does not pass, the attempt remains `running/interrupted`, the profile
+remains paused and `--resume` is rejected until the exact API returns and
+recovery is invoked again. A different requested digest is rejected without
+mutation. There is no image pull after `.env` changes: both deployment and
+rollback use only prevalidated local images with `--pull never`, so a registry
+outage cannot turn an otherwise viable local rollback into `rollback_failed`.
+
+An interrupted ordinary promotion is kept distinct from a rollback drill. On a
+paused profile, the first `--resume` either reconciles an already committed
+success locally or restores the prior certified baseline with the ordinary
+rollback path. It records the result and deliberately leaves the profile
+paused; a second `--resume` is required after operator review. Ambiguous state,
+any `rollbackStatus=failed`, and every terminal rollback-drill failure remain
+fail-closed and cannot clear the pause.
+
+If an ordinary attempt is still running while its profile was not already
+paused, the next automatic `--poll` performs the same local containment or
+reconciliation before resolving the registry alias. That poll returns non-zero
+and creates the pause marker. Every later automatic poll is an absolute no-op
+until the operator reviews the state and explicitly resumes the profile.
+
+The acceptance rollback drill is an explicit, paused-profile operation. Given
+the exact advertised bundle digest, it requires a healthy accepted baseline A,
+a strictly newer certified candidate B and exact equality of the API manifest,
+run ID, image and OpenAPI fingerprint across A, B and the active API. It pulls,
+caches and validates every required artifact before the first live mutation,
+then performs B -> A -> B. Every leg uses `--pull never` and must pass container
+health plus all certified smoke paths. Success leaves the profile paused with
+`status=succeeded`, `stage=complete` and `rollbackStatus=succeeded`; the
+operator must still inspect runtime and isolation before resuming it. Any
+failure leaves the profile paused, restores A when possible and requires an
+explicit operator action. The ordinary schedule is never used to manufacture
+or simulate this drill.
 
 ## Install without enabling
 
@@ -223,6 +255,7 @@ C=/etc/dokploy/elevant/web-cd/elevant-web-cd
 $C --app aviam-web --status
 $C --app aviam-web --dry-run
 $C --app aviam-web --adopt-current
+$C --app aviam-web --promote-with-rollback-drill sha256:64_HEX
 $C --app aviam-web --poll
 $C --app aviam-web --pause
 $C --app aviam-web --resume
@@ -230,12 +263,30 @@ $C --app aviam-web --resume
 $C --app public-web --status
 $C --app public-web --dry-run
 $C --app public-web --adopt-current
+$C --app public-web --promote-with-rollback-drill sha256:64_HEX
 $C --app public-web --poll
 ```
 
 `--adopt-current` is one-time only and refuses a pre-existing baseline. It
 verifies image provenance, the exact active API, Compose validity, Docker
 health and in-container smoke before writing `adopted-current`.
+
+`--promote-with-rollback-drill` accepts only an exact `sha256:` bundle digest
+that is currently advertised and strictly newer than the accepted baseline.
+The selected profile must already be paused and remains paused whether the
+command succeeds or fails. Do not run a normal poll after B is published and
+before this command, because B must still be a new candidate for the drill. An
+interrupted rollback-drill attempt must be recovered by invoking this command
+with the digest reported by `--status`; `--resume` fails closed while the
+current state or its matching digest attempt remains `running`. It also rejects
+terminal drill failures and any failed rollback; a new or retried drill must
+first finish successfully.
+
+`--resume` is not a blind removal of the pause marker. If it finds an ordinary
+promotion interrupted in `preflight`, `deploy`, `health` or `smoke`, it performs
+or reconciles containment locally and remains paused. Review `--status`, then
+invoke `--resume` a second time only after that result is safe. A running drill
+must instead be recovered with its exact digest as described above.
 
 `--dry-run` never changes the image or state. `--poll` makes accepted and
 previously failed digests no-ops. A failed digest may be retried only when it is
@@ -247,8 +298,12 @@ $C --app aviam-web --retry sha256:64_HEX
 
 ## Schedules
 
-Create two disabled Dokploy schedules, test each manually, and enable only after
-adoption and a successful certified no-op. Both use cron `* * * * *`:
+Create two disabled Dokploy schedules. Keep each one disabled through controller
+installation, adoption, a dry run against a strictly newer candidate, the safe
+rollback drill and verification of controller state, runtime and isolation.
+Only after a successful drill may the operator resume that profile, run its
+disabled schedule manually and require a certified no-op, then enable it. Both
+use cron `* * * * *`:
 
 | Schedule | Command | Offset |
 | --- | --- | --- |
@@ -270,7 +325,10 @@ For each profile, retain sanitized evidence of:
 - API selection by one exact Compose project/service, immutable image equality
   and namespace-scoped OpenAPI probe with no extra published port;
 - local health/smoke and private Tailscale HTTPS checks;
-- controller adoption, promotion, automatic no-op and rollback drill;
+- controller adoption and a paused B -> A -> B promotion drill ending at
+  `succeeded/complete` with `rollbackStatus=succeeded`;
+- post-resume manual no-op before enabling the schedule, followed by an
+  automatic no-op;
 - API and database still healthy, no failed systemd units;
 - post-reboot recovery, schedules resuming and Funnel remaining off.
 

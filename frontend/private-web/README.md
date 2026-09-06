@@ -52,4 +52,17 @@ El runtime usa Nginx sin privilegios, UID `101`, puerto `8080`, raíz de solo le
 
 CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API certificada y los dos proveedores de mapas revisados.
 
+## Promoción en Development
+
+Los cambios de esta aplicación llegan al VPS solo después de fusionarse en
+`Development`, superar el carril AVIAM de CI y producir una imagen y un bundle
+inmutables. El tag `development-certified` sirve únicamente para descubrir el
+bundle; el controlador despliega siempre las referencias `@sha256` validadas.
+
+Antes de habilitar el schedule de una instalación nueva, el operador adopta
+primero la baseline A sana, luego pausa el perfil y lo mantiene pausado mientras
+ejecuta y verifica la promoción con rollback drill documentada por
+`ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
+repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
+
 Esta entrega es un **preview técnico de Development**. La API real solo tiene por ahora el contrato inicial del sistema; los adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.
