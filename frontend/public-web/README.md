@@ -53,6 +53,18 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 La interfaz ofrece una identidad `.test` solo para UX. Es material sintético, no una cuenta de Production. El formulario comercial permanece en modo preview y no transmite solicitudes mientras no exista su contrato de backend.
 
+## Criterio de promoción en Development
+
+Una candidata de Public Web solo puede promoverse cuando CI certifica de forma conjunta:
+
+- una imagen y un manifiesto OCI identificados por digest inmutable;
+- el commit y el workflow de origen en la rama `Development`;
+- el manifiesto de API requerido y el hash OpenAPI exacto;
+- el Compose revisado, con puerto loopback y una única red de runtime;
+- el healthcheck y las rutas de smoke test `/`, `/login` y `/health`.
+
+Un tag mutable o un redeploy manual no constituye una identidad de release. El controlador adopta una baseline revisada y después solo acepta ejecuciones certificadas más recientes; ante un fallo conserva la última versión saludable para rollback.
+
 ## Despliegue previsto
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
