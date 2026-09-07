@@ -17,8 +17,13 @@ valida su checkpoint.
 - Los Compose extraídos se almacenan por hash en el estado root-only. Antes de
   cualquier operación se compara su modelo renderizado con el de los archivos
   Raw vivos en Dokploy: se toleran comentarios/formato, no drift semántico.
-- Un lock compartido serializa promoción, backup y restore-check. Los estados se
-  escriben con `fsync` y reemplazo atómico. Una promoción fallida o interrumpida
+- Un lock compartido serializa promoción, backup y restore-check. Los polls y
+  operaciones de control fallan inmediatamente si está ocupado; backup y
+  restore-check esperan como máximo 900 segundos. Esa espera acotada evita que
+  un poll simultáneo consuma la única ventana diaria o semanal, sin permitir
+  operaciones SQL concurrentes. Un timeout termina en error visible y exige
+  investigación; no se trata como backup completado. Los estados se escriben con
+  `fsync` y reemplazo atómico. Una promoción fallida o interrumpida
   después de crear su intento no se reintenta automáticamente. Un fallo previo
   de resolución/extracción/validación se rechaza antes de SQL y puede evaluarse
   otra vez en el siguiente poll. El lock vive dentro del directorio de estado
@@ -235,6 +240,12 @@ recuperación si Tailscale u OpenSSH no están disponibles.
      `jobs/restore-check.job.sh`, cron `30 4 * * 0` UTC;
    - `ELEVANT Database CD - Poll`: `jobs/poll.job.sh`, cron
      `* * * * *` UTC.
+
+   El poll que coincide con backup o restore-check conserva su lock no
+   bloqueante. Los dos jobs de mantenimiento esperan hasta 900 segundos por el
+   mismo lock, por lo que una carrera de arranque no les hace perder su única
+   ejecución. Si agotan el timeout, el schedule debe quedar fallido y revisarse;
+   no se habilita un segundo job paralelo para compensarlo.
 
    No usar `server`, Application ni Compose Job: cada script debe ejecutarse
    dentro del contenedor Dokploy, donde están montados `/etc/dokploy`,

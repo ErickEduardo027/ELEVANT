@@ -324,7 +324,11 @@ Orden obligatorio:
 
    El contenido del campo Script debe coincidir con el archivo indicado y
    ejecutar el controlador/config mediante paths absolutos. No usar `server`,
-   Application ni Compose Job.
+   Application ni Compose Job. Dokploy puede iniciar simultáneamente el poll y
+   el mantenimiento del mismo minuto. El poll conserva adquisición no
+   bloqueante; backup y restore-check esperan hasta 900 segundos por el lock
+   compartido. Un timeout es fallo y debe investigarse, nunca reinterpretarse
+   como ejecución satisfactoria ni compensarse con otro job paralelo.
 10. En la **terminal SSH**, ejecutar un único `--poll` manual para el bundle del
     commit aprobado. Exigir `succeeded/complete`, la secuencia completa, lock
     común, cache íntegro, códigos cero, logs sanitizados y SQL healthy. Ejecutar

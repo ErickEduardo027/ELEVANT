@@ -69,6 +69,7 @@ assert_success_with_one_database_operation() {
 
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 [[ -n "$NODE_BIN" ]] || fail "node is required"
+REAL_FLOCK_BIN="$(command -v flock 2>/dev/null || true)"
 
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/elevant-database-cd-test.XXXXXX")"
 [[ "$TEST_TMP" == *elevant-database-cd-test.* ]] || fail "unsafe test temp path"
@@ -117,6 +118,7 @@ esac
 MOCK_BIN="$TEST_TMP/bin"
 MOCK_LOG="$TEST_TMP/docker.log"
 MOCK_OPS_LOG="$TEST_TMP/docker-ops.log"
+MOCK_FLOCK_LOG="$TEST_TMP/flock.log"
 MOCK_MANIFEST_FILE="$TEST_TMP/manifest.json"
 MOCK_DATABASE_PAYLOAD="$TEST_TMP/compose.development.database.yml"
 MOCK_RELEASE_PAYLOAD="$TEST_TMP/compose.development.release.yml"
@@ -152,7 +154,7 @@ printf '%s\n' 'OTHER_SECRET=not-a-real-secret' > "$RELEASE_ENV"
 chmod 0600 "$DATABASE_ENV" "$RELEASE_ENV"
 
 export MOCK_LOG MOCK_OPS_LOG MOCK_MANIFEST_FILE MOCK_DATABASE_PAYLOAD \
-  MOCK_RELEASE_PAYLOAD MOCK_IMAGE_REVISIONS
+  MOCK_RELEASE_PAYLOAD MOCK_IMAGE_REVISIONS MOCK_FLOCK_LOG
 export MOCK_MANIFEST_REPOSITORY="ghcr.io/example/elevant-db-release-manifest"
 export MOCK_OPS_REPOSITORY="ghcr.io/example/elevant-db-ops"
 export MOCK_RELEASE_REPOSITORY="ghcr.io/example/elevant-db-release"
@@ -262,6 +264,7 @@ chmod 0755 "$MOCK_BIN/docker"
 
 cat > "$MOCK_BIN/flock" <<'MOCK'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MOCK_FLOCK_LOG"
 [[ "${MOCK_FLOCK_FAIL:-0}" != "1" ]]
 MOCK
 chmod 0755 "$MOCK_BIN/flock"
@@ -338,6 +341,17 @@ chmod 0600 "$CONFIG_FILE"
 
 controller() {
   PATH="$MOCK_BIN:$PATH" \
+  ELEVANT_CD_TEST_MODE=1 \
+  ELEVANT_CD_DOCKER_BIN="$MOCK_BIN/docker" \
+  ELEVANT_CD_NODE_BIN="$NODE_BIN" \
+    bash "$CONTROLLER" --config "$CONFIG_FILE" "$@"
+}
+
+controller_with_real_flock() {
+  local real_flock_dir
+  [[ -n "$REAL_FLOCK_BIN" ]] || fail "real flock is required"
+  real_flock_dir="$(dirname -- "$REAL_FLOCK_BIN")"
+  PATH="$real_flock_dir:$MOCK_BIN:$PATH" \
   ELEVANT_CD_TEST_MODE=1 \
   ELEVANT_CD_DOCKER_BIN="$MOCK_BIN/docker" \
   ELEVANT_CD_NODE_BIN="$NODE_BIN" \
@@ -715,6 +729,7 @@ assert_success_with_one_database_operation \
 after_scheduled_operations="$(database_operation_count)"
 
 assert_success "pause failed" controller --pause
+: > "$MOCK_FLOCK_LOG"
 before_paused_docker_commands="$(wc -l < "$MOCK_LOG")"
 mv -- "$DATABASE_COMPOSE" "$TEST_TMP/paused-database-compose.backup"
 mv -- "$DATABASE_ENV" "$TEST_TMP/paused-database-env.backup"
@@ -724,6 +739,12 @@ export MOCK_FAIL_ALL=1
 assert_success "paused poll failed" controller --poll
 assert_success "paused backup failed" controller --backup
 assert_success "paused restore-check failed" controller --restore-check
+assert_equal '-n 9' "$(sed -n '1p' "$MOCK_FLOCK_LOG")" \
+  "poll did not retain a non-blocking lock"
+assert_equal '-w 900 9' "$(sed -n '2p' "$MOCK_FLOCK_LOG")" \
+  "scheduled backup did not use the bounded maintenance wait"
+assert_equal '-w 900 9' "$(sed -n '3p' "$MOCK_FLOCK_LOG")" \
+  "scheduled restore-check did not use the bounded maintenance wait"
 assert_equal "$after_scheduled_operations" "$(database_operation_count)" \
   "paused command executed SQL"
 assert_equal "$before_paused_docker_commands" "$(wc -l < "$MOCK_LOG")" \
@@ -854,8 +875,75 @@ mv -- "$TEST_TMP/live-release-compose.backup" "$RELEASE_COMPOSE"
 mv -- "$TEST_TMP/live-release-env.backup" "$RELEASE_ENV"
 
 export MOCK_FLOCK_FAIL=1
-assert_failure "controller ignored lock contention" controller --backup
+lock_failure_operations="$(database_operation_count)"
+if controller --backup > /dev/null 2> "$TEST_TMP/maintenance-lock.err"; then
+  fail "scheduled backup ignored a maintenance lock timeout"
+fi
+grep -Fq 'timed out waiting for another ELEVANT database operation' \
+  "$TEST_TMP/maintenance-lock.err" || \
+  fail "scheduled backup lock timeout was not explained"
+assert_equal "$lock_failure_operations" "$(database_operation_count)" \
+  "maintenance lock timeout executed a database operation"
+
+if controller --poll > /dev/null 2> "$TEST_TMP/poll-lock.err"; then
+  fail "poll ignored lock contention"
+fi
+grep -Fq 'another ELEVANT database operation is running' \
+  "$TEST_TMP/poll-lock.err" || \
+  fail "poll lock contention was not explained"
+assert_equal "$lock_failure_operations" "$(database_operation_count)" \
+  "poll lock contention executed a database operation"
 export MOCK_FLOCK_FAIL=0
+
+case "$(uname -s)" in
+  MINGW*|MSYS*) ;;
+  *)
+    lock_ready="$TEST_TMP/poll-lock-ready"
+    (
+      exec 8<>"$STATE_DIR/controller.lock"
+      "$REAL_FLOCK_BIN" -x 8
+      : > "$lock_ready"
+      sleep 2
+    ) &
+    lock_holder=$!
+    for _ in {1..100}; do
+      [[ -e "$lock_ready" ]] && break
+      sleep 0.01
+    done
+    [[ -e "$lock_ready" ]] || fail "poll lock holder did not become ready"
+
+    lock_failure_operations="$(database_operation_count)"
+    if controller_with_real_flock --poll \
+      > /dev/null 2> "$TEST_TMP/real-poll-lock.err"; then
+      fail "poll waited for a real busy lock"
+    fi
+    kill -0 "$lock_holder" 2>/dev/null || \
+      fail "poll did not fail before the real lock was released"
+    wait "$lock_holder"
+    assert_equal "$lock_failure_operations" "$(database_operation_count)" \
+      "real poll lock contention executed a database operation"
+
+    lock_ready="$TEST_TMP/maintenance-lock-ready"
+    (
+      exec 8<>"$STATE_DIR/controller.lock"
+      "$REAL_FLOCK_BIN" -x 8
+      : > "$lock_ready"
+      sleep 1
+    ) &
+    lock_holder=$!
+    for _ in {1..100}; do
+      [[ -e "$lock_ready" ]] && break
+      sleep 0.01
+    done
+    [[ -e "$lock_ready" ]] || \
+      fail "maintenance lock holder did not become ready"
+
+    assert_success_with_one_database_operation \
+      "scheduled backup did not wait for a transient real lock" \
+      controller_with_real_flock --backup
+    wait "$lock_holder"
+    ;;
+esac
 
 assert_success "status failed on valid atomic state" controller --status
 grep -Fq 'SECRET_VALUE' "$LOG_DIR/controller.log" && \

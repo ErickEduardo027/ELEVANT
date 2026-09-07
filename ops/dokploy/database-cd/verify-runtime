@@ -51,6 +51,14 @@ for command_name in bash docker node curl flock sha256sum stat install awk chmod
     exit 1
   }
 done
+flock_help="$(flock --help 2>&1)"
+case "$flock_help" in
+  *"--timeout"*) ;;
+  *)
+    printf "%s\n" "flock runtime does not support --timeout" >&2
+    exit 1
+    ;;
+esac
 docker version >/dev/null
 docker compose version >/dev/null
 compose_config_help="$(docker compose config --help)"

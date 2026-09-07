@@ -10,6 +10,7 @@ readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
 readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
 readonly OCI_DATABASE_COMPOSE="/compose/compose.development.database.yml"
 readonly OCI_RELEASE_COMPOSE="/compose/compose.development.release.yml"
+readonly MAINTENANCE_LOCK_WAIT_SECONDS=900
 
 CONFIG_FILE="${ELEVANT_CD_CONFIG:-/etc/dokploy/elevant/database-cd/config.env}"
 COMMAND=""
@@ -102,9 +103,11 @@ identities, and semantic equivalence with Dokploy without running SQL.
 .env files, verifies the existing Development database, and records that baseline
 without consuming the candidate manifest alias.
 
-All mutating and scheduled operations share one non-blocking flock. There is no
-automatic schema rollback, database restore, retry, volume deletion, or SQL port
-publication.
+All mutating and scheduled operations share one flock. Polls and control-plane
+operations fail closed without waiting. Backup and restore-check wait at most
+900 seconds so a simultaneous poll cannot consume their only scheduled window.
+There is no automatic schema rollback, database restore, retry, volume deletion,
+or SQL port publication.
 EOF
 }
 
@@ -355,7 +358,15 @@ acquire_lock() {
     (umask 077; : > "$CD_LOCK_FILE") || die "could not create lock file"
   fi
   exec 9<>"$CD_LOCK_FILE"
-  flock -n 9 || die "another ELEVANT database operation is running"
+  case "$COMMAND" in
+    backup|restore-check)
+      flock -w "$MAINTENANCE_LOCK_WAIT_SECONDS" 9 || \
+        die "timed out waiting for another ELEVANT database operation"
+      ;;
+    *)
+      flock -n 9 || die "another ELEVANT database operation is running"
+      ;;
+  esac
 }
 
 docker_command() {
