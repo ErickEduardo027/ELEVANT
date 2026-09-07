@@ -11,6 +11,7 @@ readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
 readonly OCI_DATABASE_COMPOSE="/compose/compose.development.database.yml"
 readonly OCI_RELEASE_COMPOSE="/compose/compose.development.release.yml"
 readonly MAINTENANCE_LOCK_WAIT_SECONDS=900
+readonly LOCK_CONFLICT_EXIT_CODE=75
 
 CONFIG_FILE="${ELEVANT_CD_CONFIG:-/etc/dokploy/elevant/database-cd/config.env}"
 COMMAND=""
@@ -342,7 +343,7 @@ validate_runtime_files() {
 }
 
 acquire_lock() {
-  local lock_parent lock_metadata expected_uid=0
+  local lock_parent lock_metadata lock_exit expected_uid=0
   lock_parent="$(dirname -- "$CD_LOCK_FILE")"
   [[ -d "$lock_parent" && ! -L "$lock_parent" ]] || \
     die "lock parent directory is unavailable"
@@ -360,11 +361,27 @@ acquire_lock() {
   exec 9<>"$CD_LOCK_FILE"
   case "$COMMAND" in
     backup|restore-check)
-      flock -w "$MAINTENANCE_LOCK_WAIT_SECONDS" 9 || \
+      if flock -E "$LOCK_CONFLICT_EXIT_CODE" \
+        -w "$MAINTENANCE_LOCK_WAIT_SECONDS" 9; then
+        return
+      else
+        lock_exit=$?
+      fi
+      if (( lock_exit == LOCK_CONFLICT_EXIT_CODE )); then
         die "timed out waiting for another ELEVANT database operation"
+      fi
+      die "could not acquire the ELEVANT database lock (flock exit=$lock_exit)"
       ;;
     *)
-      flock -n 9 || die "another ELEVANT database operation is running"
+      if flock -E "$LOCK_CONFLICT_EXIT_CODE" -n 9; then
+        return
+      else
+        lock_exit=$?
+      fi
+      if (( lock_exit == LOCK_CONFLICT_EXIT_CODE )); then
+        die "another ELEVANT database operation is running"
+      fi
+      die "could not acquire the ELEVANT database lock (flock exit=$lock_exit)"
       ;;
   esac
 }

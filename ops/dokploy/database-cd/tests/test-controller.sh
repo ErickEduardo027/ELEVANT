@@ -265,7 +265,10 @@ chmod 0755 "$MOCK_BIN/docker"
 cat > "$MOCK_BIN/flock" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$MOCK_FLOCK_LOG"
-[[ "${MOCK_FLOCK_FAIL:-0}" != "1" ]]
+exit_code="${MOCK_FLOCK_FAIL:-0}"
+[[ "$exit_code" =~ ^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]] || \
+  exit 64
+exit "$exit_code"
 MOCK
 chmod 0755 "$MOCK_BIN/flock"
 
@@ -348,10 +351,14 @@ controller() {
 }
 
 controller_with_real_flock() {
-  local real_flock_dir
+  local flock_path real_flock_dir
   [[ -n "$REAL_FLOCK_BIN" ]] || fail "real flock is required"
   real_flock_dir="$(dirname -- "$REAL_FLOCK_BIN")"
-  PATH="$real_flock_dir:$MOCK_BIN:$PATH" \
+  flock_path="$real_flock_dir"
+  if [[ -n "${REAL_FLOCK_TEST_BIN_DIR:-}" ]]; then
+    flock_path="$REAL_FLOCK_TEST_BIN_DIR:$flock_path"
+  fi
+  PATH="$flock_path:$MOCK_BIN:$PATH" \
   ELEVANT_CD_TEST_MODE=1 \
   ELEVANT_CD_DOCKER_BIN="$MOCK_BIN/docker" \
   ELEVANT_CD_NODE_BIN="$NODE_BIN" \
@@ -739,11 +746,11 @@ export MOCK_FAIL_ALL=1
 assert_success "paused poll failed" controller --poll
 assert_success "paused backup failed" controller --backup
 assert_success "paused restore-check failed" controller --restore-check
-assert_equal '-n 9' "$(sed -n '1p' "$MOCK_FLOCK_LOG")" \
+assert_equal '-E 75 -n 9' "$(sed -n '1p' "$MOCK_FLOCK_LOG")" \
   "poll did not retain a non-blocking lock"
-assert_equal '-w 900 9' "$(sed -n '2p' "$MOCK_FLOCK_LOG")" \
+assert_equal '-E 75 -w 900 9' "$(sed -n '2p' "$MOCK_FLOCK_LOG")" \
   "scheduled backup did not use the bounded maintenance wait"
-assert_equal '-w 900 9' "$(sed -n '3p' "$MOCK_FLOCK_LOG")" \
+assert_equal '-E 75 -w 900 9' "$(sed -n '3p' "$MOCK_FLOCK_LOG")" \
   "scheduled restore-check did not use the bounded maintenance wait"
 assert_equal "$after_scheduled_operations" "$(database_operation_count)" \
   "paused command executed SQL"
@@ -874,7 +881,7 @@ assert_success_with_one_database_operation \
 mv -- "$TEST_TMP/live-release-compose.backup" "$RELEASE_COMPOSE"
 mv -- "$TEST_TMP/live-release-env.backup" "$RELEASE_ENV"
 
-export MOCK_FLOCK_FAIL=1
+export MOCK_FLOCK_FAIL=75
 lock_failure_operations="$(database_operation_count)"
 if controller --backup > /dev/null 2> "$TEST_TMP/maintenance-lock.err"; then
   fail "scheduled backup ignored a maintenance lock timeout"
@@ -895,54 +902,197 @@ assert_equal "$lock_failure_operations" "$(database_operation_count)" \
   "poll lock contention executed a database operation"
 export MOCK_FLOCK_FAIL=0
 
+export MOCK_FLOCK_FAIL=64
+lock_failure_operations="$(database_operation_count)"
+if controller --backup > /dev/null 2> "$TEST_TMP/flock-error.err"; then
+  fail "scheduled backup ignored an internal flock error"
+fi
+grep -Fq 'could not acquire the ELEVANT database lock (flock exit=64)' \
+  "$TEST_TMP/flock-error.err" || \
+  fail "internal flock error was misreported as lock contention"
+assert_equal "$lock_failure_operations" "$(database_operation_count)" \
+  "internal flock error executed a database operation"
+export MOCK_FLOCK_FAIL=0
+
 case "$(uname -s)" in
-  MINGW*|MSYS*) ;;
-  *)
-    lock_ready="$TEST_TMP/poll-lock-ready"
-    (
+  Linux)
+    wait_for_marker() {
+      local marker="$1"
+      local attempt
+      for attempt in {1..500}; do
+        [[ -e "$marker" ]] && return 0
+        sleep 0.01
+      done
+      return 1
+    }
+
+    wait_for_child_bounded() {
+      local child_pid="$1"
+      local max_attempts="$2"
+      local attempt
+      for ((attempt = 0; attempt < max_attempts; attempt += 1)); do
+        if ! kill -0 "$child_pid" 2>/dev/null; then
+          wait "$child_pid" || return $?
+          return 0
+        fi
+        sleep 0.01
+      done
+      return 124
+    }
+
+    wait_for_flock_waiter() {
+      local waiter_pid="$1"
+      local attempt
+      for attempt in {1..500}; do
+        if awk -v expected_pid="$waiter_pid" '
+          $2 == "->" &&
+          $3 == "FLOCK" &&
+          $6 == expected_pid { found = 1 }
+          END { exit !found }
+        ' /proc/locks; then
+          return 0
+        fi
+        if [[ -r "/proc/$waiter_pid/wchan" ]] &&
+          grep -Fq 'locks_lock_inode_wait' "/proc/$waiter_pid/wchan"; then
+          return 0
+        fi
+        sleep 0.01
+      done
+      return 1
+    }
+
+    hold_real_lock_until_released() {
+      local ready_marker="$1"
+      local release_marker="$2"
+      local attempt
       exec 8<>"$STATE_DIR/controller.lock"
       "$REAL_FLOCK_BIN" -x 8
-      : > "$lock_ready"
-      sleep 2
-    ) &
+      : > "$ready_marker"
+      for attempt in {1..1000}; do
+        [[ -e "$release_marker" ]] && return 0
+        sleep 0.01
+      done
+      return 70
+    }
+
+    real_flock_test_bin="$TEST_TMP/real-flock-bin"
+    mkdir -p -- "$real_flock_test_bin"
+    cat > "$real_flock_test_bin/flock" <<'REAL_FLOCK_WRAPPER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$$" > "${REAL_FLOCK_CALL_MARKER:?}"
+exec "${ELEVANT_TEST_REAL_FLOCK:?}" "$@"
+REAL_FLOCK_WRAPPER
+    chmod 0755 "$real_flock_test_bin/flock"
+    export REAL_FLOCK_TEST_BIN_DIR="$real_flock_test_bin"
+    export ELEVANT_TEST_REAL_FLOCK="$REAL_FLOCK_BIN"
+
+    lock_ready="$TEST_TMP/poll-lock-ready"
+    lock_release="$TEST_TMP/poll-lock-release"
+    poll_flock_called="$TEST_TMP/poll-flock-called"
+    hold_real_lock_until_released "$lock_ready" "$lock_release" &
     lock_holder=$!
-    for _ in {1..100}; do
-      [[ -e "$lock_ready" ]] && break
-      sleep 0.01
-    done
-    [[ -e "$lock_ready" ]] || fail "poll lock holder did not become ready"
+    wait_for_marker "$lock_ready" || \
+      fail "poll lock holder did not become ready"
 
     lock_failure_operations="$(database_operation_count)"
-    if controller_with_real_flock --poll \
-      > /dev/null 2> "$TEST_TMP/real-poll-lock.err"; then
+    export REAL_FLOCK_CALL_MARKER="$poll_flock_called"
+    controller_with_real_flock --poll \
+      > /dev/null 2> "$TEST_TMP/real-poll-lock.err" &
+    poll_pid=$!
+    if ! wait_for_marker "$poll_flock_called"; then
+      : > "$lock_release"
+      wait "$lock_holder" || true
+      kill "$poll_pid" 2>/dev/null || true
+      wait "$poll_pid" 2>/dev/null || true
+      fail "poll did not invoke real flock"
+    fi
+
+    if wait_for_child_bounded "$poll_pid" 200; then
+      poll_status=0
+    else
+      poll_status=$?
+    fi
+    if (( poll_status == 124 )); then
+      : > "$lock_release"
+      wait "$lock_holder" || true
+      kill "$poll_pid" 2>/dev/null || true
+      wait "$poll_pid" 2>/dev/null || true
       fail "poll waited for a real busy lock"
     fi
-    kill -0 "$lock_holder" 2>/dev/null || \
+    if kill -0 "$lock_holder" 2>/dev/null; then
+      poll_holder_was_locked=1
+    else
+      poll_holder_was_locked=0
+    fi
+    : > "$lock_release"
+    wait "$lock_holder" || fail "poll lock holder failed awaiting release"
+    (( poll_holder_was_locked == 1 )) || \
       fail "poll did not fail before the real lock was released"
-    wait "$lock_holder"
+    (( poll_status != 0 )) || fail "poll ignored real lock contention"
     assert_equal "$lock_failure_operations" "$(database_operation_count)" \
       "real poll lock contention executed a database operation"
 
     lock_ready="$TEST_TMP/maintenance-lock-ready"
-    (
-      exec 8<>"$STATE_DIR/controller.lock"
-      "$REAL_FLOCK_BIN" -x 8
-      : > "$lock_ready"
-      sleep 1
-    ) &
+    lock_release="$TEST_TMP/maintenance-lock-release"
+    maintenance_flock_called="$TEST_TMP/maintenance-flock-called"
+    hold_real_lock_until_released "$lock_ready" "$lock_release" &
     lock_holder=$!
-    for _ in {1..100}; do
-      [[ -e "$lock_ready" ]] && break
-      sleep 0.01
-    done
-    [[ -e "$lock_ready" ]] || \
+    wait_for_marker "$lock_ready" || \
       fail "maintenance lock holder did not become ready"
 
-    assert_success_with_one_database_operation \
-      "scheduled backup did not wait for a transient real lock" \
-      controller_with_real_flock --backup
-    wait "$lock_holder"
+    maintenance_operations="$(database_operation_count)"
+    export REAL_FLOCK_CALL_MARKER="$maintenance_flock_called"
+    controller_with_real_flock --backup \
+      > "$TEST_TMP/real-maintenance-lock.out" \
+      2> "$TEST_TMP/real-maintenance-lock.err" &
+    maintenance_pid=$!
+    if ! wait_for_marker "$maintenance_flock_called"; then
+      : > "$lock_release"
+      wait "$lock_holder" || true
+      kill "$maintenance_pid" 2>/dev/null || true
+      wait "$maintenance_pid" 2>/dev/null || true
+      fail "scheduled backup did not invoke real flock"
+    fi
+
+    maintenance_flock_pid="$(< "$maintenance_flock_called")"
+    [[ "$maintenance_flock_pid" =~ ^[0-9]+$ ]] || \
+      fail "real flock wrapper did not record a valid PID"
+    if ! wait_for_flock_waiter "$maintenance_flock_pid"; then
+      : > "$lock_release"
+      wait "$lock_holder" || true
+      kill "$maintenance_pid" 2>/dev/null || true
+      wait "$maintenance_pid" 2>/dev/null || true
+      fail "scheduled backup never became a real flock waiter"
+    fi
+    kill -0 "$maintenance_pid" 2>/dev/null || \
+      fail "scheduled backup exited while registered as a flock waiter"
+    assert_equal "$maintenance_operations" "$(database_operation_count)" \
+      "scheduled backup executed before the real lock was released"
+
+    : > "$lock_release"
+    wait "$lock_holder" || \
+      fail "maintenance lock holder failed before explicit release"
+    if wait_for_child_bounded "$maintenance_pid" 500; then
+      maintenance_status=0
+    else
+      maintenance_status=$?
+    fi
+    if (( maintenance_status == 124 )); then
+      kill "$maintenance_pid" 2>/dev/null || true
+      wait "$maintenance_pid" 2>/dev/null || true
+      fail "scheduled backup did not finish after the real lock was released"
+    fi
+    (( maintenance_status == 0 )) || \
+      fail "scheduled backup failed after the real lock was released"
+    assert_equal "$((maintenance_operations + 1))" \
+      "$(database_operation_count)" \
+      "scheduled backup did not execute exactly once after lock release"
+
+    unset REAL_FLOCK_CALL_MARKER REAL_FLOCK_TEST_BIN_DIR \
+      ELEVANT_TEST_REAL_FLOCK
     ;;
+  *) ;;
 esac
 
 assert_success "status failed on valid atomic state" controller --status

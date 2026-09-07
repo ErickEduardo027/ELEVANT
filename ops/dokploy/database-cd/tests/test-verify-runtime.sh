@@ -145,6 +145,7 @@ case "${1:-}" in
     [[ "$#" == 5 && "${3:-}" == /bin/sh && "${4:-}" == -c && \
        "${5:-}" == *'flock --help'* && \
        "${5:-}" == *'--timeout'* && \
+       "${5:-}" == *'--conflict-exit-code'* && \
        "${5:-}" == *'RUNTIME_OK'* ]] || exit 65
     if [[ "$MOCK_DOCKER_SCENARIO" == "exec-failure" ]]; then
       exit 42

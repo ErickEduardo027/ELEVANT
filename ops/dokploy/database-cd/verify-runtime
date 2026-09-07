@@ -59,6 +59,14 @@ case "$flock_help" in
     exit 1
     ;;
 esac
+case "$flock_help" in
+  *"--conflict-exit-code"*) ;;
+  *)
+    printf "%s\n" \
+      "flock runtime does not support --conflict-exit-code" >&2
+    exit 1
+    ;;
+esac
 docker version >/dev/null
 docker compose version >/dev/null
 compose_config_help="$(docker compose config --help)"

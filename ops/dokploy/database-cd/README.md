@@ -167,7 +167,8 @@ recuperación si Tailscale u OpenSSH no están disponibles.
    Debe devolver `RUNTIME_OK`. Comprueba dentro del contenedor `bash`, `docker`,
    el plugin Compose y las opciones `config --format`, `--no-interpolate`,
    `--no-env-resolution` y `--no-path-resolution`; también `node`, los tres
-   helpers, `curl`, `flock`, `sha256sum`, el daemon Docker, `/etc/dokploy` y
+   helpers, `curl`, `flock` con soporte de `--timeout` y
+   `--conflict-exit-code`, `sha256sum`, el daemon Docker, `/etc/dokploy` y
    `/root/.docker`. No instala nada. Si
    falta una dependencia, el poller **no se habilita**: se detiene el checkpoint
    y se prepara un runtime de controlador versionado; nunca se instala un paquete
@@ -262,6 +263,72 @@ recuperación si Tailscale u OpenSSH no están disponibles.
    Tras el reboot, exigir un poll automático *no-op*. Conservar deshabilitados
    los dos schedules legacy hasta observar una ejecución natural correcta del
    backup nuevo y otra del restore-check nuevo; solo entonces pueden eliminarse.
+
+## Actualización segura de un controlador ya adoptado
+
+Este flujo sustituye una revisión del controlador cuando `current.json` y
+`last-success.json` ya contienen una baseline aceptada. No es una instalación
+inicial y no vuelve a registrar la base viva.
+
+1. En la **interfaz web privada de Dokploy**, deshabilitar exactamente
+   `ELEVANT Database CD - Backup`, `ELEVANT Database CD - Restore Check` y
+   `ELEVANT Database CD - Poll`. Comprobar en el historial que ninguno está
+   `Running` ni en cola antes de tocar archivos.
+2. En la **terminal SSH privada**, resolver de nuevo la tarea local de Dokploy,
+   ejecutar `--pause` y exigir `paused=true`. Verificar que no existe una
+   operación DB/API/Web activa y que todos sus locks canónicos pueden adquirirse
+   con `flock -n`; liberarlos inmediatamente. Si algún lock está ocupado, esperar
+   a que termine la operación propietaria e iniciar otra vez el checkpoint.
+3. Crear un snapshot nuevo `root:root 0700`, con archivos `0600`, que incluya
+   `config.env`, el estado completo del controlador, los `.env` y Compose vivos
+   de Database y Database Release, y una lista SHA-256 de cada archivo. Registrar
+   aparte los IDs, imágenes y estados de SQL, API, AVIAM Web y Public Web. Nunca
+   imprimir el contenido de un `.env` ni guardar el snapshot en el repositorio.
+4. Extraer el paquete LF del commit aprobado en un directorio temporal y ejecutar
+   `install-controller`. El instalador debe informar que conserva `config.env` y
+   no puede sustituir ni borrar `state/`. Comparar con `cmp` cada archivo
+   versionado instalado contra el paquete y comprobar con `sha256sum -c` que
+   configuración, estado y Raw vivos continúan exactos. Ejecutar después
+   `verify-runtime --host-container dokploy` y exigir `RUNTIME_OK`.
+5. Con el perfil aún pausado, ejecutar `--status` y exigir una copia exacta y
+   terminal de `current.json`/`last-success.json`; ejecutar luego `--dry-run`.
+   Ambos comandos deben conservar hashes, estados e IDs de contenedor.
+
+   **En una actualización está prohibido ejecutar `--adopt-current`, eliminar o
+   editar el estado/cache, editar los Raw vivos o pulsar Deploy.** La adopción es
+   un checkpoint de una sola vez; repetirla sobre una baseline ya aceptada
+   destruye la trazabilidad del rollout.
+
+6. Reanudar el controlador mientras los tres schedules siguen deshabilitados.
+   Ejecutar la aceptación de contención contra el lock DB real con un proceso
+   independiente que lo mantenga ocupado de forma breve y controlada:
+
+   - un `--poll` debe fallar inmediatamente por lock ocupado y no ejecutar SQL;
+   - `--backup` debe permanecer esperando, adquirir el lock al liberarlo antes
+     de 900 segundos y completar exactamente una vez;
+   - repetir el mismo ensayo con `--restore-check` y exigir una única verificación
+     restaurada correcta.
+
+   El proceso que sostiene el lock debe tener liberación y timeout propios; no
+   dejar un `flock` huérfano ni interpretar el timeout del controlador como
+   éxito. Los logs y el historial de Dokploy deben distinguir contención,
+   timeout y error interno de `flock`.
+7. Confirmar de nuevo `current.json == last-success.json`, estado terminal,
+   caches íntegros y locks libres. SQL, API y ambas webs deben conservar sus IDs,
+   imágenes, health y cero reinicios; el ensayo de mantenimiento no autoriza una
+   migración, seed, despliegue ni recreación de esos servicios.
+8. Solo después de aceptar toda la evidencia, habilitar en Dokploy y en este
+   orden: backup → restore-check → poll. Observar un poll automático natural
+   *no-op* sobre el bundle ya aceptado y comprobar que los tres historiales quedan
+   sanos, sin ejecuciones superpuestas. En el siguiente reboot controlado, antes
+   de reactivar schedules, volver a comparar los archivos instalados con el
+   paquete aprobado, ejecutar `verify-runtime` y confirmar que esta semántica de
+   contención continúa activa; un poll *no-op* con el lock libre no basta para
+   identificar la revisión nueva.
+9. Ante cualquier fallo, deshabilitar o conservar deshabilitados los tres
+   schedules, pausar el controlador y guardar snapshot, logs y hashes. No
+   reanudar, adoptar, editar estado ni desplegar hasta diagnosticar la causa y
+   aprobar explícitamente la recuperación.
 
 ## Contrato del rollout
 
