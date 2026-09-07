@@ -10,6 +10,8 @@ readonly STATE_TOOL="$SCRIPT_DIR/state-tool.mjs"
 readonly COMPOSE_MODEL_TOOL="$SCRIPT_DIR/compose-model-tool.mjs"
 readonly OCI_DATABASE_COMPOSE="/compose/compose.development.database.yml"
 readonly OCI_RELEASE_COMPOSE="/compose/compose.development.release.yml"
+readonly MAINTENANCE_LOCK_WAIT_SECONDS=900
+readonly LOCK_CONFLICT_EXIT_CODE=75
 
 CONFIG_FILE="${ELEVANT_CD_CONFIG:-/etc/dokploy/elevant/database-cd/config.env}"
 COMMAND=""
@@ -102,9 +104,11 @@ identities, and semantic equivalence with Dokploy without running SQL.
 .env files, verifies the existing Development database, and records that baseline
 without consuming the candidate manifest alias.
 
-All mutating and scheduled operations share one non-blocking flock. There is no
-automatic schema rollback, database restore, retry, volume deletion, or SQL port
-publication.
+All mutating and scheduled operations share one flock. Polls and control-plane
+operations fail closed without waiting. Backup and restore-check wait at most
+900 seconds so a simultaneous poll cannot consume their only scheduled window.
+There is no automatic schema rollback, database restore, retry, volume deletion,
+or SQL port publication.
 EOF
 }
 
@@ -339,7 +343,7 @@ validate_runtime_files() {
 }
 
 acquire_lock() {
-  local lock_parent lock_metadata expected_uid=0
+  local lock_parent lock_metadata lock_exit expected_uid=0
   lock_parent="$(dirname -- "$CD_LOCK_FILE")"
   [[ -d "$lock_parent" && ! -L "$lock_parent" ]] || \
     die "lock parent directory is unavailable"
@@ -355,7 +359,31 @@ acquire_lock() {
     (umask 077; : > "$CD_LOCK_FILE") || die "could not create lock file"
   fi
   exec 9<>"$CD_LOCK_FILE"
-  flock -n 9 || die "another ELEVANT database operation is running"
+  case "$COMMAND" in
+    backup|restore-check)
+      if flock -E "$LOCK_CONFLICT_EXIT_CODE" \
+        -w "$MAINTENANCE_LOCK_WAIT_SECONDS" 9; then
+        return
+      else
+        lock_exit=$?
+      fi
+      if (( lock_exit == LOCK_CONFLICT_EXIT_CODE )); then
+        die "timed out waiting for another ELEVANT database operation"
+      fi
+      die "could not acquire the ELEVANT database lock (flock exit=$lock_exit)"
+      ;;
+    *)
+      if flock -E "$LOCK_CONFLICT_EXIT_CODE" -n 9; then
+        return
+      else
+        lock_exit=$?
+      fi
+      if (( lock_exit == LOCK_CONFLICT_EXIT_CODE )); then
+        die "another ELEVANT database operation is running"
+      fi
+      die "could not acquire the ELEVANT database lock (flock exit=$lock_exit)"
+      ;;
+  esac
 }
 
 docker_command() {

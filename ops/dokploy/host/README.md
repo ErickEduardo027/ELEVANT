@@ -90,17 +90,42 @@ El archivo debe ser `root:root`, modo `600`, tamaño 2 GiB; swappiness debe ser
 
 ## Reboot con recuperación armada
 
-Cancele cualquier timer usado durante el upgrade. Inmediatamente antes del
-reboot, arme un rollback nuevo siguiendo el README del firewall y compruebe su
-próxima ejecución. Después:
+Cancele cualquier timer usado durante el upgrade. Para el reboot final del plano
+Development ya desplegado, abra primero una ventana de quiescencia en la
+**interfaz web privada de Dokploy**: deshabilite estos seis schedules exactos y
+compruebe que ninguno está `Running` ni en cola:
+
+- `ELEVANT Database CD - Backup`;
+- `ELEVANT Database CD - Restore Check`;
+- `ELEVANT Database CD - Poll`;
+- `ELEVANT API CD - Poll`;
+- `ELEVANT AVIAM Web CD - Poll`;
+- `ELEVANT Public Web CD - Poll`.
+
+En la **terminal SSH privada**, exija después que los locks canónicos de
+Database, API y Web estén libres, que los cuatro controladores/perfiles tengan
+estado terminal y que cada `current.json` sea idéntico a su
+`last-success.json`. No reinicie mientras exista un job activo, un lock ocupado,
+un estado `running`/`failed` o copias divergentes. Pause Database CD, API CD,
+AVIAM Web CD y Public Web CD; exija los cuatro estados `paused=true` y vuelva a
+comprobar todos los locks antes de continuar.
+
+Solo entonces arme un rollback temporizado nuevo siguiendo el README del
+firewall y compruebe que está `enabled`, `active` y tiene próxima ejecución.
+Después:
 
 ```bash
 sudo systemctl reboot
 ```
 
-Dentro de los diez minutos del boot, abra dos sesiones nuevas por Tailscale y
-valide `sudo`, Dokploy privado, firewall, Docker, landing, swap y estado de
-reboot. Solo entonces cancele el timer:
+Dentro de los diez minutos del boot, mantenga los seis schedules deshabilitados,
+abra dos sesiones nuevas por Tailscale y valide `sudo`, Dokploy privado,
+firewall, Docker/Swarm, los cuatro contenedores de aplicación healthy, listeners
+loopback, estados/cache y los cuatro perfiles aún pausados, Services, HTTPS
+autorizado, Funnel apagado, landing, swap y estado de reboot. Compare además los
+archivos instalados de cada controlador con su paquete aprobado y repita cada
+`verify-runtime`; Database CD debe conservar soporte de timeout y código de
+conflicto de `flock`:
 
 ```bash
 sudo systemctl is-active containerd docker tailscaled elevant-firewall
@@ -109,6 +134,16 @@ sysctl vm.swappiness
 test ! -e /var/run/reboot-required
 sudo /usr/local/sbin/elevant-preflight
 ```
+
+Con el runtime ya verificado, reanude en orden Database CD → API CD → AVIAM Web
+CD → Public Web CD y exija que ningún contenedor sea recreado. Rehabilite después
+los jobs en orden de dependencia: Database backup → Database restore-check →
+Database poll → API poll → AVIAM poll → Public poll. Observe al menos un *no-op*
+automático natural en cada uno de los cuatro polls y confirme que los estados e
+IDs de contenedor no cambian. Cancele el timer del firewall **solo después** de
+aceptar también esta evidencia. Si falla un checkpoint, conserve deshabilitado
+el schedule afectado y todos sus dependientes, pause sus perfiles, guarde
+logs/estado y deje actuar la recuperación armada.
 
 No restaure el snapshot por un fallo menor sin guardar antes evidencia. Si se
 pierde conectividad, deje actuar el rollback y use el Browser Terminal; el

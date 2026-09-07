@@ -287,8 +287,9 @@ Orden obligatorio:
 3. En la **terminal SSH `elevant-ops` por Tailscale**, instalar en
    `/etc/dokploy/elevant/database-cd`, crear config/state/lock con permisos
    root-only y ejecutar `verify-runtime` sin mostrar `.env`. El verificador
-   exige `compose config` con las opciones de render semántico y resuelve el
-   servicio Swarm `dokploy` únicamente cuando tiene una sola tarea local activa.
+   exige `compose config` con las opciones de render semántico, `flock` con
+   `--timeout` y `--conflict-exit-code`, y resuelve el servicio Swarm `dokploy`
+   únicamente cuando tiene una sola tarea local activa.
 4. En esa misma **terminal SSH**, registrar los nombres y rutas exactos de los
    dos proyectos Raw existentes, sus `.env`, los hashes Compose aprobados y los
    repositorios GHCR esperados.
@@ -324,7 +325,11 @@ Orden obligatorio:
 
    El contenido del campo Script debe coincidir con el archivo indicado y
    ejecutar el controlador/config mediante paths absolutos. No usar `server`,
-   Application ni Compose Job.
+   Application ni Compose Job. Dokploy puede iniciar simultáneamente el poll y
+   el mantenimiento del mismo minuto. El poll conserva adquisición no
+   bloqueante; backup y restore-check esperan hasta 900 segundos por el lock
+   compartido. Un timeout es fallo y debe investigarse, nunca reinterpretarse
+   como ejecución satisfactoria ni compensarse con otro job paralelo.
 10. En la **terminal SSH**, ejecutar un único `--poll` manual para el bundle del
     commit aprobado. Exigir `succeeded/complete`, la secuencia completa, lock
     común, cache íntegro, códigos cero, logs sanitizados y SQL healthy. Ejecutar
@@ -341,6 +346,44 @@ observar al menos una ejecución natural correcta del backup nuevo y otra del
 restore-check nuevo. No hay token de commit status ni heartbeat externo
 específico de DB configurado en esta fase; el heartbeat base del Hub permanece
 activo.
+
+### Actualización in-place del controlador Database CD
+
+Una revisión nueva del controlador sobre una baseline ya adoptada usa un flujo
+distinto de los pasos 7–8 anteriores:
+
+1. Deshabilitar los tres schedules Database CD —backup, restore-check y poll— y
+   comprobar que ninguno está `Running` ni en cola. Pausar el controlador,
+   exigir `paused=true` y verificar que los locks canónicos de DB/API/Web están
+   libres antes de abrir el cambio.
+2. Crear un snapshot `root:root 0700`, con archivos `0600`, de `config.env`, el
+   estado/cache completo, los `.env` y Compose Raw vivos de Database y Database
+   Release, sus SHA-256 y los IDs/imágenes/health de SQL, API y ambas webs. No
+   imprimir Environment ni almacenar el snapshot en Git.
+3. Instalar únicamente el paquete LF del commit aprobado. El instalador debe
+   preservar configuración y estado; comparar byte a byte cada archivo
+   versionado instalado con el paquete y ejecutar `sha256sum -c` contra el
+   snapshot. Ejecutar `verify-runtime` y exigir `RUNTIME_OK`.
+4. Aún pausado, exigir `current.json == last-success.json` en estado terminal,
+   ejecutar `--status` y `--dry-run`, y demostrar que hashes, Raw, estado e IDs
+   de contenedor no cambiaron. **No ejecutar `--adopt-current`, borrar o editar
+   estado/cache, editar un Raw ni pulsar Deploy durante este upgrade.**
+5. Reanudar con los schedules todavía deshabilitados y aceptar la semántica del
+   lock real: bajo un holder breve e independiente, el poll falla de inmediato
+   sin SQL; backup y restore-check esperan, adquieren el lock al liberarlo antes
+   de 900 segundos y completan exactamente una vez cada uno. El holder debe
+   tener liberación/timeout propios, y los logs deben distinguir contención,
+   timeout y error interno de `flock`.
+6. Volver a exigir copias de estado exactas, caches íntegros, locks libres y
+   SQL/API/AVIAM/Public healthy, sin recreaciones ni reinicios. Solo entonces
+   habilitar backup → restore-check → poll y observar un poll automático natural
+   *no-op* sobre el bundle aceptado.
+
+Ante cualquier fallo se conservan deshabilitados los tres schedules, se pausa
+el controlador y se guardan snapshot, hashes y logs. No se reanuda ni se muta el
+estado hasta diagnosticar la causa y aprobar expresamente la recuperación. El
+procedimiento ejecutable y sus checkpoints completos viven en
+[`ops/dokploy/database-cd/README.md`](../../ops/dokploy/database-cd/README.md).
 
 Si una promoción ya registrada entra en una etapa y falla, el mismo bundle queda
 bloqueado. Un error anterior a crear el intento —resolución, descarga, extracción
@@ -538,8 +581,32 @@ Aplicar primero `aviam-web` y aceptarla completamente antes de iniciar
     todavía deshabilitado y exigir un no-op sobre B. Habilitar entonces su
     schedule y comprobar el primer no-op automático. Repetir desde el paso 1
     para la segunda web.
-15. Tras aceptar ambas, hacer un reboot controlado y verificar recuperación de
-    contenedores, health, Services, estados, no-op automáticos y Funnel apagado.
+15. Tras aceptar ambas, abrir una ventana de quiescencia para el reboot. En
+    **Schedules**, deshabilitar los seis jobs exactos: Database backup,
+    Database restore-check, Database poll, API poll, AVIAM poll y Public poll.
+    Exigir que ninguno esté ejecutándose ni en cola; después comprobar que todos
+    los locks canónicos están libres, que cada controlador está en estado
+    terminal y que cada `current.json` coincide exactamente con su
+    `last-success.json`. Pausar entonces Database CD, API CD y ambos perfiles
+    Web CD, exigir sus cuatro estados `paused=true` y volver a comprobar que los
+    locks están libres.
+16. Solo con esa evidencia, armar y verificar el rollback temporizado del
+    firewall y reiniciar. Durante la recuperación mantener los seis schedules
+    deshabilitados; validar desde sesiones nuevas Docker/Swarm, los cuatro
+    contenedores healthy, listeners loopback, estados/cache y los cuatro perfiles
+    aún pausados, Tailscale Services, HTTPS autorizado y Funnel apagado. Comparar
+    también los archivos instalados de cada controlador con sus paquetes
+    aprobados y repetir sus `verify-runtime`; para Database CD debe seguir
+    verificada la semántica de timeout y código de conflicto de `flock`.
+17. Reanudar en orden Database CD → API CD → AVIAM Web CD → Public Web CD y
+    exigir que reanudar no recrea contenedores. Rehabilitar después los jobs en
+    orden de dependencia: Database backup → Database restore-check → Database
+    poll → API poll → AVIAM poll → Public poll. Exigir al menos un *no-op*
+    automático natural de cada uno de los cuatro polls y confirmar que estado e
+    IDs de contenedor permanecen estables. Solo después cancelar el rollback del
+    firewall. Si falla un checkpoint, conservar deshabilitado el job afectado y
+    todos sus dependientes, pausar sus perfiles, guardar evidencia y dejar actuar
+    la recuperación armada en vez de declarar aceptado el reboot.
 
 Un candidato que no coincide exactamente con el bundle/run/imagen/OpenAPI de la
 API activa se difiere sin intento ni mutación. Si la promoción falla después de

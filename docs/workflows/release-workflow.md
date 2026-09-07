@@ -123,8 +123,11 @@ falla, se pausa solo ese perfil. El controlador no ejecuta
 Los polls comparten la jerarquía de locks `database -> API -> web -> perfil` y
 se escalonan cada minuto: DB `:00`, API `:15`, AVIAM Web `:30`, Public Web
 `:45`. Los sleeps reducen la contención ordinaria; los locks son la garantía de
-exclusión. El primer despliegue, la instalación, adopción y habilitación de jobs
-siguen siendo acciones manuales con evidencia por cada aplicación.
+exclusión. Backup y restore-check esperan hasta 900 segundos por el lock DB
+para no perder su única ventana frente al poll simultáneo; polls y promociones
+conservan adquisición no bloqueante. El primer despliegue, la instalación,
+adopción y habilitación de jobs siguen siendo acciones manuales con evidencia
+por cada aplicación.
 
 Las webs permanecen tailnet-only, sin Domain/Funnel y sin red SQL. El rollout
 inicial es un preview técnico: una shell saludable no implica que ya existan en

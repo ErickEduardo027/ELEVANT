@@ -145,7 +145,7 @@ Solo después de activar ese canal habilite para `ELEVANT Development VPS`:
 | LoadAvg5 | mayor a 1.8 | 10 minutos |
 | Disk | mayor a 80% | 10 minutos |
 
-Beszel v0.18.8 permite un solo umbral por usuario, sistema y métrica; por eso no se configuran simultáneamente niveles 70/80/90. Esta plantilla tampoco entrega datos de contenedores porque el acceso Docker está desactivado por seguridad. Los jobs de SQL health, backup y restore-check deberán tener checks independientes en Healthchecks.io cuando el operador apruebe esa integración. Mientras siga diferida, el operador revisa diariamente Beszel para estado/recursos del host y Dokploy Schedules/`controller.log` para SQL y jobs; no se debe declarar cobertura de alertas automáticas de DB.
+Beszel v0.18.8 permite un solo umbral por usuario, sistema y métrica; por eso no se configuran simultáneamente niveles 70/80/90. Esta plantilla tampoco entrega datos de contenedores porque el acceso Docker está desactivado por seguridad. Los jobs de SQL health, backup y restore-check deberán tener checks independientes en Healthchecks.io cuando el operador apruebe esa integración. Mientras siga diferida, el operador revisa diariamente Beszel para estado/recursos del host y Dokploy Schedules/`controller.log` para SQL y jobs, incluyendo cualquier timeout de 900 segundos esperando el lock de mantenimiento; no se debe declarar cobertura de alertas automáticas de DB.
 
 ## Validación y aceptación
 

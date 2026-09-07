@@ -201,10 +201,12 @@ montado dentro del contenedor Dokploy:
 
 `--poll` se programa cada minuto. El job de backup conserva 02:15 UTC y el de
 restore-check domingo 04:30 UTC. Los tres comparten `flock` y el estado
-persistente: si una promoción está activa, la operación programada no puede
-solaparse. Backup/restore usan la imagen ops y el Compose database cacheado de
-la última entrega aceptada, no un alias mutable, el Raw vivo ni un candidato
-fallido.
+persistente. Poll y promociones fallan cerrado sin esperar; backup y
+restore-check esperan hasta 900 segundos por el lock para que una carrera en el
+segundo `:00` no les haga perder su única ventana. Nunca se solapan operaciones
+SQL. Agotar ese timeout es un fallo operativo visible, no un backup exitoso.
+Backup/restore usan la imagen ops y el Compose database cacheado de la última
+entrega aceptada, no un alias mutable, el Raw vivo ni un candidato fallido.
 
 Reglas del scheduler:
 
@@ -223,7 +225,7 @@ restaura una base temporal, valida su marcador, ejecuta `DBCC CHECKDB` y la
 elimina. Después habilite los cron y verifique sus primeras ejecuciones desde
 los logs de Dokploy.
 
-Backup usa full nativo `CHECKSUM + COMPRESSION`, escribe primero `.partial`, ejecuta `VERIFYONLY` y solo entonces publica `.bak` para la retención 7. Las operaciones SQL `BACKUP`/`RESTORE` comparten bloqueo y el scheduler no solapa jobs completos. Restore-check acepta exclusivamente el patrón seguro generado, usa una base temporal aleatoria sin `WITH REPLACE`, comprueba marcador singleton y ejecuta `DBCC CHECKDB`. Snapshots/Volume Backup de Dokploy son complementarios; una captura de archivos SQL vivos no sustituye un backup consistente.
+Backup usa full nativo `CHECKSUM + COMPRESSION`, escribe primero `.partial`, ejecuta `VERIFYONLY` y solo entonces publica `.bak` para la retención 7. Las operaciones SQL `BACKUP`/`RESTORE` comparten bloqueo; el controlador las serializa aunque Dokploy inicie schedules simultáneos. Restore-check acepta exclusivamente el patrón seguro generado, usa una base temporal aleatoria sin `WITH REPLACE`, comprueba marcador singleton y ejecuta `DBCC CHECKDB`. Snapshots/Volume Backup de Dokploy son complementarios; una captura de archivos SQL vivos no sustituye un backup consistente.
 
 Sin copia off-host, una pérdida total del VPS solo se recupera con migraciones + seed. Esto es aceptable únicamente mientras Development sea descartable y sintético.
 
