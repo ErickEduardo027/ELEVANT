@@ -17,6 +17,7 @@ certifier="$root/scripts/certify-database-containers.ps1"
 workflow="$repository_root/.github/workflows/backend-ci.yml"
 password_option_re="(^|[[:space:]])[\"']?-P"
 certifier_password_option_re="(^|[[:space:]])-P([[:space:]]|$)|['\"]-P"
+certifier_wrapper_re='^[[:space:]]*-SqlcmdPassword \$passwords\.[A-Za-z]+[[:space:]]+`[[:space:]]*$'
 
 fail() {
   printf '%s\n' "$1" >&2
@@ -42,6 +43,13 @@ done
 if grep -Eq -- "$certifier_password_option_re" <<<'-Password value'; then
   fail 'certifier password option detector rejected a normal PowerShell parameter'
 fi
+
+for wrapper_line in \
+  $'        -SqlcmdPassword $passwords.Sa `\n' \
+  $'        -SqlcmdPassword $passwords.Sa `\r\n'; do
+  printf '%s' "$wrapper_line" | grep -Eq -- "$certifier_wrapper_re" ||
+    fail 'scoped password wrapper detector must accept LF and CRLF'
+done
 
 for file in "${runtime_scripts[@]}"; do
   invocations="$(awk '
@@ -82,7 +90,7 @@ grep -Fq 'SA_PASSWORD="$${MSSQL_SA_PASSWORD}"' "$root/compose.local.yml"
   fail 'every containerized sqlcmd client must import SQLCMDPASSWORD by name'
 [[ "$(grep -Fc 'Invoke-DockerWithSqlcmdPassword -Password' "$certifier")" -eq 2 ]] ||
   fail 'normal sqlcmd Docker calls must use the scoped password wrapper'
-[[ "$(grep -Ec -- '-SqlcmdPassword \$passwords\.[A-Za-z]+ `?$' "$certifier")" -eq 2 ]] ||
+[[ "$(grep -Ec -- "$certifier_wrapper_re" "$certifier")" -eq 2 ]] ||
   fail 'expected-failure sqlcmd Docker calls must use the scoped password wrapper'
 [[ "$(grep -Fc 'docker exec --env SQLCMDPASSWORD' "$certifier")" -eq 1 ]] ||
   fail 'docker exec sqlcmd readiness must import SQLCMDPASSWORD by name'
