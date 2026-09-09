@@ -11,6 +11,7 @@ if [[ -z "${ELEVANT_DB_DBA_PASSWORD:-}" ]]; then
   echo "ELEVANT_DB_DBA_PASSWORD is required." >&2
   exit 1
 fi
+export -n ELEVANT_DB_DBA_PASSWORD
 
 latest_backup="$(find "$backup_dir" -regextype posix-extended -maxdepth 1 -type f \
   -regex '.*/ElevantDevelopmentDb_[0-9]{8}T[0-9]{15}Z_[0-9a-f]{12}\.bak' \

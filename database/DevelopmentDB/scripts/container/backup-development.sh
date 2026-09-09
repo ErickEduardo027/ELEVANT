@@ -16,6 +16,7 @@ if [[ -z "${ELEVANT_DB_BACKUP_PASSWORD:-}" || -z "${ELEVANT_DB_DBA_PASSWORD:-}" 
   echo "ELEVANT_DB_BACKUP_PASSWORD and ELEVANT_DB_DBA_PASSWORD are required." >&2
   exit 1
 fi
+export -n ELEVANT_DB_BACKUP_PASSWORD ELEVANT_DB_DBA_PASSWORD
 if [[ -e "$backup_file" || -e "$working_file" ]]; then
   echo "Refusing to overwrite an existing Development backup path." >&2
   exit 1

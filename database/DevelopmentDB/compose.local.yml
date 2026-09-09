@@ -51,10 +51,14 @@ services:
         - >-
           SQLCMD=/opt/mssql-tools18/bin/sqlcmd;
           if [ ! -x "$$SQLCMD" ]; then SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi;
-          SQLCMDPASSWORD="$${ELEVANT_DB_HEALTH_PASSWORD}"
+          unset HEALTH_PASSWORD SA_PASSWORD;
+          HEALTH_PASSWORD="$${ELEVANT_DB_HEALTH_PASSWORD}";
+          SA_PASSWORD="$${MSSQL_SA_PASSWORD}";
+          unset ELEVANT_DB_HEALTH_PASSWORD MSSQL_SA_PASSWORD;
+          SQLCMDPASSWORD="$${HEALTH_PASSWORD}"
           "$$SQLCMD" -S localhost -U elevant_dev_health
           -C -b -Q "SELECT 1" -o /dev/null ||
-          SQLCMDPASSWORD="$${MSSQL_SA_PASSWORD}"
+          SQLCMDPASSWORD="$${SA_PASSWORD}"
           "$$SQLCMD" -S localhost -U sa
           -C -b -Q "SELECT 1" -o /dev/null
       interval: 10s

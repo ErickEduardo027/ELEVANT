@@ -89,6 +89,28 @@ function Invoke-Docker {
     }
 }
 
+function Invoke-DockerWithSqlcmdPassword {
+    param(
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Password,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $passwordWasPresent = Test-Path Env:SQLCMDPASSWORD
+    $previousPassword = $env:SQLCMDPASSWORD
+    try {
+        $env:SQLCMDPASSWORD = $Password
+        Invoke-Docker -Arguments $Arguments
+    }
+    finally {
+        if ($passwordWasPresent) {
+            $env:SQLCMDPASSWORD = $previousPassword
+        }
+        else {
+            Remove-Item Env:SQLCMDPASSWORD -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Ensure-DockerImage {
     param([Parameter(Mandatory = $true)][string]$Image)
 
@@ -130,16 +152,31 @@ function Invoke-DockerExpectedFailure {
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
         [Parameter(Mandatory = $true)][string]$FailureMessage,
-        [Parameter(Mandatory = $true)][string]$ExpectedErrorPattern
+        [Parameter(Mandatory = $true)][string]$ExpectedErrorPattern,
+        [string]$SqlcmdPassword
     )
 
     $previousPreference = $ErrorActionPreference
+    $passwordWasPresent = Test-Path Env:SQLCMDPASSWORD
+    $previousPassword = $env:SQLCMDPASSWORD
+    $useSqlcmdPassword = $PSBoundParameters.ContainsKey('SqlcmdPassword')
     $ErrorActionPreference = 'Continue'
     try {
+        if ($useSqlcmdPassword) {
+            $env:SQLCMDPASSWORD = $SqlcmdPassword
+        }
         $output = (& docker @Arguments 2>&1 | Out-String)
         $exitCode = $LASTEXITCODE
     }
     finally {
+        if ($useSqlcmdPassword) {
+            if ($passwordWasPresent) {
+                $env:SQLCMDPASSWORD = $previousPassword
+            }
+            else {
+                Remove-Item Env:SQLCMDPASSWORD -ErrorAction SilentlyContinue
+            }
+        }
         $ErrorActionPreference = $previousPreference
     }
 
@@ -159,14 +196,14 @@ function Invoke-SqlClient {
         [Parameter(Mandatory = $true)][string]$Query
     )
 
-    Invoke-Docker -Arguments @(
+    Invoke-DockerWithSqlcmdPassword -Password $Password -Arguments @(
         'run', '--rm',
         '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
         '--entrypoint', $sqlcmd,
         $SqlServerImage,
         '-S', "$sqlAlias,1433",
         '-U', $User,
-        '-P', $Password,
         '-d', $Database,
         '-C', '-b', '-r', '1',
         '-Q', $Query
@@ -180,14 +217,27 @@ function Wait-Sql {
         [string]$Database = 'master'
     )
 
-    for ($attempt = 1; $attempt -le 40; $attempt++) {
-        & docker exec $sqlContainer $sqlcmd `
-            -S localhost -U $User -P $Password -d $Database -C -b `
-            -Q 'SELECT 1' -o /dev/null 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return
+    $passwordWasPresent = Test-Path Env:SQLCMDPASSWORD
+    $previousPassword = $env:SQLCMDPASSWORD
+    try {
+        $env:SQLCMDPASSWORD = $Password
+        for ($attempt = 1; $attempt -le 40; $attempt++) {
+            & docker exec --env SQLCMDPASSWORD $sqlContainer $sqlcmd `
+                -S localhost -U $User -d $Database -C -b `
+                -Q 'SELECT 1' -o /dev/null 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                return
+            }
+            Start-Sleep -Seconds 3
         }
-        Start-Sleep -Seconds 3
+    }
+    finally {
+        if ($passwordWasPresent) {
+            $env:SQLCMDPASSWORD = $previousPassword
+        }
+        else {
+            Remove-Item Env:SQLCMDPASSWORD -ErrorAction SilentlyContinue
+        }
     }
 
     throw "SQL Server did not become ready for $User within 120 seconds."
@@ -240,15 +290,15 @@ function Invoke-Release {
 }
 
 function Invoke-ProductionBootstrap {
-    Invoke-Docker -Arguments @(
+    Invoke-DockerWithSqlcmdPassword -Password $passwords.Sa -Arguments @(
         'run', '--rm',
         '--network', $networkName,
         '--mount', "type=bind,source=$productionBootstrap,target=/tmp/initialize-production.sql,readonly",
+        '--env', 'SQLCMDPASSWORD',
         '--entrypoint', $sqlcmd,
         $SqlServerImage,
         '-S', "$sqlAlias,1433",
         '-U', 'sa',
-        '-P', $passwords.Sa,
         '-C', '-b', '-r', '1',
         '-v', 'CONFIRM_PRODUCTION_DATABASE=ElevantProductionDb',
         '-i', '/tmp/initialize-production.sql'
@@ -430,15 +480,16 @@ CREATE TABLE [infra].[database_instances]
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Production bootstrap unexpectedly accepted an empty environment marker.' `
         -ExpectedErrorPattern 'Existing database marker is not Production\.' `
+        -SqlcmdPassword $passwords.Sa `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
         '--mount', "type=bind,source=$productionBootstrap,target=/tmp/initialize-production.sql,readonly",
+        '--env', 'SQLCMDPASSWORD',
         '--entrypoint', $sqlcmd,
         $SqlServerImage,
         '-S', "$sqlAlias,1433",
         '-U', 'sa',
-        '-P', $passwords.Sa,
         '-C', '-b', '-r', '1',
         '-v', 'CONFIRM_PRODUCTION_DATABASE=ElevantProductionDb',
         '-i', '/tmp/initialize-production.sql'
@@ -568,14 +619,15 @@ IF NOT EXISTS (SELECT 1 FROM [infra].[database_instances] WHERE [id] = 1 AND [en
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Application login unexpectedly changed the immutable marker.' `
         -ExpectedErrorPattern 'UPDATE permission was denied' `
+        -SqlcmdPassword $passwords.App `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
         '--entrypoint', $sqlcmd,
         $SqlServerImage,
         '-S', "$sqlAlias,1433",
         '-U', 'elevant_dev_app',
-        '-P', $passwords.App,
         '-d', 'ElevantDevelopmentDb',
         '-C', '-b', '-r', '1',
         '-Q', "UPDATE [infra].[database_instances] SET [environment_name] = N'Production' WHERE [id] = 1;"

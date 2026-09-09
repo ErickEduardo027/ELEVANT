@@ -133,10 +133,11 @@ jobs:
           ACCEPT_EULA: "Y"
           MSSQL_PID: "Developer"
           MSSQL_SA_PASSWORD: "CI-Only_StrongPassword!2026"
+          SQLCMDPASSWORD: "CI-Only_StrongPassword!2026"
         ports:
           - 1433:1433
         options: >-
-          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'CI-Only_StrongPassword!2026' -C -b -Q 'SELECT 1' -o /dev/null"
+          --health-cmd "unset MSSQL_SA_PASSWORD; exec /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' -o /dev/null"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 20

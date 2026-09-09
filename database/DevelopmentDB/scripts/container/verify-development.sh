@@ -17,7 +17,9 @@ if [[ -z "${ELEVANT_DB_DBA_PASSWORD:-}" ]]; then
   exit 1
 fi
 
-export SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}"
+SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}"
+unset ELEVANT_DB_DBA_PASSWORD
+export SQLCMDPASSWORD
 exec "$sqlcmd_path" \
   -S "$server" \
   -d "$database_name" \

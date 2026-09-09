@@ -262,7 +262,9 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 - Retención local: siete backups.
 - Los comandos operativos entregan la credencial a `sqlcmd` mediante
   `SQLCMDPASSWORD`; `-P` queda prohibido porque expone el secreto en los
-  argumentos del proceso.
+  argumentos del proceso. Los nombres originales de contraseña tampoco se
+  heredan al proceso hijo; el provisionador conserva sólo sus variables de
+  scripting aprobadas.
 - Sin solapamiento, `set -x` ni secretos duplicados.
 
 Estos backups son suficientes solo mientras Development sea sintético y reconstruible.

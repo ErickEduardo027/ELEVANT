@@ -37,6 +37,7 @@ for variable_name in "${required[@]}"; do
   fi
   password_owners["$value"]="$variable_name"
 done
+export -n "${required[@]}" value password login
 
 server="${ELEVANT_SQL_SERVER:-elevant-dev-sql}"
 login=""
@@ -55,8 +56,10 @@ END;"
 can_provision_with() {
   local probe_login="$1"
   local probe_password="$2"
+  export -n probe_login probe_password
 
-  SQLCMDPASSWORD="${probe_password}" "$sqlcmd_path" \
+  SQLCMDPASSWORD="${probe_password}" \
+    "$sqlcmd_path" \
     -S "$server" \
     -d master \
     -U "$probe_login" \
