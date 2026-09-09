@@ -25,7 +25,7 @@ $rules = @(
     [PSCustomObject]@{ Name = 'telegram-bot-url'; Pattern = 'telegram://[0-9]{6,12}:[A-Za-z0-9_-]{30,}@telegram' },
     [PSCustomObject]@{ Name = 'healthchecks-ping-url'; Pattern = 'https://hc-ping\.com/[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{27,}' },
     [PSCustomObject]@{ Name = 'beszel-agent-token'; Pattern = '(?i)BESZEL_AGENT_TOKEN\s*[:=]\s*["'']?(?!\$\{|\$env:|<|REPLACE|CHANGE[_-]?ME|CHANGEME|YOUR[_-]|EXAMPLE|PLACEHOLDER)[A-Za-z0-9._~+/=-]{12,}' },
-    [PSCustomObject]@{ Name = 'sensitive-variable-assignment'; Pattern = '(?m)^\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:PASSWORD|PWD|TOKEN|AUTH[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'']?(?!\$\{|\$env:|\$\(\$[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\)|\$\([A-Za-z_][A-Za-z0-9_]*\)|%|\{|<|REPLACE|CHANGE[_-]?ME|CHANGEME|YOUR[_-]|EXAMPLE|PLACEHOLDER|CI[_-]?(?:ONLY|Only)|DESIGN[_-]?ONLY|SYNTHETIC|NOT[_-]?A[_-]?SECRET)[^\s"''#;]{12,}' },
+    [PSCustomObject]@{ Name = 'sensitive-variable-assignment'; Pattern = '(?m)^\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:PASSWORD|PWD|TOKEN|AUTH[_-]?KEY)[A-Z0-9_]*\s*[:=]\s*["'']?(?!\$\$\{|\$\{|\$env:|\$\(\$[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\)|\$\([A-Za-z_][A-Za-z0-9_]*\)|%|\{|<|REPLACE|CHANGE[_-]?ME|CHANGEME|YOUR[_-]|EXAMPLE|PLACEHOLDER|CI[_-]?(?:ONLY|Only)|DESIGN[_-]?ONLY|SYNTHETIC|NOT[_-]?A[_-]?SECRET)[^\s"''#;]{12,}' },
     [PSCustomObject]@{ Name = 'connection-string-password'; Pattern = '(?i)(?:^|;)\s*(?:Password|Pwd)\s*=\s*(?!\$\{|\$\(\$[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\)|%|\{|<|REPLACE|CHANGE[_-]?ME|CHANGEME|PLACEHOLDER|CI[_-]?ONLY|DESIGN[_-]?ONLY|SYNTHETIC|NOT[_-]?A[_-]?SECRET)[^;\s"'']{8,}' },
     [PSCustomObject]@{ Name = 'secret-assignment'; Pattern = '(?i)(?:api[_-]?key|client[_-]?secret|flightaware[_-]?(?:key|token)|secret[_-]?key)\s*[:=]\s*["'']?(?!\$\{|\$env:|<|REPLACE|CHANGE[_-]?ME|CHANGEME|YOUR[_-]|EXAMPLE|PLACEHOLDER)[A-Za-z0-9_+\-/=]{12,}' }
 )
@@ -69,6 +69,11 @@ $ruleSelfTests = @(
     [PSCustomObject]@{
         Rule = 'sensitive-variable-assignment'
         Value = ('ELEVANT_DB_DBA_' + 'PASSWORD=${ELEVANT_DB_DBA_PASSWORD:?required}')
+        ShouldMatch = $false
+    },
+    [PSCustomObject]@{
+        Rule = 'sensitive-variable-assignment'
+        Value = ('ELEVANT_DB_DBA_' + 'PASSWORD=$${ELEVANT_DB_DBA_PASSWORD:?required}')
         ShouldMatch = $false
     },
     [PSCustomObject]@{

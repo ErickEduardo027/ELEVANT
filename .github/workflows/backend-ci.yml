@@ -178,6 +178,14 @@ jobs:
           bash -n ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
           bash ../database/DevelopmentDB/tests/scripts/test_guard_database_publication.sh
 
+      - name: Test database sqlcmd password transport
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n ../database/DevelopmentDB/scripts/container/*.sh
+          bash -n ../database/DevelopmentDB/tests/scripts/test_sqlcmd_password_transport.sh
+          bash ../database/DevelopmentDB/tests/scripts/test_sqlcmd_password_transport.sh
+
       - name: Test API release manifest tooling
         run: python3 -m unittest discover -s tests/scripts -p 'test_*.py' -v
 

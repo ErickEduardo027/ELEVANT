@@ -56,11 +56,10 @@ can_provision_with() {
   local probe_login="$1"
   local probe_password="$2"
 
-  "$sqlcmd_path" \
+  SQLCMDPASSWORD="${probe_password}" "$sqlcmd_path" \
     -S "$server" \
     -d master \
     -U "$probe_login" \
-    -P "$probe_password" \
     -C -b \
     -Q "$readiness_query" \
     -o /dev/null 2>/dev/null
@@ -91,30 +90,32 @@ if [[ -z "$login" || -z "$password" ]]; then
   exit 1
 fi
 
+SQLCMDPASSWORD="${password}" \
+DBA_PASSWORD="${ELEVANT_DB_DBA_PASSWORD}" \
+MIGRATOR_PASSWORD="${ELEVANT_DB_MIGRATOR_PASSWORD}" \
+APP_PASSWORD="${ELEVANT_DB_APP_PASSWORD}" \
+SEEDER_PASSWORD="${ELEVANT_DB_SEEDER_PASSWORD}" \
+HEALTH_PASSWORD="${ELEVANT_DB_HEALTH_PASSWORD}" \
+BACKUP_PASSWORD="${ELEVANT_DB_BACKUP_PASSWORD}" \
 "$sqlcmd_path" \
   -S "$server" \
   -U "$login" \
-  -P "$password" \
   -C -b \
-  -v \
-    "DBA_PASSWORD=$ELEVANT_DB_DBA_PASSWORD" \
-    "MIGRATOR_PASSWORD=$ELEVANT_DB_MIGRATOR_PASSWORD" \
-    "APP_PASSWORD=$ELEVANT_DB_APP_PASSWORD" \
-    "SEEDER_PASSWORD=$ELEVANT_DB_SEEDER_PASSWORD" \
-    "HEALTH_PASSWORD=$ELEVANT_DB_HEALTH_PASSWORD" \
-    "BACKUP_PASSWORD=$ELEVANT_DB_BACKUP_PASSWORD" \
   -i /opt/elevant-db-ops/sql/provision-development.sql
 
-if ! "$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b \
+if ! SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}" \
+  "$sqlcmd_path" -S "$server" -U elevant_dev_dba -C -b \
   -Q "SELECT 1;" -o /dev/null 2>/dev/null; then
   echo "Declared Development DBA credentials failed verification; sa remains unchanged." >&2
   exit 1
 fi
 
-sa_disabled="$("$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b -h -1 -W \
+sa_disabled="$(SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}" \
+  "$sqlcmd_path" -S "$server" -U elevant_dev_dba -C -b -h -1 -W \
   -Q "SET NOCOUNT ON; SELECT [is_disabled] FROM sys.sql_logins WHERE [name] = N'sa';")"
 if [[ "$sa_disabled" == "0" ]]; then
-  "$sqlcmd_path" -S "$server" -U sa -P "$MSSQL_SA_PASSWORD" -C -b -Q "ALTER LOGIN [sa] DISABLE;" -o /dev/null
+  SQLCMDPASSWORD="${MSSQL_SA_PASSWORD}" \
+    "$sqlcmd_path" -S "$server" -U sa -C -b -Q "ALTER LOGIN [sa] DISABLE;" -o /dev/null
 elif [[ "$sa_disabled" != "1" ]]; then
   echo "Could not verify the sa login state after provisioning." >&2
   exit 1

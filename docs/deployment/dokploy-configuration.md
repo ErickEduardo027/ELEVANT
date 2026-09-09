@@ -260,6 +260,9 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 - Backup diario: 02:15 UTC.
 - Restore-check: domingos 04:30 UTC.
 - Retención local: siete backups.
+- Los comandos operativos entregan la credencial a `sqlcmd` mediante
+  `SQLCMDPASSWORD`; `-P` queda prohibido porque expone el secreto en los
+  argumentos del proceso.
 - Sin solapamiento, `set -x` ni secretos duplicados.
 
 Estos backups son suficientes solo mientras Development sea sintético y reconstruible.

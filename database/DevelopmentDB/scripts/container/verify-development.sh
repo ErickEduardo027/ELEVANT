@@ -17,10 +17,10 @@ if [[ -z "${ELEVANT_DB_DBA_PASSWORD:-}" ]]; then
   exit 1
 fi
 
+export SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}"
 exec "$sqlcmd_path" \
   -S "$server" \
   -d "$database_name" \
   -U elevant_dev_dba \
-  -P "$ELEVANT_DB_DBA_PASSWORD" \
   -C -b -r 1 -l 15 \
   -i /opt/elevant-db-ops/sql/verify-development.sql

@@ -31,6 +31,8 @@ Los scripts validan el destino y utilizan la solución `backend/Elevant.sln`. Pr
 
 Los comandos del contenedor `Dockerfile.ops` son `initialize-backup-storage`, `provision-development`, `backup-development`, `restore-check-development` y `verify-development`. SQL Server y sus volúmenes tienen un ciclo de vida separado del API.
 
+Los procesos `sqlcmd` reciben las credenciales mediante `SQLCMDPASSWORD`; nunca se pasan con `-P` ni como variables `-v`, para evitar exponerlas en los argumentos del proceso.
+
 CI construye las imágenes desde la raíz del repositorio, las certifica contra un SQL Server aislado y publica únicamente referencias inmutables por digest. El fixture `tests/scripts/fixtures/initialize-production.sql` crea una base Production efímera solo durante esa certificación; no es un recurso desplegable ni autoriza Production.
 
 Los dos Compose de Development se publican dentro del bundle OCI con los nombres estables `/compose/compose.development.database.yml` y `/compose/compose.development.release.yml`. Dokploy y el controlador CD siguen consumiendo ese contrato sin depender de la ubicación física del repositorio.

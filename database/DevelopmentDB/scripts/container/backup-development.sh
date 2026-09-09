@@ -22,11 +22,13 @@ if [[ -e "$backup_file" || -e "$working_file" ]]; then
 fi
 trap 'rm -f -- "$working_file"' EXIT
 
-"$sqlcmd_path" -S "$server" -U elevant_dev_backup -P "$ELEVANT_DB_BACKUP_PASSWORD" -C -b \
+SQLCMDPASSWORD="${ELEVANT_DB_BACKUP_PASSWORD}" \
+  "$sqlcmd_path" -S "$server" -U elevant_dev_backup -C -b \
   -v "BACKUP_FILE=$working_file" \
   -i /opt/elevant-db-ops/sql/backup-development.sql
 
-"$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b \
+SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}" \
+  "$sqlcmd_path" -S "$server" -U elevant_dev_dba -C -b \
   -Q "RESTORE VERIFYONLY FROM DISK = N'$working_file' WITH CHECKSUM;"
 
 mv -- "$working_file" "$backup_file"
