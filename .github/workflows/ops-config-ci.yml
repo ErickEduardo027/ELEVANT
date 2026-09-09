@@ -497,7 +497,7 @@ jobs:
           set -Eeuo pipefail
           {
             printf '%s  %s\n' \
-              dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee \
+              9b4319896a1d0b25caa6119122e2842fa6f0313ac8fdcbfa90598903cfc10b21 \
               "$DATABASE_COMPOSE"
             printf '%s  %s\n' \
               bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07 \

@@ -11,6 +11,7 @@ if [[ -z "${ELEVANT_DB_DBA_PASSWORD:-}" ]]; then
   echo "ELEVANT_DB_DBA_PASSWORD is required." >&2
   exit 1
 fi
+export -n ELEVANT_DB_DBA_PASSWORD
 
 latest_backup="$(find "$backup_dir" -regextype posix-extended -maxdepth 1 -type f \
   -regex '.*/ElevantDevelopmentDb_[0-9]{8}T[0-9]{15}Z_[0-9a-f]{12}\.bak' \
@@ -25,6 +26,7 @@ if [[ ! "$restore_check_token" =~ ^[0-9a-f]{12}$ ]]; then
   exit 1
 fi
 
-"$sqlcmd_path" -S "$server" -U elevant_dev_dba -P "$ELEVANT_DB_DBA_PASSWORD" -C -b \
+SQLCMDPASSWORD="${ELEVANT_DB_DBA_PASSWORD}" \
+  "$sqlcmd_path" -S "$server" -U elevant_dev_dba -C -b \
   -v "BACKUP_FILE=$latest_backup" "RESTORE_CHECK_TOKEN=$restore_check_token" \
   -i /opt/elevant-db-ops/sql/restore-check-development.sql
