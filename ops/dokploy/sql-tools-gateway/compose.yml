@@ -44,7 +44,7 @@ services:
 
 configs:
   haproxy_config:
-    file: ./haproxy.cfg
+    file: ../files/haproxy.cfg
 
 networks:
   data:

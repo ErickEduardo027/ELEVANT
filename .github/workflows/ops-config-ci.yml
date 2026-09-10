@@ -424,9 +424,17 @@ jobs:
 
           python3 ops/dokploy/sql-tools-gateway/tests/test_contract.py
 
+          layout="$(mktemp -d)"
+          trap 'rm -rf "$layout"' EXIT
+          mkdir -p "$layout/code" "$layout/files"
+          cp ops/dokploy/sql-tools-gateway/compose.yml \
+            "$layout/code/docker-compose.yml"
+          cp ops/dokploy/sql-tools-gateway/haproxy.cfg \
+            "$layout/files/haproxy.cfg"
+
           compose=(
             docker compose
-            -f ops/dokploy/sql-tools-gateway/compose.yml
+            -f "$layout/code/docker-compose.yml"
           )
           "${compose[@]}" config --quiet
 
