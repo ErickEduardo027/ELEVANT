@@ -1,12 +1,13 @@
 # Configuración de Dokploy
 
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
-privado, cómo se desplegaron DB v1, la API y el runtime inicial de AVIAM Web, y
-cómo se habilitan sus carriles CD pull-based. También define el handoff separado
-que aún completa AVIAM Web y despliega Public Web; versionar artefactos por sí
-solo no autoriza instalarlos. El operador realiza todos los cambios remotos
-manualmente. El agente entrega un bloque corto, identifica si corresponde a
-PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de avanzar.
+privado, cómo se desplegaron DB v1, la API y las dos webs, y cómo se habilitaron
+sus carriles CD pull-based. También define los runbooks de reconstrucción y el
+handoff del acceso SSMS humano a datos sintéticos; versionar
+artefactos por sí solo no autoriza instalarlos. El operador realiza todos los
+cambios remotos manualmente. El agente entrega un bloque corto, identifica si
+corresponde a PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de
+avanzar.
 
 ## Estado aprobado
 
@@ -30,9 +31,8 @@ PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de avanzar.
 - SQL: Development sintético únicamente; Production no se crea en este VPS.
 - Landing existente: se preserva, se deshabilita su Domain y se detiene; no se elimina.
 - Acceso: operaciones administra el host/panel; los desarrolladores acceden
-  únicamente a los Services de aplicación que ya fueron aceptados. API está
-  habilitada; los Services web no implican un runtime hasta completar su
-  rollout individual.
+  únicamente a los Services de aplicación aceptados. API, AVIAM Web y Public
+  Web están activos por Tailscale con sus carriles CD habilitados.
 - Evidencia 2026-08-23: SQL healthy/privado, cinco migraciones, seed
   idempotente, permisos mínimos, backup + restore-check y schedules validados.
 - Evidencia 2026-08-31 UTC: adopción, primera promoción, backup, restore-check,
@@ -42,10 +42,13 @@ PowerShell, hPanel, VPS o Dokploy y valida la evidencia antes de avanzar.
 - Evidencia 2026-09-05 UTC: API por digest, API-CD `succeeded/complete`, health,
   readiness, ping, Swagger, CORS exacto, poll no-op y recuperación tras reboot
   validados. El acceso continúa exclusivamente por Tailscale.
-- Entrega web: AVIAM Web ya tiene runtime inicial healthy por Tailscale, imagen
-  inmutable y baseline A adoptada por Web CD. Su schedule permanece deshabilitado
-  hasta aceptar B -> A -> B y el no-op posterior. Public Web todavía requiere su
-  rollout manual e independiente.
+- Evidencia 2026-09-07 UTC: AVIAM Web y Public Web quedaron healthy por
+  Tailscale; ambos drills B -> A -> B, sus rollbacks, repromociones, estados
+  terminales, polls no-op y schedules automáticos fueron aceptados.
+- Evidencia 2026-09-10 UTC: DB/API se promovieron al commit fuente
+  `a60b5346ffa903e7bd98e4d19dc24c47a2e2afeb`; los cuatro workloads, los
+  controladores y los seis schedules sobrevivieron el reboot final. SQL Tools
+  continúa siendo opcional y no está desplegado.
 - Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
   se configuren, el operador revisa diariamente Beszel, Schedules y
   `controller.log`; no se debe afirmar que existe notificación automática.
@@ -405,6 +408,117 @@ reemplazan una aprobación obligatoria; active las reglas documentadas en
 [`.github/BRANCH_PROTECTION.md`](../../.github/BRANCH_PROTECTION.md) cuando el
 plan lo permita.
 
+## Handoff: habilitar SSMS privado para CRUD Development
+
+Este acceso es una herramienta humana para manipular datos sintéticos. No forma
+parte del runtime de la API o las webs y no autoriza cambios estructurales desde
+SSMS. SQL conserva cero puertos publicados; un gateway separado entrega solo el
+flujo TCP autorizado por Tailscale.
+
+| Componente | Contrato |
+| --- | --- |
+| SQL Server | sin `ports`, solo `elevant-dev-data` |
+| Gateway | `elevant-dev-sql-tools-gateway`, loopback `127.0.0.1:11433` |
+| Backend gateway | `elevant-dev-sql:1433`, sin credenciales ni terminación TLS |
+| Tailscale | `svc:elevant-dev-sql-tools`, endpoint `tcp:1433` |
+| Acceso | `group:elevant-db-editors` y `group:elevant-ops` |
+| Base | `ElevantDevelopmentDb` |
+| Rol | `elevant_dev_team_editor` |
+
+El artefacto operativo está en
+[`ops/dokploy/sql-tools-gateway`](../../ops/dokploy/sql-tools-gateway/README.md).
+Usa
+`docker.io/library/haproxy:3.2.23-alpine3.24@sha256:6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42e`
+para `linux/amd64`, usuario no-root, filesystem read-only, `cap_drop: ALL`,
+`no-new-privileges`, límites y únicamente la red externa
+`elevant-dev-data`. No agregue Domain, `dokploy-network`, otra red, otra
+publicación de host o un listener `0.0.0.0`/`::`. `haproxy.cfg` se instala
+`root:root 0644`: el bind mount file-backed debe ser legible por UID `65534` y
+no contiene secretos.
+
+Orden obligatorio del rollout:
+
+1. Fusionar un PR aprobado con el gateway, la política Tailscale, el
+   provisionador Development, verificaciones de permisos y esta documentación.
+   Exigir CI verde, Compose válido e imagen gateway fijada por digest; una rama
+   versionada no autoriza instalarla.
+2. En la ventana manual, comprobar estados terminales exactos, contenedores
+   healthy, locks libres, backup reciente verificado y restore-check correcto.
+   Deshabilitar backup, restore-check y poll de Database CD; pausar Database CD
+   y volver a comprobar que no hay operación SQL en curso. Registrar hashes,
+   IDs de los cuatro contenedores y configuración viva sin imprimir secretos.
+3. Crear el recurso Raw `elevant-dev-sql-tools-gateway` con AutoDeploy, Domain e
+   Isolated Deployments desactivados. Desplegar el Compose exacto del commit y
+   exigir una sola red (`elevant-dev-data`), backend resoluble, health correcto
+   y listener host exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
+4. En Tailscale, crear `svc:elevant-dev-sql-tools` con endpoint `tcp:1433` y el
+   grupo `group:elevant-db-editors`. Los tres correos reales se escriben solo en
+   la consola del operador; la plantilla conserva placeholders. Mantener los
+   deny tests de acceso directo al host `:1433`/`:11433`, sin Funnel, subnet
+   routes, exit node ni Tailscale SSH. Este grupo concede solo SQL Tools; cada
+   integrante continúa además en `group:elevant-dev` si necesita API o webs.
+5. Los logins contractuales son `elevant_dev_erick`,
+   `elevant_dev_eliezer` y `elevant_dev_laisha`. Guardar sus tres contraseñas
+   distintas como `ELEVANT_DB_TEAM_ERICK_PASSWORD`,
+   `ELEVANT_DB_TEAM_ELIEZER_PASSWORD` y
+   `ELEVANT_DB_TEAM_LAISHA_PASSWORD`; nunca pegarlas en un comando, log,
+   repositorio o captura. Cargar esos valores y `ELEVANT_DB_DBA_PASSWORD` en un
+   archivo temporal
+   `root:root 0600`. Ejecutar la imagen db-ops exacta `@sha256` del bundle
+   aprobado como `docker run --rm --pull never`, con
+   `--network elevant-dev-data`, filesystem read-only, todas las capabilities eliminadas,
+   `no-new-privileges` y límites. Pasar solo la ruta del archivo mediante
+   `--env-file` y ejecutar el entrypoint idempotente
+   `provision-development-team-access`; verificar y eliminar inmediatamente el
+   archivo temporal. Los valores secretos nunca forman parte de argumentos ni
+   interpolación en el shell.
+6. Si el equipo usará **Database Diagrams**, ejecutar una sola vez, como DBA y
+   con otro `docker run` endurecido de la misma imagen y el entrypoint
+   idempotente `install-development-diagram-support`. Verificar los objetos
+   auxiliares y permisos mínimos; no entregar `db_owner` ni permitir `ALTER` de
+   tablas al rol humano. Ninguno de estos one-shot se añade al Compose
+   certificado de la base.
+7. Configurar el proxy TCP únicamente después de validar el listener local:
+
+   ```bash
+   sudo tailscale serve \
+     --service=svc:elevant-dev-sql-tools \
+     --tcp=1433 \
+     tcp://127.0.0.1:11433
+   ```
+
+   Aprobar el anuncio del host en la consola y comprobar `serve status`; Funnel
+   debe seguir vacío. El nombre de conexión es
+   `elevant-dev-sql-tools.<TAILNET_DNS_NAME>.ts.net,1433`.
+8. Desde cada PC y su propia identidad Tailscale, conectar SSMS con
+   `Database Engine`, `SQL Server Authentication`, base
+   `ElevantDevelopmentDb`, `Encryption: Mandatory` y
+   `Trust server certificate` habilitado solo para este Development. Probar
+   `SELECT` y un ciclo transaccional `INSERT`/`UPDATE`/`DELETE` sobre tablas de
+   negocio; confirmar que `CREATE`/`ALTER`/`DROP`, gestión de seguridad,
+   backup/restore y escritura en `infra`/`audit` son rechazados.
+9. Probar desde fuera de Tailscale y con una identidad no autorizada que el
+   endpoint falla. Probar también que la IP pública no sirve `1433` ni `11433`,
+   el host Tailscale no acepta esos puertos directamente y SQL sigue sin
+   publicación Docker.
+10. Reanudar Database CD y rehabilitar backup → restore-check → poll. Exigir un
+    poll no-op, estados exactos, locks libres, los cuatro workloads healthy y
+    cero recreaciones ajenas. Reiniciar el VPS bajo el procedimiento de
+    quiescencia/rollback ya aceptado; repetir listener, Serve, permisos,
+    denegaciones y conexión SSMS antes de cancelar el rollback.
+
+El CRUD humano modifica datos de prueba sin pasar por reglas de negocio de la
+API, por diseño. Foreign keys, `NOT NULL`, unicidad y `CHECK` continúan activos.
+Una tabla, columna, relación, índice o constraint nuevos se implementan siempre
+en una migración EF Core, pasan CI y los aplica Database CD; no se guardan desde
+el diseñador de SSMS. Consulte
+[`docs/security/database-access.md`](../security/database-access.md) para el
+contrato diario y las transacciones de prueba.
+
+Esta sección no habilita nada en Production. No copie su Service, gateway,
+usuarios, contraseñas, permisos, certificado ni objetos de diagramas a ese
+ambiente.
+
 ## Handoff: publicar API Development y activar su CD
 
 La API conserva un recurso Docker Compose normal y un controlador separado. El
@@ -456,12 +570,12 @@ la API permanece 100 % tailnet-only y con datos sintéticos.
 
 ## Handoff: publicar las webs Development y activar su CD
 
-Este handoff comienza únicamente después de fusionar la implementación web y
-obtener sus artefactos certificados. AVIAM Web ya completó el despliegue de su
-runtime inicial y la adopción de A, pero aún debe aceptar el drill y activar su
-schedule; Public Web continúa pendiente desde el primer paso. No interprete la
-presencia de Compose, Dockerfiles o `web-cd` en el repositorio como autorización
-para cambiar el VPS. El procedimiento detallado del controlador está en
+Este handoff conserva el procedimiento de reconstrucción y de próximas
+promociones. AVIAM Web y Public Web ya completaron sus despliegues, adopciones,
+drills B -> A -> B y activación de schedules; una repetición exige igualmente
+artefactos certificados y todos los checkpoints. No interprete la presencia de
+Compose, Dockerfiles o `web-cd` en el repositorio como autorización para cambiar
+el VPS. El procedimiento detallado del controlador está en
 [`ops/dokploy/web-cd/README.md`](../../ops/dokploy/web-cd/README.md).
 
 ### Publicación en GitHub
@@ -637,6 +751,11 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
 - Firewall, Serve y Docker sobreviven un reboot.
 - SQL está healthy, sin puerto público y solo en `elevant-dev-data`.
 - Migración, seed idempotente, permisos, backup y restore-check pasan.
+- Si se habilitó SSMS, el gateway escucha únicamente en
+  `127.0.0.1:11433`, pertenece solo a `elevant-dev-data` y el Service
+  `svc:elevant-dev-sql-tools` es la única entrada. Las tres cuentas personales
+  pasan CRUD de negocio y no pueden ejecutar DDL, administrar SQL ni escribir
+  en `infra`/`audit`; una identidad no autorizada y la red pública no conectan.
 - El controlador adoptó la baseline, ejecuta imágenes y Compose certificados
   por digest/hash, compara semántica con los Raw vivos, serializa promoción y
   schedules, y registra el mismo resultado en Dokploy/GitHub cuando el token
@@ -677,5 +796,10 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
   Un drill fallido ya deja el perfil pausado y restaura la baseline cuando es
   posible; no reanudar ni habilitar el schedule hasta diagnosticar su estado y
   decidir explícitamente la recuperación.
+- SSMS Development: drenar y limpiar únicamente
+  `svc:elevant-dev-sql-tools`, detener el recurso gateway y deshabilitar los
+  logins personales. No borrar la red `elevant-dev-data`, recrear SQL ni tocar
+  sus volúmenes. La retirada del soporte de diagramas, si fue instalado, es una
+  decisión de esquema separada y no forma parte del rollback de conectividad.
 - DB: detener Compose conservando red y volúmenes.
 - Snapshot: último recurso; restaura todo el VPS y pierde cambios posteriores.

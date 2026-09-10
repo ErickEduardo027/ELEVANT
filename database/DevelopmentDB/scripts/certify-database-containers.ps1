@@ -67,6 +67,10 @@ $backupVolume = "$resourcePrefix-sql-backups"
 $sqlContainer = "$resourcePrefix-sql"
 $sqlAlias = 'elevant-cert-sql'
 $sqlcmd = '/opt/mssql-tools18/bin/sqlcmd'
+$certAdminLogin = "elevant_cert_sysadmin_$suffix"
+if ($certAdminLogin -notmatch '^elevant_cert_sysadmin_[0-9a-f]{12}$') {
+    throw 'The generated certification administrator login is not safe.'
+}
 
 $passwords = @{
     Sa = "CertSa-Aa1!$suffix"
@@ -78,6 +82,16 @@ $passwords = @{
     Health = "CertHealth-Aa1!$suffix"
     Backup = "CertBackup-Aa1!$suffix"
     Demo = "CertDemo-Aa1!$suffix"
+    TeamErick = "CertTeamErick-Aa1!$suffix"
+    TeamEliezer = "CertTeamEliezer-Aa1!$suffix"
+    TeamLaisha = "CertTeamLaisha-Aa1!$suffix"
+    TeamErickRotated = "CertTeamErick-Bb2!$suffix"
+    TeamEliezerRotated = "CertTeamEliezer-Bb2!$suffix"
+    TeamLaishaRotated = "CertTeamLaisha-Bb2!$suffix"
+    TeamErickRejected = "CertTeamErick-Cc3!$suffix"
+    TeamEliezerRejected = "CertTeamEliezer-Cc3!$suffix"
+    TeamLaishaRejected = "CertTeamLaisha-Cc3!$suffix"
+    CertAdmin = "CertAdmin-Dd4!$suffix"
 }
 
 function Invoke-Docker {
@@ -107,6 +121,37 @@ function Invoke-DockerWithSqlcmdPassword {
         }
         else {
             Remove-Item Env:SQLCMDPASSWORD -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Invoke-WithScopedEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Environment,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    $previousValues = @{}
+    $presentVariables = @{}
+    try {
+        foreach ($name in $Environment.Keys) {
+            $presentVariables[$name] = Test-Path -LiteralPath "Env:$name"
+            if ($presentVariables[$name]) {
+                $previousValues[$name] = (Get-Item -LiteralPath "Env:$name").Value
+            }
+            Set-Item -LiteralPath "Env:$name" -Value $Environment[$name]
+        }
+
+        & $Action
+    }
+    finally {
+        foreach ($name in $Environment.Keys) {
+            if ($presentVariables[$name]) {
+                Set-Item -LiteralPath "Env:$name" -Value $previousValues[$name]
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
         }
     }
 }
@@ -208,6 +253,73 @@ function Invoke-SqlClient {
         '-C', '-b', '-r', '1',
         '-Q', $Query
     )
+}
+
+function Assert-SqlLoginRejected {
+    param(
+        [Parameter(Mandatory = $true)][string]$User,
+        [Parameter(Mandatory = $true)][string]$Password
+    )
+
+    Invoke-DockerExpectedFailure `
+        -FailureMessage "SQL login $User unexpectedly authenticated with a rejected credential or state." `
+        -ExpectedErrorPattern "Login failed for user '$([regex]::Escape($User))'" `
+        -SqlcmdPassword $Password `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', $User,
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', 'SELECT 1;'
+    )
+}
+
+function New-CertificationAdmin {
+    # SQLCMD reads the generated password from its inherited scripting-variable
+    # environment. Docker and sqlcmd argv contain only the variable name.
+    $scopedEnvironment = @{}
+    $scopedEnvironment['SQLCMDPASSWORD'] = $passwords.Sa
+    $scopedEnvironment['ELEVANT_CERT_ADMIN_PASSWORD'] = $passwords.CertAdmin
+    $query = "CREATE LOGIN [$certAdminLogin] WITH PASSWORD = N'`$(ELEVANT_CERT_ADMIN_PASSWORD)', CHECK_POLICY = ON, CHECK_EXPIRATION = OFF; ALTER SERVER ROLE [sysadmin] ADD MEMBER [$certAdminLogin];"
+
+    Invoke-WithScopedEnvironment -Environment $scopedEnvironment -Action {
+        Invoke-Docker -Arguments @(
+            'exec',
+            '--env', 'SQLCMDPASSWORD',
+            '--env', 'ELEVANT_CERT_ADMIN_PASSWORD',
+            $sqlContainer,
+            $sqlcmd,
+            '-S', 'localhost',
+            '-U', 'sa',
+            '-d', 'master',
+            '-C', '-b', '-r', '1',
+            '-Q', $query
+        )
+    }
+}
+
+function Invoke-WithCertificationAdmin {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+
+    # Base provisioning has already disabled sa. Privileged drift fixtures use
+    # the isolated, ephemeral certifier login and never reopen sa.
+    Assert-SqlLoginRejected -User 'sa' -Password $passwords.Sa
+    try {
+        & $Action
+    }
+    finally {
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'master' -Query "ALTER SERVER ROLE [sysadmin] DROP MEMBER [$certAdminLogin];"
+        Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query "DROP LOGIN [$certAdminLogin]; IF SUSER_ID(N'$certAdminLogin') IS NOT NULL THROW 53027, 'The ephemeral certification administrator still exists.', 1;"
+        Assert-SqlLoginRejected -User $certAdminLogin -Password $passwords.CertAdmin
+        Assert-SqlLoginRejected -User 'sa' -Password $passwords.Sa
+    }
 }
 
 function Wait-Sql {
@@ -323,13 +435,14 @@ function Invoke-BundleTarget {
 }
 
 function Invoke-Ops {
-    param([Parameter(Mandatory = $true)][ValidateSet('provision-development', 'backup-development', 'restore-check-development', 'verify-development')][string]$Command)
+    param([Parameter(Mandatory = $true)][ValidateSet('provision-development', 'provision-development-team-access', 'install-development-diagram-support', 'backup-development', 'restore-check-development', 'verify-development')][string]$Command)
 
     $arguments = @(
         'run', '--rm',
         '--network', $networkName,
         '--env', "ELEVANT_SQL_SERVER=$sqlAlias"
     )
+    $scopedEnvironment = @{}
 
     switch ($Command) {
         'provision-development' {
@@ -342,6 +455,22 @@ function Invoke-Ops {
                 '--env', "ELEVANT_DB_HEALTH_PASSWORD=$($passwords.Health)",
                 '--env', "ELEVANT_DB_BACKUP_PASSWORD=$($passwords.Backup)"
             )
+        }
+        'provision-development-team-access' {
+            $arguments += @(
+                '--env', 'ELEVANT_DB_DBA_PASSWORD',
+                '--env', 'ELEVANT_DB_TEAM_ERICK_PASSWORD',
+                '--env', 'ELEVANT_DB_TEAM_ELIEZER_PASSWORD',
+                '--env', 'ELEVANT_DB_TEAM_LAISHA_PASSWORD'
+            )
+            $scopedEnvironment['ELEVANT_DB_DBA_PASSWORD'] = $passwords.Dba
+            $scopedEnvironment['ELEVANT_DB_TEAM_ERICK_PASSWORD'] = $passwords.TeamErick
+            $scopedEnvironment['ELEVANT_DB_TEAM_ELIEZER_PASSWORD'] = $passwords.TeamEliezer
+            $scopedEnvironment['ELEVANT_DB_TEAM_LAISHA_PASSWORD'] = $passwords.TeamLaisha
+        }
+        'install-development-diagram-support' {
+            $arguments += @('--env', 'ELEVANT_DB_DBA_PASSWORD')
+            $scopedEnvironment['ELEVANT_DB_DBA_PASSWORD'] = $passwords.Dba
         }
         'backup-development' {
             $arguments += @(
@@ -362,7 +491,93 @@ function Invoke-Ops {
     }
 
     $arguments += @($OpsImage, $Command)
-    Invoke-Docker -Arguments $arguments
+    if ($scopedEnvironment.Count -eq 0) {
+        Invoke-Docker -Arguments $arguments
+    }
+    else {
+        Invoke-WithScopedEnvironment -Environment $scopedEnvironment -Action {
+            Invoke-Docker -Arguments $arguments
+        }
+    }
+}
+
+function Invoke-TeamProvisionExpectedFailure {
+    param(
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [Parameter(Mandatory = $true)][string]$ExpectedErrorPattern
+    )
+
+    $arguments = @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', "ELEVANT_SQL_SERVER=$sqlAlias",
+        '--env', 'ELEVANT_DB_DBA_PASSWORD',
+        '--env', 'ELEVANT_DB_TEAM_ERICK_PASSWORD',
+        '--env', 'ELEVANT_DB_TEAM_ELIEZER_PASSWORD',
+        '--env', 'ELEVANT_DB_TEAM_LAISHA_PASSWORD',
+        $OpsImage,
+        'provision-development-team-access'
+    )
+    $scopedEnvironment = @{}
+    $scopedEnvironment['ELEVANT_DB_DBA_PASSWORD'] = $passwords.Dba
+    $scopedEnvironment['ELEVANT_DB_TEAM_ERICK_PASSWORD'] = $passwords.TeamErick
+    $scopedEnvironment['ELEVANT_DB_TEAM_ELIEZER_PASSWORD'] = $passwords.TeamEliezer
+    $scopedEnvironment['ELEVANT_DB_TEAM_LAISHA_PASSWORD'] = $passwords.TeamLaisha
+
+    Invoke-WithScopedEnvironment -Environment $scopedEnvironment -Action {
+        Invoke-DockerExpectedFailure `
+            -Arguments $arguments `
+            -FailureMessage $FailureMessage `
+            -ExpectedErrorPattern $ExpectedErrorPattern
+    }
+}
+
+function Invoke-DiagramInstallExpectedFailure {
+    param(
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [Parameter(Mandatory = $true)][string]$ExpectedErrorPattern
+    )
+
+    $arguments = @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', "ELEVANT_SQL_SERVER=$sqlAlias",
+        '--env', 'ELEVANT_DB_DBA_PASSWORD',
+        $OpsImage,
+        'install-development-diagram-support'
+    )
+    $scopedEnvironment = @{}
+    $scopedEnvironment['ELEVANT_DB_DBA_PASSWORD'] = $passwords.Dba
+    Invoke-WithScopedEnvironment -Environment $scopedEnvironment -Action {
+        Invoke-DockerExpectedFailure `
+            -Arguments $arguments `
+            -FailureMessage $FailureMessage `
+            -ExpectedErrorPattern $ExpectedErrorPattern
+    }
+}
+
+function Invoke-DevelopmentVerifyExpectedFailure {
+    param(
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [Parameter(Mandatory = $true)][string]$ExpectedErrorPattern
+    )
+
+    $arguments = @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', "ELEVANT_SQL_SERVER=$sqlAlias",
+        '--env', 'ELEVANT_DB_DBA_PASSWORD',
+        $OpsImage,
+        'verify-development'
+    )
+    $scopedEnvironment = @{}
+    $scopedEnvironment['ELEVANT_DB_DBA_PASSWORD'] = $passwords.Dba
+    Invoke-WithScopedEnvironment -Environment $scopedEnvironment -Action {
+        Invoke-DockerExpectedFailure `
+            -Arguments $arguments `
+            -FailureMessage $FailureMessage `
+            -ExpectedErrorPattern $ExpectedErrorPattern
+    }
 }
 
 function Assert-ImageContract {
@@ -585,6 +800,7 @@ DROP DATABASE [ElevantDevelopmentDb];
     )
     Invoke-SqlClient -User 'sa' -Password $passwords.Sa -Database 'master' -Query "IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE [name] = N'sa' AND [is_disabled] = 1) THROW 53008, 'sa was disabled before DBA authentication succeeded.', 1; ALTER LOGIN [elevant_dev_dba] WITH PASSWORD = N'$($passwords.Dba)';"
 
+    New-CertificationAdmin
     Invoke-Ops -Command provision-development
     Invoke-Ops -Command provision-development
     Invoke-Release -Environment Development -ConnectionString $developmentMigratorConnection -Command verify-target
@@ -609,6 +825,505 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
     Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
 IF (SELECT COUNT_BIG(*) FROM [iam].[organizations] WHERE [code] = N'CERT-SENTINEL' AND [public_id] = CONVERT(uniqueidentifier, N'90000000-0000-7000-8000-000000000001')) <> 1
     THROW 53003, 'The second seed removed or duplicated the certification sentinel.', 1;
+'@
+
+    Invoke-Ops -Command verify-development
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+CREATE USER [elevant_dev_erick] WITHOUT LOGIN;
+'@
+    Invoke-DevelopmentVerifyExpectedFailure `
+        -FailureMessage 'Development verification unexpectedly skipped partial team-access artifacts.' `
+        -ExpectedErrorPattern 'artifacts are partial; refusing to skip verification'
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+DROP USER [elevant_dev_erick];
+'@
+
+    Invoke-Ops -Command provision-development-team-access
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query @'
+ALTER LOGIN [elevant_dev_laisha] DISABLE;
+'@
+    Invoke-Ops -Command provision-development-team-access
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query @'
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.sql_logins
+    WHERE [name] = N'elevant_dev_laisha'
+      AND [is_disabled] = 1
+      AND [is_policy_checked] = 1
+      AND [is_expiration_checked] = 0
+)
+    THROW 53015, 'Team provisioning did not preserve explicit login offboarding.', 1;
+'@
+    Assert-SqlLoginRejected -User 'elevant_dev_laisha' -Password $passwords.TeamLaisha
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query @'
+ALTER LOGIN [elevant_dev_laisha] ENABLE;
+'@
+
+    $initialTeamPasswords = @{
+        elevant_dev_erick = $passwords.TeamErick
+        elevant_dev_eliezer = $passwords.TeamEliezer
+        elevant_dev_laisha = $passwords.TeamLaisha
+    }
+    $passwords.TeamErick = $passwords.TeamErickRotated
+    $passwords.TeamEliezer = $passwords.TeamEliezerRotated
+    $passwords.TeamLaisha = $passwords.TeamLaishaRotated
+    Invoke-Ops -Command provision-development-team-access
+
+    foreach ($login in $initialTeamPasswords.Keys) {
+        Assert-SqlLoginRejected -User $login -Password $initialTeamPasswords[$login]
+    }
+
+    Invoke-WithCertificationAdmin -Action {
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'master' -Query @'
+CREATE SERVER ROLE [elevant_team_forbidden_role] AUTHORIZATION [elevant_dev_erick];
+'@
+        Invoke-TeamProvisionExpectedFailure `
+            -FailureMessage 'Team provisioning unexpectedly accepted server-role ownership.' `
+            -ExpectedErrorPattern 'owns a forbidden server securable'
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'master' -Query @'
+DROP SERVER ROLE [elevant_team_forbidden_role];
+'@
+        Invoke-Ops -Command provision-development-team-access
+
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'master' -Query @'
+CREATE DATABASE [ElevantTeamAccessOther];
+'@
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'ElevantTeamAccessOther' -Query @'
+CREATE USER [unexpected_erick_mapping] FOR LOGIN [elevant_dev_erick];
+ALTER ROLE [db_owner] ADD MEMBER [unexpected_erick_mapping];
+'@
+        Invoke-Ops -Command provision-development-team-access
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'ElevantTeamAccessOther' -Query @'
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_principals
+    WHERE [name] = N'unexpected_erick_mapping'
+)
+    THROW 53020, 'The external test mapping unexpectedly disappeared instead of becoming orphaned.', 1;
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.database_principals AS users
+    INNER JOIN master.sys.server_principals AS logins
+        ON logins.[sid] = users.[sid]
+    WHERE users.[name] = N'unexpected_erick_mapping'
+      AND logins.[name] = N'elevant_dev_erick'
+)
+    THROW 53021, 'Login SID replacement did not neutralize the external database mapping.', 1;
+'@
+        Invoke-DockerExpectedFailure `
+            -FailureMessage 'A reconciled team login unexpectedly retained access to another database.' `
+            -ExpectedErrorPattern 'Cannot open database|Login failed' `
+            -SqlcmdPassword $passwords.TeamErick `
+            -Arguments @(
+            'run', '--rm',
+            '--network', $networkName,
+            '--env', 'SQLCMDPASSWORD',
+            '--entrypoint', $sqlcmd,
+            $SqlServerImage,
+            '-S', "$sqlAlias,1433",
+            '-U', 'elevant_dev_erick',
+            '-d', 'ElevantTeamAccessOther',
+            '-C', '-b', '-r', '1',
+            '-Q', 'SELECT 1;'
+        )
+        Invoke-SqlClient -User $certAdminLogin -Password $passwords.CertAdmin -Database 'master' -Query @'
+ALTER DATABASE [ElevantTeamAccessOther] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+DROP DATABASE [ElevantTeamAccessOther];
+'@
+    }
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+GRANT CONTROL TO [elevant_dev_team_editor];
+'@
+    $teamSidsBeforeRejectedReconciliation = Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query @'
+SET NOCOUNT ON;
+SELECT [name], CONVERT(varchar(170), [sid], 2) AS [sid]
+FROM sys.sql_logins
+WHERE [name] IN (N'elevant_dev_erick', N'elevant_dev_eliezer', N'elevant_dev_laisha')
+ORDER BY [name];
+'@
+    $teamSidsBeforeRejectedReconciliation = ($teamSidsBeforeRejectedReconciliation | Out-String).Trim()
+
+    $acceptedTeamPasswords = @{
+        elevant_dev_erick = $passwords.TeamErick
+        elevant_dev_eliezer = $passwords.TeamEliezer
+        elevant_dev_laisha = $passwords.TeamLaisha
+    }
+    $passwords.TeamErick = $passwords.TeamErickRejected
+    $passwords.TeamEliezer = $passwords.TeamEliezerRejected
+    $passwords.TeamLaisha = $passwords.TeamLaishaRejected
+    try {
+        Invoke-TeamProvisionExpectedFailure `
+            -FailureMessage 'Team provisioning unexpectedly accepted a privileged role grant.' `
+            -ExpectedErrorPattern 'role permission set is not exact'
+    }
+    finally {
+        $rejectedTeamPasswords = @{
+            elevant_dev_erick = $passwords.TeamErick
+            elevant_dev_eliezer = $passwords.TeamEliezer
+            elevant_dev_laisha = $passwords.TeamLaisha
+        }
+        $passwords.TeamErick = $acceptedTeamPasswords.elevant_dev_erick
+        $passwords.TeamEliezer = $acceptedTeamPasswords.elevant_dev_eliezer
+        $passwords.TeamLaisha = $acceptedTeamPasswords.elevant_dev_laisha
+    }
+
+    $teamSidsAfterRejectedReconciliation = Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'master' -Query @'
+SET NOCOUNT ON;
+SELECT [name], CONVERT(varchar(170), [sid], 2) AS [sid]
+FROM sys.sql_logins
+WHERE [name] IN (N'elevant_dev_erick', N'elevant_dev_eliezer', N'elevant_dev_laisha')
+ORDER BY [name];
+'@
+    $teamSidsAfterRejectedReconciliation = ($teamSidsAfterRejectedReconciliation | Out-String).Trim()
+    if ($teamSidsAfterRejectedReconciliation -ne $teamSidsBeforeRejectedReconciliation) {
+        throw 'Rejected team reconciliation did not roll back all login SIDs.'
+    }
+    foreach ($login in $rejectedTeamPasswords.Keys) {
+        Assert-SqlLoginRejected -User $login -Password $rejectedTeamPasswords[$login]
+        Invoke-SqlClient -User $login -Password $acceptedTeamPasswords[$login] -Database 'ElevantDevelopmentDb' -Query 'SELECT 1;'
+    }
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+REVOKE CONTROL FROM [elevant_dev_team_editor];
+'@
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+CREATE VIEW [ops].[team_access_forbidden_view]
+AS
+    SELECT [id], [environment_name]
+    FROM [infra].[database_instances];
+'@
+    Invoke-TeamProvisionExpectedFailure `
+        -FailureMessage 'Team provisioning unexpectedly accepted a view inside a CRUD schema.' `
+        -ExpectedErrorPattern 'CRUD schema contains a non-table executable or mutable object'
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+DROP VIEW [ops].[team_access_forbidden_view];
+'@
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+CREATE TABLE [ops].[team_access_cascade_parent]
+(
+    [id] int NOT NULL CONSTRAINT [PK_team_access_cascade_parent] PRIMARY KEY
+);
+CREATE TABLE [audit].[team_access_cascade_child]
+(
+    [id] int NOT NULL CONSTRAINT [PK_team_access_cascade_child] PRIMARY KEY,
+    [parent_id] int NOT NULL,
+    CONSTRAINT [FK_team_access_cascade_child_parent]
+        FOREIGN KEY ([parent_id])
+        REFERENCES [ops].[team_access_cascade_parent] ([id])
+        ON DELETE CASCADE
+);
+'@
+    Invoke-TeamProvisionExpectedFailure `
+        -FailureMessage 'Team provisioning unexpectedly accepted a cascade into a protected schema.' `
+        -ExpectedErrorPattern 'cascading foreign key permits an editable table to mutate a protected schema'
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+DROP TABLE [audit].[team_access_cascade_child];
+DROP TABLE [ops].[team_access_cascade_parent];
+'@
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+CREATE TABLE [ops].[team_access_temporal_probe]
+(
+    [id] int NOT NULL CONSTRAINT [PK_team_access_temporal_probe] PRIMARY KEY,
+    [value] int NOT NULL,
+    [valid_from] datetime2 GENERATED ALWAYS AS ROW START HIDDEN
+        CONSTRAINT [DF_team_access_temporal_probe_valid_from] DEFAULT SYSUTCDATETIME(),
+    [valid_to] datetime2 GENERATED ALWAYS AS ROW END HIDDEN
+        CONSTRAINT [DF_team_access_temporal_probe_valid_to]
+        DEFAULT CONVERT(datetime2, N'9999-12-31 23:59:59.9999999'),
+    PERIOD FOR SYSTEM_TIME ([valid_from], [valid_to])
+)
+WITH (
+    SYSTEM_VERSIONING = ON (
+        HISTORY_TABLE = [infra].[team_access_temporal_probe_history],
+        DATA_CONSISTENCY_CHECK = ON
+    )
+);
+'@
+    Invoke-DevelopmentVerifyExpectedFailure `
+        -FailureMessage 'Development verification unexpectedly accepted protected temporal history.' `
+        -ExpectedErrorPattern 'editable temporal or ledger table writes history into a protected schema'
+    Invoke-TeamProvisionExpectedFailure `
+        -FailureMessage 'Team provisioning unexpectedly accepted protected temporal history.' `
+        -ExpectedErrorPattern 'editable temporal or ledger table writes history into a protected schema'
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+ALTER TABLE [ops].[team_access_temporal_probe] SET (SYSTEM_VERSIONING = OFF);
+DROP TABLE [ops].[team_access_temporal_probe];
+DROP TABLE [infra].[team_access_temporal_probe_history];
+'@
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+CREATE TABLE [ops].[team_access_certification]
+(
+    [id] int NOT NULL CONSTRAINT [PK_team_access_certification] PRIMARY KEY,
+    [value] nvarchar(32) NOT NULL
+);
+'@
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query @'
+INSERT INTO [ops].[team_access_certification] ([id], [value]) VALUES (1, N'created');
+IF (SELECT [value] FROM [ops].[team_access_certification] WHERE [id] = 1) <> N'created'
+    THROW 53016, 'Team editor SELECT or INSERT behavior failed.', 1;
+UPDATE [ops].[team_access_certification] SET [value] = N'updated' WHERE [id] = 1;
+IF (SELECT [value] FROM [ops].[team_access_certification] WHERE [id] = 1) <> N'updated'
+    THROW 53017, 'Team editor UPDATE behavior failed.', 1;
+DELETE FROM [ops].[team_access_certification] WHERE [id] = 1;
+IF EXISTS (SELECT 1 FROM [ops].[team_access_certification])
+    THROW 53018, 'Team editor DELETE behavior failed.', 1;
+'@
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Team editor unexpectedly changed a functional table definition.' `
+        -ExpectedErrorPattern 'permission was denied|do(?:es)? not have permissions?' `
+        -SqlcmdPassword $passwords.TeamErick `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_erick',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', 'ALTER TABLE [ops].[team_access_certification] ADD [forbidden] int NULL;'
+    )
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Team editor unexpectedly changed the immutable Development marker.' `
+        -ExpectedErrorPattern 'UPDATE permission was denied' `
+        -SqlcmdPassword $passwords.TeamErick `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_erick',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', "UPDATE [infra].[database_instances] SET [environment_name] = N'Production' WHERE [id] = 1;"
+    )
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Team editor unexpectedly mutated EF migration history.' `
+        -ExpectedErrorPattern 'DELETE permission was denied' `
+        -SqlcmdPassword $passwords.TeamErick `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_erick',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', 'DELETE FROM [infra].[__EFMigrationsHistory] WHERE 1 = 0;'
+    )
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+DROP TABLE [ops].[team_access_certification];
+'@
+
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query @'
+IF IS_ROLEMEMBER(N'elevant_dev_team_editor') <> 1
+    THROW 53009, 'The certified Erick login is not a team editor.', 1;
+
+IF HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'SELECT') <> 1
+   OR HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'INSERT') <> 1
+   OR HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'UPDATE') <> 1
+   OR HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'DELETE') <> 1
+   OR HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'ALTER') <> 0
+   OR HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'SELECT') <> 1
+   OR HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'UPDATE') <> 0
+   OR HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'DELETE') <> 0
+   OR HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'CREATE TABLE') <> 0
+    THROW 53010, 'The certified team editor permission boundary is invalid.', 1;
+'@
+
+    Invoke-Ops -Command install-development-diagram-support
+    Invoke-Ops -Command install-development-diagram-support
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+GRANT EXECUTE ON OBJECT::[dbo].[sp_helpdiagrams] TO [public];
+GRANT EXECUTE ON OBJECT::[dbo].[sp_creatediagram] TO [elevant_dev_app];
+'@
+    Invoke-DiagramInstallExpectedFailure `
+        -FailureMessage 'Diagram installation unexpectedly accepted a positive third-party grant.' `
+        -ExpectedErrorPattern 'unexpected positive permission for another principal'
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_permissions
+    WHERE [class] = 1
+      AND [major_id] = OBJECT_ID(N'dbo.sp_helpdiagrams')
+      AND [grantee_principal_id] = DATABASE_PRINCIPAL_ID(N'public')
+      AND [permission_name] = N'EXECUTE'
+      AND [state] IN (N'G', N'W')
+)
+    THROW 53023, 'Failed diagram installation did not roll back its public REVOKE.', 1;
+
+REVOKE EXECUTE ON OBJECT::[dbo].[sp_helpdiagrams] FROM [public];
+REVOKE EXECUTE ON OBJECT::[dbo].[sp_creatediagram] FROM [elevant_dev_app];
+'@
+    Invoke-Ops -Command install-development-diagram-support
+
+    # CREATE OR ALTER preserves explicit ownership. Adopt a deliberately
+    # hostile owner and prove the installer restores schema ownership before
+    # editors use the EXECUTE AS dbo modules.
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+ALTER AUTHORIZATION ON OBJECT::[dbo].[sp_helpdiagrams] TO [elevant_dev_app];
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE [object_id] = OBJECT_ID(N'dbo.sp_helpdiagrams')
+      AND [principal_id] = DATABASE_PRINCIPAL_ID(N'elevant_dev_app')
+)
+    THROW 53024, 'The diagram ownership drift probe was not installed.', 1;
+'@
+    Invoke-Ops -Command install-development-diagram-support
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+IF EXISTS (
+    SELECT 1
+    FROM sys.objects
+    WHERE [object_id] = OBJECT_ID(N'dbo.sp_helpdiagrams')
+      AND [principal_id] IS NOT NULL
+)
+    THROW 53025, 'Diagram installation did not restore schema ownership.', 1;
+'@
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Application login retained ALTER through stale diagram ownership.' `
+        -ExpectedErrorPattern 'ALTER permission was denied|do(?:es)? not have permissions?' `
+        -SqlcmdPassword $passwords.App `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_app',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', 'ALTER PROCEDURE [dbo].[sp_helpdiagrams] AS SELECT 1 AS [forbidden];'
+    )
+
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'A team editor unexpectedly executed the DBA-only diagram upgrader.' `
+        -ExpectedErrorPattern 'EXECUTE permission was denied|do(?:es)? not have permissions?' `
+        -SqlcmdPassword $passwords.TeamErick `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_erick',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', 'EXEC [dbo].[sp_upgraddiagrams];'
+    )
+
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query @'
+IF [dbo].[fn_diagramobjects]() <> 255
+    THROW 53019, 'The team editor could not inspect the installed SSMS diagram contract.', 1;
+
+DECLARE @diagram_id int;
+EXEC @diagram_id = [dbo].[sp_creatediagram]
+    @diagramname = N'certification-erick',
+    @version = 1,
+    @definition = 0x0102;
+IF @diagram_id <= 0
+    THROW 53011, 'The team editor could not create its own diagram.', 1;
+'@
+
+    # Reconciliation replaces the server SID but remaps the existing database
+    # principal, so a personal diagram must remain owned by the same editor.
+    Invoke-Ops -Command provision-development-team-access
+
+    Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'
+IF (
+    SELECT COUNT_BIG(*)
+    FROM [dbo].[sysdiagrams]
+    WHERE [principal_id] = DATABASE_PRINCIPAL_ID(N'elevant_dev_erick')
+      AND [name] = N'certification-erick'
+) <> 1
+    THROW 53022, 'Login reconciliation did not preserve personal diagram ownership.', 1;
+'@
+
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query @'
+CREATE TABLE #help
+(
+    [Database] sysname,
+    [Name] sysname,
+    [ID] int,
+    [Owner] sysname,
+    [OwnerID] int
+);
+INSERT INTO #help
+EXEC [dbo].[sp_helpdiagrams] @diagramname = N'certification-erick';
+IF (
+    SELECT COUNT_BIG(*)
+    FROM #help
+    WHERE [Name] = N'certification-erick'
+      AND [Owner] = N'elevant_dev_erick'
+) <> 1
+    THROW 53012, 'The diagram help contract did not return the owned diagram.', 1;
+
+EXEC [dbo].[sp_renamediagram]
+    @diagramname = N'certification-erick',
+    @new_diagramname = N'certification-erick-renamed';
+EXEC [dbo].[sp_alterdiagram]
+    @diagramname = N'certification-erick-renamed',
+    @version = 2,
+    @definition = 0x0304;
+
+CREATE TABLE #definition ([version] int, [definition] varbinary(max));
+INSERT INTO #definition
+EXEC [dbo].[sp_helpdiagramdefinition]
+    @diagramname = N'certification-erick-renamed';
+IF NOT EXISTS (SELECT 1 FROM #definition WHERE [version] = 2 AND [definition] = 0x0304)
+    THROW 53013, 'The diagram definition contract did not preserve the update.', 1;
+'@
+
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'A team editor unexpectedly opened another editor owned diagram.' `
+        -ExpectedErrorPattern 'Diagram does not exist or you do not have permission\.' `
+        -SqlcmdPassword $passwords.TeamEliezer `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_eliezer',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', "DECLARE @owner_id int = DATABASE_PRINCIPAL_ID(N'elevant_dev_erick'); EXEC [dbo].[sp_helpdiagramdefinition] @diagramname = N'certification-erick-renamed', @owner_id = @owner_id;"
+    )
+
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query @'
+EXEC [dbo].[sp_dropdiagram] @diagramname = N'certification-erick-renamed';
+CREATE TABLE #remaining
+(
+    [Database] sysname,
+    [Name] sysname,
+    [ID] int,
+    [Owner] sysname,
+    [OwnerID] int
+);
+INSERT INTO #remaining
+EXEC [dbo].[sp_helpdiagrams] @diagramname = N'certification-erick-renamed';
+IF EXISTS (SELECT 1 FROM #remaining)
+    THROW 53014, 'The owned diagram was not deleted.', 1;
 '@
 
     Invoke-Ops -Command verify-development
@@ -665,6 +1380,7 @@ IF EXISTS (
     Invoke-Ops -Command provision-development
     Wait-Sql -User 'elevant_dev_health' -Password $passwords.Health -Database 'ElevantDevelopmentDb'
     Invoke-Ops -Command verify-development
+    Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query 'SELECT 1;'
 
     $succeeded = $true
 }

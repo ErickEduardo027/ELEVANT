@@ -8,6 +8,12 @@ case "${1:-}" in
   provision-development)
     exec /opt/elevant-db-ops/provision-development.sh
     ;;
+  provision-development-team-access)
+    exec /opt/elevant-db-ops/provision-development-team-access.sh
+    ;;
+  install-development-diagram-support)
+    exec /opt/elevant-db-ops/install-development-diagram-support.sh
+    ;;
   backup-development)
     exec /opt/elevant-db-ops/backup-development.sh
     ;;
@@ -18,7 +24,7 @@ case "${1:-}" in
     exec /opt/elevant-db-ops/verify-development.sh
     ;;
   *)
-    echo "Usage: entrypoint.sh <initialize-backup-storage|provision-development|backup-development|restore-check-development|verify-development>" >&2
+    echo "Usage: entrypoint.sh <initialize-backup-storage|provision-development|provision-development-team-access|install-development-diagram-support|backup-development|restore-check-development|verify-development>" >&2
     exit 2
     ;;
 esac

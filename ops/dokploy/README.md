@@ -21,6 +21,7 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | `ssh/` | Drop-in key-only, verificación efectiva y rollback acotado |
 | `traefik/` | Reconciliación manual y rollback a partir del contrato auditado |
 | `observability/` | Compose privado de Beszel y contrato de alertas |
+| `sql-tools-gateway/` | Gateway TCP privado, sin credenciales, entre Tailscale Services y SQL Development |
 | `database-cd/` | Controlador pull-based, bundle OCI v1, cache Compose, lock y estado persistente para promover la DB Development |
 | `api-cd/` | Controlador pull-based de API, gate DB, rollback de imagen/Compose y estado persistente |
 | `web-cd/` | Controlador genérico con perfiles/estados separados para AVIAM Web y Public Web, gate API exacto y rollback por aplicación |
@@ -31,6 +32,13 @@ bundle OCI. `database-cd` los valida, cachea por hash y compara semánticamente
 con los Raw vivos; no posee el esquema, secretos ni volúmenes. Separar estos
 artefactos evita que una actualización del control plane cambie el ciclo de
 vida de la base.
+
+El acceso humano de herramientas SQL usa un recurso Raw independiente. HAProxy
+publica solo `127.0.0.1:11433`, se conecta únicamente a `elevant-dev-data` y no
+termina TLS ni almacena credenciales. Tailscale anuncia ese listener como
+`svc:elevant-dev-sql-tools:1433`; el `1433` de SQL Server continúa sin
+publicarse en el host o Internet y cada persona se autentica con una identidad
+SQL propia.
 
 Las fuentes Compose web permanecen junto a cada aplicación. GitHub Actions
 construye y certifica fuera del VPS una imagen y un bundle OCI independientes

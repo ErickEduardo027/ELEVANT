@@ -5,7 +5,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 repository_root="$(cd "$root/../.." && pwd)"
 runtime_scripts=(
   "$root/scripts/container/backup-development.sh"
+  "$root/scripts/container/install-development-diagram-support.sh"
   "$root/scripts/container/provision-development.sh"
+  "$root/scripts/container/provision-development-team-access.sh"
   "$root/scripts/container/restore-check-development.sh"
   "$root/scripts/container/verify-development.sh"
 )
@@ -65,6 +67,8 @@ grep -Fq 'export -n ELEVANT_DB_BACKUP_PASSWORD ELEVANT_DB_DBA_PASSWORD' \
   "$root/scripts/container/backup-development.sh"
 grep -Fq 'export -n "${required[@]}" value password login' \
   "$root/scripts/container/provision-development.sh"
+grep -Fq 'export -n "${required[@]}" variable_name password_variable password_value' \
+  "$root/scripts/container/provision-development-team-access.sh"
 grep -Fq 'export -n probe_login probe_password' \
   "$root/scripts/container/provision-development.sh"
 grep -Fq 'export -n ELEVANT_DB_DBA_PASSWORD' \
@@ -86,11 +90,11 @@ for file in "${compose_files[@]}"; do
 done
 grep -Fq 'SA_PASSWORD="$${MSSQL_SA_PASSWORD}"' "$root/compose.local.yml"
 
-[[ "$(grep -Fc "'--env', 'SQLCMDPASSWORD'," "$certifier")" -eq 4 ]] ||
+[[ "$(grep -Fc "'--env', 'SQLCMDPASSWORD'," "$certifier")" -eq 13 ]] ||
   fail 'every containerized sqlcmd client must import SQLCMDPASSWORD by name'
 [[ "$(grep -Fc 'Invoke-DockerWithSqlcmdPassword -Password' "$certifier")" -eq 2 ]] ||
   fail 'normal sqlcmd Docker calls must use the scoped password wrapper'
-[[ "$(grep -Ec -- "$certifier_wrapper_re" "$certifier")" -eq 2 ]] ||
+[[ "$(grep -Ec -- "$certifier_wrapper_re" "$certifier")" -eq 9 ]] ||
   fail 'expected-failure sqlcmd Docker calls must use the scoped password wrapper'
 [[ "$(grep -Fc 'docker exec --env SQLCMDPASSWORD' "$certifier")" -eq 1 ]] ||
   fail 'docker exec sqlcmd readiness must import SQLCMDPASSWORD by name'
@@ -108,5 +112,12 @@ if grep -nE -- '^[[:space:]]+-v([[:space:]\\]|$)' \
   "$root/scripts/container/provision-development.sh"; then
   fail 'provisioning credentials must not be sqlcmd argv values'
 fi
+
+if grep -nE -- '^[[:space:]]+-v([[:space:]\\]|$)' \
+  "$root/scripts/container/provision-development-team-access.sh"; then
+  fail 'team provisioning credentials must not be sqlcmd argv values'
+fi
+
+bash "$root/tests/scripts/test_development_team_access.sh"
 
 echo SQLCMD_PASSWORD_TRANSPORT_OK

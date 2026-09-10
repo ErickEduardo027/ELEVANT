@@ -2,7 +2,10 @@
 
 ## Estado
 
-Accepted — 2026-08-17 para preparar Development. Production queda fuera de alcance.
+Accepted — 2026-08-17 para preparar Development. El rechazo de un Service SQL
+fue modificado únicamente para el acceso humano controlado por
+[ADR-0013](0013-development-ssms-data-access.md). Production queda fuera de
+alcance.
 
 ## Contexto
 

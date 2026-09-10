@@ -13,7 +13,15 @@ La API Elevant es la única propietaria de su base SQL Server. Web, Mobile Agent
 
 ## Herramientas humanas
 
-SSMS puede usarse desde una red y cuenta administrativas controladas. No forma parte del runtime. Las consultas manuales en Production son excepcionales, de preferencia solo lectura, aprobadas y registradas. No se copian resultados a chats, issues o repositorio.
+SSMS no forma parte del runtime. En Development, cuentas personales controladas
+pueden usarlo por el Service Tailscale aprobado para ejecutar CRUD sobre datos
+sintéticos; no reciben DDL ni propiedad del esquema. Esta excepción humana no
+autoriza a un frontend, Mobile Agent, integración o herramienta compartida a
+conectarse directamente.
+
+Las consultas manuales en Production son excepcionales, de preferencia solo
+lectura, aprobadas y registradas. Production no hereda el gateway ni las cuentas
+CRUD de Development. No se copian resultados a chats, issues o repositorio.
 
 ## Separación
 

@@ -1,6 +1,13 @@
 # Tailscale para ELEVANT Development
 
-Esta guia prepara una tailnet privada para administrar el VPS y, mas adelante, compartir la API y los dos frontends Development con el equipo. Tailscale no sustituye la autenticacion de ELEVANT: JWT, roles y tenant scope siguen siendo obligatorios.
+Esta guia prepara una tailnet privada para administrar el VPS, compartir la API
+y los dos frontends Development y ofrecer a un grupo reducido el gateway de
+herramientas SQL. Tailscale no sustituye la autenticacion: ELEVANT conserva
+JWT, roles y tenant scope, y SQL Server exige una cuenta personal independiente.
+
+Dokploy, monitoreo, API, AVIAM Web y Public Web ya estan activos. SQL Tools es
+un sexto Service opcional y no se considera desplegado hasta completar su
+rollout manual y todas las pruebas de la seccion 7.
 
 ## Resultado esperado
 
@@ -10,9 +17,14 @@ Esta guia prepara una tailnet privada para administrar el VPS y, mas adelante, c
 | Dokploy | `group:elevant-ops` | `svc:elevant-dev-dokploy`, `tcp:443` |
 | Beszel | `group:elevant-ops` | `svc:elevant-dev-monitoring`, `tcp:443` |
 | API y webs Development | `group:elevant-ops`, `group:elevant-dev` | tres Services, `tcp:443` |
-| SQL Server, Docker API y Swarm | nadie por Tailscale | sin grant ni Service |
+| Herramientas SQL Development | `group:elevant-ops`, `group:elevant-db-editors` | `svc:elevant-dev-sql-tools`, `tcp:1433` |
+| SQL directo del host, Docker API y Swarm | nadie por Tailscale | sin grant ni Service |
 
-La politica es deny-by-default. No hay grants al puerto local `3000`, a SQL Server `1433`, a Docker `2375/2376` ni a Swarm `2377/7946/4789`. Tampoco se habilitan Funnel, subnet routes, exit node o Tailscale SSH. El puerto 22 usa OpenSSH normal y conserva su autenticacion por clave.
+La politica es deny-by-default. El grant SQL apunta al Service, nunca a
+`tag:elevant-dev-host:1433` ni al listener local `11433`. Tampoco hay grants al
+puerto local `3000`, Docker `2375/2376` o Swarm `2377/7946/4789`. No se
+habilitan Funnel, subnet routes, exit node o Tailscale SSH. El puerto 22 usa
+OpenSSH normal y conserva su autenticacion por clave.
 
 > Esta guia configura la red privada. No cierre aun SSH ni los puertos publicos en Hostinger: primero pruebe una sesion nueva por Tailscale y siga despues el runbook de firewall.
 
@@ -21,9 +33,14 @@ La politica es deny-by-default. No hay grants al puerto local `3000`, a SQL Serv
 1. Cree una tailnet nueva con una identidad de organizacion controlada por el propietario. Proteja esa cuenta con MFA o passkey.
 2. En **Users**, invite a cada integrante con su propia cuenta. No comparta la cuenta del propietario ni una cuenta generica.
 3. Conserve como Owner/Admin solo a quien opere infraestructura. Los companeros de desarrollo deben ser Members.
-4. Anote el nombre DNS de la tailnet mostrado por Tailscale como `<TAILNET_DNS_NAME>`; no escriba su valor real en este repositorio.
-5. Mantenga MagicDNS habilitado y habilite certificados HTTPS para la tailnet. No habilite Funnel.
-6. Instale el cliente estable en el PC del operador y, cuando corresponda, en cada PC o tablet. Todos los clientes que usen Tailscale Services deben ejecutar Tailscale `1.94` o posterior:
+4. Asigne al grupo `elevant-db-editors` solamente las identidades personales
+   aprobadas para SSMS. Este grupo no hereda acceso a aplicaciones: quien
+   tambien necesite API o webs debe permanecer en `elevant-dev`. Una identidad
+   puede pertenecer a varios grupos; sus permisos efectivos son la suma de los
+   grants de esos grupos.
+5. Anote el nombre DNS de la tailnet mostrado por Tailscale como `<TAILNET_DNS_NAME>`; no escriba su valor real en este repositorio.
+6. Mantenga MagicDNS habilitado y habilite certificados HTTPS para la tailnet. No habilite Funnel.
+7. Instale el cliente estable en el PC del operador y, cuando corresponda, en cada PC o tablet. Todos los clientes que usen Tailscale Services deben ejecutar Tailscale `1.94` o posterior:
 
 ```powershell
 tailscale version
@@ -33,17 +50,20 @@ Cada persona inicia sesion con su propia identidad. No se distribuyen auth keys 
 
 ## 2. Definir los Services
 
-Antes de cargar la politica, abra **Admin console > Services > Advertised > Define a Service** y cree estas cinco definiciones. Declare solamente el endpoint `tcp:443` en cada una:
+Antes de cargar la politica, abra **Admin console > Services > Advertised > Define a Service** y cree estas seis definiciones:
 
 | Service | Uso |
 | --- | --- |
 | `svc:elevant-dev-dokploy` | panel Dokploy |
 | `svc:elevant-dev-monitoring` | Beszel |
 | `svc:elevant-dev-api` | API Development privada |
-| `svc:elevant-dev-aviam-web` | frontend interno AVIAM futuro |
-| `svc:elevant-dev-public-web` | frontend publico Development futuro |
+| `svc:elevant-dev-aviam-web` | frontend interno AVIAM activo |
+| `svc:elevant-dev-public-web` | frontend publico Development activo |
+| `svc:elevant-dev-sql-tools` | gateway privado para SSMS Development |
 
-No defina Services para SQL Server, Docker, Swarm o el puerto `3000`. Un
+Los cinco Services HTTP declaran solamente `tcp:443`; SQL Tools declara
+solamente `tcp:1433`. No defina Services para el SQL directo del host, Docker,
+Swarm, `11433` o el puerto local `3000`. Un
 Service puede permanecer en estado **Needs configuration** u **Offline** hasta
 que exista su workload.
 
@@ -51,13 +71,20 @@ que exista su workload.
 
 1. Abra [`policy.hujson.example`](policy.hujson.example).
 2. Sustituya `owner@example.com` por el login exacto del propietario que aparece en **Users**.
-3. Sustituya `developer@example.com` y agregue una linea por cada companero. Un usuario puede pertenecer a ambos grupos si tambien es operador.
-4. Abra **Admin console > Access controls > JSON editor** y pegue el documento completo.
-5. Guarde. Tailscale debe compilar la politica y aprobar todas las pruebas `accept` y `deny`.
+3. Sustituya `developer@example.com` y agregue una linea por cada companero que
+   deba abrir las aplicaciones Development.
+4. Sustituya `database-editor@example.com` y agregue una linea por cada persona
+   aprobada adicionalmente para SSMS. Una misma identidad puede pertenecer a
+   ambos grupos. No escriba sus credenciales SQL en la politica.
+5. Abra **Admin console > Access controls > JSON editor** y pegue el documento completo.
+6. Guarde. Tailscale debe compilar la politica y aprobar todas las pruebas `accept` y `deny`.
 
-No quite pruebas para conseguir que la politica guarde. Si una prueba falla, compruebe primero que los usuarios y los cinco Services existen con los nombres exactos. El archivo es una plantilla: los logins reales viven solo en la consola de Tailscale.
+No quite pruebas para conseguir que la politica guarde. Si una prueba falla,
+compruebe primero que los usuarios y los seis Services existen con los nombres
+exactos. El archivo es una plantilla: los logins reales viven solo en la
+consola de Tailscale.
 
-La politica permite que `tag:elevant-dev-host` anuncie los cinco Services. Esa autoaprobacion no otorga acceso a usuarios; los grants separados deciden quien puede conectarse.
+La politica permite que `tag:elevant-dev-host` anuncie los seis Services. Esa autoaprobacion no otorga acceso a usuarios; los grants separados deciden quien puede conectarse.
 
 ## 4. Instalar y enrolar el VPS
 
@@ -167,7 +194,7 @@ ssh elevant-ops@elevant-dev-host
 
 Abra una sesion SSH nueva y valide `sudo` antes de cerrar la sesion root de recuperacion o modificar los firewalls. La URL de Dokploy debe fallar desde una cuenta que pertenezca solo a `group:elevant-dev`.
 
-## 6. Publicar monitoreo y workloads futuros
+## 6. Publicar monitoreo y workloads de aplicacion
 
 Ejecute cada comando unicamente despues de que el workload correspondiente escuche en loopback. Beszel usa el puerto reservado por el runbook:
 
@@ -185,15 +212,52 @@ sudo tailscale serve --service=svc:elevant-dev-api --https=443 \
   http://127.0.0.1:18080
 
 sudo tailscale serve --service=svc:elevant-dev-aviam-web --https=443 \
-  http://127.0.0.1:<AVIAM_WEB_LOOPBACK_PORT>
+  http://127.0.0.1:18081
 
 sudo tailscale serve --service=svc:elevant-dev-public-web --https=443 \
-  http://127.0.0.1:<PUBLIC_WEB_LOOPBACK_PORT>
+  http://127.0.0.1:18082
 ```
 
-Los operadores deben poder abrir los cinco Services. Los miembros de `group:elevant-dev` solo deben poder abrir API, AVIAM Web y Public Web. Ningun usuario debe poder alcanzar por la tailnet `:3000`, `:1433`, Docker o Swarm directamente.
+Los operadores deben poder abrir los cinco Services activos y, solo despues del
+rollout opcional, SQL Tools como sexto Service. Una identidad que pertenezca
+solamente a `group:elevant-dev` solo puede abrir API, AVIAM Web y Public Web;
+agregarla a `group:elevant-db-editors` le concede ademas SQL Tools. Ningun
+usuario debe alcanzar directamente los puertos `3000`, `11433` o `1433` del
+host, Docker o Swarm.
 
-## 7. Checkpoint antes del firewall
+## 7. Publicar SQL Tools Development
+
+Complete primero el despliegue y las comprobaciones de
+[`../sql-tools-gateway`](../sql-tools-gateway). El gateway debe estar `healthy`
+y `ss` debe mostrar exclusivamente `127.0.0.1:11433`, nunca un listener host en
+`1433`. Configure entonces el Service TCP crudo:
+
+```bash
+sudo tailscale serve \
+  --service=svc:elevant-dev-sql-tools \
+  --tcp=1433 \
+  tcp://127.0.0.1:11433
+```
+
+[`sql-tools-service.json.example`](sql-tools-service.json.example) conserva la
+forma declarativa esperada para revisión y comparación. El comando anterior es
+la vía de instalación preferida porque configura y anuncia el Service en un
+solo paso; no aplique el JSON con `set-config --all` sobre los otros Services.
+
+Apruebe el host si la consola lo solicita y valide:
+
+```bash
+sudo tailscale serve get-config --service=svc:elevant-dev-sql-tools
+sudo tailscale serve status
+sudo tailscale funnel status
+```
+
+Desde cada identidad en `group:elevant-db-editors`, pruebe primero conectividad
+a `elevant-dev-sql-tools.<TAILNET_DNS_NAME>.ts.net:1433` y despues autentique en
+SSMS con su login SQL personal. Una identidad que pertenezca solo a
+`group:elevant-dev` debe fallar antes de llegar a SQL Server.
+
+## 8. Checkpoint antes del firewall
 
 No continue al cierre de puertos publicos hasta cumplir todo lo siguiente:
 
@@ -204,7 +268,9 @@ No continue al cierre de puertos publicos hasta cumplir todo lo siguiente:
 - Dokploy denegado desde una cuenta que solo pertenezca a `elevant-dev`;
 - nueva sesion `ssh elevant-ops@elevant-dev-host` y `sudo` funcionales;
 - Browser Terminal de Hostinger disponible como recuperacion;
-- ningun Service creado para SQL Server ni puertos Docker/Swarm.
+- si se habilito SQL Tools, accesible solo por su Service desde
+  `elevant-db-editors` y `elevant-ops`;
+- `1433` y `11433` directos del host, Docker y Swarm inaccesibles.
 
 La politica Tailscale no cierra por si sola los puertos de la IP publica. El firewall de Hostinger y el firewall del host se aplican en la fase siguiente, despues de este checkpoint.
 

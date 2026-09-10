@@ -11,12 +11,17 @@ USER root
 WORKDIR /opt/elevant-db-ops
 RUN install -d -m 0555 /opt/elevant-db-ops/sql
 COPY --chmod=0444 database/DevelopmentDB/scripts/bootstrap/provision-development.sql ./sql/provision-development.sql
+COPY --chmod=0444 database/DevelopmentDB/scripts/bootstrap/provision-development-team-access.sql ./sql/provision-development-team-access.sql
+COPY --chmod=0444 database/DevelopmentDB/scripts/bootstrap/install-development-diagram-support.sql ./sql/install-development-diagram-support.sql
 COPY --chmod=0444 database/DevelopmentDB/scripts/backup/backup-development.sql ./sql/backup-development.sql
 COPY --chmod=0444 database/DevelopmentDB/scripts/recovery/restore-check-development.sql ./sql/restore-check-development.sql
 COPY --chmod=0444 database/DevelopmentDB/scripts/diagnostics/verify-development.sql ./sql/verify-development.sql
+COPY --chmod=0444 database/DevelopmentDB/scripts/diagnostics/verify-development-team-access.sql ./sql/verify-development-team-access.sql
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/entrypoint.sh ./entrypoint.sh
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/initialize-backup-storage.sh ./initialize-backup-storage.sh
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/provision-development.sh ./provision-development.sh
+COPY --chmod=0555 database/DevelopmentDB/scripts/container/provision-development-team-access.sh ./provision-development-team-access.sh
+COPY --chmod=0555 database/DevelopmentDB/scripts/container/install-development-diagram-support.sh ./install-development-diagram-support.sh
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/backup-development.sh ./backup-development.sh
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/restore-check-development.sh ./restore-check-development.sh
 COPY --chmod=0555 database/DevelopmentDB/scripts/container/verify-development.sh ./verify-development.sh
