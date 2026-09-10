@@ -432,9 +432,11 @@ Usa
 para `linux/amd64`, usuario no-root, filesystem read-only, `cap_drop: ALL`,
 `no-new-privileges`, límites y únicamente la red externa
 `elevant-dev-data`. No agregue Domain, `dokploy-network`, otra red, otra
-publicación de host o un listener `0.0.0.0`/`::`. `haproxy.cfg` se instala
-`root:root 0644`: el bind mount file-backed debe ser legible por UID `65534` y
-no contiene secretos.
+publicación de host o un listener `0.0.0.0`/`::`. `haproxy.cfg` se instala en
+el directorio persistente hermano `files/haproxy.cfg`, fuera de `code/`, porque
+Dokploy elimina y regenera `code/` antes de cada despliegue Raw. El directorio
+es `root:root 0700` y el archivo, que no contiene secretos, es `root:root 0644`
+para que el config mount sea legible por UID `65534`.
 
 Orden obligatorio del rollout:
 
@@ -448,9 +450,14 @@ Orden obligatorio del rollout:
    y volver a comprobar que no hay operación SQL en curso. Registrar hashes,
    IDs de los cuatro contenedores y configuración viva sin imprimir secretos.
 3. Crear el recurso Raw `elevant-dev-sql-tools-gateway` con AutoDeploy, Domain e
-   Isolated Deployments desactivados. Desplegar el Compose exacto del commit y
-   exigir una sola red (`elevant-dev-data`), backend resoluble, health correcto
-   y listener host exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
+   Isolated Deployments desactivados. Antes del primer Deploy, resolver su
+   `appName` y guardar los bytes exactos de `haproxy.cfg` en
+   `/etc/dokploy/compose/<appName>/files/haproxy.cfg`; nunca dentro de `code/`.
+   Validar el layout `code/` + `files/` primero en staging root-only, junto con
+   hash, propietario y modo. Desplegar el Compose exacto del commit, volver a
+   comparar `code/docker-compose.yml` y `files/haproxy.cfg`, y exigir una sola
+   red (`elevant-dev-data`), backend resoluble, health correcto y listener host
+   exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
 4. En Tailscale, crear `svc:elevant-dev-sql-tools` con endpoint `tcp:1433` y el
    grupo `group:elevant-db-editors`. Los tres correos reales se escriben solo en
    la consola del operador; la plantilla conserva placeholders. Mantener los

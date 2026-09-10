@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
 
 
 GATEWAY_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -19,21 +21,36 @@ EXPECTED_IMAGE = (
 
 
 def render_compose() -> dict[str, object]:
-    result = subprocess.run(
-        [
-            "docker",
-            "compose",
-            "-f",
-            str(COMPOSE_PATH),
-            "config",
-            "--format",
-            "json",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = pathlib.Path(temp_dir)
+        code = root / "code"
+        files = root / "files"
+        code.mkdir()
+        files.mkdir()
+        shutil.copy2(HAPROXY_PATH, files / "haproxy.cfg")
+
+        # A Raw deploy deletes and recreates code/. The sibling files/ directory
+        # must remain the source of the runtime configuration.
+        shutil.rmtree(code)
+        code.mkdir()
+        staged_compose = code / "docker-compose.yml"
+        shutil.copy2(COMPOSE_PATH, staged_compose)
+
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(staged_compose),
+                "config",
+                "--format",
+                "json",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
 
 
 def main() -> None:
@@ -42,6 +59,8 @@ def main() -> None:
         assert raw and b"\r" not in raw, f"{path.name}: empty or CRLF"
 
     config = render_compose()
+    compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
+    assert "file: ../files/haproxy.cfg" in compose_text
     assert config["name"] == "elevant-dev-sql-tools-gateway"
     assert config["networks"] == {
         "data": {"name": "elevant-dev-data", "ipam": {}, "external": True}
@@ -90,6 +109,8 @@ def main() -> None:
             "target": "/usr/local/etc/haproxy/haproxy.cfg",
         }
     ]
+    config_source = config["configs"]["haproxy_config"]["file"]
+    assert config_source.replace("\\", "/").endswith("/files/haproxy.cfg")
     assert service["logging"] == {
         "driver": "json-file",
         "options": {"max-file": "3", "max-size": "10m"},

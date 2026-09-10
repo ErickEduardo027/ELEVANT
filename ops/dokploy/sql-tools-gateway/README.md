@@ -17,7 +17,9 @@ permisos.
 - usuario `65534:65534`, raiz de solo lectura, `cap_drop: ALL`,
   `no-new-privileges`, limites de CPU/memoria/PID y logs rotados;
 - sin Environment, secretos, Domain, Traefik, `dokploy-network`, AutoDeploy,
-  Isolated Deployments, volumen persistente o Funnel.
+  Isolated Deployments, volumen de datos persistente o Funnel;
+- configuracion inmutable en `../files/haproxy.cfg`, fuera de `code/`, para
+  sobrevivir la regeneracion que Dokploy aplica a cada despliegue Raw.
 
 El puerto `11433` no es un endpoint de usuario. Tailscale Serve es el unico
 consumidor autorizado y publica `svc:elevant-dev-sql-tools` como `tcp:1433`.
@@ -30,16 +32,26 @@ por la tailnet y por Internet.
    contiene el alias sano `elevant-dev-sql`.
 2. Cree un Compose **Raw** llamado `ELEVANT Development SQL Tools Gateway` sin
    Domain, AutoDeploy ni Isolated Deployments. No reutilice el recurso de la DB.
-3. Copie [`compose.yml`](compose.yml) como Compose Raw y coloque
-   [`haproxy.cfg`](haproxy.cfg) con esos bytes exactos junto al
-   `docker-compose.yml` generado por Dokploy. El archivo, que no contiene
-   secretos, debe ser `root:root 0644` para que el UID no privilegiado pueda
-   leer el bind mount read-only que implementa Docker Compose; no lo genere
-   desde Environment.
-4. Ejecute `docker compose config --quiet` desde el working directory y compare
-   los SHA-256 de ambos archivos con el commit aprobado antes de desplegar.
+3. Copie [`compose.yml`](compose.yml) como Compose Raw. Resuelva el `appName`
+   asignado por Dokploy y coloque [`haproxy.cfg`](haproxy.cfg), con esos bytes
+   exactos, en `/etc/dokploy/compose/<appName>/files/haproxy.cfg`. Ese directorio
+   hermano de `code/` es persistente: Dokploy elimina y regenera `code/` antes
+   de cada Deploy Raw. No coloque la configuracion dentro de `code/` ni la
+   genere desde Environment.
+4. Exija `root:root 0700` para `files/` y `root:root 0644` para
+   `files/haproxy.cfg`; el archivo no contiene secretos y debe ser legible por
+   el UID no privilegiado `65534`. Antes del primer Deploy, reproduzca el layout
+   `code/` + `files/` en un directorio temporal root-only y ejecute
+   `docker compose config --quiet` sobre una copia aprobada del Compose. Tras el
+   Deploy, compare los SHA-256 de `code/docker-compose.yml` y
+   `files/haproxy.cfg` con el commit aprobado; no acepte el contenedor antes de
+   esa comprobacion.
 5. Despliegue una vez manualmente y verifique que el contenedor este `healthy`,
    use una sola red y publique exactamente `127.0.0.1:11433`.
+
+No use `Deploy` o `Rebuild` si falta `../files/haproxy.cfg`: ambos regeneran
+`code/` y el despliegue debe fallar cerrado antes de crear el gateway. Restaure
+primero el archivo persistente aprobado y vuelva a validar sus bytes y permisos.
 
 No agregue `depends_on` hacia otro proyecto Compose: la comprobacion de salud
 espera al backend y el resolver Docker recupera cambios de direccion sin acoplar
