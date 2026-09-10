@@ -40,9 +40,12 @@ por la tailnet y por Internet.
    genere desde Environment.
 4. Exija `root:root 0700` para `files/` y `root:root 0644` para
    `files/haproxy.cfg`; el archivo no contiene secretos y debe ser legible por
-   el UID no privilegiado `65534`. Ejecute `docker compose config --quiet`
-   contra `code/docker-compose.yml` y compare los SHA-256 del Compose generado
-   y del archivo persistente con el commit aprobado antes de desplegar.
+   el UID no privilegiado `65534`. Antes del primer Deploy, reproduzca el layout
+   `code/` + `files/` en un directorio temporal root-only y ejecute
+   `docker compose config --quiet` sobre una copia aprobada del Compose. Tras el
+   Deploy, compare los SHA-256 de `code/docker-compose.yml` y
+   `files/haproxy.cfg` con el commit aprobado; no acepte el contenedor antes de
+   esa comprobacion.
 5. Despliegue una vez manualmente y verifique que el contenedor este `healthy`,
    use una sola red y publique exactamente `127.0.0.1:11433`.
 

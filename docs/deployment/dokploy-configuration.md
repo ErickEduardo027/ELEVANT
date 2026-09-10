@@ -453,9 +453,11 @@ Orden obligatorio del rollout:
    Isolated Deployments desactivados. Antes del primer Deploy, resolver su
    `appName` y guardar los bytes exactos de `haproxy.cfg` en
    `/etc/dokploy/compose/<appName>/files/haproxy.cfg`; nunca dentro de `code/`.
-   Validar hash, propietario y modo, desplegar el Compose exacto del commit y
-   exigir una sola red (`elevant-dev-data`), backend resoluble, health correcto
-   y listener host exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
+   Validar el layout `code/` + `files/` primero en staging root-only, junto con
+   hash, propietario y modo. Desplegar el Compose exacto del commit, volver a
+   comparar `code/docker-compose.yml` y `files/haproxy.cfg`, y exigir una sola
+   red (`elevant-dev-data`), backend resoluble, health correcto y listener host
+   exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
 4. En Tailscale, crear `svc:elevant-dev-sql-tools` con endpoint `tcp:1433` y el
    grupo `group:elevant-db-editors`. Los tres correos reales se escriben solo en
    la consola del operador; la plantilla conserva placeholders. Mantener los
