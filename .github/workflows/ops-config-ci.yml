@@ -264,10 +264,12 @@ jobs:
               "svc:elevant-dev-api",
               "svc:elevant-dev-aviam-web",
               "svc:elevant-dev-public-web",
+              "svc:elevant-dev-sql-tools",
           }
           assert policy["groups"] == {
               "group:elevant-ops": ["owner@example.com"],
               "group:elevant-dev": ["developer@example.com"],
+              "group:elevant-db-editors": ["database-editor@example.com"],
           }
           assert policy["tagOwners"] == {
               "tag:elevant-dev-host": ["group:elevant-ops"]
@@ -298,8 +300,13 @@ jobs:
                   ],
                   "ip": ["tcp:443"],
               },
+              {
+                  "src": ["group:elevant-ops", "group:elevant-db-editors"],
+                  "dst": ["svc:elevant-dev-sql-tools"],
+                  "ip": ["tcp:1433"],
+              },
           ]
-          assert len(policy["tests"]) == 6
+          assert len(policy["tests"]) == 8
           tests = {
               (test["src"], test["proto"]): {
                   "accept": set(test.get("accept", [])),
@@ -314,6 +321,8 @@ jobs:
               ("group:elevant-dev", "tcp"),
               ("group:elevant-dev", "icmp"),
               ("group:elevant-dev", "udp"),
+              ("group:elevant-db-editors", "tcp"),
+              ("group:elevant-db-editors", "udp"),
           }
           assert tests[("group:elevant-ops", "tcp")]["accept"] == {
               "tag:elevant-dev-host:22",
@@ -322,13 +331,21 @@ jobs:
               "svc:elevant-dev-api:443",
               "svc:elevant-dev-aviam-web:443",
               "svc:elevant-dev-public-web:443",
+              "svc:elevant-dev-sql-tools:1433",
           }
           assert tests[("group:elevant-dev", "tcp")]["accept"] == {
               "svc:elevant-dev-api:443",
               "svc:elevant-dev-aviam-web:443",
               "svc:elevant-dev-public-web:443",
           }
-          for source in ("group:elevant-ops", "group:elevant-dev"):
+          assert tests[("group:elevant-db-editors", "tcp")]["accept"] == {
+              "svc:elevant-dev-sql-tools:1433",
+          }
+          for source in (
+              "group:elevant-ops",
+              "group:elevant-dev",
+              "group:elevant-db-editors",
+          ):
               assert tests[(source, "udp")]["accept"] == set()
               assert tests[(source, "udp")]["deny"] == {
                   "tag:elevant-dev-host:7946",
@@ -348,6 +365,7 @@ jobs:
               "tag:elevant-dev-host:3000",
               "tag:elevant-dev-host:18083",
               "tag:elevant-dev-host:1433",
+              "tag:elevant-dev-host:11433",
               "tag:elevant-dev-host:2375",
               "tag:elevant-dev-host:2376",
               "tag:elevant-dev-host:2377",
@@ -362,11 +380,69 @@ jobs:
               "tag:elevant-dev-host:3000",
               "tag:elevant-dev-host:18083",
               "tag:elevant-dev-host:1433",
+              "tag:elevant-dev-host:11433",
               "tag:elevant-dev-host:2375",
               "tag:elevant-dev-host:2376",
               "tag:elevant-dev-host:2377",
               "tag:elevant-dev-host:7946",
           }
+          assert tests[("group:elevant-db-editors", "tcp")]["deny"] == {
+              "svc:elevant-dev-sql-tools:443",
+              "tag:elevant-dev-host:80",
+              "tag:elevant-dev-host:443",
+              "tag:elevant-dev-host:3000",
+              "tag:elevant-dev-host:18083",
+              "tag:elevant-dev-host:1433",
+              "tag:elevant-dev-host:11433",
+              "tag:elevant-dev-host:2375",
+              "tag:elevant-dev-host:2376",
+              "tag:elevant-dev-host:2377",
+              "tag:elevant-dev-host:7946",
+          }
+
+          service_config_path = pathlib.Path(
+              "ops/dokploy/tailscale/sql-tools-service.json.example"
+          )
+          service_config = json.loads(
+              service_config_path.read_text(encoding="utf-8")
+          )
+          assert service_config == {
+              "version": "0.0.1",
+              "services": {
+                  "svc:elevant-dev-sql-tools": {
+                      "endpoints": {
+                          "tcp:1433": "tcp://127.0.0.1:11433",
+                      }
+                  }
+              },
+          }
+
+      - name: Validate private SQL tools gateway
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 ops/dokploy/sql-tools-gateway/tests/test_contract.py
+
+          compose=(
+            docker compose
+            -f ops/dokploy/sql-tools-gateway/compose.yml
+          )
+          "${compose[@]}" config --quiet
+
+          image="$("${compose[@]}" config --images)"
+          [[ "$image" =~ ^docker\.io/library/haproxy:[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]
+
+          docker run --rm \
+            --platform linux/amd64 \
+            --user 65534:65534 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --entrypoint haproxy \
+            --volume "$PWD/ops/dokploy/sql-tools-gateway/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro" \
+            "$image" \
+            -c -f /usr/local/etc/haproxy/haproxy.cfg
 
       - name: Validate observability Compose
         shell: bash

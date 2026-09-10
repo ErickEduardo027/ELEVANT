@@ -1,5 +1,5 @@
 {
-  // PLANTILLA: no guardar en la consola hasta sustituir los dos logins
+  // PLANTILLA: no guardar en la consola hasta sustituir todos los logins
   // example.com por identidades que ya aparezcan en Users de la tailnet.
   "groups": {
     "group:elevant-ops": [
@@ -9,6 +9,10 @@
     "group:elevant-dev": [
       // REPLACE_DEVELOPER_LOGIN; agregar una linea por persona
       "developer@example.com",
+    ],
+    "group:elevant-db-editors": [
+      // REPLACE_DB_EDITOR_LOGIN; agregar una linea por persona autorizada
+      "database-editor@example.com",
     ],
   },
 
@@ -26,6 +30,7 @@
       "svc:elevant-dev-api": ["tag:elevant-dev-host"],
       "svc:elevant-dev-aviam-web": ["tag:elevant-dev-host"],
       "svc:elevant-dev-public-web": ["tag:elevant-dev-host"],
+      "svc:elevant-dev-sql-tools": ["tag:elevant-dev-host"],
     },
   },
 
@@ -47,7 +52,7 @@
       "ip": ["tcp:443"],
     },
     {
-      // Productos Development futuros; nunca dan acceso directo al host o SQL.
+      // Productos Development activos; nunca dan acceso directo al host o SQL.
       "src": ["group:elevant-ops", "group:elevant-dev"],
       "dst": [
         "svc:elevant-dev-api",
@@ -55,6 +60,13 @@
         "svc:elevant-dev-public-web",
       ],
       "ip": ["tcp:443"],
+    },
+    {
+      // Herramientas SQL Development: TCP crudo solo por el Service dedicado.
+      // SQL autentica a cada persona; nunca se concede el puerto directo del host.
+      "src": ["group:elevant-ops", "group:elevant-db-editors"],
+      "dst": ["svc:elevant-dev-sql-tools"],
+      "ip": ["tcp:1433"],
     },
   ],
 
@@ -70,6 +82,7 @@
         "svc:elevant-dev-api:443",
         "svc:elevant-dev-aviam-web:443",
         "svc:elevant-dev-public-web:443",
+        "svc:elevant-dev-sql-tools:1433",
       ],
       "deny": [
         "tag:elevant-dev-host:80",
@@ -77,6 +90,7 @@
         "tag:elevant-dev-host:3000",
         "tag:elevant-dev-host:18083",
         "tag:elevant-dev-host:1433",
+        "tag:elevant-dev-host:11433",
         "tag:elevant-dev-host:2375",
         "tag:elevant-dev-host:2376",
         "tag:elevant-dev-host:2377",
@@ -113,6 +127,7 @@
         "tag:elevant-dev-host:3000",
         "tag:elevant-dev-host:18083",
         "tag:elevant-dev-host:1433",
+        "tag:elevant-dev-host:11433",
         "tag:elevant-dev-host:2375",
         "tag:elevant-dev-host:2376",
         "tag:elevant-dev-host:2377",
@@ -126,6 +141,34 @@
     },
     {
       "src": "group:elevant-dev",
+      "proto": "udp",
+      "deny": [
+        "tag:elevant-dev-host:7946",
+        "tag:elevant-dev-host:4789",
+      ],
+    },
+    {
+      "src": "group:elevant-db-editors",
+      "proto": "tcp",
+      "accept": [
+        "svc:elevant-dev-sql-tools:1433",
+      ],
+      "deny": [
+        "svc:elevant-dev-sql-tools:443",
+        "tag:elevant-dev-host:80",
+        "tag:elevant-dev-host:443",
+        "tag:elevant-dev-host:3000",
+        "tag:elevant-dev-host:18083",
+        "tag:elevant-dev-host:1433",
+        "tag:elevant-dev-host:11433",
+        "tag:elevant-dev-host:2375",
+        "tag:elevant-dev-host:2376",
+        "tag:elevant-dev-host:2377",
+        "tag:elevant-dev-host:7946",
+      ],
+    },
+    {
+      "src": "group:elevant-db-editors",
       "proto": "udp",
       "deny": [
         "tag:elevant-dev-host:7946",

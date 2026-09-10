@@ -1,35 +1,42 @@
 # Implementación Development en VPS con Dokploy
 
-Estado: DB v1 y la API están desplegadas y verificadas en el VPS Development
-privado, cada una con su CD pull-based activo. El hardening, Tailscale,
-observabilidad, backup/restore programados y snapshot frío ya fueron aceptados.
-AVIAM Web ya tiene su runtime inicial healthy por Tailscale y su baseline A
-adoptada por Web CD; su schedule continúa deshabilitado hasta aceptar el drill
-B -> A -> B y el no-op posterior. Public Web aún requiere su rollout manual e
-independiente. Mobile Agent continúa fuera del VPS. La secuencia reproducible
-con checkpoints y rollback está en
+Estado: DB v1, API, AVIAM Web y Public Web están desplegadas y verificadas en el
+VPS Development privado, cada una con su CD pull-based activo. El hardening,
+Tailscale, observabilidad, backup/restore programados, los drills web B -> A -> B
+y el reboot final ya fueron aceptados. Mobile Agent continúa fuera del VPS y
+SQL Tools permanece como acceso humano opcional pendiente de rollout manual. La
+secuencia reproducible con checkpoints y rollback está en
 [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
 
 Dokploy administra Docker Compose y sus bases integradas no incluyen Microsoft SQL Server. ELEVANT usa la imagen oficial Linux de SQL Server dentro de un Compose, con `/var/opt/mssql` en named volume. El contenedor hace reproducible motor/configuración; el volumen, los backups nativos y el restore probado protegen los datos. Recrear un contenedor no debe borrar el volumen, pero borrar el volumen sí es pérdida de datos.
 
-SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops entran por la red bridge interna. AVIAM Web, Public Web y Mobile nunca entran a esa red.
+SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops y,
+cuando se habilite, el gateway SQL Tools entran por la red bridge interna. AVIAM
+Web, Public Web y Mobile nunca entran a esa red.
+El único acceso humano opcional es el gateway SSMS Development de
+[ADR-0013](../adr/0013-development-ssms-data-access.md): un recurso separado,
+sin credenciales, que comparte esa red y publica solo un loopback para un
+Service Tailscale dedicado.
 
 ## Topología
 
 ```text
-Tailscale HTTPS Services
-  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (live; aceptación CD pendiente)
-  ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (rollout pendiente)
+Tailscale Services
+  ├─ AVIAM Web     -> 127.0.0.1:18081 -> contenedor web (live; CD aceptado)
+  ├─ Public Web    -> 127.0.0.1:18082 -> contenedor Next (live; CD aceptado)
   ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API
-  └─ Dokploy       -> 127.0.0.1:3000
+  ├─ Dokploy       -> 127.0.0.1:3000
+  ├─ Monitoring    -> 127.0.0.1:18083
+  └─ SQL Tools TCP -> 127.0.0.1:11433 -> gateway sin credenciales (opcional)
 
                                      red elevant-dev-data (internal)
 db release migrator/seeder ───────────────────┐
 Elevant API ──────────────────────────────────┼─> elevant-dev-sql:1433
-db ops ───────────────────────────────────────┘          │
-                                            named volume data + backups
+db ops ───────────────────────────────────────┤          │
+gateway SQL Tools ────────────────────────────┘          │
+                                             named volume data + backups
 
 tablet Android/iOS -- HTTPS/Tailscale --> Elevant API
 ```
@@ -39,8 +46,10 @@ Deployables separados:
 1. `elevant-dev-database`: manual, sin AutoDeploy.
 2. `elevant-dev-database-release`: one-shot por versión.
 3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
-4. `elevant-dev-aviam-web`: Vite estático/Nginx, runtime y baseline A activos; aceptación CD pendiente.
-5. `elevant-dev-public-web`: Next standalone, rollout manual pendiente.
+4. `elevant-dev-aviam-web`: Vite estático/Nginx, runtime y Web CD aceptados.
+5. `elevant-dev-public-web`: Next standalone, runtime y Web CD aceptados.
+6. `elevant-dev-sql-tools-gateway`: proxy TCP opcional para SSMS Development,
+   sin AutoDeploy ni credenciales.
 
 Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se compila/distribuye, no es un stack.
 
@@ -49,7 +58,8 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 - VPS Linux `amd64` con Dokploy, Docker y consola break-glass del proveedor.
 - Los tres desarrolladores y la tablet de pruebas pueden instalar Tailscale actualizado (1.94+ obligatorio para este contrato de Services).
 - Tailnet con MagicDNS, HTTPS y Services; host con identidad `tag:elevant-dev-host`.
-- Distinción de miembros `dev` y `ops` para grants de aplicación vs panel/SSH.
+- Distinción de miembros `dev`, `db-editors` y `ops` para grants de aplicación,
+  SSMS y panel/SSH.
 - Namespace GHCR y credencial Dokploy `read:packages` si los packages son privados.
 - CIDR bridge libre después de inspeccionar redes Docker existentes.
 - Development continuará 100% sintético hasta disponer de backup externo.
@@ -62,13 +72,18 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 4. Configurar grants deny-by-default:
    - `dev` -> API, AVIAM Web y Public Web `tcp:443`;
    - `ops` -> esos servicios + Dokploy `tcp:443` + host SSH;
+   - `db-editors` -> únicamente `svc:elevant-dev-sql-tools` `tcp:1433`;
    - GitHub Actions/CI -> ningún acceso al tailnet o al VPS; los controladores
      privados descubren los artefactos por pull;
-   - nadie -> SQL.
+   - nadie -> puertos SQL/gateway directos del host.
 5. Usar firewall del proveedor. Mantener 1433 y 18080-18082 cerrados siempre; cerrar 3000/80/443 públicos y SSH público después de comprobar acceso privado. Docker puede saltarse reglas UFW, por eso se valida externamente el firewall del proveedor.
 6. Mantener `tailscale funnel off`.
 
-No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria. Tailscale Serve debe apuntar solo a los cinco loopbacks previstos: Dokploy, monitoreo y, cuando existan, API, AVIAM Web y Public Web.
+No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria.
+Tailscale Serve debe apuntar solo a los seis loopbacks previstos: Dokploy,
+monitoreo, API, AVIAM Web, Public Web y el gateway SQL Tools opcional. Los cinco
+primeros son HTTP/HTTPS; SQL Tools es TCP crudo y nunca apunta directamente al
+contenedor SQL.
 
 ## 2. Publicar imágenes y bundle aprobados
 
@@ -261,9 +276,10 @@ propia proporciona salida y `elevant-dev-data` conserva SQL aislado.
 
 ## 8. Publicar las webs Development
 
-Esta sección define el rollout próximo; no registra que ya haya ocurrido. Se
-despliega y acepta primero AVIAM Web y después Public Web, sin agruparlas en un
-solo Compose o estado.
+Esta sección conserva el rollout ya aceptado como runbook de reconstrucción y
+actualización. AVIAM Web y Public Web permanecen desplegadas en recursos y
+estados independientes; el orden de una reconstrucción sigue siendo primero
+AVIAM Web y después Public Web.
 
 Los valores `VITE_*`/`NEXT_PUBLIC_*` se hornean durante build, son públicos y no
 pueden contener secretos. GitHub Actions toma los orígenes HTTPS exactos de

@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "services": {
+    "svc:elevant-dev-sql-tools": {
+      "endpoints": {
+        "tcp:1433": "tcp://127.0.0.1:11433"
+      }
+    }
+  }
+}

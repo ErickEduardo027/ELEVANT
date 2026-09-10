@@ -29,10 +29,70 @@ Los scripts validan el destino y utilizan la solución `backend/Elevant.sln`. Pr
 
 ## Operaciones y certificación
 
-Los comandos del contenedor `Dockerfile.ops` son `initialize-backup-storage`, `provision-development`, `backup-development`, `restore-check-development` y `verify-development`. SQL Server y sus volúmenes tienen un ciclo de vida separado del API.
+Los comandos del contenedor `Dockerfile.ops` son `initialize-backup-storage`, `provision-development`, `provision-development-team-access`, `install-development-diagram-support`, `backup-development`, `restore-check-development` y `verify-development`. SQL Server y sus volúmenes tienen un ciclo de vida separado del API.
 
 Los procesos `sqlcmd` reciben la credencial de autenticación mediante `SQLCMDPASSWORD`; nunca se pasa con `-P` ni se envían contraseñas como variables `-v`. Antes de cada invocación, los scripts dejan de exportar los nombres originales y sólo conservan en el proceso hijo las variables de entorno estrictamente necesarias; el provisionador añade sus variables de scripting aprobadas.
 
 CI construye las imágenes desde la raíz del repositorio, las certifica contra un SQL Server aislado y publica únicamente referencias inmutables por digest. El fixture `tests/scripts/fixtures/initialize-production.sql` crea una base Production efímera solo durante esa certificación; no es un recurso desplegable ni autoriza Production.
 
 Los dos Compose de Development se publican dentro del bundle OCI con los nombres estables `/compose/compose.development.database.yml` y `/compose/compose.development.release.yml`. Dokploy y el controlador CD siguen consumiendo ese contrato sin depender de la ubicación física del repositorio.
+
+## Acceso humano de Development
+
+`provision-development-team-access` crea o reconcilia los tres logins personales fijos
+`elevant_dev_erick`, `elevant_dev_eliezer` y `elevant_dev_laisha`. Las contraseñas
+llegan exclusivamente mediante las variables documentadas en
+`.team-access.env.example`; el provisionador vuelve a aplicar el valor declarado para
+permitir rotaciones idempotentes y nunca lo coloca en argumentos de `sqlcmd`.
+Las tres claves personales deben contener mayúsculas, minúsculas, números y
+caracteres especiales; los marcadores del archivo de ejemplo se rechazan. La clave
+DBA existente solo autentica mediante `SQLCMDPASSWORD`: puede conservar su formato
+actual siempre que no esté vacía ni sea un marcador y no se reutilice para una
+cuenta personal. Si un DBA deshabilita un login
+para retirar acceso, una reconciliación posterior conserva ese estado deshabilitado.
+La reconciliación sustituye cada login dentro de una transacción, genera un SID nuevo
+y remapea el usuario ya existente de `ElevantDevelopmentDb`. Así neutraliza cualquier
+mapping accidental en otra base sin ampliar los permisos globales del DBA, mientras
+conserva el `principal_id` local y la propiedad de los diagramas. Debe ejecutarse en
+una ventana breve sin sesiones SSMS de esas cuentas: `DROP LOGIN` falla cerrado si
+una de ellas sigue conectada y toda la reconciliación se revierte.
+El mismo `DROP LOGIN` devuelve el error nativo 15141 si un administrador de instancia
+hubiera hecho al login dueño de un server role que el DBA delegado no puede ver. El
+provisionador lo traduce a un error estable y revierte; no se amplía al DBA con
+`ALTER ANY SERVER ROLE`, `VIEW ANY DEFINITION` ni `CONTROL SERVER`.
+Por esa visibilidad de metadatos, el verificador de solo lectura no puede descubrir
+por sí solo un server role oculto creado después por un administrador de seguridad
+del servidor. La auditoría autoritativa de ese caso es volver a ejecutar el one-shot:
+el reemplazo falla cerrado con 51114 sin modificar logins ni usuarios.
+
+La única membresía explícita de los tres usuarios es
+`elevant_dev_team_editor`; como todo usuario, conservan el rol implícito
+`public`. El rol editor hereda
+`SELECT`, `INSERT`, `UPDATE` y `DELETE` para objetos presentes y futuros en `iam`,
+`ref`, `hr`, `commercial`, `ops` e `integration`. Puede consultar `infra` y `audit`,
+pero no modificarlos. Los permisos DDL, ejecución de procedimientos, backups y
+administración de usuarios o roles quedan denegados. Por tanto, los datos sintéticos
+pueden manipularse directamente desde SSMS, mientras cualquier cambio de tabla,
+columna, índice, constraint o clave foránea continúa siendo una migración EF revisada.
+Para evitar ampliar CRUD mediante ownership chaining o ejecución implícita, el
+verificador rechaza views, sinónimos, funciones, agregados CLR, secuencias, triggers
+y tablas externas dentro de esos seis esquemas. También rechaza cascadas
+`ON DELETE`/`ON UPDATE` desde una tabla editable hacia `infra` o `audit`. Cualquiera
+de esos objetos futuros requiere antes una decisión explícita y permisos revisados.
+Una tabla system-versioned editable tampoco puede escribir su historial temporal en
+`infra` o `audit`, porque un `UPDATE`/`DELETE` produciría una mutación protegida
+implícita.
+
+`install-development-diagram-support` es un segundo comando, deliberadamente
+separado y ejecutado como `elevant_dev_dba`. Instala de manera idempotente el contrato
+de objetos que SSMS usa para almacenar diagramas. El rol editor solo puede ejecutar
+los procedimientos controlados para sus propios diagramas; no recibe acceso directo
+a `dbo.sysdiagrams` ni capacidad para alterar las tablas representadas.
+`dbo.sp_upgraddiagrams` permanece reservado al DBA porque solo forma parte del
+bootstrap/upgrade del soporte, no de la edición cotidiana en SSMS.
+
+Ambos comandos son one-shot. En el VPS se ejecutan desde la imagen `elevant-db-ops`
+certificada por digest, conectada solamente a `elevant-dev-data`, y con un archivo
+temporal `root:root 0600` suministrado mediante `docker run --env-file`. Ese archivo
+debe eliminarse después de comprobar el acceso de las tres cuentas. No se añaden
+servicios a los Compose certificados y no se autoriza exponer SQL Server a Internet.
