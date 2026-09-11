@@ -603,8 +603,10 @@ jobs:
           runtime_gateway="$(docker network inspect -f \
             '{{(index .IPAM.Config 0).Gateway}}' \
             elevant-dev-sql-tools-runtime)"
-          docker exec "$gateway_id" ip route show default | \
-            grep -Eq "^default via ${runtime_gateway} dev "
+          default_route="$(docker exec "$gateway_id" \
+            ip route show default)"
+          [[ "$default_route" == \
+            "default via ${runtime_gateway} dev "* ]]
 
       - name: Validate observability Compose
         shell: bash
