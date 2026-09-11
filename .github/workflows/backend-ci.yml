@@ -156,6 +156,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/api-client/package-lock.json
+
       - name: Set up .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
@@ -304,6 +311,54 @@ jobs:
 
       - name: Build
         run: dotnet build Elevant.sln --configuration Release --no-restore
+
+      - name: Detect OpenAPI source and snapshot drift
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          actual="$RUNNER_TEMP/elevant-v1.actual.json"
+          api_log="$RUNNER_TEMP/elevant-api.log"
+          api_url=http://127.0.0.1:5080/swagger/v1/swagger.json
+
+          ASPNETCORE_ENVIRONMENT=Testing \
+          ASPNETCORE_URLS=http://127.0.0.1:5080 \
+          Swagger__Enabled=true \
+          ELEVANT_DATABASE_ENVIRONMENT=Development \
+          ConnectionStrings__ElevantDatabase='Server=127.0.0.1,1;Initial Catalog=ElevantDevelopmentDb;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;Connect Timeout=1' \
+            dotnet Elevant.Api/bin/Release/net10.0/Elevant.Api.dll \
+              >"$api_log" 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            kill "$api_pid" 2>/dev/null || true
+            wait "$api_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          fetched=false
+          for _ in {1..30}; do
+            if curl --fail --silent --show-error \
+              --max-time 5 \
+              --output "$actual" \
+              "$api_url"; then
+              fetched=true
+              break
+            fi
+
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "$fetched" != true ]]; then
+            cat "$api_log" >&2
+            echo "The locally built API did not publish its OpenAPI document." >&2
+            exit 1
+          fi
+
+          npm --prefix ../packages/api-client run check:openapi -- "$actual"
 
       - name: Test
         run: dotnet test Elevant.sln --configuration Release --no-build --logger trx --results-directory TestResults
