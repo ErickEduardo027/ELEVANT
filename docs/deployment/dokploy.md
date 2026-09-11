@@ -13,8 +13,10 @@ secuencia reproducible con checkpoints y rollback está en
 Dokploy administra Docker Compose y sus bases integradas no incluyen Microsoft SQL Server. ELEVANT usa la imagen oficial Linux de SQL Server dentro de un Compose, con `/var/opt/mssql` en named volume. El contenedor hace reproducible motor/configuración; el volumen, los backups nativos y el restore probado protegen los datos. Recrear un contenedor no debe borrar el volumen, pero borrar el volumen sí es pérdida de datos.
 
 SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops y,
-cuando se habilite, el gateway SQL Tools entran por la red bridge interna. AVIAM
-Web, Public Web y Mobile nunca entran a esa red.
+cuando se habilite, el gateway SQL Tools entran por la red bridge interna. El
+gateway usa además una bridge no interna exclusiva para materializar su binding
+loopback; SQL nunca entra a esa segunda red. AVIAM Web, Public Web y Mobile
+nunca entran a la red de datos.
 El único acceso humano opcional es el gateway SSMS Development de
 [ADR-0013](../adr/0013-development-ssms-data-access.md): un recurso separado,
 sin credenciales, que comparte esa red y publica solo un loopback para un
@@ -37,6 +39,9 @@ Elevant API ──────────────────────�
 db ops ───────────────────────────────────────┤          │
 gateway SQL Tools ────────────────────────────┘          │
                                              named volume data + backups
+
+gateway SQL Tools ── elevant-dev-sql-tools-runtime
+                     (bridge no interna, solo publicación loopback)
 
 tablet Android/iOS -- HTTPS/Tailscale --> Elevant API
 ```
@@ -61,7 +66,8 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 - Distinción de miembros `dev`, `db-editors` y `ops` para grants de aplicación,
   SSMS y panel/SSH.
 - Namespace GHCR y credencial Dokploy `read:packages` si los packages son privados.
-- CIDR bridge libre después de inspeccionar redes Docker existentes.
+- CIDR bridge libre por cada red nueva después de inspeccionar redes Docker
+  existentes.
 - Development continuará 100% sintético hasta disponer de backup externo.
 
 ## 1. Endurecer acceso antes de desplegar
@@ -138,6 +144,17 @@ docker volume create elevant-dev-sql-backups
 ```
 
 Registre CIDR/gateway. El gateway exacto podrá usarse como proxy conocido en API; no confíe un `/16` amplio. No marque estos recursos como efímeros ni permita que un proyecto Dokploy los elimine.
+
+Al habilitar SQL Tools, cree además una bridge no interna dedicada. No conecte
+SQL ni ningún otro workload a ella:
+
+```bash
+docker network create --driver bridge \
+  --subnet <CIDR_RUNTIME_APROBADO> \
+  --gateway <GATEWAY_RUNTIME_APROBADO> \
+  --opt com.docker.network.bridge.host_binding_ipv4=127.0.0.1 \
+  elevant-dev-sql-tools-runtime
+```
 
 ## 4. Crear `elevant-dev-database`
 

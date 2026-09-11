@@ -402,10 +402,11 @@ baseline aceptada; como no existe todavía un intento terminal, el poll periódi
 puede volver a descargar y validar ese candidato. Investigue el alias si el
 mismo error se repite.
 
-## Estado vivo de referencia
+## Baseline histórica del primer rollout
 
-El rollout Development fue aceptado manualmente el 2026-08-31 UTC con el
-controlador del merge `e4ae11c7bb8ba8f9c75d8f3d82c199736dc57878` y el bundle
+Esta sección conserva la evidencia del primer rollout; no describe el estado
+vivo actual. Ese rollout Development fue aceptado manualmente el 2026-08-31 UTC
+con el controlador del merge `e4ae11c7bb8ba8f9c75d8f3d82c199736dc57878` y el bundle
 `sha256:bd385ea1bd736d9ecd58fb3deddb75f50eb5a51755e34e4c857546bc21d4cd26`
 del commit fuente `5c6af693f4fc80e9cccabdb1b0fc0aefd865e20f`. La promoción, los dos jobs
 operativos, los *no-op* periódicos y la persistencia tras reboot pasaron. El PAT

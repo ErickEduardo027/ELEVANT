@@ -70,8 +70,11 @@ escrituras quedan auditadas.
 
 El contenedor SQL continúa sin `ports` y solo pertenece a `elevant-dev-data`.
 Un recurso independiente `elevant-dev-sql-tools-gateway` reenvía TCP sin
-credenciales y publica únicamente `127.0.0.1:11433` en el VPS. Tailscale Serve
-presenta ese loopback como `svc:elevant-dev-sql-tools`, endpoint `tcp:1433`.
+credenciales. Pertenece a `elevant-dev-data` para alcanzar SQL y a la bridge
+dedicada `elevant-dev-sql-tools-runtime` para publicar únicamente
+`127.0.0.1:11433` en el VPS; SQL no pertenece a esa segunda red. Tailscale
+Serve presenta ese loopback como `svc:elevant-dev-sql-tools`, endpoint
+`tcp:1433`.
 
 Solo `group:elevant-db-editors` y operaciones reciben grant al Service. El host
 no concede acceso directo a `tag:elevant-dev-host:1433` ni `:11433`; no se

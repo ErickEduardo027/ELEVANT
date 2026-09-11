@@ -423,14 +423,116 @@ jobs:
           set -Eeuo pipefail
 
           python3 ops/dokploy/sql-tools-gateway/tests/test_contract.py
+          command -v dpkg timeout >/dev/null
+          compose_version="$(docker compose version --short | sed 's/^v//')"
+          engine_version="$(docker version --format '{{.Server.Version}}')"
+          dpkg --compare-versions "$compose_version" ge 2.33.1
+          dpkg --compare-versions "$engine_version" ge 28.0.0
 
           layout="$(mktemp -d)"
-          trap 'rm -rf "$layout"' EXIT
+          project="elevant-sql-tools-contract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          backend="${project}-backend"
+          data_created=false
+          runtime_created=false
+          cleanup() {
+            docker compose -p "$project" \
+              -f "$layout/code/docker-compose.yml" \
+              down --remove-orphans >/dev/null 2>&1 || true
+            docker rm -f "$backend" >/dev/null 2>&1 || true
+            if [[ "$runtime_created" == true ]]; then
+              docker network rm elevant-dev-sql-tools-runtime \
+                >/dev/null 2>&1 || true
+            fi
+            if [[ "$data_created" == true ]]; then
+              docker network rm elevant-dev-data >/dev/null 2>&1 || true
+            fi
+            rm -rf "$layout"
+          }
+          trap cleanup EXIT
           mkdir -p "$layout/code" "$layout/files"
           cp ops/dokploy/sql-tools-gateway/compose.yml \
             "$layout/code/docker-compose.yml"
           cp ops/dokploy/sql-tools-gateway/haproxy.cfg \
             "$layout/files/haproxy.cfg"
+
+          normalized="$layout/normalized"
+          mkdir -p "$normalized/code" "$normalized/files"
+          cp ops/dokploy/sql-tools-gateway/haproxy.cfg \
+            "$normalized/files/haproxy.cfg"
+          cp ops/dokploy/sql-tools-gateway/compose.yml \
+            "$normalized/code/input.yml"
+          docker compose --profile '*' -p dokploy-normalized \
+            -f "$normalized/code/input.yml" config \
+            --no-normalize --no-path-resolution \
+            > "$normalized/code/docker-compose.yml"
+          sed -i '/^name: /d' \
+            "$normalized/code/docker-compose.yml"
+          python3 ops/dokploy/sql-tools-gateway/verify-compose-model.py \
+            --approved-compose \
+              ops/dokploy/sql-tools-gateway/compose.yml \
+            --approved-config \
+              ops/dokploy/sql-tools-gateway/haproxy.cfg \
+            --live-compose \
+              "$normalized/code/docker-compose.yml" \
+            --live-config "$normalized/files/haproxy.cfg"
+
+          cp "$normalized/code/docker-compose.yml" \
+            "$normalized/code/drift.yml"
+          python3 - "$normalized/code/drift.yml" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          content = path.read_text(encoding="utf-8")
+          original = "6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42e"
+          changed = "6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42f"
+          assert content.count(original) == 1
+          path.write_text(content.replace(original, changed), encoding="utf-8")
+          PY
+          if python3 ops/dokploy/sql-tools-gateway/verify-compose-model.py \
+            --approved-compose \
+              ops/dokploy/sql-tools-gateway/compose.yml \
+            --approved-config \
+              ops/dokploy/sql-tools-gateway/haproxy.cfg \
+            --live-compose "$normalized/code/drift.yml" \
+            --live-config "$normalized/files/haproxy.cfg" \
+            >/dev/null 2>&1; then
+            echo "semantic drift was accepted" >&2
+            exit 1
+          fi
+
+          cp "$normalized/code/docker-compose.yml" \
+            "$normalized/code/profile-drift.yml"
+          python3 - "$normalized/code/profile-drift.yml" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          content = path.read_text(encoding="utf-8")
+          dormant = (
+              "services:\n"
+              "  dormant:\n"
+              "    image: docker.io/library/haproxy:3.2.23-alpine3.24@sha256:"
+              "6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42e\n"
+              "    profiles:\n"
+              "      - never\n"
+          )
+          assert content.count("services:\n") == 1
+          path.write_text(
+              content.replace("services:\n", dormant), encoding="utf-8"
+          )
+          PY
+          if python3 ops/dokploy/sql-tools-gateway/verify-compose-model.py \
+            --approved-compose \
+              ops/dokploy/sql-tools-gateway/compose.yml \
+            --approved-config \
+              ops/dokploy/sql-tools-gateway/haproxy.cfg \
+            --live-compose "$normalized/code/profile-drift.yml" \
+            --live-config "$normalized/files/haproxy.cfg" \
+            >/dev/null 2>&1; then
+            echo "profiled semantic drift was accepted" >&2
+            exit 1
+          fi
 
           compose=(
             docker compose
@@ -451,6 +553,60 @@ jobs:
             --volume "$PWD/ops/dokploy/sql-tools-gateway/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro" \
             "$image" \
             -c -f /usr/local/etc/haproxy/haproxy.cfg
+
+          docker network create --driver bridge --internal \
+            elevant-dev-data
+          data_created=true
+          docker network create --driver bridge \
+            --opt com.docker.network.bridge.host_binding_ipv4=127.0.0.1 \
+            elevant-dev-sql-tools-runtime
+          runtime_created=true
+
+          docker run -d \
+            --name "$backend" \
+            --network elevant-dev-data \
+            --network-alias elevant-dev-sql \
+            --entrypoint nc \
+            "$image" \
+            -lk -p 1433 -e cat
+
+          "${compose[@]}" -p "$project" \
+            up -d --wait --wait-timeout 60
+
+          gateway_id="$("${compose[@]}" -p "$project" \
+            ps -q sql-tools-gateway)"
+          [[ "$gateway_id" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$(docker port "$gateway_id" 11433/tcp)" == \
+            "127.0.0.1:11433" ]]
+          timeout 5 bash -c '</dev/tcp/127.0.0.1/11433'
+
+          mapfile -t gateway_networks < <(
+            docker inspect -f \
+              '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
+              "$gateway_id" |
+              sed '/^$/d' |
+              sort
+          )
+          [[ "${#gateway_networks[@]}" -eq 2 ]]
+          [[ "${gateway_networks[0]}" == "elevant-dev-data" ]]
+          [[ "${gateway_networks[1]}" == \
+            "elevant-dev-sql-tools-runtime" ]]
+
+          [[ "$(docker network inspect -f \
+            '{{.Driver}}|{{.Internal}}|{{len .Containers}}' \
+            elevant-dev-data)" == "bridge|true|2" ]]
+          [[ "$(docker network inspect -f \
+            '{{.Driver}}|{{.Internal}}|{{index .Options "com.docker.network.bridge.host_binding_ipv4"}}|{{len .Containers}}' \
+            elevant-dev-sql-tools-runtime)" == \
+            "bridge|false|127.0.0.1|1" ]]
+
+          runtime_gateway="$(docker network inspect -f \
+            '{{(index .IPAM.Config 0).Gateway}}' \
+            elevant-dev-sql-tools-runtime)"
+          default_route="$(docker exec "$gateway_id" \
+            ip route show default)"
+          [[ "$default_route" == \
+            "default via ${runtime_gateway} dev "* ]]
 
       - name: Validate observability Compose
         shell: bash

@@ -24,7 +24,9 @@ acceso SQL directo de cualquier cliente ELEVANT.
 - Mantener el contenedor SQL sin `ports` y únicamente en la red interna
   `elevant-dev-data`.
 - Ejecutar un gateway HAProxy separado, inmutable y sin credenciales, conectado
-  solo a esa red y publicado únicamente en `127.0.0.1:11433`.
+  a `elevant-dev-data` para alcanzar SQL y a una bridge no interna exclusiva
+  `elevant-dev-sql-tools-runtime` para materializar la publicación únicamente
+  en `127.0.0.1:11433`. SQL no pertenece a la segunda red.
 - Exponer el gateway como `svc:elevant-dev-sql-tools`, endpoint Tailscale
   `tcp:1433`; solo `group:elevant-db-editors` y operaciones reciben acceso.
 - Usar logins personales `elevant_dev_erick`, `elevant_dev_eliezer` y

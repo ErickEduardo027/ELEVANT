@@ -40,13 +40,18 @@ services:
         max-size: "10m"
         max-file: "3"
     networks:
-      - data
+      runtime:
+        gw_priority: 1
+      data:
 
 configs:
   haproxy_config:
     file: ../files/haproxy.cfg
 
 networks:
+  runtime:
+    external: true
+    name: elevant-dev-sql-tools-runtime
   data:
     external: true
     name: elevant-dev-data
