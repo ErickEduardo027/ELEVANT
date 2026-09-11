@@ -40,6 +40,8 @@ def render_compose() -> dict[str, object]:
             [
                 "docker",
                 "compose",
+                "--profile",
+                "*",
                 "-f",
                 str(staged_compose),
                 "config",
@@ -63,7 +65,12 @@ def main() -> None:
     assert "file: ../files/haproxy.cfg" in compose_text
     assert config["name"] == "elevant-dev-sql-tools-gateway"
     assert config["networks"] == {
-        "data": {"name": "elevant-dev-data", "ipam": {}, "external": True}
+        "data": {"name": "elevant-dev-data", "ipam": {}, "external": True},
+        "runtime": {
+            "name": "elevant-dev-sql-tools-runtime",
+            "ipam": {},
+            "external": True,
+        },
     }
     assert set(config["services"]) == {"sql-tools-gateway"}
 
@@ -84,7 +91,10 @@ def main() -> None:
         "/tmp:rw,noexec,nosuid,nodev,size=8m,uid=65534,gid=65534,mode=0700"
     ]
     assert service["stop_grace_period"] == "15s"
-    assert service["networks"] == {"data": None}
+    assert service["networks"] == {
+        "data": None,
+        "runtime": {"gw_priority": 1},
+    }
     assert not service.get("privileged", False)
     assert not service.get("environment")
     assert not service.get("secrets")

@@ -34,8 +34,10 @@ artefactos evita que una actualización del control plane cambie el ciclo de
 vida de la base.
 
 El acceso humano de herramientas SQL usa un recurso Raw independiente. HAProxy
-publica solo `127.0.0.1:11433`, se conecta únicamente a `elevant-dev-data` y no
-termina TLS ni almacena credenciales. Tailscale anuncia ese listener como
+publica solo `127.0.0.1:11433`; usa `elevant-dev-data` exclusivamente para el
+backend SQL y la bridge dedicada `elevant-dev-sql-tools-runtime` para
+materializar el loopback del host. No termina TLS ni almacena credenciales.
+Tailscale anuncia ese listener como
 `svc:elevant-dev-sql-tools:1433`; el `1433` de SQL Server continúa sin
 publicarse en el host o Internet y cada persona se autentica con una identidad
 SQL propia.

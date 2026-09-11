@@ -13,17 +13,17 @@ avanzar.
 
 - DB v1 inicial: commit `1281bd139709898f220c90f12ff27036a6a83b93` de `Development`.
 - Base de hardening del control plane: `86555b61b0ff17b4a42f5e51fe2055000e90664f`.
-- Controlador Database CD instalado: merge
-  `e4ae11c7bb8ba8f9c75d8f3d82c199736dc57878`.
+- Controlador Database CD instalado y actualizado: merge
+  `d9a03877a83d12fe02bceda3fe947c15ea8befd7`.
 - Entrega DB automática aceptada: commit fuente
-  `5c6af693f4fc80e9cccabdb1b0fc0aefd865e20f`, bundle
-  `sha256:bd385ea1bd736d9ecd58fb3deddb75f50eb5a51755e34e4c857546bc21d4cd26`.
+  `45e1e0267b5a7ba443da8299d1000cb43cb412b6`, bundle
+  `sha256:5c18775f0c8055b3367b47a4204e1fff87bf935a294ea38021563828cb495487`.
 - Imágenes aceptadas: ops
-  `sha256:d511be817e8840dfbcf822eed7a427491b5e8d41291603a1086f670754be162f`
+  `sha256:4497a8801f6c05e20c78a107f22b0bd572f9ce25052aff5884e1b21224e91d7a`
   y release
-  `sha256:bed4a78e1e810c59cd396c4be3f381b7779af8c9be6fc9162b73ad8ef7d891be`.
+  `sha256:01e2a1b9daa0ab4f1965ea89aa475461ff25c790588e7688d04f9a83b4e5caed`.
 - Compose aceptados: database
-  `dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee`
+  `9b4319896a1d0b25caa6119122e2842fa6f0313ac8fdcbfa90598903cfc10b21`
   y release
   `bd8fbded7339f87c71bb7e4058427581f58417602b8e37ebd0e90a0d1e79fd07`.
 - Dokploy: mantener `v0.30.0` o una revisión posterior expresamente auditada.
@@ -48,7 +48,10 @@ avanzar.
 - Evidencia 2026-09-10 UTC: DB/API se promovieron al commit fuente
   `a60b5346ffa903e7bd98e4d19dc24c47a2e2afeb`; los cuatro workloads, los
   controladores y los seis schedules sobrevivieron el reboot final. SQL Tools
-  continúa siendo opcional y no está desplegado.
+  continúa siendo opcional. La DB se promovió después a
+  `45e1e0267b5a7ba443da8299d1000cb43cb412b6` para preparar identidades y
+  diagramas; el gateway no se considera habilitado hasta superar todos sus
+  checkpoints de red, Tailscale y permisos.
 - Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
   se configuren, el operador revisa diariamente Beszel, Schedules y
   `controller.log`; no se debe afirmar que existe notificación automática.
@@ -245,7 +248,7 @@ Si alguno ya existe, detenerse e inventariarlo. Nunca usar `down -v`.
 
 - Provider Raw, Docker Compose normal, manual, sin AutoDeploy, Domain, ports o `dokploy-network`.
 - Fuente: `database/DevelopmentDB/compose.development.database.yml`.
-- SHA-256: `dd29e07fcf92b95b4f0d2b45ac7a288290f862068cbf9360a9c856a962a2a1ee`.
+- SHA-256: `9b4319896a1d0b25caa6119122e2842fa6f0313ac8fdcbfa90598903cfc10b21`.
 - Resultado: storage init/provisioner `Exit 0`, SQL healthy, marker Development singleton, `sa` deshabilitado y ningún 1433 público.
 - Ejecutar backup y restore-check manuales antes de migrar; ambos deben terminar cero.
 
@@ -430,9 +433,14 @@ El artefacto operativo está en
 Usa
 `docker.io/library/haproxy:3.2.23-alpine3.24@sha256:6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42e`
 para `linux/amd64`, usuario no-root, filesystem read-only, `cap_drop: ALL`,
-`no-new-privileges`, límites y únicamente la red externa
-`elevant-dev-data`. No agregue Domain, `dokploy-network`, otra red, otra
-publicación de host o un listener `0.0.0.0`/`::`. `haproxy.cfg` se instala en
+`no-new-privileges`, límites y exactamente dos redes externas: la interna
+`elevant-dev-data` para alcanzar SQL y la bridge no interna, exclusiva,
+`elevant-dev-sql-tools-runtime` para materializar el binding del host. SQL
+permanece únicamente en la primera. No agregue Domain, `dokploy-network`, una
+tercera red, otra publicación o un listener **del host** en `0.0.0.0`/`::`.
+El `bind :11433` interno de HAProxy es correcto; no constituye una publicación
+wildcard del VPS.
+`haproxy.cfg` se instala en
 el directorio persistente hermano `files/haproxy.cfg`, fuera de `code/`, porque
 Dokploy elimina y regenera `code/` antes de cada despliegue Raw. El directorio
 es `root:root 0700` y el archivo, que no contiene secretos, es `root:root 0644`
@@ -449,15 +457,28 @@ Orden obligatorio del rollout:
    Deshabilitar backup, restore-check y poll de Database CD; pausar Database CD
    y volver a comprobar que no hay operación SQL en curso. Registrar hashes,
    IDs de los cuatro contenedores y configuración viva sin imprimir secretos.
-3. Crear el recurso Raw `elevant-dev-sql-tools-gateway` con AutoDeploy, Domain e
-   Isolated Deployments desactivados. Antes del primer Deploy, resolver su
+   Guardar `sqlserver`, `api`, `aviam-web` y `public-web`, un ID completo por
+   línea y en ese orden, en `<SNAPSHOT>/container-ids.before`.
+3. Tras demostrar que su CIDR está libre, crear
+   `elevant-dev-sql-tools-runtime` como bridge externa, `internal=false`, con
+   binding predeterminado defensivo `127.0.0.1`; debe permanecer dedicada al
+   gateway. Exigir Compose 2.33.1 o posterior y Docker Engine 28.0.0 o
+   posterior. Crear entonces el recurso Raw
+   `elevant-dev-sql-tools-gateway` con AutoDeploy, Domain e Isolated Deployments
+   desactivados. Antes del primer Deploy, resolver su
    `appName` y guardar los bytes exactos de `haproxy.cfg` en
    `/etc/dokploy/compose/<appName>/files/haproxy.cfg`; nunca dentro de `code/`.
    Validar el layout `code/` + `files/` primero en staging root-only, junto con
-   hash, propietario y modo. Desplegar el Compose exacto del commit, volver a
-   comparar `code/docker-compose.yml` y `files/haproxy.cfg`, y exigir una sola
-   red (`elevant-dev-data`), backend resoluble, health correcto y listener host
-   exacto `127.0.0.1:11433`. SQL, API y webs no se recrean.
+   hash, propietario y modo. Desplegar el Compose exacto del commit. Después del
+   Deploy, verificar byte a byte `files/haproxy.cfg` y ejecutar
+   `ops/dokploy/sql-tools-gateway/verify-compose-model.py` contra el Compose
+   aprobado y `code/docker-compose.yml`; Dokploy normaliza el Raw y omite
+   `name`. Exigir driver, `internal`, opción de binding, CIDR/gateway aprobados,
+   ruta por defecto runtime, exactamente las redes `elevant-dev-data` y
+   `elevant-dev-sql-tools-runtime`, backend resoluble, health correcto, TCP real
+   y mapping efectivo `127.0.0.1:11433`. SQL, API y webs no se recrean y SQL
+   nunca se conecta a la red runtime. Los comandos canónicos están en el README
+   del gateway.
 4. En Tailscale, crear `svc:elevant-dev-sql-tools` con endpoint `tcp:1433` y el
    grupo `group:elevant-db-editors`. Los tres correos reales se escriben solo en
    la consola del operador; la plantilla conserva placeholders. Mantener los
@@ -759,8 +780,10 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
 - SQL está healthy, sin puerto público y solo en `elevant-dev-data`.
 - Migración, seed idempotente, permisos, backup y restore-check pasan.
 - Si se habilitó SSMS, el gateway escucha únicamente en
-  `127.0.0.1:11433`, pertenece solo a `elevant-dev-data` y el Service
-  `svc:elevant-dev-sql-tools` es la única entrada. Las tres cuentas personales
+  `127.0.0.1:11433`, pertenece exactamente a `elevant-dev-data` y
+  `elevant-dev-sql-tools-runtime`, y el Service `svc:elevant-dev-sql-tools` es
+  la única entrada. SQL permanece solo en la red de datos y la red runtime solo
+  contiene el gateway. Las tres cuentas personales
   pasan CRUD de negocio y no pueden ejecutar DDL, administrar SQL ni escribir
   en `infra`/`audit`; una identidad no autorizada y la red pública no conectan.
 - El controlador adoptó la baseline, ejecuta imágenes y Compose certificados
