@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "bea325aad4863ad85281d92ed5c005fa53f905bc"
+verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
 sources:
   - AGENTS.md
   - README.md
@@ -27,6 +27,9 @@ sources:
   - docs/workflows/mobile-workflow.md
   - docs/workflows/pull-requests.md
   - docs/workflows/release-workflow.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - inicio
   - faq
@@ -41,7 +44,15 @@ Esta página responde lo esencial y te lleva a la evidencia. Si una respuesta de
 
 ### ¿Qué es ELEVANT?
 
-Es la plataforma de AVIAM para planificar y controlar asistencia en tierra. El monorepo contiene una aplicación interna, un portal público/cliente, una aplicación nativa para agentes y el backend compartido. Consulta el [README principal](../../README.md) y la [arquitectura del sistema](../../docs/architecture/system-overview.md).
+Es la plataforma de AVIAM para planificar y controlar asistencia en tierra. El monorepo contiene una aplicación interna, un portal público/cliente, una aplicación nativa para agentes y el backend compartido. Consulta el [Mapa de Producto](../02-producto/README.md), el [README principal](../../README.md) y la [arquitectura del sistema](../../docs/architecture/system-overview.md).
+
+### ¿Cuál es el recorrido operativo principal?
+
+La evidencia actual conecta solicitud comercial, contrato versionado, planificación del turnaround, ejecución en rampa, revisión OCC y consecuencias financieras futuras. No todas esas etapas tienen hoy endpoints de negocio reales: el [Mapa de Producto](../02-producto/README.md) distingue capacidad observada, contrato persistente y trabajo diferido; el [Mapa de Dominio](../03-dominio/README.md) fija el vocabulario canónico.
+
+### ¿Desde cuándo existe ELEVANT y cómo evolucionó?
+
+La historia reproducible comienza en el primer commit disponible; cualquier origen anterior permanece explícitamente desconocido hasta contar con testimonio y evidencia. El [Índice de Historia](../01-historia/README.md) separa hitos Git, prototipo, consolidación de arquitectura y operación Development.
 
 ### ¿Hay un backend o una base por aplicación?
 

@@ -22,12 +22,12 @@
     },
     {
       "id": "a000000000000003",
-      "type": "text",
-      "text": "## Producto y dominio\n\nPropósito, actores, lenguaje operativo y reglas de negocio.",
+      "type": "file",
+      "file": "Vault/diagrams/producto-dominio-historia.md",
       "x": -1080,
       "y": -100,
       "width": 360,
-      "height": 180,
+      "height": 240,
       "color": "1"
     },
     {
@@ -82,12 +82,12 @@
     },
     {
       "id": "a000000000000009",
-      "type": "text",
-      "text": "## Historia y backlog\n\nLo anterior se marca historical; lo pendiente se marca draft o deferred.",
+      "type": "file",
+      "file": "Vault/01-historia/README.md",
       "x": 60,
       "y": 340,
       "width": 360,
-      "height": 200,
+      "height": 240,
       "color": "1"
     },
     {

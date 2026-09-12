@@ -8,12 +8,15 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
 sources:
   - AGENTS.md
   - docs/README.md
   - .obsidian/app.json
   - Vault/00-inicio/home.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - vault
   - onboarding
@@ -41,20 +44,20 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 | Área | Responde principalmente | Punto de entrada |
 | --- | --- | --- |
 | Inicio | ¿Dónde encuentro algo y qué está vigente? | [Home](00-inicio/home.md) |
-| Producto | ¿Para quién existe ELEVANT y qué problema resuelve? | Índice de Producto |
+| Producto | ¿Para quién existe ELEVANT y qué problema resuelve? | [Índice de Producto](02-producto/README.md) |
 | Arquitectura | ¿Cómo se conectan aplicaciones, API y datos? | Índice de Arquitectura |
-| Dominio | ¿Qué significan los conceptos operativos? | Índice de Dominio |
+| Dominio | ¿Qué significan los conceptos operativos? | [Índice de Dominio](03-dominio/README.md) |
 | Aplicaciones | ¿Qué hace cada cliente y cuál es su estado? | Índice de Aplicaciones |
 | Desarrollo | ¿Cómo preparo, cambio y valido el código? | Índice de Desarrollo |
 | CI/CD | ¿Qué valida y qué entrega cada pipeline? | Índice de CI/CD |
 | Operaciones | ¿Cómo se despliega, observa y recupera Development? | Índice de Operaciones |
 | Seguridad | ¿Cuáles son las fronteras de confianza y acceso? | Índice de Seguridad |
 | Gobernanza | ¿Cómo sabemos que una afirmación es confiable? | [Política de evidencia](08-gobernanza/fuentes-y-evidencia.md) |
-| Historia | ¿Cómo llegó el proyecto al estado actual? | Índice de Historia |
+| Historia | ¿Cómo llegó el proyecto al estado actual? | [Índice de Historia](01-historia/README.md) |
 | Referencia | ¿Dónde están contratos, inventarios y glosarios? | Índice de Referencia |
 | Backlog | ¿Qué está diferido y qué falta decidir? | Índice de Backlog |
 
-Los índices que todavía no tengan enlace se incorporan por entregas. Una ausencia se registra como pendiente; nunca se rellena con una suposición.
+Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio e Historia ya tienen mapas verificables; una ausencia restante se registra como pendiente y nunca se rellena con una suposición.
 
 ## Relación con el repositorio
 

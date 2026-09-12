@@ -260,9 +260,9 @@
     {
       "id": "be00000000000008",
       "fromNode": "b00000000000000b",
-      "fromSide": "bottom",
+      "fromSide": "right",
       "toNode": "b00000000000000d",
-      "toSide": "top",
+      "toSide": "right",
       "toEnd": "arrow",
       "label": "adaptadores futuros"
     },
