@@ -3,12 +3,12 @@ id: diagram-leyenda-grafo
 title: "Leyenda y uso del grafo de conocimiento"
 type: diagram
 area: vault
-status: documented
+status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "b75d1df4dbb42cfae27366a3cff0e5cdcaa495b8"
 sources:
   - .obsidian/graph.json
   - Vault/README.md
@@ -21,7 +21,7 @@ tags:
 
 # Leyenda y uso del grafo de conocimiento
 
-El Graph nativo de Obsidian representa el cerebro navegable de ELEVANT: los nodos son notas, las líneas son relaciones explícitas y el color combina estado y área. Su configuración compartida enfoca `Vault/` y oculta plantillas para que el mapa principal sea legible.
+El Graph nativo de Obsidian representa el cerebro navegable de ELEVANT: los nodos son notas y fuentes Markdown, las líneas son relaciones explícitas y el color combina estado, área y evidencia. Su configuración compartida enfoca el Vault junto con `docs/`, `ops/dokploy`, reglas y README; oculta plantillas para que el mapa principal sea legible.
 
 ## Gramática visual
 
@@ -30,13 +30,14 @@ El Graph nativo de Obsidian representa el cerebro navegable de ELEVANT: los nodo
 | 🔴 Coral | `draft` o evidencia `unknown` | ¿Qué no debo asumir todavía? |
 | 🟠 Ámbar | `deferred` o `planned` | ¿Qué está diseñado para después? |
 | ⚪ Gris | Histórico, deprecado o área de historia | ¿Qué explica el pasado pero no gobierna el presente? |
-| 🟣 Violeta | Inicio, mapas y recuperación de contexto | ¿Por dónde entro? |
+| 🟣 Violeta | Inicio, diagramas, mapas y recuperación de contexto | ¿Por dónde entro? |
 | 🟪 Magenta | Producto y dominio | ¿Qué problema y vocabulario compartimos? |
 | 🔵 Azul | Arquitectura, backend y datos | ¿Cómo está construido? |
 | 🩵 Cian | Aplicaciones y experiencias | ¿Dónde vive cada flujo de usuario? |
 | 🟦 Turquesa | Desarrollo y contratos de cliente | ¿Cómo lo cambio de forma segura? |
 | 🟢 Verde | CI/CD, operaciones y seguridad | ¿Cómo se valida, entrega y protege? |
 | 🟪 Lavanda | Gobernanza y referencia | ¿Cómo pruebo o consulto una afirmación? |
+| ⚫ Pizarra | Fuentes Markdown fuera del Vault | ¿Dónde compruebo la explicación? |
 
 El color nunca es la única señal: abre el nodo y lee `status`, `evidence`, `maturity`, `verified_commit` y `sources`. Los estados de riesgo aparecen antes que los grupos de área en la configuración para mantenerlos visibles.
 
@@ -66,6 +67,6 @@ path:"Vault/00-inicio"
 
 ## Diseño intencional
 
-La separación, repulsión y longitud de enlace se ajustan para evitar una “bola” compacta a medida que crece el repositorio. El grafo abre con flechas, etiquetas visibles y una escala moderada. No se versionan posiciones personales ni workspaces: cada colaborador puede explorar sin ensuciar Git.
+La separación, repulsión y longitud de enlace se ajustan para evitar una “bola” compacta a medida que crece el repositorio. El grafo abre con flechas, etiquetas visibles y una escala moderada; los tags se ocultan como nodos para privilegiar relaciones entre documentos. Las carpetas generadas y dependencias locales se excluyen antes de indexar. No se versionan posiciones personales ni workspaces: cada colaborador puede explorar sin ensuciar Git.
 
 Volver a [Home](../00-inicio/home.md), abrir el [Atlas general](atlas-elevant.md) o seguir el [Protocolo de recuperación](../00-inicio/protocolo-recuperacion-contexto.md).

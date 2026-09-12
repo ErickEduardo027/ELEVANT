@@ -805,6 +805,17 @@ function validateObsidianConfig(relativePath, document, errors) {
         addError(errors, relativePath, `'${key}' must remain ${JSON.stringify(value)}`);
       }
     }
+    const requiredIgnoreFilters = [
+      "/(^|\\/)node_modules\\//",
+      "/(^|\\/)(\\.git|\\.worktrees|\\.expo|\\.next|\\.astro)\\//",
+      "/(^|\\/)(bin|obj|dist|build|coverage|artifacts|TestResults)\\//",
+    ];
+    if (
+      !Array.isArray(document.userIgnoreFilters) ||
+      requiredIgnoreFilters.some((filter) => !document.userIgnoreFilters.includes(filter))
+    ) {
+      addError(errors, relativePath, "generated dependency and build directories must remain excluded");
+    }
   } else if (relativePath === ".obsidian/core-plugins.json") {
     for (const [plugin, enabled] of Object.entries(document)) {
       if (typeof enabled !== "boolean") {
@@ -835,9 +846,14 @@ function validateObsidianConfig(relativePath, document, errors) {
     if (
       typeof document.search !== "string" ||
       !document.search.includes('path:"Vault"') ||
+      !document.search.includes('path:"docs"') ||
+      !document.search.includes('path:"ops/dokploy"') ||
       !document.search.includes('-path:"Vault/99-plantillas"')
     ) {
       addError(errors, relativePath, "graph search must focus on Vault and exclude its templates");
+    }
+    if (document.showTags !== false) {
+      addError(errors, relativePath, "graph tags must remain hidden to keep note relationships legible");
     }
   }
 }

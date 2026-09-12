@@ -3,12 +3,12 @@ id: inicio-como-usar-vault
 title: "Cómo usar el Vault"
 type: guide
 area: vault
-status: documented
+status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "b75d1df4dbb42cfae27366a3cff0e5cdcaa495b8"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -41,7 +41,7 @@ tags:
 4. Mantén habilitadas las funciones nativas necesarias para Markdown, backlinks, Canvas, Bases, Properties y Templates.
 5. No instales plugins comunitarios para poder leer el conocimiento base.
 
-La configuración compartida vive en `.obsidian/` en la raíz. Al abrir todo el monorepo, los enlaces del Vault hacia código, `docs/`, contratos y workflows permanecen navegables en Obsidian y GitHub. El filtro inicial del grafo se concentra en `Vault/`; puedes retirarlo temporalmente para explorar backlinks del resto del repositorio.
+La configuración compartida vive en `.obsidian/` en la raíz. Al abrir todo el monorepo, los enlaces del Vault hacia código, `docs/`, contratos y workflows permanecen navegables en Obsidian y GitHub. Obsidian excluye dependencias y salidas generadas al indexar; el grafo inicial muestra el Vault y sus fuentes Markdown principales sin incluir las plantillas.
 
 ## Tres formas de encontrar una respuesta
 

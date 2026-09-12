@@ -1,7 +1,7 @@
 {
   "collapse-filter": false,
-  "search": "path:\"Vault\" -path:\"Vault/99-plantillas\"",
-  "showTags": true,
+  "search": "(path:\"Vault\" OR path:\"docs\" OR path:\"ops/dokploy\" OR path:\".github/BRANCH_PROTECTION.md\" OR path:\"AGENTS.md\" OR path:\"README.md\") -path:\"Vault/99-plantillas\"",
+  "showTags": false,
   "showAttachments": false,
   "hideUnresolved": true,
   "showOrphans": true,
@@ -29,7 +29,7 @@
       }
     },
     {
-      "query": "path:\"Vault/00-inicio\"",
+      "query": "path:\"Vault/00-inicio\" OR path:\"Vault/diagrams\"",
       "color": {
         "a": 1,
         "rgb": 8150268
@@ -75,6 +75,13 @@
       "color": {
         "a": 1,
         "rgb": 10980346
+      }
+    },
+    {
+      "query": "(path:\"docs\" OR path:\"ops/dokploy\" OR path:\".github\" OR path:\"AGENTS.md\" OR path:\"README.md\") -path:\"Vault\"",
+      "color": {
+        "a": 1,
+        "rgb": 6583435
       }
     }
   ],

@@ -11,7 +11,7 @@
         "title": "Cómo usar el Vault",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -41,7 +41,7 @@
         "title": "Mapa de preguntas",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -51,7 +51,7 @@
         "title": "Protocolo de recuperación de contexto",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -81,7 +81,7 @@
         "title": "Política de evidencia y fuentes",
         "type": "policy",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -91,7 +91,7 @@
         "title": "Mantenimiento del Vault",
         "type": "policy",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -101,7 +101,7 @@
         "title": "Esquema de metadatos",
         "type": "policy",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -111,7 +111,7 @@
         "title": "Plantilla: ADR",
         "type": "template",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -121,7 +121,7 @@
         "title": "Plantilla: capacidad",
         "type": "template",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -131,7 +131,7 @@
         "title": "Plantilla: incidente",
         "type": "template",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -141,7 +141,7 @@
         "title": "Plantilla: página de conocimiento",
         "type": "template",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -151,7 +151,7 @@
         "title": "Plantillas del Vault",
         "type": "index",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -161,7 +161,7 @@
         "title": "Plantilla: runbook operativo",
         "type": "template",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -191,7 +191,7 @@
         "title": "Leyenda y uso del grafo de conocimiento",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -201,7 +201,7 @@
         "title": "Mapa de navegación y estado",
         "type": "diagram",
         "area": "governance",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -211,7 +211,7 @@
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }
@@ -239,7 +239,7 @@
     "obsidianConfig": [
       {
         "path": ".obsidian/app.json",
-        "sha256": "9dfbea15b21f59a0a6bc5b1ba71580a5e8b379f2479220d83637fcb14b7fc5f2"
+        "sha256": "66368f7502a9e2e3d278295d59836d67a6fd1bacd9f63136ab1eca45f20f9c9a"
       },
       {
         "path": ".obsidian/appearance.json",
@@ -251,7 +251,7 @@
       },
       {
         "path": ".obsidian/graph.json",
-        "sha256": "b811c0f3946c15d0ad894f3d0b2d116614ee2cd0d491b897f4fa207f6db12c85"
+        "sha256": "299fe6e5818e8b1916b366a08402772808ca84be99db0c7aa34100932a940d01"
       },
       {
         "path": ".obsidian/templates.json",

@@ -3,12 +3,12 @@ id: plantilla-pagina
 title: "Plantilla: página de conocimiento"
 type: template
 area: governance
-status: documented
+status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "b75d1df4dbb42cfae27366a3cff0e5cdcaa495b8"
 sources:
   - Vault/08-gobernanza/metadatos.md
   - Vault/08-gobernanza/fuentes-y-evidencia.md

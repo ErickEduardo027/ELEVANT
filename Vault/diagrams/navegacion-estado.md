@@ -3,12 +3,12 @@ id: diagram-navegacion-estado
 title: "Mapa de navegación y estado"
 type: diagram
 area: governance
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "b75d1df4dbb42cfae27366a3cff0e5cdcaa495b8"
 sources:
   - Vault/README.md
   - Vault/00-inicio/home.md

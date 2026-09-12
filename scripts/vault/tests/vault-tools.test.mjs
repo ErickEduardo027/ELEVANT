@@ -75,6 +75,11 @@ function fixture() {
       newFileLocation: "current",
       newLinkFormat: "relative",
       useMarkdownLinks: true,
+      userIgnoreFilters: [
+        "/(^|\\/)node_modules\\//",
+        "/(^|\\/)(\\.git|\\.worktrees|\\.expo|\\.next|\\.astro)\\//",
+        "/(^|\\/)(bin|obj|dist|build|coverage|artifacts|TestResults)\\//",
+      ],
     },
     "appearance.json": {},
     "core-plugins.json": {
@@ -90,7 +95,8 @@ function fixture() {
       templates: true,
     },
     "graph.json": {
-      search: 'path:"Vault" -path:"Vault/99-plantillas"',
+      search: '(path:"Vault" OR path:"docs" OR path:"ops/dokploy") -path:"Vault/99-plantillas"',
+      showTags: false,
     },
     "templates.json": {
       folder: "Vault/99-plantillas",

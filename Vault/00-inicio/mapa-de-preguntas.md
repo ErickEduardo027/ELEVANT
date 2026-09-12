@@ -3,12 +3,12 @@ id: inicio-mapa-preguntas
 title: "Mapa de preguntas"
 type: index
 area: vault
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "b75d1df4dbb42cfae27366a3cff0e5cdcaa495b8"
 sources:
   - AGENTS.md
   - docs/README.md
