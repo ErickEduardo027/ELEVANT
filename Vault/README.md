@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
+verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -17,6 +17,9 @@ sources:
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
+  - Vault/04-arquitectura/README.md
+  - Vault/05-aplicaciones/README.md
+  - Vault/06-desarrollo/README.md
 tags:
   - vault
   - onboarding
@@ -45,10 +48,10 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 | --- | --- | --- |
 | Inicio | ¿Dónde encuentro algo y qué está vigente? | [Home](00-inicio/home.md) |
 | Producto | ¿Para quién existe ELEVANT y qué problema resuelve? | [Índice de Producto](02-producto/README.md) |
-| Arquitectura | ¿Cómo se conectan aplicaciones, API y datos? | Índice de Arquitectura |
+| Arquitectura | ¿Cómo se conectan aplicaciones, API y datos? | [Índice de Arquitectura](04-arquitectura/README.md) |
 | Dominio | ¿Qué significan los conceptos operativos? | [Índice de Dominio](03-dominio/README.md) |
-| Aplicaciones | ¿Qué hace cada cliente y cuál es su estado? | Índice de Aplicaciones |
-| Desarrollo | ¿Cómo preparo, cambio y valido el código? | Índice de Desarrollo |
+| Aplicaciones | ¿Qué hace cada cliente y cuál es su estado? | [Índice de Aplicaciones](05-aplicaciones/README.md) |
+| Desarrollo | ¿Cómo preparo, cambio y valido el código? | [Índice de Desarrollo](06-desarrollo/README.md) |
 | CI/CD | ¿Qué valida y qué entrega cada pipeline? | Índice de CI/CD |
 | Operaciones | ¿Cómo se despliega, observa y recupera Development? | Índice de Operaciones |
 | Seguridad | ¿Cuáles son las fronteras de confianza y acceso? | Índice de Seguridad |
@@ -57,7 +60,7 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 | Referencia | ¿Dónde están contratos, inventarios y glosarios? | Índice de Referencia |
 | Backlog | ¿Qué está diferido y qué falta decidir? | Índice de Backlog |
 
-Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio e Historia ya tienen mapas verificables; una ausencia restante se registra como pendiente y nunca se rellena con una suposición.
+Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio, Historia, Arquitectura, Aplicaciones y Desarrollo ya tienen mapas verificables; una ausencia restante se registra como pendiente y nunca se rellena con una suposición.
 
 ## Relación con el repositorio
 

@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
+verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
 sources:
   - AGENTS.md
   - README.md
@@ -30,6 +30,9 @@ sources:
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
+  - Vault/04-arquitectura/README.md
+  - Vault/05-aplicaciones/README.md
+  - Vault/06-desarrollo/README.md
 tags:
   - inicio
   - faq
@@ -58,6 +61,10 @@ La historia reproducible comienza en el primer commit disponible; cualquier orig
 
 No. La arquitectura establece una sola API y una sola base lógica por ambiente para los tres clientes. Private Web y Public Web ya siguen esa frontera; la integración real del Mobile Agent con endpoints versionados continúa incompleta. Crear un backend o una base por cliente contradice la arquitectura vigente. Fuente: [`AGENTS.md`](../../AGENTS.md) y [Flujo Mobile](../../docs/workflows/mobile-workflow.md).
 
+### ¿Qué recorrido funciona hoy de extremo a extremo en la API real?
+
+La superficie contractual actual es técnica: health/readiness, Swagger donde está habilitado y `GET /api/v1/system/ping`. El modelo persistente es amplio, pero todavía no hay autenticación ni endpoints de negocio. Consulta [Arquitectura](../04-arquitectura/README.md), [API compartida](../05-aplicaciones/api-compartida.md) y [Mapa de Aplicaciones](../05-aplicaciones/README.md) antes de inferir capacidad desde una pantalla o tabla.
+
 ### ¿Puede un frontend consultar SQL Server directamente?
 
 No. Ningún cliente puede consultar SQL Server directamente. Private Web y Public Web acceden mediante la API; Mobile Agent debe hacerlo por la misma frontera cuando complete su integración. El acceso SSMS de Development es una herramienta controlada para personas autorizadas y no un contrato de aplicación. Consulta [Acceso a base de datos](../../docs/security/database-access.md).
@@ -70,6 +77,10 @@ OpenAPI cuando el endpoint existe. Las entidades EF no son DTO HTTP y los mocks 
 
 La historia de migraciones EF Core en `database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations`. Para cambiarla, empieza por [Migraciones](../../docs/database/migrations.md) y [Arquitectura Database v1](../../docs/architecture/database-v1.md).
 
+### ¿Dónde veo todas las capas y aplicaciones juntas?
+
+Usa el [lienzo Arquitectura · Aplicaciones · Desarrollo](../diagrams/arquitectura-aplicaciones-desarrollo.md). Su Canvas permite recorrer tarjetas y su Base ofrece vistas filtrables sin depender del gráfico.
+
 ## Desarrollo
 
 ### ¿Desde qué rama empiezo?
@@ -78,7 +89,7 @@ Desde `Development`, en una rama feature. El merge es manual mediante PR; no tra
 
 ### ¿Qué debo leer antes de cambiar código?
 
-El [`AGENTS.md`](../../AGENTS.md) raíz y el más cercano al subárbol. Después, el README del producto, sus contratos y sus pruebas. La guía general está en [Cómo usar el Vault](como-usar-el-vault.md).
+El [`AGENTS.md`](../../AGENTS.md) raíz y el más cercano al subárbol. Después, el perfil de la [aplicación](../05-aplicaciones/README.md), el README del producto, sus contratos y sus pruebas. La secuencia completa está en el [Mapa de Desarrollo](../06-desarrollo/README.md).
 
 ### ¿Puedo reutilizar datos del prototipo como seed?
 
@@ -86,7 +97,19 @@ No. Fixtures del frontend, almacenamiento del navegador y datos de `backend-prot
 
 ### ¿Cómo sé qué pruebas ejecutar?
 
-Cada subárbol posee sus comandos. El backend usa la solución y manifests .NET bloqueados; cada frontend usa su propio `package-lock.json` y scripts npm. Consulta [Desarrollo local](../../docs/workflows/local-development.md) y el README/`AGENTS.md` del área.
+Cada subárbol posee sus comandos. El backend usa la solución y manifests .NET bloqueados; cada frontend usa su propio `package-lock.json` y scripts npm. Consulta [Comandos locales por subárbol](../06-desarrollo/comandos-locales-por-subarbol.md), [Pruebas y frontera CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md) y el README/`AGENTS.md` del área.
+
+### ¿Cómo cambio un endpoint o el cliente TypeScript?
+
+Implementación, OpenAPI, snapshot, cliente generado, tests y consumidores afectados deben evolucionar juntos. No edites la salida generada a mano. Sigue [OpenAPI y cliente compartido](../06-desarrollo/openapi-y-cliente-compartido.md) y [Cambio seguro por tipo](../06-desarrollo/cambio-seguro-por-tipo.md).
+
+### ¿Cómo cambio una tabla, columna o relación?
+
+Mediante una migración EF aditiva creada con el script revisado; nunca con DDL manual en SSMS ni reescribiendo una migración aplicada. Sigue [Migraciones y datos](../06-desarrollo/migraciones-y-datos.md).
+
+### ¿Cuándo está terminado un cambio?
+
+Cuando el alcance está acotado, pasan las validaciones de todos los límites afectados, no se versionan artefactos/secretos, se actualiza la documentación durable y el handoff declara también qué no se desplegó. Consulta [Definition of Done y handoff](../06-desarrollo/definition-of-done-y-handoff.md).
 
 ## CI/CD y ambientes
 

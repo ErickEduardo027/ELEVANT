@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
+verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
 sources:
   - AGENTS.md
   - README.md
@@ -17,8 +17,12 @@ sources:
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
+  - Vault/04-arquitectura/README.md
+  - Vault/05-aplicaciones/README.md
+  - Vault/06-desarrollo/README.md
   - Vault/diagrams/atlas-elevant.canvas
   - Vault/diagrams/producto-dominio-historia.md
+  - Vault/diagrams/arquitectura-aplicaciones-desarrollo.md
 tags:
   - atlas
   - conocimiento
@@ -34,6 +38,7 @@ Este mapa conecta las áreas que explican ELEVANT sin convertir la documentació
 - [Ver arquitectura y contexto](arquitectura-contexto.md)
 - [Ver navegación y estados](navegacion-estado.md)
 - [Explorar Producto, Dominio e Historia](producto-dominio-historia.md)
+- [Explorar Arquitectura, Aplicaciones y Desarrollo](arquitectura-aplicaciones-desarrollo.md)
 
 ```mermaid
 flowchart TB
@@ -93,5 +98,8 @@ La [estructura real del repositorio](../../docs/architecture/repository-structur
 - [Historia](../01-historia/README.md)
 - [Producto](../02-producto/README.md)
 - [Dominio](../03-dominio/README.md)
+- [Arquitectura](../04-arquitectura/README.md)
+- [Aplicaciones](../05-aplicaciones/README.md)
+- [Desarrollo](../06-desarrollo/README.md)
 
 Las áreas restantes del diagrama se incorporan por etapas según el [Roadmap](../00-inicio/roadmap-del-vault.md).

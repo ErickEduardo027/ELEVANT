@@ -316,6 +316,236 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/04-arquitectura/backend-dotnet-capas-y-dependencias.md",
+        "id": "arquitectura-backend-dotnet-capas",
+        "title": "Backend .NET, capas y dependencias",
+        "type": "architecture",
+        "area": "backend",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/datos-ef-migraciones-y-persistencia.md",
+        "id": "arquitectura-datos-ef-migraciones",
+        "title": "Datos, EF Core, migraciones y persistencia",
+        "type": "architecture",
+        "area": "database",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/decisiones-restricciones-y-riesgos.md",
+        "id": "arquitectura-decisiones-restricciones-riesgos",
+        "title": "Decisiones, restricciones y riesgos",
+        "type": "decision",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/integraciones-externas.md",
+        "id": "arquitectura-integraciones-externas",
+        "title": "Integraciones externas",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/openapi-http-y-signalr.md",
+        "id": "arquitectura-openapi-http-signalr",
+        "title": "OpenAPI, HTTP y SignalR",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/README.md",
+        "id": "arquitectura-indice",
+        "title": "Arquitectura ELEVANT",
+        "type": "index",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/04-arquitectura/sistema-y-fronteras-de-confianza.md",
+        "id": "arquitectura-sistema-fronteras-confianza",
+        "title": "Sistema y fronteras de confianza",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/api-compartida.md",
+        "id": "aplicaciones-api-compartida",
+        "title": "API compartida",
+        "type": "architecture",
+        "area": "backend",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/developmentdb-compartida.md",
+        "id": "aplicaciones-developmentdb-compartida",
+        "title": "DevelopmentDB como dependencia compartida",
+        "type": "architecture",
+        "area": "database",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/mobile-agent.md",
+        "id": "aplicaciones-mobile-agent",
+        "title": "Mobile Agent",
+        "type": "architecture",
+        "area": "mobile",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/private-web-aviam.md",
+        "id": "aplicaciones-private-web-aviam",
+        "title": "Private Web / AVIAM",
+        "type": "architecture",
+        "area": "private-web",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/public-web-portal.md",
+        "id": "aplicaciones-public-web-portal",
+        "title": "Public Web y portal de aerolíneas",
+        "type": "architecture",
+        "area": "public-web",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/README.md",
+        "id": "aplicaciones-indice",
+        "title": "Mapa de aplicaciones",
+        "type": "index",
+        "area": "applications",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/cambio-seguro-por-tipo.md",
+        "id": "desarrollo-cambio-seguro-por-tipo",
+        "title": "Cambio seguro por tipo",
+        "type": "guide",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/comandos-locales-por-subarbol.md",
+        "id": "desarrollo-comandos-locales-subarbol",
+        "title": "Comandos locales por subárbol",
+        "type": "reference",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/definition-of-done-y-handoff.md",
+        "id": "desarrollo-definition-of-done-handoff",
+        "title": "Definition of Done y handoff",
+        "type": "policy",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/depuracion-local.md",
+        "id": "desarrollo-depuracion-local",
+        "title": "Depuración local segura",
+        "type": "runbook",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/flujo-de-rama-y-pull-request.md",
+        "id": "desarrollo-flujo-rama-pull-request",
+        "title": "Flujo de rama y pull request",
+        "type": "guide",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/migraciones-y-datos.md",
+        "id": "desarrollo-migraciones-y-datos",
+        "title": "Migraciones y datos de Development",
+        "type": "guide",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/openapi-y-cliente-compartido.md",
+        "id": "desarrollo-openapi-cliente-compartido",
+        "title": "OpenAPI y cliente compartido",
+        "type": "guide",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/preparacion-del-entorno-local.md",
+        "id": "desarrollo-preparacion-entorno-local",
+        "title": "Preparación del entorno local",
+        "type": "guide",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/pruebas-calidad-y-frontera-ci.md",
+        "id": "desarrollo-pruebas-calidad-frontera-ci",
+        "title": "Pruebas, calidad y frontera con CI",
+        "type": "reference",
+        "area": "development",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/06-desarrollo/README.md",
+        "id": "desarrollo-indice",
+        "title": "Guía de desarrollo de ELEVANT",
+        "type": "index",
+        "area": "development",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/08-gobernanza/fuentes-y-evidencia.md",
         "id": "gobernanza-evidencia-fuentes",
         "title": "Política de evidencia y fuentes",
@@ -406,6 +636,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.md",
+        "id": "diagram-arquitectura-aplicaciones-desarrollo",
+        "title": "Arquitectura, aplicaciones y desarrollo",
+        "type": "diagram",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/diagrams/arquitectura-contexto.md",
         "id": "diagram-arquitectura-contexto",
         "title": "Arquitectura y contexto inicial",
@@ -468,12 +708,16 @@
     ],
     "canvases": [
       {
+        "path": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.canvas",
+        "sha256": "84f97b4a869ac29a032d58a804057f987b356bdeed523d5afeb3be9219be0ab3"
+      },
+      {
         "path": "Vault/diagrams/arquitectura-contexto.canvas",
         "sha256": "cd0c90474aca6270c73a6a5b97992ac19b86929ab339b2c160521d65334bda56"
       },
       {
         "path": "Vault/diagrams/atlas-elevant.canvas",
-        "sha256": "d4feef4d02612dd0d40ac83620980c66c58ffd6a8465152e5c6f7f21a4f8fcca"
+        "sha256": "c25d1d5fa781acba868e4464df5560cba90b7718135b142efb458944a18f4c91"
       },
       {
         "path": "Vault/diagrams/navegacion-estado.canvas",
@@ -485,6 +729,10 @@
       }
     ],
     "bases": [
+      {
+        "path": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.base",
+        "sha256": "2c8d1cae057e1c584a1a5bf78bec7f0de0f839bf5808547f5a0a9a168475dc39"
+      },
       {
         "path": "Vault/diagrams/atlas-conocimiento.base",
         "sha256": "7bad1054dee8abecba08e38af2b7e950f7df093129305460fb314a6a37123e5e"
