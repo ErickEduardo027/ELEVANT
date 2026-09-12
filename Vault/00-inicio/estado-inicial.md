@@ -3,12 +3,12 @@ id: inicio-estado-inicial
 title: "Estado inicial del conocimiento"
 type: status
 area: vault
-status: documented
+status: verified
 maturity: seed
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
 sources:
   - AGENTS.md
   - .github/BRANCH_PROTECTION.md

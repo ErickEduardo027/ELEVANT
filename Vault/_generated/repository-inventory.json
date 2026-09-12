@@ -21,7 +21,7 @@
         "title": "Estado inicial del conocimiento",
         "type": "status",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "seed",
         "evidence": "operator-recorded"
       },
@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -41,7 +41,7 @@
         "title": "Mapa de preguntas",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -51,7 +51,7 @@
         "title": "Protocolo de recuperación de contexto",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -61,7 +61,7 @@
         "title": "Respuestas rápidas",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -421,7 +421,7 @@
         "title": "Atlas general de ELEVANT",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -431,7 +431,7 @@
         "title": "Leyenda y uso del grafo de conocimiento",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -451,7 +451,7 @@
         "title": "Producto, dominio e historia",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -461,7 +461,7 @@
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }

@@ -3,12 +3,12 @@ id: inicio-respuestas-rapidas
 title: "Respuestas rápidas"
 type: guide
 area: vault
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
 sources:
   - AGENTS.md
   - README.md

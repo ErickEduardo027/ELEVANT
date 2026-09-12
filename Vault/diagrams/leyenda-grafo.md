@@ -3,12 +3,12 @@ id: diagram-leyenda-grafo
 title: "Leyenda y uso del grafo de conocimiento"
 type: diagram
 area: vault
-status: documented
+status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
 sources:
   - .obsidian/graph.json
   - Vault/README.md
