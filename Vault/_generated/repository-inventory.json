@@ -21,7 +21,7 @@
         "title": "Estado inicial del conocimiento",
         "type": "status",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "seed",
         "evidence": "operator-recorded"
       },
@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -41,7 +41,7 @@
         "title": "Mapa de preguntas",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -51,7 +51,7 @@
         "title": "Protocolo de recuperación de contexto",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -61,7 +61,7 @@
         "title": "Respuestas rápidas",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -641,7 +641,7 @@
         "title": "Arquitectura, aplicaciones y desarrollo",
         "type": "diagram",
         "area": "architecture",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -661,7 +661,7 @@
         "title": "Atlas general de ELEVANT",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -701,7 +701,7 @@
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }

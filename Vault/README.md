@@ -3,12 +3,12 @@ id: vault-readme
 title: "Vault ELEVANT"
 type: index
 area: vault
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
 sources:
   - AGENTS.md
   - docs/README.md
