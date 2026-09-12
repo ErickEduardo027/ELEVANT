@@ -8,7 +8,7 @@ maturity: seed
 evidence: planned
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
 sources:
   - AGENTS.md
   - docs/README.md

@@ -3,12 +3,12 @@ id: diagram-atlas-elevant
 title: "Atlas general de ELEVANT"
 type: diagram
 area: vault
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
 sources:
   - AGENTS.md
   - README.md
