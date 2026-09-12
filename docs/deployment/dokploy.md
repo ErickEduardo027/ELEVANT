@@ -3,21 +3,22 @@
 Estado: DB v1, API, AVIAM Web y Public Web están desplegadas y verificadas en el
 VPS Development privado, cada una con su CD pull-based activo. El hardening,
 Tailscale, observabilidad, backup/restore programados, los drills web B -> A -> B
-y el reboot final ya fueron aceptados. Mobile Agent continúa fuera del VPS y
-SQL Tools permanece como acceso humano opcional pendiente de rollout manual. La
-secuencia reproducible con checkpoints y rollback está en
-[Configuración de Dokploy](dokploy-configuration.md).
+y el reboot final ya fueron aceptados. SQL Tools también quedó desplegado y
+aceptado el 2026-09-12 como acceso humano privado a datos sintéticos, con cuentas
+personales, permisos CRUD acotados y persistencia validada tras reboot. Mobile
+Agent continúa fuera del VPS. La secuencia reproducible con checkpoints y
+rollback está en [Configuración de Dokploy](dokploy-configuration.md).
 
 ## Por qué SQL Server va en contenedor
 
 Dokploy administra Docker Compose y sus bases integradas no incluyen Microsoft SQL Server. ELEVANT usa la imagen oficial Linux de SQL Server dentro de un Compose, con `/var/opt/mssql` en named volume. El contenedor hace reproducible motor/configuración; el volumen, los backups nativos y el restore probado protegen los datos. Recrear un contenedor no debe borrar el volumen, pero borrar el volumen sí es pérdida de datos.
 
-SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops y,
-cuando se habilite, el gateway SQL Tools entran por la red bridge interna. El
+SQL Server permanece sin dominio y sin `ports`. Solo API/migrator/seeder/ops y
+el gateway SQL Tools entran por la red bridge interna. El
 gateway usa además una bridge no interna exclusiva para materializar su binding
 loopback; SQL nunca entra a esa segunda red. AVIAM Web, Public Web y Mobile
 nunca entran a la red de datos.
-El único acceso humano opcional es el gateway SSMS Development de
+El único acceso humano es el gateway SSMS Development controlado de
 [ADR-0013](../adr/0013-development-ssms-data-access.md): un recurso separado,
 sin credenciales, que comparte esa red y publica solo un loopback para un
 Service Tailscale dedicado.
@@ -31,7 +32,7 @@ Tailscale Services
   ├─ Elevant API   -> 127.0.0.1:18080 -> contenedor API
   ├─ Dokploy       -> 127.0.0.1:3000
   ├─ Monitoring    -> 127.0.0.1:18083
-  └─ SQL Tools TCP -> 127.0.0.1:11433 -> gateway sin credenciales (opcional)
+  └─ SQL Tools TCP -> 127.0.0.1:11433 -> gateway sin credenciales (live; reboot aceptado)
 
                                      red elevant-dev-data (internal)
 db release migrator/seeder ───────────────────┐
@@ -53,8 +54,8 @@ Deployables separados:
 3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
 4. `elevant-dev-aviam-web`: Vite estático/Nginx, runtime y Web CD aceptados.
 5. `elevant-dev-public-web`: Next standalone, runtime y Web CD aceptados.
-6. `elevant-dev-sql-tools-gateway`: proxy TCP opcional para SSMS Development,
-   sin AutoDeploy ni credenciales.
+6. `elevant-dev-sql-tools-gateway`: proxy TCP privado aceptado para SSMS
+   Development, sin AutoDeploy ni credenciales.
 
 Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se compila/distribuye, no es un stack.
 
@@ -86,10 +87,10 @@ Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se co
 6. Mantener `tailscale funnel off`.
 
 No anuncie toda la subnet de Dokploy/Docker: publica una superficie innecesaria.
-Tailscale Serve debe apuntar solo a los seis loopbacks previstos: Dokploy,
-monitoreo, API, AVIAM Web, Public Web y el gateway SQL Tools opcional. Los cinco
-primeros son HTTP/HTTPS; SQL Tools es TCP crudo y nunca apunta directamente al
-contenedor SQL.
+Tailscale Serve apunta solo a los seis loopbacks aceptados: Dokploy, monitoreo,
+API, AVIAM Web, Public Web y el gateway SQL Tools. Los cinco primeros son
+HTTP/HTTPS; SQL Tools es TCP crudo y nunca apunta directamente al contenedor
+SQL.
 
 ## 2. Publicar imágenes y bundle aprobados
 
@@ -145,8 +146,8 @@ docker volume create elevant-dev-sql-backups
 
 Registre CIDR/gateway. El gateway exacto podrá usarse como proxy conocido en API; no confíe un `/16` amplio. No marque estos recursos como efímeros ni permita que un proyecto Dokploy los elimine.
 
-Al habilitar SQL Tools, cree además una bridge no interna dedicada. No conecte
-SQL ni ningún otro workload a ella:
+Para reconstruir SQL Tools, cree además una bridge no interna dedicada. No
+conecte SQL ni ningún otro workload a ella:
 
 ```bash
 docker network create --driver bridge \
@@ -274,9 +275,13 @@ Internet ni se considera autenticada por estar detrás de Tailscale.
 | AVIAM Web | build Vite + Nginx unprivileged | `127.0.0.1:18081:8080` | no | 128 MB / 0.15 CPU |
 | Public Web | Next `standalone`, Node no-root | `127.0.0.1:18082:3000` | no | 512 MB / 0.35 CPU |
 
-GitHub Actions construye y prueba la imagen API una sola vez, la publica por
-digest y mueve al final el alias de un bundle OCI certificado. Ese bundle fija
-el Compose y la compatibilidad DB. El controlador privado
+GitHub Actions construye la API una sola vez y, antes de exportar o publicar su
+imagen, inicia ese build localmente en `Testing` para comparar su documento
+OpenAPI con el snapshot canónico. El job de publicación depende del mismo
+`build-and-test`: cualquier drift bloquea la imagen, el bundle y el movimiento
+de su alias. Con el gate y las pruebas verdes, publica por digest y mueve al
+final el alias de un bundle OCI certificado. Ese bundle fija el Compose y la
+compatibilidad DB. El controlador privado
 [`ops/dokploy/api-cd`](../../ops/dokploy/api-cd/README.md) espera primero el
 estado aceptado por `database-cd`, despliega el digest y valida health,
 readiness, ping y Swagger. Dokploy usa Compose Raw con AutoDeploy desactivado;

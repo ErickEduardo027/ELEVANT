@@ -1,6 +1,8 @@
 # Base de datos ELEVANT v1
 
-Estado: implementada en la rama de integración `feature/database-v1`, pendiente de merge manual a `Development`.
+Estado: implementada y versionada en `Development`; la cadena v1 está desplegada
+y verificada en `ElevantDevelopmentDb` dentro del VPS Development. Production
+permanece como una frontera futura separada y no está desplegada en ese host.
 
 ## Límite del producto
 

@@ -82,6 +82,13 @@ espera la base requerida, despliega la imagen inmutable y exige health,
 readiness, ping y Swagger. El recurso sigue siendo Compose Raw con AutoDeploy
 desactivado; GitHub Actions no inicia conexiones al VPS ni recompila en él.
 
+Antes de publicar, el job `build-and-test` de `Backend CI` levanta localmente en
+`Testing` la API recién compilada y ejecuta `check:openapi` contra el snapshot
+canónico. `publish-api-image` depende del éxito de ese job: un drift bloquea la
+imagen API, su bundle OCI y el movimiento de `development-certified`. La
+comprobación independiente de `API Client CI` conserva la misma comparación
+como defensa adicional; el bloqueo de publicación vive dentro de `Backend CI`.
+
 Cuando API y Persistence cambian juntos, Database CD promueve primero. Un fallo
 DB conserva la API anterior. Un fallo API no revierte el esquema y por eso las
 migraciones deben ser backward-compatible. Consulte

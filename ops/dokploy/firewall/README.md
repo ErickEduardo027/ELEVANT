@@ -168,6 +168,55 @@ de systemd y no reinician Docker:
 sudo systemctl reload-or-restart elevant-firewall.service
 ```
 
+El timer es una ventana activa, no una garantía que pueda comprobarse una sola
+vez. Inmediatamente después de cada boot, y antes de cada bloque largo de
+validación o de salir a probar SSH, HTTPS o SSMS desde otro equipo, compruebe
+otra vez `enabled`, `active`, el marcador y la próxima ejecución; reinicie el
+timer para recuperar los diez minutos completos:
+
+```bash
+sudo systemctl is-enabled elevant-firewall-rollback.timer
+sudo systemctl is-active elevant-firewall-rollback.timer
+sudo test -f /var/lib/elevant-firewall/rollback-armed
+sudo systemctl list-timers elevant-firewall-rollback.timer --no-pager
+sudo systemctl restart elevant-firewall-rollback.timer
+sudo systemctl is-enabled elevant-firewall-rollback.timer
+sudo systemctl is-active elevant-firewall-rollback.timer
+sudo test -f /var/lib/elevant-firewall/rollback-armed
+sudo systemctl list-timers elevant-firewall-rollback.timer --no-pager
+```
+
+Si antes de completar la aceptación el timer aparece `inactive`/`disabled`, no
+tiene próxima ejecución o falta el marcador, deténgase: el rollback pudo haberse
+ejecutado. No marque el host como aceptado ni reanude workloads. Desde el Browser
+Terminal inspeccione el dry-run, arme una ventana nueva y reaplique la fase
+configurada antes de repetir todas las comprobaciones afectadas:
+
+```bash
+sudo /usr/bin/bash /usr/local/sbin/elevant-firewall-apply \
+  --config /etc/elevant/firewall.env --dry-run
+sudo systemctl enable elevant-firewall-rollback.timer
+sudo install -o root -g root -m 0600 /dev/null \
+  /var/lib/elevant-firewall/rollback-armed
+sudo systemctl restart elevant-firewall-rollback.timer
+sudo systemctl is-enabled elevant-firewall-rollback.timer
+sudo systemctl is-active elevant-firewall-rollback.timer
+sudo test -f /var/lib/elevant-firewall/rollback-armed
+sudo systemctl list-timers elevant-firewall-rollback.timer --no-pager
+sudo systemctl reenable elevant-firewall.service
+sudo systemctl reload-or-restart elevant-firewall.service
+sudo /usr/local/sbin/elevant-firewall-apply \
+  --config /etc/elevant/firewall.env --verify-active
+sudo systemctl restart elevant-firewall-rollback.timer
+sudo systemctl is-enabled elevant-firewall-rollback.timer
+sudo systemctl is-active elevant-firewall-rollback.timer
+sudo test -f /var/lib/elevant-firewall/rollback-armed
+sudo systemctl list-timers elevant-firewall-rollback.timer --no-pager
+```
+
+La fase de `/etc/elevant/firewall.env` debe seguir siendo la fase explícitamente
+aprobada. No la cambie para recuperar conectividad y no retire el gate de Docker.
+
 Mantener abierta la consola del proveedor. Desde sesiones nuevas e
 independientes comprobar:
 

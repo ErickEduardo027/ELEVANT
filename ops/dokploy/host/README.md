@@ -118,11 +118,27 @@ Después:
 sudo systemctl reboot
 ```
 
-Dentro de los diez minutos del boot, mantenga los seis schedules deshabilitados,
+Inmediatamente después del boot, antes de cualquier validación larga, confirme
+desde el Browser Terminal que el timer sigue `enabled`, `active`, conserva el
+marcador y muestra una próxima ejecución. Reinícielo para abrir una ventana
+completa. Repita ese refresh antes de cada bloque largo y antes de abandonar el
+Browser Terminal para pruebas externas o de SSMS. El countdown no se pausa
+mientras se recopila evidencia.
+
+Si el timer ya está `inactive`/`disabled`, no tiene próxima ejecución o perdió el
+marcador, detenga la aceptación. No reanude controladores ni schedules. El
+rollback pudo haberse ejecutado: desde el Browser Terminal reaplique la fase
+final y arme un timer nuevo siguiendo
+[`../firewall/README.md`](../firewall/README.md); continúe únicamente después de
+verificar de nuevo firewall, timer y marcador.
+
+Dentro de cada ventana protegida, mantenga los seis schedules deshabilitados,
 abra dos sesiones nuevas por Tailscale y valide `sudo`, Dokploy privado,
-firewall, Docker/Swarm, los cuatro contenedores de aplicación healthy, listeners
-loopback, estados/cache y los cuatro perfiles aún pausados, Services, HTTPS
-autorizado, Funnel apagado, landing, swap y estado de reboot. Compare además los
+firewall, Docker/Swarm y estos cinco workloads exactos: SQL Server, API, AVIAM
+Web, Public Web y SQL Tools Gateway. Los cinco deben estar `running`, `healthy`,
+sin reinicios y con los mismos IDs e imágenes guardados antes del reboot.
+Compruebe además estados/cache y los cuatro perfiles aún pausados, Services,
+HTTPS autorizado, Funnel apagado, landing, swap y estado de reboot. Compare los
 archivos instalados de cada controlador con su paquete aprobado y repita cada
 `verify-runtime`; Database CD debe conservar soporte de timeout y código de
 conflicto de `flock`:
@@ -135,14 +151,26 @@ test ! -e /var/run/reboot-required
 sudo /usr/local/sbin/elevant-preflight
 ```
 
+La aceptación de SQL Tools exige además que el gateway conserve exactamente las
+redes `elevant-dev-data` y `elevant-dev-sql-tools-runtime`, mientras SQL Server
+permanece solo en `elevant-dev-data`; que el único listener host sea
+`127.0.0.1:11433`; y que no exista listener host en `1433`. El Service
+`svc:elevant-dev-sql-tools` debe seguir anunciado y mapear `tcp:1433` a
+`tcp://127.0.0.1:11433`, con Funnel apagado. Desde un equipo autorizado, una
+conexión nueva al Service y una autenticación SSMS con login personal deben
+funcionar. Deben fallar conexiones nuevas a `1433` y `11433` tanto por la
+identidad directa del host en Tailscale como por su IP pública; una identidad no
+autorizada también debe quedar fuera del Service.
+
 Con el runtime ya verificado, reanude en orden Database CD → API CD → AVIAM Web
 CD → Public Web CD y exija que ningún contenedor sea recreado. Rehabilite después
 los jobs en orden de dependencia: Database backup → Database restore-check →
 Database poll → API poll → AVIAM poll → Public poll. Observe al menos un *no-op*
 automático natural en cada uno de los cuatro polls y confirme que los estados e
-IDs de contenedor no cambian. Cancele el timer del firewall **solo después** de
-aceptar también esta evidencia. Si falla un checkpoint, conserve deshabilitado
-el schedule afectado y todos sus dependientes, pause sus perfiles, guarde
+IDs de los cinco workloads no cambian. Cancele el timer del firewall **solo
+después** de aceptar también esta evidencia, las pruebas HTTPS nuevas y el login
+SSMS posterior al reboot. Si falla un checkpoint, conserve deshabilitado el
+schedule afectado y todos sus dependientes, pause sus perfiles, guarde
 logs/estado y deje actuar la recuperación armada.
 
 No restaure el snapshot por un fallo menor sin guardar antes evidencia. Si se

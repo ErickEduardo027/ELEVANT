@@ -6,6 +6,11 @@ credenciales: HAProxy reenvia TCP sin modificar entre el listener local y
 `elevant-dev-sql:1433`. SQL Server sigue aplicando autenticacion, cifrado y
 permisos.
 
+Una vez completados el rollout, las pruebas de límites y un reboot aceptado, el
+gateway forma parte persistente del plano Development. No se trata como un
+contenedor auxiliar descartable: su identidad, topología, listener y Service se
+incluyen en toda línea base y aceptación posterior del host.
+
 ## Contrato
 
 - proyecto Compose: `elevant-dev-sql-tools-gateway`;
@@ -206,6 +211,37 @@ en `1433` y no muestra ninguna configuracion Funnel. Desde un dispositivo
 autorizado, SSMS usa
 `elevant-dev-sql-tools.<TAILNET_DNS_NAME>.ts.net,1433`; desde una identidad fuera
 de `group:elevant-db-editors` y `group:elevant-ops` debe fallar.
+
+## Persistencia y aceptación posterior al reboot
+
+Antes de reiniciar, guarde una línea base root-only de ID, digest de imagen,
+estado, health y contador de reinicios para los cinco workloads exactos:
+`sqlserver`, `api`, `aviam-web`, `public-web` y `sql-tools-gateway`. Siga la
+quiescencia y recuperación armada de [`../host`](../host) y
+[`../firewall`](../firewall). Después del boot, con los schedules aún
+deshabilitados y los controladores pausados, exija todo lo siguiente antes de
+reanudar:
+
+- los cinco workloads están `running`, `healthy`, sin reinicios y coinciden con
+  los IDs e imágenes de la línea base;
+- el gateway pertenece exactamente a `elevant-dev-data` y
+  `elevant-dev-sql-tools-runtime`, SQL Server pertenece solo a
+  `elevant-dev-data`, y la red runtime contiene únicamente al gateway;
+- `docker port` y `ss` prueban `127.0.0.1:11433`, no existe listener host en
+  `1433`, y una conexión local nueva a `127.0.0.1:11433` funciona;
+- Tailscale Serve conserva `svc:elevant-dev-sql-tools` con `tcp:1433` hacia
+  `tcp://127.0.0.1:11433`, el host del Service aparece online y Funnel está
+  apagado;
+- desde un dispositivo autorizado, una conexión nueva al FQDN del Service y un
+  login SSMS personal a `ElevantDevelopmentDb` funcionan;
+- desde ese dispositivo fallan conexiones directas a `1433` y `11433` por la
+  identidad Tailscale del host y por `<VPS_PUBLIC_IP>`, y una identidad no
+  autorizada no alcanza el Service.
+
+Una sesión SQL o TCP preexistente no prueba persistencia. Refresque el timer de
+rollback antes de los bloques externos y de SSMS, y no lo cancele hasta que las
+pruebas positivas y negativas, los polls naturales y la comparación final de
+los cinco workloads hayan pasado sin mutación.
 
 ## Retirada
 
