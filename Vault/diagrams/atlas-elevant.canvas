@@ -1,0 +1,249 @@
+{
+  "nodes": [
+    {
+      "id": "a000000000000001",
+      "type": "text",
+      "text": "# Atlas general de ELEVANT\n\nUn punto de entrada para recorrer conocimiento, sistema, entrega y evidencia.",
+      "x": -420,
+      "y": -760,
+      "width": 840,
+      "height": 180,
+      "color": "6"
+    },
+    {
+      "id": "a000000000000002",
+      "type": "file",
+      "file": "Vault/00-inicio/home.md",
+      "x": -180,
+      "y": -500,
+      "width": 360,
+      "height": 260,
+      "color": "5"
+    },
+    {
+      "id": "a000000000000003",
+      "type": "text",
+      "text": "## Producto y dominio\n\nPropósito, actores, lenguaje operativo y reglas de negocio.",
+      "x": -1080,
+      "y": -100,
+      "width": 360,
+      "height": 180,
+      "color": "1"
+    },
+    {
+      "id": "a000000000000004",
+      "type": "text",
+      "text": "## Arquitectura y aplicaciones\n\nPrivate Web, Public Web y Mobile Agent convergen en una API compartida.",
+      "x": -630,
+      "y": -100,
+      "width": 360,
+      "height": 200,
+      "color": "4"
+    },
+    {
+      "id": "a000000000000005",
+      "type": "text",
+      "text": "## Desarrollo y contratos\n\nOpenAPI, migraciones EF y pruebas ejecutables definen los contratos.",
+      "x": -180,
+      "y": -100,
+      "width": 360,
+      "height": 200,
+      "color": "4"
+    },
+    {
+      "id": "a000000000000006",
+      "type": "text",
+      "text": "## CI/CD y operaciones\n\nArtefactos inmutables, promoción pull-based, salud, backup y rollback.",
+      "x": 270,
+      "y": -100,
+      "width": 360,
+      "height": 200,
+      "color": "3"
+    },
+    {
+      "id": "a000000000000007",
+      "type": "text",
+      "text": "## Seguridad y gobernanza\n\nFronteras de confianza, secretos fuera de Git y evidencia verificable.",
+      "x": 720,
+      "y": -100,
+      "width": 360,
+      "height": 200,
+      "color": "2"
+    },
+    {
+      "id": "a000000000000008",
+      "type": "file",
+      "file": "Vault/00-inicio/estado-inicial.md",
+      "x": -420,
+      "y": 320,
+      "width": 360,
+      "height": 260,
+      "color": "3"
+    },
+    {
+      "id": "a000000000000009",
+      "type": "text",
+      "text": "## Historia y backlog\n\nLo anterior se marca historical; lo pendiente se marca draft o deferred.",
+      "x": 60,
+      "y": 340,
+      "width": 360,
+      "height": 200,
+      "color": "1"
+    },
+    {
+      "id": "a00000000000000a",
+      "type": "text",
+      "text": "## Regla de salida\n\nToda afirmación importante termina en una fuente versionada, evidencia operativa saneada o una incertidumbre explícita.",
+      "x": -180,
+      "y": 720,
+      "width": 520,
+      "height": 220,
+      "color": "5"
+    },
+    {
+      "id": "a00000000000000b",
+      "type": "file",
+      "file": "Vault/diagrams/atlas-elevant.md",
+      "x": -980,
+      "y": 690,
+      "width": 400,
+      "height": 260
+    },
+    {
+      "id": "a00000000000000c",
+      "type": "file",
+      "file": "Vault/diagrams/atlas-conocimiento.base",
+      "x": 580,
+      "y": 690,
+      "width": 400,
+      "height": 260
+    }
+  ],
+  "edges": [
+    {
+      "id": "ae00000000000001",
+      "fromNode": "a000000000000001",
+      "fromSide": "bottom",
+      "toNode": "a000000000000002",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "empieza aquí"
+    },
+    {
+      "id": "ae00000000000002",
+      "fromNode": "a000000000000002",
+      "fromSide": "bottom",
+      "toNode": "a000000000000003",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000003",
+      "fromNode": "a000000000000002",
+      "fromSide": "bottom",
+      "toNode": "a000000000000004",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000004",
+      "fromNode": "a000000000000002",
+      "fromSide": "bottom",
+      "toNode": "a000000000000005",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000005",
+      "fromNode": "a000000000000002",
+      "fromSide": "bottom",
+      "toNode": "a000000000000006",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000006",
+      "fromNode": "a000000000000002",
+      "fromSide": "bottom",
+      "toNode": "a000000000000007",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000007",
+      "fromNode": "a000000000000003",
+      "fromSide": "bottom",
+      "toNode": "a000000000000008",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000008",
+      "fromNode": "a000000000000004",
+      "fromSide": "bottom",
+      "toNode": "a000000000000008",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae00000000000009",
+      "fromNode": "a000000000000005",
+      "fromSide": "bottom",
+      "toNode": "a000000000000008",
+      "toSide": "right",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae0000000000000a",
+      "fromNode": "a000000000000006",
+      "fromSide": "bottom",
+      "toNode": "a000000000000009",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae0000000000000b",
+      "fromNode": "a000000000000007",
+      "fromSide": "bottom",
+      "toNode": "a000000000000009",
+      "toSide": "right",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ae0000000000000c",
+      "fromNode": "a000000000000008",
+      "fromSide": "bottom",
+      "toNode": "a00000000000000a",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "verificar"
+    },
+    {
+      "id": "ae0000000000000d",
+      "fromNode": "a000000000000009",
+      "fromSide": "bottom",
+      "toNode": "a00000000000000a",
+      "toSide": "right",
+      "toEnd": "arrow",
+      "label": "declarar límites"
+    },
+    {
+      "id": "ae0000000000000e",
+      "fromNode": "a00000000000000a",
+      "fromSide": "left",
+      "toNode": "a00000000000000b",
+      "toSide": "right",
+      "toEnd": "arrow",
+      "label": "leer"
+    },
+    {
+      "id": "ae0000000000000f",
+      "fromNode": "a00000000000000a",
+      "fromSide": "right",
+      "toNode": "a00000000000000c",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "filtrar"
+    }
+  ]
+}

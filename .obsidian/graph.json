@@ -1,0 +1,100 @@
+{
+  "collapse-filter": false,
+  "search": "(path:\"Vault\" OR path:\"docs\" OR path:\"ops/dokploy\" OR path:\".github/BRANCH_PROTECTION.md\" OR path:\"AGENTS.md\" OR path:\"README.md\") -path:\"Vault/99-plantillas\"",
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": true,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "[status:draft] OR [evidence:unknown]",
+      "color": {
+        "a": 1,
+        "rgb": 15752542
+      }
+    },
+    {
+      "query": "[status:deferred] OR [evidence:planned]",
+      "color": {
+        "a": 1,
+        "rgb": 16096779
+      }
+    },
+    {
+      "query": "[status:historical] OR [status:deprecated] OR [area:history]",
+      "color": {
+        "a": 1,
+        "rgb": 9147559
+      }
+    },
+    {
+      "query": "path:\"Vault/00-inicio\" OR path:\"Vault/diagrams\"",
+      "color": {
+        "a": 1,
+        "rgb": 8150268
+      }
+    },
+    {
+      "query": "[area:product] OR [area:domain]",
+      "color": {
+        "a": 1,
+        "rgb": 14239471
+      }
+    },
+    {
+      "query": "[area:architecture] OR [area:backend] OR [area:database]",
+      "color": {
+        "a": 1,
+        "rgb": 3900150
+      }
+    },
+    {
+      "query": "[area:applications] OR [area:private-web] OR [area:public-web] OR [area:mobile]",
+      "color": {
+        "a": 1,
+        "rgb": 440020
+      }
+    },
+    {
+      "query": "[area:development] OR [area:api-client]",
+      "color": {
+        "a": 1,
+        "rgb": 1357990
+      }
+    },
+    {
+      "query": "[area:ci-cd] OR [area:operations] OR [area:security]",
+      "color": {
+        "a": 1,
+        "rgb": 1096065
+      }
+    },
+    {
+      "query": "[area:governance] OR [area:reference]",
+      "color": {
+        "a": 1,
+        "rgb": 10980346
+      }
+    },
+    {
+      "query": "(path:\"docs\" OR path:\"ops/dokploy\" OR path:\".github\" OR path:\"AGENTS.md\" OR path:\"README.md\") -path:\"Vault\"",
+      "color": {
+        "a": 1,
+        "rgb": 6583435
+      }
+    }
+  ],
+  "collapse-display": false,
+  "showArrow": true,
+  "textFadeMultiplier": 0.15,
+  "nodeSizeMultiplier": 1.2,
+  "lineSizeMultiplier": 1.25,
+  "collapse-forces": false,
+  "centerStrength": 0.48,
+  "repelStrength": 13,
+  "linkStrength": 0.85,
+  "linkDistance": 220,
+  "scale": 0.9,
+  "close": true
+}

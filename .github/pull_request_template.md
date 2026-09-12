@@ -42,6 +42,13 @@ Describa endpoints, payloads o códigos HTTP modificados, si corresponde.
 Liste solo los nombres y propósito de las variables. Nunca escriba sus valores
 reales. Escriba `Ninguna` cuando no aplique.
 
+## Impacto en el Vault
+
+- [ ] Actualicé las páginas del Vault afectadas y verifiqué sus fuentes.
+- [ ] El cambio no altera conocimiento duradero; explico el motivo a continuación.
+
+Explique la opción seleccionada. No marque ambas.
+
 ## Checklist de seguridad
 
 - [ ] No se incluyeron secretos, credenciales, certificados, PII ni archivos `.env`.
@@ -49,5 +56,7 @@ reales. Escriba `Ninguna` cuando no aplique.
 - [ ] Los errores y logs no revelan datos sensibles.
 - [ ] Se aplicó mínimo privilegio a nuevos accesos.
 - [ ] Se ejecutó `scripts/repository/check-secrets.ps1`.
+- [ ] Se ejecutó `npm run vault:generate` cuando cambió el inventario derivado.
+- [ ] Se ejecutó `npm run vault:check`.
 - [ ] El cambio está limitado al alcance de esta PR.
 - [ ] La documentación y las pruebas están actualizadas.

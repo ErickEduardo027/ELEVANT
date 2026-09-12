@@ -1,0 +1,143 @@
+---
+id: inicio-home
+title: "Home"
+type: index
+area: vault
+status: verified
+maturity: evolving
+evidence: repo-verified
+owner: equipo-elevant
+last_verified: "2026-09-12"
+verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+sources:
+  - AGENTS.md
+  - README.md
+  - docs/README.md
+  - docs/deployment/dokploy.md
+  - docs/deployment/environments.md
+  - docs/deployment/development-hardening-backlog.md
+  - docs/security/database-access.md
+  - docs/workflows/mobile-workflow.md
+  - docs/workflows/release-workflow.md
+  - .github/BRANCH_PROTECTION.md
+  - Vault/README.md
+tags:
+  - inicio
+  - mapa
+  - onboarding
+---
+
+# Home
+
+Bienvenido a la base de conocimiento de ELEVANT. Desde aquí puedes llegar a una respuesta por pregunta, por área o por nivel de evidencia.
+
+> [!IMPORTANT]
+> El Vault describe el sistema, pero no sustituye el código, las migraciones EF, OpenAPI, los workflows ni los runbooks operativos. Si una afirmación no puede demostrarse, usa `evidence: unknown`; si describe futuro, usa `evidence: planned` y el `status` correspondiente, como `deferred`.
+
+## ¿Qué necesitas saber?
+
+```mermaid
+flowchart LR
+    Q{"¿Cuál es tu pregunta?"}
+    Q -->|Qué y para quién| P[Producto y dominio]
+    Q -->|Cómo funciona| A[Arquitectura y aplicaciones]
+    Q -->|Cómo cambiarlo| D[Desarrollo y contratos]
+    Q -->|Cómo llega al ambiente| C[CI/CD y operaciones]
+    Q -->|Qué está permitido| S[Seguridad y gobernanza]
+    Q -->|Qué falta| B[Estado y backlog]
+    P --> E[Fuente y evidencia]
+    A --> E
+    D --> E
+    C --> E
+    S --> E
+    B --> E
+```
+
+- Tengo una pregunta concreta: [Respuestas rápidas](respuestas-rapidas.md).
+- No sé en qué área buscar: [Mapa de preguntas](mapa-de-preguntas.md).
+- Quiero entender el estado actual: [Estado inicial](estado-inicial.md).
+- Quiero saber qué documentación falta: [Roadmap del Vault](roadmap-del-vault.md).
+- Perdí el contexto o cambié de colaborador/IA: [Protocolo de recuperación](protocolo-recuperacion-contexto.md).
+- Quiero editar una nota: [Cómo usar el Vault](como-usar-el-vault.md).
+- Quiero justificar una afirmación: [Política de evidencia y fuentes](../08-gobernanza/fuentes-y-evidencia.md).
+- Quiero crear una nota: [Plantillas](../99-plantillas/README.md).
+
+## Explora visualmente
+
+- [Atlas general de ELEVANT](../diagrams/atlas-elevant.md)
+- [Arquitectura de contexto](../diagrams/arquitectura-contexto.md)
+- [Navegación por estado](../diagrams/navegacion-estado.md)
+- [Leyenda y uso del Graph](../diagrams/leyenda-grafo.md)
+
+Cada vista visual tiene un companion Markdown/Mermaid para conservar la lectura en GitHub y sin plugins.
+
+## ELEVANT en una vista
+
+```mermaid
+flowchart TB
+    U1[Personal interno AVIAM]
+    U2[Clientes y aerolíneas]
+    U3[Agentes de rampa]
+    W1[Private Web]
+    W2[Public Web]
+    M[Mobile Agent]
+    API[API compartida]
+    DB[(Base lógica compartida por ambiente)]
+    EXT[Proveedores externos autorizados]
+
+    U1 --> W1
+    U2 --> W2
+    U3 --> M
+    W1 --> API
+    W2 --> API
+    M -.->|integración objetivo| API
+    API --> DB
+    API -.->|adaptadores futuros| EXT
+```
+
+Reglas estructurales:
+
+- La arquitectura exige que los tres clientes usen la misma API versionada; la integración real del Mobile Agent todavía está en evolución.
+- Existe una sola base lógica por ambiente; no una base por cliente.
+- Los clientes no acceden directamente a SQL Server ni a proveedores externos.
+- OpenAPI es el contrato cliente/servidor cuando un endpoint existe.
+- Las migraciones EF Core son la historia del esquema.
+
+Consulta las fuentes actuales en [`AGENTS.md`](../../AGENTS.md), [README del repositorio](../../README.md) y [Documentación ELEVANT](../../docs/README.md).
+
+## Radar de estado
+
+| Capacidad | Estado resumido | Leer antes de asumir |
+| --- | --- | --- |
+| Development: DB, API y webs | CI/CD aceptado para el alcance documentado | [Estado inicial](estado-inicial.md) |
+| Acceso SQL de Development | Privado y controlado; no es un endpoint público | [Seguridad de acceso SQL](../../docs/security/database-access.md) |
+| Mobile Agent | Aplicación ejecutable; integración API y entrega APK aún incompletas | [Flujo Mobile](../../docs/workflows/mobile-workflow.md) |
+| Production | Frontera futura, no desplegada | [Ambientes](../../docs/deployment/environments.md) |
+| Alertas externas | Diferidas | [Backlog de hardening](../../docs/deployment/development-hardening-backlog.md) |
+| Protección técnica de ramas | Diferida por limitación vigente | [Branch protection](../../.github/BRANCH_PROTECTION.md) |
+
+Este radar es una orientación, no evidencia operativa en tiempo real. La fotografía completa y su fecha están en [Estado inicial](estado-inicial.md).
+
+## Navegación editorial
+
+- [Política de evidencia y fuentes](../08-gobernanza/fuentes-y-evidencia.md)
+- [Esquema de metadatos](../08-gobernanza/metadatos.md)
+- [Mantenimiento del Vault](../08-gobernanza/mantenimiento-del-vault.md)
+- [Plantilla general](../99-plantillas/pagina.md)
+- [Plantilla ADR](../99-plantillas/adr.md)
+- [Plantilla de runbook](../99-plantillas/runbook.md)
+- [Plantilla de capacidad](../99-plantillas/capacidad.md)
+- [Plantilla de incidente](../99-plantillas/incidente.md)
+
+## Semáforo de confianza
+
+| Etiqueta | Lectura correcta |
+| --- | --- |
+| `verified` + `repo-verified` | Contrastado con una fuente versionada vigente. |
+| `verified` + `operator-recorded` | Aceptado mediante evidencia operativa saneada. |
+| `documented` | Explicado y versionado; puede seguir evolucionando. |
+| `draft` | Incompleto; no usar como contrato. |
+| `deferred` | Acordado para después; no existe todavía. |
+| `historical` | Describe un momento anterior, no el estado actual. |
+
+La definición normativa vive en [Metadatos](../08-gobernanza/metadatos.md).

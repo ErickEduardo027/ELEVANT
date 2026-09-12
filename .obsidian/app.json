@@ -1,0 +1,11 @@
+{
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "current",
+  "newLinkFormat": "relative",
+  "useMarkdownLinks": true,
+  "userIgnoreFilters": [
+    "/(^|\\/)node_modules\\//",
+    "/(^|\\/)(\\.git|\\.worktrees|\\.expo|\\.next|\\.astro)\\//",
+    "/(^|\\/)(bin|obj|dist|build|coverage|artifacts|TestResults)\\//"
+  ]
+}
