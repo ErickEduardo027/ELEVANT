@@ -16,12 +16,17 @@ avanzar.
 - Controlador Database CD instalado y actualizado: merge
   `d9a03877a83d12fe02bceda3fe947c15ea8befd7`.
 - Entrega DB automática aceptada: commit fuente
-  `45e1e0267b5a7ba443da8299d1000cb43cb412b6`, bundle
-  `sha256:5c18775f0c8055b3367b47a4204e1fff87bf935a294ea38021563828cb495487`.
-- Imágenes aceptadas: ops
-  `sha256:4497a8801f6c05e20c78a107f22b0bd572f9ce25052aff5884e1b21224e91d7a`
+  `1ed89a7a0f120c9eba8645ab070de4118cfa7c3c`, run
+  `34694288399` y bundle
+  `sha256:bb667f503ab0e7576bee565786adea130be1a48c8eda87728682d83c3307cfe2`.
+- Imágenes DB aceptadas: ops
+  `sha256:1c07b1f12938e7a8a86f7f429632201c56148e584a10e718a996015d4e04f129`
   y release
-  `sha256:01e2a1b9daa0ab4f1965ea89aa475461ff25c790588e7688d04f9a83b4e5caed`.
+  `sha256:f8671425e656bd8abca1eeabab3541cc6f18f3ed0cf9aafc1d03baa81da23f40`.
+- Entrega API automática aceptada para el mismo commit/run: imagen
+  `sha256:ae517c037a99f12dcf283b94ee9a880cab138965cef2853ffede406d96d00789`
+  y bundle
+  `sha256:ca95c61c234af01c166d9a3b3ac4f43175fc48aec3118b692bd1a3f404f2796e`.
 - Compose aceptados: database
   `9b4319896a1d0b25caa6119122e2842fa6f0313ac8fdcbfa90598903cfc10b21`
   y release
@@ -32,7 +37,8 @@ avanzar.
 - Landing existente: se preserva, se deshabilita su Domain y se detiene; no se elimina.
 - Acceso: operaciones administra el host/panel; los desarrolladores acceden
   únicamente a los Services de aplicación aceptados. API, AVIAM Web y Public
-  Web están activos por Tailscale con sus carriles CD habilitados.
+  Web están activos por Tailscale con sus carriles CD habilitados; los miembros
+  autorizados de `group:elevant-db-editors` acceden además a SQL Tools.
 - Evidencia 2026-08-23: SQL healthy/privado, cinco migraciones, seed
   idempotente, permisos mínimos, backup + restore-check y schedules validados.
 - Evidencia 2026-08-31 UTC: adopción, primera promoción, backup, restore-check,
@@ -47,14 +53,33 @@ avanzar.
   terminales, polls no-op y schedules automáticos fueron aceptados.
 - Evidencia 2026-09-10 UTC: DB/API se promovieron al commit fuente
   `a60b5346ffa903e7bd98e4d19dc24c47a2e2afeb`; los cuatro workloads, los
-  controladores y los seis schedules sobrevivieron el reboot final. SQL Tools
-  continúa siendo opcional. La DB se promovió después a
+  controladores y los seis schedules sobrevivieron el reboot final. La DB se
+  promovió después a
   `45e1e0267b5a7ba443da8299d1000cb43cb412b6` para preparar identidades y
-  diagramas; el gateway no se considera habilitado hasta superar todos sus
-  checkpoints de red, Tailscale y permisos.
-- Alertas externas de DB y commit status de GitHub están diferidos. Mientras no
-  se configuren, el operador revisa diariamente Beszel, Schedules y
-  `controller.log`; no se debe afirmar que existe notificación automática.
+  diagramas.
+- Evidencia 2026-09-12 UTC: el gateway SQL Tools del merge
+  `1dae9ab422f003cf01dc16c6e9ccf38e5c6f94e2` quedó healthy con HAProxy
+  `sha256:6343ce34a132a5dceaa24767d739df2bd519f8f7c1079ae39e4821334e8eb42e`,
+  listener loopback, dos redes exactas y el Service TCP privado como única
+  entrada. Las tres cuentas personales y sus permisos mínimos, el soporte
+  controlado de diagramas, los límites negativos de red y una conexión SSMS real
+  pasaron.
+- Evidencia 2026-09-12 UTC: el merge
+  `1ed89a7a0f120c9eba8645ab070de4118cfa7c3c` incorporó el gate OpenAPI al job
+  que bloquea la publicación API. DB se promovió antes que API; ambos quedaron
+  `succeeded/complete` y sus polls posteriores fueron *no-op*. Tras el reboot de
+  aceptación, los cinco workloads conservaron identidad y health sin
+  recreaciones; los cuatro controladores persistieron y se reanudaron, los seis
+  schedules se rehabilitaron en orden y el firewall final quedó aceptado. La
+  primera ventana temporizada venció durante la recopilación de evidencia y el
+  rollback actuó; desde el Browser Terminal se armó una ventana nueva, se
+  reaplicó la fase final y se repitieron los gates antes de cancelarla.
+- Alertas externas, heartbeats por carril, commit statuses y protección de ramas
+  están diferidos en el
+  [backlog de hardening](development-hardening-backlog.md). Mientras no se
+  configuren, el operador revisa diariamente Beszel, Schedules y
+  `controller.log`; no se debe afirmar que existe notificación automática ni
+  gobernanza técnica de ramas.
 
 No continúe si aparece una identidad, servicio, integración o volumen no reconocido.
 
@@ -166,10 +191,12 @@ En fase final se eliminan las dos reglas TCP y permanecen solo ICMP y UDP `41641
 
 La observabilidad v1 no recibe `docker.sock`: Beszel muestra estado y métricas
 del host, no health, logs ni inventario de contenedores. El heartbeat base del
-Hub está activo. En el estado aceptado del 2026-08-31, SQL health, backup y
-restore-check se revisan en Containers, Schedules y `controller.log` de Dokploy;
-todavía no envían heartbeats DB independientes ni alertas externas. Es una
-mejora explícitamente diferida.
+Hub está activo. En el estado aceptado del 2026-09-12, SQL health y los seis
+carriles programados —Database backup, Database restore-check, Database poll,
+API poll, AVIAM poll y Public poll— se revisan en Containers, Schedules y
+`controller.log` de Dokploy; todavía no envían heartbeats independientes ni
+alertas externas. Es una mejora explícitamente diferida en el
+[backlog de hardening](development-hardening-backlog.md).
 
 ## Handoff: despliegue manual DB v1
 
@@ -413,6 +440,9 @@ plan lo permita.
 
 ## Handoff: habilitar SSMS privado para CRUD Development
 
+El rollout quedó aceptado el 2026-09-12. Esta sección permanece como runbook de
+reconstrucción, auditoría y rotación; versionarla no autoriza cambios remotos.
+
 Este acceso es una herramienta humana para manipular datos sintéticos. No forma
 parte del runtime de la API o las webs y no autoriza cambios estructurales desde
 SSMS. SQL conserva cero puertos publicados; un gateway separado entrega solo el
@@ -530,10 +560,11 @@ Orden obligatorio del rollout:
    el host Tailscale no acepta esos puertos directamente y SQL sigue sin
    publicación Docker.
 10. Reanudar Database CD y rehabilitar backup → restore-check → poll. Exigir un
-    poll no-op, estados exactos, locks libres, los cuatro workloads healthy y
-    cero recreaciones ajenas. Reiniciar el VPS bajo el procedimiento de
-    quiescencia/rollback ya aceptado; repetir listener, Serve, permisos,
-    denegaciones y conexión SSMS antes de cancelar el rollback.
+    poll no-op, estados exactos, locks libres, los cinco workloads —SQL, API,
+    ambas webs y gateway— healthy y cero recreaciones ajenas. Reiniciar el VPS
+    bajo el procedimiento de quiescencia/rollback ya aceptado; repetir topología
+    de redes, listener, Serve, permisos, denegaciones y conexión SSMS antes de
+    cancelar el rollback.
 
 El CRUD humano modifica datos de prueba sin pasar por reglas de negocio de la
 API, por diseño. Foreign keys, `NOT NULL`, unicidad y `CHECK` continúan activos.
@@ -739,12 +770,24 @@ Aplicar primero `aviam-web` y aceptarla completamente antes de iniciar
     locks están libres.
 16. Solo con esa evidencia, armar y verificar el rollback temporizado del
     firewall y reiniciar. Durante la recuperación mantener los seis schedules
-    deshabilitados; validar desde sesiones nuevas Docker/Swarm, los cuatro
-    contenedores healthy, listeners loopback, estados/cache y los cuatro perfiles
-    aún pausados, Tailscale Services, HTTPS autorizado y Funnel apagado. Comparar
-    también los archivos instalados de cada controlador con sus paquetes
-    aprobados y repetir sus `verify-runtime`; para Database CD debe seguir
-    verificada la semántica de timeout y código de conflicto de `flock`.
+    deshabilitados; validar desde sesiones nuevas Docker/Swarm, los cinco
+    workloads healthy —SQL, API, AVIAM Web, Public Web y SQL Tools Gateway—,
+    listeners loopback, estados/cache y los cuatro perfiles aún pausados,
+    Tailscale Services, HTTPS autorizado y Funnel apagado. El
+    gateway debe conservar exactamente sus dos redes y su mapping
+    `127.0.0.1:11433`; SQL debe permanecer solo en `elevant-dev-data` y sin
+    listener host `1433`. Comparar también los archivos instalados de cada
+    controlador con sus paquetes aprobados, el modelo/configuración del gateway
+    con sus artefactos aprobados y repetir los tres `verify-runtime`; para
+    Database CD debe seguir verificada la semántica de timeout y código de
+    conflicto de `flock`. Antes de cancelar el rollback, repetir desde un PC
+    autorizado la conexión SQL por el Service, las denegaciones a los puertos
+    directos y una autenticación SSMS personal. Inmediatamente después del boot
+    y antes de cada bloque largo o prueba externa, verificar marcador, estado y
+    próxima ejecución del timer y reiniciarlo para recuperar la ventana
+    completa. Si ya venció, detener la aceptación y seguir la recuperación
+    fail-closed de
+    [`ops/dokploy/firewall`](../../ops/dokploy/firewall/README.md).
 17. Reanudar en orden Database CD → API CD → AVIAM Web CD → Public Web CD y
     exigir que reanudar no recrea contenedores. Rehabilitar después los jobs en
     orden de dependencia: Database backup → Database restore-check → Database
@@ -779,7 +822,7 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
 - Firewall, Serve y Docker sobreviven un reboot.
 - SQL está healthy, sin puerto público y solo en `elevant-dev-data`.
 - Migración, seed idempotente, permisos, backup y restore-check pasan.
-- Si se habilitó SSMS, el gateway escucha únicamente en
+- SSMS Development está habilitado: el gateway escucha únicamente en
   `127.0.0.1:11433`, pertenece exactamente a `elevant-dev-data` y
   `elevant-dev-sql-tools-runtime`, y el Service `svc:elevant-dev-sql-tools` es
   la única entrada. SQL permanece solo en la red de datos y la red runtime solo

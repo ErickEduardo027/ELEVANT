@@ -41,6 +41,19 @@ lo inicia localmente en `Testing` con Swagger habilitado y compara los documento
 como JSON, ignorando únicamente el orden de claves de objetos. Después verifica
 que la salida generada corresponda exactamente al snapshot comprometido.
 
+### Gate de publicación Development
+
+`Backend CI` ejecuta esa comparación dentro de `build-and-test`, usando la API
+que acaba de compilar y antes de certificar su imagen. El job
+`publish-api-image` depende explícitamente del éxito completo de
+`build-and-test`; por tanto, cualquier drift entre el Swagger real y el snapshot
+canónico bloquea la publicación de la imagen API, el bundle de entrega y el
+movimiento final de `development-certified`.
+
+`API Client CI` repite la comprobación como una defensa independiente para el
+paquete TypeScript y sus consumidores. El gate que impide publicar el backend
+vive dentro de `Backend CI` y no depende de que otro workflow termine primero.
+
 ## Compatibilidad y orden de despliegue
 
 Son normalmente compatibles las rutas nuevas y las propiedades opcionales de

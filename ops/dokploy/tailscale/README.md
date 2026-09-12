@@ -5,9 +5,11 @@ y los dos frontends Development y ofrecer a un grupo reducido el gateway de
 herramientas SQL. Tailscale no sustituye la autenticacion: ELEVANT conserva
 JWT, roles y tenant scope, y SQL Server exige una cuenta personal independiente.
 
-Dokploy, monitoreo, API, AVIAM Web y Public Web ya estan activos. SQL Tools es
-un sexto Service opcional y no se considera desplegado hasta completar su
-rollout manual y todas las pruebas de la seccion 7.
+El plano Development aceptado contiene seis Services: Dokploy, monitoreo, API,
+AVIAM Web, Public Web y SQL Tools. En una instalación nueva SQL Tools no se
+considera desplegado hasta completar su rollout manual y todas las pruebas de la
+sección 7; después de aceptarlo pasa a ser un componente persistente y debe
+superar los mismos checkpoints de reboot que los demás workloads.
 
 ## Resultado esperado
 
@@ -218,9 +220,9 @@ sudo tailscale serve --service=svc:elevant-dev-public-web --https=443 \
   http://127.0.0.1:18082
 ```
 
-Los operadores deben poder abrir los cinco Services activos y, solo despues del
-rollout opcional, SQL Tools como sexto Service. Una identidad que pertenezca
-solamente a `group:elevant-dev` solo puede abrir API, AVIAM Web y Public Web;
+Los operadores deben poder abrir los seis Services del plano aceptado. Una
+identidad que pertenezca solamente a `group:elevant-dev` solo puede abrir API,
+AVIAM Web y Public Web;
 agregarla a `group:elevant-db-editors` le concede ademas SQL Tools. Ningun
 usuario debe alcanzar directamente los puertos `3000`, `11433` o `1433` del
 host, Docker o Swarm.
@@ -257,6 +259,15 @@ a `elevant-dev-sql-tools.<TAILNET_DNS_NAME>.ts.net:1433` y despues autentique en
 SSMS con su login SQL personal. Una identidad que pertenezca solo a
 `group:elevant-dev` debe fallar antes de llegar a SQL Server.
 
+La aceptación y cada reboot posterior deben demostrar que la configuración
+Serve y el anuncio del host persistieron: `tcp:1433` sigue reenviando a
+`tcp://127.0.0.1:11433`, el Service aparece **Connected** con el host online y
+Funnel continúa apagado. Repita desde un dispositivo autorizado una conexión
+nueva y una autenticación SSMS; no reutilice una sesión ya abierta como
+evidencia. Pruebe también que fallen `1433` y `11433` contra la identidad directa
+del host y su IP pública, y que una identidad fuera de `elevant-db-editors` y
+`elevant-ops` no alcance el Service.
+
 ## 8. Checkpoint antes del firewall
 
 No continue al cierre de puertos publicos hasta cumplir todo lo siguiente:
@@ -268,7 +279,7 @@ No continue al cierre de puertos publicos hasta cumplir todo lo siguiente:
 - Dokploy denegado desde una cuenta que solo pertenezca a `elevant-dev`;
 - nueva sesion `ssh elevant-ops@elevant-dev-host` y `sudo` funcionales;
 - Browser Terminal de Hostinger disponible como recuperacion;
-- si se habilito SQL Tools, accesible solo por su Service desde
+- SQL Tools conectado y accesible solo por su Service desde
   `elevant-db-editors` y `elevant-ops`;
 - `1433` y `11433` directos del host, Docker y Swarm inaccesibles.
 

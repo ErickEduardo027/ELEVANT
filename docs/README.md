@@ -14,7 +14,9 @@ La documentación vive con el código. Cuando cambia un contrato técnico u oper
 
 - `architecture`: límites, dependencias, monolito modular, modelo v1 e integraciones.
 - `database`: propiedad, inventario y migraciones. Los ejecutables de Development están en `database/DevelopmentDB`.
-- `deployment`: ambientes, Dokploy, capacidad del KVM y rollback.
+- `deployment`: ambientes, Dokploy, capacidad del KVM y rollback; los controles
+  operativos todavía diferidos se registran en
+  [`development-hardening-backlog.md`](deployment/development-hardening-backlog.md).
 - `api`: HTTP, errores, OpenAPI y consumidores.
 - `workflows`: Git, desarrollo local y flujos por plataforma.
 - `security`: acceso SQL, secretos y línea base.
