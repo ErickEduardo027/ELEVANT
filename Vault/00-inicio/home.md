@@ -3,12 +3,12 @@ id: inicio-home
 title: "Home"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - README.md
@@ -24,6 +24,9 @@ sources:
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
+  - Vault/04-arquitectura/README.md
+  - Vault/05-aplicaciones/README.md
+  - Vault/06-desarrollo/README.md
 tags:
   - inicio
   - mapa
@@ -71,6 +74,10 @@ flowchart LR
 - [Dominio](../03-dominio/README.md): lenguaje canónico, contextos, entidades, ciclos e invariantes.
 - [Historia](../01-historia/README.md): cronología reproducible desde el primer commit y límites de lo que Git no puede contar.
 - [Lienzo Producto · Dominio · Historia](../diagrams/producto-dominio-historia.md): vista interactiva para recorrer las tres capas como un solo sistema.
+- [Arquitectura](../04-arquitectura/README.md): componentes, confianza, backend, persistencia, contratos e integraciones reales o futuras.
+- [Aplicaciones](../05-aplicaciones/README.md): estado verificable de Private Web, Public Web, Mobile Agent, API y DevelopmentDB.
+- [Desarrollo](../06-desarrollo/README.md): preparación local, comandos, flujo de PR, cambios seguros, pruebas y handoff.
+- [Lienzo Arquitectura · Aplicaciones · Desarrollo](../diagrams/arquitectura-aplicaciones-desarrollo.md): recorrido visual desde el cliente hasta la evidencia de un cambio.
 
 ## Explora visualmente
 
@@ -78,6 +85,7 @@ flowchart LR
 - [Arquitectura de contexto](../diagrams/arquitectura-contexto.md)
 - [Navegación por estado](../diagrams/navegacion-estado.md)
 - [Producto, dominio e historia](../diagrams/producto-dominio-historia.md)
+- [Arquitectura, aplicaciones y desarrollo](../diagrams/arquitectura-aplicaciones-desarrollo.md)
 - [Leyenda y uso del Graph](../diagrams/leyenda-grafo.md)
 
 Cada vista visual tiene un companion Markdown/Mermaid para conservar la lectura en GitHub y sin plugins.

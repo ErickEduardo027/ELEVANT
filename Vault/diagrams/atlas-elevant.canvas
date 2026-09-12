@@ -32,8 +32,8 @@
     },
     {
       "id": "a000000000000004",
-      "type": "text",
-      "text": "## Arquitectura y aplicaciones\n\nPrivate Web, Public Web y Mobile Agent convergen en una API compartida.",
+      "type": "file",
+      "file": "Vault/diagrams/arquitectura-aplicaciones-desarrollo.md",
       "x": -630,
       "y": -100,
       "width": 360,
@@ -42,8 +42,8 @@
     },
     {
       "id": "a000000000000005",
-      "type": "text",
-      "text": "## Desarrollo y contratos\n\nOpenAPI, migraciones EF y pruebas ejecutables definen los contratos.",
+      "type": "file",
+      "file": "Vault/06-desarrollo/README.md",
       "x": -180,
       "y": -100,
       "width": 360,

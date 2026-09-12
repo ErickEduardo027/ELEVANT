@@ -1,0 +1,88 @@
+filters:
+  or:
+    - 'file.inFolder("Vault/04-arquitectura")'
+    - 'file.inFolder("Vault/05-aplicaciones")'
+    - 'file.inFolder("Vault/06-desarrollo")'
+properties:
+  file.name:
+    displayName: Nota
+  note.title:
+    displayName: Título
+  note.area:
+    displayName: Área
+  note.type:
+    displayName: Tipo
+  note.status:
+    displayName: Estado
+  note.maturity:
+    displayName: Madurez
+  note.evidence:
+    displayName: Evidencia
+  note.last_verified:
+    displayName: Verificada
+  note.verified_commit:
+    displayName: Commit
+views:
+  - type: cards
+    name: Sistema y cambio
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence
+      - note.maturity
+  - type: table
+    name: Arquitectura verificable
+    filters:
+      or:
+        - 'note.area == "architecture"'
+        - 'note.area == "backend"'
+        - 'note.area == "database"'
+    order:
+      - note.title
+      - note.area
+      - note.type
+      - note.status
+      - note.maturity
+      - note.last_verified
+      - note.verified_commit
+  - type: table
+    name: Aplicaciones por frontera
+    filters:
+      or:
+        - 'note.area == "applications"'
+        - 'note.area == "private-web"'
+        - 'note.area == "public-web"'
+        - 'note.area == "mobile"'
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.maturity
+      - note.evidence
+  - type: table
+    name: Guías de desarrollo
+    filters:
+      and:
+        - 'note.area == "development"'
+    order:
+      - note.title
+      - note.type
+      - note.status
+      - note.evidence
+      - note.last_verified
+  - type: list
+    name: Decisiones y riesgo
+    filters:
+      or:
+        - 'note.type == "decision"'
+        - 'note.type == "backlog"'
+        - 'note.status == "draft"'
+        - 'note.status == "deferred"'
+        - 'note.evidence == "unknown"'
+        - 'file.hasTag("riesgos")'
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence
