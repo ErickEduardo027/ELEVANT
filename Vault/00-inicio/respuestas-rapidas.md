@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
 sources:
   - AGENTS.md
   - README.md
@@ -33,6 +33,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - inicio
   - faq
@@ -115,15 +118,15 @@ Cuando el alcance está acotado, pasan las validaciones de todos los límites af
 
 ### ¿Un merge a `Development` se despliega automáticamente?
 
-Para DB, API, Private Web y Public Web existe entrega automática pull-based dentro del alcance aceptado de Development. Los controladores privados promueven únicamente bundles certificados e inmutables. Consulta [Flujo de release](../../docs/workflows/release-workflow.md) y [Dokploy](../../docs/deployment/dokploy.md).
+Para DB, API, Private Web y Public Web existe entrega pull-based dentro del alcance aceptado de Development: el CI publica bundles certificados y los controladores privados los consultan. Que un merge concreto llegue al runtime depende de los gates, schedules y salud actual; no se deduce sólo del merge. Consulta [Cadena de artefactos](../07-entrega/cadena-de-artefactos-y-promocion.md) y [Controladores](../09-operaciones/controladores-schedules-y-promocion.md).
 
 ### ¿Un PR sin conflictos garantiza que CI pase?
 
-No. “Sin conflictos” solo significa que Git puede combinar ramas. CI valida compilación, pruebas, contratos y políticas que pueden fallar independientemente. Un merge solo debe realizarse después de revisar todos los checks requeridos.
+No. “Sin conflictos” solo significa que Git puede combinar ramas. CI valida compilación, pruebas, contratos y políticas que pueden fallar independientemente. Por norma del equipo, el merge se hace tras revisar los checks aplicables. En el repositorio privado actual esa disciplina no está impuesta por branch protection, así que un push directo sigue siendo técnicamente posible: [límites de revisión](../07-entrega/limites-revision-y-rollback.md).
 
 ### ¿El Mobile Agent ya tiene entrega APK automática?
 
-No. La aplicación Expo/React Native existe, pero su workflow CI es todavía una plantilla y la distribución firmada requiere decisiones y configuración adicionales. Consulta [Flujo Mobile](../../docs/workflows/mobile-workflow.md). No se aloja como sitio en Dokploy.
+No. La aplicación Expo/React Native existe, pero su workflow móvil propio es todavía una plantilla y la distribución firmada requiere decisiones y configuración adicionales. Algunas pruebas móviles sí corren condicionalmente en API-client CI; eso no crea una APK. Consulta el [diseño diferido de APK](../07-entrega/mobile-apk-ci-cd.md). No se aloja como sitio en Dokploy.
 
 ### ¿Production está desplegada?
 
@@ -131,21 +134,21 @@ No. `database/ProductionDB` es una frontera futura reservada. Production necesit
 
 ### ¿En qué orden se promueve un cambio coordinado?
 
-El orden es migración compatible de DB, luego API y después clientes. Cada artefacto tiene ciclo independiente y debe conservar compatibilidad durante la transición. Consulta [Release workflow](../../docs/workflows/release-workflow.md).
+El orden es migración compatible de DB, luego API y después clientes. Cada artefacto tiene ciclo independiente y debe conservar compatibilidad durante la transición. Consulta [Cadena de artefactos y promoción](../07-entrega/cadena-de-artefactos-y-promocion.md).
 
 ## Operación y acceso
 
 ### ¿Development está expuesto a Internet?
 
-Los endpoints de control, SQL, Dokploy y monitorización deben permanecer privados mediante Tailscale. “Public Web” describe audiencia funcional; no convierte Development en un servicio público de Internet. Consulta [Ambientes](../../docs/deployment/environments.md).
+Los endpoints de control, SQL, Dokploy y monitorización deben permanecer privados mediante Tailscale. “Public Web” describe audiencia funcional; no convierte Development en un servicio público de Internet. Consulta [Perímetro privado](../10-seguridad/perimetro-development-y-acceso-privado.md).
 
 ### ¿Cómo veo o modifico datos de Development con SSMS?
 
-Solo mediante la ruta privada aprobada y una identidad SQL individual de mínimo privilegio. El acceso permite CRUD de datos de prueba dentro de los límites asignados; no concede cambios de esquema, backups ni privilegios de infraestructura. Consulta [Database access](../../docs/security/database-access.md) y nunca guardes la contraseña en el repositorio.
+Solo mediante la ruta privada aprobada y una identidad SQL individual de mínimo privilegio. El acceso permite CRUD de datos de prueba dentro de los límites asignados; no concede cambios de esquema, backups ni privilegios de infraestructura. Consulta [SQL privado y SSMS](../09-operaciones/sql-privado-y-ssms.md) y [seguridad de identidades](../10-seguridad/identidades-secretos-y-datos-de-prueba.md); nunca guardes la contraseña en el repositorio.
 
 ### ¿Dónde veo si una promoción falló?
 
-Primero en los checks de GitHub para CI; después, para CD, en el estado y log del controlador y en los schedules privados de Dokploy. La ausencia de alertas externas automáticas sigue documentada como un riesgo diferido en [Hardening de Development](../../docs/deployment/development-hardening-backlog.md).
+Primero en los checks de GitHub para CI; después, para CD, en el estado y log del controlador y en los schedules privados de Dokploy. La ausencia de alertas externas automáticas sigue documentada como riesgo: [gates y fallos](../07-entrega/gates-fallos-y-no-op.md) y [observabilidad](../09-operaciones/observabilidad-y-alertas.md).
 
 ### ¿Un documento de operaciones me autoriza a ejecutar comandos en el VPS?
 

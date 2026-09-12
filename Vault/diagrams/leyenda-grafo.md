@@ -8,7 +8,7 @@ maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "f6e0c231abaa9ce9c23a5aa37a501d2859d7152b"
+verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
 sources:
   - .obsidian/graph.json
   - Vault/README.md
@@ -27,19 +27,21 @@ El Graph nativo de Obsidian representa el cerebro navegable de ELEVANT: los nodo
 
 | Color | Significado dominante | Pregunta que ayuda a responder |
 | --- | --- | --- |
-| 🔴 Coral | `draft` o evidencia `unknown` | ¿Qué no debo asumir todavía? |
-| 🟠 Ámbar | `deferred`, `planned` o tipo `backlog` | ¿Qué está diseñado para después o mantiene una brecha visible? |
-| ⚪ Gris | Histórico, deprecado o área de historia | ¿Qué explica el pasado pero no gobierna el presente? |
-| 🟣 Violeta | Inicio, diagramas, mapas y recuperación de contexto | ¿Por dónde entro? |
-| 🟪 Magenta | Producto y dominio | ¿Qué problema y vocabulario compartimos? |
-| 🔵 Azul | Arquitectura, backend y datos | ¿Cómo está construido? |
-| 🩵 Cian | Aplicaciones y experiencias | ¿Dónde vive cada flujo de usuario? |
-| 🟦 Turquesa | Desarrollo y contratos de cliente | ¿Cómo lo cambio de forma segura? |
-| 🟢 Verde | CI/CD, operaciones y seguridad | ¿Cómo se valida, entrega y protege? |
-| 🟪 Lavanda | Gobernanza y referencia | ¿Cómo pruebo o consulto una afirmación? |
-| ⚫ Pizarra | Fuentes Markdown fuera del Vault | ¿Dónde compruebo la explicación? |
+| Coral | `draft` o evidencia `unknown` | ¿Qué no debo asumir todavía? |
+| Ámbar | `deferred`, `planned` o tipo `backlog` | ¿Qué está diseñado para después o mantiene una brecha visible? |
+| Gris | Histórico, deprecado o área de historia | ¿Qué explica el pasado pero no gobierna el presente? |
+| Violeta | Inicio, diagramas, mapas y recuperación de contexto | ¿Por dónde entro? |
+| Magenta | Producto y dominio | ¿Qué problema y vocabulario compartimos? |
+| Azul | Arquitectura, backend y datos | ¿Cómo está construido? |
+| Cian | Aplicaciones y experiencias | ¿Dónde vive cada flujo de usuario? |
+| Turquesa | Desarrollo y contratos de cliente | ¿Cómo lo cambio de forma segura? |
+| Índigo | CI/CD y entrega | ¿Qué se valida y publica? |
+| Verde azulado | Operaciones | ¿Qué se observa, mantiene y recupera? |
+| Cobre | Seguridad | ¿Qué límite o permiso rige? |
+| Lavanda | Gobernanza y referencia | ¿Cómo pruebo o consulto una afirmación? |
+| Pizarra | Fuentes Markdown fuera del Vault | ¿Dónde compruebo la explicación? |
 
-El color nunca es la única señal: abre el nodo y lee `status`, `evidence`, `maturity`, `verified_commit` y `sources`. Los estados de riesgo aparecen antes que los grupos de área en la configuración para mantenerlos visibles.
+El color nunca es la única señal: abre el nodo y lee `status`, `evidence`, `maturity`, `verified_commit` y `sources`. Los estados de riesgo aparecen antes que los grupos de área en la configuración para mantenerlos visibles. Entrega, Operaciones y Seguridad tienen ahora grupos propios, aunque sus notas diferidas conservan el ámbar prioritario.
 
 ## Vistas recomendadas
 

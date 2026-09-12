@@ -64,10 +64,24 @@
       }
     },
     {
-      "query": "[area:ci-cd] OR [area:operations] OR [area:security]",
+      "query": "[area:ci-cd]",
       "color": {
         "a": 1,
-        "rgb": 1096065
+        "rgb": 4548553
+      }
+    },
+    {
+      "query": "[area:operations]",
+      "color": {
+        "a": 1,
+        "rgb": 2395002
+      }
+    },
+    {
+      "query": "[area:security]",
+      "color": {
+        "a": 1,
+        "rgb": 13072440
       }
     },
     {

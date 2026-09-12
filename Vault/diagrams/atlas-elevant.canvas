@@ -52,8 +52,8 @@
     },
     {
       "id": "a000000000000006",
-      "type": "text",
-      "text": "## CI/CD y operaciones\n\nArtefactos inmutables, promoción pull-based, salud, backup y rollback.",
+      "type": "file",
+      "file": "Vault/diagrams/entrega-operaciones-seguridad.md",
       "x": 270,
       "y": -100,
       "width": 360,
@@ -62,8 +62,8 @@
     },
     {
       "id": "a000000000000007",
-      "type": "text",
-      "text": "## Seguridad y gobernanza\n\nFronteras de confianza, secretos fuera de Git y evidencia verificable.",
+      "type": "file",
+      "file": "Vault/10-seguridad/README.md",
       "x": 720,
       "y": -100,
       "width": 360,

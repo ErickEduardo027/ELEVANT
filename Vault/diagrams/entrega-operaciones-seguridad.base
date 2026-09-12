@@ -1,0 +1,76 @@
+filters:
+  or:
+    - 'file.inFolder("Vault/07-entrega")'
+    - 'file.inFolder("Vault/09-operaciones")'
+    - 'file.inFolder("Vault/10-seguridad")'
+properties:
+  file.name:
+    displayName: Nota
+  note.title:
+    displayName: Título
+  note.area:
+    displayName: Área
+  note.type:
+    displayName: Tipo
+  note.status:
+    displayName: Estado
+  note.maturity:
+    displayName: Madurez
+  note.evidence:
+    displayName: Evidencia
+  note.last_verified:
+    displayName: Verificada
+  note.verified_commit:
+    displayName: Commit
+views:
+  - type: cards
+    name: Entrega y continuidad
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence
+      - note.maturity
+  - type: table
+    name: CI y artefactos
+    filters:
+      and:
+        - 'note.area == "ci-cd"'
+    order:
+      - note.title
+      - note.status
+      - note.evidence
+      - note.verified_commit
+  - type: table
+    name: Operación verificada
+    filters:
+      and:
+        - 'note.area == "operations"'
+    order:
+      - note.title
+      - note.status
+      - note.evidence
+      - note.last_verified
+  - type: table
+    name: Acceso y riesgo
+    filters:
+      and:
+        - 'note.area == "security"'
+    order:
+      - note.title
+      - note.type
+      - note.status
+      - note.evidence
+  - type: list
+    name: Diferido y desconocido
+    filters:
+      or:
+        - 'note.status == "deferred"'
+        - 'note.status == "draft"'
+        - 'note.evidence == "planned"'
+        - 'note.evidence == "unknown"'
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.evidence

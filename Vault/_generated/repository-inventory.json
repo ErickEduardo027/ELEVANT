@@ -546,6 +546,66 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/07-entrega/cadena-de-artefactos-y-promocion.md",
+        "id": "entrega-cadena-artefactos-promocion",
+        "title": "Cadena de artefactos y promoción Development",
+        "type": "architecture",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/07-entrega/gates-fallos-y-no-op.md",
+        "id": "entrega-gates-fallos-no-op",
+        "title": "Gates, fallos, diferidos y no-op",
+        "type": "guide",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/07-entrega/limites-revision-y-rollback.md",
+        "id": "entrega-limites-revision-rollback",
+        "title": "Límites, revisión y rollback lógico",
+        "type": "policy",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/07-entrega/mobile-apk-ci-cd.md",
+        "id": "entrega-mobile-apk-ci-cd",
+        "title": "Mobile Agent: diseño diferido de CI/CD para APK",
+        "type": "architecture",
+        "area": "ci-cd",
+        "status": "deferred",
+        "maturity": "evolving",
+        "evidence": "planned"
+      },
+      {
+        "path": "Vault/07-entrega/README.md",
+        "id": "entrega-indice",
+        "title": "CI/CD y entrega de Development",
+        "type": "index",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/07-entrega/workflows-y-estado.md",
+        "id": "entrega-workflows-estado",
+        "title": "Workflows activos y estado de CI/CD",
+        "type": "reference",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/08-gobernanza/fuentes-y-evidencia.md",
         "id": "gobernanza-evidencia-fuentes",
         "title": "Política de evidencia y fuentes",
@@ -573,6 +633,116 @@
         "area": "governance",
         "status": "verified",
         "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/09-operaciones/backups-y-restore-check.md",
+        "id": "operaciones-backups-restore-check",
+        "title": "Backups y restore-check de Development",
+        "type": "guide",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/09-operaciones/controladores-schedules-y-promocion.md",
+        "id": "operaciones-controladores-schedules-promocion",
+        "title": "Controladores, schedules y promoción observable",
+        "type": "architecture",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/09-operaciones/mantenimiento-reboot-y-recuperacion.md",
+        "id": "operaciones-mantenimiento-reboot-recuperacion",
+        "title": "Mantenimiento, reboot y recuperación de Development",
+        "type": "guide",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/09-operaciones/observabilidad-y-alertas.md",
+        "id": "operaciones-observabilidad-alertas",
+        "title": "Observabilidad y alertas de Development",
+        "type": "status",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/09-operaciones/README.md",
+        "id": "operaciones-indice",
+        "title": "Operaciones de Development",
+        "type": "index",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/09-operaciones/sql-privado-y-ssms.md",
+        "id": "operaciones-sql-privado-ssms",
+        "title": "SQL privado y operación con SSMS",
+        "type": "guide",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/09-operaciones/topologia-y-limites-development.md",
+        "id": "operaciones-topologia-limites-development",
+        "title": "Topología y límites de Development",
+        "type": "architecture",
+        "area": "operations",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/10-seguridad/identidades-secretos-y-datos-de-prueba.md",
+        "id": "seguridad-identidades-secretos-datos-prueba",
+        "title": "Identidades, secretos y datos de prueba",
+        "type": "policy",
+        "area": "security",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/10-seguridad/perimetro-development-y-acceso-privado.md",
+        "id": "seguridad-perimetro-development-acceso-privado",
+        "title": "Perímetro de Development y acceso privado",
+        "type": "architecture",
+        "area": "security",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/10-seguridad/README.md",
+        "id": "seguridad-indice",
+        "title": "Seguridad y límites de acceso",
+        "type": "index",
+        "area": "security",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/10-seguridad/riesgos-y-controles-pendientes.md",
+        "id": "seguridad-riesgos-controles-pendientes",
+        "title": "Riesgos y controles pendientes",
+        "type": "backlog",
+        "area": "security",
+        "status": "verified",
+        "maturity": "evolving",
         "evidence": "repo-verified"
       },
       {
@@ -666,6 +836,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/diagrams/entrega-operaciones-seguridad.md",
+        "id": "diagram-entrega-operaciones-seguridad",
+        "title": "Entrega, operaciones y seguridad",
+        "type": "diagram",
+        "area": "ci-cd",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/diagrams/leyenda-grafo.md",
         "id": "diagram-leyenda-grafo",
         "title": "Leyenda y uso del grafo de conocimiento",
@@ -717,7 +897,11 @@
       },
       {
         "path": "Vault/diagrams/atlas-elevant.canvas",
-        "sha256": "c25d1d5fa781acba868e4464df5560cba90b7718135b142efb458944a18f4c91"
+        "sha256": "52a340979f7cc50fed58b86951c7086413185a9e4224cb7d4a721c63c6560052"
+      },
+      {
+        "path": "Vault/diagrams/entrega-operaciones-seguridad.canvas",
+        "sha256": "7a8a1bac1d91935202956606f55fedf567d4465a24f8b413167cc76a67d30dfb"
       },
       {
         "path": "Vault/diagrams/navegacion-estado.canvas",
@@ -736,6 +920,10 @@
       {
         "path": "Vault/diagrams/atlas-conocimiento.base",
         "sha256": "7bad1054dee8abecba08e38af2b7e950f7df093129305460fb314a6a37123e5e"
+      },
+      {
+        "path": "Vault/diagrams/entrega-operaciones-seguridad.base",
+        "sha256": "6ea80249c5a5996c625ddd12b13acf97c334207ed1a0a28c00610ebdeab5b032"
       },
       {
         "path": "Vault/diagrams/producto-dominio-historia.base",
@@ -757,7 +945,7 @@
       },
       {
         "path": ".obsidian/graph.json",
-        "sha256": "cf0fc0b4f63193a480779ee7ba4f2677a2e62e11761e4859a17b06532d437f10"
+        "sha256": "131a45dc3a0f3ee753ca82d9cbfc4c28f9c4ce7d636436947a26ab69a08c4552"
       },
       {
         "path": ".obsidian/templates.json",

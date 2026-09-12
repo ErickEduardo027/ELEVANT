@@ -8,7 +8,7 @@ maturity: seed
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
 sources:
   - AGENTS.md
   - .github/BRANCH_PROTECTION.md
@@ -31,6 +31,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - estado
   - development
@@ -100,6 +103,9 @@ El diagrama omite identificadores, IP y dominios deliberadamente. Los detalles o
 - Componentes, dependencias, contratos y riesgos: [Arquitectura](../04-arquitectura/README.md).
 - Responsabilidad y madurez de cada frontera ejecutable: [Aplicaciones](../05-aplicaciones/README.md).
 - Preparación, cambio, validación y handoff local: [Desarrollo](../06-desarrollo/README.md).
+- Workflows, artefactos, fallos y diseño APK diferido: [CI/CD y entrega](../07-entrega/README.md).
+- Topología, schedules, backups, observabilidad y recuperación: [Operaciones](../09-operaciones/README.md).
+- Perímetro, identidades, secretos y brechas: [Seguridad](../10-seguridad/README.md).
 - Límites de producto y reglas para agentes: [`AGENTS.md`](../../AGENTS.md).
 - Arquitectura y dependencias: [`docs/architecture`](../../docs/architecture/system-overview.md).
 - Decisiones aceptadas: [`docs/adr`](../../docs/adr/0001-use-monorepo.md).
