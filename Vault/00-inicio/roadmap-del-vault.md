@@ -8,7 +8,7 @@ maturity: seed
 evidence: planned
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -19,6 +19,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - roadmap
   - conocimiento
@@ -42,8 +45,8 @@ flowchart LR
     classDef done fill:#e5f7ef,color:#173f31,stroke:#36a579;
     classDef next fill:#fff1d6,color:#4d3512,stroke:#d99021;
     classDef living fill:#dce8ff,color:#17213a,stroke:#4f75c2;
-    class F,P,A done;
-    class O,R next;
+    class F,P,A,O done;
+    class R next;
     class L living;
 ```
 
@@ -52,7 +55,7 @@ flowchart LR
 | 1. Fundación | Navegación, evidencia, metadatos, plantillas, diagramas nativos, inventario y CI del Vault | Entregada |
 | 2. Producto, dominio e historia | Visión, actores, vocabulario, capacidades, cronología Git y preguntas anteriores al repositorio | Entregada |
 | 3. Arquitectura y desarrollo | Mapas por aplicación, backend, datos, OpenAPI, flujo local y guía de cambio seguro | Entregada |
-| 4. Operaciones y entrega | CI/CD Development, runbooks saneados, observabilidad, SQL privado y diseño de CI/CD/distribución APK del Mobile Agent | Pendiente |
+| 4. Operaciones y entrega | CI/CD Development, runbooks saneados, observabilidad, SQL privado y diseño de CI/CD/distribución APK del Mobile Agent | Entregada como documentación; pipeline APK y alertas externas aún diferidos |
 | 5. Reconciliación | Auditoría de `docs/`, corrección de contradicciones, saneamiento y enlaces de reemplazo sin borrar historia útil | Pendiente |
 
 ## Alcances deliberadamente separados

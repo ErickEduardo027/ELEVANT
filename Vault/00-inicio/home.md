@@ -3,12 +3,12 @@ id: inicio-home
 title: "Home"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - README.md
@@ -27,6 +27,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - inicio
   - mapa
@@ -78,6 +81,10 @@ flowchart LR
 - [Aplicaciones](../05-aplicaciones/README.md): estado verificable de Private Web, Public Web, Mobile Agent, API y DevelopmentDB.
 - [Desarrollo](../06-desarrollo/README.md): preparación local, comandos, flujo de PR, cambios seguros, pruebas y handoff.
 - [Lienzo Arquitectura · Aplicaciones · Desarrollo](../diagrams/arquitectura-aplicaciones-desarrollo.md): recorrido visual desde el cliente hasta la evidencia de un cambio.
+- [CI/CD y entrega](../07-entrega/README.md): workflows activos, artefactos certificados, gates y diseño diferido de APK móvil.
+- [Operaciones](../09-operaciones/README.md): topología privada, schedules, backups, observabilidad y recuperación de Development.
+- [Seguridad](../10-seguridad/README.md): acceso, secretos, permisos efectivos y controles pendientes.
+- [Lienzo Entrega · Operaciones · Seguridad](../diagrams/entrega-operaciones-seguridad.md): flujo entre certificación, promoción, observación y respuesta.
 
 ## Explora visualmente
 
@@ -86,6 +93,7 @@ flowchart LR
 - [Navegación por estado](../diagrams/navegacion-estado.md)
 - [Producto, dominio e historia](../diagrams/producto-dominio-historia.md)
 - [Arquitectura, aplicaciones y desarrollo](../diagrams/arquitectura-aplicaciones-desarrollo.md)
+- [Entrega, operaciones y seguridad](../diagrams/entrega-operaciones-seguridad.md)
 - [Leyenda y uso del Graph](../diagrams/leyenda-grafo.md)
 
 Cada vista visual tiene un companion Markdown/Mermaid para conservar la lectura en GitHub y sin plugins.
@@ -128,12 +136,12 @@ Consulta las fuentes actuales en [`AGENTS.md`](../../AGENTS.md), [README del rep
 
 | Capacidad | Estado resumido | Leer antes de asumir |
 | --- | --- | --- |
-| Development: DB, API y webs | CI/CD aceptado para el alcance documentado | [Estado inicial](estado-inicial.md) |
-| Acceso SQL de Development | Privado y controlado; no es un endpoint público | [Seguridad de acceso SQL](../../docs/security/database-access.md) |
-| Mobile Agent | Aplicación ejecutable; integración API y entrega APK aún incompletas | [Flujo Mobile](../../docs/workflows/mobile-workflow.md) |
+| Development: DB, API y webs | CI/CD aceptado para el alcance documentado | [Entrega](../07-entrega/README.md) y [Estado inicial](estado-inicial.md) |
+| Acceso SQL de Development | Privado y controlado; no es un endpoint público | [Seguridad](../10-seguridad/README.md) |
+| Mobile Agent | Aplicación ejecutable; integración API y entrega APK aún incompletas | [Diseño diferido de APK](../07-entrega/mobile-apk-ci-cd.md) |
 | Production | Frontera futura, no desplegada | [Ambientes](../../docs/deployment/environments.md) |
-| Alertas externas | Diferidas | [Backlog de hardening](../../docs/deployment/development-hardening-backlog.md) |
-| Protección técnica de ramas | Diferida por limitación vigente | [Branch protection](../../.github/BRANCH_PROTECTION.md) |
+| Alertas externas | Diferidas | [Observabilidad](../09-operaciones/observabilidad-y-alertas.md) |
+| Protección técnica de ramas | Diferida por limitación vigente | [Riesgos y controles pendientes](../10-seguridad/riesgos-y-controles-pendientes.md) |
 
 Este radar es una orientación, no evidencia operativa en tiempo real. La fotografía completa y su fecha están en [Estado inicial](estado-inicial.md).
 

@@ -3,12 +3,12 @@ id: diagram-atlas-elevant
 title: "Atlas general de ELEVANT"
 type: diagram
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - README.md
@@ -20,9 +20,13 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
   - Vault/diagrams/atlas-elevant.canvas
   - Vault/diagrams/producto-dominio-historia.md
   - Vault/diagrams/arquitectura-aplicaciones-desarrollo.md
+  - Vault/diagrams/entrega-operaciones-seguridad.md
 tags:
   - atlas
   - conocimiento
@@ -39,6 +43,7 @@ Este mapa conecta las áreas que explican ELEVANT sin convertir la documentació
 - [Ver navegación y estados](navegacion-estado.md)
 - [Explorar Producto, Dominio e Historia](producto-dominio-historia.md)
 - [Explorar Arquitectura, Aplicaciones y Desarrollo](arquitectura-aplicaciones-desarrollo.md)
+- [Explorar Entrega, Operaciones y Seguridad](entrega-operaciones-seguridad.md)
 
 ```mermaid
 flowchart TB
@@ -101,5 +106,8 @@ La [estructura real del repositorio](../../docs/architecture/repository-structur
 - [Arquitectura](../04-arquitectura/README.md)
 - [Aplicaciones](../05-aplicaciones/README.md)
 - [Desarrollo](../06-desarrollo/README.md)
+- [CI/CD y entrega](../07-entrega/README.md)
+- [Operaciones](../09-operaciones/README.md)
+- [Seguridad](../10-seguridad/README.md)
 
-Las áreas restantes del diagrama se incorporan por etapas según el [Roadmap](../00-inicio/roadmap-del-vault.md).
+Las áreas de Referencia y Backlog transversal se reconcilian en la etapa final según el [Roadmap](../00-inicio/roadmap-del-vault.md). El diseño APK permanece diferido aunque su explicación ya sea navegable.

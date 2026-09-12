@@ -3,12 +3,12 @@ id: inicio-mapa-preguntas
 title: "Mapa de preguntas"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -19,6 +19,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - inicio
   - preguntas
@@ -55,17 +58,18 @@ flowchart TD
 | Si preguntas… | Busca primero… | Fuente de comprobación |
 | --- | --- | --- |
 | ¿Qué problema resuelve? | [Producto](../02-producto/README.md) | Prototipos + decisiones aceptadas, diferenciando historia de implementación |
-| ¿Quién puede hacer qué? | [Producto](../02-producto/README.md), [Dominio](../03-dominio/README.md) y Seguridad | Políticas de autorización, código y tests |
+| ¿Quién puede hacer qué? | [Producto](../02-producto/README.md), [Dominio](../03-dominio/README.md) y [Seguridad](../10-seguridad/README.md) | Políticas de autorización, código y tests |
 | ¿Qué significa este término? | [Dominio](../03-dominio/README.md) o Referencia | Modelo vigente y glosario |
 | ¿Qué aplicación es responsable? | [Aplicaciones](../05-aplicaciones/README.md) y [Arquitectura](../04-arquitectura/README.md) | Límites del monorepo y reglas de dependencia |
 | ¿Qué endpoint uso? | [OpenAPI, HTTP y SignalR](../04-arquitectura/openapi-http-y-signalr.md) | OpenAPI generado/compilado |
 | ¿Qué tabla o relación existe? | [Datos, EF y migraciones](../04-arquitectura/datos-ef-migraciones-y-persistencia.md) | Migraciones EF Core |
 | ¿Cómo agrego una capacidad? | [Desarrollo](../06-desarrollo/README.md) | `AGENTS.md`, README del área, tests y contratos |
-| ¿Qué check debe pasar? | CI/CD | Workflow vigente del repositorio |
-| ¿Qué está desplegado? | Estado y Operaciones | Estado versionado + evidencia operativa saneada |
-| ¿Cómo recupero un fallo? | Runbook | Procedimiento aceptado, precondiciones y rollback |
+| ¿Qué check debe pasar? | [Workflows y estado](../07-entrega/workflows-y-estado.md) | Workflow vigente y filtros de ruta |
+| ¿Qué está desplegado? | [Estado](estado-inicial.md) y [Operaciones](../09-operaciones/README.md) | Aceptación fechada + comprobación nueva para salud actual |
+| ¿Cómo recupero un fallo? | [Mantenimiento y recuperación](../09-operaciones/mantenimiento-reboot-y-recuperacion.md) | Runbook aceptado, precondiciones y rollback |
+| ¿Cómo se compilaría una APK móvil? | [Diseño Mobile diferido](../07-entrega/mobile-apk-ci-cd.md) | Plantilla, configuración Expo y decisiones pendientes |
 | ¿Por qué se eligió esta solución? | ADR e [Historia](../01-historia/README.md) | ADR aceptado y contexto de su fecha |
-| ¿Qué todavía falta? | Backlog | Estado `deferred`/`draft` y criterios de aceptación |
+| ¿Qué todavía falta? | [Riesgos pendientes](../10-seguridad/riesgos-y-controles-pendientes.md) y [Roadmap](roadmap-del-vault.md) | Estado `deferred`/`draft` y criterios de aceptación |
 
 ## Atajos a las fuentes vigentes
 

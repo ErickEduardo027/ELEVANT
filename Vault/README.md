@@ -3,12 +3,12 @@ id: vault-readme
 title: "Vault ELEVANT"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "74fcc59193d3ea3c45a9398a07e84330ce7866fd"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -20,6 +20,9 @@ sources:
   - Vault/04-arquitectura/README.md
   - Vault/05-aplicaciones/README.md
   - Vault/06-desarrollo/README.md
+  - Vault/07-entrega/README.md
+  - Vault/09-operaciones/README.md
+  - Vault/10-seguridad/README.md
 tags:
   - vault
   - onboarding
@@ -52,15 +55,15 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 | Dominio | ¿Qué significan los conceptos operativos? | [Índice de Dominio](03-dominio/README.md) |
 | Aplicaciones | ¿Qué hace cada cliente y cuál es su estado? | [Índice de Aplicaciones](05-aplicaciones/README.md) |
 | Desarrollo | ¿Cómo preparo, cambio y valido el código? | [Índice de Desarrollo](06-desarrollo/README.md) |
-| CI/CD | ¿Qué valida y qué entrega cada pipeline? | Índice de CI/CD |
-| Operaciones | ¿Cómo se despliega, observa y recupera Development? | Índice de Operaciones |
-| Seguridad | ¿Cuáles son las fronteras de confianza y acceso? | Índice de Seguridad |
+| CI/CD | ¿Qué valida y qué entrega cada pipeline? | [Índice de CI/CD](07-entrega/README.md) |
+| Operaciones | ¿Cómo se despliega, observa y recupera Development? | [Índice de Operaciones](09-operaciones/README.md) |
+| Seguridad | ¿Cuáles son las fronteras de confianza y acceso? | [Índice de Seguridad](10-seguridad/README.md) |
 | Gobernanza | ¿Cómo sabemos que una afirmación es confiable? | [Política de evidencia](08-gobernanza/fuentes-y-evidencia.md) |
 | Historia | ¿Cómo llegó el proyecto al estado actual? | [Índice de Historia](01-historia/README.md) |
 | Referencia | ¿Dónde están contratos, inventarios y glosarios? | Índice de Referencia |
 | Backlog | ¿Qué está diferido y qué falta decidir? | Índice de Backlog |
 
-Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio, Historia, Arquitectura, Aplicaciones y Desarrollo ya tienen mapas verificables; una ausencia restante se registra como pendiente y nunca se rellena con una suposición.
+Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio, Historia, Arquitectura, Aplicaciones, Desarrollo, CI/CD, Operaciones y Seguridad ya tienen mapas; una ausencia restante se registra como pendiente y nunca se rellena con una suposición. El [lienzo de entrega y operación](diagrams/entrega-operaciones-seguridad.md) conecta los tres planos sin confundir un diseño con un despliegue vivo.
 
 ## Relación con el repositorio
 
