@@ -8,11 +8,14 @@ maturity: seed
 evidence: planned
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
   - Vault/README.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - roadmap
   - conocimiento
@@ -27,7 +30,7 @@ Esta nota hace visible el alcance que todavía no forma parte de la fundación. 
 
 ```mermaid
 flowchart LR
-    F[1 · Fundación] --> P[2 · Producto e historia]
+    F[1 · Fundación] --> P[2 · Producto, dominio e historia]
     P --> A[3 · Arquitectura y desarrollo]
     A --> O[4 · Operaciones y entrega]
     O --> R[5 · Reconciliación]
@@ -43,8 +46,8 @@ flowchart LR
 
 | Etapa | Resultado esperado | Estado al crear la fundación |
 | --- | --- | --- |
-| 1. Fundación | Navegación, evidencia, metadatos, plantillas, diagramas nativos, inventario y CI del Vault | En este PR |
-| 2. Producto e historia | Visión, actores, vocabulario, capacidades, cronología Git y preguntas de historia anterior al repositorio | Pendiente |
+| 1. Fundación | Navegación, evidencia, metadatos, plantillas, diagramas nativos, inventario y CI del Vault | Entregada |
+| 2. Producto, dominio e historia | Visión, actores, vocabulario, capacidades, cronología Git y preguntas anteriores al repositorio | Entregada |
 | 3. Arquitectura y desarrollo | Mapas por aplicación, backend, datos, OpenAPI, flujo local y guía de cambio seguro | Pendiente |
 | 4. Operaciones y entrega | CI/CD Development, runbooks saneados, observabilidad, SQL privado y diseño de CI/CD/distribución APK del Mobile Agent | Pendiente |
 | 5. Reconciliación | Auditoría de `docs/`, corrección de contradicciones, saneamiento y enlaces de reemplazo sin borrar historia útil | Pendiente |

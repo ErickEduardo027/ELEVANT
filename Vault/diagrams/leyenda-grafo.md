@@ -3,12 +3,12 @@ id: diagram-leyenda-grafo
 title: "Leyenda y uso del grafo de conocimiento"
 type: diagram
 area: vault
-status: verified
+status: documented
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+verified_commit: "pending"
 sources:
   - .obsidian/graph.json
   - Vault/README.md
@@ -28,7 +28,7 @@ El Graph nativo de Obsidian representa el cerebro navegable de ELEVANT: los nodo
 | Color | Significado dominante | Pregunta que ayuda a responder |
 | --- | --- | --- |
 | 🔴 Coral | `draft` o evidencia `unknown` | ¿Qué no debo asumir todavía? |
-| 🟠 Ámbar | `deferred` o `planned` | ¿Qué está diseñado para después? |
+| 🟠 Ámbar | `deferred`, `planned` o tipo `backlog` | ¿Qué está diseñado para después o mantiene una brecha visible? |
 | ⚪ Gris | Histórico, deprecado o área de historia | ¿Qué explica el pasado pero no gobierna el presente? |
 | 🟣 Violeta | Inicio, diagramas, mapas y recuperación de contexto | ¿Por dónde entro? |
 | 🟪 Magenta | Producto y dominio | ¿Qué problema y vocabulario compartimos? |

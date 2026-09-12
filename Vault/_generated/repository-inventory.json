@@ -21,7 +21,7 @@
         "title": "Estado inicial del conocimiento",
         "type": "status",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "seed",
         "evidence": "operator-recorded"
       },
@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -41,7 +41,7 @@
         "title": "Mapa de preguntas",
         "type": "index",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -51,7 +51,7 @@
         "title": "Protocolo de recuperación de contexto",
         "type": "guide",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -61,7 +61,7 @@
         "title": "Respuestas rápidas",
         "type": "guide",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -74,6 +74,246 @@
         "status": "deferred",
         "maturity": "seed",
         "evidence": "planned"
+      },
+      {
+        "path": "Vault/01-historia/cronologia-versionada.md",
+        "id": "historia-cronologia-versionada",
+        "title": "Cronología versionada de ELEVANT",
+        "type": "history",
+        "area": "history",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/01-historia/evolucion-arquitectura-y-datos.md",
+        "id": "historia-arquitectura-datos",
+        "title": "Evolución de arquitectura, contrato y datos",
+        "type": "history",
+        "area": "history",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/01-historia/evolucion-entrega-development.md",
+        "id": "historia-entrega-development",
+        "title": "Evolución de la entrega Development",
+        "type": "history",
+        "area": "history",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/01-historia/origenes-y-limites-de-evidencia.md",
+        "id": "historia-origen-limites-evidencia",
+        "title": "Orígenes y límites de evidencia",
+        "type": "history",
+        "area": "history",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/01-historia/prototipos-y-convergencia.md",
+        "id": "historia-prototipos-convergencia",
+        "title": "De prototipos a monorepo convergente",
+        "type": "history",
+        "area": "history",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/01-historia/README.md",
+        "id": "historia-indice",
+        "title": "Historia de ELEVANT",
+        "type": "index",
+        "area": "history",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/actores-y-audiencias.md",
+        "id": "producto-actores-y-audiencias",
+        "title": "Actores y audiencias",
+        "type": "reference",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/alcance-y-no-objetivos.md",
+        "id": "producto-alcance-y-no-objetivos",
+        "title": "Alcance, estados y no objetivos",
+        "type": "status",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/fronteras-de-clientes.md",
+        "id": "producto-fronteras-de-clientes",
+        "title": "Fronteras de los clientes",
+        "type": "architecture",
+        "area": "product",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/mapa-de-capacidades.md",
+        "id": "producto-mapa-de-capacidades",
+        "title": "Mapa de capacidades",
+        "type": "capability",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/preguntas-abiertas.md",
+        "id": "producto-preguntas-abiertas",
+        "title": "Preguntas abiertas de producto",
+        "type": "backlog",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/README.md",
+        "id": "producto-indice",
+        "title": "Mapa de producto",
+        "type": "index",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/recorridos-end-to-end.md",
+        "id": "producto-recorridos-end-to-end",
+        "title": "Recorridos de extremo a extremo",
+        "type": "capability",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/02-producto/vision-y-problema.md",
+        "id": "producto-vision-y-problema",
+        "title": "Visión y espacio de problema",
+        "type": "concept",
+        "area": "product",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/brechas-y-preguntas-abiertas.md",
+        "id": "dominio-brechas-preguntas",
+        "title": "Brechas y preguntas abiertas del dominio",
+        "type": "backlog",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/contextos-y-limites.md",
+        "id": "dominio-contextos-limites",
+        "title": "Contextos y límites del dominio",
+        "type": "architecture",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/entidades-y-relaciones-v1.md",
+        "id": "dominio-entidades-relaciones-v1",
+        "title": "Entidades y relaciones v1",
+        "type": "architecture",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/glosario-canonico.md",
+        "id": "dominio-glosario-canonico",
+        "title": "Glosario canónico",
+        "type": "reference",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/identidad-tenancy-y-autorizacion.md",
+        "id": "dominio-identidad-tenancy-autorizacion",
+        "title": "Identidad, tenancy y autorización",
+        "type": "architecture",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/personal-roles-y-departamentos.md",
+        "id": "dominio-personal-roles-departamentos",
+        "title": "Personal, roles y departamentos",
+        "type": "concept",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/README.md",
+        "id": "dominio-indice",
+        "title": "Dominio ELEVANT",
+        "type": "index",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/solicitudes-contratos-y-servicios.md",
+        "id": "dominio-solicitudes-contratos-servicios",
+        "title": "Solicitudes, contratos y servicios",
+        "type": "capability",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/tiempo-estados-y-trazabilidad.md",
+        "id": "dominio-tiempo-estados-trazabilidad",
+        "title": "Tiempo, estados y trazabilidad",
+        "type": "reference",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/03-dominio/turnaround-y-operacion.md",
+        "id": "dominio-turnaround-operacion",
+        "title": "Turnaround y operación en tierra",
+        "type": "capability",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
       },
       {
         "path": "Vault/08-gobernanza/fuentes-y-evidencia.md",
@@ -181,7 +421,7 @@
         "title": "Atlas general de ELEVANT",
         "type": "diagram",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -191,7 +431,7 @@
         "title": "Leyenda y uso del grafo de conocimiento",
         "type": "diagram",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -206,12 +446,22 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/diagrams/producto-dominio-historia.md",
+        "id": "diagram-producto-dominio-historia",
+        "title": "Producto, dominio e historia",
+        "type": "diagram",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/README.md",
         "id": "vault-readme",
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }
@@ -219,21 +469,29 @@
     "canvases": [
       {
         "path": "Vault/diagrams/arquitectura-contexto.canvas",
-        "sha256": "2afc2df20ddc598587372ac39c0bcb2b205bb5986cf8a27e887766f34973b69b"
+        "sha256": "cd0c90474aca6270c73a6a5b97992ac19b86929ab339b2c160521d65334bda56"
       },
       {
         "path": "Vault/diagrams/atlas-elevant.canvas",
-        "sha256": "cded936358827768e3dc9290f501a83d2251c7b7aa0f1d543bf0dc8c035bd51b"
+        "sha256": "d4feef4d02612dd0d40ac83620980c66c58ffd6a8465152e5c6f7f21a4f8fcca"
       },
       {
         "path": "Vault/diagrams/navegacion-estado.canvas",
         "sha256": "64c478cc8b005897268127218af7f5025f50e802bccc07ec11b9fa5ed5c8e8e0"
+      },
+      {
+        "path": "Vault/diagrams/producto-dominio-historia.canvas",
+        "sha256": "1429474190d8520e45a207063eb027d960b05cc5e8b8f81efb13365e1da30e1b"
       }
     ],
     "bases": [
       {
         "path": "Vault/diagrams/atlas-conocimiento.base",
         "sha256": "7bad1054dee8abecba08e38af2b7e950f7df093129305460fb314a6a37123e5e"
+      },
+      {
+        "path": "Vault/diagrams/producto-dominio-historia.base",
+        "sha256": "2e8dd87e5fc75ba4ca7cbbeda02d4cd34c3cb4a0a9d429d33298168189ff770e"
       }
     ],
     "obsidianConfig": [
@@ -251,7 +509,7 @@
       },
       {
         "path": ".obsidian/graph.json",
-        "sha256": "299fe6e5818e8b1916b366a08402772808ca84be99db0c7aa34100932a940d01"
+        "sha256": "cf0fc0b4f63193a480779ee7ba4f2677a2e62e11761e4859a17b06532d437f10"
       },
       {
         "path": ".obsidian/templates.json",

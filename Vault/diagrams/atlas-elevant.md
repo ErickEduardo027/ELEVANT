@@ -3,17 +3,22 @@ id: diagram-atlas-elevant
 title: "Atlas general de ELEVANT"
 type: diagram
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "bea325aad4863ad85281d92ed5c005fa53f905bc"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - README.md
   - docs/README.md
   - docs/architecture/repository-structure.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
+  - Vault/diagrams/atlas-elevant.canvas
+  - Vault/diagrams/producto-dominio-historia.md
 tags:
   - atlas
   - conocimiento
@@ -28,6 +33,7 @@ Este mapa conecta las áreas que explican ELEVANT sin convertir la documentació
 - [Abrir la Base nativa de conocimiento](atlas-conocimiento.base)
 - [Ver arquitectura y contexto](arquitectura-contexto.md)
 - [Ver navegación y estados](navegacion-estado.md)
+- [Explorar Producto, Dominio e Historia](producto-dominio-historia.md)
 
 ```mermaid
 flowchart TB
@@ -81,3 +87,11 @@ flowchart TB
 5. **Prueba:** el estado y la evidencia determinan si una afirmación puede usarse hoy.
 
 La [estructura real del repositorio](../../docs/architecture/repository-structure.md) y las reglas de [`AGENTS.md`](../../AGENTS.md) prevalecen sobre este dibujo.
+
+## Mapas ya materializados
+
+- [Historia](../01-historia/README.md)
+- [Producto](../02-producto/README.md)
+- [Dominio](../03-dominio/README.md)
+
+Las áreas restantes del diagrama se incorporan por etapas según el [Roadmap](../00-inicio/roadmap-del-vault.md).

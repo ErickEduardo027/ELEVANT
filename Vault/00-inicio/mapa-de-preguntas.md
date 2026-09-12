@@ -3,16 +3,19 @@ id: inicio-mapa-preguntas
 title: "Mapa de preguntas"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
   - Vault/README.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - inicio
   - preguntas
@@ -48,9 +51,9 @@ flowchart TD
 
 | Si preguntas… | Busca primero… | Fuente de comprobación |
 | --- | --- | --- |
-| ¿Qué problema resuelve? | Producto | Prototipos + decisiones aceptadas, diferenciando historia de implementación |
-| ¿Quién puede hacer qué? | Producto, Dominio y Seguridad | Políticas de autorización, código y tests |
-| ¿Qué significa este término? | Dominio o Referencia | Modelo vigente y glosario |
+| ¿Qué problema resuelve? | [Producto](../02-producto/README.md) | Prototipos + decisiones aceptadas, diferenciando historia de implementación |
+| ¿Quién puede hacer qué? | [Producto](../02-producto/README.md), [Dominio](../03-dominio/README.md) y Seguridad | Políticas de autorización, código y tests |
+| ¿Qué significa este término? | [Dominio](../03-dominio/README.md) o Referencia | Modelo vigente y glosario |
 | ¿Qué aplicación es responsable? | Aplicaciones y Arquitectura | Límites del monorepo y reglas de dependencia |
 | ¿Qué endpoint uso? | API y OpenAPI | OpenAPI generado/compilado |
 | ¿Qué tabla o relación existe? | Base de datos | Migraciones EF Core |
@@ -58,7 +61,7 @@ flowchart TD
 | ¿Qué check debe pasar? | CI/CD | Workflow vigente del repositorio |
 | ¿Qué está desplegado? | Estado y Operaciones | Estado versionado + evidencia operativa saneada |
 | ¿Cómo recupero un fallo? | Runbook | Procedimiento aceptado, precondiciones y rollback |
-| ¿Por qué se eligió esta solución? | ADR e Historia | ADR aceptado y contexto de su fecha |
+| ¿Por qué se eligió esta solución? | ADR e [Historia](../01-historia/README.md) | ADR aceptado y contexto de su fecha |
 | ¿Qué todavía falta? | Backlog | Estado `deferred`/`draft` y criterios de aceptación |
 
 ## Atajos a las fuentes vigentes

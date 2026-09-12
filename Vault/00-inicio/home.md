@@ -3,12 +3,12 @@ id: inicio-home
 title: "Home"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - README.md
@@ -21,6 +21,9 @@ sources:
   - docs/workflows/release-workflow.md
   - .github/BRANCH_PROTECTION.md
   - Vault/README.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - inicio
   - mapa
@@ -62,11 +65,19 @@ flowchart LR
 - Quiero justificar una afirmación: [Política de evidencia y fuentes](../08-gobernanza/fuentes-y-evidencia.md).
 - Quiero crear una nota: [Plantillas](../99-plantillas/README.md).
 
+## Contexto esencial de ELEVANT
+
+- [Producto](../02-producto/README.md): propósito observable, audiencias, capacidades, recorridos y preguntas abiertas.
+- [Dominio](../03-dominio/README.md): lenguaje canónico, contextos, entidades, ciclos e invariantes.
+- [Historia](../01-historia/README.md): cronología reproducible desde el primer commit y límites de lo que Git no puede contar.
+- [Lienzo Producto · Dominio · Historia](../diagrams/producto-dominio-historia.md): vista interactiva para recorrer las tres capas como un solo sistema.
+
 ## Explora visualmente
 
 - [Atlas general de ELEVANT](../diagrams/atlas-elevant.md)
 - [Arquitectura de contexto](../diagrams/arquitectura-contexto.md)
 - [Navegación por estado](../diagrams/navegacion-estado.md)
+- [Producto, dominio e historia](../diagrams/producto-dominio-historia.md)
 - [Leyenda y uso del Graph](../diagrams/leyenda-grafo.md)
 
 Cada vista visual tiene un companion Markdown/Mermaid para conservar la lectura en GitHub y sin plugins.

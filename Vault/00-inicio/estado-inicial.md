@@ -3,12 +3,12 @@ id: inicio-estado-inicial
 title: "Estado inicial del conocimiento"
 type: status
 area: vault
-status: verified
+status: documented
 maturity: seed
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "bea325aad4863ad85281d92ed5c005fa53f905bc"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - .github/BRANCH_PROTECTION.md
@@ -25,6 +25,9 @@ sources:
   - docs/workflows/release-workflow.md
   - docs/workflows/mobile-workflow.md
   - ops/dokploy/README.md
+  - Vault/01-historia/README.md
+  - Vault/02-producto/README.md
+  - Vault/03-dominio/README.md
 tags:
   - estado
   - development
@@ -88,6 +91,9 @@ El diagrama omite identificadores, IP y dominios deliberadamente. Los detalles o
 
 ## Conocimiento confiable existente
 
+- Historia observable y límites anteriores a Git: [Historia](../01-historia/README.md).
+- Propósito, audiencias, capacidades y recorridos: [Producto](../02-producto/README.md).
+- Lenguaje, contextos, relaciones e invariantes: [Dominio](../03-dominio/README.md).
 - Límites de producto y reglas para agentes: [`AGENTS.md`](../../AGENTS.md).
 - Arquitectura y dependencias: [`docs/architecture`](../../docs/architecture/system-overview.md).
 - Decisiones aceptadas: [`docs/adr`](../../docs/adr/0001-use-monorepo.md).

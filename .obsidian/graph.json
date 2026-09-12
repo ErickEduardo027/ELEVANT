@@ -15,7 +15,7 @@
       }
     },
     {
-      "query": "[status:deferred] OR [evidence:planned]",
+      "query": "[status:deferred] OR [evidence:planned] OR [type:backlog]",
       "color": {
         "a": 1,
         "rgb": 16096779
