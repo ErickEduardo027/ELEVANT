@@ -1,0 +1,55 @@
+filters:
+  and:
+    - 'file.ext == "md"'
+    - 'file.inFolder("Vault")'
+    - 'note.id'
+properties:
+  file.name:
+    displayName: Nota
+  note.title:
+    displayName: Título
+  note.area:
+    displayName: Área
+  note.type:
+    displayName: Tipo
+  note.status:
+    displayName: Estado
+  note.maturity:
+    displayName: Madurez
+  note.evidence:
+    displayName: Evidencia
+  note.owner:
+    displayName: Responsable
+  note.last_verified:
+    displayName: Última verificación
+  note.verified_commit:
+    displayName: Commit verificado
+views:
+  - type: table
+    name: Atlas completo
+    order:
+      - note.title
+      - note.area
+      - note.type
+      - note.status
+      - note.maturity
+      - note.evidence
+      - note.owner
+      - note.last_verified
+      - note.verified_commit
+  - type: table
+    name: Requiere atención
+    filters:
+      or:
+        - 'note.status == "documented"'
+        - 'note.status == "draft"'
+        - 'note.status == "deferred"'
+        - 'note.evidence == "unknown"'
+        - 'note.verified_commit == "pending"'
+    order:
+      - note.title
+      - note.area
+      - note.status
+      - note.maturity
+      - note.evidence
+      - note.owner

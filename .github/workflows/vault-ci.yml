@@ -1,0 +1,43 @@
+name: Vault CI
+
+on:
+  push:
+    branches:
+      - main
+      - Development
+  pull_request:
+    branches:
+      - main
+      - Development
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vault-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate ELEVANT knowledge Vault
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked root dependencies
+        run: npm ci
+
+      - name: Test and validate Vault without rewriting it
+        run: npm run vault:ci

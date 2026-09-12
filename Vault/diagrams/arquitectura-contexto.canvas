@@ -1,0 +1,351 @@
+{
+  "nodes": [
+    {
+      "id": "b000000000000001",
+      "type": "text",
+      "text": "# Arquitectura y contexto inicial\n\nUna API y una base lógica compartidas por ambiente; clientes y carriles de entrega independientes.",
+      "x": -360,
+      "y": -840,
+      "width": 720,
+      "height": 180,
+      "color": "6"
+    },
+    {
+      "id": "b000000000000002",
+      "type": "group",
+      "label": "Personas",
+      "x": -1260,
+      "y": -460,
+      "width": 400,
+      "height": 1020,
+      "color": "1"
+    },
+    {
+      "id": "b000000000000003",
+      "type": "text",
+      "text": "**Personal interno AVIAM**\n\nOCC, administración y departamentos.",
+      "x": -1210,
+      "y": -370,
+      "width": 300,
+      "height": 150
+    },
+    {
+      "id": "b000000000000004",
+      "type": "text",
+      "text": "**Clientes y aerolíneas**\n\nExperiencia pública y portal con alcance de tenant.",
+      "x": -1210,
+      "y": -130,
+      "width": 300,
+      "height": 170
+    },
+    {
+      "id": "b000000000000005",
+      "type": "text",
+      "text": "**Agentes de rampa**\n\nTrabajo móvil con conectividad intermitente.",
+      "x": -1210,
+      "y": 120,
+      "width": 300,
+      "height": 150
+    },
+    {
+      "id": "b000000000000014",
+      "type": "text",
+      "text": "**Operaciones autorizadas**\n\nAdministra el ambiente mediante rutas privadas y procedimientos revisados.",
+      "x": -1210,
+      "y": 350,
+      "width": 300,
+      "height": 160
+    },
+    {
+      "id": "b000000000000006",
+      "type": "group",
+      "label": "Clientes no confiables",
+      "x": -690,
+      "y": -460,
+      "width": 400,
+      "height": 760,
+      "color": "4"
+    },
+    {
+      "id": "b000000000000007",
+      "type": "text",
+      "text": "## Private Web\n\nAplicación interna; imagen y CD propios.",
+      "x": -640,
+      "y": -370,
+      "width": 300,
+      "height": 150,
+      "color": "4"
+    },
+    {
+      "id": "b000000000000008",
+      "type": "text",
+      "text": "## Public Web\n\nSitio y portal; imagen y CD propios.",
+      "x": -640,
+      "y": -130,
+      "width": 300,
+      "height": 150,
+      "color": "4"
+    },
+    {
+      "id": "b000000000000009",
+      "type": "text",
+      "text": "## Mobile Agent\n\nAplicación nativa; no se aloja en Dokploy.",
+      "x": -640,
+      "y": 110,
+      "width": 300,
+      "height": 160,
+      "color": "4"
+    },
+    {
+      "id": "b00000000000000a",
+      "type": "group",
+      "label": "Plataforma por ambiente",
+      "x": -60,
+      "y": -500,
+      "width": 520,
+      "height": 850,
+      "color": "3"
+    },
+    {
+      "id": "b00000000000000b",
+      "type": "text",
+      "text": "# API compartida\n\nÚnica frontera para reglas, datos e integraciones. REST/HTTPS y SignalR.",
+      "x": 0,
+      "y": -380,
+      "width": 400,
+      "height": 190,
+      "color": "3"
+    },
+    {
+      "id": "b00000000000000c",
+      "type": "text",
+      "text": "## SQL Server\n\nUna base lógica por ambiente. Sin acceso directo desde clientes.",
+      "x": 0,
+      "y": -80,
+      "width": 400,
+      "height": 170,
+      "color": "3"
+    },
+    {
+      "id": "b00000000000000d",
+      "type": "text",
+      "text": "## Proveedores externos\n\nSólo mediante adaptadores autorizados; integración real aún evolutiva.",
+      "x": 0,
+      "y": 180,
+      "width": 400,
+      "height": 150,
+      "color": "1"
+    },
+    {
+      "id": "b00000000000000e",
+      "type": "group",
+      "label": "Operación Development",
+      "x": 680,
+      "y": -500,
+      "width": 480,
+      "height": 850,
+      "color": "2"
+    },
+    {
+      "id": "b00000000000000f",
+      "type": "text",
+      "text": "## Acceso privado\n\nLa red privada precede a los endpoints del control plane y a las aplicaciones Development.",
+      "x": 730,
+      "y": -390,
+      "width": 380,
+      "height": 180,
+      "color": "2"
+    },
+    {
+      "id": "b000000000000010",
+      "type": "text",
+      "text": "## CI/CD pull-based\n\nGitHub publica artefactos; los controladores del VPS validan y promueven.",
+      "x": 730,
+      "y": -100,
+      "width": 380,
+      "height": 180,
+      "color": "2"
+    },
+    {
+      "id": "b000000000000011",
+      "type": "text",
+      "text": "## SQL Tools\n\nAcceso humano privado con cuentas personales y permisos CRUD acotados sobre datos sintéticos.",
+      "x": 730,
+      "y": 180,
+      "width": 380,
+      "height": 150,
+      "color": "2"
+    },
+    {
+      "id": "b000000000000012",
+      "type": "text",
+      "text": "## Production futura\n\nHost, secretos, datos, backups y promoción separados. No desplegada.",
+      "x": -40,
+      "y": 620,
+      "width": 480,
+      "height": 170,
+      "color": "1"
+    },
+    {
+      "id": "b000000000000013",
+      "type": "file",
+      "file": "Vault/diagrams/arquitectura-contexto.md",
+      "x": 660,
+      "y": 590,
+      "width": 500,
+      "height": 240
+    }
+  ],
+  "edges": [
+    {
+      "id": "be00000000000001",
+      "fromNode": "b000000000000003",
+      "fromSide": "right",
+      "toNode": "b000000000000007",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "be00000000000002",
+      "fromNode": "b000000000000004",
+      "fromSide": "right",
+      "toNode": "b000000000000008",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "be00000000000003",
+      "fromNode": "b000000000000005",
+      "fromSide": "right",
+      "toNode": "b000000000000009",
+      "toSide": "left",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "be00000000000004",
+      "fromNode": "b000000000000007",
+      "fromSide": "right",
+      "toNode": "b00000000000000b",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "HTTPS · OpenAPI"
+    },
+    {
+      "id": "be00000000000005",
+      "fromNode": "b000000000000008",
+      "fromSide": "right",
+      "toNode": "b00000000000000b",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "HTTPS · OpenAPI"
+    },
+    {
+      "id": "be00000000000006",
+      "fromNode": "b000000000000009",
+      "fromSide": "right",
+      "toNode": "b00000000000000b",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "OpenAPI objetivo · en evolución"
+    },
+    {
+      "id": "be00000000000007",
+      "fromNode": "b00000000000000b",
+      "fromSide": "bottom",
+      "toNode": "b00000000000000c",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "persistencia"
+    },
+    {
+      "id": "be00000000000008",
+      "fromNode": "b00000000000000b",
+      "fromSide": "bottom",
+      "toNode": "b00000000000000d",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "adaptadores futuros"
+    },
+    {
+      "id": "be00000000000009",
+      "fromNode": "b00000000000000f",
+      "fromSide": "left",
+      "toNode": "b000000000000010",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "canal privado"
+    },
+    {
+      "id": "be0000000000000a",
+      "fromNode": "b000000000000010",
+      "fromSide": "left",
+      "toNode": "b00000000000000b",
+      "toSide": "right",
+      "toEnd": "arrow",
+      "label": "promueve"
+    },
+    {
+      "id": "be0000000000000e",
+      "fromNode": "b000000000000010",
+      "fromSide": "left",
+      "toNode": "b00000000000000c",
+      "toSide": "right",
+      "toEnd": "arrow",
+      "label": "promueve DB"
+    },
+    {
+      "id": "be0000000000000f",
+      "fromNode": "b000000000000010",
+      "fromSide": "top",
+      "toNode": "b000000000000007",
+      "toSide": "bottom",
+      "toEnd": "arrow",
+      "label": "promueve web"
+    },
+    {
+      "id": "be00000000000010",
+      "fromNode": "b000000000000010",
+      "fromSide": "top",
+      "toNode": "b000000000000008",
+      "toSide": "bottom",
+      "toEnd": "arrow",
+      "label": "promueve web"
+    },
+    {
+      "id": "be0000000000000b",
+      "fromNode": "b000000000000011",
+      "fromSide": "left",
+      "toNode": "b00000000000000c",
+      "toSide": "right",
+      "toEnd": "arrow",
+      "label": "CRUD Development"
+    },
+    {
+      "id": "be00000000000011",
+      "fromNode": "b000000000000014",
+      "fromSide": "right",
+      "toNode": "b00000000000000f",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "acceso privado"
+    },
+    {
+      "id": "be00000000000012",
+      "fromNode": "b000000000000014",
+      "fromSide": "right",
+      "toNode": "b000000000000011",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "label": "cuenta personal"
+    },
+    {
+      "id": "be0000000000000d",
+      "fromNode": "b000000000000001",
+      "fromSide": "right",
+      "toNode": "b000000000000013",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "guía"
+    }
+  ]
+}

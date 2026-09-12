@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "rootCommit": "8a1a1d8eae36744f7c791c1541c86f68769dce20"
+  },
+  "vault": {
+    "notes": [
+      {
+        "path": "Vault/00-inicio/como-usar-el-vault.md",
+        "id": "inicio-como-usar-vault",
+        "title": "Cómo usar el Vault",
+        "type": "guide",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/00-inicio/estado-inicial.md",
+        "id": "inicio-estado-inicial",
+        "title": "Estado inicial del conocimiento",
+        "type": "status",
+        "area": "vault",
+        "status": "verified",
+        "maturity": "seed",
+        "evidence": "operator-recorded"
+      },
+      {
+        "path": "Vault/00-inicio/home.md",
+        "id": "inicio-home",
+        "title": "Home",
+        "type": "index",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/00-inicio/mapa-de-preguntas.md",
+        "id": "inicio-mapa-preguntas",
+        "title": "Mapa de preguntas",
+        "type": "index",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/00-inicio/protocolo-recuperacion-contexto.md",
+        "id": "inicio-recuperacion-contexto",
+        "title": "Protocolo de recuperación de contexto",
+        "type": "guide",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/00-inicio/respuestas-rapidas.md",
+        "id": "inicio-respuestas-rapidas",
+        "title": "Respuestas rápidas",
+        "type": "guide",
+        "area": "vault",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/00-inicio/roadmap-del-vault.md",
+        "id": "inicio-roadmap-vault",
+        "title": "Roadmap de construcción del Vault",
+        "type": "backlog",
+        "area": "backlog",
+        "status": "deferred",
+        "maturity": "seed",
+        "evidence": "planned"
+      },
+      {
+        "path": "Vault/08-gobernanza/fuentes-y-evidencia.md",
+        "id": "gobernanza-evidencia-fuentes",
+        "title": "Política de evidencia y fuentes",
+        "type": "policy",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/08-gobernanza/mantenimiento-del-vault.md",
+        "id": "gobernanza-mantenimiento-vault",
+        "title": "Mantenimiento del Vault",
+        "type": "policy",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/08-gobernanza/metadatos.md",
+        "id": "gobernanza-metadatos",
+        "title": "Esquema de metadatos",
+        "type": "policy",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/adr.md",
+        "id": "plantilla-adr",
+        "title": "Plantilla: ADR",
+        "type": "template",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/capacidad.md",
+        "id": "plantilla-capacidad",
+        "title": "Plantilla: capacidad",
+        "type": "template",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/incidente.md",
+        "id": "plantilla-incidente",
+        "title": "Plantilla: incidente",
+        "type": "template",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/pagina.md",
+        "id": "plantilla-pagina",
+        "title": "Plantilla: página de conocimiento",
+        "type": "template",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/README.md",
+        "id": "plantillas-indice",
+        "title": "Plantillas del Vault",
+        "type": "index",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/99-plantillas/runbook.md",
+        "id": "plantilla-runbook",
+        "title": "Plantilla: runbook operativo",
+        "type": "template",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/diagrams/arquitectura-contexto.md",
+        "id": "diagram-arquitectura-contexto",
+        "title": "Arquitectura y contexto inicial",
+        "type": "diagram",
+        "area": "architecture",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/diagrams/atlas-elevant.md",
+        "id": "diagram-atlas-elevant",
+        "title": "Atlas general de ELEVANT",
+        "type": "diagram",
+        "area": "vault",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/diagrams/leyenda-grafo.md",
+        "id": "diagram-leyenda-grafo",
+        "title": "Leyenda y uso del grafo de conocimiento",
+        "type": "diagram",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "stable",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/diagrams/navegacion-estado.md",
+        "id": "diagram-navegacion-estado",
+        "title": "Mapa de navegación y estado",
+        "type": "diagram",
+        "area": "governance",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/README.md",
+        "id": "vault-readme",
+        "title": "Vault ELEVANT",
+        "type": "index",
+        "area": "vault",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      }
+    ],
+    "canvases": [
+      {
+        "path": "Vault/diagrams/arquitectura-contexto.canvas",
+        "sha256": "2afc2df20ddc598587372ac39c0bcb2b205bb5986cf8a27e887766f34973b69b"
+      },
+      {
+        "path": "Vault/diagrams/atlas-elevant.canvas",
+        "sha256": "cded936358827768e3dc9290f501a83d2251c7b7aa0f1d543bf0dc8c035bd51b"
+      },
+      {
+        "path": "Vault/diagrams/navegacion-estado.canvas",
+        "sha256": "64c478cc8b005897268127218af7f5025f50e802bccc07ec11b9fa5ed5c8e8e0"
+      }
+    ],
+    "bases": [
+      {
+        "path": "Vault/diagrams/atlas-conocimiento.base",
+        "sha256": "7bad1054dee8abecba08e38af2b7e950f7df093129305460fb314a6a37123e5e"
+      }
+    ],
+    "obsidianConfig": [
+      {
+        "path": ".obsidian/app.json",
+        "sha256": "9dfbea15b21f59a0a6bc5b1ba71580a5e8b379f2479220d83637fcb14b7fc5f2"
+      },
+      {
+        "path": ".obsidian/appearance.json",
+        "sha256": "ad4d8ba5c6b8159cf09e6e517e6449b9fa6913e40e9296ab7c2a7ae05b4bd99f"
+      },
+      {
+        "path": ".obsidian/core-plugins.json",
+        "sha256": "67b43c618d1e561121b1db484f70a7f1dd2037da47a3d2efa382dba85e6d7e55"
+      },
+      {
+        "path": ".obsidian/graph.json",
+        "sha256": "b811c0f3946c15d0ad894f3d0b2d116614ee2cd0d491b897f4fa207f6db12c85"
+      },
+      {
+        "path": ".obsidian/templates.json",
+        "sha256": "7bb07e27b73bea788990e1d1358b203c8b4abc1dd5cd79da21e1884883f55557"
+      }
+    ]
+  },
+  "contracts": {
+    "workflows": [
+      {
+        "path": ".github/workflows/api-client-ci.yml",
+        "sha256": "9a05842f1fc18747ad8275b41626924ee83a72ce53b7e5e7f07c6c3f33b3c623"
+      },
+      {
+        "path": ".github/workflows/backend-ci.yml",
+        "sha256": "548d80ef2a191a21340a4549c051362586d107c0e845fc3aeeff351a96af78e4"
+      },
+      {
+        "path": ".github/workflows/ops-config-ci.yml",
+        "sha256": "08dc9347db95986f18bf3ad551d8b96c54d2b462c86f199fb58d11400c4a9612"
+      },
+      {
+        "path": ".github/workflows/vault-ci.yml",
+        "sha256": "e02870fafe6bc160c6bb189117c415652f04e66a26e0e549cb231c2cf3d71a3d"
+      },
+      {
+        "path": ".github/workflows/web-ci.yml",
+        "sha256": "64a8dc1c2e08668ef1d9ecde8c50b9bbdc29b80f8be191f3914e8234c564baa3"
+      }
+    ],
+    "openapi": [
+      {
+        "path": "packages/api-client/openapi/elevant-v1.json",
+        "sha256": "b5ab6d3b40608b824a669e3bbe6731d35ba6faa3f3ccaf198c622a23154cd56e",
+        "title": "Elevant API",
+        "version": "v1"
+      },
+      {
+        "path": "packages/api-client/openapi/source.json",
+        "sha256": "26bf5bd76596a2f461dcbdafcac2a20c0203a90a15e2b3362398048b102ea5c2",
+        "title": null,
+        "version": null
+      }
+    ],
+    "migrations": [
+      {
+        "id": "20260817200402",
+        "name": "V1_01_Platform",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817200402_V1_01_Platform.cs",
+        "sha256": "bcf985d1a45ee060b059a80022f60cfc42af174207141837d5698a9c3ec882f2"
+      },
+      {
+        "id": "20260817201128",
+        "name": "V1_02_IdentityReference",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817201128_V1_02_IdentityReference.cs",
+        "sha256": "22032124bc969c765ddeeaa962db260319f01fb62fc4bdef774cceb29a34ddf5"
+      },
+      {
+        "id": "20260817201608",
+        "name": "V1_03_WorkforceCommercial",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817201608_V1_03_WorkforceCommercial.cs",
+        "sha256": "4c63178bb2e5269bc0fd0c264b204775d3b51791da5d1701c7e75a08bf425e7d"
+      },
+      {
+        "id": "20260817202135",
+        "name": "V1_04_Operations",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817202135_V1_04_Operations.cs",
+        "sha256": "1ef202b3314b864c0d210714e8163834fccae9ee20a4140db0a3e9c40ddd92fe"
+      },
+      {
+        "id": "20260817202420",
+        "name": "V1_05_MobileAudit",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817202420_V1_05_MobileAudit.cs",
+        "sha256": "384d938786888fc32bbfa61cd34dd491e03ecc33613a8c39bd0fcf12304b4ff2"
+      }
+    ],
+    "manifestContracts": [
+      {
+        "path": "backend/scripts/deployment/api_release_manifest.py",
+        "sha256": "3ba687b63f0200931a12479743f2d8e21097ff32a528dadb9c808668cbbeacf1"
+      },
+      {
+        "path": "database/DevelopmentDB/scripts/deployment/database_release_manifest.py",
+        "sha256": "d4ff3fe975262862d004ff1fb7d3703e2133df47003e4ce9965c8eaf6c3be6ca"
+      },
+      {
+        "path": "frontend/scripts/deployment/web_release_manifest.py",
+        "sha256": "502dd02a51f41b4aa571d3cac3293d8865de5bdf60917df4e3601c0900c4210c"
+      },
+      {
+        "path": "ops/dokploy/api-cd/manifest-tool.mjs",
+        "sha256": "3f200558b195676d53343ea1188957d006184a4901930378af252bfc114e7477"
+      },
+      {
+        "path": "ops/dokploy/database-cd/manifest-tool.mjs",
+        "sha256": "e988d24aab89f9b3981a16b2e3c9896124ea084c507a5f2cd2d6f9d9846fe5d9"
+      },
+      {
+        "path": "ops/dokploy/web-cd/manifest-tool.mjs",
+        "sha256": "61496091a970fdea695473a9dc928f9bc42fefa36c7f54ea5516e43bff7c6fa4"
+      }
+    ]
+  }
+}

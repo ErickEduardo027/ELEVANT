@@ -8,6 +8,10 @@
   },
   "scripts": {
     "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repository/check-secrets.ps1",
-    "tree": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repository/show-tree.ps1"
+    "tree": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/repository/show-tree.ps1",
+    "vault:generate": "node scripts/vault/generate.mjs",
+    "vault:check": "node scripts/vault/check.mjs",
+    "vault:test": "node --test scripts/vault/tests/vault-tools.test.mjs",
+    "vault:ci": "npm run vault:test && npm run vault:check"
   }
 }

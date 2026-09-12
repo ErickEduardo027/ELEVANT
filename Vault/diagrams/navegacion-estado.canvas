@@ -1,0 +1,246 @@
+{
+  "nodes": [
+    {
+      "id": "c000000000000001",
+      "type": "text",
+      "text": "# Navegación y estado\n\nEncuentra una nota, interpreta su vigencia y termina en evidencia.",
+      "x": -350,
+      "y": -780,
+      "width": 700,
+      "height": 170,
+      "color": "6"
+    },
+    {
+      "id": "c000000000000002",
+      "type": "file",
+      "file": "Vault/00-inicio/home.md",
+      "x": -170,
+      "y": -500,
+      "width": 340,
+      "height": 230,
+      "color": "5"
+    },
+    {
+      "id": "c000000000000003",
+      "type": "file",
+      "file": "Vault/00-inicio/respuestas-rapidas.md",
+      "x": -760,
+      "y": -100,
+      "width": 340,
+      "height": 240,
+      "color": "4"
+    },
+    {
+      "id": "c000000000000004",
+      "type": "file",
+      "file": "Vault/00-inicio/mapa-de-preguntas.md",
+      "x": -170,
+      "y": -100,
+      "width": 340,
+      "height": 240,
+      "color": "4"
+    },
+    {
+      "id": "c000000000000005",
+      "type": "file",
+      "file": "Vault/00-inicio/estado-inicial.md",
+      "x": 420,
+      "y": -100,
+      "width": 340,
+      "height": 240,
+      "color": "3"
+    },
+    {
+      "id": "c000000000000006",
+      "type": "file",
+      "file": "Vault/08-gobernanza/metadatos.md",
+      "x": -760,
+      "y": 330,
+      "width": 340,
+      "height": 240,
+      "color": "2"
+    },
+    {
+      "id": "c000000000000007",
+      "type": "file",
+      "file": "Vault/08-gobernanza/fuentes-y-evidencia.md",
+      "x": -170,
+      "y": 330,
+      "width": 340,
+      "height": 240,
+      "color": "2"
+    },
+    {
+      "id": "c000000000000008",
+      "type": "file",
+      "file": "Vault/08-gobernanza/mantenimiento-del-vault.md",
+      "x": 420,
+      "y": 330,
+      "width": 340,
+      "height": 240,
+      "color": "2"
+    },
+    {
+      "id": "c000000000000009",
+      "type": "text",
+      "text": "## Lectura fail-closed\n\n**verified/documented** explican vigencia.\n\n**draft/deferred** declaran que algo no debe asumirse implementado.\n\n**deprecated/historical** conservan transición o memoria, no estado actual.",
+      "x": -580,
+      "y": 760,
+      "width": 480,
+      "height": 300,
+      "color": "1"
+    },
+    {
+      "id": "c00000000000000a",
+      "type": "text",
+      "text": "## Evidencia\n\n**repo-verified**: fuente versionada.\n\n**operator-recorded**: evidencia operativa saneada.\n\n**planned/unknown**: no afirmar como capacidad presente.",
+      "x": 100,
+      "y": 760,
+      "width": 480,
+      "height": 280,
+      "color": "3"
+    },
+    {
+      "id": "c00000000000000b",
+      "type": "file",
+      "file": "Vault/99-plantillas/README.md",
+      "x": -820,
+      "y": 1220,
+      "width": 360,
+      "height": 220
+    },
+    {
+      "id": "c00000000000000c",
+      "type": "file",
+      "file": "Vault/diagrams/navegacion-estado.md",
+      "x": -180,
+      "y": 1220,
+      "width": 360,
+      "height": 220
+    },
+    {
+      "id": "c00000000000000d",
+      "type": "file",
+      "file": "Vault/diagrams/atlas-conocimiento.base",
+      "x": 460,
+      "y": 1220,
+      "width": 360,
+      "height": 220
+    }
+  ],
+  "edges": [
+    {
+      "id": "ce00000000000001",
+      "fromNode": "c000000000000001",
+      "fromSide": "bottom",
+      "toNode": "c000000000000002",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ce00000000000002",
+      "fromNode": "c000000000000002",
+      "fromSide": "bottom",
+      "toNode": "c000000000000003",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "respuesta directa"
+    },
+    {
+      "id": "ce00000000000003",
+      "fromNode": "c000000000000002",
+      "fromSide": "bottom",
+      "toNode": "c000000000000004",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "buscar por pregunta"
+    },
+    {
+      "id": "ce00000000000004",
+      "fromNode": "c000000000000002",
+      "fromSide": "bottom",
+      "toNode": "c000000000000005",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "comprobar hoy"
+    },
+    {
+      "id": "ce00000000000005",
+      "fromNode": "c000000000000003",
+      "fromSide": "bottom",
+      "toNode": "c000000000000006",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ce00000000000006",
+      "fromNode": "c000000000000004",
+      "fromSide": "bottom",
+      "toNode": "c000000000000007",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ce00000000000007",
+      "fromNode": "c000000000000005",
+      "fromSide": "bottom",
+      "toNode": "c000000000000008",
+      "toSide": "top",
+      "toEnd": "arrow"
+    },
+    {
+      "id": "ce00000000000008",
+      "fromNode": "c000000000000006",
+      "fromSide": "bottom",
+      "toNode": "c000000000000009",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "interpretar status"
+    },
+    {
+      "id": "ce00000000000009",
+      "fromNode": "c000000000000007",
+      "fromSide": "bottom",
+      "toNode": "c00000000000000a",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "comprobar sources"
+    },
+    {
+      "id": "ce0000000000000a",
+      "fromNode": "c000000000000008",
+      "fromSide": "bottom",
+      "toNode": "c00000000000000a",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "mantener vigencia"
+    },
+    {
+      "id": "ce0000000000000b",
+      "fromNode": "c000000000000009",
+      "fromSide": "bottom",
+      "toNode": "c00000000000000b",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "crear correctamente"
+    },
+    {
+      "id": "ce0000000000000c",
+      "fromNode": "c00000000000000a",
+      "fromSide": "bottom",
+      "toNode": "c00000000000000c",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "leer la guía"
+    },
+    {
+      "id": "ce0000000000000d",
+      "fromNode": "c00000000000000a",
+      "fromSide": "bottom",
+      "toNode": "c00000000000000d",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "filtrar"
+    }
+  ]
+}

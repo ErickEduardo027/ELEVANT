@@ -14,6 +14,19 @@ artifacts/
 !.vscode/extensions.json
 !.vscode/settings.json
 
+# Obsidian: se comparte la configuracion portable, no el estado personal.
+.trash/
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/community-plugins.json
+.obsidian/hotkeys.json
+.obsidian/types.json
+.obsidian/bookmarks.json
+.obsidian/cache/
+.obsidian/plugins/
+.obsidian/themes/
+.obsidian/snippets/
+
 # Node, web and mobile
 node_modules/
 .pnpm-store/

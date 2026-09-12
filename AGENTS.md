@@ -22,6 +22,27 @@ The clients never connect to SQL Server or external aviation providers directly.
 - `docs/architecture/database-v1.md` records the decisions derived from the current prototypes.
 - Data in `backend-prototipo/data`, browser storage and frontend fixtures is disposable prototype data. Never promote it to Production or copy credentials/PII from it into a seed.
 
+## Living knowledge vault
+
+- `Vault/README.md` is the team entry point for product, architecture,
+  development, operations, history and roadmap context. Read its relevant map
+  before changing a product boundary.
+- Code and tests, EF migrations, compiled OpenAPI, CI workflows, reviewed
+  operations templates and accepted ADRs remain the technical sources of
+  truth in that order. The Vault explains and links them; it does not override
+  executable evidence.
+- A change to durable behavior, contracts, schema, deployment, security or
+  team workflow updates the corresponding Vault note in the same pull request.
+  If no update is needed, explain why in the pull request.
+- Update `last_verified` and `verified_commit` only after checking every listed
+  source. Never present prototype, historical, planned or deferred behavior as
+  current.
+- Do not hand-edit `Vault/_generated`. Regenerate it with the repository-owned
+  command and run the Vault checks before handoff.
+- Vault content uses standard Markdown links, Mermaid and native Obsidian
+  artifacts without community-plugin dependencies. It never contains secrets,
+  PII or real private infrastructure identifiers.
+
 ## Change discipline
 
 - Preserve unrelated work in a dirty tree.
