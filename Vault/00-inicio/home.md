@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "a4df1d8114430405dd0edda9ae3b008ae94798c4"
 sources:
   - AGENTS.md
   - README.md
@@ -21,6 +21,7 @@ sources:
   - docs/workflows/release-workflow.md
   - .github/BRANCH_PROTECTION.md
   - Vault/README.md
+  - Vault/00-inicio/roadmap-del-vault.md
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
@@ -67,7 +68,7 @@ flowchart LR
 - Tengo una pregunta concreta: [Respuestas rápidas](respuestas-rapidas.md).
 - No sé en qué área buscar: [Mapa de preguntas](mapa-de-preguntas.md).
 - Quiero entender el estado actual: [Estado inicial](estado-inicial.md).
-- Quiero saber qué documentación falta: [Roadmap del Vault](roadmap-del-vault.md).
+- Quiero distinguir las etapas documentales cerradas de las brechas abiertas: [Roadmap del Vault](roadmap-del-vault.md) y [Backlog transversal](../12-backlog/README.md).
 - Perdí el contexto o cambié de colaborador/IA: [Protocolo de recuperación](protocolo-recuperacion-contexto.md).
 - Quiero editar una nota: [Cómo usar el Vault](como-usar-el-vault.md).
 - Quiero justificar una afirmación: [Política de evidencia y fuentes](../08-gobernanza/fuentes-y-evidencia.md).

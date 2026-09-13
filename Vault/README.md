@@ -8,12 +8,13 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "a4df1d8114430405dd0edda9ae3b008ae94798c4"
 sources:
   - AGENTS.md
   - docs/README.md
   - .obsidian/app.json
   - Vault/00-inicio/home.md
+  - Vault/00-inicio/roadmap-del-vault.md
   - Vault/01-historia/README.md
   - Vault/02-producto/README.md
   - Vault/03-dominio/README.md
@@ -44,7 +45,7 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 3. Usa el [Mapa de preguntas](00-inicio/mapa-de-preguntas.md) para encontrar la fuente correcta.
 4. Lee [Cómo usar el Vault](00-inicio/como-usar-el-vault.md) antes de editarlo.
 5. Revisa el [Estado inicial del conocimiento](00-inicio/estado-inicial.md) para distinguir lo operativo de lo pendiente.
-6. Consulta el [Roadmap del Vault](00-inicio/roadmap-del-vault.md) para conocer las siguientes entregas y sus límites.
+6. Consulta el [Roadmap del Vault](00-inicio/roadmap-del-vault.md) para conocer el cierre de las cinco etapas iniciales y los límites que siguen abiertos.
 7. Si retomas el proyecto sin historial de conversación, sigue el [Protocolo de recuperación de contexto](00-inicio/protocolo-recuperacion-contexto.md).
 
 ## Mapa del conocimiento
