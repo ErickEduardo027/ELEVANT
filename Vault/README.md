@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -23,6 +23,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
 tags:
   - vault
   - onboarding
@@ -60,10 +62,10 @@ El Vault explica qué existe, por qué existe, cómo se cambia y cómo se opera.
 | Seguridad | ¿Cuáles son las fronteras de confianza y acceso? | [Índice de Seguridad](10-seguridad/README.md) |
 | Gobernanza | ¿Cómo sabemos que una afirmación es confiable? | [Política de evidencia](08-gobernanza/fuentes-y-evidencia.md) |
 | Historia | ¿Cómo llegó el proyecto al estado actual? | [Índice de Historia](01-historia/README.md) |
-| Referencia | ¿Dónde están contratos, inventarios y glosarios? | Índice de Referencia |
-| Backlog | ¿Qué está diferido y qué falta decidir? | Índice de Backlog |
+| Referencia | ¿Dónde están contratos, inventarios y glosarios? | [Índice de Referencia](11-referencia/README.md) |
+| Backlog | ¿Qué está diferido y qué falta decidir? | [Índice de Backlog](12-backlog/README.md) |
 
-Los índices que todavía no tengan enlace se incorporan por entregas. Producto, Dominio, Historia, Arquitectura, Aplicaciones, Desarrollo, CI/CD, Operaciones y Seguridad ya tienen mapas; una ausencia restante se registra como pendiente y nunca se rellena con una suposición. El [lienzo de entrega y operación](diagrams/entrega-operaciones-seguridad.md) conecta los tres planos sin confundir un diseño con un despliegue vivo.
+Las trece áreas del mapa ya tienen una entrada navegable. Eso no significa que toda capacidad esté implementada ni que todo dato histórico sea conocido: las ausencias quedan explícitas en el [Backlog transversal](12-backlog/README.md). El [lienzo de entrega y operación](diagrams/entrega-operaciones-seguridad.md) conecta tres planos sin confundir un diseño con un despliegue vivo.
 
 ## Relación con el repositorio
 
@@ -97,6 +99,8 @@ Lee, en este orden:
 - [Mantenimiento del Vault](08-gobernanza/mantenimiento-del-vault.md)
 - [Roadmap de construcción](00-inicio/roadmap-del-vault.md)
 - [Protocolo de recuperación de contexto](00-inicio/protocolo-recuperacion-contexto.md)
+- [Índice de fuentes y reconciliación de `docs/`](11-referencia/README.md)
+- [Backlog transversal](12-backlog/README.md)
 - [Leyenda del grafo](diagrams/leyenda-grafo.md)
 - [Plantillas](99-plantillas/README.md)
 

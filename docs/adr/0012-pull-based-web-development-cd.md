@@ -3,9 +3,11 @@
 ## Estado
 
 Accepted — 2026-09-05. Define la entrega de AVIAM Web y Public Web en
-Development. La instalación inicial y el rollout del VPS siguen siendo
-checkpoints manuales posteriores; este ADR no declara que las webs ya estén
-desplegadas. Production y Mobile Agent quedan fuera de alcance.
+Development. En la fecha de la decisión, la instalación inicial y el rollout
+del VPS eran checkpoints manuales posteriores; este ADR por sí solo no prueba
+un despliegue. La [aceptación operativa posterior](../deployment/dokploy-configuration.md)
+registra ambas webs y su CD en Development. Production y Mobile Agent quedan
+fuera de alcance.
 
 ## Contexto
 
@@ -71,6 +73,10 @@ ocultar esa limitación ni justificar desplegar `backend-prototipo`.
   controlador nunca ejecuta `docker compose down`, elimina redes o toca SQL.
 - Mobile Agent se prueba en emulador/tablet y se distribuye como APK/EAS por su
   propio canal; no se instala como servicio del VPS.
+
+La última viñeta conserva una **intención de arquitectura**: el build firmado y
+la distribución APK no son un carril activo, como detalla el
+[diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md).
 
 ## Consecuencias
 

@@ -1,6 +1,10 @@
 # Códigos de estado HTTP
 
-Los endpoints documentan los códigos que realmente pueden producir. Esta tabla establece el uso general, no obliga a devolver todos en cada operación.
+Los endpoints deben documentar los códigos que realmente pueden producir. La
+tabla siguiente es una pauta para operaciones futuras, no una lista de respuestas
+que la API ya publique. Hoy el único endpoint versionado, `GetSystemPing`,
+declara `200`, `429` y `500` en OpenAPI; health/readiness son endpoints de
+plataforma fuera de ese documento.
 
 | Código | Uso |
 | --- | --- |
@@ -19,4 +23,3 @@ Los endpoints documentan los códigos que realmente pueden producir. Esta tabla 
 | 502/503/504 | Dependencia o servicio no disponible, según la capa que detecta el fallo. |
 
 Una colección vacía exitosa devuelve 200 con colección vacía, no 404. Un error de validación no devuelve stack trace. El código no se elige para facilitar una pantalla concreta: refleja el resultado HTTP y el cliente traduce esa semántica a UX.
-

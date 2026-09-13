@@ -2,6 +2,8 @@
 
 La documentación vive con el código. Cuando cambia un contrato técnico u operativo, el mismo PR actualiza la guía correspondiente.
 
+Para orientarse por pregunta, evidencia y estado, usar el [Vault ELEVANT](../Vault/README.md). El [índice de fuentes](../Vault/11-referencia/README.md) enlaza contratos ejecutables y la [reconciliación documental](../Vault/11-referencia/reconciliacion-docs.md) explica discrepancias históricas corregidas. Una guía de `docs/` no sustituye al código, migraciones, OpenAPI o workflow vigente.
+
 ## Lectura inicial
 
 1. `AGENTS.md` raíz y el más cercano al árbol que se modificará.
@@ -22,6 +24,9 @@ La documentación vive con el código. Cuando cambia un contrato técnico u oper
 - `security`: acceso SQL, secretos y línea base.
 - `onboarding`: recorridos por rol.
 - `adr`: decisiones aceptadas/propuestas.
+- `superpowers/plans`: planes históricos; conservar para contexto, no ejecutar como contrato vigente.
+
+Las brechas funcionales y operativas todavía abiertas se consultan en el [Backlog transversal](../Vault/12-backlog/README.md). En particular, la entrega APK del Mobile Agent, Production y las alertas externas no se vuelven capacidades actuales porque estén documentadas.
 
 ## Convenciones
 

@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - README.md
@@ -30,6 +30,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
 tags:
   - inicio
   - mapa
@@ -84,6 +86,8 @@ flowchart LR
 - [CI/CD y entrega](../07-entrega/README.md): workflows activos, artefactos certificados, gates y diseño diferido de APK móvil.
 - [Operaciones](../09-operaciones/README.md): topología privada, schedules, backups, observabilidad y recuperación de Development.
 - [Seguridad](../10-seguridad/README.md): acceso, secretos, permisos efectivos y controles pendientes.
+- [Referencia](../11-referencia/README.md): rutas de fuentes primarias y reconciliación de `docs/`.
+- [Backlog](../12-backlog/README.md): decisiones abiertas, dependencias y pruebas de cierre.
 - [Lienzo Entrega · Operaciones · Seguridad](../diagrams/entrega-operaciones-seguridad.md): flujo entre certificación, promoción, observación y respuesta.
 
 ## Explora visualmente
@@ -155,6 +159,8 @@ Este radar es una orientación, no evidencia operativa en tiempo real. La fotogr
 - [Plantilla de runbook](../99-plantillas/runbook.md)
 - [Plantilla de capacidad](../99-plantillas/capacidad.md)
 - [Plantilla de incidente](../99-plantillas/incidente.md)
+- [Auditoría documental](../11-referencia/reconciliacion-docs.md)
+- [Pendientes transversales](../12-backlog/pendientes-transversales.md)
 
 ## Semáforo de confianza
 

@@ -1,23 +1,25 @@
 # Arquitectura general
 
-Elevant comienza como un monolito modular en .NET 10. Un único backend desplegable concentra reglas, persistencia e integraciones, pero Clean Architecture mantiene fronteras explícitas entre Domain, Application, Contracts, Infrastructure y Api. Esta forma reduce complejidad operativa temprana sin impedir extraer un módulo cuando exista una necesidad medida.
+ELEVANT organiza su único backend desplegable como monolito modular en .NET 10. Clean Architecture mantiene fronteras explícitas entre Domain, Application, Contracts, Infrastructure, Persistence y Api; `Elevant.DatabaseTool` es una herramienta one-shot separada del proceso HTTP. Esta forma reduce complejidad operativa temprana sin impedir extraer un módulo cuando exista una necesidad medida.
 
 ## Componentes
 
-1. **Web** y **Mobile Agent** son clientes no confiables. Consumen HTTPS y SignalR, y no poseen credenciales de infraestructura.
+1. **Private Web**, **Public Web** y **Mobile Agent** son clientes no confiables. Su frontera prevista es HTTPS y, cuando haya eventos implementados, SignalR; no poseen credenciales de infraestructura.
 2. **Elevant.Api** es el host HTTP. Compone dependencias, aplica políticas transversales y publica endpoints, health checks y hubs.
-3. **Elevant.Application** contiene casos de uso y puertos requeridos por estos casos.
-4. **Elevant.Domain** contiene invariantes, entidades y eventos de dominio sin dependencias de infraestructura.
+3. **Elevant.Application** define puertos y alojará casos de uso; aún no contiene handlers de negocio.
+4. **Elevant.Domain** contiene entidades y bases para invariantes/eventos sin dependencias de infraestructura; todavía no dispone de comportamiento completo de agregado.
 5. **Elevant.Contracts** contiene contratos públicos estables de la API; no expone entidades de persistencia.
-6. **Elevant.Infrastructure** implementa persistencia e integraciones externas.
-7. **SQL Server 2022** almacena el estado del backend y solo es accesible desde servicios autorizados.
-8. **FlightAware** representa una integración futura detrás de un puerto de Application; no es consumido por clientes.
+6. **Elevant.Infrastructure** prepara adaptadores externos no persistentes; FlightAware aún no tiene adaptador funcional.
+7. **Elevant.Persistence** posee EF Core, SQL Server, Identity y cinco migraciones v1 bajo `database/DevelopmentDB`.
+8. **Elevant.DatabaseTool** verifica destinos y ejecuta el seed sintético explícito de Development; la API no migra ni siembra al arrancar.
+9. **SQL Server 2022** almacena el estado del backend y solo es accesible desde servicios autorizados; Development contempla acceso humano privado y controlado para datos de prueba.
+10. **FlightAware** representa una integración futura detrás de un puerto de Application; no es consumido por clientes.
 
 ## Flujo típico
 
-Un cliente envía una solicitud versionada. Api valida el transporte y delega un caso de uso a Application. El caso aplica reglas en Domain y solicita persistencia o información externa mediante abstracciones. Infrastructure implementa esos puertos. La respuesta se proyecta a un contrato público y no devuelve entidades internas.
+El flujo objetivo es: un cliente envía una solicitud versionada; Api valida el transporte y delega un caso de uso a Application; éste aplica reglas en Domain y solicita persistencia o información externa mediante abstracciones; Persistence o Infrastructure implementan los puertos respectivos. La respuesta se proyecta a un contrato público y no devuelve entidades internas. Hoy sólo existe la operación versionada de diagnóstico `GetSystemPing`; no hay handlers de negocio que completen ese flujo.
 
-SignalR complementa este flujo para notificaciones servidor-cliente. Un mensaje en tiempo real indica que el cliente debe actualizar su vista o consultar el estado canónico por REST; no constituye por sí solo confirmación de una transacción.
+SignalR está mapeado como shell técnico sin eventos de negocio. Cuando se implemente, un mensaje en tiempo real indicará al cliente que actualice su vista o consulte el estado canónico por REST; no constituirá por sí solo confirmación de una transacción.
 
 ## Principios
 
@@ -29,4 +31,4 @@ SignalR complementa este flujo para notificaciones servidor-cliente. Un mensaje 
 - las operaciones peligrosas, como migrar Production, requieren una acción explícita;
 - observabilidad no revela tokens, cadenas de conexión ni datos personales.
 
-El diseño actual no incluye autenticación, entidades de negocio, migraciones iniciales ni tráfico real a FlightAware. Esos elementos se agregan solo con requisitos y criterios de aceptación concretos.
+El modelo Domain y la cadena de migraciones v1 ya existen. En cambio, autenticación y autorización end-to-end, endpoints/handlers de negocio y tráfico real a FlightAware siguen pendientes. La [nota vigente de backend](../../Vault/04-arquitectura/backend-dotnet-capas-y-dependencias.md) distingue cada capa implementada de su intención futura.

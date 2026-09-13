@@ -5,7 +5,11 @@ Un secreto es cualquier valor que permite acceso o firma: contraseñas, cadenas 
 ## Por ambiente
 
 - Local: user-secrets de .NET o archivo local ignorado y protegido.
-- Development: gestor de secretos/variables protegidas de la plataforma.
+- Development: variables/archivos de entorno protegidos, root-only en el VPS y
+  separados por recurso; las imágenes, bundles OCI y Compose revisados siguen
+  libres de valores secretos. Consultar el
+  [runbook de Dokploy](../deployment/dokploy-configuration.md) para el límite
+  operativo actual.
 - Production: secretos de plataforma con acceso mínimo y auditoría.
 - CI: secretos del proveedor, limitados a jobs y ramas requeridos.
 

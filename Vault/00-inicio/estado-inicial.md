@@ -8,7 +8,7 @@ maturity: seed
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - .github/BRANCH_PROTECTION.md
@@ -34,6 +34,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
 tags:
   - estado
   - development
@@ -106,6 +108,8 @@ El diagrama omite identificadores, IP y dominios deliberadamente. Los detalles o
 - Workflows, artefactos, fallos y diseño APK diferido: [CI/CD y entrega](../07-entrega/README.md).
 - Topología, schedules, backups, observabilidad y recuperación: [Operaciones](../09-operaciones/README.md).
 - Perímetro, identidades, secretos y brechas: [Seguridad](../10-seguridad/README.md).
+- Fuentes primarias y guías corregidas: [Referencia](../11-referencia/README.md).
+- Decisiones y pruebas todavía pendientes: [Backlog transversal](../12-backlog/README.md).
 - Límites de producto y reglas para agentes: [`AGENTS.md`](../../AGENTS.md).
 - Arquitectura y dependencias: [`docs/architecture`](../../docs/architecture/system-overview.md).
 - Decisiones aceptadas: [`docs/adr`](../../docs/adr/0001-use-monorepo.md).

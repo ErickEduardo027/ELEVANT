@@ -10,13 +10,15 @@ Cada operación pública debe declarar:
 
 - una ruta y versión explícitas;
 - un `operationId` único y estable;
-- schemas de request, respuesta y Problem Details;
+- schemas de request cuando aplique, respuesta y Problem Details relevantes;
 - códigos de éxito y error relevantes con su tipo de contenido exacto;
 - nulabilidad y miembros `required` coherentes con la serialización real;
 - comentarios útiles sin detalles internos, secretos ni datos personales.
 
-El documento mantiene el esquema Bearer para autenticación. La presencia del
-esquema no autoriza a incluir tokens ni ejemplos de credenciales.
+El documento mantiene un esquema Bearer reservado para autenticación futura.
+Su presencia no significa que el host ya tenga un handler JWT ni que el ping
+requiera autenticación. Tampoco autoriza a incluir tokens o ejemplos de
+credenciales.
 
 ## Snapshot canónico para TypeScript
 

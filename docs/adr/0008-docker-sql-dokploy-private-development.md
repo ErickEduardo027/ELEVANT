@@ -7,6 +7,11 @@ fue modificado únicamente para el acceso humano controlado por
 [ADR-0013](0013-development-ssms-data-access.md). Production queda fuera de
 alcance.
 
+La frase «Mobile se distribuye como APK» en la decisión expresa la ruta de
+entrega prevista en 2026-08-17, no una APK ni un pipeline hoy activos. El
+[estado actual de Mobile](../../Vault/07-entrega/mobile-apk-ci-cd.md) sigue
+diferido.
+
 ## Contexto
 
 ELEVANT necesita SQL Server 2022, pero Dokploy no ofrece MSSQL como base administrada. El KVM 2 alojará inicialmente base, API y las dos webs; Mobile será nativo. Aún no existe dominio propio y no se debe exponer SQL/panel/ambiente de pruebas a Internet.

@@ -1,7 +1,12 @@
 # Rollback de despliegue
 
 Este procedimiento se completa con datos específicos de cada liberación. No
-autoriza ejecutar cambios en Production sin la aprobación de Erick.
+autoriza ejecutar cambios en Production sin una aprobación separada. Para
+Development, los controladores DB, API y Web conservan estado, locks y una
+baseline certificada; este resumen no sustituye sus runbooks
+([DB](../../ops/dokploy/database-cd/README.md),
+[API](../../ops/dokploy/api-cd/README.md),
+[Web](../../ops/dokploy/web-cd/README.md)).
 
 El bootstrap del VPS, firewall, Tailscale y Traefik tiene checkpoints propios en
 [`dokploy-configuration.md`](dokploy-configuration.md). Su rollback temporizado se
@@ -10,23 +15,33 @@ reglas de host o volúmenes SQL.
 
 ## Antes del despliegue
 
-- Registrar la imagen o digest anterior y la nueva.
+- Registrar los digests, manifiestos y hashes de Compose de la baseline anterior
+  y del candidato, sin copiar secretos.
 - Confirmar backup recuperable cuando exista cambio de datos.
 - Clasificar la migración como compatible hacia atrás o irreversible.
 - Definir señales de aborto: health, errores, latencia y validaciones funcionales.
 
 ## Aplicación
 
-Si el esquema sigue siendo compatible, detener la promoción y volver a desplegar la
-imagen anterior mediante Dokploy. Verificar `/health`, `/health/ready`, ping, logs y
-un smoke test. No borrar el artefacto fallido hasta conservar evidencia sanitizada.
+Si el esquema sigue siendo compatible, aislar solo el perfil afectado y comprobar
+el resultado del controlador. Una promoción API o Web que falla después de
+iniciar el despliegue restaura el **par certificado anterior de imagen y
+Compose/hash**, y repite el health y smoke propios del servicio. No basta con
+seleccionar manualmente una etiqueta o imagen anterior en Dokploy: se perdería
+la verificación del Compose y del estado aceptado. Si el rollback falla, el
+perfil queda pausado; el operador debe diagnosticarlo según su runbook antes de
+reanudar o reintentar. No ejecutar `docker compose down`, eliminar redes ni
+recrear SQL para revertir una API o una web. Conservar evidencia saneada del
+artefacto fallido y verificar que los demás workloads no cambiaron.
 
 ## Base de datos
 
-No ejecutar automáticamente una migración descendente. Si el cambio no es
-compatible, detener escrituras afectadas y aplicar el procedimiento revisado para
-esa migración. Restaurar un backup es la última medida y exige validar pérdida de
-datos respecto del RPO acordado.
+Una migración DB promovida no se revierte automáticamente cuando falla una API
+posterior. No ejecutar migraciones descendentes ni restaurar SQL por un rollback
+de aplicación. Si el cambio de esquema no es compatible, detener escrituras
+afectadas y aprobar un procedimiento específico para esa migración. Restaurar un
+backup es la última medida y exige validar pérdida de datos respecto del RPO
+acordado; nunca se hace con `docker compose down` ni borrando volúmenes.
 
 ## Cierre
 

@@ -7,7 +7,10 @@ Elevant reserva SignalR para notificaciones servidor-cliente y actualizaciones o
 - `/hubs/operations`: cambios operativos relevantes para pantallas activas.
 - `/hubs/notifications`: avisos dirigidos a usuarios o roles cuando exista autenticación.
 
-Los hubs pueden existir como shell técnico sin métodos de negocio. Ningún cliente debe asumir eventos hasta que su nombre, payload, autorización y compatibilidad estén documentados.
+Ambos hubs están mapeados como shells técnicos sin métodos ni eventos de
+negocio. No tienen autenticación o autorización de handshake efectiva. Ningún
+cliente debe asumir eventos hasta que su nombre, payload, autorización y
+compatibilidad estén implementados y documentados.
 
 ## Semántica de entrega
 
@@ -16,4 +19,3 @@ La conexión puede perder mensajes, reconectarse o recibir duplicados. Por eso c
 ## Seguridad y escala
 
 Antes de enviar datos reales se implementan autenticación del handshake, autorización por grupo, límites de payload, validación de origen y revocación. Al escalar a varias réplicas se decide un backplane o servicio administrado compatible; no se presupone afinidad de sesión como solución permanente.
-

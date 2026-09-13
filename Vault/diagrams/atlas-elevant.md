@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - README.md
@@ -23,6 +23,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
   - Vault/diagrams/atlas-elevant.canvas
   - Vault/diagrams/producto-dominio-historia.md
   - Vault/diagrams/arquitectura-aplicaciones-desarrollo.md
@@ -53,6 +55,8 @@ flowchart TB
     H --> O[CI/CD y operaciones]
     H --> G[Seguridad y gobernanza]
     H --> E[Estado, historia y backlog]
+    H --> REF[Referencia y fuentes]
+    H --> BACK[Pendientes transversales]
 
     P --> WEB[Private Web · Public Web]
     P --> MOB[Mobile Agent]
@@ -75,6 +79,8 @@ flowchart TB
     TRUST --> API
     TRUST --> DB
     E --> CHECK{¿Está vigente y demostrado?}
+    REF --> SOURCE
+    BACK --> CHECK
     CHECK -->|Sí| SOURCE[Fuente versionada u operator-recorded]
     CHECK -->|No| LABEL[Marcar draft, deferred o unknown]
 
@@ -86,6 +92,8 @@ flowchart TB
     class WEB,MOB,API,DB,CONTRACT system;
     class RELEASE,TRUST,SOURCE control;
     class CHECK,LABEL caution;
+    class BACK caution;
+    class REF control;
 ```
 
 ## Cómo leerlo
@@ -109,5 +117,7 @@ La [estructura real del repositorio](../../docs/architecture/repository-structur
 - [CI/CD y entrega](../07-entrega/README.md)
 - [Operaciones](../09-operaciones/README.md)
 - [Seguridad](../10-seguridad/README.md)
+- [Referencia](../11-referencia/README.md)
+- [Backlog transversal](../12-backlog/README.md)
 
-Las áreas de Referencia y Backlog transversal se reconcilian en la etapa final según el [Roadmap](../00-inicio/roadmap-del-vault.md). El diseño APK permanece diferido aunque su explicación ya sea navegable.
+Referencia señala las fuentes primarias y la [reconciliación de `docs/`](../11-referencia/reconciliacion-docs.md); Backlog guarda las decisiones y pruebas pendientes. El diseño APK permanece diferido aunque su explicación ya sea navegable.

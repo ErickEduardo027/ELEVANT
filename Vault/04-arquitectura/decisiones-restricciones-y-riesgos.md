@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - docs/adr/0001-use-monorepo.md
   - docs/adr/0002-use-dotnet-10.md
@@ -157,16 +157,21 @@ CRUD por SSMS sobre datos sintéticos es una excepción deliberada. Puede produc
 
 **Control actual:** cuentas individuales y no DDL; mantener datos sintéticos y usar la anomalía para fortalecer validaciones, nunca para inferir un comportamiento Production.
 
-## Discrepancias documentales detectadas
+## Discrepancias documentales reconciliadas
 
-Dos documentos antiguos de arquitectura no describen el estado vigente:
+La documentación inicial del scaffold quedó atrás cuando se incorporaron los
+clientes ejecutables, el modelo v1 y las cinco migraciones. En esta
+reconciliación, [Arquitectura general](../../docs/architecture/overview.md) y
+[Visión del sistema](../../docs/architecture/system-overview.md) ya distinguen
+ese estado del flujo de negocio aún pendiente. Los resúmenes de
+[monolito modular](../../docs/architecture/modular-monolith.md) y
+[reglas de dependencia](../../docs/architecture/dependency-rules.md) incluyen
+ahora Persistence y DatabaseTool.
 
-- `docs/architecture/overview.md` afirma al final que el diseño no incluye entidades ni migraciones iniciales; el commit verificado sí contiene entidades y cinco migraciones.
-- `docs/architecture/system-overview.md` conserva la fotografía de clientes sin framework y base sin migración inicial; las tres aplicaciones ya son ejecutables y el modelo v1 existe.
-
-Aplica la precedencia de evidencia: usa código, migraciones, OpenAPI y pruebas para el presente. Conserva esos documentos sólo como contexto hasta que un PR autorizado los actualice; no replique sus afirmaciones obsoletas en nuevo trabajo.
-
-También hay resúmenes anteriores del grafo que omiten Persistence/DatabaseTool. El grafo exacto está en los `.csproj` y `ProjectDependencyTests`.
+Ésta es una corrección documental, no la implementación de autenticación,
+handlers o integraciones externas. Para describir comportamiento actual, la
+precedencia sigue siendo código, migraciones, OpenAPI y pruebas; el grafo exacto
+se comprueba en los `.csproj` y `ProjectDependencyTests`.
 
 ## Decisiones todavía desconocidas
 

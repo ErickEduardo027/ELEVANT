@@ -1,12 +1,14 @@
 # Base de datos ELEVANT v1
 
-Estado: implementada y versionada en `Development`; la cadena v1 está desplegada
-y verificada en `ElevantDevelopmentDb` dentro del VPS Development. Production
-permanece como una frontera futura separada y no está desplegada en ese host.
+Estado del esquema: implementado y versionado en `Development`; la cadena v1
+fue aceptada mediante la operación controlada de Development. Esto no significa
+que las capacidades de negocio representadas por todas sus tablas ya tengan
+handlers o endpoints. Production permanece como frontera futura separada.
 
 ## Límite del producto
 
-ELEVANT posee tres clientes y una sola fuente de verdad por ambiente:
+ELEVANT posee tres clientes y una sola fuente de verdad por ambiente. La última
+columna expresa la **regla de diseño**, no permisos de aplicación ya efectivos:
 
 | Cliente | Audiencia | Frontera de datos |
 | --- | --- | --- |
@@ -14,7 +16,9 @@ ELEVANT posee tres clientes y una sola fuente de verdad por ambiente:
 | `frontend/public-web` | Clientes/aerolíneas | Tenant derivado por la API desde la membresía autenticada |
 | `frontend/mobile-agent` | Agentes de rampa | Agente/estación derivados por la API; comandos offline idempotentes |
 
-Ningún cliente se conecta a SQL Server. Development y Production son bases físicas diferentes y, cuando se habilite Production, vivirán en VPS/credenciales/volúmenes separados. Ambas aplican la misma secuencia ordenada de migraciones; solo Development recibe fixtures sintéticos.
+Ningún cliente se conecta a SQL Server. Cuando se habilite Production, su base,
+VPS, credenciales y volúmenes serán independientes de Development; aplicará la
+misma secuencia ordenada de migraciones, pero no recibirá fixtures sintéticos.
 
 ## Decisiones derivadas de los frontends
 
@@ -24,8 +28,8 @@ Ningún cliente se conecta a SQL Server. Development y Production son bases fís
 - Habilitaciones y permisos son ciclos históricos. `vigente`, `por vencer` y `vencido` son proyecciones calculadas desde fechas.
 - Los contratos tienen versiones aprobables. Tarifas, moneda y vigencia pertenecen a una versión; un servicio ejecutado guarda su snapshot y no se revaloriza con la tarifa actual.
 - Las asignaciones son relaciones normalizadas. Los arrays duplicados dentro de vuelos mock no se persisten.
-- Estados operativos, respuestas de checklist, envíos a OCC y decisiones de revisión conservan historial append-only.
-- Cada escritura móvil usa una clave de idempotencia dentro del scope de un dispositivo registrado y almacena su resultado/error para responder reintentos.
+- Estados operativos, respuestas de checklist, envíos a OCC y decisiones de revisión deben conservar historial append-only. Las tablas modelan ese historial; todavía faltan handlers y permisos que lo garanticen en todos los caminos de escritura.
+- Cada futura escritura móvil debe usar una clave de idempotencia dentro del scope de un dispositivo registrado y almacenar su resultado/error para responder reintentos. La tabla e índice existen, pero no hay endpoint de comandos offline.
 - KPIs, cobertura, conteos, alertas, no-leídos y elegibilidad son read models, no tablas autoritativas.
 
 ## Convenciones SQL Server

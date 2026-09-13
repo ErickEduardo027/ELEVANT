@@ -8,7 +8,7 @@ maturity: evolving
 evidence: planned
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md

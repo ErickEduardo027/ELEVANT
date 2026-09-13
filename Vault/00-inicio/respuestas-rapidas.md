@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - README.md
@@ -36,6 +36,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
 tags:
   - inicio
   - faq
@@ -167,6 +169,10 @@ Usa `status: draft` o `status: deferred` y `evidence: planned`. Explica dependen
 ### ¿Qué hago si la respuesta no está documentada?
 
 Busca la fuente ejecutable, registra `unknown` si no existe evidencia y crea una nota o issue usando la [plantilla general](../99-plantillas/pagina.md). No completes el vacío con una inferencia silenciosa.
+
+### ¿Dónde compruebo una afirmación y veo lo pendiente?
+
+Empieza por el [Índice de Referencia](../11-referencia/README.md), sigue la fuente primaria y comprueba el commit indicado. La [reconciliación de `docs/`](../11-referencia/reconciliacion-docs.md) identifica guías que se corrigieron; el [Backlog transversal](../12-backlog/README.md) registra decisiones y pruebas de cierre todavía pendientes.
 
 ## Más rutas
 

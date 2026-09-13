@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - Vault/README.md
@@ -22,6 +22,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
   - Vault/08-gobernanza/fuentes-y-evidencia.md
 tags:
   - contexto
@@ -57,7 +59,7 @@ flowchart TD
 4. Recorre [Producto](../02-producto/README.md), [Dominio](../03-dominio/README.md) e [Historia](../01-historia/README.md) cuando necesites comprender el porqué y el vocabulario antes del código.
 5. Recorre [Arquitectura](../04-arquitectura/README.md), [Aplicaciones](../05-aplicaciones/README.md) y [Desarrollo](../06-desarrollo/README.md) antes de proponer un cambio técnico.
 6. Para entrega o seguridad, abre [CI/CD](../07-entrega/README.md), [Operaciones](../09-operaciones/README.md) y [Seguridad](../10-seguridad/README.md); separa aceptación fechada de salud actual.
-7. Lee [Roadmap](roadmap-del-vault.md) para distinguir documentación entregada, pendiente y deliberadamente separada.
+7. Lee [Referencia](../11-referencia/README.md) para encontrar fuentes primarias y [Backlog](../12-backlog/README.md) para reconocer las brechas; luego revisa el [Roadmap](roadmap-del-vault.md).
 8. Sigue el [Mapa de preguntas](mapa-de-preguntas.md) o [Respuestas rápidas](respuestas-rapidas.md).
 9. Abre cada ruta de `sources` relevante y comprueba el commit indicado antes de afirmar que algo está vigente.
 10. Revisa rama, cambios locales y último commit antes de editar.
@@ -83,8 +85,9 @@ npm run vault:check
 | Diseñar Mobile CI/CD | [Diseño APK diferido](../07-entrega/mobile-apk-ci-cd.md) | Estado Expo, firma, distribución, secretos y rollback |
 | Revisar un riesgo de acceso | [Seguridad](../10-seguridad/README.md) | Política real, prueba negativa y control pendiente |
 | Entender una decisión | [Historia](../01-historia/README.md) → ADR | Fecha, alternativas, consecuencias y reemplazo vigente |
+| Resolver una discrepancia de guías | [Reconciliación de `docs/`](../11-referencia/reconciliacion-docs.md) | Fuente ejecutable, fecha y alcance de cada texto |
 
-Arquitectura, Aplicaciones, Desarrollo, Entrega, Operaciones y Seguridad ya están materializados. Referencia y Backlog transversal se completarán en la reconciliación del [Roadmap del Vault](roadmap-del-vault.md); mientras una ruta no exista, usa los enlaces actuales y `docs/` sin inventar su contenido.
+Los mapas de Arquitectura, Aplicaciones, Desarrollo, Entrega, Operaciones, Seguridad, Referencia y Backlog ya son navegables. Una página disponible no certifica que su capacidad esté implementada; sigue su fuente y su estado.
 
 ## Contrato para otra IA o colaborador
 
@@ -94,7 +97,7 @@ Puedes iniciar una sesión nueva con esta instrucción, sin pegar historiales ni
 Trabaja en el repositorio ELEVANT. Lee primero AGENTS.md, Vault/README.md,
 Vault/00-inicio/home.md, Vault/00-inicio/estado-inicial.md, los índices de
 Producto, Dominio, Historia, Arquitectura, Aplicaciones, Desarrollo, Entrega,
-Operaciones y Seguridad pertinentes,
+Operaciones, Seguridad, Referencia y Backlog pertinentes,
 y el AGENTS.md más cercano al área solicitada. Verifica las afirmaciones contra
 sources y Git.
 No confundas planned/deferred con implementado, no despliegues ni fusiones sin

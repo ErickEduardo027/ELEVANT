@@ -44,7 +44,7 @@ gateway SQL Tools ────────────────────�
 gateway SQL Tools ── elevant-dev-sql-tools-runtime
                      (bridge no interna, solo publicación loopback)
 
-tablet Android/iOS -- HTTPS/Tailscale --> Elevant API
+tablet Android/iOS -- HTTPS/Tailscale --> Elevant API  (ruta objetivo; no integrada aún)
 ```
 
 Deployables separados:
@@ -57,7 +57,7 @@ Deployables separados:
 6. `elevant-dev-sql-tools-gateway`: proxy TCP privado aceptado para SSMS
    Development, sin AutoDeploy ni credenciales.
 
-Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile se compila/distribuye, no es un stack.
+Separarlos impide que un push/redeploy de una web o API recree SQL. Mobile no es un stack del VPS; su build firmado y distribución APK siguen pendientes ([diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md)).
 
 ## Prerrequisitos que deben confirmarse
 
@@ -396,8 +396,9 @@ health saludable no demuestra que esos flujos sean funcionales. Los adaptadores
 pendientes apuntan a la API real para fallar de forma visible; nunca se despliega
 `backend-prototipo` ni se usa el localhost del navegador como backend remoto.
 
-Mobile Agent no se instala en el VPS. Se prueba en emulador/tablet y se
-distribuye por APK/EAS en su ciclo propio.
+Mobile Agent no se instala en el VPS. Hoy se explora en Expo/emulador/tablet
+contra el backend prototipo; su integración con la API real, la APK firmada y
+su distribución por un canal propio todavía no están implementadas.
 
 ## Producción queda fuera de este VPS
 

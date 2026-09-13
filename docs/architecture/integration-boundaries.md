@@ -4,20 +4,32 @@
 
 Web y móvil consumen contratos publicados por Api. No importan ensamblados
 .NET, no conocen tablas y no llaman al proveedor de vuelos. Según ADR-0007, los
-tres clientes usan `@elevant/api-client`, generado desde el snapshot OpenAPI
-versionado y adaptado mediante una capa `fetch` común y sin estado global.
+tres clientes incorporan `@elevant/api-client`, generado desde el snapshot
+OpenAPI versionado y adaptado mediante una capa `fetch` común y sin estado global.
+Hoy el snapshot sólo contiene `GetSystemPing`: depender del paquete no demuestra
+que sus flujos de negocio estén integrados con la API.
 
 ## Backend a SQL Server
 
-Infrastructure posee el `DbContext` y las configuraciones. Application solicita repositorios o puertos orientados al caso de uso; no compone SQL. La conexión entra mediante un secreto de ambiente y el usuario de la aplicación recibe solo permisos necesarios.
+`database/DevelopmentDB/Elevant.Persistence` posee el `DbContext`, las
+configuraciones, Identity y las migraciones. Application debe solicitar puertos
+orientados al caso de uso cuando existan handlers; no compone SQL. La conexión
+entra mediante configuración secreta del ambiente. La API no ejecuta migración
+ni seed al arrancar.
 
 ## Backend a FlightAware
 
-Application define una consulta neutral mediante `IFlightInformationProvider`. Infrastructure mapeará a la API concreta después de confirmar documentación, plan y límites. Un fallo externo se traduce a un resultado controlado y nunca expone el cuerpo, credencial o URL interna del proveedor.
+Application define una consulta neutral mediante `IFlightInformationProvider`.
+Infrastructure sólo enlaza opciones y reserva una clase cliente vacía; no hay
+implementación registrada, transporte ni llamada real. Cuando se apruebe el
+proveedor, deberá mapear fallos a resultados controlados sin exponer cuerpo,
+credencial o URL interna.
 
 ## Backend a clientes en tiempo real
 
-Api publica hubs SignalR. Los mensajes tienen contratos versionados y autorización antes de transportar información real. REST sigue siendo canónico.
+Api mapea dos hubs SignalR vacíos. Todavía no existen mensajes de negocio,
+contratos de eventos ni autorización del handshake. Esos controles son requisitos
+previos a transportar datos reales; REST seguirá siendo canónico.
 
 ## Reglas comunes
 

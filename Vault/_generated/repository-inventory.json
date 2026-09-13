@@ -71,7 +71,7 @@
         "title": "Roadmap de construcción del Vault",
         "type": "backlog",
         "area": "backlog",
-        "status": "deferred",
+        "status": "documented",
         "maturity": "seed",
         "evidence": "planned"
       },
@@ -746,6 +746,46 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/11-referencia/README.md",
+        "id": "referencia-indice",
+        "title": "Índice de referencia y fuentes primarias",
+        "type": "index",
+        "area": "reference",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/11-referencia/reconciliacion-docs.md",
+        "id": "referencia-reconciliacion-docs",
+        "title": "Reconciliación de docs con código y Vault",
+        "type": "reference",
+        "area": "reference",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/12-backlog/pendientes-transversales.md",
+        "id": "backlog-pendientes-transversales",
+        "title": "Pendientes transversales: dependencias y prueba de cierre",
+        "type": "backlog",
+        "area": "backlog",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/12-backlog/README.md",
+        "id": "backlog-indice",
+        "title": "Backlog transversal y límites del conocimiento",
+        "type": "index",
+        "area": "backlog",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/99-plantillas/adr.md",
         "id": "plantilla-adr",
         "title": "Plantilla: ADR",
@@ -897,7 +937,7 @@
       },
       {
         "path": "Vault/diagrams/atlas-elevant.canvas",
-        "sha256": "52a340979f7cc50fed58b86951c7086413185a9e4224cb7d4a721c63c6560052"
+        "sha256": "156c7b2773c7860f013888875cd933edd75fbce14571ec2862c7669f460122c5"
       },
       {
         "path": "Vault/diagrams/entrega-operaciones-seguridad.canvas",
