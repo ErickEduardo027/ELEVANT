@@ -3,12 +3,12 @@ id: inicio-home
 title: "Home"
 type: index
 area: vault
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "a4df1d8114430405dd0edda9ae3b008ae94798c4"
 sources:
   - AGENTS.md
   - README.md
