@@ -3,12 +3,12 @@ id: backlog-pendientes-transversales
 title: "Pendientes transversales: dependencias y prueba de cierre"
 type: backlog
 area: backlog
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - docs/deployment/development-hardening-backlog.md
   - docs/deployment/environments.md

@@ -21,7 +21,7 @@
         "title": "Estado inicial del conocimiento",
         "type": "status",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "seed",
         "evidence": "operator-recorded"
       },
@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -41,7 +41,7 @@
         "title": "Mapa de preguntas",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -51,7 +51,7 @@
         "title": "Protocolo de recuperación de contexto",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -61,7 +61,7 @@
         "title": "Respuestas rápidas",
         "type": "guide",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -321,7 +321,7 @@
         "title": "Backend .NET, capas y dependencias",
         "type": "architecture",
         "area": "backend",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -331,7 +331,7 @@
         "title": "Datos, EF Core, migraciones y persistencia",
         "type": "architecture",
         "area": "database",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -341,7 +341,7 @@
         "title": "Decisiones, restricciones y riesgos",
         "type": "decision",
         "area": "architecture",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -361,7 +361,7 @@
         "title": "OpenAPI, HTTP y SignalR",
         "type": "architecture",
         "area": "architecture",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -371,7 +371,7 @@
         "title": "Arquitectura ELEVANT",
         "type": "index",
         "area": "architecture",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -391,7 +391,7 @@
         "title": "API compartida",
         "type": "architecture",
         "area": "backend",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -401,7 +401,7 @@
         "title": "DevelopmentDB como dependencia compartida",
         "type": "architecture",
         "area": "database",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -471,7 +471,7 @@
         "title": "Definition of Done y handoff",
         "type": "policy",
         "area": "development",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -491,7 +491,7 @@
         "title": "Flujo de rama y pull request",
         "type": "guide",
         "area": "development",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -541,7 +541,7 @@
         "title": "Guía de desarrollo de ELEVANT",
         "type": "index",
         "area": "development",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -551,7 +551,7 @@
         "title": "Cadena de artefactos y promoción Development",
         "type": "architecture",
         "area": "ci-cd",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -561,7 +561,7 @@
         "title": "Gates, fallos, diferidos y no-op",
         "type": "guide",
         "area": "ci-cd",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -571,7 +571,7 @@
         "title": "Límites, revisión y rollback lógico",
         "type": "policy",
         "area": "ci-cd",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -591,7 +591,7 @@
         "title": "CI/CD y entrega de Development",
         "type": "index",
         "area": "ci-cd",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -601,7 +601,7 @@
         "title": "Workflows activos y estado de CI/CD",
         "type": "reference",
         "area": "ci-cd",
-        "status": "documented",
+        "status": "verified",
         "maturity": "stable",
         "evidence": "repo-verified"
       },
@@ -661,7 +661,7 @@
         "title": "Mantenimiento, reboot y recuperación de Development",
         "type": "guide",
         "area": "operations",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "operator-recorded"
       },
@@ -681,7 +681,7 @@
         "title": "Operaciones de Development",
         "type": "index",
         "area": "operations",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -751,7 +751,7 @@
         "title": "Índice de referencia y fuentes primarias",
         "type": "index",
         "area": "reference",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -761,7 +761,7 @@
         "title": "Reconciliación de docs con código y Vault",
         "type": "reference",
         "area": "reference",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -771,7 +771,7 @@
         "title": "Pendientes transversales: dependencias y prueba de cierre",
         "type": "backlog",
         "area": "backlog",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -781,7 +781,7 @@
         "title": "Backlog transversal y límites del conocimiento",
         "type": "index",
         "area": "backlog",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -871,7 +871,7 @@
         "title": "Atlas general de ELEVANT",
         "type": "diagram",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -921,7 +921,7 @@
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }

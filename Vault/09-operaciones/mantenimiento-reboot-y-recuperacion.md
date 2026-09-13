@@ -3,12 +3,12 @@ id: operaciones-mantenimiento-reboot-recuperacion
 title: "Mantenimiento, reboot y recuperación de Development"
 type: guide
 area: operations
-status: documented
+status: verified
 maturity: evolving
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - ops/dokploy/host/README.md
   - ops/dokploy/firewall/README.md

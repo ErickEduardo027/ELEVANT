@@ -3,12 +3,12 @@ id: backlog-indice
 title: "Backlog transversal y límites del conocimiento"
 type: index
 area: backlog
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - AGENTS.md
   - docs/deployment/development-hardening-backlog.md

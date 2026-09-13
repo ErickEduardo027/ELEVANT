@@ -3,12 +3,12 @@ id: entrega-indice
 title: "CI/CD y entrega de Development"
 type: index
 area: ci-cd
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "pending"
+verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
