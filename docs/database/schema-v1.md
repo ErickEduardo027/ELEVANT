@@ -38,21 +38,40 @@ ref (aerolíneas, estaciones, servicios, aeronaves, equipos)
 
 `iam.persons` representa a la persona; `iam.accounts` representa credenciales; `iam.organization_memberships` define su relación con una organización. Un perfil `hr.ramp_agents` enlaza una persona con su realidad laboral. Esta separación evita usar correo, username o nombre como identidad de negocio.
 
-El portal público parte de una membresía activa y scopes autorizados. No toma un airline/organization recibido del navegador como filtro confiable. El acceso interno usa permisos de rol más `account_station_scopes`.
+El diseño del portal público exige partir de una membresía activa y scopes
+autorizados, sin confiar en un airline/organization recibido del navegador.
+El acceso interno previsto combina permisos de rol con
+`account_station_scopes`. Hoy esas tablas y relaciones existen en el esquema,
+pero no hay autenticación, autorización tenant ni endpoints de negocio que
+apliquen todavía esas reglas.
 
 ### Comercial
 
-Una solicitud conserva estaciones, ítems e historial de estados. Un contrato tiene eventos de estado y versiones; cada versión declara estaciones y tarifas de servicio. Una versión histórica no se sobrescribe al renovar.
+El esquema permite que una solicitud conserve estaciones, ítems e historial de
+estados, y que un contrato tenga eventos de estado y versiones con estaciones
+y tarifas. No existe todavía un handler que imponga la renovación sin
+sobrescribir una versión histórica.
 
 ### Operación
 
-`ops.turnarounds` es la raíz de la escala. Sus `flight_legs` separan llegada/salida. La ejecución vive en `ground_operations`; asignaciones de stand, agentes y equipos son relaciones temporales propias. `operation_services` guarda cantidad y snapshot comercial para impedir doble valoración o repricing histórico.
+`ops.turnarounds` modela la raíz de la escala. Sus `flight_legs` separan
+llegada/salida. El esquema ubica la ejecución en `ground_operations` y las
+asignaciones de stand, agentes y equipos en relaciones temporales propias.
+`operation_services` tiene columnas para cantidad y snapshot comercial; la
+prohibición de repricing histórico requiere lógica de aplicación adicional.
 
-Checklist usa template -> versión -> ítems -> instancia de operación -> respuestas. La operación se envía mediante `operation_submissions` y OCC responde con `review_decisions`; una corrección genera nuevos registros, no borra la decisión anterior.
+El modelo de checklist conecta template -> versión -> ítems -> instancia de
+operación -> respuestas. `operation_submissions` y `review_decisions` modelan
+envío a OCC y revisión. El comportamiento de corrección append-only aún debe
+implementarse y comprobarse en los casos de uso.
 
 ### Mobile y auditoría
 
-La unicidad de `integration.mobile_command_receipts` por dispositivo + idempotency key hace seguros los reintentos. Auditoría registra contexto y cambios, pero no debe almacenar tokens, contraseñas, archivos o payloads sensibles completos.
+La unicidad de `integration.mobile_command_receipts` por dispositivo +
+idempotency key prepara la deduplicación de reintentos, pero no existe todavía
+un handler que procese comandos offline. Las tablas de auditoría pueden guardar
+contexto y cambios cuando se implementen sus escrituras; no deben almacenar
+tokens, contraseñas, archivos o payloads sensibles completos.
 
 ## Elementos que no son tablas v1
 

@@ -1,6 +1,6 @@
 # Ambientes ELEVANT
 
-Una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Agent dentro de cada ambiente. “Public Web” describe a sus usuarios; no significa que el ambiente Development deba estar abierto a Internet.
+Por diseño, una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Agent dentro de cada ambiente. Mobile todavía usa flujos del backend prototipo y no ha completado esa integración. “Public Web” describe a sus usuarios; no significa que el ambiente Development deba estar abierto a Internet.
 
 ## Matriz
 
@@ -10,7 +10,7 @@ Una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Agent dentro de
 | API | `http://127.0.0.1:8080` | `ELEVANT_DEV_API_ORIGIN` | dominio público controlado |
 | AVIAM Web | `http://localhost:5173` | `ELEVANT_DEV_AVIAM_WEB_ORIGIN` | dominio interno/controlado |
 | Public Web | `http://localhost:3000` | `ELEVANT_DEV_PUBLIC_WEB_ORIGIN` | dominio público controlado |
-| Mobile | Expo/device | APK de pruebas conectada al tailnet | build de tienda con API pública |
+| Mobile | Expo/device con backend prototipo | APK de pruebas y conexión funcional a la API compartida pendientes | build de tienda con API pública, por diseñar |
 | Base | `ElevantDevelopmentDb` local | `ElevantDevelopmentDb` | `ElevantProductionDb` |
 | Datos | sintéticos | sintéticos/reconstruibles | reales autorizados |
 | SQL edition | Developer | Developer | por decidir/licenciar |
@@ -45,11 +45,13 @@ pull desde el VPS solo después de comprobar la entrega API exacta. Sus recursos
 Dokploy usan Compose Raw con AutoDeploy desactivado; no compilan desde GitHub en
 el host y nunca se conectan a la red SQL.
 
-El rollout web inicial es un preview técnico. Algunas pantallas todavía esperan
+El rollout web inicial ya fue aceptado en el VPS y sigue siendo un preview técnico. Algunas pantallas todavía esperan
 operaciones del prototipo que la API real no ofrece; esas llamadas deben fallar
 contra la API Development, nunca desviarse al localhost del navegador o a un
-backend prototipo. La instalación de los dos runtimes y su CD en el VPS es una
-operación manual posterior a la revisión de los artefactos del repositorio.
+backend prototipo. La instalación inicial de los dos runtimes y sus controladores
+CD fue una operación manual aceptada; un workflow versionado no demuestra por sí
+solo la salud actual del host. Mobile Agent sigue fuera del VPS y no cuenta con
+un carril activo de build/distribución APK ([diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md)).
 
 ## Production
 

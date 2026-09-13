@@ -1,7 +1,11 @@
 # Flujo de Git
 
-`main` representa Production y `Development` el desarrollo remoto e integración. El repositorio
-inicial no crea ramas remotas ni configura protecciones por sí solo.
+`main` representa la frontera de Production y `Development` la integración de
+Development. El trabajo ordinario parte de una rama corta creada desde
+`Development` y llega mediante un PR revisado. Es una norma de equipo, no una
+barrera técnica vigente: la [protección de ramas pendiente](../../.github/BRANCH_PROTECTION.md)
+documenta que, en el repositorio privado actual, un colaborador con permiso de
+escritura aún puede hacer push directo a `Development`.
 
 ## Ramas de trabajo
 
@@ -28,4 +32,9 @@ Cada commit debe ser coherente, compilable cuando sea posible y libre de secreto
 
 ## Protección recomendada
 
-En el proveedor Git, proteger `main` y `Development` con pull request obligatorio, al menos una aprobación, CI requerido, conversaciones resueltas y prohibición de force-push/eliminación. CODEOWNERS se activa únicamente con usuarios o equipos reales confirmados.
+Cuando el plan del proveedor lo permita, proteger `main` y `Development` con
+pull request obligatorio, al menos una aprobación, CI requerido, conversaciones
+resueltas y prohibición de force-push/eliminación. Hasta entonces, un PR sin
+conflictos no prueba que CI vaya a pasar ni impide un push directo. CODEOWNERS
+solo se activa con usuarios o equipos reales confirmados. Para el recorrido
+paso a paso, consulta el [flujo de rama y PR del Vault](../../Vault/06-desarrollo/flujo-de-rama-y-pull-request.md).

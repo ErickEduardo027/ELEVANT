@@ -3,12 +3,12 @@ id: desarrollo-indice
 title: "Guía de desarrollo de ELEVANT"
 type: index
 area: development
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - CONTRIBUTING.md

@@ -33,8 +33,8 @@ También puede usar `npm run android`, `npm run ios` o `npm run web` para desarr
 Copie `.env.example` a su archivo local y use una URL alcanzable desde la tablet:
 
 ```text
-EXPO_PUBLIC_ELEVANT_API_URL=https://elevant-dev-api.taild2f562.ts.net
-EXPO_PUBLIC_API_URL=http://192.168.1.100:4310
+EXPO_PUBLIC_ELEVANT_API_URL=https://<PRIVATE_API_SERVICE>.<TAILNET_DNS_NAME>.ts.net
+EXPO_PUBLIC_API_URL=http://<DEV_LAN_IP>:4310
 ```
 
 `EXPO_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `EXPO_PUBLIC_API_URL` conserva temporalmente los adaptadores del prototipo. `localhost` desde la tablet se refiere a la propia tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca contiene secretos.

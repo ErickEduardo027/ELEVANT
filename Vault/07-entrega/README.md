@@ -3,12 +3,12 @@ id: entrega-indice
 title: "CI/CD y entrega de Development"
 type: index
 area: ci-cd
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
@@ -67,6 +67,9 @@ flowchart LR
 Las líneas punteadas expresan dependencias de aceptación, no una llamada de
 GitHub al host. El push relevante publica en GHCR tras CI; los controladores
 privados consultan los aliases y resuelven digests. No se recompila en el VPS.
+El diagrama expresa la norma de revisión; la falta de branch protection
+vigente permite todavía un push directo a `Development` por alguien con
+permiso de escritura, que también pasa por los gates de publicación.
 
 ## Qué está dentro y qué no
 

@@ -3,12 +3,12 @@ id: operaciones-mantenimiento-reboot-recuperacion
 title: "Mantenimiento, reboot y recuperación de Development"
 type: guide
 area: operations
-status: verified
+status: documented
 maturity: evolving
 evidence: operator-recorded
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - ops/dokploy/host/README.md
   - ops/dokploy/firewall/README.md
@@ -58,4 +58,4 @@ La línea base incluye identificadores e imágenes de los cinco workloads, hashe
 
 La tabla de firewall ELEVANT pertenece solo al host y se administra transaccionalmente; no se vacía el ruleset completo. El proveedor mantiene un perfil independiente. El timer de rollback **no revierte** cambios del panel del proveedor. El [runbook de firewall](../../ops/dokploy/firewall/README.md), el [runbook de host](../../ops/dokploy/host/README.md) y el [drop-in SSH](../../ops/dokploy/ssh/README.md) contienen las acciones exactas y sus precondiciones.
 
-Para fallo de aplicación, el [rollback de despliegue](../../docs/deployment/rollback.md) permite volver a imagen anterior si el esquema es compatible. Para fallo DB no se ejecuta `Down` ni restore automático. Para pérdida total del VPS, el snapshot es último recurso y revierte cambios posteriores; los backups locales pueden perderse con el host. Ninguna de estas rutas autoriza un restore de Production en Development ni borrar volúmenes para “limpiar” el problema.
+Para fallo de API o Web, el [rollback de despliegue](../../docs/deployment/rollback.md) exige restaurar el par certificado anterior de imagen y Compose/hash, con health y smoke propios, si el esquema sigue siendo compatible. Un rollback fallido deja pausado sólo el perfil afectado para revisión. Para fallo DB no se ejecuta `Down` ni restore automático. Para pérdida total del VPS, el snapshot es último recurso y revierte cambios posteriores; los backups locales pueden perderse con el host. Ninguna de estas rutas autoriza un restore de Production en Development ni borrar volúmenes para “limpiar” el problema.

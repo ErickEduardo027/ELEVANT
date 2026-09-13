@@ -4,7 +4,8 @@ La API Elevant es la única propietaria de su base SQL Server. Web, Mobile Agent
 
 ## Responsabilidades del backend
 
-- definir y migrar el esquema mediante Infrastructure;
+- definir el esquema en `Elevant.Persistence` y aplicarlo mediante una operación
+  explícita de release; la API no migra ni siembra al arrancar;
 - mantener invariantes y transacciones;
 - limitar permisos de la identidad de aplicación;
 - exponer datos mínimos mediante API;
@@ -25,6 +26,10 @@ CRUD de Development. No se copian resultados a chats, issues o repositorio.
 
 ## Separación
 
-Local, Development y Production tienen bases, usuarios, credenciales, volúmenes, backups y uploads independientes. Development y Production aplican las mismas migraciones para conservar el esquema, pero un backup de Production no se restaura en Development; se emplean datos sintéticos.
+Local y Development separan bases, usuarios, credenciales, volúmenes y backups.
+Production es un límite futuro reservado: cuando se apruebe tendrá recursos
+independientes y aplicará la misma cadena de migraciones de esquema, sin seed
+de negocio. No se restaurará un backup de Production en Development; se emplean
+datos sintéticos.
 
 El puerto 1433 local se liga a loopback cuando sea necesario. En servidores no se publica a Internet y el acceso administrativo se restringe por red, firewall y credencial separada.

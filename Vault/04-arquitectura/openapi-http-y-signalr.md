@@ -3,12 +3,12 @@ id: arquitectura-openapi-http-signalr
 title: "OpenAPI, HTTP y SignalR"
 type: architecture
 area: architecture
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+verified_commit: "pending"
 sources:
   - backend/Elevant.Api/Controllers/V1/SystemController.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs

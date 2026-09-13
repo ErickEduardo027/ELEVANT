@@ -15,7 +15,8 @@
 2. ejecutar bundle de migraciones con login migrator;
 3. ejecutar seed solo en Development con login seeder;
 4. desplegar API compatible y validar `/health`, `/health/ready` y ping;
-5. desplegar AVIAM Web/Public Web; distribuir Mobile por su canal;
+5. desplegar AVIAM Web/Public Web; cuando el carril Mobile esté aprobado,
+   distribuir su binario por un canal propio, nunca mediante Dokploy;
 6. observar errores, latencia y flujo crítico.
 
 SQL Server y sus volúmenes nunca participan de una promoción API/web. Los
@@ -143,9 +144,14 @@ la API los endpoints de autenticación o negocio del prototipo. Consulte
 
 ## Carril Mobile Agent
 
-Mobile Agent se prueba localmente con emulador/tablet y consume la misma API
-Development por HTTPS/Tailscale. Genera APK/EAS por su propio canal y nunca se
-despliega como servicio Dokploy.
+Mobile Agent es hoy una app Expo ejecutable con flujos de negocio todavía
+acoplados al backend prototipo. La integración con la API .NET y una APK
+Development firmada y distribuida son objetivos, no capacidades del CI/CD
+actual. `.github/workflows/mobile-ci.yml.template` no es un workflow activo;
+el cliente OpenAPI compartido sí tiene comprobaciones de consumo Mobile bajo
+los filtros de `API Client CI`. En el futuro la tablet de Development deberá
+alcanzar la misma API por HTTPS/Tailscale; la APK tendrá su propio canal y no
+será un servicio Dokploy. Véase el [diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md).
 
 ## Fallo
 

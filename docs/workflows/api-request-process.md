@@ -3,15 +3,15 @@
 Una necesidad de web o móvil comienza con el resultado de usuario, no con un endpoint prediseñado.
 
 ```text
-Laisha o Eliezer definen la necesidad
+El cliente afectado define la necesidad
                 ↓
-Erick define el contrato REST
+Backend y consumidor revisan el contrato REST
                 ↓
-Erick implementa y despliega en Development
+Backend implementa; CI valida el commit
                 ↓
-El equipo valida con Swagger, Postman o cliente HTTP
+Tras merge y gates verdes, el carril aplicable publica; el controlador evalúa
                 ↓
-Web o móvil integra el endpoint
+El equipo verifica aceptación y el cliente integra el endpoint
 ```
 
 ## Solicitud
@@ -32,6 +32,15 @@ Backend propone método, ruta versionada, códigos, Problem Details, paginación
 
 ## Entrega
 
-Se implementan pruebas y se actualiza OpenAPI. Tras una revisión de compatibilidad se regenera el cliente compartido. Web y móvil integran primero contra Development. La versión anterior se retira únicamente cuando no haya consumidores activos o exista una migración acordada.
+Se implementan pruebas y se actualiza OpenAPI. Tras una revisión de
+compatibilidad se regenera el cliente compartido. Una API nueva no está
+disponible solo porque un PR se pueda fusionar: el CI de PR, la publicación
+posterior al merge y la promoción privada son pasos distintos. Web integra
+contra Development cuando el endpoint exista y esté aceptado. Mobile Agent
+todavía usa adaptadores de negocio del prototipo; su integración real se hará
+por contrato OpenAPI en un cambio posterior. La versión anterior se retira
+únicamente cuando no haya consumidores activos o exista una migración
+acordada. Véanse [entrega](../../Vault/07-entrega/README.md) y
+[estado Mobile](../../Vault/05-aplicaciones/mobile-agent.md).
 
 Una solicitud urgente no autoriza exponer SQL Server, compartir una clave o agregar campos sensibles sin revisión.

@@ -3,12 +3,12 @@ id: entrega-gates-fallos-no-op
 title: "Gates, fallos, diferidos y no-op"
 type: guide
 area: ci-cd
-status: verified
+status: documented
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
@@ -37,6 +37,7 @@ runtime** antes de afirmar el resultado.
 ```mermaid
 flowchart TD
     PR[Checks del PR] --> Push[Push relevante a Development]
+    Direct[Push directo posible sin branch protection] --> Push
     Push --> CI[Build, tests y certificación]
     CI -->|fallo| Stop[No publicar alias nuevo]
     CI -->|éxito| Bundle[Imagen y bundle por digest]
@@ -49,6 +50,10 @@ flowchart TD
     Promote -->|fallo| Contain[Contención/rollback aplicable]
     Promote -->|éxito| Accept[Estado aceptado]
 ```
+
+La ruta de PR es la norma del equipo, pero actualmente no está impuesta por
+branch protection. El push directo también debe superar los gates del run
+antes de cualquier publicación; no implica revisión humana previa.
 
 Backend CI bloquea la imagen API si Swagger compilado y snapshot divergen;
 API Client CI lo repite como defensa independiente. El bundle incompleto no

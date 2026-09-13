@@ -3,12 +3,12 @@ id: operaciones-indice
 title: "Operaciones de Development"
 type: index
 area: operations
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - ops/AGENTS.md
@@ -25,7 +25,7 @@ tags:
 
 # Operaciones de Development
 
-Este mapa explica **qué se aceptó operativamente**, qué contrato técnico está versionado y cómo orientarse ante una anomalía sin convertir el Vault en una consola de producción. Se refiere al VPS privado de Development y a datos sintéticos. [Production](../../docs/deployment/environments.md) es una frontera futura separada; Mobile Agent se distribuye como aplicación nativa, no como servicio de Dokploy.
+Este mapa explica **qué se aceptó operativamente**, qué contrato técnico está versionado y cómo orientarse ante una anomalía sin convertir el Vault en una consola de producción. Se refiere al VPS privado de Development y a datos sintéticos. [Production](../../docs/deployment/environments.md) es una frontera futura separada; Mobile Agent está previsto como aplicación nativa, no como servicio de Dokploy. Su [APK firmada y distribución](../07-entrega/mobile-apk-ci-cd.md) siguen diferidas.
 
 > [!IMPORTANT]
 > La última aceptación saneada en el repositorio data del **12 de septiembre de 2026**. No es una comprobación del estado del host al momento de leer esta nota. Antes de intervenir se requiere evidencia fresca, autorización del operador y el runbook versionado correspondiente. Ninguna nota del Vault autoriza conectarse, desplegar, reiniciar o cambiar permisos.

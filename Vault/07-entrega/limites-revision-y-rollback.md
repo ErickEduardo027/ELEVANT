@@ -3,12 +3,12 @@ id: entrega-limites-revision-rollback
 title: "Límites, revisión y rollback lógico"
 type: policy
 area: ci-cd
-status: verified
+status: documented
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - .github/BRANCH_PROTECTION.md

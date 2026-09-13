@@ -117,6 +117,26 @@
       "y": 690,
       "width": 400,
       "height": 260
+    },
+    {
+      "id": "a00000000000000d",
+      "type": "file",
+      "file": "Vault/11-referencia/README.md",
+      "x": -430,
+      "y": 1100,
+      "width": 360,
+      "height": 220,
+      "color": "5"
+    },
+    {
+      "id": "a00000000000000e",
+      "type": "file",
+      "file": "Vault/12-backlog/README.md",
+      "x": 110,
+      "y": 1100,
+      "width": 360,
+      "height": 220,
+      "color": "3"
     }
   ],
   "edges": [
@@ -244,6 +264,24 @@
       "toSide": "left",
       "toEnd": "arrow",
       "label": "filtrar"
+    },
+    {
+      "id": "ae00000000000010",
+      "fromNode": "a00000000000000a",
+      "fromSide": "bottom",
+      "toNode": "a00000000000000d",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "comprobar fuente"
+    },
+    {
+      "id": "ae00000000000011",
+      "fromNode": "a00000000000000a",
+      "fromSide": "bottom",
+      "toNode": "a00000000000000e",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "label": "registrar brecha"
     }
   ]
 }

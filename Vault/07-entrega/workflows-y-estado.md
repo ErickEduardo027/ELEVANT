@@ -3,12 +3,12 @@ id: entrega-workflows-estado
 title: "Workflows activos y estado de CI/CD"
 type: reference
 area: ci-cd
-status: verified
+status: documented
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml

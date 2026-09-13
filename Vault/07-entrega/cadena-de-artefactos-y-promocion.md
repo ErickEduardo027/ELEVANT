@@ -3,12 +3,12 @@ id: entrega-cadena-artefactos-promocion
 title: "Cadena de artefactos y promoción Development"
 type: architecture
 area: ci-cd
-status: verified
+status: documented
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: "pending"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
@@ -96,8 +96,9 @@ en el host.
 
 ## 3. Webs: dos ciclos, dependencia API exacta
 
-Web CI clasifica `aviam-web` y `public-web` por separado. Cada carril aplicable
-construye y certifica su imagen, publica un bundle OCI v1 propio con manifiesto
+Web CI clasifica `aviam-web` y `public-web` por separado para la publicación.
+Su matriz fija construye y certifica **ambas** webs cuando se dispara el
+workflow; cada perfil clasificado publica un bundle OCI v1 propio con manifiesto
 cerrado + Compose exacto, vuelve a verificar los payloads y mueve su alias al
 final. El bundle fija digest de la imagen web, hash Compose, fingerprint de
 configuración, bundle API, `runId`, imagen API y hash canónico OpenAPI usados en

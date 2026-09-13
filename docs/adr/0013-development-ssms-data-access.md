@@ -6,6 +6,11 @@ Accepted — 2026-09-10. Autoriza una excepción humana solo para Development; n
 declara que el rollout del VPS ya fue ejecutado. Production queda fuera de
 alcance.
 
+La [aceptación operativa posterior](../deployment/dokploy-configuration.md)
+registra el gateway, el Service TCP privado, los permisos y la conexión SSMS
+verificados el 2026-09-12. La decisión y la evidencia de ejecución son cosas
+distintas.
+
 ## Contexto
 
 El equipo necesita observar el esquema vivo y crear, modificar o eliminar datos

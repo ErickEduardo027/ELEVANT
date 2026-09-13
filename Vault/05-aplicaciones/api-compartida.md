@@ -3,12 +3,12 @@ id: aplicaciones-api-compartida
 title: "API compartida"
 type: architecture
 area: backend
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+verified_commit: "pending"
 sources:
   - global.json
   - Directory.Build.props

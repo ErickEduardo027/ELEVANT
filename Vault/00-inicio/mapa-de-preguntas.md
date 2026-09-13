@@ -3,12 +3,12 @@ id: inicio-mapa-preguntas
 title: "Mapa de preguntas"
 type: index
 area: vault
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "be06a7ede3cdeb647ef0ac26a48167f406c4b778"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -22,6 +22,8 @@ sources:
   - Vault/07-entrega/README.md
   - Vault/09-operaciones/README.md
   - Vault/10-seguridad/README.md
+  - Vault/11-referencia/README.md
+  - Vault/12-backlog/README.md
 tags:
   - inicio
   - preguntas
@@ -59,7 +61,7 @@ flowchart TD
 | --- | --- | --- |
 | ¿Qué problema resuelve? | [Producto](../02-producto/README.md) | Prototipos + decisiones aceptadas, diferenciando historia de implementación |
 | ¿Quién puede hacer qué? | [Producto](../02-producto/README.md), [Dominio](../03-dominio/README.md) y [Seguridad](../10-seguridad/README.md) | Políticas de autorización, código y tests |
-| ¿Qué significa este término? | [Dominio](../03-dominio/README.md) o Referencia | Modelo vigente y glosario |
+| ¿Qué significa este término? | [Dominio](../03-dominio/README.md) o [Referencia](../11-referencia/README.md) | Modelo vigente y glosario |
 | ¿Qué aplicación es responsable? | [Aplicaciones](../05-aplicaciones/README.md) y [Arquitectura](../04-arquitectura/README.md) | Límites del monorepo y reglas de dependencia |
 | ¿Qué endpoint uso? | [OpenAPI, HTTP y SignalR](../04-arquitectura/openapi-http-y-signalr.md) | OpenAPI generado/compilado |
 | ¿Qué tabla o relación existe? | [Datos, EF y migraciones](../04-arquitectura/datos-ef-migraciones-y-persistencia.md) | Migraciones EF Core |
@@ -69,7 +71,8 @@ flowchart TD
 | ¿Cómo recupero un fallo? | [Mantenimiento y recuperación](../09-operaciones/mantenimiento-reboot-y-recuperacion.md) | Runbook aceptado, precondiciones y rollback |
 | ¿Cómo se compilaría una APK móvil? | [Diseño Mobile diferido](../07-entrega/mobile-apk-ci-cd.md) | Plantilla, configuración Expo y decisiones pendientes |
 | ¿Por qué se eligió esta solución? | ADR e [Historia](../01-historia/README.md) | ADR aceptado y contexto de su fecha |
-| ¿Qué todavía falta? | [Riesgos pendientes](../10-seguridad/riesgos-y-controles-pendientes.md) y [Roadmap](roadmap-del-vault.md) | Estado `deferred`/`draft` y criterios de aceptación |
+| ¿Qué todavía falta? | [Backlog transversal](../12-backlog/README.md), [riesgos pendientes](../10-seguridad/riesgos-y-controles-pendientes.md) y [Roadmap](roadmap-del-vault.md) | Estado `deferred`/`draft` y criterios de aceptación |
+| ¿Qué guía de `docs/` quedó reemplazada o corregida? | [Reconciliación documental](../11-referencia/reconciliacion-docs.md) | Fuente ejecutable y período de la afirmación |
 
 ## Atajos a las fuentes vigentes
 
