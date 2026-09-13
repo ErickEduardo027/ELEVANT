@@ -1,14 +1,14 @@
 ---
 id: inicio-roadmap-vault
-title: "Roadmap de construcción del Vault"
+title: "Roadmap de construcción y mantenimiento del Vault"
 type: backlog
 area: backlog
 status: documented
-maturity: seed
-evidence: planned
+maturity: evolving
+evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "pending"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -31,9 +31,9 @@ tags:
   - entregas
 ---
 
-# Roadmap de construcción del Vault
+# Roadmap de construcción y mantenimiento del Vault
 
-Esta nota hace visible el alcance que todavía no forma parte de la fundación. Cada etapa se entrega en un PR independiente creado desde el `Development` actualizado y sólo avanza después del merge manual de la etapa anterior.
+Las cinco etapas iniciales ya fueron fusionadas manualmente en `Development`: fundación, producto/dominio/historia, arquitectura/desarrollo, entrega/operaciones y reconciliación. Esto cierra la **construcción documental inicial**, no las brechas de producto, seguridad u operación. A partir de ahora, el conocimiento se mantiene vivo en los PR que cambien sus fuentes.
 
 ## Secuencia acordada
 
@@ -46,10 +46,8 @@ flowchart LR
     R --> L[Mantenimiento vivo por PR]
 
     classDef done fill:#e5f7ef,color:#173f31,stroke:#36a579;
-    classDef next fill:#fff1d6,color:#4d3512,stroke:#d99021;
     classDef living fill:#dce8ff,color:#17213a,stroke:#4f75c2;
-    class F,P,A,O done;
-    class R next;
+    class F,P,A,O,R done;
     class L living;
 ```
 
@@ -59,7 +57,9 @@ flowchart LR
 | 2. Producto, dominio e historia | Visión, actores, vocabulario, capacidades, cronología Git y preguntas anteriores al repositorio | Entregada |
 | 3. Arquitectura y desarrollo | Mapas por aplicación, backend, datos, OpenAPI, flujo local y guía de cambio seguro | Entregada |
 | 4. Operaciones y entrega | CI/CD Development, runbooks saneados, observabilidad, SQL privado y diseño de CI/CD/distribución APK del Mobile Agent | Entregada como documentación; pipeline APK y alertas externas aún diferidos |
-| 5. Reconciliación | Auditoría de `docs/`, corrección de contradicciones, saneamiento y enlaces de reemplazo sin borrar historia útil | Preparada en este PR; pendiente de revisión y merge manual |
+| 5. Reconciliación | Auditoría de `docs/`, corrección de contradicciones, saneamiento y enlaces de reemplazo sin borrar historia útil | Entregada; [registro de discrepancias](../11-referencia/reconciliacion-docs.md) |
+
+El [Backlog transversal](../12-backlog/README.md) muestra decisiones y controles aún abiertos. No debe interpretarse el cierre de estas cinco entregas como «producto terminado» ni como aceptación de un nuevo despliegue.
 
 ## Alcances deliberadamente separados
 
@@ -70,6 +70,6 @@ flowchart LR
 
 ## Criterio de cierre de cada etapa
 
-Una etapa queda cerrada cuando sus notas son navegables desde [Home](home.md), distinguen presente de futuro, citan fuentes reproducibles, pasan `npm run vault:ci`, no contienen información sensible y el PR fue revisado y fusionado manualmente.
+Cada etapa se cerró cuando sus notas quedaron navegables desde [Home](home.md), distinguieron presente de futuro, citaron fuentes reproducibles, pasaron `npm run vault:ci`, no incluyeron información sensible y su PR fue revisado y fusionado manualmente. El mismo estándar rige las mejoras futuras.
 
 Volver a [Home](home.md) o consultar [Mantenimiento del Vault](../08-gobernanza/mantenimiento-del-vault.md).

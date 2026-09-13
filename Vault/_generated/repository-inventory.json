@@ -31,7 +31,7 @@
         "title": "Home",
         "type": "index",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -68,12 +68,12 @@
       {
         "path": "Vault/00-inicio/roadmap-del-vault.md",
         "id": "inicio-roadmap-vault",
-        "title": "Roadmap de construcción del Vault",
+        "title": "Roadmap de construcción y mantenimiento del Vault",
         "type": "backlog",
         "area": "backlog",
         "status": "documented",
-        "maturity": "seed",
-        "evidence": "planned"
+        "maturity": "evolving",
+        "evidence": "repo-verified"
       },
       {
         "path": "Vault/01-historia/cronologia-versionada.md",
@@ -921,7 +921,7 @@
         "title": "Vault ELEVANT",
         "type": "index",
         "area": "vault",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       }
