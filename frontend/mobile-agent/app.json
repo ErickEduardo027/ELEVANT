@@ -7,7 +7,6 @@
     "icon": "./assets/images/elevant-symbol.png",
     "scheme": "elevant",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.elevant.mobileagent"
@@ -17,7 +16,6 @@
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/elevant-symbol.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.elevant.mobileagent"
     },
@@ -39,7 +37,10 @@
           }
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-font",
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
