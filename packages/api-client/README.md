@@ -10,18 +10,25 @@ importan TypeScript fuente y configuran una instancia por contexto o petición.
 ```ts
 import { createElevantApiClient } from "@elevant/api-client";
 
+let accessToken: string | undefined;
 const api = createElevantApiClient({
   baseUrl: "https://api.example.test",
-  getAccessToken: async () => session.accessToken,
+  getAccessToken: async () => accessToken,
 });
 
+const session = await api.createSession({ email, password });
+accessToken = session.accessToken;
+const currentSession = await api.getCurrentSession();
 const status = await api.getSystemPing({ signal: abortController.signal });
 ```
 
 `baseUrl` debe ser un origen HTTP(S) absoluto sin ruta final. El callback de
-token se ejecuta para cada petición; el cliente no persiste ni registra el
+token se ejecuta para cada petición autenticada; el cliente no persiste ni registra el
 valor. `fetch` y `defaultHeaders` se pueden inyectar para SSR, Expo y pruebas.
 Los encabezados `Authorization` duraderos se rechazan: use `getAccessToken`.
+`createSession` y `getSystemPing` nunca adjuntan un Bearer previo; el consumidor
+decide cómo mantener el token corto en memoria y debe evitar almacenamiento
+persistente no protegido.
 
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
 error expone solo `status`, un `title` saneado y el `traceId` opcional. Su

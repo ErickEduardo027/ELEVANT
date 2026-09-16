@@ -129,6 +129,11 @@ jobs:
 
       - name: Detect OpenAPI source and snapshot drift
         shell: bash
+        env:
+          Authentication__Issuer: "https://api.ci.elevant.test"
+          Authentication__Audience: "elevant-ci-clients"
+          Authentication__SigningKeyBase64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+          Authentication__AccessTokenMinutes: "15"
         run: |
           set -Eeuo pipefail
 

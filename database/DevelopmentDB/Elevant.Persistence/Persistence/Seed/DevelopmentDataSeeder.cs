@@ -9,6 +9,7 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Infrastructure.Persistence.Seed;
@@ -19,12 +20,11 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
     private static readonly DateTimeOffset FixtureInstant = new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly FixtureDate = new(2026, 8, 18);
 
-    public async Task SeedAsync(string accountPassword, CancellationToken cancellationToken = default)
+    public async Task SeedAsync(
+        DevelopmentAccountPasswords accountPasswords,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(accountPassword) || accountPassword.Length < 14)
-        {
-            throw new InvalidOperationException("The synthetic Development account password must contain at least 14 characters.");
-        }
+        ArgumentNullException.ThrowIfNull(accountPasswords);
 
         await DatabaseInstanceVerifier.RequireEnvironmentAsync(context, "Development", cancellationToken);
 
@@ -35,12 +35,14 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 IsolationLevel.Serializable,
                 cancellationToken);
 
-            await SeedInsideTransactionAsync(accountPassword, cancellationToken);
+            await SeedInsideTransactionAsync(accountPasswords, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         });
     }
 
-    private async Task SeedInsideTransactionAsync(string accountPassword, CancellationToken cancellationToken)
+    private async Task SeedInsideTransactionAsync(
+        DevelopmentAccountPasswords accountPasswords,
+        CancellationToken cancellationToken)
     {
         var aviam = await GetOrAddAsync(
             context.Organizations,
@@ -221,9 +223,9 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         var agentRole = await SeedRoleAsync("Ramp Agent", "RAMP_AGENT", PortalKind.RampMobileApp, "ramp_agent", cancellationToken);
         var clientRole = await SeedRoleAsync("Airline Client", "AIRLINE_CLIENT", PortalKind.AirlinePortal, "airline_client", cancellationToken);
 
-        var adminAccount = await SeedAccountAsync(adminPerson, accountPassword, "40000000-0000-7000-8000-000000000001", cancellationToken);
-        var agentAccount = await SeedAccountAsync(agentPerson, accountPassword, "40000000-0000-7000-8000-000000000002", cancellationToken);
-        var clientAccount = await SeedAccountAsync(clientPerson, accountPassword, "40000000-0000-7000-8000-000000000003", cancellationToken);
+        var adminAccount = await SeedAccountAsync(adminPerson, accountPasswords.AdminOcc, "40000000-0000-7000-8000-000000000001", cancellationToken);
+        var agentAccount = await SeedAccountAsync(agentPerson, accountPasswords.RampAgent, "40000000-0000-7000-8000-000000000002", cancellationToken);
+        var clientAccount = await SeedAccountAsync(clientPerson, accountPasswords.AirlineClient, "40000000-0000-7000-8000-000000000003", cancellationToken);
 
         await EnsureUserRoleAsync(adminAccount.Id, adminRole.Id, cancellationToken);
         await EnsureUserRoleAsync(agentAccount.Id, agentRole.Id, cancellationToken);
@@ -479,9 +481,12 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         string lastName,
         string email,
         string identificationNumber,
-        CancellationToken cancellationToken) => await GetOrAddAsync(
+        CancellationToken cancellationToken)
+    {
+        var expectedPublicId = Guid.Parse(publicId);
+        var person = await GetOrAddAsync(
             context.Persons,
-            person => person.PrimaryEmail == email,
+            candidate => candidate.PrimaryEmail == email,
             () => Stamp(new Person
             {
                 FirstName = firstName,
@@ -491,6 +496,15 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 IdentificationNumber = identificationNumber,
             }, publicId),
             cancellationToken);
+
+        if (person.PublicId != expectedPublicId)
+        {
+            throw new InvalidOperationException(
+                "Synthetic Development person identity drift was detected; refusing to seed credentials or privileges.");
+        }
+
+        return person;
+    }
 
     private async Task<ApplicationRole> SeedRoleAsync(
         string name,
@@ -518,31 +532,80 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         CancellationToken cancellationToken)
     {
         var normalizedEmail = person.PrimaryEmail!.ToUpperInvariant();
-        return await GetOrAddAsync(
-            context.Users,
-            account => account.NormalizedEmail == normalizedEmail,
-            () =>
-            {
-                var account = new ApplicationUser
-                {
-                    PublicId = Guid.Parse(publicId),
-                    PersonId = person.Id,
-                    UserName = person.PrimaryEmail,
-                    NormalizedUserName = normalizedEmail,
-                    Email = person.PrimaryEmail,
-                    NormalizedEmail = normalizedEmail,
-                    EmailConfirmed = true,
-                    Status = AccountLifecycleStatus.Active,
-                    InvitationStatus = InvitationStatus.Accepted,
-                    CreatedAt = FixtureInstant,
-                    UpdatedAt = FixtureInstant,
-                    SecurityStamp = DeterministicGuid($"security:{normalizedEmail}").ToString("D"),
-                    ConcurrencyStamp = DeterministicGuid($"concurrency:{normalizedEmail}").ToString("D"),
-                };
-                account.PasswordHash = new PasswordHasher<ApplicationUser>().HashPassword(account, password);
-                return account;
-            },
+        var expectedPublicId = Guid.Parse(publicId);
+        var account = await context.Users.SingleOrDefaultAsync(
+            candidate => candidate.NormalizedEmail == normalizedEmail,
             cancellationToken);
+        var passwordHasher = new PasswordHasher<ApplicationUser>();
+
+        if (account is null)
+        {
+            account = new ApplicationUser
+            {
+                PublicId = expectedPublicId,
+                PersonId = person.Id,
+                UserName = person.PrimaryEmail,
+                NormalizedUserName = normalizedEmail,
+                Email = person.PrimaryEmail,
+                NormalizedEmail = normalizedEmail,
+                EmailConfirmed = true,
+                LockoutEnabled = true,
+                Status = AccountLifecycleStatus.Active,
+                InvitationStatus = InvitationStatus.Accepted,
+                CreatedAt = FixtureInstant,
+                UpdatedAt = FixtureInstant,
+                SecurityStamp = DeterministicGuid($"security:{normalizedEmail}").ToString("D"),
+                ConcurrencyStamp = DeterministicGuid($"concurrency:{normalizedEmail}").ToString("D"),
+            };
+            account.PasswordHash = passwordHasher.HashPassword(account, password);
+            context.Users.Add(account);
+            await context.SaveChangesAsync(cancellationToken);
+            return account;
+        }
+
+        if (account.PublicId != expectedPublicId || account.PersonId != person.Id)
+        {
+            throw new InvalidOperationException(
+                "Synthetic Development account identity drift was detected; refusing to rotate credentials or attach privileges.");
+        }
+
+        var verification = string.IsNullOrEmpty(account.PasswordHash)
+            ? PasswordVerificationResult.Failed
+            : passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password);
+        var rotatePassword = verification != PasswordVerificationResult.Success;
+        if (!account.LockoutEnabled || rotatePassword)
+        {
+            var replacementHash = rotatePassword
+                ? passwordHasher.HashPassword(account, password)
+                : null;
+            var replacementSecurityStamp = rotatePassword
+                ? Guid.NewGuid().ToString("D")
+                : null;
+            var normalizedEmailParameter = new SqlParameter("@normalized_email", System.Data.SqlDbType.NVarChar, 256)
+            {
+                Value = normalizedEmail,
+            };
+            var publicIdParameter = new SqlParameter("@public_id", System.Data.SqlDbType.UniqueIdentifier)
+            {
+                Value = expectedPublicId,
+            };
+            var passwordHashParameter = new SqlParameter("@password_hash", System.Data.SqlDbType.NVarChar, -1)
+            {
+                Value = (object?)replacementHash ?? DBNull.Value,
+            };
+            var securityStampParameter = new SqlParameter("@security_stamp", System.Data.SqlDbType.NVarChar, -1)
+            {
+                Value = (object?)replacementSecurityStamp ?? DBNull.Value,
+            };
+
+            await context.Database.ExecuteSqlRawAsync(
+                "EXEC [iam].[set_development_account_credential] @normalized_email, @public_id, @password_hash, @security_stamp;",
+                [normalizedEmailParameter, publicIdParameter, passwordHashParameter, securityStampParameter],
+                cancellationToken);
+            await context.Entry(account).ReloadAsync(cancellationToken);
+        }
+
+        return account;
     }
 
     private async Task EnsureUserRoleAsync(long accountId, long roleId, CancellationToken cancellationToken)

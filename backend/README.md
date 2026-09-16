@@ -48,18 +48,51 @@ desarrollo local de ambas webs. `AllowedHosts` sigue describiendo únicamente el
 host de la API; no debe contener los hosts de los clientes. Mobile Agent no usa
 CORS porque es una aplicación nativa.
 
+El Compose exige además `ELEVANT_API_AUTH_ISSUER`,
+`ELEVANT_API_AUTH_AUDIENCE` y `ELEVANT_API_AUTH_SIGNING_KEY_BASE64`; la clave
+debe ser material aleatorio de 32 a 128 bytes codificado en base64 y entrar
+desde el almacén de secretos. El lifetime se
+configura opcionalmente con `ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES`, admite de 1
+a 60 minutos y usa 15 por defecto.
+
 - `/health` comprueba solo que el proceso HTTP está vivo.
 - `/health/ready` comprueba SQL, el catálogo exacto y el marcador inmutable de
   `ElevantDevelopmentDb`.
-- `/api/v1/system/ping` y `/swagger/v1/swagger.json` son los únicos contratos
-  HTTP útiles del scaffold actual.
+- `/health`, `/health/ready` y `/api/v1/system/ping` permiten acceso anónimo.
+- `POST /api/v1/auth/session` valida credenciales y emite la sesión; `GET` sobre
+  la misma ruta exige Bearer y vuelve a resolver en SQL el actor efectivo.
+- El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
+  10 intentos por IP remota en 60 segundos; responde `413` o `429`,
+  respectivamente, cuando se excede cada límite.
+- `/swagger/v1/swagger.json` publica el contrato HTTP en Development.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión
 compatible. El bootstrap inicial del VPS sigue siendo manual y verificable.
-La API aún no implementa autenticación ni endpoints de negocio, por lo que debe
-permanecer exclusivamente dentro del tailnet.
+La autenticación actual es un slice acotado de sesión, no una autorización de
+negocio completa. El host aplica una política fallback autenticada a controllers
+y hubs que no declaren acceso anónimo; los dos hubs SignalR exigen Bearer, aunque
+siguen sin métodos ni mensajes de negocio. El JWT es corto (15 minutos por
+defecto), está firmado con HS256 mediante `Authentication__SigningKeyBase64` inyectada
+desde el ambiente y solo transporta un `sub` y un `jti`, ambos UUID únicos y
+obligatorios, como datos de identidad, además de los claims temporales y de
+emisor/audiencia. Roles, membresías y estaciones no
+se confían al token: `GET /api/v1/auth/session` los vuelve a consultar en SQL.
+
+Los clientes SignalR de navegador pueden enviar el JWT en el parámetro
+`access_token`; el middleware solo lo acepta bajo `/hubs/operations` y
+`/hubs/notifications`. Development eleva el log de
+`Microsoft.AspNetCore.Hosting.Diagnostics` a `Warning` para no registrar esa
+query en el inicio estándar de solicitud. Proxies y observabilidad también deben
+redactarla. Los hubs no deben transportar eventos reales hasta implementar
+revalidación de actor, autorización por scope y cierre/renovación al expirar o
+revocarse el token.
+
+No existen aún refresh, logout, revocación por `jti`, autorización fina por rol,
+tenant o estación, ni endpoints de negocio. Development debe permanecer dentro
+del tailnet; el secreto real de firma se guarda junto con los demás valores
+root-only del ambiente y nunca en Git.
 
 ## Entorno local completo
 
@@ -72,4 +105,4 @@ docker compose --env-file database/DevelopmentDB/.env `
 
 El flujo local es `SQL -> provisioner -> migrator -> seeder-development -> API`. La API no ejecuta migraciones ni seeds al arrancar.
 
-Los endpoints funcionales todavía deben implementarse como vertical slices y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF directamente.
+Los próximos endpoints de negocio deben implementarse como vertical slices y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF directamente.

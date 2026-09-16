@@ -8,7 +8,7 @@
 | Application | Domain | Infrastructure, Api, detalles HTTP o SQL |
 | Contracts | BCL y tipos públicos mínimos | Domain, Application, Infrastructure, Api |
 | Infrastructure | Application, Domain | Api y Contracts salvo una decisión revisada |
-| Persistence | Domain | Application, Infrastructure, Api y Contracts |
+| Persistence | Application, Domain | Infrastructure, Api y Contracts |
 | DatabaseTool | Persistence | Api y clientes web/móvil |
 | Api | Application, Contracts, Infrastructure, Persistence | clientes web/móvil |
 
@@ -17,6 +17,9 @@ Identity y las migraciones pertenecen a Persistence, físicamente bajo
 `database/DevelopmentDB`; Infrastructure reserva adaptadores externos no
 persistentes. Que Api los referencie para composición no habilita a los
 controllers a usar directamente el `DbContext` o clientes externos.
+Persistence implementa los puertos de Application que requieren SQL, como la
+verificación de credenciales y la resolución del actor; por eso depende de
+Application y Domain sin invertir la dependencia hacia Persistence.
 
 ## Dependencias de datos
 

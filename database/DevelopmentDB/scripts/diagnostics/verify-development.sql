@@ -52,7 +52,8 @@ VALUES
     (N'20260817201128_V1_02_IdentityReference'),
     (N'20260817201608_V1_03_WorkforceCommercial'),
     (N'20260817202135_V1_04_Operations'),
-    (N'20260817202420_V1_05_MobileAudit');
+    (N'20260817202420_V1_05_MobileAudit'),
+    (N'20260916151935_V1_06_DevelopmentAccountCredentialRotation');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
@@ -80,6 +81,37 @@ IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> (SELECT COUNT_B
        )
    )
     THROW 52020, 'EF migration history contains an unexpected v1 migration.', 1;
+
+IF OBJECT_ID(N'[iam].[set_development_account_credential]', N'P') IS NULL
+    THROW 52025, 'The restricted Development credential procedure is missing.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.sql_modules
+    WHERE [object_id] = OBJECT_ID(N'[iam].[set_development_account_credential]')
+      AND [execute_as_principal_id] = -2
+)
+    THROW 52026, 'The restricted Development credential procedure must execute as owner.', 1;
+
+IF NOT EXISTS (
+       SELECT 1
+       FROM sys.indexes
+       WHERE [object_id] = OBJECT_ID(N'[iam].[accounts]', N'U')
+         AND [name] = N'ux_accounts_normalized_email'
+         AND [is_unique] = 1
+         AND [has_filter] = 1
+         AND REPLACE([filter_definition], N' ', N'') IN (
+             N'[normalized_email]ISNOTNULL',
+             N'([normalized_email]ISNOTNULL)'
+         )
+   )
+   OR EXISTS (
+       SELECT 1
+       FROM sys.indexes
+       WHERE [object_id] = OBJECT_ID(N'[iam].[accounts]', N'U')
+         AND [name] = N'ix_accounts_normalized_email'
+   )
+    THROW 52028, 'Normalized account emails must use the filtered unique index.', 1;
 
 DECLARE @seed_checks table
 (
@@ -116,6 +148,18 @@ WHERE [public_id] IN (
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000002'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000003')
 );
+
+INSERT INTO @seed_checks
+SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 3
+FROM [iam].[accounts]
+WHERE [normalized_email] IN (
+    N'ADMIN.OCC@DEV.ELEVANT.TEST',
+    N'RAMP.AGENT@DEV.ELEVANT.TEST',
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+)
+  AND [lockout_enabled] = CONVERT(bit, 1)
+  AND NULLIF([password_hash], N'') IS NOT NULL
+  AND NULLIF([security_stamp], N'') IS NOT NULL;
 
 INSERT INTO @seed_checks
 SELECT N'reference-airports', COUNT_BIG(*), 2
@@ -341,6 +385,7 @@ INSERT INTO #permission_checks VALUES
     (N'app-select-marker', COALESCE(HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'SELECT'), 0), 1),
     (N'app-insert-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'INSERT'), 0), 1),
     (N'app-delete-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'DELETE'), 0), 0),
+    (N'app-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 0),
     (N'app-alter-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'ALTER'), 0), 0),
     (N'app-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
 REVERT;
@@ -349,8 +394,12 @@ EXECUTE AS USER = N'elevant_dev_seeder';
 INSERT INTO #permission_checks VALUES
     (N'seeder-select-ref', COALESCE(HAS_PERMS_BY_NAME(N'ref', N'SCHEMA', N'SELECT'), 0), 1),
     (N'seeder-insert-commercial', COALESCE(HAS_PERMS_BY_NAME(N'commercial', N'SCHEMA', N'INSERT'), 0), 1),
+    (N'seeder-update-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'UPDATE'), 0), 0),
+    (N'seeder-update-accounts', COALESCE(HAS_PERMS_BY_NAME(N'iam.accounts', N'OBJECT', N'UPDATE'), 0), 0),
     (N'seeder-update-hr', COALESCE(HAS_PERMS_BY_NAME(N'hr', N'SCHEMA', N'UPDATE'), 0), 0),
     (N'seeder-delete-ops', COALESCE(HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'DELETE'), 0), 0),
+    (N'seeder-execute-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'EXECUTE'), 0), 0),
+    (N'seeder-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 1),
     (N'seeder-select-marker', COALESCE(HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'SELECT'), 0), 1),
     (N'seeder-alter-ref', COALESCE(HAS_PERMS_BY_NAME(N'ref', N'SCHEMA', N'ALTER'), 0), 0),
     (N'seeder-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
@@ -383,6 +432,52 @@ BEGIN
 
     THROW 52019, 'One or more effective Development permissions are incorrect.', 1;
 END;
+
+DECLARE @seeder_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_seeder_role');
+DECLARE @app_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_app_role');
+DECLARE @credential_procedure_id int = OBJECT_ID(N'[iam].[set_development_account_credential]', N'P');
+
+IF NOT EXISTS (
+       SELECT 1
+       FROM sys.database_permissions
+       WHERE [grantee_principal_id] = @seeder_role_id
+         AND [class] = 1
+         AND [major_id] = @credential_procedure_id
+         AND [minor_id] = 0
+         AND [permission_name] = N'EXECUTE'
+         AND [state] IN (N'G', N'W')
+   )
+   OR EXISTS (
+       SELECT 1
+       FROM sys.database_permissions
+       WHERE [grantee_principal_id] = @seeder_role_id
+         AND [permission_name] = N'EXECUTE'
+         AND [state] IN (N'G', N'W')
+         AND NOT ([class] = 1 AND [major_id] = @credential_procedure_id AND [minor_id] = 0)
+   )
+   OR EXISTS (
+       SELECT 1
+       FROM sys.database_permissions
+       WHERE [class] = 1
+         AND [major_id] = @credential_procedure_id
+         AND [minor_id] = 0
+         AND [permission_name] = N'EXECUTE'
+         AND [state] IN (N'G', N'W')
+         AND [grantee_principal_id] <> @seeder_role_id
+   )
+    THROW 52027, 'Seeder EXECUTE must be granted only on the restricted credential procedure.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_permissions
+    WHERE [grantee_principal_id] = @app_role_id
+      AND [class] = 1
+      AND [major_id] = @credential_procedure_id
+      AND [minor_id] = 0
+      AND [permission_name] = N'EXECUTE'
+      AND [state] = N'D'
+)
+    THROW 52029, 'Application role must be denied EXECUTE on the Development credential procedure.', 1;
 
 PRINT N'PASS: SQL Server 2022 Developer Edition and database configuration.';
 PRINT N'PASS: exact ElevantDevelopmentDb target and immutable Development marker.';

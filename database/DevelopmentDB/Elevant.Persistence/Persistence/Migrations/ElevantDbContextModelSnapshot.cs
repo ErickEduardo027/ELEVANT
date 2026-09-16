@@ -4682,7 +4682,9 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
-                        .HasDatabaseName("ix_accounts_normalized_email");
+                        .IsUnique()
+                        .HasDatabaseName("ux_accounts_normalized_email")
+                        .HasFilter("[normalized_email] IS NOT NULL");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()

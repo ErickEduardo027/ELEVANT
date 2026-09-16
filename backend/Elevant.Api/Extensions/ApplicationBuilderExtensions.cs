@@ -54,8 +54,44 @@ public static class ApplicationBuilderExtensions
         }
 
         app.UseRouting();
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateResponseAttribute>() is not null)
+            {
+                context.Response.OnStarting(static state =>
+                {
+                    var response = (HttpResponse)state;
+                    response.Headers.CacheControl = "no-store";
+                    response.Headers.Pragma = "no-cache";
+                    return Task.CompletedTask;
+                }, context.Response);
+            }
+
+            if (context.GetEndpoint()?.Metadata.GetMetadata<SessionCreationRateLimitAttribute>() is not null &&
+                context.Request.ContentLength is > ApiConfiguration.SessionRequestBodyLimitBytes)
+            {
+                context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                var problemDetailsService = context.RequestServices
+                    .GetRequiredService<IProblemDetailsService>();
+                await problemDetailsService.WriteAsync(new ProblemDetailsContext
+                {
+                    HttpContext = context,
+                    ProblemDetails = new ProblemDetails
+                    {
+                        Status = StatusCodes.Status413PayloadTooLarge,
+                        Title = "Request body is too large.",
+                        Type = "https://www.rfc-editor.org/rfc/rfc9110.html#name-413-content-too-large",
+                        Instance = context.Request.Path,
+                    },
+                });
+                return;
+            }
+
+            await next(context);
+        });
         app.UseCors(ApiConfiguration.CorsPolicy);
         app.UseRateLimiter();
+        app.UseAuthentication();
         app.UseAuthorization();
 
         app.MapControllers()
@@ -65,13 +101,13 @@ public static class ApplicationBuilderExtensions
         {
             Predicate = _ => false,
             ResponseWriter = HealthCheckResponseWriter.WriteAsync,
-        });
+        }).AllowAnonymous();
 
         app.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains("ready"),
             ResponseWriter = HealthCheckResponseWriter.WriteAsync,
-        });
+        }).AllowAnonymous();
 
         app.MapHub<OperationsHub>("/hubs/operations");
         app.MapHub<NotificationsHub>("/hubs/notifications");

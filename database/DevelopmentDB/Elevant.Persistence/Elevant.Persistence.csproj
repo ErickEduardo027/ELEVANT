@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\backend\Elevant.Application\Elevant.Application.csproj" />
     <ProjectReference Include="..\..\..\backend\Elevant.Domain\Elevant.Domain.csproj" />
   </ItemGroup>
 

@@ -90,11 +90,11 @@ for file in "${compose_files[@]}"; do
 done
 grep -Fq 'SA_PASSWORD="$${MSSQL_SA_PASSWORD}"' "$root/compose.local.yml"
 
-[[ "$(grep -Fc "'--env', 'SQLCMDPASSWORD'," "$certifier")" -eq 13 ]] ||
+[[ "$(grep -Fc "'--env', 'SQLCMDPASSWORD'," "$certifier")" -eq 16 ]] ||
   fail 'every containerized sqlcmd client must import SQLCMDPASSWORD by name'
-[[ "$(grep -Fc 'Invoke-DockerWithSqlcmdPassword -Password' "$certifier")" -eq 2 ]] ||
+[[ "$(grep -Fc 'Invoke-DockerWithSqlcmdPassword -Password' "$certifier")" -eq 3 ]] ||
   fail 'normal sqlcmd Docker calls must use the scoped password wrapper'
-[[ "$(grep -Ec -- "$certifier_wrapper_re" "$certifier")" -eq 9 ]] ||
+[[ "$(grep -Ec -- "$certifier_wrapper_re" "$certifier")" -eq 11 ]] ||
   fail 'expected-failure sqlcmd Docker calls must use the scoped password wrapper'
 [[ "$(grep -Fc 'docker exec --env SQLCMDPASSWORD' "$certifier")" -eq 1 ]] ||
   fail 'docker exec sqlcmd readiness must import SQLCMDPASSWORD by name'

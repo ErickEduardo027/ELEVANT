@@ -7,8 +7,13 @@ using Elevant.Api.Configuration;
 using Elevant.Api.ExceptionHandling;
 using Elevant.Api.HealthChecks;
 using Elevant.Api.OpenApi;
+using Elevant.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Primitives;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Elevant.Api.Extensions;
 
@@ -42,7 +47,7 @@ public static class ServiceCollectionExtensions
                 options.SubstituteApiVersionInUrl = true;
             });
 
-        services.AddAuthorization();
+        AddAuthentication(services, configuration);
         services.AddSignalR();
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
@@ -67,6 +72,106 @@ public static class ServiceCollectionExtensions
         services.AddElevantOpenApi();
 
         return services;
+    }
+
+    private static void AddAuthentication(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var settings = configuration
+            .GetRequiredSection(JwtAccessTokenOptions.SectionName)
+            .Get<JwtAccessTokenOptions>()
+            ?? throw new InvalidOperationException("Authentication JWT settings are required.");
+
+        if (!settings.IsValid() || !settings.TryGetSigningKey(out var signingKeyBytes))
+        {
+            throw new InvalidOperationException(
+                "Authentication JWT settings must provide issuer, audience, a base64 signing key that decodes to 32-128 bytes, and a lifetime from 1 to 60 minutes.");
+        }
+
+        var signingKey = new SymmetricSecurityKey(signingKeyBytes);
+
+        services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.IncludeErrorDetails = false;
+                options.MapInboundClaims = false;
+                options.SaveToken = false;
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!StringValues.IsNullOrEmpty(accessToken) &&
+                            (path.StartsWithSegments("/hubs/operations") ||
+                             path.StartsWithSegments("/hubs/notifications")))
+                        {
+                            context.Token = accessToken;
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                    OnTokenValidated = context =>
+                    {
+                        var subjectClaims = context.Principal?
+                            .FindAll(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)
+                            .Select(claim => claim.Value)
+                            .ToArray() ?? [];
+                        var tokenIdClaims = context.Principal?
+                            .FindAll(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)
+                            .Select(claim => claim.Value)
+                            .ToArray() ?? [];
+
+                        if (subjectClaims.Length != 1 ||
+                            !Guid.TryParse(subjectClaims[0], out var subject) ||
+                            subject == Guid.Empty ||
+                            tokenIdClaims.Length != 1 ||
+                            !Guid.TryParse(tokenIdClaims[0], out var tokenId) ||
+                            tokenId == Guid.Empty)
+                        {
+                            context.Fail("The access token identity is invalid.");
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                    OnChallenge = context =>
+                    {
+                        context.Response.Headers.CacheControl = "no-store";
+                        context.Response.Headers.Pragma = "no-cache";
+                        return Task.CompletedTask;
+                    },
+                    OnForbidden = context =>
+                    {
+                        context.Response.Headers.CacheControl = "no-store";
+                        context.Response.Headers.Pragma = "no-cache";
+                        return Task.CompletedTask;
+                    },
+                };
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ClockSkew = TimeSpan.FromSeconds(30),
+                    IssuerSigningKey = signingKey,
+                    RequireExpirationTime = true,
+                    RequireSignedTokens = true,
+                    ValidateAudience = true,
+                    ValidateIssuer = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidateLifetime = true,
+                    ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+                    ValidAudience = settings.Audience,
+                    ValidIssuer = settings.Issuer,
+                    ValidTypes = ["at+jwt"],
+                };
+            });
+
+        services.AddAuthorization(options =>
+        {
+            options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
+        });
     }
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)
@@ -96,21 +201,30 @@ public static class ServiceCollectionExtensions
     private static void AddRateLimiting(IServiceCollection services, IConfiguration configuration)
     {
         var permitLimit = Math.Max(1, configuration.GetValue("RateLimiting:PermitLimit", 100));
+        var sessionPermitLimit = Math.Max(
+            1,
+            configuration.GetValue("RateLimiting:SessionPermitLimit", 10));
         var windowSeconds = Math.Max(1, configuration.GetValue("RateLimiting:WindowSeconds", 60));
 
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.AddPolicy(ApiConfiguration.ApiRateLimitPolicy, httpContext =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            {
+                var isSessionCreation = httpContext.GetEndpoint()?.Metadata
+                    .GetMetadata<SessionCreationRateLimitAttribute>() is not null;
+                var clientAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: $"{(isSessionCreation ? "session" : "api")}:{clientAddress}",
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         AutoReplenishment = true,
-                        PermitLimit = permitLimit,
+                        PermitLimit = isSessionCreation ? sessionPermitLimit : permitLimit,
                         QueueLimit = 0,
                         Window = TimeSpan.FromSeconds(windowSeconds),
-                    }));
+                    });
+            });
 
             options.OnRejected = async (context, _) =>
             {

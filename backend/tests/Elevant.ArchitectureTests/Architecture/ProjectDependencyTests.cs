@@ -27,7 +27,9 @@ public sealed class ProjectDependencyTests
             ["Elevant.Infrastructure"] = new HashSet<string>(
                 ["Elevant.Application", "Elevant.Domain"],
                 StringComparer.Ordinal),
-            ["Elevant.Persistence"] = new HashSet<string>(["Elevant.Domain"], StringComparer.Ordinal),
+            ["Elevant.Persistence"] = new HashSet<string>(
+                ["Elevant.Application", "Elevant.Domain"],
+                StringComparer.Ordinal),
             ["Elevant.Api"] = new HashSet<string>(
                 [
                     "Elevant.Application",
@@ -56,7 +58,7 @@ public sealed class ProjectDependencyTests
         AssertProjectReferences("Elevant.Infrastructure");
 
     [Fact]
-    public void PersistenceDependsOnlyOnDomain() =>
+    public void PersistenceDependsOnlyOnApplicationAndDomain() =>
         AssertProjectReferences("Elevant.Persistence");
 
     [Fact]

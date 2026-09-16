@@ -42,8 +42,20 @@ El diseño del portal público exige partir de una membresía activa y scopes
 autorizados, sin confiar en un airline/organization recibido del navegador.
 El acceso interno previsto combina permisos de rol con
 `account_station_scopes`. Hoy esas tablas y relaciones existen en el esquema,
-pero no hay autenticación, autorización tenant ni endpoints de negocio que
-apliquen todavía esas reglas.
+y el slice de sesión valida credenciales y resuelve desde SQL los roles,
+membresías activas y station scopes del actor. `GET /api/v1/auth/session` repite
+esa resolución para no confiar el contexto al JWT. Todavía no hay autorización
+fina de recursos por tenant/rol/estación ni endpoints de negocio que apliquen
+esas reglas.
+
+En el slice actual, `organization_memberships.ValidFrom` y `ValidTo` son fechas
+civiles inclusivas y se comparan con la fecha UTC del servidor. Es una semántica
+provisional: antes de introducir reglas dependientes de jornada o estación debe
+decidirse explícitamente su zona horaria de negocio; el cliente no elige esa
+interpretación. La resolución de cuenta, persona, roles, membresías y estaciones
+usa consultas de lectura separadas, no una transacción con snapshot consistente.
+Por ello la respuesta de sesión es contexto informativo y cada comando futuro
+debe autorizarse contra el estado vigente dentro de su propia operación.
 
 ### Comercial
 

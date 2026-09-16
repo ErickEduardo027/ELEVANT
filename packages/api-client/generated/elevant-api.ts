@@ -5,6 +5,79 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
+export interface CreateSessionRequest {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
+}
+
+export type SessionPortal = typeof SessionPortal[keyof typeof SessionPortal];
+
+
+export const SessionPortal = {
+  back_office: 'back_office',
+  ramp_mobile_app: 'ramp_mobile_app',
+  airline_portal: 'airline_portal',
+} as const;
+
+export interface SessionRoleResponse {
+  roleId: string;
+  code: string;
+  name: string;
+  portal: SessionPortal;
+  userType: string;
+}
+
+export type SessionOrganizationType = typeof SessionOrganizationType[keyof typeof SessionOrganizationType];
+
+
+export const SessionOrganizationType = {
+  aviam_operator: 'aviam_operator',
+  airline_customer: 'airline_customer',
+} as const;
+
+export type SessionMembershipKind = typeof SessionMembershipKind[keyof typeof SessionMembershipKind];
+
+
+export const SessionMembershipKind = {
+  internal_staff: 'internal_staff',
+  airline_client: 'airline_client',
+} as const;
+
+export interface SessionMembershipResponse {
+  membershipId: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+  organizationType: SessionOrganizationType;
+  kind: SessionMembershipKind;
+}
+
+export interface SessionStationScopeResponse {
+  stationId: string;
+  stationCode: string;
+}
+
+export interface SessionActorResponse {
+  accountId: string;
+  email: string;
+  displayName: string;
+  roles: SessionRoleResponse[];
+  memberships: SessionMembershipResponse[];
+  stationScopes: SessionStationScopeResponse[];
+}
+
+export interface CurrentSessionResponse {
+  actor: SessionActorResponse;
+}
+
 export interface ProblemDetails {
   /** @nullable */
   type?: string | null;
@@ -19,12 +92,87 @@ export interface ProblemDetails {
   [key: string]: unknown;
 }
 
+export interface SessionResponse {
+  accessToken: string;
+  tokenType: string;
+  expiresAt: string;
+  actor: SessionActorResponse;
+}
+
 export interface SystemPingResponse {
   application: string;
   status: string;
   environment: string;
   timestampUtc: string;
 }
+
+export const getCreateSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session`
+}
+
+/**
+ * @summary Exchanges valid Development credentials for a short-lived bearer token.
+ */
+export const createSession = async (createSessionRequest: CreateSessionRequest, options?: RequestInit): Promise<SessionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSessionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetCurrentSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session`
+}
+
+/**
+ * @summary Returns the current actor after revalidating its effective scope in SQL.
+ */
+export const getCurrentSession = async ( options?: RequestInit): Promise<CurrentSessionResponse> => {
+
+  const res = await fetch(getGetCurrentSessionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
 
 export const getGetSystemPingUrl = () => {
 

@@ -10,7 +10,7 @@ orientación transversal, comience por el [Vault](../../Vault/README.md).
 ## Primer recorrido
 
 1. Restaurar herramientas/locks, compilar y ejecutar toda la solución.
-2. Revisar las cinco migraciones y snapshot; ejecutar tests SQL reales.
+2. Revisar las seis migraciones y snapshot; ejecutar tests SQL reales.
 3. Entender marcador de ambiente, doble guarda Production y seed Development.
 4. Validar Compose local/database/release con secretos sintéticos.
 5. Revisar identidades DBA/migrator/app/seeder/health/backup.

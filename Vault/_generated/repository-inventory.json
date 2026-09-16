@@ -321,9 +321,9 @@
         "title": "Backend .NET, capas y dependencias",
         "type": "architecture",
         "area": "backend",
-        "status": "verified",
+        "status": "draft",
         "maturity": "evolving",
-        "evidence": "repo-verified"
+        "evidence": "unknown"
       },
       {
         "path": "Vault/04-arquitectura/datos-ef-migraciones-y-persistencia.md",
@@ -361,9 +361,9 @@
         "title": "OpenAPI, HTTP y SignalR",
         "type": "architecture",
         "area": "architecture",
-        "status": "verified",
+        "status": "draft",
         "maturity": "evolving",
-        "evidence": "repo-verified"
+        "evidence": "unknown"
       },
       {
         "path": "Vault/04-arquitectura/README.md",
@@ -391,9 +391,9 @@
         "title": "API compartida",
         "type": "architecture",
         "area": "backend",
-        "status": "verified",
+        "status": "draft",
         "maturity": "evolving",
-        "evidence": "repo-verified"
+        "evidence": "unknown"
       },
       {
         "path": "Vault/05-aplicaciones/developmentdb-compartida.md",
@@ -997,11 +997,11 @@
     "workflows": [
       {
         "path": ".github/workflows/api-client-ci.yml",
-        "sha256": "9a05842f1fc18747ad8275b41626924ee83a72ce53b7e5e7f07c6c3f33b3c623"
+        "sha256": "fdb55c8082d706732e606556874331d11f09fa10c64d63e96bd95508ee4ec0ca"
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "a6965c0a36cb3a53c532c1ceb2406a49104bfcb8fc138527b197b5be237022b2"
+        "sha256": "d29c561508522fa394f25df7491387aa9d086872baab229fd01ce83674e35991"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1009,7 +1009,7 @@
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
-        "sha256": "08dc9347db95986f18bf3ad551d8b96c54d2b462c86f199fb58d11400c4a9612"
+        "sha256": "121d45a5f03997d86d4a433ce9b4473124340afb37b5d079325a80ba6c666f0c"
       },
       {
         "path": ".github/workflows/vault-ci.yml",
@@ -1023,13 +1023,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "b5ab6d3b40608b824a669e3bbe6731d35ba6faa3f3ccaf198c622a23154cd56e",
+        "sha256": "fffb588a3216c6d7ed532e984e7dc4239f92b009e0db71553f3e468eece7d8f0",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "a4160dc591b70f3ca74dae1cbce2642ee8e1aa98af8c9b12c798ef588b99c637",
+        "sha256": "74fe4a2e801ced7d263511beb05bdfaf8b779dde715b607885df58ccbd0366ed",
         "title": null,
         "version": null
       }
@@ -1064,6 +1064,12 @@
         "name": "V1_05_MobileAudit",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260817202420_V1_05_MobileAudit.cs",
         "sha256": "384d938786888fc32bbfa61cd34dd491e03ecc33613a8c39bd0fcf12304b4ff2"
+      },
+      {
+        "id": "20260916151935",
+        "name": "V1_06_DevelopmentAccountCredentialRotation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260916151935_V1_06_DevelopmentAccountCredentialRotation.cs",
+        "sha256": "fc61c8582531f27d514ac3f6eaa231f5c2791ba71b8f9e7e479fc9ef801f02d6"
       }
     ],
     "manifestContracts": [
@@ -1073,7 +1079,7 @@
       },
       {
         "path": "database/DevelopmentDB/scripts/deployment/database_release_manifest.py",
-        "sha256": "d4ff3fe975262862d004ff1fb7d3703e2133df47003e4ce9965c8eaf6c3be6ca"
+        "sha256": "dbb9e1da22cdad7b724ab079dc45a77e6b0e4e8f98e5267ae2255763fa89c023"
       },
       {
         "path": "frontend/scripts/deployment/web_release_manifest.py",

@@ -245,6 +245,32 @@ def _migration_fingerprint(source_files: list[Path]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _development_seed_fingerprint(
+    source_root: Path,
+    development_seed: Path,
+) -> str:
+    if not development_seed.is_file():
+        _fail(f"Required source file is missing: {development_seed}")
+
+    seed_sources = sorted(development_seed.parent.glob("*.cs"))
+    if development_seed not in seed_sources:
+        _fail("The configured Development seed entry point must be a C# source file.")
+
+    digest = hashlib.sha256()
+    for source_file in seed_sources:
+        _resolve_within_source_root(
+            source_root,
+            source_file,
+            f"Development seed source {source_file.name}",
+        )
+        digest.update(source_file.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(source_file.read_bytes())
+        digest.update(b"\0")
+
+    return f"sha256:{digest.hexdigest()}"
+
+
 def _source_fingerprints(
     source_root: Path,
     source_paths: ManifestSourcePaths,
@@ -268,7 +294,10 @@ def _source_fingerprints(
             "migrationIds": migration_chain,
             "migrationFingerprint": _migration_fingerprint(migration_sources),
             "modelFingerprint": _sha256_file(resolved.model_snapshot),
-            "seedFingerprint": _sha256_file(resolved.development_seed),
+            "seedFingerprint": _development_seed_fingerprint(
+                source_root,
+                resolved.development_seed,
+            ),
         },
     }
 
@@ -492,7 +521,11 @@ def _add_source_path_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--development-seed",
         type=Path,
-        help=f"Development seed path relative to the selected root (default: {DEVELOPMENT_SEED}).",
+        help=(
+            "Development seed entry point relative to the selected root; the "
+            "fingerprint includes every .cs file in its directory "
+            f"(default: {DEVELOPMENT_SEED})."
+        ),
     )
 
 

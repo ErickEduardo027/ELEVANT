@@ -11,7 +11,9 @@ Genera y valida el manifiesto que une una publicación de Development con:
 - los digests inmutables de las imágenes `elevant-db-ops` y
   `elevant-db-release`;
 - los hashes de ambos archivos Compose revisados;
-- la cadena de migraciones y las huellas de modelo y seed certificadas.
+- la cadena de migraciones y las huellas de modelo y seed certificadas; la
+  huella del seed cubre todos los archivos `.cs` de su directorio, no solo el
+  entry point `DevelopmentDataSeeder.cs`.
 
 El JSON no es por sí solo el artefacto de entrega. El workflow
 `.github/workflows/backend-ci.yml` publica primero las dos imágenes y crea al

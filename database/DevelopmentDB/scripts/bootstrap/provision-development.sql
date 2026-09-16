@@ -168,6 +168,17 @@ REVOKE UPDATE, DELETE ON SCHEMA::[ref] FROM [elevant_seeder_role];
 REVOKE UPDATE, DELETE ON SCHEMA::[hr] FROM [elevant_seeder_role];
 REVOKE UPDATE, DELETE ON SCHEMA::[commercial] FROM [elevant_seeder_role];
 REVOKE UPDATE, DELETE ON SCHEMA::[ops] FROM [elevant_seeder_role];
+REVOKE EXECUTE ON SCHEMA::[iam] FROM [elevant_seeder_role];
+IF OBJECT_ID(N'[iam].[accounts]', N'U') IS NOT NULL
+    REVOKE UPDATE, DELETE ON OBJECT::[iam].[accounts] FROM [elevant_seeder_role];
+IF OBJECT_ID(N'[iam].[set_development_account_credential]', N'P') IS NOT NULL
+BEGIN
+    REVOKE EXECUTE ON OBJECT::[iam].[set_development_account_credential] FROM [public];
+    IF DATABASE_PRINCIPAL_ID(N'guest') IS NOT NULL
+        REVOKE EXECUTE ON OBJECT::[iam].[set_development_account_credential] FROM [guest];
+    GRANT EXECUTE ON OBJECT::[iam].[set_development_account_credential] TO [elevant_seeder_role];
+    DENY EXECUTE ON OBJECT::[iam].[set_development_account_credential] TO [elevant_app_role];
+END;
 GRANT SELECT ON OBJECT::[infra].[database_instances] TO [elevant_dev_seeder];
 GRANT SELECT ON OBJECT::[infra].[database_instances] TO [elevant_dev_health];
 GRANT SELECT ON OBJECT::[infra].[database_instances] TO [elevant_dev_app];

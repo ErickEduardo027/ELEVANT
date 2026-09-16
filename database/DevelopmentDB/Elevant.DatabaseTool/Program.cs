@@ -3,7 +3,9 @@ using Elevant.Infrastructure.Persistence.Seed;
 using Microsoft.EntityFrameworkCore;
 
 const string connectionVariable = "ConnectionStrings__ElevantDatabase";
-const string seedPasswordVariable = "ELEVANT_DEV_SEED_ACCOUNT_PASSWORD";
+const string adminPasswordVariable = "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD";
+const string rampPasswordVariable = "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD";
+const string airlinePasswordVariable = "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD";
 
 if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development"))
 {
@@ -40,10 +42,12 @@ try
         throw new InvalidOperationException("The Development seeder is forbidden outside Development.");
     }
 
-    var password = Environment.GetEnvironmentVariable(seedPasswordVariable)
-        ?? throw new InvalidOperationException($"Set {seedPasswordVariable} through the deployment secret store.");
+    var passwords = new DevelopmentAccountPasswords(
+        ReadSecret(adminPasswordVariable),
+        ReadSecret(rampPasswordVariable),
+        ReadSecret(airlinePasswordVariable));
 
-    await new DevelopmentDataSeeder(context).SeedAsync(password);
+    await new DevelopmentDataSeeder(context).SeedAsync(passwords);
     Console.WriteLine("Synthetic Development fixtures are present.");
     return 0;
 }
@@ -52,3 +56,7 @@ catch (Exception exception)
     Console.Error.WriteLine($"Database tool failed: {exception.Message}");
     return 1;
 }
+
+static string ReadSecret(string variableName) =>
+    Environment.GetEnvironmentVariable(variableName)
+    ?? throw new InvalidOperationException($"Set {variableName} through the deployment secret store.");
