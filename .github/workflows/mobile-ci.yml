@@ -1,0 +1,71 @@
+name: Mobile Agent CI
+
+on:
+  push:
+    branches:
+      - main
+      - Development
+    paths:
+      - "frontend/mobile-agent/**"
+      - "packages/api-client/**"
+      - ".github/workflows/mobile-ci.yml"
+  pull_request:
+    branches:
+      - main
+      - Development
+    paths:
+      - "frontend/mobile-agent/**"
+      - "packages/api-client/**"
+      - ".github/workflows/mobile-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-agent-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate Mobile Agent source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: frontend/mobile-agent
+
+    env:
+      CI: "true"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_ELEVANT_API_URL: https://api.example.test
+      EXPO_PUBLIC_API_URL: https://prototype-api.example.test
+      EXPO_PUBLIC_SIGNALR_URL: https://prototype-api.example.test/hubs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/mobile-agent/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint Mobile Agent
+        run: npm run lint
+
+      - name: Type-check Mobile Agent
+        run: npm run typecheck
+
+      - name: Bundle shared API client with Metro
+        run: npm run test:api-client-bundle
+
+      - name: Bundle Android application with Metro
+        run: npm run test:app-bundle

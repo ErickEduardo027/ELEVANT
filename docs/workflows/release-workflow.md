@@ -164,13 +164,16 @@ la API los endpoints de autenticación o negocio del prototipo. Consulte
 ## Carril Mobile Agent
 
 Mobile Agent es hoy una app Expo ejecutable con flujos de negocio todavía
-acoplados al backend prototipo. La integración con la API .NET y una APK
-Development firmada y distribuida son objetivos, no capacidades del CI/CD
-actual. `.github/workflows/mobile-ci.yml.template` no es un workflow activo;
-el cliente OpenAPI compartido sí tiene comprobaciones de consumo Mobile bajo
-los filtros de `API Client CI`. En el futuro la tablet de Development deberá
-alcanzar la misma API por HTTPS/Tailscale; la APK tendrá su propio canal y no
-será un servicio Dokploy. Véase el [diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md).
+acoplados al backend prototipo. `.github/workflows/mobile-ci.yml` aporta CI de
+fuente independiente: instala el lockfile, ejecuta lint y tipos, y empaqueta
+tanto el cliente OpenAPI compartido como la aplicación Android con Metro. Ese
+workflow no usa secretos, no firma, no publica y no distribuye una APK.
+
+La integración funcional con la API .NET y una APK Development firmada y
+distribuida continúan siendo objetivos separados. La tablet de Development
+deberá alcanzar la misma API por HTTPS/Tailscale; la APK tendrá su propio canal
+y no será un servicio Dokploy. Véase el
+[diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md).
 
 ## Fallo
 
