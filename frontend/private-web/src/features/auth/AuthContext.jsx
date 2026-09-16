@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { AUTH_EXPIRED_EVENT, logout as closeBackendSession, mockLogin, readSession } from './authService';
+import { AUTH_EXPIRED_EVENT, login as createSession, logout as closeBackendSession, readSession } from './authService';
 
 const AuthContext = createContext(null);
 
@@ -13,7 +13,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     session,
     async login(credentials) {
-      const nextSession = await mockLogin(credentials);
+      const nextSession = await createSession(credentials);
       setSession(nextSession);
       return nextSession;
     },

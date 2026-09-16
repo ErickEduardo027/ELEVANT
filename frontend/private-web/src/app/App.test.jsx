@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { clearSession } from '../features/auth/authService';
+import { clearSession, handleUnauthorizedResponse } from '../features/auth/authService';
 
 vi.mock('../features/shell/AppShell.jsx', () => ({
   default: ({ onLogout }) => (
@@ -62,12 +62,15 @@ describe('App routing', () => {
     'logs in the admin user and lands on Admin/OCC',
     async () => {
       render(<App />);
+      expect(screen.getByRole('checkbox', { name: /recordarme/i })).not.toBeChecked();
       await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
       await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
       await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
 
       expect(await screen.findByText('Admin OCC shell')).toBeInTheDocument();
       expect(window.location.pathname).toBe('/admin-occ');
+      expect(window.localStorage.getItem('elevant-auth-session')).toBeNull();
+      expect(window.sessionStorage.getItem('elevant-auth-session')).not.toBeNull();
     },
     15000
   );
@@ -121,6 +124,8 @@ describe('App routing', () => {
       window.sessionStorage.setItem(
         'elevant-auth-session',
         JSON.stringify({
+          token: 'test-session-token',
+          expiresAt: '2099-01-01T00:00:00.000Z',
           email: 'gestionhumana@elevant.test',
           name: 'Camila Reyes',
           role: 'GESTION_HUMANA',
@@ -137,4 +142,19 @@ describe('App routing', () => {
     },
     15000
   );
+
+  it('clears the active App session and redirects when the API reports 401', async () => {
+    render(<App />);
+    await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
+    await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
+    await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
+    expect(await screen.findByText('Admin OCC shell')).toBeInTheDocument();
+
+    act(() => {
+      expect(handleUnauthorizedResponse({ status: 401 })).toBe(true);
+    });
+
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    expect(await screen.findByText(/inicia sesión para continuar/i)).toBeInTheDocument();
+  });
 });
