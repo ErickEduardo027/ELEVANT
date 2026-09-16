@@ -139,7 +139,7 @@ function Logo({ bright = false }) {
 
 export default function LoginPage({ onSubmit = async () => {} }) {
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const [status, setStatus] = useState('idle'); // 'idle' | 'busy' | 'done'
   const [ripple, setRipple] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
@@ -239,7 +239,7 @@ export default function LoginPage({ onSubmit = async () => {} }) {
               <div className="elv-welcome-sub">Inicia sesión para continuar en la plataforma operativa.</div>
             </div>
             <p className="elv-login-hint">
-              Usa uno de los correos mock de desarrollo y la contraseña compartida para entrar al rol correcto.
+              Usa las credenciales individuales asignadas para Development. El acceso depende de tu rol habilitado.
             </p>
 
             <form className="elv-form" onSubmit={handleSubmit}>

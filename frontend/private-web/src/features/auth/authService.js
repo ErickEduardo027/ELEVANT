@@ -1,3 +1,5 @@
+import { ElevantApiError } from '@elevant/api-client';
+import { createPrivateWebApiClient } from '../../config/elevantApiClient';
 import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
@@ -7,32 +9,40 @@ export const PROTOTYPE_API_URL = String(
   import.meta.env.VITE_PROTOTYPE_API_URL || 'http://localhost:4310'
 ).replace(/\/$/, '');
 
-const MOCK_USERS = {
-  'admin@elevant.test': {
-    email: 'admin@elevant.test',
-    name: 'Laisha Ramírez',
-    role: ROLE_KEYS.ADMIN_OCC,
-    roleLabel: 'Administrador OCC',
-  },
-  'gestionhumana@elevant.test': {
-    email: 'gestionhumana@elevant.test',
-    name: 'Camila Reyes',
-    role: ROLE_KEYS.GESTION_HUMANA,
-    roleLabel: 'Gestión Humana',
-  },
-  'contratos@elevant.test': {
-    email: 'contratos@elevant.test',
-    name: 'Marcos Silva',
-    role: ROLE_KEYS.CONTRATOS,
-    roleLabel: 'Contratos',
-  },
-  'finanzas@elevant.test': {
-    email: 'finanzas@elevant.test',
-    name: 'Elena Rojas',
-    role: ROLE_KEYS.FINANZAS,
-    roleLabel: 'Finanzas',
-  },
-};
+const SUPPORTED_BACK_OFFICE_ROLES = new Set(Object.values(ROLE_KEYS));
+const MOCK_SESSION_LIFETIME_MS = 60 * 60 * 1000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const GENERIC_AUTH_ERROR = 'No fue posible completar la autenticación.';
+let sessionExpirationTimer = null;
+
+const MOCK_USERS = import.meta.env.MODE === 'test'
+  ? {
+      'admin@elevant.test': {
+        email: 'admin@elevant.test',
+        name: 'Laisha Ramírez',
+        role: ROLE_KEYS.ADMIN_OCC,
+        roleLabel: 'Administrador OCC',
+      },
+      'gestionhumana@elevant.test': {
+        email: 'gestionhumana@elevant.test',
+        name: 'Camila Reyes',
+        role: ROLE_KEYS.GESTION_HUMANA,
+        roleLabel: 'Gestión Humana',
+      },
+      'contratos@elevant.test': {
+        email: 'contratos@elevant.test',
+        name: 'Marcos Silva',
+        role: ROLE_KEYS.CONTRATOS,
+        roleLabel: 'Contratos',
+      },
+      'finanzas@elevant.test': {
+        email: 'finanzas@elevant.test',
+        name: 'Elena Rojas',
+        role: ROLE_KEYS.FINANZAS,
+        roleLabel: 'Finanzas',
+      },
+    }
+  : {};
 
 function safeStorage(storage) {
   try {
@@ -56,50 +66,145 @@ function readFrom(storage) {
 function writeTo(storage, session) {
   const store = safeStorage(storage);
   if (!store) return;
-  store.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  try {
+    store.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Authentication still succeeds when browser storage is unavailable.
+  }
 }
 
 function removeFrom(storage) {
   const store = safeStorage(storage);
   if (!store) return;
-  store.removeItem(AUTH_STORAGE_KEY);
+  try {
+    store.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // There is no local state to recover when browser storage is unavailable.
+  }
+}
+
+function cancelSessionExpiration() {
+  if (sessionExpirationTimer === null) return;
+  globalThis.clearTimeout(sessionExpirationTimer);
+  sessionExpirationTimer = null;
+}
+
+function expireActiveSession() {
+  clearSession();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+}
+
+function scheduleSessionExpiration(session) {
+  cancelSessionExpiration();
+  const expiresAt = Date.parse(session?.expiresAt);
+  if (!Number.isFinite(expiresAt)) return;
+
+  const scheduleNextCheck = () => {
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      expireActiveSession();
+      return;
+    }
+
+    sessionExpirationTimer = globalThis.setTimeout(() => {
+      sessionExpirationTimer = null;
+      scheduleNextCheck();
+    }, Math.min(remaining, MAX_TIMEOUT_MS));
+  };
+
+  scheduleNextCheck();
+}
+
+function isFreshSupportedSession(session) {
+  if (!session || typeof session !== 'object') return false;
+  if (typeof session.token !== 'string' || !session.token) return false;
+  if (typeof session.email !== 'string' || !session.email) return false;
+  if (typeof session.name !== 'string' || !session.name) return false;
+  if (!SUPPORTED_BACK_OFFICE_ROLES.has(session.role)) return false;
+
+  const expiresAt = Date.parse(session.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function readFreshFrom(storage) {
+  const session = readFrom(storage);
+  if (!session) return null;
+  if (!isFreshSupportedSession(session)) {
+    removeFrom(storage);
+    return null;
+  }
+  return {
+    ...session,
+    homePath: getRoleHomePath(session.role),
+  };
+}
+
+function mapApiSession(response) {
+  const roles = Array.isArray(response?.actor?.roles) ? response.actor.roles : [];
+  const role = roles.find(candidate =>
+    candidate?.portal === 'back_office' && SUPPORTED_BACK_OFFICE_ROLES.has(candidate.code)
+  );
+
+  if (!role) {
+    throw new Error('Esta cuenta no tiene acceso a AVIAM Web.');
+  }
+
+  return {
+    token: response.accessToken,
+    expiresAt: response.expiresAt,
+    accountId: response.actor.accountId,
+    email: response.actor.email,
+    name: response.actor.displayName,
+    role: role.code,
+    roleLabel: role.name,
+    homePath: getRoleHomePath(role.code),
+    memberships: Array.isArray(response.actor.memberships) ? response.actor.memberships : [],
+    stationScopes: Array.isArray(response.actor.stationScopes) ? response.actor.stationScopes : [],
+  };
+}
+
+function createMockSession(email, password) {
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  const testUser = MOCK_USERS[normalizedEmail];
+  if (!testUser || password !== MOCK_PASSWORD) {
+    throw new Error('Credenciales inválidas.');
+  }
+
+  return {
+    token: 'test-session-token',
+    expiresAt: new Date(Date.now() + MOCK_SESSION_LIFETIME_MS).toISOString(),
+    accountId: `test-${testUser.role.toLowerCase()}`,
+    email: testUser.email,
+    name: testUser.name,
+    role: testUser.role,
+    roleLabel: testUser.roleLabel,
+    homePath: getRoleHomePath(testUser.role),
+    memberships: [],
+    stationScopes: [],
+  };
 }
 
 export function getMockUsers() {
   return Object.values(MOCK_USERS).map(({ email, name, roleLabel }) => ({ email, name, roleLabel }));
 }
 
-async function request(path, options = {}) {
-  let response;
-  try {
-    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-  } catch {
-    throw new Error('No fue posible conectar con el backend del prototipo. Verifica que esté iniciado en el puerto 4310.');
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la autenticación.');
-  return payload;
-}
-
 export function readSession() {
-  return readFrom(window.localStorage) ?? readFrom(window.sessionStorage);
+  const session = readFreshFrom(window.localStorage) ?? readFreshFrom(window.sessionStorage);
+  if (session) scheduleSessionExpiration(session);
+  else cancelSessionExpiration();
+  return session;
 }
 
 export function persistSession(session, remember = false) {
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
   writeTo(remember ? window.localStorage : window.sessionStorage, session);
+  scheduleSessionExpiration(session);
   return session;
 }
 
 export function clearSession() {
+  cancelSessionExpiration();
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
 }
@@ -112,41 +217,36 @@ export function handleUnauthorizedResponse(response) {
 }
 
 export function logout() {
-  const session = readSession();
-  if (session?.token) {
-    void request('/api/auth/logout', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${session.token}` },
-    }).catch(() => undefined);
-  }
   clearSession();
 }
 
-export async function mockLogin({ email, password, remember = false }) {
-  let response;
-  if (import.meta.env.MODE === 'test') {
-    const normalizedEmail = String(email ?? '').trim().toLowerCase();
-    const testUser = MOCK_USERS[normalizedEmail];
-    if (!testUser || password !== MOCK_PASSWORD) {
+export async function login({ email, password, remember = false }, injectedApiClient = null) {
+  if (import.meta.env.MODE === 'test' && !injectedApiClient) {
+    return persistSession(createMockSession(email, password), remember);
+  }
+
+  try {
+    const apiClient = injectedApiClient ?? createPrivateWebApiClient();
+    const response = await apiClient.createSession({
+      email: String(email ?? '').trim(),
+      password: String(password ?? ''),
+    });
+    const session = mapApiSession(response);
+
+    if (!isFreshSupportedSession(session)) {
+      clearSession();
+      throw new Error(GENERIC_AUTH_ERROR);
+    }
+
+    return persistSession(session, remember);
+  } catch (error) {
+    clearSession();
+    if (error instanceof ElevantApiError && error.status === 401) {
       throw new Error('Credenciales inválidas.');
     }
-    response = { token: 'test-session-token', user: testUser };
-  } else {
-    response = await request('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
+    if (error instanceof Error && error.message === 'Esta cuenta no tiene acceso a AVIAM Web.') {
+      throw error;
+    }
+    throw new Error(GENERIC_AUTH_ERROR);
   }
-  const user = response.user;
-
-  const session = {
-    token: response.token,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    roleLabel: user.roleLabel,
-    homePath: getRoleHomePath(user.role),
-  };
-
-  return persistSession(session, remember);
 }

@@ -20,6 +20,8 @@ Vite sirve localmente en `http://localhost:5173`. Las entradas históricas `dash
 
 Ambas variables `VITE_*` son públicas. El build falla si falta alguna, si no usa HTTPS, si apunta a localhost, si contiene una ruta o si no representan el mismo origen. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido. `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores, pero en una imagen certificada también apunta a la API real de Development. Nunca use tokens, contraseñas ni cadenas SQL en variables `VITE_*`.
 
+El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Solo acepta roles conocidos del portal `back_office`, conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
+
 ## Frontera de seguridad
 
 Los roles, tenants y scopes de estación se validan en el servidor. Filtros, menús ocultos y sesiones del prototipo no autorizan datos. La web solo consume la API HTTPS versionada; no accede directamente a SQL Server, proveedores de aviación ni almacenamiento de objetos.
@@ -65,4 +67,4 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. La API real solo tiene por ahora el contrato inicial del sistema; los adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.
+Esta entrega es un **preview técnico de Development**. La creación de sesión ya usa la API real; los adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.

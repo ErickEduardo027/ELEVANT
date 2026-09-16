@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import LoginPage from '../features/auth/LoginPage.jsx';
-import { logout, mockLogin, readSession } from '../features/auth/authService.js';
+import { AUTH_EXPIRED_EVENT, login, logout, readSession } from '../features/auth/authService.js';
 import { ROUTE_PATHS, resolveRoute } from '../features/auth/roleRouting.js';
 import AppShell from '../features/shell/AppShell.jsx';
 import ContractsShell from '../features/contracts/shell/ContractsShell.jsx';
@@ -44,8 +44,19 @@ export default function App() {
     bumpLocationVersion();
   }, [route.pathname, bumpLocationVersion]);
 
+  useEffect(() => {
+    const expireSession = () => {
+      setSession(null);
+      navigate(ROUTE_PATHS.LOGIN, true);
+      bumpLocationVersion();
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, expireSession);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expireSession);
+  }, [bumpLocationVersion]);
+
   async function handleLogin(credentials) {
-    const nextSession = await mockLogin(credentials);
+    const nextSession = await login(credentials);
     setSession(nextSession);
     navigate(nextSession.homePath, true);
     bumpLocationVersion();
