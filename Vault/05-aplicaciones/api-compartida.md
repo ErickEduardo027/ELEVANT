@@ -3,12 +3,12 @@ id: aplicaciones-api-compartida
 title: "API compartida"
 type: architecture
 area: backend
-status: verified
+status: draft
 maturity: evolving
-evidence: repo-verified
+evidence: unknown
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "pending"
 sources:
   - global.json
   - Directory.Build.props
@@ -17,7 +17,7 @@ sources:
   - backend/README.md
   - backend/Elevant.Api/appsettings.json
   - backend/Elevant.Api/appsettings.Production.json
-  - backend/Elevant.Api/Controllers/V1/SystemController.cs
+  - backend/Elevant.Api/Controllers/SystemController.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
   - backend/Elevant.Api/Hubs/README.md
@@ -32,6 +32,12 @@ tags:
 ---
 
 # API compartida
+
+> [!WARNING]
+> La verificación integral de esta nota queda pendiente mientras avanza el plan
+> de implementación. La ruta de `SystemController` fue corregida para conservar
+> la navegación, pero el estado funcional se documentará únicamente en el cierre
+> aprobado por el usuario.
 
 `Elevant.Api` es la única puerta de aplicación a reglas, datos e integraciones para Private Web, Public Web y Mobile Agent. El host existe y está probado como scaffold técnico; no implementa todavía autenticación ni casos de uso de negocio.
 

@@ -3,14 +3,14 @@ id: arquitectura-openapi-http-signalr
 title: "OpenAPI, HTTP y SignalR"
 type: architecture
 area: architecture
-status: verified
+status: draft
 maturity: evolving
-evidence: repo-verified
+evidence: unknown
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "pending"
 sources:
-  - backend/Elevant.Api/Controllers/V1/SystemController.cs
+  - backend/Elevant.Api/Controllers/SystemController.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
   - backend/Elevant.Api/ExceptionHandling/GlobalExceptionHandler.cs
@@ -31,6 +31,12 @@ tags:
 ---
 
 # OpenAPI, HTTP y SignalR
+
+> [!WARNING]
+> La verificación integral de esta nota queda pendiente mientras avanza el plan
+> de implementación. La ruta de `SystemController` fue corregida para conservar
+> la navegación; consulte OpenAPI y el código como fuentes ejecutables hasta la
+> documentación de cierre aprobada por el usuario.
 
 La API dispone de una frontera HTTP endurecida para crecer, pero su contrato público útil continúa siendo mínimo. OpenAPI v1 contiene una sola operación: `GetSystemPing`. Health/readiness son endpoints de plataforma y los dos hubs SignalR son shells sin mensajes de negocio.
 
@@ -201,7 +207,7 @@ REST debe conservar la verdad: después de reconectar o recibir un aviso, el cli
 ## Verificación
 
 - Abre [el snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json) y enumera `paths` antes de asumir una operación.
-- Compara [SystemController](../../backend/Elevant.Api/Controllers/V1/SystemController.cs), [SwaggerConfiguration](../../backend/Elevant.Api/OpenApi/SwaggerConfiguration.cs) y la prueba de diagnostics.
+- Compara [SystemController](../../backend/Elevant.Api/Controllers/SystemController.cs), [SwaggerConfiguration](../../backend/Elevant.Api/OpenApi/SwaggerConfiguration.cs) y la prueba de diagnostics.
 - Revisa el mapeo real en [ApplicationBuilderExtensions](../../backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs).
 - Inspecciona las clases de hubs: una ruta mapeada no implica mensajes implementados.
 - Busca `AddAuthentication`, `UseAuthentication` y `[Authorize]`; no aparecen en el backend del commit verificado.

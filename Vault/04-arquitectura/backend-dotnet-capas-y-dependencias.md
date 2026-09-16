@@ -3,12 +3,12 @@ id: arquitectura-backend-dotnet-capas
 title: "Backend .NET, capas y dependencias"
 type: architecture
 area: backend
-status: verified
+status: draft
 maturity: evolving
-evidence: repo-verified
+evidence: unknown
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+verified_commit: "pending"
 sources:
   - Directory.Build.props
   - Directory.Packages.props
@@ -29,7 +29,7 @@ sources:
   - database/DevelopmentDB/Elevant.DatabaseTool/Elevant.DatabaseTool.csproj
   - database/DevelopmentDB/Elevant.DatabaseTool/packages.lock.json
   - backend/Elevant.Api/Program.cs
-  - backend/Elevant.Api/Controllers/V1/SystemController.cs
+  - backend/Elevant.Api/Controllers/SystemController.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
   - backend/Elevant.Api/HealthChecks/DatabaseRuntimeTarget.cs
@@ -53,6 +53,12 @@ tags:
 ---
 
 # Backend .NET, capas y dependencias
+
+> [!WARNING]
+> La verificación integral de esta nota queda pendiente mientras avanza el plan
+> de implementación. La ruta de `SystemController` fue corregida para conservar
+> la navegación, pero el estado funcional se documentará al cerrar el plan y no
+> debe inferirse desde la fotografía anterior.
 
 El backend es un monolito modular entregable como un único proceso ASP.NET Core. Clean Architecture se materializa mediante proyectos y referencias dirigidas hacia Domain; no mediante microservicios. Persistence y DatabaseTool están físicamente bajo `database/DevelopmentDB`, pero forman parte de la misma solución y del mismo grafo productivo.
 
