@@ -253,7 +253,7 @@ function Invoke-SqlClient {
         '-S', "$sqlAlias,1433",
         '-U', $User,
         '-d', $Database,
-        '-C', '-b', '-r', '1',
+        '-C', '-b', '-I', '-r', '1',
         '-Q', $Query
     )
 }
@@ -992,7 +992,7 @@ IF NOT EXISTS (
         '-S', "$sqlAlias,1433",
         '-U', 'elevant_dev_seeder',
         '-d', 'ElevantDevelopmentDb',
-        '-C', '-b', '-r', '1',
+        '-C', '-b', '-I', '-r', '1',
         '-Q', "UPDATE [iam].[accounts] SET [lockout_enabled] = 0 WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';"
     )
     Invoke-DockerExpectedFailure `
