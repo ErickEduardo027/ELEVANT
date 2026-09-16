@@ -81,7 +81,10 @@ $passwords = @{
     Seeder = "CertSeeder-Aa1!$suffix"
     Health = "CertHealth-Aa1!$suffix"
     Backup = "CertBackup-Aa1!$suffix"
-    Demo = "CertDemo-Aa1!$suffix"
+    DemoAdmin = "CertDemoAdmin-Aa1!$suffix"
+    DemoAdminRotated = "CertDemoAdmin-Bb2!$suffix"
+    DemoRamp = "CertDemoRamp-Aa1!$suffix"
+    DemoAirline = "CertDemoAirline-Aa1!$suffix"
     TeamErick = "CertTeamErick-Aa1!$suffix"
     TeamEliezer = "CertTeamEliezer-Aa1!$suffix"
     TeamLaisha = "CertTeamLaisha-Aa1!$suffix"
@@ -255,6 +258,36 @@ function Invoke-SqlClient {
     )
 }
 
+function Invoke-SqlScalar {
+    param(
+        [Parameter(Mandatory = $true)][string]$User,
+        [Parameter(Mandatory = $true)][string]$Password,
+        [Parameter(Mandatory = $true)][string]$Database,
+        [Parameter(Mandatory = $true)][string]$Query
+    )
+
+    $output = @(Invoke-DockerWithSqlcmdPassword -Password $Password -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', $User,
+        '-d', $Database,
+        '-C', '-b', '-r', '1',
+        '-h', '-1', '-w', '65535', '-y', '8000',
+        '-Q', $Query
+    ))
+
+    $values = @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ -ne '' })
+    if ($values.Count -ne 1) {
+        throw 'SQL scalar query did not return exactly one value.'
+    }
+
+    return $values[0]
+}
+
 function Assert-SqlLoginRejected {
     param(
         [Parameter(Mandatory = $true)][string]$User,
@@ -381,7 +414,8 @@ function Invoke-Release {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Development', 'Production')][string]$Environment,
         [Parameter(Mandatory = $true)][string]$ConnectionString,
-        [Parameter(Mandatory = $true)][ValidateSet('migrate', 'seed-development', 'verify-target')][string]$Command
+        [Parameter(Mandatory = $true)][ValidateSet('migrate', 'seed-development', 'verify-target')][string]$Command,
+        [switch]$UseRotatedAdminPassword
     )
 
     $arguments = @(
@@ -394,7 +428,17 @@ function Invoke-Release {
         $arguments += @('--env', 'ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProductionDb')
     }
     if ($Command -eq 'seed-development') {
-        $arguments += @('--env', "ELEVANT_DEV_SEED_ACCOUNT_PASSWORD=$($passwords.Demo)")
+        $adminPassword = if ($UseRotatedAdminPassword) {
+            $passwords.DemoAdminRotated
+        }
+        else {
+            $passwords.DemoAdmin
+        }
+        $arguments += @(
+            '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$adminPassword",
+            '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
+            '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)"
+        )
     }
     $arguments += @($ReleaseImage, $Command)
 
@@ -623,8 +667,8 @@ $productionConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantProduction
 $developmentMigratorConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=$($passwords.Migrator);Encrypt=True;TrustServerCertificate=True"
 $developmentSeederConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=$($passwords.Seeder);Encrypt=True;TrustServerCertificate=True"
 $productionIntegrityQuery = @'
-IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> 5
-    THROW 53000, 'Production does not contain the five v1 migrations.', 1;
+IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> 6
+    THROW 53000, 'Production does not contain the six v1 migrations.', 1;
 
 IF (SELECT COUNT_BIG(*) FROM [infra].[database_instances]) <> 1
    OR NOT EXISTS (
@@ -731,7 +775,9 @@ DROP DATABASE [ElevantProductionDb];
         '--network', $networkName,
         '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Production',
         '--env', 'ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProductionDb',
-        '--env', "ELEVANT_DEV_SEED_ACCOUNT_PASSWORD=$($passwords.Demo)",
+        '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
+        '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
+        '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -743,7 +789,9 @@ DROP DATABASE [ElevantProductionDb];
         'run', '--rm',
         '--network', $networkName,
         '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Development',
-        '--env', "ELEVANT_DEV_SEED_ACCOUNT_PASSWORD=$($passwords.Demo)",
+        '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
+        '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
+        '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -820,12 +868,200 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
 
     Invoke-Release -Environment Development -ConnectionString $developmentMigratorConnection -Command migrate
     Invoke-Release -Environment Development -ConnectionString $developmentMigratorConnection -Command verify-target
+
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Development seed unexpectedly accepted a deployment placeholder.' `
+        -ExpectedErrorPattern 'must not contain deployment placeholder text' `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Development',
+        '--env', 'ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=REPLACE_ME_AdminAccount!2026',
+        '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
+        '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
+        $ReleaseImage,
+        'seed-development'
+    )
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Development seed unexpectedly accepted a shared account secret.' `
+        -ExpectedErrorPattern 'must use three distinct passwords' `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Development',
+        '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
+        '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
+        '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
+        $ReleaseImage,
+        'seed-development'
+    )
+
+    $allCredentialStateQuery = @'
+SET NOCOUNT ON;
+SELECT STRING_AGG(
+    CONVERT(nvarchar(max), CONCAT([normalized_email], N'=', [password_hash], N'|', [security_stamp])),
+    N';'
+) WITHIN GROUP (ORDER BY [normalized_email])
+FROM [iam].[accounts]
+WHERE [normalized_email] IN (
+    N'ADMIN.OCC@DEV.ELEVANT.TEST',
+    N'RAMP.AGENT@DEV.ELEVANT.TEST',
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+);
+'@
+    $adminCredentialStateQuery = @'
+SET NOCOUNT ON;
+SELECT CONCAT([password_hash], N'|', [security_stamp])
+FROM [iam].[accounts]
+WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';
+'@
+    $nonAdminCredentialStateQuery = @'
+SET NOCOUNT ON;
+SELECT STRING_AGG(
+    CONVERT(nvarchar(max), CONCAT([normalized_email], N'=', [password_hash], N'|', [security_stamp])),
+    N';'
+) WITHIN GROUP (ORDER BY [normalized_email])
+FROM [iam].[accounts]
+WHERE [normalized_email] IN (
+    N'RAMP.AGENT@DEV.ELEVANT.TEST',
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+);
+'@
+
     Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development
+    $credentialsBeforeRepeat = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $allCredentialStateQuery
     Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development
+    $credentialsAfterRepeat = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $allCredentialStateQuery
+    if ($credentialsAfterRepeat -cne $credentialsBeforeRepeat) {
+        throw 'Repeating the Development seed unexpectedly rehashed an unchanged account password.'
+    }
+
     Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
 IF (SELECT COUNT_BIG(*) FROM [iam].[organizations] WHERE [code] = N'CERT-SENTINEL' AND [public_id] = CONVERT(uniqueidentifier, N'90000000-0000-7000-8000-000000000001')) <> 1
     THROW 53003, 'The second seed removed or duplicated the certification sentinel.', 1;
 '@
+
+    Invoke-SqlClient -User 'elevant_dev_migrator' -Password $passwords.Migrator -Database 'ElevantDevelopmentDb' -Query @'
+UPDATE [iam].[accounts]
+SET [lockout_enabled] = CONVERT(bit, 0),
+    [access_failed_count] = 4,
+    [lockout_end] = CONVERT(datetimeoffset, N'2099-12-30T12:34:56+00:00')
+WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';
+'@
+    Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development
+    $credentialsAfterLockoutRepair = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $allCredentialStateQuery
+    if ($credentialsAfterLockoutRepair -cne $credentialsBeforeRepeat) {
+        throw 'Lockout hardening unexpectedly rehashed an unchanged account password.'
+    }
+    Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
+IF NOT EXISTS (
+    SELECT 1
+    FROM [iam].[accounts]
+    WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST'
+      AND [lockout_enabled] = CONVERT(bit, 1)
+      AND [access_failed_count] = 4
+      AND [lockout_end] = CONVERT(datetimeoffset, N'2099-12-30T12:34:56+00:00')
+)
+    THROW 53024, 'Credential hardening reset or unlocked the synthetic account.', 1;
+'@
+
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Seeder unexpectedly obtained direct UPDATE on iam.accounts.' `
+        -ExpectedErrorPattern 'UPDATE permission was denied' `
+        -SqlcmdPassword $passwords.Seeder `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_seeder',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', "UPDATE [iam].[accounts] SET [lockout_enabled] = 0 WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';"
+    )
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Restricted credential procedure unexpectedly accepted an unrelated email.' `
+        -ExpectedErrorPattern 'Credential rotation is restricted to synthetic Development accounts' `
+        -SqlcmdPassword $passwords.Seeder `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'SQLCMDPASSWORD',
+        '--entrypoint', $sqlcmd,
+        $SqlServerImage,
+        '-S', "$sqlAlias,1433",
+        '-U', 'elevant_dev_seeder',
+        '-d', 'ElevantDevelopmentDb',
+        '-C', '-b', '-r', '1',
+        '-Q', "EXEC [iam].[set_development_account_credential] N'OUTSIDER@DEV.ELEVANT.TEST', '49999999-0000-7000-8000-000000000999', NULL, NULL;"
+    )
+
+    $adminCredentialBeforeRotation = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $adminCredentialStateQuery
+    $nonAdminCredentialsBeforeRotation = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $nonAdminCredentialStateQuery
+    Invoke-Release `
+        -Environment Development `
+        -ConnectionString $developmentSeederConnection `
+        -Command seed-development `
+        -UseRotatedAdminPassword
+    $adminCredentialAfterRotation = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $adminCredentialStateQuery
+    $nonAdminCredentialsAfterRotation = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $nonAdminCredentialStateQuery
+    if ($adminCredentialAfterRotation -ceq $adminCredentialBeforeRotation) {
+        throw 'Rotating the admin Development secret did not change its stored credential state.'
+    }
+    if ($nonAdminCredentialsAfterRotation -cne $nonAdminCredentialsBeforeRotation) {
+        throw 'Rotating the admin Development secret changed another synthetic account.'
+    }
+
+    $credentialsAfterRotation = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $allCredentialStateQuery
+    Invoke-Release `
+        -Environment Development `
+        -ConnectionString $developmentSeederConnection `
+        -Command seed-development `
+        -UseRotatedAdminPassword
+    $credentialsAfterRotatedRepeat = Invoke-SqlScalar `
+        -User 'elevant_dev_seeder' `
+        -Password $passwords.Seeder `
+        -Database 'ElevantDevelopmentDb' `
+        -Query $allCredentialStateQuery
+    if ($credentialsAfterRotatedRepeat -cne $credentialsAfterRotation) {
+        throw 'Repeating the rotated Development seed unexpectedly rehashed an account password.'
+    }
 
     Invoke-Ops -Command verify-development
     Invoke-SqlClient -User 'elevant_dev_dba' -Password $passwords.Dba -Database 'ElevantDevelopmentDb' -Query @'

@@ -203,6 +203,8 @@ jobs:
           bash -n tests/scripts/test_api_contract_fingerprint.sh
           bash -n tests/scripts/test_api_release_bundle.sh
           bash -n tests/scripts/test_guard_api_publication.sh
+          shellcheck scripts/deployment/certify-api-image.sh
+          shellcheck tests/scripts/test_api_contract_fingerprint.sh
           bash -n ../scripts/release/path-ownership.sh
           bash -n ../scripts/release/tests/test-path-ownership.sh
           bash tests/scripts/test_api_contract_fingerprint.sh
@@ -317,6 +319,11 @@ jobs:
 
       - name: Detect OpenAPI source and snapshot drift
         shell: bash
+        env:
+          Authentication__Issuer: "https://api.ci.elevant.test"
+          Authentication__Audience: "elevant-ci-clients"
+          Authentication__SigningKeyBase64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+          Authentication__AccessTokenMinutes: "15"
         run: |
           set -Eeuo pipefail
 
@@ -389,6 +396,10 @@ jobs:
         env:
           ConnectionStrings__ElevantDatabase: "Server=localhost,1433;Initial Catalog=ElevantDevelopmentDb;User ID=sa;Password=CI-Only_StrongPassword!2026;Encrypt=True;TrustServerCertificate=True"
           ELEVANT_DATABASE_ENVIRONMENT: Development
+          Authentication__Issuer: "https://api.ci.elevant.test"
+          Authentication__Audience: "elevant-ci-clients"
+          Authentication__SigningKeyBase64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+          Authentication__AccessTokenMinutes: "15"
         run: >-
           dotnet ef migrations has-pending-model-changes
           --project ../database/DevelopmentDB/Elevant.Persistence
@@ -401,6 +412,10 @@ jobs:
         env:
           ConnectionStrings__ElevantDatabase: "Server=localhost,1433;Initial Catalog=ElevantDevelopmentDb;User ID=sa;Password=CI-Only_StrongPassword!2026;Encrypt=True;TrustServerCertificate=True"
           ELEVANT_DATABASE_ENVIRONMENT: Development
+          Authentication__Issuer: "https://api.ci.elevant.test"
+          Authentication__Audience: "elevant-ci-clients"
+          Authentication__SigningKeyBase64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+          Authentication__AccessTokenMinutes: "15"
         run: >-
           dotnet ef migrations script --idempotent
           --project ../database/DevelopmentDB/Elevant.Persistence
@@ -423,27 +438,47 @@ jobs:
           ELEVANT_DB_RELEASE_IMAGE: "ghcr.io/example/elevant-db-release@sha256:0000000000000000000000000000000000000000000000000000000000000000"
           ELEVANT_MIGRATOR_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=CI-Only_Migrator!2026;Encrypt=True;TrustServerCertificate=True"
           ELEVANT_SEEDER_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=CI-Only_SeederPassword!2026;Encrypt=True;TrustServerCertificate=True"
-          ELEVANT_DEV_SEED_ACCOUNT_PASSWORD: "CI-Only_AccountPassword!2026"
+          ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD: "CI-Only_AdminAccount!2026"
+          ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD: "CI-Only_RampAccount!2026"
+          ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD: "CI-Only_AirlineAccount!2026"
         run: |
           docker compose -f ../database/DevelopmentDB/compose.development.database.yml config --quiet
           docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet
+          for required_secret in \
+            ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD \
+            ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD \
+            ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD; do
+            if env -u "$required_secret" \
+              docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet \
+              >/dev/null 2>&1; then
+              echo "$required_secret must remain required by the database release Compose." >&2
+              exit 1
+            fi
+          done
 
       - name: Validate Development API Compose file
         env:
           ELEVANT_API_IMAGE: "ghcr.io/example/elevant-api@sha256:0000000000000000000000000000000000000000000000000000000000000000"
           ELEVANT_API_ALLOWED_HOSTS: "elevant-dev-api.example.ts.net;localhost;127.0.0.1"
           ELEVANT_API_DATABASE_CONNECTION_STRING: "Server=elevant-dev-sql,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_app;Password=CI-Only_AppPassword!2026;Encrypt=True;TrustServerCertificate=True"
+          ELEVANT_API_AUTH_ISSUER: "https://api.ci.elevant.test"
+          ELEVANT_API_AUTH_AUDIENCE: "elevant-ci-clients"
+          ELEVANT_API_AUTH_SIGNING_KEY_BASE64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+          ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES: "15"
           ELEVANT_API_PRIVATE_WEB_ORIGIN: "https://private-web.elevant.test"
           ELEVANT_API_PUBLIC_WEB_ORIGIN: "https://public-web.elevant.test"
           ELEVANT_API_TRUSTED_PROXY: "172.30.241.1"
         run: |
-          for required_origin in \
+          for required_setting in \
+            ELEVANT_API_AUTH_ISSUER \
+            ELEVANT_API_AUTH_AUDIENCE \
+            ELEVANT_API_AUTH_SIGNING_KEY_BASE64 \
             ELEVANT_API_PRIVATE_WEB_ORIGIN \
             ELEVANT_API_PUBLIC_WEB_ORIGIN; do
-            if env -u "$required_origin" \
+            if env -u "$required_setting" \
               docker compose -f compose.development.api.yml config --quiet \
               >/dev/null 2>&1; then
-              echo "$required_origin must remain required by the API Compose." >&2
+              echo "$required_setting must remain required by the API Compose." >&2
               exit 1
             fi
           done
@@ -452,11 +487,19 @@ jobs:
           trap 'rm -f -- "$rendered_compose"' EXIT
           docker compose -f compose.development.api.yml config --format json > "$rendered_compose"
           jq -e \
+            --arg auth_issuer "$ELEVANT_API_AUTH_ISSUER" \
+            --arg auth_audience "$ELEVANT_API_AUTH_AUDIENCE" \
+            --arg auth_signing_key_base64 "$ELEVANT_API_AUTH_SIGNING_KEY_BASE64" \
+            --arg auth_access_token_minutes "$ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES" \
             --arg private "$ELEVANT_API_PRIVATE_WEB_ORIGIN" \
             --arg public "$ELEVANT_API_PUBLIC_WEB_ORIGIN" \
             '
               .services.api.environment as $environment
-              | ($environment.Cors__AllowedOrigins__0 == $private)
+              | ($environment.Authentication__Issuer == $auth_issuer)
+                and ($environment.Authentication__Audience == $auth_audience)
+                and ($environment.Authentication__SigningKeyBase64 == $auth_signing_key_base64)
+                and ($environment.Authentication__AccessTokenMinutes == $auth_access_token_minutes)
+                and ($environment.Cors__AllowedOrigins__0 == $private)
                 and ($environment.Cors__AllowedOrigins__1 == $public)
                 and ($environment.Cors__AllowedOrigins__2 == "http://localhost:5173")
                 and ($environment.Cors__AllowedOrigins__3 == "http://localhost:3000")

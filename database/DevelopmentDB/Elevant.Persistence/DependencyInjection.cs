@@ -1,4 +1,8 @@
+using Elevant.Application.Abstractions.Identity;
+using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Identity;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +32,25 @@ public static class DependencyInjection
 
         services.AddDbContext<ElevantDbContext>(options =>
             options.UseSqlServer(connectionString, ElevantSqlServerOptions.Configure));
+
+        services
+            .AddIdentityCore<ApplicationUser>(options =>
+            {
+                options.Password.RequiredLength = 14;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = true;
+                options.User.RequireUniqueEmail = true;
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+                options.Lockout.MaxFailedAccessAttempts = 5;
+            })
+            .AddRoles<ApplicationRole>()
+            .AddEntityFrameworkStores<ElevantDbContext>();
+
+        services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
+        services.AddScoped<IActorContextResolver, EfActorContextResolver>();
 
         services
             .AddHealthChecks()

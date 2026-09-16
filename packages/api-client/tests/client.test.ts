@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createElevantApiClient,
   ElevantApiError,
+  type SessionResponse,
   type SystemPingResponse,
 } from "../src";
 
@@ -10,6 +11,42 @@ const ping: SystemPingResponse = {
   environment: "Testing",
   status: "ok",
   timestampUtc: "2026-09-05T13:11:41Z",
+};
+
+const session: SessionResponse = {
+  accessToken: "signed-short-lived-token",
+  tokenType: "Bearer",
+  expiresAt: "2026-09-16T12:15:00Z",
+  actor: {
+    accountId: "40000000-0000-7000-8000-000000000001",
+    email: "admin.occ@dev.elevant.test",
+    displayName: "Avery Operations",
+    roles: [
+      {
+        roleId: "41000000-0000-7000-8000-000000000001",
+        code: "ADMIN_OCC",
+        name: "Admin OCC",
+        portal: "back_office",
+        userType: "admin_occ",
+      },
+    ],
+    memberships: [
+      {
+        membershipId: "42000000-0000-7000-8000-000000000001",
+        organizationId: "43000000-0000-7000-8000-000000000001",
+        organizationCode: "AVIAM",
+        organizationName: "AVIAM",
+        organizationType: "aviam_operator",
+        kind: "internal_staff",
+      },
+    ],
+    stationScopes: [
+      {
+        stationId: "44000000-0000-7000-8000-000000000001",
+        stationCode: "SDQ",
+      },
+    ],
+  },
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -42,6 +79,9 @@ describe("createElevantApiClient", () => {
     let requestedUrl = "";
     const client = createElevantApiClient({
       baseUrl: "https://api.example.test/",
+      getAccessToken: () => {
+        throw new Error("getSystemPing must not request an access token");
+      },
       fetch: async (input) => {
         requestedUrl = String(input);
         return jsonResponse(ping);
@@ -52,7 +92,74 @@ describe("createElevantApiClient", () => {
     expect(requestedUrl).toBe("https://api.example.test/api/v1/system/ping");
   });
 
-  it("requests a fresh access token for every request without retaining it", async () => {
+  it("creates a session without sending a stale bearer token", async () => {
+    let requestedUrl = "";
+    let requestMethod = "";
+    let requestAuthorization: string | null = null;
+    let requestBody = "";
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => {
+        throw new Error("createSession must not request an access token");
+      },
+      fetch: async (input, init) => {
+        requestedUrl = String(input);
+        requestMethod = init?.method ?? "";
+        requestAuthorization = new Headers(init?.headers).get("authorization");
+        requestBody = String(init?.body);
+        return jsonResponse(session);
+      },
+    });
+
+    await expect(
+      client.createSession({
+        email: "admin.occ@dev.elevant.test",
+        password: "Synthetic-AccountPassword!2026",
+      }),
+    ).resolves.toEqual(session);
+    expect(requestedUrl).toBe("https://api.example.test/api/v1/auth/session");
+    expect(requestMethod).toBe("POST");
+    expect(requestAuthorization).toBeNull();
+    expect(JSON.parse(requestBody)).toEqual({
+      email: "admin.occ@dev.elevant.test",
+      password: "Synthetic-AccountPassword!2026",
+    });
+  });
+
+  it("resolves the current session with a fresh bearer token", async () => {
+    let authorization: string | null = null;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => session.accessToken,
+      fetch: async (_input, init) => {
+        authorization = new Headers(init?.headers).get("authorization");
+        return jsonResponse({ actor: session.actor });
+      },
+    });
+
+    await expect(client.getCurrentSession()).resolves.toEqual({ actor: session.actor });
+    expect(authorization).toBe(`Bearer ${session.accessToken}`);
+  });
+
+  it("rejects malformed session payloads without retaining credentials", async () => {
+    const password = "Synthetic-AccountPassword!2026";
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => jsonResponse({ accessToken: "incomplete" }),
+    });
+
+    const error = await client
+      .createSession({ email: "admin.occ@dev.elevant.test", password })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ kind: "malformed-response", status: 200 });
+    if (!(error instanceof ElevantApiError)) throw new Error("Expected API error");
+    expect(error.message).not.toContain(password);
+    expect(client).not.toHaveProperty("password");
+    expect(client).not.toHaveProperty("accessToken");
+  });
+
+  it("requests a fresh access token for every authenticated request without retaining it", async () => {
     const authorization: Array<string | null> = [];
     let tokenNumber = 0;
     const client = createElevantApiClient({
@@ -60,12 +167,12 @@ describe("createElevantApiClient", () => {
       getAccessToken: async () => `short-lived-${++tokenNumber}`,
       fetch: async (_input, init) => {
         authorization.push(new Headers(init?.headers).get("authorization"));
-        return jsonResponse(ping);
+        return jsonResponse({ actor: session.actor });
       },
     });
 
-    await client.getSystemPing();
-    await client.getSystemPing();
+    await client.getCurrentSession();
+    await client.getCurrentSession();
 
     expect(authorization).toEqual([
       "Bearer short-lived-1",
@@ -178,7 +285,7 @@ describe("createElevantApiClient", () => {
         ),
     });
 
-    const error = await client.getSystemPing().catch((reason: unknown) => reason);
+    const error = await client.getCurrentSession().catch((reason: unknown) => reason);
 
     expect(error).toBeInstanceOf(ElevantApiError);
     expect(error).toMatchObject({
@@ -247,9 +354,9 @@ describe("createElevantApiClient", () => {
     const client = createElevantApiClient({
       baseUrl: "https://api.example.test",
       getAccessToken: () => token,
-      fetch: async () => jsonResponse(ping),
+      fetch: async () => jsonResponse({ actor: session.actor }),
     });
-    const error = await client.getSystemPing().catch((reason) => reason);
+    const error = await client.getCurrentSession().catch((reason) => reason);
     expect(error).toBeInstanceOf(TypeError);
     expect(error.message).not.toContain(token);
   });

@@ -6,8 +6,9 @@ Web y móvil consumen contratos publicados por Api. No importan ensamblados
 .NET, no conocen tablas y no llaman al proveedor de vuelos. Según ADR-0007, los
 tres clientes incorporan `@elevant/api-client`, generado desde el snapshot
 OpenAPI versionado y adaptado mediante una capa `fetch` común y sin estado global.
-Hoy el snapshot sólo contiene `GetSystemPing`: depender del paquete no demuestra
-que sus flujos de negocio estén integrados con la API.
+Hoy el snapshot contiene `GetSystemPing`, `CreateSession` y
+`GetCurrentSession`: depender del paquete no demuestra que sus flujos de negocio
+estén integrados con la API.
 
 ## Backend a SQL Server
 
@@ -27,9 +28,12 @@ credencial o URL interna.
 
 ## Backend a clientes en tiempo real
 
-Api mapea dos hubs SignalR vacíos. Todavía no existen mensajes de negocio,
-contratos de eventos ni autorización del handshake. Esos controles son requisitos
-previos a transportar datos reales; REST seguirá siendo canónico.
+Api mapea dos hubs SignalR vacíos y la política fallback autentica su handshake.
+Para clientes de navegador, el JWT de query solo se acepta bajo esas dos rutas y
+se trata como dato secreto en observabilidad. Todavía no existen mensajes de
+negocio, contratos de eventos, revalidación del actor contra SQL ni autorización
+por grupo, tenant o estación. Esos controles son requisitos previos a transportar
+datos reales; REST seguirá siendo canónico.
 
 ## Reglas comunes
 

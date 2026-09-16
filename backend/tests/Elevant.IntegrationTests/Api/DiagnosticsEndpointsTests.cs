@@ -1,10 +1,25 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Elevant.IntegrationTests.Api;
 
 public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClassFixture<ElevantApiFactory>
 {
+    [Fact]
+    public void DevelopmentRequestLoggingDoesNotRecordSignalRQueryTokens()
+    {
+        using var application = factory.WithWebHostBuilder(builder =>
+            builder.UseEnvironment("Development"));
+        var configuration = application.Services.GetRequiredService<IConfiguration>();
+
+        Assert.Equal(
+            "Warning",
+            configuration["Logging:LogLevel:Microsoft.AspNetCore.Hosting.Diagnostics"]);
+    }
+
     [Theory]
     [InlineData(ElevantApiFactory.PrivateWebOrigin)]
     [InlineData(ElevantApiFactory.PublicWebOrigin)]
@@ -186,6 +201,82 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         AssertStringProperty(properties, "environment");
         AssertStringProperty(properties, "timestampUtc", "date-time");
 
+        var sessionPath = root
+            .GetProperty("paths")
+            .GetProperty("/api/v1/auth/session");
+        var createSession = sessionPath.GetProperty("post");
+        Assert.Equal("CreateSession", createSession.GetProperty("operationId").GetString());
+        Assert.False(createSession.TryGetProperty("security", out _));
+        Assert.Equal(
+            ["200", "400", "401", "413", "415", "429", "500", "503"],
+            createSession
+                .GetProperty("responses")
+                .EnumerateObject()
+                .Select(response => response.Name)
+                .Order()
+                .ToArray());
+        Assert.Equal(
+            "#/components/schemas/CreateSessionRequest",
+            createSession
+                .GetProperty("requestBody")
+                .GetProperty("content")
+                .GetProperty("application/json")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.True(createSession.GetProperty("requestBody").GetProperty("required").GetBoolean());
+        AssertResponseContent(
+            createSession.GetProperty("responses"),
+            "200",
+            "application/json",
+            "#/components/schemas/SessionResponse");
+
+        var getCurrentSession = sessionPath.GetProperty("get");
+        Assert.Equal(
+            "GetCurrentSession",
+            getCurrentSession.GetProperty("operationId").GetString());
+        Assert.Equal(
+            ["200", "401", "429", "500"],
+            getCurrentSession
+                .GetProperty("responses")
+                .EnumerateObject()
+                .Select(response => response.Name)
+                .Order()
+                .ToArray());
+        AssertResponseContent(
+            getCurrentSession.GetProperty("responses"),
+            "200",
+            "application/json",
+            "#/components/schemas/CurrentSessionResponse");
+        var securityRequirement = Assert.Single(
+            getCurrentSession.GetProperty("security").EnumerateArray());
+        Assert.Empty(securityRequirement.GetProperty("Bearer").EnumerateArray());
+
+        var schemas = components.GetProperty("schemas");
+        var credentialProperties = schemas
+            .GetProperty("CreateSessionRequest")
+            .GetProperty("properties");
+        Assert.Equal(1, credentialProperties.GetProperty("email").GetProperty("minLength").GetInt32());
+        var passwordProperty = credentialProperties.GetProperty("password");
+        Assert.Equal("password", passwordProperty.GetProperty("format").GetString());
+        Assert.True(passwordProperty.GetProperty("writeOnly").GetBoolean());
+        AssertStringEnum(
+            schemas,
+            "SessionPortal",
+            "back_office",
+            "ramp_mobile_app",
+            "airline_portal");
+        AssertStringEnum(
+            schemas,
+            "SessionOrganizationType",
+            "aviam_operator",
+            "airline_customer");
+        AssertStringEnum(
+            schemas,
+            "SessionMembershipKind",
+            "internal_staff",
+            "airline_client");
+
         var bearerScheme = components
             .GetProperty("securitySchemes")
             .GetProperty("Bearer");
@@ -237,5 +328,20 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.False(
             property.TryGetProperty("nullable", out var nullable) && nullable.GetBoolean(),
             $"{propertyName} must remain non-nullable in OpenAPI.");
+    }
+
+    private static void AssertStringEnum(
+        JsonElement schemas,
+        string schemaName,
+        params string[] expectedValues)
+    {
+        var schema = schemas.GetProperty(schemaName);
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal(
+            expectedValues,
+            schema.GetProperty("enum")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray());
     }
 }

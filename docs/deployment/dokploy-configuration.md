@@ -257,7 +257,11 @@ Las imágenes GHCR son privadas. El operador crea una credencial classic con sol
 
 ### Secretos
 
-Generar en el PC siete passwords SQL distintos de 40–48 caracteres y un password demo de 32 caracteres. Guardarlos en un password manager y en los Environment separados de Dokploy. Excluir espacios, `$`, comillas, punto y coma, `#` y saltos de línea para evitar ambigüedad de Compose/connection string.
+Generar en el PC siete passwords SQL distintos de 40–48 caracteres y tres
+passwords demo distintos, uno por cada cuenta sintética Development. Guardarlos
+en un password manager y en los Environment separados de Dokploy. Excluir
+espacios, `$`, comillas, punto y coma, `#` y saltos de línea para evitar
+ambigüedad de Compose/connection string.
 
 ### Recursos one-time
 
@@ -623,9 +627,26 @@ candidato disponible, ejecutar `--dry-run`, reanudar, hacer un `--poll` manual y
 validar la promoción antes de reactivar el schedule. Esto evita registrar un
 `preflight_failed` por divergencia entre el Raw vivo y el payload certificado.
 
-La credencial runtime es exclusivamente `elevant_dev_app`. JWT/RBAC/tenant y
-endpoints de negocio quedan fuera de este scaffold inicial; hasta implementarlos
-la API permanece 100 % tailnet-only y con datos sintéticos.
+El primer rollout de sesión requiere coordinar Database y API antes de fusionar:
+el Environment root-only de Database Release incorpora
+`ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD`, `ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD` y
+`ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD`, con valores distintos; el Environment
+de API incorpora `ELEVANT_API_AUTH_ISSUER`, `ELEVANT_API_AUTH_AUDIENCE` y
+`ELEVANT_API_AUTH_SIGNING_KEY_BASE64`, y puede fijar
+`ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES`. La clave de firma se genera como 32–128
+bytes aleatorios codificados en Base64. No se reutiliza ningún password de
+cuenta, no se muestran valores en logs o capturas y se conserva la antigua
+variable compartida del seed durante toda la ventana de rollback. Solo se retira
+después de la aceptación final de Database, API y webs.
+Como cambian ambos Compose certificados, se pausan los controladores y schedules
+de DB/API/Web, se guardan los Raw exactos revisados y se ejecutan los dry-runs
+antes del merge. La promoción se acepta en orden Database → API → webs.
+
+La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
+El slice actual implementa autenticación y contexto de actor, pero la
+autorización fina por rol, tenant y estación y los endpoints de negocio continúan
+fuera de este incremento. Development permanece 100 % tailnet-only y con datos
+sintéticos.
 
 ## Handoff: publicar las webs Development y activar su CD
 

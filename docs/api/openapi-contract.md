@@ -15,10 +15,17 @@ Cada operación pública debe declarar:
 - nulabilidad y miembros `required` coherentes con la serialización real;
 - comentarios útiles sin detalles internos, secretos ni datos personales.
 
-El documento mantiene un esquema Bearer reservado para autenticación futura.
-Su presencia no significa que el host ya tenga un handler JWT ni que el ping
-requiera autenticación. Tampoco autoriza a incluir tokens o ejemplos de
+El esquema Bearer describe la autenticación JWT ya activa. La operación
+`CreateSession` (`POST /api/v1/auth/session`) y el ping son anónimos;
+`GetCurrentSession` (`GET` sobre la misma ruta) declara Bearer. El host aplica
+además una política fallback autenticada a controllers y hubs sin una excepción
+anónima; los health checks declaran esa excepción y los hubs, que no forman parte
+de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
+
+Este contrato solo cubre creación y consulta de sesión. No implica refresh,
+logout, revocación de `jti`, autorización fina por rol/tenant/estación ni
+endpoints de negocio.
 
 ## Snapshot canónico para TypeScript
 

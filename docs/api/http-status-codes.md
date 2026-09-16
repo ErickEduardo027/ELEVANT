@@ -2,9 +2,15 @@
 
 Los endpoints deben documentar los códigos que realmente pueden producir. La
 tabla siguiente es una pauta para operaciones futuras, no una lista de respuestas
-que la API ya publique. Hoy el único endpoint versionado, `GetSystemPing`,
-declara `200`, `429` y `500` en OpenAPI; health/readiness son endpoints de
-plataforma fuera de ese documento.
+que cada operación ya publique. Los contratos versionados actuales declaran:
+
+- `GetSystemPing`: `200`, `429` y `500`;
+- `CreateSession`: `200`, `400`, `401`, `413`, `415`, `429`, `500` y `503`;
+- `GetCurrentSession`: `200`, `401`, `429` y `500`.
+
+Health/readiness son endpoints de plataforma fuera de OpenAPI. El ping, ambos
+health checks y la creación de sesión permiten acceso anónimo; consultar la
+sesión actual exige un Bearer válido.
 
 | Código | Uso |
 | --- | --- |
@@ -17,6 +23,8 @@ plataforma fuera de ese documento.
 | 403 | Identidad autenticada sin permiso. |
 | 404 | Recurso no visible o inexistente. |
 | 409 | Conflicto de estado, concurrencia o idempotencia. |
+| 413 | Cuerpo de solicitud mayor que el límite publicado por la operación. |
+| 415 | Tipo de contenido no admitido por la operación. |
 | 422 | Semántica válida en JSON pero no procesable, solo si el equipo adopta esta distinción. |
 | 429 | Límite de solicitudes excedido. |
 | 500 | Error inesperado con mensaje público genérico. |

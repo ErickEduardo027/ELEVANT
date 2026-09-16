@@ -35,7 +35,9 @@ internal static class IdentityReferenceConfiguration
                 .HasFilter("[normalized_user_name] IS NOT NULL")
                 .IsUnique();
             builder.HasIndex(account => account.NormalizedEmail)
-                .HasDatabaseName("ix_accounts_normalized_email");
+                .HasDatabaseName("ux_accounts_normalized_email")
+                .HasFilter("[normalized_email] IS NOT NULL")
+                .IsUnique();
             builder.HasOne(account => account.Person)
                 .WithOne()
                 .HasForeignKey<ApplicationUser>(account => account.PersonId)

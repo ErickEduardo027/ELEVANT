@@ -94,6 +94,11 @@ payloads, mantiene esta forma exacta:
 }
 ```
 
+`seedFingerprint` representa todos los archivos `.cs` del directorio de seed,
+incluidos sus validadores auxiliares. Cambiar la política de credenciales o
+cualquier otra semántica del seed cambia la huella aunque el entry point no se
+modifique.
+
 CI vuelve a extraer los tres archivos y exige igualdad byte a byte antes y
 después de publicar el digest. El controlador exige los tres archivos
 regulares, no symlinks, entre 1 byte y 1 MiB; compara el SHA-256 de cada Compose

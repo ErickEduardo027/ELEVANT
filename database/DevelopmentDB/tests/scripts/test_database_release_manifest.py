@@ -19,6 +19,10 @@ import database_release_manifest as release_manifest  # noqa: E402
 
 
 CANONICAL_SOURCE_PATHS = release_manifest.ManifestSourcePaths()
+DEVELOPMENT_SEED_PASSWORDS = (
+    CANONICAL_SOURCE_PATHS.development_seed.parent
+    / "DevelopmentAccountPasswords.cs"
+)
 EXPECTED_SCHEMA_V1_FIXTURE_MIGRATION_FINGERPRINT = (
     "sha256:4b9a8e46167ce2fa0441b2fd49e09896242d06b21a38895d6c51a443bd2fc14d"
 )
@@ -47,6 +51,7 @@ class DatabaseReleaseManifestTests(unittest.TestCase):
         )
         self._write_at(source_paths.model_snapshot, "// model snapshot\n")
         self._write_at(source_paths.development_seed, "// development seed\n")
+        self._write_at(DEVELOPMENT_SEED_PASSWORDS, "// password policy\n")
         self._write_at(
             source_paths.migrations_directory
             / "20260817200402_V1_01_Platform.cs",
@@ -300,6 +305,18 @@ class DatabaseReleaseManifestTests(unittest.TestCase):
     def test_detects_development_seed_drift(self) -> None:
         document = self._generate()
         self._write(CANONICAL_SOURCE_PATHS.development_seed, "// changed seed\n")
+
+        with self.assertRaisesRegex(
+            release_manifest.ManifestError, "Database fingerprints"
+        ):
+            release_manifest.validate_manifest(
+                document,
+                repository_root=self.repository_root,
+            )
+
+    def test_detects_development_seed_helper_drift(self) -> None:
+        document = self._generate()
+        self._write(DEVELOPMENT_SEED_PASSWORDS, "// changed password policy\n")
 
         with self.assertRaisesRegex(
             release_manifest.ManifestError, "Database fingerprints"

@@ -1,3 +1,4 @@
+using Elevant.Infrastructure.Authentication;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,7 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddFlightAwareShell(configuration);
+        services.AddJwtAccessTokens(configuration);
 
         return services;
     }

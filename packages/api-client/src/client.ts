@@ -1,5 +1,11 @@
 import {
+  getCreateSessionUrl,
+  getGetCurrentSessionUrl,
   getGetSystemPingUrl,
+  type CreateSessionRequest,
+  type CurrentSessionResponse,
+  type SessionActorResponse,
+  type SessionResponse,
   type SystemPingResponse,
 } from "../generated/elevant-api";
 import { ElevantApiError } from "./errors";
@@ -10,7 +16,7 @@ type FetchImplementation = typeof globalThis.fetch;
 export interface ElevantApiClientOptions {
   /** Absolute HTTP(S) origin, without a path, query string, or fragment. */
   readonly baseUrl: string;
-  /** Invoked immediately before every request. The token is not retained. */
+  /** Invoked immediately before each authenticated request. The token is not retained. */
   readonly getAccessToken?: () => AccessToken | Promise<AccessToken>;
   /** Request-scoped fetch implementation for SSR, Expo, and tests. */
   readonly fetch?: FetchImplementation;
@@ -23,8 +29,15 @@ export type ElevantRequestInit = Omit<RequestInit, "headers"> & {
 };
 
 export type GetSystemPingOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 
 export interface ElevantApiClient {
+  createSession(
+    request: CreateSessionRequest,
+    options?: CreateSessionOptions,
+  ): Promise<SessionResponse>;
+  getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -182,6 +195,90 @@ function isSystemPingResponse(value: unknown): value is SystemPingResponse {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isSessionActorResponse(value: unknown): value is SessionActorResponse {
+  if (!isRecord(value)) return false;
+  if (
+    !isNonEmptyString(value.accountId) ||
+    !isNonEmptyString(value.email) ||
+    !isNonEmptyString(value.displayName) ||
+    !Array.isArray(value.roles) ||
+    !Array.isArray(value.memberships) ||
+    !Array.isArray(value.stationScopes)
+  ) {
+    return false;
+  }
+
+  return (
+    value.roles.length > 0 &&
+    value.memberships.length > 0 &&
+    value.roles.every(
+      (role) =>
+        isRecord(role) &&
+        isNonEmptyString(role.roleId) &&
+        isNonEmptyString(role.code) &&
+        isNonEmptyString(role.name) &&
+        isNonEmptyString(role.userType) &&
+        ["back_office", "ramp_mobile_app", "airline_portal"].includes(
+          String(role.portal),
+        ),
+    ) &&
+    value.memberships.every(
+      (membership) =>
+        isRecord(membership) &&
+        isNonEmptyString(membership.membershipId) &&
+        isNonEmptyString(membership.organizationId) &&
+        isNonEmptyString(membership.organizationCode) &&
+        isNonEmptyString(membership.organizationName) &&
+        ["aviam_operator", "airline_customer"].includes(
+          String(membership.organizationType),
+        ) &&
+        ["internal_staff", "airline_client"].includes(String(membership.kind)),
+    ) &&
+    value.stationScopes.every(
+      (scope) =>
+        isRecord(scope) &&
+        isNonEmptyString(scope.stationId) &&
+        isNonEmptyString(scope.stationCode),
+    )
+  );
+}
+
+function isSessionResponse(value: unknown): value is SessionResponse {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.accessToken) &&
+    value.tokenType === "Bearer" &&
+    isNonEmptyString(value.expiresAt) &&
+    !Number.isNaN(Date.parse(value.expiresAt)) &&
+    isSessionActorResponse(value.actor)
+  );
+}
+
+function isCurrentSessionResponse(value: unknown): value is CurrentSessionResponse {
+  return isRecord(value) && isSessionActorResponse(value.actor);
+}
+
+function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
+  if (
+    !isRecord(request) ||
+    !isNonEmptyString(request.email) ||
+    typeof request.password !== "string" ||
+    request.password.length === 0
+  ) {
+    throw new TypeError("Session credentials must include an email and password.");
+  }
+
+  return request;
+}
+
 function validatedAccessToken(value: AccessToken) {
   if (value === null || value === undefined || value === "") return undefined;
   if (
@@ -212,12 +309,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   const execute = async (
     path: string,
     init: ElevantRequestInit = {},
+    includeAccessToken = false,
   ): Promise<ApiResult> => {
     const url = validatedRequestUrl(baseUrl, path);
     const headers = mergeHeaders(defaultHeaders, init.headers);
     if (init.body === undefined || init.body === null) headers.delete("content-type");
 
-    if (getAccessToken) {
+    if (includeAccessToken && getAccessToken) {
       const token = validatedAccessToken(await getAccessToken());
       if (token) headers.set("authorization", `Bearer ${token}`);
     }
@@ -248,6 +346,36 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   return Object.freeze({
+    async createSession(request: CreateSessionRequest, options?: CreateSessionOptions) {
+      const credentials = validatedSessionRequest(request);
+      const result = await execute(
+        getCreateSessionUrl(),
+        {
+          ...options,
+          method: "POST",
+          headers: {
+            ...Object.fromEntries(headersFrom(options?.headers, "Request headers")),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(credentials),
+        },
+        false,
+      );
+      if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getCurrentSession(options?: GetCurrentSessionOptions) {
+      const result = await execute(
+        getGetCurrentSessionUrl(),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isCurrentSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     async getSystemPing(options?: GetSystemPingOptions) {
       const result = await execute(getGetSystemPingUrl(), {
         ...options,

@@ -7,8 +7,14 @@ readonly EXPECTED_SOURCE="${3:-}"
 readonly EXPECTED_OPENAPI_SHA256="${4:-}"
 readonly PRIVATE_WEB_ORIGIN="https://private-web.elevant.test"
 readonly PUBLIC_WEB_ORIGIN="https://public-web.elevant.test"
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
+readonly AUTHENTICATION_ISSUER="https://api.ci.elevant.test"
+readonly AUTHENTICATION_AUDIENCE="elevant-ci-clients"
+readonly AUTHENTICATION_SIGNING_KEY_BASE64="RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
+readonly AUTHENTICATION_ACCESS_TOKEN_MINUTES="15"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
+readonly REPOSITORY_ROOT
 readonly OPENAPI_TOOL="$REPOSITORY_ROOT/ops/dokploy/web-cd/openapi-tool.mjs"
 
 [[ -n "$IMAGE" ]] || {
@@ -78,6 +84,10 @@ container="$(docker run --detach --rm \
   --env ASPNETCORE_ENVIRONMENT=Development \
   --env ELEVANT_DATABASE_ENVIRONMENT=Development \
   --env 'ConnectionStrings__ElevantDatabase=Server=127.0.0.1,1;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_app;Password=CI-Only_AppPassword!2026;Encrypt=True;TrustServerCertificate=True;Connect Timeout=1' \
+  --env "Authentication__Issuer=$AUTHENTICATION_ISSUER" \
+  --env "Authentication__Audience=$AUTHENTICATION_AUDIENCE" \
+  --env "Authentication__SigningKeyBase64=$AUTHENTICATION_SIGNING_KEY_BASE64" \
+  --env "Authentication__AccessTokenMinutes=$AUTHENTICATION_ACCESS_TOKEN_MINUTES" \
   --env "Cors__AllowedOrigins__0=$PRIVATE_WEB_ORIGIN" \
   --env "Cors__AllowedOrigins__1=$PUBLIC_WEB_ORIGIN" \
   "$IMAGE")"
@@ -121,6 +131,11 @@ done
 [[ "$(curl --silent --output "$response_root/ping.json" --write-out '%{http_code}' --max-time 5 "$base_url/api/v1/system/ping")" == 200 ]] || {
   docker logs "$container" >&2 || true
   echo "API ping endpoint did not return HTTP 200." >&2
+  exit 1
+}
+[[ "$(curl --silent --output "$response_root/session-unauthenticated.json" --write-out '%{http_code}' --max-time 5 "$base_url/api/v1/auth/session")" == 401 ]] || {
+  docker logs "$container" >&2 || true
+  echo "API session endpoint did not reject an unauthenticated request with HTTP 401." >&2
   exit 1
 }
 [[ "$(curl --silent --output "$response_root/swagger.json" --write-out '%{http_code}' --max-time 5 "$base_url/swagger/v1/swagger.json")" == 200 ]] || {
