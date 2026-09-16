@@ -51,9 +51,8 @@ class WebReleaseManifestTests(unittest.TestCase):
         )
         self.api_manifest = self._api_manifest()
         self.api_client_source = {
-            "sourceCommit": "b" * 40,
-            "sourceRunId": "111111",
-            "apiImage": f"ghcr.io/erickeduardo027/elevant-api@sha256:{'3' * 64}",
+            "schemaVersion": 1,
+            "openApiSha256": self._openapi_digest(),
             "swaggerPath": "/swagger/v1/swagger.json",
         }
 
@@ -199,15 +198,44 @@ class WebReleaseManifestTests(unittest.TestCase):
                 published_at="2026-09-05T01:00:00Z",
             )
 
-    def test_rejects_api_client_provenance_drift(self) -> None:
-        self.api_client_source["sourceCommit"] = "c" * 40
-        with self.assertRaisesRegex(web_manifest.ManifestError, "sourceCommit"):
-            self._generate()
-        self.api_client_source["sourceCommit"] = "b" * 40
-        self.api_client_source["apiImage"] = (
+    def test_api_release_provenance_comes_from_certified_manifest(self) -> None:
+        self.api_manifest["source"]["commit"] = "c" * 40  # type: ignore[index]
+        self.api_manifest["source"]["runId"] = "222222"  # type: ignore[index]
+        self.api_manifest["source"]["workflowUrl"] = (  # type: ignore[index]
+            "https://github.com/ErickEduardo027/ELEVANT/actions/runs/222222"
+        )
+        self.api_manifest["images"]["api"] = (  # type: ignore[index]
             f"ghcr.io/erickeduardo027/elevant-api@sha256:{'8' * 64}"
         )
-        with self.assertRaisesRegex(web_manifest.ManifestError, "image does not match"):
+        document = self._generate()
+        self.assertEqual(document["api"]["requiredRunId"], "222222")  # type: ignore[index]
+        self.assertEqual(
+            document["api"]["requiredImage"],  # type: ignore[index]
+            f"ghcr.io/erickeduardo027/elevant-api@sha256:{'8' * 64}",
+        )
+
+    def test_rejects_api_client_contract_drift_and_legacy_shape(self) -> None:
+        self.api_client_source["openApiSha256"] = f"sha256:{'8' * 64}"
+        with self.assertRaisesRegex(web_manifest.ManifestError, "OpenAPI fingerprint"):
+            self._generate()
+
+        self.api_client_source["openApiSha256"] = self._openapi_digest()
+        self.api_client_source["sourceCommit"] = "b" * 40
+        with self.assertRaisesRegex(web_manifest.ManifestError, "unexpected"):
+            self._generate()
+
+    def test_rejects_api_manifest_swagger_path_drift(self) -> None:
+        self.api_manifest["endpoints"]["swaggerPath"] = "/swagger/v2/swagger.json"  # type: ignore[index]
+        with self.assertRaisesRegex(web_manifest.ManifestError, "swaggerPath"):
+            self._generate()
+
+    def test_rejects_coordinated_noncanonical_swagger_path(self) -> None:
+        self.api_client_source["swaggerPath"] = "/swagger/v2/swagger.json"
+        self.api_manifest["endpoints"]["swaggerPath"] = "/swagger/v2/swagger.json"  # type: ignore[index]
+        with self.assertRaisesRegex(
+            web_manifest.ManifestError,
+            "must be /swagger/v1/swagger.json",
+        ):
             self._generate()
 
     def test_rejects_mutable_references_and_unknown_fields(self) -> None:

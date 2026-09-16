@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-09-16"
+verified_commit: "f533cf2b20c1ded9b68fb10d6edcf2d622551ac4"
 sources:
   - docs/adr/0001-use-monorepo.md
   - docs/adr/0002-use-dotnet-10.md
@@ -18,6 +18,13 @@ sources:
   - docs/adr/0006-separate-development-and-production.md
   - docs/adr/0007-api-client-generation.md
   - docs/adr/0013-development-ssms-data-access.md
+  - docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md
+  - .github/workflows/backend-ci.yml
+  - .github/workflows/web-ci.yml
+  - packages/api-client/openapi/source.json
+  - packages/api-client/scripts/snapshot-utils.mjs
+  - frontend/scripts/deployment/resolve-api-release.sh
+  - scripts/release/path-ownership.sh
   - backend/tests/Elevant.ArchitectureTests/Architecture/ProjectDependencyTests.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
@@ -52,9 +59,14 @@ Esta nota resume decisiones aceptadas y las contrasta con el código vigente. Un
 | ADR-0004 · APIs externas centralizadas | Frontera implementada, adapter pendiente | Application define el puerto FlightAware; no existe transporte real. |
 | ADR-0005 · API remota de Development | Decisión arquitectónica aceptada | Los clientes tienen configuración para un origen remoto; esta nota no certifica el estado de un host vivo. |
 | ADR-0006 · Development/Production separados | Guardas y límites de repo implementados | Development tiene tooling; Production sigue reservada y requiere diseño/rollout independiente. |
-| ADR-0007 · Cliente TypeScript generado | Implementada para el contrato mínimo | Snapshot, procedencia, Orval y wrapper existen; sólo `GetSystemPing` está disponible. |
+| ADR-0007 · Cliente TypeScript generado | Implementada para el contrato mínimo | Snapshot, descriptor, Orval y wrapper existen; sólo `GetSystemPing` está disponible. |
+| ADR-0014 · Release API ligada a fingerprint OpenAPI | Implementada en CI/CD | Descriptor, snapshot, Swagger y etiqueta OCI deben coincidir; la huella prueba igualdad canónica, no compatibilidad semántica ni una atestación externa. |
 
-Los ADR posteriores sobre empaquetado y operación de Development pertenecen principalmente a CI/CD y Operaciones. No se usan aquí para afirmar disponibilidad, despliegue o recuperación de un runtime.
+Los ADR-0008 a ADR-0013 sobre empaquetado y operación de Development
+pertenecen principalmente a CI/CD y Operaciones. ADR-0014 sí aparece aquí
+porque separa identidad del contrato y procedencia de release. Ninguna de estas
+decisiones se usa para inferir disponibilidad, despliegue o recuperación de un
+runtime vivo.
 
 ## Restricciones no negociables
 
@@ -80,6 +92,8 @@ Los ADR posteriores sobre empaquetado y operación de Development pertenecen pri
 - API no migra ni siembra al arrancar.
 - Migraciones no transportan DML de negocio; Development seed es explícito y Production no se siembra.
 - OpenAPI gobierna el contrato cliente/servidor sólo para operaciones existentes.
+- `source.json` identifica el contrato mediante versión, ruta y fingerprint;
+  commit, run e imagen se obtienen del manifiesto OCI inmutable de la release.
 - Cambios incompatibles requieren versión o rollout API-first coordinado; cliente y API pueden desplegarse de forma independiente.
 - REST conserva la verdad; SignalR no constituye confirmación durable.
 
@@ -97,6 +111,7 @@ Los ADR posteriores sobre empaquetado y operación de Development pertenecen pri
 | Modelo SQL, no-cascade y convenciones críticas | Pruebas de integración de Persistence | Automática para invariantes enumeradas; no para toda regla de negocio. |
 | Destino de DB | Guard de ambiente/nombre/confirmación + marker | Automática en tooling/readiness. |
 | Contrato mínimo HTTP | Prueba de diagnostics + snapshot OpenAPI | Automática para `GetSystemPing`; no existen contratos de negocio. |
+| Unión contrato/release | Igualdad descriptor/snapshot/Swagger, etiqueta OCI, política de paths y resolver de linaje | Automática para identidad canónica y procedencia exacta; no juzga compatibilidad semántica. |
 | Separación DTO/EF y controllers delgados | Reglas AGENTS + revisión | No hay analizador que impida toda violación dentro de Api. |
 | Tenant/RBAC/station scope | Diseño y modelo persistente | Sin enforcement HTTP porque autenticación/casos de uso no están implementados. |
 | Historial append-only | Tablas/eventos y algunas restricciones | No existe una garantía universal contra `UPDATE`/`DELETE`. |

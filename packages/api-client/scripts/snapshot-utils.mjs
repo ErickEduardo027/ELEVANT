@@ -1,16 +1,18 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const expectedMetadataKeys = [
-  "apiImage",
-  "sourceCommit",
-  "sourceRunId",
+const expectedDescriptorKeys = [
+  "openApiSha256",
+  "schemaVersion",
   "swaggerPath",
 ];
 
+export const openApiDescriptorSchemaVersion = 1;
+
 export const packageRoot = resolve(import.meta.dirname, "..");
 export const snapshotPath = resolve(packageRoot, "openapi", "elevant-v1.json");
-export const sourceMetadataPath = resolve(packageRoot, "openapi", "source.json");
+export const sourceDescriptorPath = resolve(packageRoot, "openapi", "source.json");
 
 export async function readJson(path) {
   let contents;
@@ -28,55 +30,76 @@ export async function readJson(path) {
   }
 }
 
-export function canonicalJson(value) {
+export function canonicalStringify(value) {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return JSON.stringify(value);
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("JSON contains a non-finite number.");
+    }
+    if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
+      throw new Error("JSON contains an integer outside the safe range.");
+    }
+    return JSON.stringify(value);
+  }
+
   if (Array.isArray(value)) {
-    return value.map(canonicalJson);
+    return `[${value.map(canonicalStringify).join(",")}]`;
   }
 
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonicalJson(value[key])]),
-    );
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalStringify(value[key])}`,
+      )
+      .join(",")}}`;
   }
 
-  return value;
+  throw new Error("JSON contains an unsupported value.");
 }
 
-export function canonicalStringify(value) {
-  return JSON.stringify(canonicalJson(value));
+export function canonicalJsonSha256(value) {
+  const digest = createHash("sha256")
+    .update(canonicalStringify(value), "utf8")
+    .digest("hex");
+  return `sha256:${digest}`;
 }
 
-export async function validateTrackedSnapshot() {
-  const [snapshot, metadata] = await Promise.all([
-    readJson(snapshotPath),
-    readJson(sourceMetadataPath),
-  ]);
-
-  const metadataKeys = Object.keys(metadata).sort();
-  if (canonicalStringify(metadataKeys) !== canonicalStringify(expectedMetadataKeys)) {
-    throw new Error("OpenAPI provenance metadata has an unexpected shape.");
-  }
-
-  if (!/^[0-9a-f]{40}$/.test(metadata.sourceCommit)) {
-    throw new Error("OpenAPI provenance has an invalid source commit.");
-  }
-
-  if (!/^\d+$/.test(metadata.sourceRunId)) {
-    throw new Error("OpenAPI provenance has an invalid source run ID.");
-  }
-
+export function validateSnapshotDescriptor(snapshot, descriptor) {
   if (
-    !/^ghcr\.io\/erickeduardo027\/elevant-api@sha256:[0-9a-f]{64}$/.test(
-      metadata.apiImage,
-    )
+    descriptor === null ||
+    typeof descriptor !== "object" ||
+    Array.isArray(descriptor)
   ) {
-    throw new Error("OpenAPI provenance has an invalid immutable API image.");
+    throw new Error("OpenAPI source descriptor has an unexpected shape.");
   }
 
-  if (metadata.swaggerPath !== "/swagger/v1/swagger.json") {
-    throw new Error("OpenAPI provenance has an invalid Swagger path.");
+  const descriptorKeys = Object.keys(descriptor).sort();
+  if (
+    canonicalStringify(descriptorKeys) !==
+    canonicalStringify(expectedDescriptorKeys)
+  ) {
+    throw new Error("OpenAPI source descriptor has an unexpected shape.");
+  }
+
+  if (descriptor.schemaVersion !== openApiDescriptorSchemaVersion) {
+    throw new Error("OpenAPI source descriptor has an invalid schema version.");
+  }
+
+  if (!/^sha256:[0-9a-f]{64}$/.test(descriptor.openApiSha256)) {
+    throw new Error("OpenAPI source descriptor has an invalid fingerprint.");
+  }
+
+  if (descriptor.swaggerPath !== "/swagger/v1/swagger.json") {
+    throw new Error("OpenAPI source descriptor has an invalid Swagger path.");
   }
 
   if (
@@ -87,5 +110,18 @@ export async function validateTrackedSnapshot() {
     throw new Error("The tracked OpenAPI snapshot is not the expected v1 contract.");
   }
 
+  if (descriptor.openApiSha256 !== canonicalJsonSha256(snapshot)) {
+    throw new Error("OpenAPI source descriptor does not match the tracked snapshot.");
+  }
+
   return snapshot;
+}
+
+export async function validateTrackedSnapshot() {
+  const [snapshot, descriptor] = await Promise.all([
+    readJson(snapshotPath),
+    readJson(sourceDescriptorPath),
+  ]);
+
+  return validateSnapshotDescriptor(snapshot, descriptor);
 }

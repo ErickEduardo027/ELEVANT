@@ -90,6 +90,14 @@ imagen API, su bundle OCI y el movimiento de `development-certified`. La
 comprobación independiente de `API Client CI` conserva la misma comparación
 como defensa adicional; el bloqueo de publicación vive dentro de `Backend CI`.
 
+El descriptor versionado del contrato contiene su huella canónica, no el commit
+o digest que CI aún no ha publicado. Backend CI exige que descriptor, snapshot y
+Swagger servido coincidan, y graba la misma huella en la etiqueta inmutable
+`io.elevant.api-release.openapi-sha256` del bundle API. La procedencia completa
+de la ejecución permanece en el manifiesto del bundle. Este vínculo permite una
+única entrega sin un commit posterior de reconciliación; véase
+[ADR-0014](../adr/0014-bind-api-releases-to-openapi-fingerprint.md).
+
 Cuando API y Persistence cambian juntos, Database CD promueve primero. Un fallo
 DB conserva la API anterior. Un fallo API no revierte el esquema y por eso las
 migraciones deben ser backward-compatible. Consulte
@@ -99,7 +107,8 @@ migraciones deben ser backward-compatible. Consulte
 
 AVIAM Web y Public Web son dos carriles independientes. En un pull request se
 validan y construyen con orígenes sintéticos; en un push relevante a
-`Development`, cada carril aplicable usa los orígenes HTTPS de las variables de
+`Development`, cada carril aplicable valida la huella del snapshot contra la
+etiqueta del bundle API compatible, usa los orígenes HTTPS de las variables de
 repositorio, certifica una imagen y publica un bundle OCI v1 independiente:
 
 ```text
@@ -112,6 +121,16 @@ imagen, hash Compose, fingerprint de configuración y la entrega API exacta con
 la que se construyó: bundle, `runId`, imagen y hash OpenAPI. Solo después de
 volver a extraer y comparar el payload se mueve su alias
 `development-certified`.
+
+Una política de paths compartida mantiene alineados el clasificador API, los
+guards y los carriles web. Todo cambio que produzca una release API recertifica
+ambas webs. El resolver admite una API anterior solo cuando su commit pertenece
+a la misma historia y el diff hasta el checkout no contiene inputs API; de lo
+contrario espera la release nueva incluso si OpenAPI no cambió. Antes de publicar
+revalida tanto el digest seleccionado como el alias vigente. Las publicaciones
+API, AVIAM y Public se serializan en un grupo común con cola múltiple, sin
+cancelar un carril pendiente, cambiar los manifiestos v1 ni relajar el gate
+exacto del controlador.
 
 En el VPS, el mismo paquete `web-cd` ejecuta perfiles `aviam-web` y
 `public-web`, pero conserva configuración, estado, historia y rollback

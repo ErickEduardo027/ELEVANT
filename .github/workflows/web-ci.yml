@@ -13,6 +13,24 @@ on:
       - "packages/api-client/**"
       - "ops/dokploy/web-cd/**"
       - ".github/workflows/web-ci.yml"
+      - ".github/workflows/backend-ci.yml"
+      - ".dockerignore"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "dotnet-tools.json"
+      - "global.json"
+      - "scripts/release/**"
+      - "backend/Dockerfile"
+      - "backend/compose.development.api.yml"
+      - "backend/Elevant.sln"
+      - "backend/Elevant.Api/**"
+      - "backend/Elevant.Application/**"
+      - "backend/Elevant.Contracts/**"
+      - "backend/Elevant.Domain/**"
+      - "backend/Elevant.Infrastructure/**"
+      - "backend/scripts/deployment/**"
+      - "database/DevelopmentDB/Elevant.Persistence/**"
   pull_request:
     branches:
       - main
@@ -25,6 +43,24 @@ on:
       - "packages/api-client/**"
       - "ops/dokploy/web-cd/**"
       - ".github/workflows/web-ci.yml"
+      - ".github/workflows/backend-ci.yml"
+      - ".dockerignore"
+      - "Directory.Build.props"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "dotnet-tools.json"
+      - "global.json"
+      - "scripts/release/**"
+      - "backend/Dockerfile"
+      - "backend/compose.development.api.yml"
+      - "backend/Elevant.sln"
+      - "backend/Elevant.Api/**"
+      - "backend/Elevant.Application/**"
+      - "backend/Elevant.Contracts/**"
+      - "backend/Elevant.Domain/**"
+      - "backend/Elevant.Infrastructure/**"
+      - "backend/scripts/deployment/**"
+      - "database/DevelopmentDB/Elevant.Persistence/**"
 
 permissions:
   contents: read
@@ -68,22 +104,19 @@ jobs:
 
           aviam_owned=false
           public_owned=false
+          # shellcheck source=scripts/release/path-ownership.sh
+          source scripts/release/path-ownership.sh
           while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/workflows/web-ci.yml | \
-              frontend/scripts/deployment/* | \
-              frontend/tests/deployment/* | \
-              packages/api-client/* )
-                aviam_owned=true
-                public_owned=true
-                ;;
-              frontend/private-web/* )
-                aviam_owned=true
-                ;;
-              frontend/public-web/* )
-                public_owned=true
-                ;;
-            esac
+            if elevant_is_web_shared_input_path "$path"; then
+              aviam_owned=true
+              public_owned=true
+            fi
+            if elevant_is_web_application_input_path aviam-web "$path"; then
+              aviam_owned=true
+            fi
+            if elevant_is_web_application_input_path public-web "$path"; then
+              public_owned=true
+            fi
           done < "$changed_file_list"
 
           matrix='{"include":[]}'
@@ -145,7 +178,11 @@ jobs:
             frontend/tests/deployment/test_resolve_api_release.sh
           )
           bash -n "${scripts[@]}"
-          shellcheck "${scripts[@]}"
+          bash -n scripts/release/path-ownership.sh
+          bash -n scripts/release/tests/test-path-ownership.sh
+          shellcheck -x "${scripts[@]}"
+          shellcheck scripts/release/path-ownership.sh
+          shellcheck -x scripts/release/tests/test-path-ownership.sh
           modules=(
             frontend/scripts/deployment/csp-tool.mjs
             frontend/scripts/deployment/web-compose-tool.mjs
@@ -158,6 +195,7 @@ jobs:
             frontend/tests/deployment/test-web-compose-tool.mjs
           bash frontend/tests/deployment/test_guard_web_publication.sh
           bash frontend/tests/deployment/test_resolve_api_release.sh
+          bash scripts/release/tests/test-path-ownership.sh
 
       - name: Render and validate both reviewed Development web Compose files
         shell: bash
@@ -228,6 +266,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -292,6 +331,7 @@ jobs:
         shell: bash
         env:
           ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
+          ELEVANT_SOURCE_COMMIT: ${{ github.sha }}
           ELEVANT_API_WAIT_SECONDS: "1800"
           ELEVANT_API_POLL_SECONDS: "15"
         run: |
@@ -467,7 +507,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     concurrency:
-      group: development-${{ matrix.application }}-manifest-publication
+      group: development-api-web-release-publication
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: read
@@ -528,11 +569,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Re-resolve and compare the immutable API prerequisite
+      - name: Re-resolve and compare the exact API prerequisite
         shell: bash
         env:
           APPLICATION: ${{ matrix.application }}
           ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
+          ELEVANT_SOURCE_COMMIT: ${{ github.sha }}
           ELEVANT_API_WAIT_SECONDS: "0"
           ELEVANT_API_POLL_SECONDS: "1"
         run: |
@@ -548,6 +590,18 @@ jobs:
           cmp -s "$transferred/api-release-manifest-reference.txt" \
             artifacts/resolved-api/api-release-manifest-reference.txt
           cmp -s "$transferred/openapi.sha256" artifacts/resolved-api/openapi.sha256
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          ELEVANT_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
+            bash frontend/scripts/deployment/resolve-api-release.sh \
+              "ghcr.io/${owner}/elevant-api-release-manifest:development-certified" \
+              "$GITHUB_WORKSPACE/artifacts/resolved-api-alias"
+          cmp -s "$transferred/api-release-manifest.json" \
+            artifacts/resolved-api-alias/api-release-manifest.json
+          cmp -s "$transferred/api-release-manifest-reference.txt" \
+            artifacts/resolved-api-alias/api-release-manifest-reference.txt
+          cmp -s "$transferred/openapi.sha256" \
+            artifacts/resolved-api-alias/openapi.sha256
 
       - name: Re-certify, publish and verify the immutable web image
         id: web_image

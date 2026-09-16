@@ -97,12 +97,14 @@ HASH_B="$(node "$ROOT/openapi-tool.mjs" hash --file "$TMP/openapi-b.json")"
 [[ "$HASH_A" == "$HASH_B" && "$HASH_A" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "canonical OpenAPI hash is unstable"
 
 cat > "$TMP/openapi-numbers-a.json" <<'JSON'
-{"openapi":"3.0.4","x-values":{"integerFloat":1.0,"small":1e-7,"large":1e20}}
+{"openapi":"3.0.4","x-values":{"integerFloat":1.0,"small":1e-7,"large":1e15}}
 JSON
 cat > "$TMP/openapi-numbers-b.json" <<'JSON'
-{"x-values":{"large":100000000000000000000,"small":0.0000001,"integerFloat":1},"openapi":"3.0.4"}
+{"x-values":{"large":1000000000000000,"small":0.0000001,"integerFloat":1},"openapi":"3.0.4"}
 JSON
 [[ "$(node "$ROOT/openapi-tool.mjs" hash --file "$TMP/openapi-numbers-a.json")" == "$(node "$ROOT/openapi-tool.mjs" hash --file "$TMP/openapi-numbers-b.json")" ]] || fail "canonical OpenAPI number normalization is unstable"
+printf '%s\n' '{"openapi":"3.0.4","x-unsafe":9007199254740993}' > "$TMP/openapi-unsafe-integer.json"
+assert_failure "OpenAPI unsafe integer was accepted" node "$ROOT/openapi-tool.mjs" hash --file "$TMP/openapi-unsafe-integer.json"
 printf '\357\273\277{"openapi":"3.0.4"}\n' > "$TMP/openapi-bom.json"
 assert_failure "OpenAPI UTF-8 BOM was accepted" node "$ROOT/openapi-tool.mjs" hash --file "$TMP/openapi-bom.json"
 

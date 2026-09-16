@@ -55,6 +55,8 @@ assert_result() {
     [[ "$expected" == accept ]] || fail "$app should reject $path"
   else
     [[ "$expected" == reject ]] || fail "$app should accept $path"
+    grep -Fq "A newer Development commit changes $app release input path: $path" "$err" ||
+      fail "$app rejection should identify $path"
   fi
   pass "$app $expected: $path"
 }
@@ -71,6 +73,13 @@ assert_result public-owned public-web frontend/public-web/src/app/page.tsx rejec
 assert_result public-other-web public-web frontend/private-web/src/App.jsx accept
 assert_result shared-client aviam-web packages/api-client/src/index.ts reject
 assert_result shared-workflow public-web .github/workflows/web-ci.yml reject
+assert_result shared-application public-web backend/Elevant.Application/Feature.cs reject
+assert_result shared-dockerfile aviam-web backend/Dockerfile reject
+assert_result shared-openapi-tool public-web ops/dokploy/web-cd/openapi-tool.mjs reject
+assert_result shared-persistence aviam-web database/DevelopmentDB/Elevant.Persistence/Model.cs reject
+assert_result shared-path-policy public-web scripts/release/path-ownership.sh reject
+assert_result unrelated-mobile aviam-web frontend/mobile-agent/app.ts accept
+assert_result unrelated-production public-web database/ProductionDB/.gitkeep accept
 assert_result unrelated-doc public-web docs/note.md accept
 
 printf 'All %d web publication guard tests passed.\n' "$pass_count"

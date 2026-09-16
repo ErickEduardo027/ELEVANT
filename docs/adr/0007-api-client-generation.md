@@ -25,11 +25,13 @@ auditable que no dependa de un framework de UI.
   La generación y CI usan Node.js 24 y npm; no dependen del antiguo workspace
   pnpm del prototipo.
 - `openapi/elevant-v1.json` es el snapshot canónico, versionado y revisable del
-  contrato. Se obtiene de `/swagger/v1/swagger.json` ejecutando la imagen API
-  exacta que superó su certificación para el mismo commit; nunca se descarga del
-  endpoint privado del VPS durante CI.
-- `openapi/source.json` registra la procedencia verificable del snapshot, incluido
-  el commit y la referencia inmutable de la imagen certificada, sin credenciales.
+  contrato. Se obtiene del host API compilado que se propone versionar; CI exige
+  después que `/swagger/v1/swagger.json` en la imagen exacta del commit coincida.
+  Nunca se descarga del endpoint privado del VPS durante CI.
+- `openapi/source.json` describe el contrato con una versión de esquema, la ruta
+  Swagger y la huella SHA-256 canónica del snapshot, sin credenciales. La
+  procedencia de una release concreta vive en sus manifiestos OCI inmutables,
+  según la enmienda de [ADR-0014](0014-bind-api-releases-to-openapi-fingerprint.md).
 - Orval transforma ese snapshot en `generated`. Tanto el snapshot como la salida
   generada se versionan para que un pull request muestre el cambio contractual.
   `generated` es solo salida y no se edita manualmente.
@@ -50,11 +52,11 @@ auditable que no dependa de un framework de UI.
 
 1. El cambio del backend define `operationId`, respuestas, tipos de contenido y
    schemas estables, y actualiza sus pruebas.
-2. La imagen exacta del commit se construye y certifica; su documento OpenAPI se
-   copia a `openapi/elevant-v1.json` y su procedencia a `openapi/source.json`.
+2. El documento aprobado se copia a `openapi/elevant-v1.json` y su huella
+   canónica se registra en `openapi/source.json` antes de publicar.
 3. Se regenera `generated` y se revisan juntos el diff del snapshot y de la salida.
-4. CI reproduce la generación y falla ante archivos desactualizados o deriva del
-   documento que expone el código fuente.
+4. CI reproduce la generación, certifica la imagen exacta y falla ante archivos
+   desactualizados o deriva entre snapshot, Swagger servido y huella del bundle.
 5. Private Web, Public Web y Mobile Agent actualizan sus adaptadores cuando vayan
    reemplazando mocks. No se requiere migrar los tres prototipos en un único PR.
 

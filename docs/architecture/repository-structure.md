@@ -33,9 +33,10 @@ a proveedores externos.
 
 Los contratos HTTP comunes pertenecen a `packages/api-client`:
 
-- `openapi/elevant-v1.json`: snapshot canónico procedente de la imagen API exacta
-  certificada;
-- `openapi/source.json`: procedencia inmutable del snapshot, sin secretos;
+- `openapi/elevant-v1.json`: snapshot canónico del host API compilado, que CI
+  exige reproducir en la imagen exacta certificada;
+- `openapi/source.json`: descriptor cerrado con versión, ruta Swagger y huella
+  SHA-256 canónica del snapshot, sin secretos ni identidad futura de CI;
 - `generated`: salida reproducible de Orval; no se edita manualmente;
 - `src`: API pública y adaptación manual del runtime `fetch` compartido;
 - tests y configuración: validan generación, tipos, cancelación, autenticación y

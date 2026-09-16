@@ -18,8 +18,8 @@ SQL Server ni a proveedores de aviación directamente.
    contrato OpenAPI existente o coordinado.
 2. Definir tenant, roles y station scopes que la API aplicará. La interfaz no
    concede autorización por mostrar u ocultar controles.
-3. Actualizar el cliente compartido cuando cambie OpenAPI y conservar su
-   procedencia verificable.
+3. Actualizar el cliente compartido cuando cambie OpenAPI y conservar la huella
+   verificable del contrato; cada release conserva su propia procedencia.
 4. Mantener adaptadores mock/remoto fuera de los componentes. Los mocks son
    evidencia de workflow, no una base ni contrato paralelos.
 5. Diseñar carga, éxito, vacío, error recuperable y no autorizado; probar
@@ -65,9 +65,9 @@ certifica sus imágenes/runtime. No publica ni accede al VPS.
 
 En un push relevante a `Development`, cada carril aplicable:
 
-1. resuelve el bundle API certificado que coincide con
-   `packages/api-client/openapi/source.json`, extrae su manifiesto y verifica
-   el hash canónico del snapshot OpenAPI versionado;
+1. valida el descriptor contra el snapshot, resuelve un bundle API certificado
+   cuya etiqueta OpenAPI tenga esa misma huella, comprueba que no haya inputs API
+   pendientes entre su commit y el checkout, y extrae su manifiesto inmutable;
 2. construye una sola imagen con los tres orígenes revisados y la etiqueta de
    procedencia del commit;
 3. certifica health, rutas/shell, configuración horneada, ausencia de localhost
@@ -78,6 +78,16 @@ En un push relevante a `Development`, cada carril aplicable:
 6. empaqueta manifiesto + Compose exacto en su bundle OCI v1, vuelve a extraer
    ambos payloads y exige igualdad byte a byte;
 7. mueve al final el alias `development-certified` del bundle propio.
+
+El alias API es solo descubrimiento. Si todavía señala una release previa con
+otra huella, sin la etiqueta v1 o anterior a un cambio que produzca API, el
+resolver espera el bundle exacto nuevo; una referencia API inmutable incompatible
+falla inmediatamente. Los mismos paths API disparan la recertificación de ambas
+webs. Antes de publicar se vuelve a comparar el alias con el bundle usado en el
+build, y API/AVIAM/Public comparten una exclusión de publicación con cola
+múltiple para no sustituir carriles pendientes. Así Backend y Web CI pueden
+comenzar en paralelo sin dejar una web atada a una release API que el
+controlador exacto ya no podrá promover.
 
 Las imágenes son `elevant-private-web` y `elevant-public-web`; los bundles son
 `elevant-aviam-web-release-manifest` y

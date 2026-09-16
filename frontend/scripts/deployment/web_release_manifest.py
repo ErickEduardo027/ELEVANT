@@ -229,25 +229,26 @@ def _api_provenance(
     client_source = _object(
         api_client_source,
         "API client source",
-        {"sourceCommit", "sourceRunId", "apiImage", "swaggerPath"},
+        {"schemaVersion", "openApiSha256", "swaggerPath"},
     )
-    _pattern(client_source["sourceCommit"], "API client sourceCommit", COMMIT_RE)
-    _pattern(client_source["sourceRunId"], "API client sourceRunId", POSITIVE_INTEGER_RE)
-    _digest_reference(
-        client_source["apiImage"],
-        "API client apiImage",
-        f"ghcr.io/{owner}/elevant-api",
+    if (
+        type(client_source["schemaVersion"]) is not int
+        or client_source["schemaVersion"] != 1
+    ):
+        _fail("API client schemaVersion must be the integer 1.")
+    client_openapi_sha256 = _pattern(
+        client_source["openApiSha256"],
+        "API client openApiSha256",
+        SHA256_RE,
     )
-    if client_source["sourceCommit"] != api_source["commit"]:
-        _fail("API client sourceCommit does not match the required API release.")
-    if client_source["sourceRunId"] != api_source["runId"]:
-        _fail("API client sourceRunId does not match the required API release.")
-    if client_source["apiImage"] != api_image:
-        _fail("API client image does not match the required API release.")
+    if client_source["swaggerPath"] != "/swagger/v1/swagger.json":
+        _fail("API client swaggerPath must be /swagger/v1/swagger.json.")
     if client_source["swaggerPath"] != endpoints["swaggerPath"]:
         _fail("API client swaggerPath does not match the required API release.")
     _pattern(openapi_sha256, "OpenAPI fingerprint", SHA256_RE)
     _pattern(actual_openapi_sha256, "calculated OpenAPI fingerprint", SHA256_RE)
+    if client_openapi_sha256 != openapi_sha256:
+        _fail("API client OpenAPI fingerprint does not match the required API release.")
     if openapi_sha256 != actual_openapi_sha256:
         _fail("OpenAPI fingerprint does not match the selected document.")
 

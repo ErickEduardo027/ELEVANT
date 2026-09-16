@@ -4,8 +4,12 @@ set -Eeuo pipefail
 readonly IMAGE="${1:-}"
 readonly EXPECTED_REVISION="${2:-}"
 readonly EXPECTED_SOURCE="${3:-}"
+readonly EXPECTED_OPENAPI_SHA256="${4:-}"
 readonly PRIVATE_WEB_ORIGIN="https://private-web.elevant.test"
 readonly PUBLIC_WEB_ORIGIN="https://public-web.elevant.test"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
+readonly OPENAPI_TOOL="$REPOSITORY_ROOT/ops/dokploy/web-cd/openapi-tool.mjs"
 
 [[ -n "$IMAGE" ]] || {
   echo "An API image reference is required." >&2
@@ -17,6 +21,18 @@ readonly PUBLIC_WEB_ORIGIN="https://public-web.elevant.test"
 }
 [[ "$EXPECTED_SOURCE" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
   echo "A canonical GitHub source URL is required." >&2
+  exit 1
+}
+[[ "$EXPECTED_OPENAPI_SHA256" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+  echo "A canonical expected OpenAPI fingerprint is required." >&2
+  exit 1
+}
+[[ -f "$OPENAPI_TOOL" && ! -L "$OPENAPI_TOOL" ]] || {
+  echo "The reviewed OpenAPI fingerprint tool is unavailable." >&2
+  exit 1
+}
+command -v node >/dev/null 2>&1 || {
+  echo "Node.js is required to calculate the OpenAPI fingerprint." >&2
   exit 1
 }
 
@@ -110,6 +126,13 @@ done
 [[ "$(curl --silent --output "$response_root/swagger.json" --write-out '%{http_code}' --max-time 5 "$base_url/swagger/v1/swagger.json")" == 200 ]] || {
   docker logs "$container" >&2 || true
   echo "Development OpenAPI document did not return HTTP 200." >&2
+  exit 1
+}
+
+actual_openapi_sha256="$(node "$OPENAPI_TOOL" hash \
+  --file "$response_root/swagger.json")"
+[[ "$actual_openapi_sha256" == "$EXPECTED_OPENAPI_SHA256" ]] || {
+  echo "API OpenAPI fingerprint does not match the certified contract." >&2
   exit 1
 }
 
