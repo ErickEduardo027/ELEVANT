@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 readonly APPLICATION="${1:-}"
 readonly SOURCE_COMMIT="${2:-}"
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
 readonly PATH_OWNERSHIP="$SCRIPT_DIR/../../../scripts/release/path-ownership.sh"
 
 [[ "$APPLICATION" == aviam-web || "$APPLICATION" == public-web ]] || {
@@ -22,6 +23,7 @@ readonly PATH_OWNERSHIP="$SCRIPT_DIR/../../../scripts/release/path-ownership.sh"
   echo "The reviewed release path policy is unavailable." >&2
   exit 1
 }
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../../scripts/release/path-ownership.sh
 source "$PATH_OWNERSHIP"
 

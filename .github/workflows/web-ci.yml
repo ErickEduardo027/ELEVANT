@@ -180,9 +180,9 @@ jobs:
           bash -n "${scripts[@]}"
           bash -n scripts/release/path-ownership.sh
           bash -n scripts/release/tests/test-path-ownership.sh
-          shellcheck "${scripts[@]}"
+          shellcheck -x "${scripts[@]}"
           shellcheck scripts/release/path-ownership.sh
-          shellcheck scripts/release/tests/test-path-ownership.sh
+          shellcheck -x scripts/release/tests/test-path-ownership.sh
           modules=(
             frontend/scripts/deployment/csp-tool.mjs
             frontend/scripts/deployment/web-compose-tool.mjs

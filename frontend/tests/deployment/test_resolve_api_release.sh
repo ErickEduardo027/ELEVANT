@@ -214,7 +214,7 @@ with open(path, "w", encoding="utf-8", newline="\n") as stream:
     stream.write("\n")
 PY
 
-if MOCK_OPENAPI_LABEL= ELEVANT_API_WAIT_SECONDS=2 \
+if MOCK_OPENAPI_LABEL='' ELEVANT_API_WAIT_SECONDS=2 \
   run_resolver "$TEST_ROOT/old-alias" >"$TEST_ROOT/old-alias.out" 2>"$TEST_ROOT/old-alias.err"; then
   echo "Resolver accepted an old certified alias without an OpenAPI label." >&2
   exit 1

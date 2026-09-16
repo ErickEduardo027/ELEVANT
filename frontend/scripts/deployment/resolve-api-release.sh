@@ -40,6 +40,7 @@ for file in "$API_CLIENT_SOURCE" "$OPENAPI_DOCUMENT" "$API_MANIFEST_VALIDATOR" "
     exit 1
   }
 done
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../../scripts/release/path-ownership.sh
 source "$PATH_OWNERSHIP"
 [[ "$(git -C "$REPOSITORY_ROOT" rev-parse --is-inside-work-tree)" == true ]] || {
@@ -139,6 +140,7 @@ resolve_digest_reference() {
 
 api_lineage_status() {
   local candidate="$1" changed_file_list path
+  local api_input_changed=false
   git -C "$REPOSITORY_ROOT" cat-file -e "$candidate^{commit}" 2>/dev/null || return 2
 
   if git -C "$REPOSITORY_ROOT" merge-base --is-ancestor "$candidate" "$SOURCE_COMMIT"; then
@@ -150,11 +152,12 @@ api_lineage_status() {
     fi
     while IFS= read -r -d '' path; do
       if elevant_is_api_build_input_path "$path"; then
-        rm -f -- "$changed_file_list"
-        return 1
+        api_input_changed=true
+        break
       fi
     done < "$changed_file_list"
     rm -f -- "$changed_file_list"
+    [[ "$api_input_changed" == false ]] || return 1
     return 0
   fi
 
