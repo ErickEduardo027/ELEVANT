@@ -7,8 +7,8 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - package.json
   - backend/README.md
@@ -19,7 +19,7 @@ sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
-  - .github/workflows/mobile-ci.yml.template
+  - .github/workflows/mobile-ci.yml
   - .github/workflows/vault-ci.yml
   - .github/BRANCH_PROTECTION.md
 tags:
@@ -60,7 +60,7 @@ flowchart LR
 | API client | `npm ci`, `generate`, `check` y `check:openapi` contra API local |
 | Private Web | `npm ci`, `test`, `test:delivery`, validator y build configurado |
 | Public Web local | `npm ci`, lint, typecheck, test y build configurado; el validator de release requiere metadatos y orígenes distintos del ejemplo local |
-| Mobile Agent | `npm ci`, lint, typecheck y bundle seam del API client |
+| Mobile Agent | `npm ci`, lint, typecheck, bundle seam del API client y export Android completo con Metro |
 | Vault | secret scan, `vault:test`, `vault:generate`, `vault:check` |
 
 Los comandos copiables están en
@@ -95,15 +95,14 @@ Ejecuta instalación reproducible y `npm run vault:ci`, que combina pruebas del
 validador y verificación sin autoescritura. El inventario generado se actualiza
 localmente antes del PR.
 
-### Estado del workflow móvil
+### Mobile Agent CI
 
-`.github/workflows/mobile-ci.yml.template` es una plantilla versionada, no un
-workflow activo porque conserva la extensión `.template`. En consecuencia no
-se debe afirmar que hoy existe un carril móvil completo por PR. Cuando sus
-filtros de rutas activan **API client CI**, ese workflow sí ejecuta `lint`,
-`typecheck` y el bundle Metro del Mobile Agent como costura del paquete
-compartido. Un cambio móvil fuera de esos filtros no queda cubierto por ese
-job; la prueba en dispositivo sigue siendo evidencia explícita del autor.
+`.github/workflows/mobile-ci.yml` es un workflow activo para todo cambio bajo
+Mobile Agent o el paquete API compartido. Reconstruye desde el lockfile,
+ejecuta `lint`, `typecheck`, el smoke Metro del cliente compartido y un export
+Android completo. Es evidencia de fuente y empaquetado JavaScript: no genera
+una APK, no valida firma, no prueba hardware ni sustituye la aceptación en una
+tablet. **API client CI** conserva además su costura contra la API compilada.
 
 ## Cómo leer un fallo de CI
 

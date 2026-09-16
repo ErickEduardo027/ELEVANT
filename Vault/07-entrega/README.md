@@ -7,15 +7,15 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
   - .github/workflows/ops-config-ci.yml
   - .github/workflows/vault-ci.yml
-  - .github/workflows/mobile-ci.yml.template
+  - .github/workflows/mobile-ci.yml
   - docs/workflows/release-workflow.md
   - .github/BRANCH_PROTECTION.md
   - ops/dokploy/README.md
@@ -74,13 +74,14 @@ permiso de escritura, que también pasa por los gates de publicación.
 ## Qué está dentro y qué no
 
 - **Actual, versionado:** workflows activos de backend, cliente API, webs,
-  configuración operativa y Vault; bundle OCI y controladores de DB/API/web.
+  Mobile Agent fuente, configuración operativa y Vault; bundle OCI y
+  controladores de DB/API/web.
 - **Condicionado:** la promoción automática exige controlador instalado,
   baseline adoptada, schedules habilitados, runtime sano y gates satisfechos.
   Esos hechos vivos no los demuestra esta sección.
-- **Diferido:** workflow móvil completo, firmado/distribución APK y canales de
-  tienda; branch protection obligatoria en el repositorio privado bajo el plan
-  documentado; Production.
+- **Diferido:** build, firma y distribución de APK, pruebas funcionales Mobile
+  completas y canales de tienda; branch protection obligatoria en el
+  repositorio privado bajo el plan documentado; Production.
 - **Fuera de alcance:** comandos para mutar Dokploy/VPS, secretos y endpoints
   privados. Usa los [runbooks fuente](../../ops/dokploy/README.md) y la
   [guía de release](../../docs/workflows/release-workflow.md) solo mediante el

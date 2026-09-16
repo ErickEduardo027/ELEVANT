@@ -7,8 +7,8 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "300f0be1dcd5a27b7cf5d432c577e78a6b9a7b43"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - AGENTS.md
   - docs/README.md
@@ -76,11 +76,11 @@ Una afirmación importante debe incluir suficiente contexto para reproducir su v
 
 Ejemplo correcto:
 
-> El workflow Mobile es una plantilla y no un pipeline activo. Evidencia: `.github/workflows/mobile-ci.yml.template`, verificado en el commit indicado. Esto no demuestra que una APK no pueda compilarse manualmente.
+> Mobile Agent tiene CI de fuente activo, sin build o distribución de APK. Evidencia: `.github/workflows/mobile-ci.yml`, verificado en el commit indicado. Sus bundles Metro no demuestran firma, instalación ni comportamiento en una tablet.
 
 Ejemplo incorrecto:
 
-> Mobile CI/CD funciona.
+> Mobile CI/CD está completamente terminado.
 
 ## Fuentes en frontmatter y cuerpo
 

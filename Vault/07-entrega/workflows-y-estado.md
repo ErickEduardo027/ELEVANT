@@ -7,15 +7,15 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
   - .github/workflows/ops-config-ci.yml
   - .github/workflows/vault-ci.yml
-  - .github/workflows/mobile-ci.yml.template
+  - .github/workflows/mobile-ci.yml
   - .github/BRANCH_PROTECTION.md
   - docs/workflows/release-workflow.md
 tags:
@@ -28,8 +28,8 @@ tags:
 # Workflows activos y estado de CI/CD
 
 GitHub Actions distingue validación de PR y publicación después de un push.
-Los cinco archivos `.yml` siguientes son workflows activos. El archivo móvil
-terminado en `.yml.template` **no** lo es.
+Los seis archivos `.yml` siguientes son workflows activos. Mobile valida
+fuente y empaquetado Metro, pero no construye ni distribuye una APK firmada.
 
 | Workflow | Cuándo corre | Validación principal | Publicación automática |
 | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ terminado en `.yml.template` **no** lo es.
 | [API client CI](../../.github/workflows/api-client-ci.yml) | PR/push a esas ramas con contrato, API o costuras seleccionadas de tres clientes | compila API del commit, compara Swagger/snapshot, valida generado y consumo Private/Public/Mobile | ninguna |
 | [Operations configuration CI](../../.github/workflows/ops-config-ci.yml) | todo PR/push a `main` o `Development` | artefactos operativos sin secretos, sintaxis, modelos y tests | ninguna |
 | [Vault CI](../../.github/workflows/vault-ci.yml) | todo PR/push a `main` o `Development` | metadata, enlaces, evidencia, Mermaid, Canvas/Base, privacidad e inventario sin reescribirlo | ninguna |
-| [Mobile CI template](../../.github/workflows/mobile-ci.yml.template) | no se ejecuta como workflow | diseño de validación de fuente | ninguna; APK firmada tampoco |
+| [Mobile Agent CI](../../.github/workflows/mobile-ci.yml) | PR/push a `main` o `Development` con rutas Mobile o cliente API compartido | instalación bloqueada, lint, tipos, smoke del cliente compartido y export Android completo con Metro | ninguna; no crea ni distribuye una APK |
 
 Los filtros `paths` de backend, web y cliente API son diferentes: que uno no
 aparezca en un PR puede ser correcto. Operations y Vault no tienen filtro de
