@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-16"
-verified_commit: "cad88ab7c889743cc5004cdd0fe0fa58e427bb4e"
+verified_commit: "f533cf2b20c1ded9b68fb10d6edcf2d622551ac4"
 sources:
   - docs/adr/0001-use-monorepo.md
   - docs/adr/0002-use-dotnet-10.md
