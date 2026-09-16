@@ -7,8 +7,8 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
+last_verified: "2026-09-16"
+verified_commit: "cad88ab7c889743cc5004cdd0fe0fa58e427bb4e"
 sources:
   - docs/architecture/database-v1.md
   - docs/architecture/repository-structure.md
@@ -25,11 +25,17 @@ sources:
   - docs/adr/0011-pull-based-api-development-cd.md
   - docs/adr/0012-pull-based-web-development-cd.md
   - docs/adr/0013-development-ssms-data-access.md
+  - docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md
   - .github/workflows/backend-ci.yml
+  - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
   - packages/api-client/openapi/elevant-v1.json
   - packages/api-client/openapi/source.json
+  - packages/api-client/scripts/snapshot-utils.mjs
   - packages/api-client/package.json
+  - frontend/scripts/deployment/resolve-api-release.sh
+  - ops/dokploy/web-cd/openapi-tool.mjs
+  - scripts/release/path-ownership.sh
   - frontend/private-web/package.json
   - frontend/public-web/package.json
   - frontend/mobile-agent/package.json
@@ -114,7 +120,7 @@ ADR-0007 fue aceptado el 5 de septiembre después de estabilizar la superficie
 OpenAPI inicial. Desde entonces:
 
 - `packages/api-client/openapi/elevant-v1.json` conserva el snapshot revisado y
-  `source.json` registra su procedencia inmutable;
+  `source.json` declara su esquema, ruta y fingerprint canónico;
 - Orval genera el cliente TypeScript compartido desde ese snapshot;
 - los workflows de backend y API client reconstruyen la API y comparan la
   superficie publicada, el snapshot y la salida generada;
@@ -127,6 +133,13 @@ de negocio ya consuman operaciones generadas: autenticación y endpoints de
 dominio siguen pendientes. El mecanismo sí fija cómo incorporar cada contrato
 nuevo sin derivar DTOs desde entidades EF o mocks.
 
+El 16 de septiembre, ADR-0014 cerró una circularidad de procedencia: un commit
+no puede contener el digest de una imagen que ese mismo commit todavía no ha
+producido. Desde esa enmienda, el descriptor versionado identifica el contrato;
+el manifiesto OCI inmutable conserva commit, run e imagen de cada release. CI
+exige igualdad entre descriptor, snapshot, Swagger servido y la etiqueta del
+bundle, y Web CI comprueba además el linaje exacto de inputs API.
+
 ## Evolución operativa de las decisiones
 
 | ADR | Fecha declarada | Alcance | Relación histórica |
@@ -137,6 +150,7 @@ nuevo sin derivar DTOs desde entidades EF o mocks.
 | [0011](../../docs/adr/0011-pull-based-api-development-cd.md) | 2026-08-31 | CD pull-based de API | Añadió gate de compatibilidad DB, salud y rollback |
 | [0012](../../docs/adr/0012-pull-based-web-development-cd.md) | 2026-09-05 | CD independiente de ambas webs | Dejó Mobile y Production fuera de alcance |
 | [0013](../../docs/adr/0013-development-ssms-data-access.md) | 2026-09-10 | Acceso humano CRUD a Development | Modificó solo la ausencia de Service SQL humano de ADR-0008 |
+| [0014](../../docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md) | 2026-09-16 | Fingerprint OpenAPI cerrado y procedencia por release | Enmendó sólo la procedencia circular de ADR-0007; conservó manifiestos/controladores v1 |
 
 ADR-0013 no revoca la frontera de datos: los productos siguen usando la API.
 Autoriza a personas aprobadas a experimentar con datos sintéticos, no a editar
@@ -147,6 +161,8 @@ schema, migraciones, backups o configuración administrativa desde SSMS.
 - Los tres clientes convergen en la misma API versionada.
 - La API es dueña de autorización, tenancy, reglas e integraciones.
 - EF Core es dueño del esquema; OpenAPI es dueño del contrato HTTP.
+- La identidad canónica del contrato se separa de la procedencia exacta de cada
+  release, que permanece en su manifiesto inmutable.
 - Los artefactos se identifican por contenido inmutable; los aliases solo sirven
   para descubrimiento.
 - GitHub no inicia conexiones al VPS privado.
@@ -173,6 +189,6 @@ funcionalmente completo.
 
 - [Database v1](../../docs/architecture/database-v1.md) y [estructura del repositorio](../../docs/architecture/repository-structure.md): esquema y límites físicos.
 - [ADR-0001](../../docs/adr/0001-use-monorepo.md), [ADR-0002](../../docs/adr/0002-use-dotnet-10.md), [ADR-0003](../../docs/adr/0003-use-modular-monolith.md), [ADR-0004](../../docs/adr/0004-centralize-external-api-access.md), [ADR-0005](../../docs/adr/0005-use-remote-development-api.md) y [ADR-0006](../../docs/adr/0006-separate-development-and-production.md): decisiones fundacionales.
-- [ADR-0007](../../docs/adr/0007-api-client-generation.md), [ADR-0008](../../docs/adr/0008-docker-sql-dokploy-private-development.md), [ADR-0009](../../docs/adr/0009-pull-based-database-development-cd.md), [ADR-0010](../../docs/adr/0010-package-development-database-release-as-oci-bundle-v1.md), [ADR-0011](../../docs/adr/0011-pull-based-api-development-cd.md), [ADR-0012](../../docs/adr/0012-pull-based-web-development-cd.md) y [ADR-0013](../../docs/adr/0013-development-ssms-data-access.md): contrato, operación y excepciones posteriores.
-- [CI de backend](../../.github/workflows/backend-ci.yml), [CI del cliente API](../../.github/workflows/api-client-ci.yml), [snapshot](../../packages/api-client/openapi/elevant-v1.json), [procedencia](../../packages/api-client/openapi/source.json) y [manifiesto del paquete](../../packages/api-client/package.json): implementación ejecutable del contrato reproducible.
+- [ADR-0007](../../docs/adr/0007-api-client-generation.md), [ADR-0008](../../docs/adr/0008-docker-sql-dokploy-private-development.md), [ADR-0009](../../docs/adr/0009-pull-based-database-development-cd.md), [ADR-0010](../../docs/adr/0010-package-development-database-release-as-oci-bundle-v1.md), [ADR-0011](../../docs/adr/0011-pull-based-api-development-cd.md), [ADR-0012](../../docs/adr/0012-pull-based-web-development-cd.md), [ADR-0013](../../docs/adr/0013-development-ssms-data-access.md) y [ADR-0014](../../docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md): contrato, operación, excepciones y enmienda de procedencia posteriores.
+- [CI de backend](../../.github/workflows/backend-ci.yml), [CI web](../../.github/workflows/web-ci.yml), [CI del cliente API](../../.github/workflows/api-client-ci.yml), [snapshot](../../packages/api-client/openapi/elevant-v1.json), [descriptor](../../packages/api-client/openapi/source.json) y [manifiesto del paquete](../../packages/api-client/package.json): implementación ejecutable del contrato reproducible y su unión con releases inmutables.
 - Los manifiestos de [Private Web](../../frontend/private-web/package.json), [Public Web](../../frontend/public-web/package.json) y [Mobile Agent](../../frontend/mobile-agent/package.json): adopción de la dependencia compartida, no prueba de casos de uso de negocio completos.

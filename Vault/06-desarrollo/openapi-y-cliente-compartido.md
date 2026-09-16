@@ -7,17 +7,26 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-09-16"
+verified_commit: "cad88ab7c889743cc5004cdd0fe0fa58e427bb4e"
 sources:
   - docs/api/openapi-contract.md
   - docs/api/consumer-guidelines.md
+  - docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md
   - backend/Elevant.Api/OpenApi/README.md
+  - .github/workflows/backend-ci.yml
+  - .github/workflows/web-ci.yml
   - packages/api-client/README.md
   - packages/api-client/package.json
+  - packages/api-client/openapi/elevant-v1.json
+  - packages/api-client/openapi/source.json
   - packages/api-client/scripts/check-openapi.mjs
+  - packages/api-client/scripts/snapshot-utils.mjs
+  - packages/api-client/tests/snapshot-utils.test.mjs
   - packages/api-client/orval.config.ts
   - .github/workflows/api-client-ci.yml
+  - frontend/scripts/deployment/resolve-api-release.sh
+  - ops/dokploy/web-cd/openapi-tool.mjs
   - frontend/private-web/package.json
   - frontend/public-web/package.json
   - frontend/mobile-agent/package.json
@@ -31,34 +40,46 @@ tags:
 # OpenAPI y cliente compartido
 
 OpenAPI es el contrato cliente/servidor cuando una operación existe. El
-snapshot canónico procede de la imagen API inmutable y certificada del mismo
-commit, no de una especificación escrita a mano ni de un servidor mutable. Ese
-snapshot alimenta el cliente TypeScript común de Private Web, Public Web y
-Mobile Agent.
+snapshot canónico se revisa desde el host API compilado que se propone
+versionar; CI exige después que la imagen API inmutable del mismo commit lo
+reproduzca exactamente. No procede de un servidor mutable ni se confía en una
+especificación desconectada del código. Ese snapshot alimenta el cliente
+TypeScript común de Private Web, Public Web y Mobile Agent.
 
 ```mermaid
 flowchart LR
     Code[API compilada] --> Swagger[Swagger JSON]
     Swagger --> Compare{check:openapi}
     Snapshot[openapi/elevant-v1.json] --> Compare
+    Snapshot --> Hash[SHA-256 JSON canónico]
+    Hash --> Descriptor[source.json]
+    Compare --> Bundle[Bundle API inmutable]
+    Descriptor --> Bundle
     Snapshot --> Orval[Orval]
     Orval --> Shared[packages/api-client]
+    Bundle --> Resolver[Resolver web]
+    Descriptor --> Resolver
     Shared --> Private[Private Web]
     Shared --> Public[Public Web]
     Shared --> Mobile[Mobile Agent]
 ```
 
 `check:openapi` solo compara el Swagger candidato con el snapshot versionado;
-no lo crea ni lo reescribe. La captura aprobada desde la imagen certificada es
-un paso separado anterior a Orval.
+no lo crea ni lo reescribe. La imagen certificada vuelve a servir ese contrato,
+y su bundle queda unido a la misma huella sin obligar a un segundo commit de
+reconciliación.
 
 ## Autoridad y superficie actual
 
 - El código compilado de la API es la autoridad para el documento real.
 - `packages/api-client/openapi/elevant-v1.json` es el snapshot revisado.
 - `packages/api-client/generated` es generado: nunca se edita a mano.
-- `packages/api-client/openapi/source.json` registra commit, ejecución e imagen
-  inmutable de procedencia sin guardar una URL operativa.
+- `packages/api-client/openapi/source.json` es un descriptor cerrado con
+  `schemaVersion`, `openApiSha256` y la ruta Swagger exacta; no intenta nombrar
+  una imagen o ejecución que todavía no existe.
+- Commit, run e imagen pertenecen al manifiesto OCI inmutable de cada release;
+  el bundle API lleva además la etiqueta OCI
+  `io.elevant.api-release.openapi-sha256`.
 - health, readiness y Swagger son endpoints de plataforma, no operaciones de
   negocio del cliente generado.
 - El snapshot actual es deliberadamente pequeño; no documentes un endpoint de
@@ -73,8 +94,10 @@ Actívalo si cambia cualquiera de estos elementos:
 - seguridad o headers observables;
 - operación o tipo usado por un consumidor.
 
-Un refactor interno que conserve el documento compilado no requiere regenerar,
-pero sí debe demostrar que `check:openapi` sigue exacto.
+Un refactor interno que conserve el documento compilado no requiere regenerar
+el cliente, pero debe demostrar que `check:openapi` sigue exacto. Si cambia un
+input que produce API, CI crea una release API exacta nueva y recertifica ambas
+webs aunque la huella OpenAPI permanezca igual.
 
 ## Bucle local reproducible
 
@@ -93,8 +116,8 @@ npm --prefix packages/api-client run check:openapi -- `
   http://127.0.0.1:8080/swagger/v1/swagger.json
 ```
 
-Una vez que el proceso de contrato haya capturado el Swagger desde la imagen
-certificada exacta y actualizado `source.json`, regenera:
+Una vez revisado el Swagger del host compilado, actualiza juntos el snapshot y
+la huella declarada en `source.json`; después regenera:
 
 ```powershell
 npm --prefix packages/api-client run generate
@@ -105,6 +128,25 @@ git diff -- packages/api-client/openapi packages/api-client/generated
 La generación debe producir un diff explicable tanto en snapshot como en
 tipos/operaciones. Un diff sorpresivo se investiga; no se normaliza editando el
 archivo generado.
+
+## Descriptor, fingerprint y procedencia
+
+El descriptor v1 tiene exactamente tres propiedades. La huella se calcula
+ordenando recursivamente las claves de objetos, conservando el orden de arrays
+y serializando sin espacios antes de aplicar SHA-256 a los bytes UTF-8. Los
+enteros fuera del rango seguro de JavaScript fallan cerrado para que una pérdida
+de precisión no una dos contratos distintos.
+
+Backend CI exige igualdad entre descriptor, snapshot y Swagger de la imagen
+certificada. Web CI añade la etiqueta del bundle API como tercera prueba y obtiene
+la procedencia exacta desde el manifiesto inmutable, no desde `source.json`. El
+resolver también comprueba que el commit declarado sea el `HEAD` examinado y que
+no exista un cambio de input API pendiente entre la release seleccionada y ese
+checkout.
+
+La huella demuestra igualdad del JSON canónico. No demuestra compatibilidad
+semántica, calidad del diseño ni constituye una atestación criptográfica
+externa; esas conclusiones requieren revisión y pruebas adicionales.
 
 ## Validar los tres seams
 
@@ -143,8 +185,10 @@ puede empaquetar. No sustituyen pruebas funcionales de cada nueva operación.
 
 El workflow de API client reconstruye una API del mismo commit, obtiene su
 Swagger local y compara el snapshot; también ejecuta las costuras de los
-consumidores. CI no consulta el Swagger privado de Development y no convierte
-un origen remoto mutable en autoridad del PR.
+consumidores. Backend CI repite la igualdad antes de publicar API y Web CI
+resuelve la release compatible antes de construir y nuevamente antes de
+publicar. CI no consulta el Swagger privado de Development ni convierte un
+origen remoto mutable en autoridad del PR.
 
 El origen de API de cada cliente llega por configuración pública. Usa loopback
 en local o un dominio reservado como `https://api.elevant.test` al probar

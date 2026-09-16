@@ -1001,7 +1001,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "548d80ef2a191a21340a4549c051362586d107c0e845fc3aeeff351a96af78e4"
+        "sha256": "a6965c0a36cb3a53c532c1ceb2406a49104bfcb8fc138527b197b5be237022b2"
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
@@ -1013,7 +1013,7 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "64a8dc1c2e08668ef1d9ecde8c50b9bbdc29b80f8be191f3914e8234c564baa3"
+        "sha256": "f72a6ab1ce8f86dc77a7620163bb7d03f17feaa5fdebdd860ee34f2c81ec8374"
       }
     ],
     "openapi": [
@@ -1025,7 +1025,7 @@
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "d76d7029d04ae3adad3d2cf3b0cc45beb750c3af39888d1abb0d9b96328db746",
+        "sha256": "a4160dc591b70f3ca74dae1cbce2642ee8e1aa98af8c9b12c798ef588b99c637",
         "title": null,
         "version": null
       }
@@ -1073,7 +1073,7 @@
       },
       {
         "path": "frontend/scripts/deployment/web_release_manifest.py",
-        "sha256": "502dd02a51f41b4aa571d3cac3293d8865de5bdf60917df4e3601c0900c4210c"
+        "sha256": "d346ffbc421478fe196604ee4f9f8ba6799361196834cd4302cf3ac4cef5819d"
       },
       {
         "path": "ops/dokploy/api-cd/manifest-tool.mjs",
