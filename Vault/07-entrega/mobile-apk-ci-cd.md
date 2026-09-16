@@ -7,8 +7,8 @@ status: deferred
 maturity: evolving
 evidence: planned
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
@@ -16,7 +16,7 @@ sources:
   - frontend/mobile-agent/app.json
   - frontend/mobile-agent/src/config/elevant-api.ts
   - frontend/mobile-agent/src/storage/prototype-storage.ts
-  - .github/workflows/mobile-ci.yml.template
+  - .github/workflows/mobile-ci.yml
   - .github/workflows/api-client-ci.yml
   - docs/workflows/mobile-workflow.md
   - docs/adr/0006-separate-development-and-production.md
@@ -33,11 +33,10 @@ tags:
 # Mobile Agent: diseño diferido de CI/CD para APK
 
 > [!IMPORTANT]
-> **Esto es un diseño para decidir e implementar después, no un pipeline activo.**
-> Hoy no hay entrega automática de APK, configuración EAS, credenciales de firma
-> ni canal de distribución aprobado en el repositorio. Ningún merge por sí solo
-> instala o actualiza Mobile Agent en una tablet. Esta nota no activa workflows,
-> genera un binario ni autoriza publicar una APK.
+> **El CI de fuente está activo; el build firmado y la distribución siguen
+> diferidos.** Hoy no hay entrega automática de APK, configuración EAS,
+> credenciales de firma ni canal de distribución aprobado en el repositorio.
+> Ningún merge por sí solo instala o actualiza Mobile Agent en una tablet.
 
 El resultado buscado es una APK **instalable y firmada para Development**,
 compilada desde un commit revisado, entregada solo a testers autorizados y
@@ -53,7 +52,7 @@ no están habilitados ([flujo fuente](../../docs/workflows/mobile-workflow.md),
 | --- | --- | --- |
 | Aplicación | Prototipo Expo SDK 54, Expo Router 6 y React Native 0.81.5; navegación y flujos de agente explorables. | Cerrar alcance funcional y probar el binario en tablet representativa. |
 | API | Existe la fábrica del cliente OpenAPI compartido; los flujos móviles siguen usando el backend prototipo. | Implementar y probar contratos reales de autenticación, tareas, sincronización e idempotencia antes de habilitar esos flujos. |
-| CI | `mobile-ci.yml.template` está inactivo y, aun activado sin cambios, solo haría `npm ci` y lint. El workflow activo `api-client-ci.yml`, cuando sus filtros de rutas disparan, sí valida lint, tipos y empaquetado Metro del cliente compartido. | Workflow móvil independiente con checks del código completo, contrato, pruebas funcionales y puertas de build. |
+| CI | `mobile-ci.yml` está activo y ejecuta `npm ci`, lint, tipos, smoke Metro del cliente compartido y export Android completo. `api-client-ci.yml` valida además la costura contra la API compilada cuando aplican sus filtros. | Añadir pruebas funcionales de sesión/offline y las puertas protegidas del futuro build firmado. |
 | Build | `app.json` tiene versión visible e identificador Android, pero no `android.versionCode`, EAS `projectId`, `eas.json`, perfil de APK ni configuración de firma. | Perfil Development aprobado, versionCode monotónico, proyecto/cuenta EAS y firma bajo custodia. |
 | Entrega | No existe APK firmada ni distribución versionada en el repositorio. | Publicación restringida, inventario de artefactos y aceptación humana antes de instalar. |
 | Datos locales | La outbox prototípica usa AsyncStorage; no equivale a sincronización segura ni contrato de servidor. | Almacenamiento protegido, migraciones locales y reconciliación con el servidor verificadas. |
@@ -80,8 +79,8 @@ flowchart LR
     Tablet -.-> Later[Canal de tienda futuro]
 ```
 
-La futura automatización debe **separar CI sin credenciales de firma** (PR)
-de build/distribución con credenciales protegidas (commit aceptado y aprobación).
+La automatización separa **CI sin credenciales de firma** (PR) del futuro
+build/distribución con credenciales protegidas (commit aceptado y aprobación).
 Inicialmente conviene una autorización manual vinculada al SHA exacto; no se
 debe suponer que exista una regla obligatoria de protección de ramas. El
 workflow de firma no debe ejecutarse desde código de un PR no confiable.
@@ -91,11 +90,12 @@ modo no interactivo. En ese flujo, `--no-wait` confirma solo el envío de la
 solicitud: la puerta de entrega debe esperar y comprobar el **resultado final
 exitoso** del build, no el mero ID de una tarea.
 
-### CI de PR que habrá que implementar
+### CI de PR activo y cobertura pendiente
 
-1. Instalar dependencias desde el lockfile del subproyecto; ejecutar lint,
-   typecheck y el test Metro del cliente compartido. Hoy estos checks existen
-   como scripts, pero el template móvil no los ejecuta todos.
+1. La base implementada instala dependencias desde el lockfile del subproyecto
+   y ejecuta lint, typecheck, el test Metro del cliente compartido y un export
+   Android completo. Estos bundles prueban resolución y empaquetado, no lógica
+   funcional ni una APK instalable.
 2. Añadir pruebas automáticas reales para sesión, autorización/scope,
    navegación crítica, almacenamiento local, migración de su esquema, cola
    offline, reintentos, idempotencia y orden fuera de secuencia. El test de
@@ -229,8 +229,8 @@ entenderlo.
 
 ## Criterio de aceptación para habilitarlo después
 
-El equipo podrá aprobar una implementación del workflow —en un PR futuro,
-**no con esta nota**— solo cuando se cumplan conjuntamente:
+El equipo podrá aprobar el workflow futuro de build, firma y distribución de
+APK solo cuando se cumplan conjuntamente:
 
 1. Contratos de negocio, identidad y sync implementados, versionados y
    verificados contra OpenAPI; pruebas de idempotencia y compatibilidad

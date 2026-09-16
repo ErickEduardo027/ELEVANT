@@ -1004,6 +1004,10 @@
         "sha256": "a6965c0a36cb3a53c532c1ceb2406a49104bfcb8fc138527b197b5be237022b2"
       },
       {
+        "path": ".github/workflows/mobile-ci.yml",
+        "sha256": "4bc32c7e89c28a7756d494503418358f70ff0775942cdb06ab007b0b32d5d676"
+      },
+      {
         "path": ".github/workflows/ops-config-ci.yml",
         "sha256": "08dc9347db95986f18bf3ad551d8b96c54d2b462c86f199fb58d11400c4a9612"
       },

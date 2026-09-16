@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test:api-client-bundle": "expo export:embed --platform android --entry-file frontend/mobile-agent/tests/api-client.metro-smoke.ts --bundle-output .expo/api-client-smoke.android.js --assets-dest .expo/api-client-smoke-assets --dev false --minify false"
+    "test:api-client-bundle": "expo export:embed --platform android --entry-file frontend/mobile-agent/tests/api-client.metro-smoke.ts --bundle-output .expo/api-client-smoke.android.js --assets-dest .expo/api-client-smoke-assets --dev false --minify false",
+    "test:app-bundle": "expo export --platform android --output-dir .expo/ci-app-export --clear"
   },
   "dependencies": {
     "@elevant/api-client": "file:../../packages/api-client",

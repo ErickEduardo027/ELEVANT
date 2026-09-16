@@ -16,6 +16,10 @@ El prototipo permite explorar:
 
 Todavía no consume los contratos de `Elevant.Api` .NET ni constituye autenticación productiva. La memoria local es una caché/outbox del dispositivo, no la fuente de verdad.
 
+El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
+OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados
+Metro para Android. Es CI de fuente: no firma, publica ni distribuye una APK.
+
 ## Ejecutar
 
 Desde `frontend/mobile-agent`:
@@ -26,6 +30,7 @@ npm run start
 npm run lint
 npm run typecheck
 npm run test:api-client-bundle
+npm run test:app-bundle
 ```
 
 También puede usar `npm run android`, `npm run ios` o `npm run web` para desarrollo. Expo Go sirve para la exploración temprana, pero las capacidades y permisos finales deben verificarse en un development build/app firmada.

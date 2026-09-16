@@ -7,13 +7,14 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
   - frontend/mobile-agent/package.json
   - frontend/mobile-agent/app.json
+  - .github/workflows/mobile-ci.yml
   - frontend/mobile-agent/src/services/mobile-auth.ts
   - frontend/mobile-agent/src/services/assigned-flights.ts
   - frontend/mobile-agent/src/services/automatic-sync.ts
@@ -119,13 +120,19 @@ npm run start
 npm run lint
 npm run typecheck
 npm run test:api-client-bundle
+npm run test:app-bundle
 ```
 
 También existen `npm run android`, `npm run ios` y `npm run web` para exploración. Una tablet interpreta `localhost` como la propia tablet: configura una URL alcanzable y autorizada. Expo Go sirve para exploración temprana; permisos y capacidades finales deben validarse en un development build o aplicación firmada.
 
 ## Cobertura de pruebas actual
 
-El `package.json` no declara una suite unitaria/E2E general. Sí declara lint, typecheck y un smoke que empaqueta el cliente API compartido para Android mediante Metro/Expo. Antes de distribuir una APK faltan pruebas verificables de:
+El `package.json` no declara una suite unitaria/E2E general. Sí declara lint,
+typecheck, un smoke que empaqueta el cliente API compartido y un export Android
+completo mediante Metro/Expo. `Mobile Agent CI` ejecuta esos cuatro gates desde
+el lockfile para cambios Mobile o del cliente compartido. No produce una APK ni
+prueba comportamiento nativo. Antes de distribuir una APK faltan pruebas
+verificables de:
 
 - reconexión, reintentos, duplicados y orden fuera de secuencia;
 - permisos de cámara/fotos rechazados y falta de espacio;

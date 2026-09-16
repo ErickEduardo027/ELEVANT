@@ -7,13 +7,13 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-09-16"
+verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
 sources:
   - docs/deployment/development-hardening-backlog.md
   - docs/deployment/environments.md
   - .github/BRANCH_PROTECTION.md
-  - .github/workflows/mobile-ci.yml.template
+  - .github/workflows/mobile-ci.yml
   - Vault/00-inicio/roadmap-del-vault.md
   - Vault/02-producto/preguntas-abiertas.md
   - Vault/03-dominio/brechas-y-preguntas-abiertas.md

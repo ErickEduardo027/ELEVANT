@@ -3,8 +3,9 @@
 `frontend/mobile-agent` ya es una aplicación Expo 54/React Native ejecutable,
 pero sus flujos de negocio siguen usando el backend prototipo. Su destino es
 una tablet Android/iOS: APK Development firmada primero, canales de tienda
-después. No existe hoy un workflow activo de build/distribución APK, perfiles
-EAS ni firma aprobada; no se aloja como web en Dokploy. Véanse el
+después. `Mobile Agent CI` valida fuente, tipos y empaquetado Android con Metro;
+no existe todavía un workflow de build/distribución APK, perfiles EAS ni firma
+aprobada, y la aplicación no se aloja como web en Dokploy. Véanse el
 [estado verificable](../../Vault/05-aplicaciones/mobile-agent.md) y el
 [diseño diferido de entrega](../../Vault/07-entrega/mobile-apk-ci-cd.md).
 
@@ -15,6 +16,14 @@ EAS ni firma aprobada; no se aloja como web en Dokploy. Véanse el
 5. Probar permisos rechazados, falta de espacio, reconexión, duplicados, cierre/reinicio y orden fuera de secuencia.
 6. Validar en una tablet representativa, no solo en web/emulador.
 7. Generar build Development firmado con application ID, storage y endpoint separados de Production.
+
+## CI de fuente activo
+
+`.github/workflows/mobile-ci.yml` se activa por cambios de Mobile Agent o del
+cliente OpenAPI compartido. Instala exactamente el lockfile del subproyecto y
+ejecuta lint, typecheck, el smoke Metro del cliente compartido y un export
+Android completo. Los orígenes usados durante CI son sintéticos y públicos;
+el workflow no contiene credenciales, no crea una APK y no despliega al VPS.
 
 **Contrato objetivo, todavía no implementado de extremo a extremo:** cada
 comando offline conservará un device ID registrado y una idempotency key
