@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 readonly APPLICATION="${1:-}"
 readonly SOURCE_COMMIT="${2:-}"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PATH_OWNERSHIP="$SCRIPT_DIR/../../../scripts/release/path-ownership.sh"
 
 [[ "$APPLICATION" == aviam-web || "$APPLICATION" == public-web ]] || {
   echo "Application must be aviam-web or public-web." >&2
@@ -16,6 +18,12 @@ readonly SOURCE_COMMIT="${2:-}"
   echo "REPOSITORY_TOKEN is required." >&2
   exit 1
 }
+[[ -f "$PATH_OWNERSHIP" && ! -L "$PATH_OWNERSHIP" ]] || {
+  echo "The reviewed release path policy is unavailable." >&2
+  exit 1
+}
+# shellcheck source=../../../scripts/release/path-ownership.sh
+source "$PATH_OWNERSHIP"
 
 authorization="$(printf 'x-access-token:%s' "$REPOSITORY_TOKEN" | base64 -w 0)"
 git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $authorization" \
@@ -40,26 +48,8 @@ git diff --name-only --no-renames -z \
   "$SOURCE_COMMIT" "$development_tip" > "$changed_file_list"
 
 while IFS= read -r -d '' path; do
-  shared=false
-  case "$path" in
-    .github/workflows/web-ci.yml | \
-    frontend/scripts/deployment/* | \
-    frontend/tests/deployment/* | \
-    packages/api-client/* | \
-    backend/Elevant.Api/* | \
-    backend/Elevant.Contracts/* )
-      shared=true
-      ;;
-  esac
-
-  owned=false
-  if [[ "$APPLICATION" == aviam-web && "$path" == frontend/private-web/* ]]; then
-    owned=true
-  elif [[ "$APPLICATION" == public-web && "$path" == frontend/public-web/* ]]; then
-    owned=true
-  fi
-
-  if [[ "$shared" == true || "$owned" == true ]]; then
+  if elevant_is_web_shared_input_path "$path" ||
+     elevant_is_web_application_input_path "$APPLICATION" "$path"; then
     echo "A newer Development commit changes $APPLICATION release input path: $path" >&2
     echo "This older run will not move the mutable Development web alias." >&2
     exit 1

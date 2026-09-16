@@ -13,6 +13,7 @@ function canonicalJson(value) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("OpenAPI contains a non-finite number");
+    if (Number.isInteger(value) && !Number.isSafeInteger(value)) throw new Error("OpenAPI contains an integer outside the safe range");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;

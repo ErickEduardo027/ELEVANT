@@ -23,18 +23,22 @@ credenciales.
 ## Snapshot canónico para TypeScript
 
 `packages/api-client/openapi/elevant-v1.json` es la entrada versionada de Orval.
-Debe proceder de `/swagger/v1/swagger.json` en la imagen API exacta certificada
-para el mismo commit. No se acepta copiar un Swagger de origen desconocido, de
-una imagen flotante o de una instancia cuyo commit no pueda demostrarse.
-`packages/api-client/openapi/source.json` conserva esa procedencia —commit e
-imagen por digest— y no contiene credenciales ni una URL privada operativa.
+Se captura del host API compilado que se propone versionar y debe coincidir con
+`/swagger/v1/swagger.json` en la imagen exacta que CI certifica para el commit.
+No se acepta copiar un Swagger de origen desconocido, de una imagen flotante o
+de una instancia cuyo contrato no pueda demostrarse.
+`packages/api-client/openapi/source.json` es un descriptor cerrado con versión,
+ruta Swagger y la huella SHA-256 canónica del snapshot; no contiene credenciales,
+una URL privada ni datos de una ejecución futura. Commit, run e imagen por digest
+pertenecen al manifiesto inmutable de cada release.
 
 El proceso de actualización es:
 
 1. implementar y probar el cambio en la API;
-2. construir y certificar la imagen inmutable del commit;
-3. ejecutar esa imagen de forma controlada, copiar su JSON al snapshot y registrar
-   la procedencia en `source.json`;
+2. actualizar el snapshot revisado y registrar su huella canónica en
+   `source.json`;
+3. construir y certificar la imagen inmutable del commit, exigiendo que su
+   Swagger coincida con el snapshot y la huella;
 4. ejecutar la generación y el check completo de `packages/api-client`;
 5. revisar el diff del snapshot y de `generated` antes de fusionar.
 
@@ -52,9 +56,22 @@ que acaba de compilar y antes de certificar su imagen. El job
 canónico bloquea la publicación de la imagen API, el bundle de entrega y el
 movimiento final de `development-certified`.
 
+El bundle API lleva además la etiqueta inmutable
+`io.elevant.api-release.openapi-sha256`. Web CI exige que esa etiqueta, el
+descriptor y el snapshot coincidan antes de certificar un cliente. La forma
+canónica ordena recursivamente las claves de objetos, conserva el orden de los
+arrays y serializa sin espacios antes de aplicar SHA-256 a los bytes UTF-8. Un
+entero fuera del rango seguro de JavaScript falla cerrado para evitar colisiones
+por pérdida de precisión.
+
 `API Client CI` repite la comprobación como una defensa independiente para el
 paquete TypeScript y sus consumidores. El gate que impide publicar el backend
 vive dentro de `Backend CI` y no depende de que otro workflow termine primero.
+
+La identidad del contrato y la procedencia de la release son conceptos
+separados. Esta frontera evita un commit posterior dedicado únicamente a anotar
+la imagen que el commit anterior todavía no podía haber producido. Véase
+[ADR-0014](../adr/0014-bind-api-releases-to-openapi-fingerprint.md).
 
 ## Compatibilidad y orden de despliegue
 

@@ -31,7 +31,8 @@ Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
 ## Contrato y generación
 
 - `openapi/elevant-v1.json`: snapshot canónico certificado.
-- `openapi/source.json`: commit, ejecución e imagen inmutable de procedencia.
+- `openapi/source.json`: descriptor cerrado del contrato con versión de
+  esquema, huella SHA-256 canónica y ruta Swagger.
 - `generated/elevant-api.ts`: salida determinista de Orval; no se edita a mano.
 - `src`: fábrica y transporte compartido, sin dependencias de ejecución.
 
@@ -54,3 +55,23 @@ La comparación ignora espacios y el orden de propiedades JSON, pero detecta
 cualquier otra deriva. CI no usa Tailscale: compila el backend del commit, lo
 inicia localmente en `Testing` y compara su documento. Un cambio incompatible
 exige versionar el endpoint o coordinar la migración de los tres consumidores.
+
+El descriptor `source.json` tiene exactamente esta forma:
+
+```json
+{
+  "schemaVersion": 1,
+  "openApiSha256": "sha256:64_HEX_MINUSCULAS",
+  "swaggerPath": "/swagger/v1/swagger.json"
+}
+```
+
+`openApiSha256` se calcula sobre JSON canónico: las claves de cada objeto se
+ordenan recursivamente, el orden de los arrays se conserva y el resultado se
+serializa sin espacios antes de aplicar SHA-256 sobre sus bytes UTF-8. Los
+enteros deben estar dentro del rango seguro de JavaScript; un valor fuera de él
+se rechaza para evitar que dos literales distintos pierdan precisión y compartan
+huella. Los checks también rechazan claves adicionales, una versión desconocida
+y cualquier huella que no coincida exactamente con `openapi/elevant-v1.json`.
+El descriptor identifica el contrato compartido; la procedencia de una release
+concreta se mantiene en sus manifiestos inmutables de entrega.

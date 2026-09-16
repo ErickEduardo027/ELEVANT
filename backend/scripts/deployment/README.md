@@ -17,6 +17,11 @@ exactly these reviewed payloads:
 /compose/compose.development.api.yml
 ```
 
+Its `io.elevant.api-release.openapi-sha256` OCI label binds those schema-v1
+promotion inputs to the canonical fingerprint of the OpenAPI document exposed
+by the certified API image. The label is additive metadata: it does not change
+the manifest schema or the controller's two reviewed payloads.
+
 The mutable `development-certified` tag is discovery-only. CI validates the
 bundle again after pulling it by digest and moves that tag only after every
 other publication step and a final stale-run guard succeed.
@@ -29,10 +34,12 @@ fails immediately; a discovery alias is polled for at most 30 minutes.
 `certify-api-image.sh` validates the exact image transferred between CI jobs. It
 checks OCI provenance, the non-root runtime, liveness, unavailable-database
 readiness behavior, ping, exact positive/negative CORS preflights, and the
-invariant that API startup does not invoke migrations. It also freezes the
-client-generation-safe ping contract: stable operation ID, exact success and
-Problem Details responses, media types and schema references, plus required,
-non-nullable typed fields.
+invariant that API startup does not invoke migrations. It recomputes the full
+canonical OpenAPI fingerprint from the running image and requires the exact
+CI-certified value before applying the focused contract invariants. It also
+freezes the client-generation-safe ping contract: stable operation ID, exact
+success and Problem Details responses, media types and schema references, plus
+required, non-nullable typed fields.
 
 `guard-api-publication.sh` fetches the current `Development` tip immediately
 before a mutable alias is moved. It rejects divergent history and any newer
@@ -51,5 +58,9 @@ Run the deterministic local tests from the repository root:
 
 ```bash
 python3 -m unittest discover -s backend/tests/scripts -p 'test_*.py' -v
+bash backend/tests/scripts/test_api_contract_fingerprint.sh
+bash backend/tests/scripts/test_api_release_bundle.sh
 bash backend/tests/scripts/test_guard_api_publication.sh
 ```
+
+The release-bundle test requires a running local Docker daemon.
