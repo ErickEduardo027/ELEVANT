@@ -997,7 +997,7 @@
     "workflows": [
       {
         "path": ".github/workflows/api-client-ci.yml",
-        "sha256": "fdb55c8082d706732e606556874331d11f09fa10c64d63e96bd95508ee4ec0ca"
+        "sha256": "da6e3336112ce8090e8cd9e96d58b0fc084f08a39c6b99aea1d191d2c18089eb"
       },
       {
         "path": ".github/workflows/backend-ci.yml",
