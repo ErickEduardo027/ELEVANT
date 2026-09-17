@@ -1,8 +1,9 @@
 import FlightCard from './FlightCard';
 import { groupFlightsByHour } from '../planningMappers';
 
-export default function FlightTimeline({ flights, now, onSelectFlight }) {
-  const groups = groupFlightsByHour(flights);
+export default function FlightTimeline({ flights, now, timeZone, onSelectFlight }) {
+  const effectiveTimeZone = timeZone ?? flights.find(flight => flight.station?.ianaTimeZone)?.station.ianaTimeZone;
+  const groups = groupFlightsByHour(flights, effectiveTimeZone);
 
   return (
     <div data-testid="flight-timeline" className="space-y-4">

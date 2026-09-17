@@ -22,6 +22,15 @@ Ambas variables `VITE_*` son públicas. El build falla si falta alguna, si no us
 
 El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Solo acepta roles conocidos del portal `back_office`, conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
 
+## Planificación OCC remota
+
+La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
+
+- `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;
+- `GET /api/v1/occ/planning/options`, al abrir el detalle de una escala autorizada.
+
+La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. Incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Las acciones de crear vuelos, editar, asignar recursos y generar Work Orders permanecen deshabilitadas hasta que existan contratos OpenAPI de escritura con concurrencia e idempotencia definidas. Los fixtures del módulo se usan solo en pruebas.
+
 ## Frontera de seguridad
 
 Los roles, tenants y scopes de estación se validan en el servidor. Filtros, menús ocultos y sesiones del prototipo no autorizan datos. La web solo consume la API HTTPS versionada; no accede directamente a SQL Server, proveedores de aviación ni almacenamiento de objetos.
@@ -67,4 +76,4 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. La creación de sesión ya usa la API real; los adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.
+Esta entrega es un **preview técnico de Development**. La creación de sesión y la lectura de Planificación OCC usan la API real; los demás adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.
