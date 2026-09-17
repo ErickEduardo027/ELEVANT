@@ -4,17 +4,16 @@ Aplicación nativa para agentes de rampa en tablets Android/iOS. Usa Expo 54, Ex
 
 ## Estado actual
 
-El prototipo permite explorar:
+La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
+`@elevant/api-client`:
 
-- inicio de sesión contra el backend prototipo;
-- vuelos/turnarounds y tareas asignadas;
-- inicio y cierre de atención;
-- checklists y hitos;
-- incidencias y selección de fotografías;
-- cola local y sincronización con conectividad intermitente;
-- chat y estado de red demostrativos.
+- inicio de sesión y revalidación de la cuenta actual;
+- operaciones/turnarounds y servicios asignados al agente autenticado;
+- caché de solo lectura por cuenta para conectividad intermitente.
 
-Todavía no consume los contratos de `Elevant.Api` .NET ni constituye autenticación productiva. La memoria local es una caché/outbox del dispositivo, no la fuente de verdad.
+Los comandos de atención, checklists, incidencias, chat, evidencias y
+sincronización permanecen deshabilitados hasta contar con contratos canónicos.
+La aplicación no simula esas escrituras ni conserva una outbox prototípica.
 
 El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
 OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados
@@ -29,28 +28,55 @@ npm install
 npm run start
 npm run lint
 npm run typecheck
+npm run test:unit
 npm run test:api-client-bundle
 npm run test:app-bundle
 ```
 
-También puede usar `npm run android`, `npm run ios` o `npm run web` para desarrollo. Expo Go sirve para la exploración temprana, pero las capacidades y permisos finales deben verificarse en un development build/app firmada.
+También puede usar `npm run android` o `npm run ios` para desarrollo. `npm run
+web` sirve únicamente para revisión visual: la sesión segura canónica requiere
+el runtime nativo de SecureStore. Expo Go sirve para la exploración temprana,
+pero las capacidades y permisos finales deben verificarse en un development
+build/app firmada.
 
 Copie `.env.example` a su archivo local y use una URL alcanzable desde la tablet:
 
 ```text
 EXPO_PUBLIC_ELEVANT_API_URL=https://<PRIVATE_API_SERVICE>.<TAILNET_DNS_NAME>.ts.net
-EXPO_PUBLIC_API_URL=http://<DEV_LAN_IP>:4310
 ```
 
-`EXPO_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `EXPO_PUBLIC_API_URL` conserva temporalmente los adaptadores del prototipo. `localhost` desde la tablet se refiere a la propia tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca contiene secretos.
+`EXPO_PUBLIC_ELEVANT_API_URL` configura autenticación y asignaciones mediante el
+cliente OpenAPI compartido. `localhost` desde la tablet se refiere a la propia
+tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API
+privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca
+contiene secretos.
 
 ## Autorización y almacenamiento
 
-La API determina la cuenta, el perfil de agente y las estaciones autorizadas. El dispositivo no puede ampliar ese scope enviando otro agent/person/station ID. Los tokens futuros deben almacenarse con mecanismos seguros de la plataforma, no en variables públicas, código, logs o AsyncStorage sin protección.
+La API determina la cuenta, el perfil de agente y las estaciones autorizadas. El
+dispositivo no envía `agentId` ni `stationId` al consultar sus asignaciones. La
+sesión solo se conserva cuando la respuesta y la revalidación actual contienen
+el rol exacto `RAMP_AGENT` del portal `ramp_mobile_app`, membresía interna de
+AVIAM y al menos un scope de estación.
+
+El bearer token se guarda exclusivamente con `expo-secure-store`; nunca forma
+parte del objeto de sesión entregado a la UI, AsyncStorage ni logs. Token y
+metadata se enlazan mediante una revisión aleatoria: una pareja incompleta o
+inconsistente se rechaza en cerrado. AsyncStorage conserva solo actor/expiración
+no secretos y una caché versionada por `accountId` y revisión. Una sesión
+vencida se elimina en cerrado. Logout, `401`, `403` y un cambio de autorización
+eliminan token, metadata, cachés de cuentas y todo estado sensible no namespaced
+heredado del prototipo.
+
+La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
+antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,
+caché vencida o contrato malformado se entrega como error tipado y nunca se
+disfraza con datos cacheados. Las solicitudes expiran a los 15 segundos para
+evitar que la interfaz quede bloqueada cuando una ruta privada deja de responder.
 
 Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-compatible, tamaño/tipos, retención y autorización. SQL Server no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
 
-## Sincronización offline
+## Próxima sincronización offline
 
 Cada escritura offline debe conservar:
 

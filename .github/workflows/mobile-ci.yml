@@ -64,6 +64,9 @@ jobs:
       - name: Type-check Mobile Agent
         run: npm run typecheck
 
+      - name: Test Mobile Agent session boundaries
+        run: npm run test:unit
+
       - name: Bundle shared API client with Metro
         run: npm run test:api-client-bundle
 

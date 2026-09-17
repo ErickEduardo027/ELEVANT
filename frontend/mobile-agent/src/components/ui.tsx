@@ -6,7 +6,7 @@ import { colors } from '../theme/colors';
 export function PrimaryButton({ title, onPress, icon, disabled, secondary = false, danger = false }: {
   title: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap; disabled?: boolean; secondary?: boolean; danger?: boolean;
 }) {
-  return <Pressable onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
+  return <Pressable accessibilityLabel={title} accessibilityRole="button" accessibilityState={{ disabled: Boolean(disabled) }} onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.secondary, danger && styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
     {icon && <Ionicons name={icon} size={20} color={danger ? colors.danger : secondary ? colors.navy : colors.white} />}
     <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{title}</Text>
   </Pressable>;
