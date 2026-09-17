@@ -1854,6 +1854,288 @@ public sealed class SqlServerMigrationTests
             .ToArrayAsync(cancellationToken));
     }
 
+    [Fact]
+    public async Task RampOperationsReadStoreDerivesAgentAndEnforcesAssignmentAndStationScope()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null)
+        {
+            return;
+        }
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection,
+            "Development",
+            cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext)
+                .SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        var accountId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var accountWithoutProfileId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var otherStationId = Guid.Parse("91000000-0000-7000-8000-000000000001");
+        var otherStationOperationId = Guid.Parse("91000000-0000-7000-8000-000000000003");
+        var instant = new DateTimeOffset(2026, 8, 19, 10, 0, 0, TimeSpan.Zero);
+
+        await using (var setupContext = CreateContext(database.ConnectionString))
+        {
+            var agent = await setupContext.RampAgents
+                .SingleAsync(item => item.PublicId == agentId, cancellationToken);
+            var position = await setupContext.OperationalPositions
+                .SingleAsync(item => item.Code == "RAMP-AGENT", cancellationToken);
+            var airline = await setupContext.Airlines
+                .SingleAsync(item => item.IataCode == "ZZ", cancellationToken);
+            var releasedOperation = await (
+                    from operation in setupContext.GroundOperations
+                    join turnaround in setupContext.Turnarounds
+                        on operation.TurnaroundId equals turnaround.Id
+                    where turnaround.OperationCode == "DEV-TAT-0002"
+                    select operation)
+                .SingleAsync(cancellationToken);
+            var otherAgentPersonId = await setupContext.Users
+                .Where(item => item.PublicId ==
+                    Guid.Parse("40000000-0000-7000-8000-000000000003"))
+                .Select(item => item.PersonId)
+                .SingleAsync(cancellationToken);
+
+            var otherAgent = NewTestAgent(
+                otherAgentPersonId,
+                "DEV-RA-OTHER",
+                "91000000-0000-7000-8000-000000000004",
+                instant);
+            var otherAirport = new Airport
+            {
+                PublicId = Guid.Parse("91000000-0000-7000-8000-000000000008"),
+                IataCode = "OTH",
+                IcaoCode = "MDOT",
+                Name = "Other test airport",
+                City = "Test city",
+                CountryCode = "DO",
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            };
+            setupContext.RampAgents.Add(otherAgent);
+            setupContext.Airports.Add(otherAirport);
+            await setupContext.SaveChangesAsync(cancellationToken);
+
+            setupContext.OperationAgentAssignments.AddRange(
+                new OperationAgentAssignment
+                {
+                    PublicId = Guid.Parse("91000000-0000-7000-8000-000000000005"),
+                    GroundOperationId = releasedOperation.Id,
+                    RampAgentId = agent.Id,
+                    OperationalPositionId = position.Id,
+                    AssignmentRole = "released-test",
+                    AssignedAt = instant,
+                    ReleasedAt = instant.AddMinutes(5),
+                    CreatedAt = instant,
+                    UpdatedAt = instant.AddMinutes(5),
+                },
+                new OperationAgentAssignment
+                {
+                    PublicId = Guid.Parse("91000000-0000-7000-8000-000000000006"),
+                    GroundOperationId = releasedOperation.Id,
+                    RampAgentId = otherAgent.Id,
+                    OperationalPositionId = position.Id,
+                    AssignmentRole = "other-agent-test",
+                    AssignedAt = instant,
+                    CreatedAt = instant,
+                    UpdatedAt = instant,
+                });
+
+            var otherStation = new Station
+            {
+                PublicId = otherStationId,
+                AirportId = otherAirport.Id,
+                Code = "OTH",
+                Name = "Other test station",
+                IanaTimeZone = "America/Santo_Domingo",
+                IsActive = true,
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            };
+            setupContext.Stations.Add(otherStation);
+            await setupContext.SaveChangesAsync(cancellationToken);
+
+            var otherTurnaround = new Turnaround
+            {
+                PublicId = Guid.Parse("91000000-0000-7000-8000-000000000002"),
+                OperationCode = "RAMP-OTHER-STATION",
+                AirlineId = airline.Id,
+                StationId = otherStation.Id,
+                OperationDate = new DateOnly(2026, 8, 20),
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            };
+            setupContext.Turnarounds.Add(otherTurnaround);
+            await setupContext.SaveChangesAsync(cancellationToken);
+
+            var otherOperation = new GroundOperation
+            {
+                PublicId = otherStationOperationId,
+                TurnaroundId = otherTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Assigned,
+                PlannedStartAt = instant.AddDays(1),
+                PlannedEndAt = instant.AddDays(1).AddHours(1),
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            };
+            setupContext.GroundOperations.Add(otherOperation);
+            await setupContext.SaveChangesAsync(cancellationToken);
+
+            setupContext.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.Parse("91000000-0000-7000-8000-000000000007"),
+                GroundOperationId = otherOperation.Id,
+                RampAgentId = agent.Id,
+                AssignmentRole = "other-station-test",
+                AssignedAt = instant,
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            });
+            await setupContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString,
+            new PasswordHashCounter());
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IRampOperationsReadStore>();
+
+            var emptyScope = await store.GetActiveAssignedOperationsAsync(
+                Guid.NewGuid(),
+                [],
+                cancellationToken);
+            Assert.True(emptyScope.IsSuccess);
+            Assert.Empty(emptyScope.Operations!);
+
+            var missingProfile = await store.GetActiveAssignedOperationsAsync(
+                accountWithoutProfileId,
+                [stationId],
+                cancellationToken);
+            Assert.False(missingProfile.IsSuccess);
+            Assert.Equal(
+                RampOperationsReadFailure.AgentProfileUnavailable,
+                missingProfile.Failure);
+
+            var agentIdentifierIsNotAnAccount = await store.GetActiveAssignedOperationsAsync(
+                agentId,
+                [stationId],
+                cancellationToken);
+            Assert.False(agentIdentifierIsNotAnAccount.IsSuccess);
+            Assert.Equal(
+                RampOperationsReadFailure.AgentProfileUnavailable,
+                agentIdentifierIsNotAnAccount.Failure);
+
+            var ownStation = await store.GetActiveAssignedOperationsAsync(
+                accountId,
+                [Guid.Empty, stationId, stationId],
+                cancellationToken);
+            Assert.True(ownStation.IsSuccess);
+            var operation = Assert.Single(ownStation.Operations!);
+            Assert.Equal(agentId, operation.Assignment.AgentId);
+            Assert.Equal("primary", operation.Assignment.AssignmentRole);
+            Assert.Equal("RAMP-AGENT", operation.Assignment.Position?.Code);
+            Assert.Equal("Assigned", operation.Operation.Status);
+            Assert.Equal("DEV-TAT-0001", operation.Turnaround.OperationCode);
+            Assert.Equal(stationId, operation.Turnaround.Station.Id);
+            Assert.Equal("ZZ", operation.Turnaround.Airline.IataCode);
+            Assert.Equal("A320", operation.Turnaround.Aircraft?.IcaoCode);
+            Assert.Equal("HI-DEV", operation.Turnaround.Aircraft?.Registration);
+            Assert.Equal("A01", operation.Turnaround.Stand?.Code);
+            Assert.Equal("A", operation.Turnaround.Stand?.Terminal?.Code);
+            Assert.Equal("ZZ100", operation.Turnaround.Arrival?.FlightNumber);
+            Assert.Equal("ZZ101", operation.Turnaround.Departure?.FlightNumber);
+            var service = Assert.Single(operation.Services);
+            Assert.Equal(1, service.LineNumber);
+            Assert.Equal("BAGGAGE", service.Code);
+
+            var otherStation = await store.GetActiveAssignedOperationsAsync(
+                accountId,
+                [otherStationId],
+                cancellationToken);
+            Assert.True(otherStation.IsSuccess);
+            Assert.Equal(
+                otherStationOperationId,
+                Assert.Single(otherStation.Operations!).Operation.Id);
+        }
+
+        await using (var profileContext = CreateContext(database.ConnectionString))
+        {
+            await profileContext.RampAgents
+                .Where(item => item.PublicId == agentId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.IsActive, false),
+                    cancellationToken);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var inactiveProfile = await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsReadStore>()
+                .GetActiveAssignedOperationsAsync(
+                    accountId,
+                    [stationId],
+                    cancellationToken);
+            Assert.False(inactiveProfile.IsSuccess);
+            Assert.Equal(
+                RampOperationsReadFailure.AgentProfileUnavailable,
+                inactiveProfile.Failure);
+        }
+
+        await using (var ambiguousProfileContext = CreateContext(database.ConnectionString))
+        {
+            await ambiguousProfileContext.RampAgents
+                .Where(item => item.PublicId == agentId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.IsActive, true),
+                    cancellationToken);
+            await ambiguousProfileContext.Database.ExecuteSqlRawAsync(
+                "DROP INDEX [IX_ramp_agents_person_id] ON [hr].[ramp_agents];",
+                cancellationToken);
+            var personId = await ambiguousProfileContext.Users
+                .Where(item => item.PublicId == accountId)
+                .Select(item => item.PersonId)
+                .SingleAsync(cancellationToken);
+            ambiguousProfileContext.RampAgents.Add(NewTestAgent(
+                personId,
+                "DEV-RA-AMBIGUOUS",
+                "91000000-0000-7000-8000-000000000009",
+                instant));
+            await ambiguousProfileContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var ambiguousProfile = await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsReadStore>()
+                .GetActiveAssignedOperationsAsync(
+                    accountId,
+                    [stationId],
+                    cancellationToken);
+            Assert.False(ambiguousProfile.IsSuccess);
+            Assert.Equal(
+                RampOperationsReadFailure.AgentProfileUnavailable,
+                ambiguousProfile.Failure);
+        }
+    }
+
     private static ServiceProvider CreateAuthenticationProvider(
         string connectionString,
         PasswordHashCounter passwordCounter)

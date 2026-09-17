@@ -4,6 +4,7 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   type AssignOccOperationRequest,
   type CreateSessionRequest,
@@ -13,6 +14,7 @@ import {
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
   type OccAssignmentResponse,
+  type RampAssignedOperationsResponse,
   type SessionActorResponse,
   type SessionResponse,
   type SystemPingResponse,
@@ -49,6 +51,10 @@ export type GetOccPlanningOptionsOptions = Omit<
   "body" | "method"
 >;
 export type AssignOccPlanningOperationOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type GetRampAssignedOperationsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
@@ -93,6 +99,9 @@ export interface ElevantApiClient {
     etag: string,
     options?: AssignOccPlanningOperationOptions,
   ): Promise<OccAssignmentWithMetadata>;
+  getRampAssignedOperations(
+    options?: GetRampAssignedOperationsOptions,
+  ): Promise<RampAssignedOperationsResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -689,6 +698,85 @@ function isOccAssignmentResponse(value: unknown): value is OccAssignmentResponse
   );
 }
 
+function isRampOperationalPositionResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "code", "name"]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isString(value.name)
+  );
+}
+
+function isRampAgentAssignmentResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "agentId",
+      "position",
+      "assignmentRole",
+      "assignedAt",
+    ]) &&
+    isUuid(value.id) &&
+    isUuid(value.agentId) &&
+    isOptionalNullable(value.position, isRampOperationalPositionResponse) &&
+    isString(value.assignmentRole) &&
+    isDateTimeOffset(value.assignedAt)
+  );
+}
+
+function isRampTurnaroundResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "operationCode",
+      "operationDate",
+      "status",
+      "station",
+      "airline",
+      "aircraft",
+      "stand",
+      "arrival",
+      "departure",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.operationCode) &&
+    isDateOnly(value.operationDate) &&
+    isString(value.status) &&
+    isOccStationResponse(value.station) &&
+    isOccAirlineResponse(value.airline) &&
+    isOptionalNullable(value.aircraft, isOccAircraftResponse) &&
+    isOptionalNullable(value.stand, isOccStandResponse) &&
+    isOptionalNullable(value.arrival, isOccFlightLegResponse) &&
+    isOptionalNullable(value.departure, isOccFlightLegResponse)
+  );
+}
+
+function isRampAssignedOperationResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["assignment", "operation", "turnaround", "services"]) &&
+    isRampAgentAssignmentResponse(value.assignment) &&
+    isOccGroundOperationResponse(value.operation) &&
+    isRampTurnaroundResponse(value.turnaround) &&
+    Array.isArray(value.services) &&
+    value.services.every(isOccOperationServiceResponse)
+  );
+}
+
+function isRampAssignedOperationsResponse(
+  value: unknown,
+): value is RampAssignedOperationsResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["operations"]) &&
+    Array.isArray(value.operations) &&
+    value.operations.every(isRampAssignedOperationResponse)
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -1049,6 +1137,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       }
       return { assignment: result.assignment, etag: result.etag };
+    },
+    async getRampAssignedOperations(options?: GetRampAssignedOperationsOptions) {
+      const result = await execute(
+        getGetRampAssignedOperationsUrl(),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isRampAssignedOperationsResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
     },
     async getSystemPing(options?: GetSystemPingOptions) {
       const result = await execute(getGetSystemPingUrl(), {

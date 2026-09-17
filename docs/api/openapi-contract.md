@@ -44,6 +44,16 @@ Si más de una versión contractual activa y aprobada resulta aplicable a la
 misma aerolínea, estación y fecha, las opciones fallan cerrado con `409` en vez
 de escoger una de forma implícita.
 
+El contrato también publica `GetRampAssignedOperations`
+(`GET /api/v1/ramp/operations`) como primera lectura autenticada de Mobile Agent.
+No recibe parámetros de agente ni estación. La API deriva ambos límites de la
+cuenta autenticada, exige rol `RAMP_AGENT` del portal `RampMobileApp`, membresía
+interna AVIAM, perfil de agente activo y al menos un scope de estación. La
+consulta filtra en SQL asignaciones activas propias y estaciones permitidas,
+devuelve una colección ordenada y acotada, y responde `200` con `operations: []`
+cuando el agente no tiene trabajo vigente. Una identidad incompatible o un
+perfil ausente/ambiguo falla cerrado con `403` sin revelar su causa interna.
+
 La asignación vuelve a resolver esos controles dentro de una transacción
 serializable. No acepta servicios, contrato, precio, cantidad, estación ni
 posición suministrados por el cliente: deriva la posición desde el turno y
@@ -56,7 +66,8 @@ un contexto vigente pero no asignable responde `409`, siempre sin escrituras
 parciales. CORS expone `ETag` para los clientes web.
 
 Este incremento no implica refresh, logout, revocación de `jti`, creación de
-escalas, reasignación, ejecución mobile, push ni otra escritura de negocio.
+escalas, reasignación, inicio o ejecución mobile, push ni otra escritura de
+negocio.
 
 ## Snapshot canónico para TypeScript
 

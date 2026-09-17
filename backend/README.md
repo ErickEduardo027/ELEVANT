@@ -77,6 +77,13 @@ a 60 minutos y usa 15 por defecto.
   servicios contractuales y registra transición y auditoría de forma atómica.
   Los tres endpoints OCC exigen `ADMIN_OCC`, portal BackOffice, membresía
   interna AVIAM vigente y scope de estación.
+- `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
+  asignaciones activas, el contexto operativo y los servicios planificados.
+  No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el
+  perfil activo y los scopes, filtra por agente y estación antes de proyectar
+  y limita la respuesta a 100 operaciones ordenadas. Exige `RAMP_AGENT`, portal
+  `RampMobileApp` y membresía interna AVIAM; una cuenta sin perfil compatible
+  falla cerrada con `403` y una cola legítimamente vacía responde `200`.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
@@ -86,8 +93,9 @@ GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión
 compatible. El bootstrap inicial del VPS sigue siendo manual y verificable.
-La autenticación actual es un slice acotado de sesión. OCC Planning es la primera
-autorización de negocio fina; los demás módulos todavía deben implementar la suya.
+La autenticación actual es un slice acotado de sesión. OCC Planning y la lectura
+de trabajo asignado del agente son los primeros límites de autorización fina;
+los demás módulos todavía deben implementar la suya.
 El host aplica una política fallback autenticada a controllers
 y hubs que no declaren acceso anónimo; los dos hubs SignalR exigen Bearer, aunque
 siguen sin métodos ni mensajes de negocio. El JWT es corto (15 minutos por
@@ -106,8 +114,9 @@ redactarla. Los hubs no deben transportar eventos reales hasta implementar
 revalidación de actor, autorización por scope y cierre/renovación al expirar o
 revocarse el token.
 
-No existen aún refresh, logout ni revocación por `jti`. Fuera del corte OCC
-implementado tampoco existe todavía autorización fina por rol, tenant o estación.
+No existen aún refresh, logout ni revocación por `jti`. Fuera de los cortes OCC
+y de lectura de asignaciones de rampa implementados tampoco existe todavía
+autorización fina por rol, tenant o estación.
 Development debe permanecer dentro
 del tailnet; el secreto real de firma se guarda junto con los demás valores
 root-only del ambiente y nunca en Git.

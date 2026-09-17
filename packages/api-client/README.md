@@ -38,6 +38,7 @@ const { assignment, etag: assignedEtag } =
     { agentId: agent.id },
     etag,
   );
+const assignedRampWork = await api.getRampAssignedOperations();
 const status = await api.getSystemPing({ signal: abortController.signal });
 ```
 
@@ -69,6 +70,15 @@ no forma parte de este cliente.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus
 esquemas OpenAPI publican `additionalProperties: false`; cualquier ampliación
 del contrato debe regenerar y revisar el cliente antes de desplegarse.
+
+`getRampAssignedOperations` es la primera lectura de Mobile Agent. Ejecuta un
+`GET` autenticado sin query ni body: el consumidor no puede suministrar agente,
+estación ni tenant. La API los deriva de la sesión y devuelve solamente las
+asignaciones activas propias. El wrapper valida recursivamente la proyección
+cerrada antes de entregarla, acepta `operations: []` como cola válida y rechaza
+identificadores, fechas o propiedades fuera del contrato. Iniciar una operación,
+registrar checklist, adjuntar evidencias o completar servicios siguen fuera de
+este incremento de solo lectura.
 
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
 error expone solo `status`, un `title` saneado y el `traceId` opcional. Su

@@ -277,6 +277,125 @@ export interface ProblemDetails {
   [key: string]: unknown;
 }
 
+export interface RampOperationalPositionResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RampAgentAssignmentResponse {
+  id: string;
+  agentId: string;
+  position?: RampOperationalPositionResponse | null;
+  assignmentRole: string;
+  assignedAt: string;
+}
+
+export interface RampAircraftResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  registration?: string | null;
+}
+
+export interface RampAirlineResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface RampAirportResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface RampGroundOperationResponse {
+  id: string;
+  status: string;
+  /** @nullable */
+  plannedStartAt?: string | null;
+  /** @nullable */
+  plannedEndAt?: string | null;
+  /** @nullable */
+  actualStartAt?: string | null;
+  /** @nullable */
+  actualEndAt?: string | null;
+}
+
+export interface RampStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
+export interface RampTerminalResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RampStandResponse {
+  id: string;
+  code: string;
+  terminal?: RampTerminalResponse | null;
+}
+
+export interface RampFlightLegResponse {
+  id: string;
+  flightNumber: string;
+  origin: RampAirportResponse;
+  destination: RampAirportResponse;
+  scheduledAt: string;
+  /** @nullable */
+  estimatedAt?: string | null;
+  /** @nullable */
+  actualAt?: string | null;
+}
+
+export interface RampTurnaroundResponse {
+  id: string;
+  operationCode: string;
+  operationDate: string;
+  status: string;
+  station: RampStationResponse;
+  airline: RampAirlineResponse;
+  aircraft?: RampAircraftResponse | null;
+  stand?: RampStandResponse | null;
+  arrival?: RampFlightLegResponse | null;
+  departure?: RampFlightLegResponse | null;
+}
+
+export interface RampOperationServiceResponse {
+  id: string;
+  lineNumber: number;
+  serviceDefinitionId: string;
+  code: string;
+  name: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+  status: string;
+}
+
+export interface RampAssignedOperationResponse {
+  assignment: RampAgentAssignmentResponse;
+  operation: RampGroundOperationResponse;
+  turnaround: RampTurnaroundResponse;
+  services: RampOperationServiceResponse[];
+}
+
+export interface RampAssignedOperationsResponse {
+  operations: RampAssignedOperationResponse[];
+}
+
 export interface SessionResponse {
   accessToken: string;
   tokenType: string;
@@ -477,6 +596,37 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetRampAssignedOperationsUrl = () => {
+
+
+
+
+  return `/api/v1/ramp/operations`
+}
+
+/**
+ * @summary Returns only active operations assigned to the current ramp agent.
+ */
+export const getRampAssignedOperations = async ( options?: RequestInit): Promise<RampAssignedOperationsResponse> => {
+
+  const res = await fetch(getGetRampAssignedOperationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampAssignedOperationsResponse = body ? JSON.parse(body) : {}
   return data
 }
 
