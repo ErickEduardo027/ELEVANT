@@ -5,6 +5,10 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
+export interface AssignOccOperationRequest {
+  agentId: string;
+}
+
 export interface CreateSessionRequest {
   /**
      * @minLength 1
@@ -137,28 +141,6 @@ export interface OccAssignedEquipmentResponse {
   assignedAt: string;
 }
 
-export interface OccContractOptionResponse {
-  id: string;
-  code: string;
-  version: number;
-  validFrom: string;
-  /** @nullable */
-  validTo?: string | null;
-  currencyCode: string;
-}
-
-export interface OccFlightLegResponse {
-  id: string;
-  flightNumber: string;
-  origin: OccAirportResponse;
-  destination: OccAirportResponse;
-  scheduledAt: string;
-  /** @nullable */
-  estimatedAt?: string | null;
-  /** @nullable */
-  actualAt?: string | null;
-}
-
 export interface OccGroundOperationResponse {
   id: string;
   status: string;
@@ -182,6 +164,35 @@ export interface OccOperationServiceResponse {
   executedQuantity: number;
   billingUnit: string;
   status: string;
+}
+
+export interface OccAssignmentResponse {
+  turnaroundId: string;
+  operation: OccGroundOperationResponse;
+  assignment: OccAssignedAgentResponse;
+  services: OccOperationServiceResponse[];
+}
+
+export interface OccContractOptionResponse {
+  id: string;
+  code: string;
+  version: number;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+}
+
+export interface OccFlightLegResponse {
+  id: string;
+  flightNumber: string;
+  origin: OccAirportResponse;
+  destination: OccAirportResponse;
+  scheduledAt: string;
+  /** @nullable */
+  estimatedAt?: string | null;
+  /** @nullable */
+  actualAt?: string | null;
 }
 
 export interface OccStationResponse {
@@ -428,6 +439,44 @@ export const getOccPlanningOptions = async (params: GetOccPlanningOptionsParams,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccPlanningOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAssignOccPlanningOperationUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment`
+}
+
+/**
+ * @summary Assigns one eligible agent and materializes all applicable contracted services.
+ */
+export const assignOccPlanningOperation = async (turnaroundId: string,
+    assignOccOperationRequest: AssignOccOperationRequest, options?: RequestInit): Promise<OccAssignmentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignOccOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
   return data
 }
 

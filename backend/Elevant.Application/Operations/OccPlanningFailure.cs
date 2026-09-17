@@ -7,4 +7,5 @@ public enum OccPlanningFailure
     InvalidRequest,
     NotFound,
     Conflict,
+    PreconditionFailed,
 }

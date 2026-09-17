@@ -43,13 +43,13 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
     [Theory]
     [InlineData(ElevantApiFactory.PrivateWebOrigin)]
     [InlineData(ElevantApiFactory.PublicWebOrigin)]
-    public async Task CorsPreflightAllowsAuthorizationAndContentType(string origin)
+    public async Task CorsPreflightAllowsAuthorizationContentTypeAndConcurrencyHeader(string origin)
     {
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/system/ping");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "GET");
-        request.Headers.Add("Access-Control-Request-Headers", "Authorization, Content-Type");
+        request.Headers.Add("Access-Control-Request-Headers", "Authorization, Content-Type, If-Match");
 
         using var response = await client.SendAsync(
             request,
@@ -65,6 +65,7 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Contains("GET", allowedMethods);
         Assert.Contains("Authorization", allowedHeaders);
         Assert.Contains("Content-Type", allowedHeaders);
+        Assert.Contains("If-Match", allowedHeaders);
     }
 
     [Fact]

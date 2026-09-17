@@ -26,6 +26,7 @@ public sealed class OccAgentEligibilityPolicyTests
             HasCurrentAirportId = false,
             HasCurrentRampDriverLicense = false,
             HasCompatibleShift = false,
+            HasAssignmentConflict = true,
         });
 
         Assert.False(result.Eligible);
@@ -39,6 +40,7 @@ public sealed class OccAgentEligibilityPolicyTests
                 "airport_id_not_current",
                 "ramp_driver_license_not_current",
                 "shift_not_compatible",
+                "assignment_conflict",
             ],
             result.EligibilityReasons);
     }
@@ -50,10 +52,19 @@ public sealed class OccAgentEligibilityPolicyTests
             { "mobile_account_unavailable", candidate => candidate with { HasMobileAccount = false } },
             { "station_scope_missing", candidate => candidate with { HasStationScope = false } },
             { "terminal_scope_missing", candidate => candidate with { HasTerminalScope = false } },
+            { "operational_position_unavailable", candidate => candidate with { OperationalPositionId = null } },
             { "qualification_not_current", candidate => candidate with { HasCurrentQualification = false } },
             { "airport_id_not_current", candidate => candidate with { HasCurrentAirportId = false } },
             { "ramp_driver_license_not_current", candidate => candidate with { HasCurrentRampDriverLicense = false } },
-            { "shift_not_compatible", candidate => candidate with { HasCompatibleShift = false } },
+            {
+                "shift_not_compatible",
+                candidate => candidate with
+                {
+                    HasCompatibleShift = false,
+                    OperationalPositionId = null,
+                }
+            },
+            { "assignment_conflict", candidate => candidate with { HasAssignmentConflict = true } },
         };
 
     [Theory]
@@ -79,5 +90,7 @@ public sealed class OccAgentEligibilityPolicyTests
         HasCurrentQualification: true,
         HasCurrentAirportId: true,
         HasCurrentRampDriverLicense: true,
-        HasCompatibleShift: true);
+        HasCompatibleShift: true,
+        OperationalPositionId: Guid.Parse("52000000-0000-7000-8000-000000000001"),
+        HasAssignmentConflict: false);
 }

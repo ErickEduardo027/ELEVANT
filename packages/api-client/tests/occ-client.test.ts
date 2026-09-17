@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   createElevantApiClient,
   ElevantApiError,
+  type OccAssignmentResponse,
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
 } from "../src";
 
 const stationId = "20000000-0000-7000-8000-000000000003";
 const turnaroundId = "70000000-0000-7000-8000-000000000012";
+const agentId = "50000000-0000-7000-8000-000000000001";
+const operationEtag = '"occ-operation-v7"';
+const assignmentEtag = '"occ-operation-v8"';
 
 const station = {
   id: stationId,
@@ -174,10 +178,34 @@ const planningOptions: OccPlanningOptionsResponse = {
   ],
 };
 
-function jsonResponse(body: unknown, status = 200) {
+const assignment: OccAssignmentResponse = {
+  turnaroundId,
+  operation: {
+    id: "70000000-0000-7000-8000-000000000023",
+    status: "Assigned",
+    plannedStartAt: "2026-08-19T12:30:00-04:00",
+    plannedEndAt: "2026-08-19T13:45:00-04:00",
+    actualStartAt: null,
+    actualEndAt: null,
+  },
+  assignment: {
+    assignmentId: "70000000-0000-7000-8000-000000000061",
+    agentId,
+    displayName: "Riley Ramp",
+    employeeNumber: "DEV-RA-001",
+    positionId: "50000000-0000-7000-8000-000000000011",
+    positionCode: "RAMP",
+    positionName: "Ramp Agent",
+    assignmentRole: "primary",
+    assignedAt: "2026-08-19T12:20:00-04:00",
+  },
+  services: snapshot.turnarounds[0]!.services,
+};
+
+function jsonResponse(body: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...Object.fromEntries(new Headers(headers)) },
   });
 }
 
@@ -263,6 +291,207 @@ describe("OCC planning API client", () => {
     expect(authorization).toEqual(["Bearer occ-token-1", "Bearer occ-token-2"]);
   });
 
+  it("returns OCC options with the exact opaque non-base64 strong ETag without changing the legacy method", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse(planningOptions, 200, { etag: operationEtag });
+      },
+    });
+
+    await expect(client.getOccPlanningOptions(turnaroundId)).resolves.toEqual(
+      planningOptions,
+    );
+    await expect(
+      client.getOccPlanningOptionsWithMetadata(turnaroundId),
+    ).resolves.toEqual({ options: planningOptions, etag: operationEtag });
+    expect(calls).toBe(2);
+  });
+
+  it("assigns only one agent with a fresh token and the exact If-Match precondition", async () => {
+    let requestUrl = "";
+    let requestMethod = "";
+    let requestBody = "";
+    let requestHeaders = new Headers();
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "fresh-occ-token",
+      fetch: async (input, init) => {
+        requestUrl = String(input);
+        requestMethod = init?.method ?? "";
+        requestBody = String(init?.body ?? "");
+        requestHeaders = new Headers(init?.headers);
+        return jsonResponse(assignment, 200, { etag: assignmentEtag });
+      },
+    });
+
+    await expect(
+      client.assignOccPlanningOperation(
+        turnaroundId,
+        { agentId },
+        operationEtag,
+        {
+          headers: {
+            "If-Match": '"AAAAAAAAAAA="',
+            "Content-Type": "text/plain",
+          },
+        },
+      ),
+    ).resolves.toEqual(assignment);
+
+    expect(requestUrl).toBe(
+      `https://api.example.test/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment`,
+    );
+    expect(requestMethod).toBe("POST");
+    expect(JSON.parse(requestBody)).toEqual({ agentId });
+    expect(requestHeaders.get("authorization")).toBe("Bearer fresh-occ-token");
+    expect(requestHeaders.get("content-type")).toBe("application/json");
+    expect(requestHeaders.get("if-match")).toBe(operationEtag);
+  });
+
+  it("returns an assignment with the exact opaque non-base64 response ETag", async () => {
+    let observedIfMatch: string | null = null;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "fresh-occ-token",
+      fetch: async (_input, init) => {
+        observedIfMatch = new Headers(init?.headers).get("if-match");
+        return jsonResponse(assignment, 200, { etag: assignmentEtag });
+      },
+    });
+
+    await expect(
+      client.assignOccPlanningOperationWithMetadata(
+        turnaroundId,
+        { agentId },
+        operationEtag,
+      ),
+    ).resolves.toEqual({ assignment, etag: assignmentEtag });
+    expect(observedIfMatch).toBe(operationEtag);
+  });
+
+  it.each([
+    ["bad turnaround", "bad", { agentId }, operationEtag, "turnaroundId"],
+    ["empty agent", turnaroundId, { agentId: "" }, operationEtag, "agentId"],
+    [
+      "unknown request field",
+      turnaroundId,
+      { agentId, serviceIds: [] },
+      operationEtag,
+      "agentId",
+    ],
+    ["weak ETag", turnaroundId, { agentId }, `W/${operationEtag}`, "etag"],
+    ["unquoted ETag", turnaroundId, { agentId }, "AAAAAAAAAAc=", "etag"],
+  ])(
+    "rejects unsafe assignment input: %s",
+    async (_label, candidateTurnaround, request, etag, message) => {
+      let requestCount = 0;
+      const client = createElevantApiClient({
+        baseUrl: "https://api.example.test",
+        fetch: async () => {
+          requestCount += 1;
+          return jsonResponse(assignment);
+        },
+      });
+
+      await expect(
+        client.assignOccPlanningOperation(
+          candidateTurnaround,
+          request as never,
+          etag,
+        ),
+      ).rejects.toThrow(message);
+      expect(requestCount).toBe(0);
+    },
+  );
+
+  it.each([null, "W/\"AAAAAAAAAAc=\"", '"bad tag"'])(
+    "rejects missing or malformed options ETag %j",
+    async (etag) => {
+      const client = createElevantApiClient({
+        baseUrl: "https://api.example.test",
+        getAccessToken: () => "occ-token",
+        fetch: async () => jsonResponse(planningOptions, 200, etag ? { etag } : {}),
+      });
+
+      await expect(
+        client.getOccPlanningOptionsWithMetadata(turnaroundId),
+      ).rejects.toMatchObject({ kind: "malformed-response", status: 200 });
+    },
+  );
+
+  it.each([null, 'W/"occ-operation-v8"', '"bad tag"'])(
+    "rejects missing or malformed assignment response ETag %j",
+    async (etag) => {
+      const client = createElevantApiClient({
+        baseUrl: "https://api.example.test",
+        getAccessToken: () => "occ-token",
+        fetch: async () => jsonResponse(assignment, 200, etag ? { etag } : {}),
+      });
+
+      await expect(
+        client.assignOccPlanningOperationWithMetadata(
+          turnaroundId,
+          { agentId },
+          operationEtag,
+        ),
+      ).rejects.toMatchObject({ kind: "malformed-response", status: 200 });
+    },
+  );
+
+  it("rejects a malformed assignment success projection", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async () =>
+        jsonResponse({ ...deepClone(assignment), clientControlledPrice: 1 }),
+    });
+
+    await expect(
+      client.assignOccPlanningOperation(
+        turnaroundId,
+        { agentId },
+        operationEtag,
+      ),
+    ).rejects.toMatchObject({ kind: "malformed-response", status: 200 });
+  });
+
+  it("returns a safe 412 assignment error without retaining details or tokens", async () => {
+    const token = "private-occ-token";
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => token,
+      fetch: async () =>
+        jsonResponse(
+          {
+            title: "The OCC planning context has changed.",
+            status: 412,
+            detail: `stale internals containing ${token}`,
+            traceId: "trace-occ-412",
+          },
+          412,
+        ),
+    });
+
+    const error = await client
+      .assignOccPlanningOperation(turnaroundId, { agentId }, operationEtag)
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ElevantApiError);
+    expect(error).toMatchObject({
+      kind: "http",
+      status: 412,
+      traceId: "trace-occ-412",
+    });
+    expect(error).not.toHaveProperty("detail");
+    expect(error).not.toHaveProperty("body");
+    if (!(error instanceof ElevantApiError)) throw new Error("Expected API error");
+    expect(error.message).not.toContain(token);
+  });
+
   it.each([
     [null, "object"],
     [{ stationId: "not-a-uuid" }, "stationId"],
@@ -319,6 +548,30 @@ describe("OCC planning API client", () => {
 
     await expect(
       client.getOccPlanningOptions(turnaroundId, { signal: controller.signal }),
+    ).rejects.toBe(abortError);
+    expect(observedSignal).toBe(controller.signal);
+  });
+
+  it("preserves the caller signal and AbortError for the OCC assignment POST", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException("The operation was aborted.", "AbortError");
+    let observedSignal: AbortSignal | null | undefined;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async (_input, init) => {
+        observedSignal = init?.signal;
+        throw abortError;
+      },
+    });
+
+    await expect(
+      client.assignOccPlanningOperationWithMetadata(
+        turnaroundId,
+        { agentId },
+        operationEtag,
+        { signal: controller.signal },
+      ),
     ).rejects.toBe(abortError);
     expect(observedSignal).toBe(controller.signal);
   });

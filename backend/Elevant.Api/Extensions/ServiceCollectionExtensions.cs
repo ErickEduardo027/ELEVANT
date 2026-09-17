@@ -193,6 +193,7 @@ public static class ServiceCollectionExtensions
                     .WithOrigins(allowedOrigins)
                     .AllowAnyHeader()
                     .AllowAnyMethod()
+                    .WithExposedHeaders("ETag")
                     .AllowCredentials();
             }
         }));

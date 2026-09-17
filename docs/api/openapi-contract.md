@@ -23,16 +23,19 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
-Además de creación y consulta de sesión, el contrato publica dos operaciones
-de negocio autenticadas y de solo lectura para OCC:
+Además de creación y consulta de sesión, el contrato publica tres operaciones
+de negocio autenticadas para OCC:
 
 - `GetOccPlanningSnapshot` (`GET /api/v1/occ/planning`) proyecta las escalas de
   una estación y fecha operativa;
 - `GetOccPlanningOptions` (`GET /api/v1/occ/planning/options`) proyecta el
   catálogo de servicios del contrato aplicable y la elegibilidad de agentes
-  para una escala concreta.
+  para una escala concreta, y devuelve un `ETag` fuerte sin alterar el cuerpo;
+- `AssignOccPlanningOperation`
+  (`POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`) recibe
+  únicamente `agentId` y exige el `ETag` anterior mediante `If-Match`.
 
-Ambas vuelven a resolver el actor en SQL y exigen simultáneamente el rol
+Las tres vuelven a resolver el actor en SQL y exigen simultáneamente el rol
 `ADMIN_OCC` del portal `BackOffice`, una membresía interna activa en una
 organización AVIAM y el scope de estación correspondiente. La persistencia
 aplica el scope antes de materializar los recursos. Una estación o escala fuera
@@ -41,8 +44,19 @@ Si más de una versión contractual activa y aprobada resulta aplicable a la
 misma aerolínea, estación y fecha, las opciones fallan cerrado con `409` en vez
 de escoger una de forma implícita.
 
+La asignación vuelve a resolver esos controles dentro de una transacción
+serializable. No acepta servicios, contrato, precio, cantidad, estación ni
+posición suministrados por el cliente: deriva la posición desde el turno y
+materializa todos los servicios de la única versión contractual aplicable.
+El `ETag` de opciones versiona de forma opaca la representación asignable
+completa, no expone ni equivale a un `rowversion` SQL aislado. Un cambio de
+operación, turnaround, stand, contrato, servicios o elegibilidad invalida la
+precondición. Una versión obsoleta responde `412`, la ausencia de `If-Match` responde `428` y
+un contexto vigente pero no asignable responde `409`, siempre sin escrituras
+parciales. CORS expone `ETag` para los clientes web.
+
 Este incremento no implica refresh, logout, revocación de `jti`, creación de
-escalas, asignación de agentes, ejecución mobile ni otra escritura de negocio.
+escalas, reasignación, ejecución mobile, push ni otra escritura de negocio.
 
 ## Snapshot canónico para TypeScript
 

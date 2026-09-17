@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
@@ -21,7 +22,12 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     private static readonly Guid StationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
     private static readonly Guid SecondStationId = Guid.Parse("20000000-0000-7000-8000-000000000013");
     private static readonly Guid TurnaroundId = Guid.Parse("70000000-0000-7000-8000-000000000012");
+    private static readonly Guid AgentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
     private static readonly DateOnly FixtureDate = new(2026, 8, 19);
+    private static readonly byte[] ContextVersion =
+        Enumerable.Range(1, 32).Select(value => (byte)value).ToArray();
+    private static readonly Guid ReceiptId =
+        Guid.Parse("90000000-0000-7000-8000-000000000002");
 
     [Fact]
     public async Task SnapshotRequiresBearerAuthenticationAndIsNeverCached()
@@ -257,8 +263,12 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         await using var application = CreateApplication(state);
         using var client = CreateAuthenticatedClient(application);
 
-        using var response = await client.GetAsync(
-            $"/api/v1/occ/planning/options?turnaroundId={TurnaroundId:D}",
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/v1/occ/planning/options?turnaroundId={TurnaroundId:D}");
+        request.Headers.Add("Origin", ElevantApiFactory.PrivateWebOrigin);
+        using var response = await client.SendAsync(
+            request,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -272,15 +282,237 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.False(agent.GetProperty("eligible").GetBoolean());
         Assert.Equal("shift_not_compatible", agent.GetProperty("eligibilityReasons")[0].GetString());
         Assert.Equal([StationId], state.OptionStationIds);
+        Assert.Equal(
+            $"\"{Convert.ToBase64String(ContextVersion)}\"",
+            response.Headers.ETag?.Tag);
+        Assert.Contains(
+            "ETag",
+            response.Headers.GetValues("Access-Control-Expose-Headers"),
+            StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("operationVersion", document.RootElement.GetRawText(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task OverlappingApplicableContractsReturnGenericConflict()
+    public async Task AssignmentRequiresBearerAuthentication()
+    {
+        await using var application = CreateApplication(new OccState());
+        using var client = application.CreateClient();
+        using var request = CreateAssignmentRequest(includeIfMatch: true);
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
+    }
+
+    [Fact]
+    public async Task AssignmentRequiresAValidStrongIfMatch()
     {
         var state = new OccState
         {
             Actor = CreateActor(),
-            OptionsFailure = OccPlanningOptionsReadFailure.ContractConflict,
+            AssignmentWriteResult = OccAssignmentWriteResult.Success(CreateAssignment(), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var missing = CreateAssignmentRequest(includeIfMatch: false);
+        using var weak = CreateAssignmentRequest(includeIfMatch: false);
+        weak.Headers.TryAddWithoutValidation(
+            "If-Match",
+            $"W/\"{Convert.ToBase64String(ContextVersion)}\"");
+        using var malformed = CreateAssignmentRequest(includeIfMatch: false);
+        malformed.Headers.TryAddWithoutValidation("If-Match", "\"not-base64\"");
+
+        using var missingResponse = await client.SendAsync(
+            missing,
+            TestContext.Current.CancellationToken);
+        using var weakResponse = await client.SendAsync(
+            weak,
+            TestContext.Current.CancellationToken);
+        using var malformedResponse = await client.SendAsync(
+            malformed,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal((HttpStatusCode)428, missingResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, weakResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, malformedResponse.StatusCode);
+        AssertPrivateResponse(missingResponse);
+        AssertPrivateResponse(weakResponse);
+        AssertPrivateResponse(malformedResponse);
+        Assert.Null(state.AssignmentRequest);
+    }
+
+    [Fact]
+    public async Task AssignmentAcceptsOnlyAgentAndReturnsCanonicalResultWithNewEtag()
+    {
+        var assignment = CreateAssignment();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AssignmentWriteResult = OccAssignmentWriteResult.Success(assignment, ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateAssignmentRequest(includeIfMatch: true);
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal($"\"{assignment.ConcurrencyToken}\"", response.Headers.ETag?.Tag);
+        Assert.NotNull(state.AssignmentRequest);
+        Assert.Equal(AccountId, state.AssignmentRequest.ActorAccountId);
+        Assert.Equal([StationId], state.AssignmentRequest.AllowedStationIds);
+        Assert.Equal(TurnaroundId, state.AssignmentRequest.TurnaroundId);
+        Assert.Equal(AgentId, state.AssignmentRequest.AgentId);
+        Assert.Equal(ContextVersion, state.AssignmentRequest.ExpectedContextVersion);
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var document = await JsonDocument.ParseAsync(
+            stream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("Assigned", document.RootElement.GetProperty("operation").GetProperty("status").GetString());
+        Assert.Equal(AgentId, document.RootElement.GetProperty("assignment").GetProperty("agentId").GetGuid());
+        Assert.False(document.RootElement.TryGetProperty("operationVersion", out _));
+    }
+
+    [Theory]
+    [InlineData(OccAssignmentWriteFailure.NotFound, HttpStatusCode.NotFound)]
+    [InlineData(OccAssignmentWriteFailure.Conflict, HttpStatusCode.Conflict)]
+    [InlineData(OccAssignmentWriteFailure.PreconditionFailed, HttpStatusCode.PreconditionFailed)]
+    public async Task AssignmentMapsStoreFailuresToStableHttpResponses(
+        OccAssignmentWriteFailure failure,
+        HttpStatusCode expectedStatus)
+    {
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AssignmentWriteResult = OccAssignmentWriteResult.Failed(failure),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateAssignmentRequest(includeIfMatch: true);
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        AssertPrivateResponse(response);
+    }
+
+    [Fact]
+    public async Task AssignmentRejectsUnknownJsonMembers()
+    {
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AssignmentWriteResult = OccAssignmentWriteResult.Success(CreateAssignment(), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/assignment")
+        {
+            Content = new StringContent(
+                $$"""{"agentId":"{{AgentId:D}}","serviceIds":[]}""",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        };
+        request.Headers.TryAddWithoutValidation(
+            "If-Match",
+            $"\"{Convert.ToBase64String(ContextVersion)}\"");
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Null(state.AssignmentRequest);
+    }
+
+    [Fact]
+    public async Task AssignmentRejectsMissingBodyBeforeCallingTheStore()
+    {
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AssignmentWriteResult = OccAssignmentWriteResult.Success(CreateAssignment(), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/assignment");
+        request.Headers.TryAddWithoutValidation(
+            "If-Match",
+            $"\"{Convert.ToBase64String(ContextVersion)}\"");
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Null(state.AssignmentRequest);
+    }
+
+    [Fact]
+    public async Task OversizedAssignmentBodyIsRejectedBeforeCallingTheStore()
+    {
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AssignmentWriteResult = OccAssignmentWriteResult.Success(CreateAssignment(), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/assignment")
+        {
+            Content = new StringContent(
+                $$"""{"agentId":"{{AgentId:D}}","padding":"{{new string('x', 1500)}}"}""",
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        };
+        request.Headers.TryAddWithoutValidation(
+            "If-Match",
+            $"\"{Convert.ToBase64String(ContextVersion)}\"");
+        request.Headers.Add("Origin", ElevantApiFactory.PrivateWebOrigin);
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal(
+            ElevantApiFactory.PrivateWebOrigin,
+            response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+        Assert.Equal(
+            "true",
+            response.Headers.GetValues("Access-Control-Allow-Credentials").Single());
+        Assert.Null(state.AssignmentRequest);
+    }
+
+    [Theory]
+    [InlineData(OccPlanningOptionsReadFailure.ContractConflict)]
+    [InlineData(OccPlanningOptionsReadFailure.OperationalConflict)]
+    public async Task InvalidPlanningContextsReturnGenericConflict(
+        OccPlanningOptionsReadFailure failure)
+    {
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            OptionsFailure = failure,
         };
         await using var application = CreateApplication(state);
         using var client = CreateAuthenticatedClient(application);
@@ -306,7 +538,7 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
-    public async Task OpenApiPublishesBothOccPlanningOperations()
+    public async Task OpenApiPublishesAllOccPlanningOperations()
     {
         using var client = factory.CreateClient();
 
@@ -326,6 +558,41 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.True(paths.TryGetProperty("/api/v1/occ/planning/options", out var options));
         Assert.True(options.TryGetProperty("get", out var optionsGet));
         Assert.True(optionsGet.GetProperty("responses").TryGetProperty("409", out _));
+        Assert.True(optionsGet
+            .GetProperty("responses")
+            .GetProperty("200")
+            .GetProperty("headers")
+            .TryGetProperty("ETag", out _));
+        Assert.True(paths.TryGetProperty(
+            "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment",
+            out var assignment));
+        Assert.True(assignment.TryGetProperty("post", out var assignmentPost));
+        var assignmentResponses = assignmentPost.GetProperty("responses");
+        foreach (var responseCode in new[] { "200", "400", "401", "403", "404", "409", "412", "413", "415", "428", "429", "500" })
+        {
+            Assert.True(assignmentResponses.TryGetProperty(responseCode, out _), responseCode);
+        }
+
+        var parameters = assignmentPost.GetProperty("parameters").EnumerateArray().ToArray();
+        var ifMatch = Assert.Single(parameters, parameter =>
+            parameter.GetProperty("name").GetString() == "If-Match");
+        Assert.Equal("header", ifMatch.GetProperty("in").GetString());
+        Assert.True(ifMatch.GetProperty("required").GetBoolean());
+        Assert.True(assignmentResponses
+            .GetProperty("200")
+            .GetProperty("headers")
+            .TryGetProperty("ETag", out _));
+        var requestSchema = assignmentPost
+            .GetProperty("requestBody")
+            .GetProperty("content")
+            .GetProperty("application/json")
+            .GetProperty("schema");
+        var requestReference = requestSchema.TryGetProperty("$ref", out var directReference)
+            ? directReference
+            : Assert.Single(requestSchema.GetProperty("allOf").EnumerateArray())
+                .GetProperty("$ref");
+        Assert.Equal("#/components/schemas/AssignOccOperationRequest", requestReference.GetString());
+        Assert.True(assignmentPost.GetProperty("requestBody").GetProperty("required").GetBoolean());
 
         var schemas = document.RootElement
             .GetProperty("components")
@@ -345,6 +612,11 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             "OccPlanningOptionsResponse",
             "contract",
             "OccContractOptionResponse");
+        var assignmentRequest = schemas.GetProperty("AssignOccOperationRequest");
+        Assert.Equal(
+            ["agentId"],
+            assignmentRequest.GetProperty("properties").EnumerateObject().Select(item => item.Name));
+        Assert.False(assignmentRequest.GetProperty("additionalProperties").GetBoolean());
     }
 
     private WebApplicationFactory<Program> CreateApplication(OccState state) =>
@@ -352,10 +624,30 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IOccPlanningReadStore>();
+            services.RemoveAll<IOccPlanningCommandStore>();
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IOccPlanningReadStore>(_ => state);
+            services.AddScoped<IOccPlanningCommandStore>(_ => state);
         }));
+
+    private static HttpRequestMessage CreateAssignmentRequest(bool includeIfMatch)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/assignment")
+        {
+            Content = JsonContent.Create(new { agentId = AgentId }),
+        };
+        if (includeIfMatch)
+        {
+            request.Headers.TryAddWithoutValidation(
+                "If-Match",
+                $"\"{Convert.ToBase64String(ContextVersion)}\"");
+        }
+
+        return request;
+    }
 
     private static HttpClient CreateAuthenticatedClient(WebApplicationFactory<Program> application)
     {
@@ -442,7 +734,8 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             FixtureDate,
             CreateStation(),
             null,
-            new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero)),
+            new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero),
+            Convert.ToBase64String(ContextVersion)),
         null,
         [],
         [
@@ -457,8 +750,36 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
                 HasCurrentQualification: true,
                 HasCurrentAirportId: true,
                 HasCurrentRampDriverLicense: true,
-                HasCompatibleShift: false),
+                HasCompatibleShift: false,
+                OperationalPositionId: null,
+                HasAssignmentConflict: false),
         ]);
+
+    private static OccAssignmentData CreateAssignment()
+    {
+        var start = new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero);
+        return new OccAssignmentData(
+            TurnaroundId,
+            new OccGroundOperationData(
+                Guid.Parse("70000000-0000-7000-8000-000000000016"),
+                "Assigned",
+                start,
+                start.AddHours(2),
+                null,
+                null),
+            new OccAssignedAgentData(
+                Guid.Parse("70000000-0000-7000-8000-000000000018"),
+                AgentId,
+                "Riley Ramp",
+                "DEV-RA-001",
+                Guid.Parse("52000000-0000-7000-8000-000000000001"),
+                "RAMP-AGENT",
+                "Ramp agent",
+                "primary",
+                start),
+            [],
+            Convert.ToBase64String(Enumerable.Repeat((byte)8, 32).ToArray()));
+    }
 
     private static OccStationData CreateStation() => new(
         StationId,
@@ -489,7 +810,7 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             reference.GetProperty("$ref").GetString());
     }
 
-    private sealed class OccState : IActorContextResolver, IOccPlanningReadStore
+    private sealed class OccState : IActorContextResolver, IOccPlanningReadStore, IOccPlanningCommandStore
     {
         public ActorContext? Actor { get; init; }
 
@@ -501,11 +822,17 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
 
         public OccPlanningOptionsReadFailure? OptionsFailure { get; init; }
 
+        public OccAssignmentWriteResult AssignmentWriteResult { get; init; } =
+            OccAssignmentWriteResult.Failed(OccAssignmentWriteFailure.Conflict);
+
         public Guid? LatestDateStationId { get; private set; }
 
         public (Guid StationId, DateOnly Date)? SnapshotRequest { get; private set; }
 
         public IReadOnlyCollection<Guid>? OptionStationIds { get; private set; }
+
+        public OccAssignmentWriteRequest? AssignmentRequest { get; private set; }
+
 
         public Task<ActorContext?> ResolveAsync(
             Guid accountId,
@@ -554,5 +881,15 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
                     OptionsFailure ?? OccPlanningOptionsReadFailure.NotFound)
                 : OccPlanningOptionsReadResult.Success(Options));
         }
+
+        public Task<OccAssignmentWriteResult> AssignOperationAsync(
+            OccAssignmentWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AssignmentRequest = request;
+            return Task.FromResult(AssignmentWriteResult);
+        }
+
     }
 }

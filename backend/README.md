@@ -67,8 +67,16 @@ a 60 minutos y usa 15 por defecto.
   tiene exactamente un scope.
 - `GET /api/v1/occ/planning/options?turnaroundId=...` deriva estación, terminal
   y hora desde el turnaround y devuelve el catálogo contractual junto con la
-  elegibilidad explicable de agentes. Ambos endpoints OCC exigen `ADMIN_OCC`,
-  portal BackOffice, membresía interna AVIAM vigente y scope de estación.
+  elegibilidad explicable de agentes. Su `ETag` fuerte representa toda la
+  proyección asignable que OCC está observando: operación, stand, contrato,
+  servicios y elegibilidad.
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment` exige ese
+  `ETag` en `If-Match` y acepta únicamente `agentId`. El servidor revalida actor,
+  scope, estado, agente, posición, turno, permisos y contrato dentro de una
+  transacción serializable; crea la asignación primaria, materializa todos los
+  servicios contractuales y registra transición y auditoría de forma atómica.
+  Los tres endpoints OCC exigen `ADMIN_OCC`, portal BackOffice, membresía
+  interna AVIAM vigente y scope de estación.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
@@ -98,8 +106,8 @@ redactarla. Los hubs no deben transportar eventos reales hasta implementar
 revalidación de actor, autorización por scope y cierre/renovación al expirar o
 revocarse el token.
 
-No existen aún refresh, logout ni revocación por `jti`. Fuera del corte de lectura
-OCC tampoco existe todavía autorización fina por rol, tenant o estación.
+No existen aún refresh, logout ni revocación por `jti`. Fuera del corte OCC
+implementado tampoco existe todavía autorización fina por rol, tenant o estación.
 Development debe permanecer dentro
 del tailnet; el secreto real de firma se guarda junto con los demás valores
 root-only del ambiente y nunca en Git.

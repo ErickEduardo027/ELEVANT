@@ -1,15 +1,18 @@
 import {
+  getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
   getGetSystemPingUrl,
+  type AssignOccOperationRequest,
   type CreateSessionRequest,
   type CurrentSessionResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
+  type OccAssignmentResponse,
   type SessionActorResponse,
   type SessionResponse,
   type SystemPingResponse,
@@ -45,6 +48,20 @@ export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type AssignOccPlanningOperationOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+
+export interface OccPlanningOptionsWithMetadata {
+  readonly options: OccPlanningOptionsResponse;
+  readonly etag: string;
+}
+
+export interface OccAssignmentWithMetadata {
+  readonly assignment: OccAssignmentResponse;
+  readonly etag: string;
+}
 
 export interface ElevantApiClient {
   createSession(
@@ -60,12 +77,29 @@ export interface ElevantApiClient {
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
   ): Promise<OccPlanningOptionsResponse>;
+  getOccPlanningOptionsWithMetadata(
+    turnaroundId: string,
+    options?: GetOccPlanningOptionsOptions,
+  ): Promise<OccPlanningOptionsWithMetadata>;
+  assignOccPlanningOperation(
+    turnaroundId: string,
+    request: AssignOccOperationRequest,
+    etag: string,
+    options?: AssignOccPlanningOperationOptions,
+  ): Promise<OccAssignmentResponse>;
+  assignOccPlanningOperationWithMetadata(
+    turnaroundId: string,
+    request: AssignOccOperationRequest,
+    etag: string,
+    options?: AssignOccPlanningOperationOptions,
+  ): Promise<OccAssignmentWithMetadata>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
 interface ApiResult {
   readonly status: number;
   readonly data: unknown | undefined;
+  readonly etag: string | null;
 }
 
 interface ProblemMetadata {
@@ -643,6 +677,18 @@ function isOccPlanningOptionsResponse(
   );
 }
 
+function isOccAssignmentResponse(value: unknown): value is OccAssignmentResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "operation", "assignment", "services"]) &&
+    isUuid(value.turnaroundId) &&
+    isOccGroundOperationResponse(value.operation) &&
+    isOccAssignedAgentResponse(value.assignment) &&
+    Array.isArray(value.services) &&
+    value.services.every(isOccOperationServiceResponse)
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -751,6 +797,40 @@ function validatedOccPlanningOptionsParams(
   return { turnaroundId };
 }
 
+function validatedOccAssignmentRequest(
+  request: AssignOccOperationRequest,
+): AssignOccOperationRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, ["agentId"]) ||
+    !isUuid(request.agentId)
+  ) {
+    throw new TypeError("OCC assignment must contain only a valid agentId UUID.");
+  }
+
+  return { agentId: request.agentId };
+}
+
+function isStrongEtag(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 3 &&
+    value.trim() === value &&
+    value.startsWith('"') &&
+    value.endsWith('"') &&
+    !value.startsWith('W/"') &&
+    !/["\u0000-\u0020\u007f]/.test(value.slice(1, -1))
+  );
+}
+
+function validatedStrongEtag(value: string) {
+  if (!isStrongEtag(value)) {
+    throw new TypeError("etag must be the strong OCC ETag returned by the API.");
+  }
+
+  return value;
+}
+
 function validatedAccessToken(value: AccessToken) {
   if (value === null || value === undefined || value === "") return undefined;
   if (
@@ -814,7 +894,40 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       });
     }
 
-    return { status: response.status, data: await readSuccessBody(response) };
+    return {
+      status: response.status,
+      data: await readSuccessBody(response),
+      etag: response.headers.get("etag"),
+    };
+  };
+
+  const executeOccAssignment = async (
+    turnaroundId: string,
+    request: AssignOccOperationRequest,
+    etag: string,
+    requestOptions?: AssignOccPlanningOperationOptions,
+  ) => {
+    const body = validatedOccAssignmentRequest(request);
+    const headers = headersFrom(requestOptions?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("if-match", validatedStrongEtag(etag));
+    const result = await execute(
+      getAssignOccPlanningOperationUrl(
+        validatedOccPlanningOptionsParams(turnaroundId).turnaroundId,
+      ),
+      {
+        ...requestOptions,
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      },
+      true,
+    );
+    if (!isOccAssignmentResponse(result.data)) {
+      throw malformedResponse(result.status);
+    }
+
+    return { assignment: result.data, etag: result.etag, status: result.status };
   };
 
   return Object.freeze({
@@ -883,6 +996,59 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       }
       return result.data;
+    },
+    async getOccPlanningOptionsWithMetadata(
+      turnaroundId: string,
+      options?: GetOccPlanningOptionsOptions,
+    ) {
+      const result = await execute(
+        getGetOccPlanningOptionsUrl(
+          validatedOccPlanningOptionsParams(turnaroundId),
+        ),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isOccPlanningOptionsResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      if (!isStrongEtag(result.etag)) {
+        throw malformedResponse(result.status);
+      }
+      return { options: result.data, etag: result.etag };
+    },
+    async assignOccPlanningOperation(
+      turnaroundId: string,
+      request: AssignOccOperationRequest,
+      etag: string,
+      options?: AssignOccPlanningOperationOptions,
+    ) {
+      const result = await executeOccAssignment(
+        turnaroundId,
+        request,
+        etag,
+        options,
+      );
+      return result.assignment;
+    },
+    async assignOccPlanningOperationWithMetadata(
+      turnaroundId: string,
+      request: AssignOccOperationRequest,
+      etag: string,
+      options?: AssignOccPlanningOperationOptions,
+    ) {
+      const result = await executeOccAssignment(
+        turnaroundId,
+        request,
+        etag,
+        options,
+      );
+      if (!isStrongEtag(result.etag)) {
+        throw malformedResponse(result.status);
+      }
+      return { assignment: result.assignment, etag: result.etag };
     },
     async getSystemPing(options?: GetSystemPingOptions) {
       const result = await execute(getGetSystemPingUrl(), {

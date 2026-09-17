@@ -255,12 +255,14 @@ public sealed class OccPlanningHandlersTests
         Assert.Null(store.OptionTurnaroundId);
     }
 
-    [Fact]
-    public async Task ContractConflictFailsClosed()
+    [Theory]
+    [InlineData(OccPlanningOptionsReadFailure.ContractConflict)]
+    [InlineData(OccPlanningOptionsReadFailure.OperationalConflict)]
+    public async Task OptionsConflictsFailClosed(OccPlanningOptionsReadFailure failure)
     {
         var store = new StubReadStore
         {
-            OptionsFailure = OccPlanningOptionsReadFailure.ContractConflict,
+            OptionsFailure = failure,
         };
         var handler = new GetOccPlanningOptionsHandler(
             new StubActorContextResolver(CreateActor()),
@@ -347,7 +349,8 @@ public sealed class OccPlanningHandlersTests
                 FixtureDate,
                 station,
                 null,
-                new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero)),
+                new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero),
+                Convert.ToBase64String(new byte[32])),
             null,
             [],
             [ineligible, eligible]);
@@ -364,7 +367,9 @@ public sealed class OccPlanningHandlersTests
         HasCurrentQualification: true,
         HasCurrentAirportId: true,
         HasCurrentRampDriverLicense: true,
-        HasCompatibleShift: true);
+        HasCompatibleShift: true,
+        OperationalPositionId: Guid.Parse("52000000-0000-7000-8000-000000000001"),
+        HasAssignmentConflict: false);
 
     private sealed class StubActorContextResolver(ActorContext? actor) : IActorContextResolver
     {

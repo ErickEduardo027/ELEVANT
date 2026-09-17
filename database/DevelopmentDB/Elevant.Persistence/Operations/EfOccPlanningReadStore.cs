@@ -321,6 +321,7 @@ internal sealed class EfOccPlanningReadStore(
                     turnaround.PublicId,
                     turnaround.OperationCode,
                     turnaround.OperationDate,
+                    TurnaroundStatus = turnaround.CurrentStatus,
                     turnaround.AirlineId,
                     StationInternalId = station.Id,
                     Station = new OccStationData(
@@ -328,14 +329,39 @@ internal sealed class EfOccPlanningReadStore(
                         station.Code,
                         station.Name,
                         station.IanaTimeZone),
+                    OperationInternalId = operation == null
+                        ? (long?)null
+                        : operation.Id,
+                    OperationStatus = operation == null
+                        ? (GroundOperationStatus?)null
+                        : operation.CurrentStatus,
                     PlannedStartAt = operation == null
                         ? null
                         : operation.PlannedStartAt,
+                    PlannedEndAt = operation == null
+                        ? null
+                        : operation.PlannedEndAt,
+                    OperationRowVersion = operation == null
+                        ? null
+                        : operation.RowVersion,
                 })
             .SingleOrDefaultAsync(cancellationToken);
         if (scope is null)
         {
             return OccPlanningOptionsReadResult.Failed(OccPlanningOptionsReadFailure.NotFound);
+        }
+
+        if (!scope.OperationInternalId.HasValue ||
+            !scope.OperationStatus.HasValue ||
+            scope.OperationRowVersion is null ||
+            !OccPlanningAssignmentPolicy.CanAssign(
+                scope.TurnaroundStatus,
+                scope.OperationStatus.Value,
+                scope.PlannedStartAt,
+                scope.PlannedEndAt))
+        {
+            return OccPlanningOptionsReadResult.Failed(
+                OccPlanningOptionsReadFailure.OperationalConflict);
         }
 
         var stand = await (
@@ -428,31 +454,50 @@ internal sealed class EfOccPlanningReadStore(
                 .ToArrayAsync(cancellationToken);
 
         var candidates = await BuildAgentCandidatesAsync(
+            scope.OperationInternalId,
             scope.StationInternalId,
             stand?.TerminalInternalId,
             scope.OperationDate,
             referenceTime,
+            scope.PlannedStartAt,
+            scope.PlannedEndAt,
             scope.Station.IanaTimeZone,
             cancellationToken);
 
-        return OccPlanningOptionsReadResult.Success(new OccPlanningOptionsSourceData(
+        var options = new OccPlanningOptionsSourceData(
             new OccPlanningTurnaroundContextData(
                 scope.PublicId,
                 scope.OperationCode,
                 scope.OperationDate,
                 scope.Station,
                 stand?.Stand,
-                referenceTime),
+                referenceTime,
+                string.Empty),
             contract?.Contract,
             services,
-            candidates));
+            candidates);
+        var concurrencyToken = OccPlanningConcurrencyToken.CreateOptions(
+            scope.TurnaroundStatus,
+            scope.OperationStatus.Value,
+            scope.PlannedStartAt!.Value,
+            scope.PlannedEndAt!.Value,
+            scope.OperationRowVersion,
+            options);
+
+        return OccPlanningOptionsReadResult.Success(options with
+        {
+            Turnaround = options.Turnaround with { ConcurrencyToken = concurrencyToken },
+        });
     }
 
     private async Task<OccAgentCandidateData[]> BuildAgentCandidatesAsync(
+        long? operationId,
         long stationId,
         long? terminalId,
         DateOnly operationDate,
         DateTimeOffset referenceTime,
+        DateTimeOffset? plannedStartAt,
+        DateTimeOffset? plannedEndAt,
         string ianaTimeZone,
         CancellationToken cancellationToken)
     {
@@ -588,13 +633,17 @@ internal sealed class EfOccPlanningReadStore(
                 .ToArrayAsync(cancellationToken)
             : [];
 
-        var qualifiedAgents = await context.QualificationCycles
+        var qualifications = await context.QualificationCycles
             .AsNoTracking()
             .Where(cycle => agentIds.Contains(cycle.RampAgentId) &&
                 cycle.IsCurrent &&
                 cycle.ObtainedOn <= operationDate &&
                 cycle.ExpiresOn >= operationDate)
-            .Select(cycle => cycle.RampAgentId)
+            .Select(cycle => new
+            {
+                cycle.RampAgentId,
+                cycle.EquipmentTypeId,
+            })
             .Distinct()
             .ToArrayAsync(cancellationToken);
 
@@ -621,16 +670,59 @@ internal sealed class EfOccPlanningReadStore(
                     shift.WorkDate,
                     shift.StartsAtLocal,
                     shift.EndsAtLocal,
+                    shift.OperationalPositionId,
                 })
                 .ToArrayAsync(cancellationToken)
             : [];
+
+        var positionIds = shifts
+            .Where(shift => shift.OperationalPositionId.HasValue)
+            .Select(shift => shift.OperationalPositionId!.Value)
+            .Distinct()
+            .ToArray();
+        var positions = positionIds.Length == 0
+            ? []
+            : await context.OperationalPositions
+                .AsNoTracking()
+                .Where(position => positionIds.Contains(position.Id) && position.IsActive)
+                .Select(position => new
+                {
+                    position.Id,
+                    position.PublicId,
+                    position.RequiresQualification,
+                    position.RequiredEquipmentTypeId,
+                })
+                .ToArrayAsync(cancellationToken);
+
+        var conflictingAgentIds = operationId.HasValue &&
+            plannedStartAt.HasValue &&
+            plannedEndAt.HasValue &&
+            plannedStartAt.Value < plannedEndAt.Value
+                ? await (
+                        from assignment in context.OperationAgentAssignments.AsNoTracking()
+                        join otherOperation in context.GroundOperations.AsNoTracking()
+                            on assignment.GroundOperationId equals otherOperation.Id
+                        where agentIds.Contains(assignment.RampAgentId) &&
+                              assignment.ReleasedAt == null &&
+                              assignment.GroundOperationId != operationId.Value &&
+                              (otherOperation.PlannedStartAt == null ||
+                               otherOperation.PlannedEndAt == null ||
+                               otherOperation.PlannedStartAt >= otherOperation.PlannedEndAt ||
+                               (otherOperation.PlannedStartAt < plannedEndAt.Value &&
+                                plannedStartAt.Value < otherOperation.PlannedEndAt))
+                        select assignment.RampAgentId)
+                    .Distinct()
+                    .ToArrayAsync(cancellationToken)
+                : [];
 
         var mobileRoles = mobileRoleAccounts.ToHashSet();
         var memberships = activeMembershipAccounts.ToHashSet();
         var accountScopes = accountStationScopes.ToHashSet();
         var agentStationScopes = stationScopedAgents.ToHashSet();
         var agentTerminalScopes = terminalScopedAgents.ToHashSet();
-        var qualifications = qualifiedAgents.ToHashSet();
+        var currentQualifications = qualifications
+            .Select(item => (item.RampAgentId, item.EquipmentTypeId))
+            .ToHashSet();
         var airportIds = currentPermits
             .Where(item => item.DocumentType == PermitDocumentType.AirportId)
             .Select(item => item.RampAgentId)
@@ -641,6 +733,8 @@ internal sealed class EfOccPlanningReadStore(
             .ToHashSet();
         var accountsByPerson = accounts.ToLookup(account => account.PersonId);
         var shiftsByAgent = shifts.ToLookup(shift => shift.RampAgentId);
+        var positionsById = positions.ToDictionary(position => position.Id);
+        var assignmentConflicts = conflictingAgentIds.ToHashSet();
 
         return agents.Select(agent =>
         {
@@ -651,13 +745,26 @@ internal sealed class EfOccPlanningReadStore(
                 memberships.Contains(account.Id));
             var hasAccountStationScope = agentAccounts.Any(account =>
                 accountScopes.Contains(account.Id));
-            var hasShift = shiftsByAgent[agent.Id].Any(shift =>
-                OccShiftCoveragePolicy.Covers(
+            var compatibleShifts = shiftsByAgent[agent.Id]
+                .Where(shift => OccShiftCoveragePolicy.Covers(
                     shift.WorkDate,
                     shift.StartsAtLocal,
                     shift.EndsAtLocal,
                     localDate,
-                    localTime));
+                    localTime))
+                .ToArray();
+            var hasShift = compatibleShifts.Length > 0;
+            var position = compatibleShifts.Length == 1 &&
+                compatibleShifts[0].OperationalPositionId is long positionId &&
+                positionsById.TryGetValue(
+                    positionId,
+                    out var resolvedPosition)
+                    ? resolvedPosition
+                    : null;
+            var hasCurrentQualification = position is not null &&
+                (!position.RequiresQualification ||
+                 (position.RequiredEquipmentTypeId.HasValue &&
+                  currentQualifications.Contains((agent.Id, position.RequiredEquipmentTypeId.Value))));
 
             return new OccAgentCandidateData(
                 agent.PublicId,
@@ -667,10 +774,12 @@ internal sealed class EfOccPlanningReadStore(
                 hasMobileAccount,
                 agentStationScopes.Contains(agent.Id) && hasAccountStationScope,
                 agentTerminalScopes.Contains(agent.Id),
-                qualifications.Contains(agent.Id),
+                hasCurrentQualification,
                 airportIds.Contains(agent.Id),
                 driverLicenses.Contains(agent.Id),
-                hasShift);
+                hasShift,
+                position?.PublicId,
+                assignmentConflicts.Contains(agent.Id));
         }).ToArray();
     }
 

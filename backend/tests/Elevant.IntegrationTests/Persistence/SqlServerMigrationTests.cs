@@ -282,6 +282,18 @@ public sealed class SqlServerMigrationTests
         await context.SaveChangesAsync(cancellationToken);
         var position = await context.OperationalPositions
             .SingleAsync(item => item.Code == "RAMP-AGENT", cancellationToken);
+        var unrelatedEquipmentType = new EquipmentType
+        {
+            PublicId = Guid.Parse("90000000-0000-7000-8000-000000000034"),
+            Code = "UNRELATED-QUALIFICATION",
+            Name = "Unrelated qualification fixture",
+            RequiresQualification = true,
+            IsActive = true,
+            CreatedAt = testInstant,
+            UpdatedAt = testInstant,
+        };
+        context.EquipmentTypes.Add(unrelatedEquipmentType);
+        await context.SaveChangesAsync(cancellationToken);
         var expiredPerson = new Person
         {
             PublicId = Guid.Parse("90000000-0000-7000-8000-000000000001"),
@@ -507,6 +519,11 @@ public sealed class SqlServerMigrationTests
             var options = Assert.IsType<OccPlanningOptionsSourceData>(optionsResult.Options);
             Assert.Equal("DEV-CONTRACT-0001", options.Contract?.Code);
             Assert.Equal("BAGGAGE", Assert.Single(options.Services).Code);
+            Assert.True(OccPlanningConcurrencyToken.TryDecode(
+                options.Turnaround.ConcurrencyToken,
+                out var optionsVersion));
+            Assert.Equal(32, optionsVersion.Length);
+            Assert.False(planningOperation.RowVersion.AsSpan().SequenceEqual(optionsVersion));
             Assert.DoesNotContain(options.AgentCandidates, candidate =>
                 candidate.EmployeeNumber is
                     "DEV-RA-EXPIRED" or
@@ -531,6 +548,209 @@ public sealed class SqlServerMigrationTests
             Assert.True(rileyCandidate.HasCurrentAirportId);
             Assert.True(rileyCandidate.HasCurrentRampDriverLicense);
             Assert.True(rileyCandidate.HasCompatibleShift);
+            Assert.Equal(position.PublicId, rileyCandidate.OperationalPositionId);
+            Assert.False(rileyCandidate.HasAssignmentConflict);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.OperationalPositions
+                    .Where(item => item.Id == position.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.RequiresQualification, true)
+                            .SetProperty(
+                                item => item.RequiredEquipmentTypeId,
+                                unrelatedEquipmentType.Id),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+            }
+
+            var unrelatedQualificationResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var unrelatedQualificationOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                unrelatedQualificationResult.Options);
+            var unrelatedQualificationRiley = Assert.Single(
+                unrelatedQualificationOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.False(unrelatedQualificationRiley.HasCurrentQualification);
+            Assert.Equal(
+                ["qualification_not_current"],
+                OccAgentEligibilityPolicy.Evaluate(unrelatedQualificationRiley)
+                    .EligibilityReasons);
+
+            var gpuType = await context.EquipmentTypes
+                .AsNoTracking()
+                .SingleAsync(item => item.Code == "GPU", cancellationToken);
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.OperationalPositions
+                    .Where(item => item.Id == position.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            item => item.RequiredEquipmentTypeId,
+                            gpuType.Id),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+            }
+
+            var matchingQualificationResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var matchingQualificationOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                matchingQualificationResult.Options);
+            var matchingQualificationRiley = Assert.Single(
+                matchingQualificationOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.True(matchingQualificationRiley.HasCurrentQualification);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.OperationalPositions
+                    .Where(item => item.Id == position.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(item => item.IsActive, false),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+            }
+
+            var inactivePositionResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var inactivePositionOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                inactivePositionResult.Options);
+            var inactivePositionRiley = Assert.Single(
+                inactivePositionOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.True(inactivePositionRiley.HasCompatibleShift);
+            Assert.Null(inactivePositionRiley.OperationalPositionId);
+            Assert.False(inactivePositionRiley.HasCurrentQualification);
+            Assert.Equal(
+                ["operational_position_unavailable"],
+                OccAgentEligibilityPolicy.Evaluate(inactivePositionRiley)
+                    .EligibilityReasons);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.OperationalPositions
+                    .Where(item => item.Id == position.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.IsActive, true)
+                            .SetProperty(item => item.RequiresQualification, false)
+                            .SetProperty(item => item.RequiredEquipmentTypeId, (long?)null),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+
+                var overlappingShiftChanged = await administratorContext.ShiftAssignments
+                    .Where(item => item.RampAgentId == riley.Id &&
+                        item.WorkDate == new DateOnly(2026, 8, 18))
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.StartsAtLocal, new TimeOnly(22, 0))
+                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(9, 0)),
+                        cancellationToken);
+                Assert.Equal(1, overlappingShiftChanged);
+            }
+
+            var ambiguousPositionResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var ambiguousPositionOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                ambiguousPositionResult.Options);
+            var ambiguousPositionRiley = Assert.Single(
+                ambiguousPositionOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.True(ambiguousPositionRiley.HasCompatibleShift);
+            Assert.Null(ambiguousPositionRiley.OperationalPositionId);
+            Assert.Contains(
+                "operational_position_unavailable",
+                OccAgentEligibilityPolicy.Evaluate(ambiguousPositionRiley)
+                    .EligibilityReasons);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var shiftChanged = await administratorContext.ShiftAssignments
+                    .Where(item => item.RampAgentId == riley.Id &&
+                        item.WorkDate == new DateOnly(2026, 8, 18))
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.StartsAtLocal, new TimeOnly(6, 0))
+                            .SetProperty(item => item.EndsAtLocal, new TimeOnly(14, 0)),
+                        cancellationToken);
+                Assert.Equal(1, shiftChanged);
+
+                var boundaryChanged = await administratorContext.GroundOperations
+                    .Where(item => item.TurnaroundId == legacyTurnaround.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(
+                                item => item.PlannedStartAt,
+                                planningOperation.PlannedEndAt)
+                            .SetProperty(
+                                item => item.PlannedEndAt,
+                                planningOperation.PlannedEndAt!.Value.AddHours(1)),
+                        cancellationToken);
+                Assert.Equal(1, boundaryChanged);
+            }
+
+            var touchingWindowResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var touchingWindowOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                touchingWindowResult.Options);
+            var touchingWindowRiley = Assert.Single(
+                touchingWindowOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.False(touchingWindowRiley.HasAssignmentConflict);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.GroundOperations
+                    .Where(item => item.TurnaroundId == legacyTurnaround.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(
+                            item => item.PlannedStartAt,
+                            planningOperation.PlannedEndAt!.Value.AddMinutes(-1)),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+            }
+
+            var overlappingWindowResult = await readStore.GetOptionsAsync(
+                [stationPublicId],
+                planningTurnaround.PublicId,
+                cancellationToken);
+            var overlappingWindowOptions = Assert.IsType<OccPlanningOptionsSourceData>(
+                overlappingWindowResult.Options);
+            var overlappingWindowRiley = Assert.Single(
+                overlappingWindowOptions.AgentCandidates,
+                candidate => candidate.EmployeeNumber == "DEV-RA-001");
+            Assert.True(overlappingWindowRiley.HasAssignmentConflict);
+            Assert.Contains(
+                "assignment_conflict",
+                OccAgentEligibilityPolicy.Evaluate(overlappingWindowRiley)
+                    .EligibilityReasons);
+
+            await using (var administratorContext = CreateContext(database.ConnectionString))
+            {
+                var changed = await administratorContext.GroundOperations
+                    .Where(item => item.TurnaroundId == legacyTurnaround.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(
+                                item => item.PlannedStartAt,
+                                new DateTimeOffset(2026, 8, 17, 12, 45, 0, TimeSpan.Zero))
+                            .SetProperty(
+                                item => item.PlannedEndAt,
+                                new DateTimeOffset(2026, 8, 17, 14, 30, 0, TimeSpan.Zero)),
+                        cancellationToken);
+                Assert.Equal(1, changed);
+            }
 
             var shiftOnlyCandidate = Assert.Single(
                 options.AgentCandidates,
@@ -686,10 +906,11 @@ public sealed class SqlServerMigrationTests
                 [stationPublicId],
                 noTimeTurnaround.PublicId,
                 cancellationToken);
-            var noTimeOptions = Assert.IsType<OccPlanningOptionsSourceData>(noTimeResult.Options);
+            Assert.False(noTimeResult.IsSuccess);
+            Assert.Null(noTimeResult.Options);
             Assert.Equal(
-                new DateTimeOffset(2026, 8, 19, 4, 0, 0, TimeSpan.Zero),
-                noTimeOptions.Turnaround.ReferenceTime);
+                OccPlanningOptionsReadFailure.OperationalConflict,
+                noTimeResult.Failure);
 
             var conflictingContract = new Contract
             {
@@ -1179,6 +1400,458 @@ public sealed class SqlServerMigrationTests
                 cancellationToken);
             Assert.False(currentSession.IsSuccess);
         }
+    }
+
+    [Fact]
+    public async Task OccAssignmentIsAtomicContractDrivenAndConcurrencySafe()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null)
+        {
+            return;
+        }
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection,
+            "Development",
+            cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext)
+                .SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        var actorId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var turnaroundId = Guid.Parse("70000000-0000-7000-8000-000000000012");
+        var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        long turnaroundInternalId;
+        long operationId;
+        long activeAssignmentOperationId;
+        DateTimeOffset activeAssignmentStart;
+        DateTimeOffset activeAssignmentEnd;
+        await using (var setupContext = CreateContext(database.ConnectionString))
+        {
+            turnaroundInternalId = await setupContext.Turnarounds
+                .Where(item => item.PublicId == turnaroundId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var operation = await setupContext.GroundOperations
+                .SingleAsync(
+                    item => item.TurnaroundId == turnaroundInternalId,
+                    cancellationToken);
+            operationId = operation.Id;
+            var activeAssignmentOperation = await (
+                    from activeAssignment in setupContext.OperationAgentAssignments
+                    join agent in setupContext.RampAgents
+                        on activeAssignment.RampAgentId equals agent.Id
+                    join assignedOperation in setupContext.GroundOperations
+                        on activeAssignment.GroundOperationId equals assignedOperation.Id
+                    where agent.PublicId == agentId &&
+                          activeAssignment.ReleasedAt == null &&
+                          assignedOperation.Id != operationId
+                    select assignedOperation)
+                .SingleAsync(cancellationToken);
+            activeAssignmentOperationId = activeAssignmentOperation.Id;
+            activeAssignmentStart = Assert.IsType<DateTimeOffset>(
+                activeAssignmentOperation.PlannedStartAt);
+            activeAssignmentEnd = Assert.IsType<DateTimeOffset>(
+                activeAssignmentOperation.PlannedEndAt);
+            // The command, not the client or fixture, owns complete service materialization.
+            await setupContext.OperationServices
+                .Where(item => item.GroundOperationId == operationId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString,
+            new PasswordHashCounter());
+
+        async Task<byte[]> FetchOptionsVersionAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var optionsResult = await scope.ServiceProvider
+                .GetRequiredService<IOccPlanningReadStore>()
+                .GetOptionsAsync([stationId], turnaroundId, cancellationToken);
+            Assert.True(optionsResult.IsSuccess);
+            Assert.True(OccPlanningConcurrencyToken.TryDecode(
+                optionsResult.Options!.Turnaround.ConcurrencyToken,
+                out var version));
+            return version;
+        }
+
+        async Task<OccAssignmentWriteResult> AssignAsync(
+            byte[] version,
+            string correlationId,
+            string requestId)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IOccPlanningCommandStore>()
+                .AssignOperationAsync(
+                    new OccAssignmentWriteRequest(
+                        actorId,
+                        [stationId],
+                        turnaroundId,
+                        agentId,
+                        version,
+                        Guid.Parse(correlationId),
+                        requestId),
+                    cancellationToken);
+        }
+
+        async Task AssertNoAssignmentWritesAsync()
+        {
+            await using var verificationContext = CreateContext(database.ConnectionString);
+            var operationPublicId = await verificationContext.GroundOperations
+                .Where(item => item.Id == operationId)
+                .Select(item => item.PublicId)
+                .SingleAsync(cancellationToken);
+            Assert.Empty(await verificationContext.OperationAgentAssignments
+                .Where(item => item.GroundOperationId == operationId && item.ReleasedAt == null)
+                .ToArrayAsync(cancellationToken));
+            Assert.Empty(await verificationContext.OperationServices
+                .Where(item => item.GroundOperationId == operationId)
+                .ToArrayAsync(cancellationToken));
+            Assert.Empty(await verificationContext.Set<GroundOperationStatusEvent>()
+                .Where(item =>
+                    item.GroundOperationId == operationId &&
+                    item.FromStatus == GroundOperationStatus.Planned &&
+                    item.ToStatus == GroundOperationStatus.Assigned)
+                .ToArrayAsync(cancellationToken));
+            Assert.Empty(await verificationContext.AuditEntries
+                .Where(item =>
+                    item.EntityPublicId == operationPublicId &&
+                    item.Action == "occ.operation.assigned")
+                .ToArrayAsync(cancellationToken));
+        }
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.GroundOperations
+                .Where(item => item.Id == activeAssignmentOperationId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.PlannedStartAt,
+                        (DateTimeOffset?)null),
+                    cancellationToken);
+        }
+
+        var expectedVersion = await FetchOptionsVersionAsync();
+        var missingWindowResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000079",
+            "occ-assignment-missing-active-window-sql-test");
+        Assert.Equal(OccAssignmentWriteFailure.Conflict, missingWindowResult.Failure);
+        await AssertNoAssignmentWritesAsync();
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.GroundOperations
+                .Where(item => item.Id == activeAssignmentOperationId)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(item => item.PlannedStartAt, activeAssignmentStart)
+                        .SetProperty(item => item.PlannedEndAt, activeAssignmentStart),
+                    cancellationToken);
+        }
+
+        expectedVersion = await FetchOptionsVersionAsync();
+        var zeroWindowResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000080",
+            "occ-assignment-zero-active-window-sql-test");
+        Assert.Equal(OccAssignmentWriteFailure.Conflict, zeroWindowResult.Failure);
+        await AssertNoAssignmentWritesAsync();
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.GroundOperations
+                .Where(item => item.Id == activeAssignmentOperationId)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(item => item.PlannedStartAt, activeAssignmentStart)
+                        .SetProperty(item => item.PlannedEndAt, activeAssignmentEnd),
+                    cancellationToken);
+        }
+
+        expectedVersion = await FetchOptionsVersionAsync();
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.Turnarounds
+                .Where(item => item.PublicId == turnaroundId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.CurrentStatus,
+                        TurnaroundStatus.Completed),
+                    cancellationToken);
+        }
+
+        var terminalResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000081",
+            "occ-assignment-terminal-sql-test");
+        Assert.Equal(OccAssignmentWriteFailure.PreconditionFailed, terminalResult.Failure);
+        await AssertNoAssignmentWritesAsync();
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.Turnarounds
+                .Where(item => item.PublicId == turnaroundId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.CurrentStatus,
+                        TurnaroundStatus.Confirmed),
+                    cancellationToken);
+        }
+
+        expectedVersion = await FetchOptionsVersionAsync();
+        long originalStandId;
+        long alternateStandId;
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            originalStandId = await (
+                    from assignmentItem in mutationContext.Set<StandAssignment>()
+                    join turnaround in mutationContext.Turnarounds
+                        on assignmentItem.TurnaroundId equals turnaround.Id
+                    where turnaround.PublicId == turnaroundId && assignmentItem.AssignedTo == null
+                    select assignmentItem.StandId)
+                .SingleAsync(cancellationToken);
+            alternateStandId = await mutationContext.Stands
+                .Where(item => item.Code == "A01" && item.Id != originalStandId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            await mutationContext.Set<StandAssignment>()
+                .Where(item =>
+                    item.TurnaroundId == turnaroundInternalId &&
+                    item.AssignedTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.StandId, alternateStandId),
+                    cancellationToken);
+        }
+
+        var standResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000082",
+            "occ-assignment-stand-sql-test");
+        Assert.Equal(OccAssignmentWriteFailure.PreconditionFailed, standResult.Failure);
+        await AssertNoAssignmentWritesAsync();
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.Set<StandAssignment>()
+                .Where(item => item.TurnaroundId == turnaroundInternalId && item.AssignedTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.StandId, originalStandId),
+                    cancellationToken);
+        }
+
+        expectedVersion = await FetchOptionsVersionAsync();
+        decimal originalUnitPrice;
+        long rateId;
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            var rate = await mutationContext.ContractServiceRates
+                .SingleAsync(item => item.PublicId ==
+                    Guid.Parse("60000000-0000-7000-8000-000000000004"), cancellationToken);
+            rateId = rate.Id;
+            originalUnitPrice = rate.UnitPrice;
+            await mutationContext.ContractServiceRates
+                .Where(item => item.Id == rateId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.UnitPrice,
+                        originalUnitPrice + 1m),
+                    cancellationToken);
+        }
+
+        var contractResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000083",
+            "occ-assignment-contract-sql-test");
+        Assert.Equal(OccAssignmentWriteFailure.PreconditionFailed, contractResult.Failure);
+        await AssertNoAssignmentWritesAsync();
+
+        await using (var mutationContext = CreateContext(database.ConnectionString))
+        {
+            await mutationContext.ContractServiceRates
+                .Where(item => item.Id == rateId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.UnitPrice, originalUnitPrice),
+                    cancellationToken);
+        }
+
+        expectedVersion = await FetchOptionsVersionAsync();
+        var startGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async Task<OccAssignmentWriteResult> AssignWhenReleasedAsync(
+            string correlationId,
+            string requestId)
+        {
+            await startGate.Task.WaitAsync(cancellationToken);
+            return await AssignAsync(expectedVersion, correlationId, requestId);
+        }
+
+        var concurrentAttempts = new[]
+        {
+            AssignWhenReleasedAsync(
+                "90000000-0000-7000-8000-000000000091",
+                "occ-assignment-concurrent-a-sql-test"),
+            AssignWhenReleasedAsync(
+                "90000000-0000-7000-8000-000000000092",
+                "occ-assignment-concurrent-b-sql-test"),
+        };
+        startGate.SetResult();
+        var concurrentResults = await Task.WhenAll(concurrentAttempts);
+        var firstResult = Assert.Single(concurrentResults, result => result.IsSuccess);
+        var rejectedResult = Assert.Single(concurrentResults, result => !result.IsSuccess);
+        Assert.True(
+            rejectedResult.Failure is OccAssignmentWriteFailure.PreconditionFailed or
+                OccAssignmentWriteFailure.Conflict,
+            $"Unexpected concurrent rejection: {rejectedResult.Failure}.");
+
+        var assignment = Assert.IsType<OccAssignmentData>(firstResult.Assignment);
+        Assert.Equal("Assigned", assignment.Operation.Status);
+        Assert.Equal(agentId, assignment.Assignment.AgentId);
+        Assert.Equal("primary", assignment.Assignment.AssignmentRole);
+        Assert.Equal("BAGGAGE", Assert.Single(assignment.Services).Code);
+        Assert.True(OccPlanningConcurrencyToken.TryDecode(
+            assignment.ConcurrencyToken,
+            out var assignmentVersion));
+        Assert.False(expectedVersion.AsSpan().SequenceEqual(assignmentVersion));
+
+        await using (var verificationContext = CreateContext(database.ConnectionString))
+        {
+            var operation = await verificationContext.GroundOperations
+                .SingleAsync(item => item.Id == operationId, cancellationToken);
+            Assert.Equal(GroundOperationStatus.Assigned, operation.CurrentStatus);
+            Assert.Single(await verificationContext.OperationAgentAssignments
+                .Where(item => item.GroundOperationId == operationId && item.ReleasedAt == null)
+                .ToArrayAsync(cancellationToken));
+            var service = Assert.Single(await verificationContext.OperationServices
+                .Where(item => item.GroundOperationId == operationId)
+                .ToArrayAsync(cancellationToken));
+            Assert.NotNull(service.ContractServiceRateId);
+            Assert.Equal(0m, service.ExecutedQuantity);
+            Assert.Equal(ServiceExecutionStatus.Planned, service.CurrentStatus);
+            var serviceStatusEvent = Assert.Single(await verificationContext
+                .Set<OperationServiceStatusEvent>()
+                .Where(item => item.OperationServiceId == service.Id)
+                .ToArrayAsync(cancellationToken));
+            Assert.Null(serviceStatusEvent.FromStatus);
+            Assert.Equal(ServiceExecutionStatus.Planned, serviceStatusEvent.ToStatus);
+            Assert.Single(await verificationContext.Set<GroundOperationStatusEvent>()
+                .Where(item =>
+                    item.GroundOperationId == operationId &&
+                    item.FromStatus == GroundOperationStatus.Planned &&
+                    item.ToStatus == GroundOperationStatus.Assigned)
+                .ToArrayAsync(cancellationToken));
+            Assert.Single(await verificationContext.AuditEntries
+                .Where(item =>
+                    item.EntityPublicId == operation.PublicId &&
+                    item.Action == "occ.operation.assigned")
+                .ToArrayAsync(cancellationToken));
+        }
+
+        var staleResult = await AssignAsync(
+            expectedVersion,
+            "90000000-0000-7000-8000-000000000093",
+            "occ-assignment-stale-sql-test");
+
+        Assert.Equal(OccAssignmentWriteFailure.PreconditionFailed, staleResult.Failure);
+        await using var finalContext = CreateContext(database.ConnectionString);
+        Assert.Single(await finalContext.OperationAgentAssignments
+            .Where(item => item.GroundOperationId == operationId && item.ReleasedAt == null)
+            .ToArrayAsync(cancellationToken));
+        Assert.Single(await finalContext.OperationServices
+            .Where(item => item.GroundOperationId == operationId)
+            .ToArrayAsync(cancellationToken));
+
+        var existingServiceTurnaroundId =
+            Guid.Parse("70000000-0000-7000-8000-000000000001");
+        long existingServiceOperationId;
+        Guid existingServiceId;
+        await using (var reconciliationSetupContext = CreateContext(database.ConnectionString))
+        {
+            var existingServiceTurnaroundInternalId = await reconciliationSetupContext.Turnarounds
+                .Where(item => item.PublicId == existingServiceTurnaroundId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var existingServiceOperation = await reconciliationSetupContext.GroundOperations
+                .SingleAsync(
+                    item => item.TurnaroundId == existingServiceTurnaroundInternalId,
+                    cancellationToken);
+            existingServiceOperationId = existingServiceOperation.Id;
+            existingServiceOperation.CurrentStatus = GroundOperationStatus.Planned;
+            existingServiceOperation.PlannedStartAt =
+                new DateTimeOffset(2026, 8, 18, 12, 15, 0, TimeSpan.Zero);
+            existingServiceOperation.PlannedEndAt =
+                new DateTimeOffset(2026, 8, 18, 13, 30, 0, TimeSpan.Zero);
+            await reconciliationSetupContext.OperationAgentAssignments
+                .Where(item => item.GroundOperationId == existingServiceOperationId)
+                .ExecuteDeleteAsync(cancellationToken);
+            existingServiceId = await reconciliationSetupContext.OperationServices
+                .Where(item => item.GroundOperationId == existingServiceOperationId)
+                .Select(item => item.PublicId)
+                .SingleAsync(cancellationToken);
+            await reconciliationSetupContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await using (var reconciliationScope = provider.CreateAsyncScope())
+        {
+            var reconciliationOptions = await reconciliationScope.ServiceProvider
+                .GetRequiredService<IOccPlanningReadStore>()
+                .GetOptionsAsync(
+                    [stationId],
+                    existingServiceTurnaroundId,
+                    cancellationToken);
+            Assert.True(reconciliationOptions.IsSuccess);
+            Assert.True(OccPlanningConcurrencyToken.TryDecode(
+                reconciliationOptions.Options!.Turnaround.ConcurrencyToken,
+                out var reconciliationVersion));
+            var reconciliationCandidate = Assert.Single(
+                reconciliationOptions.Options.AgentCandidates,
+                candidate => candidate.Id == agentId);
+            var reconciliationEligibility =
+                OccAgentEligibilityPolicy.Evaluate(reconciliationCandidate);
+            Assert.True(
+                reconciliationEligibility.Eligible,
+                string.Join(", ", reconciliationEligibility.EligibilityReasons));
+
+            var reconciliationResult = await reconciliationScope.ServiceProvider
+                .GetRequiredService<IOccPlanningCommandStore>()
+                .AssignOperationAsync(
+                    new OccAssignmentWriteRequest(
+                        actorId,
+                        [stationId],
+                        existingServiceTurnaroundId,
+                        agentId,
+                        reconciliationVersion,
+                        Guid.Parse("90000000-0000-7000-8000-000000000094"),
+                        "occ-assignment-existing-service-sql-test"),
+                    cancellationToken);
+            Assert.True(
+                reconciliationResult.IsSuccess,
+                $"Existing-service reconciliation failed: {reconciliationResult.Failure}.");
+        }
+
+        await using var reconciliationContext = CreateContext(database.ConnectionString);
+        var reconciledService = Assert.Single(await reconciliationContext.OperationServices
+            .Where(item => item.GroundOperationId == existingServiceOperationId)
+            .ToArrayAsync(cancellationToken));
+        Assert.Equal(existingServiceId, reconciledService.PublicId);
+        Assert.Empty(await reconciliationContext.Set<OperationServiceStatusEvent>()
+            .Where(item => item.OperationServiceId == reconciledService.Id)
+            .ToArrayAsync(cancellationToken));
     }
 
     private static ServiceProvider CreateAuthenticationProvider(
