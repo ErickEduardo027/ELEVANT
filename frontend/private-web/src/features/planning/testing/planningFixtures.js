@@ -81,6 +81,7 @@ export const PLANNING_OPTIONS = {
 export const OPTIONS_STATE_SUCCESS = {
   status: 'success',
   data: PLANNING_OPTIONS,
+  etag: '"planning-options-v1"',
   error: null,
   reason: null,
   recoverable: false,

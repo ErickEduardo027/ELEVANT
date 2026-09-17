@@ -27,9 +27,12 @@ El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente Open
 La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
 
 - `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;
-- `GET /api/v1/occ/planning/options`, al abrir el detalle de una escala autorizada.
+- `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones.
 
-La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. Incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Las acciones de crear vuelos, editar, asignar recursos y generar Work Orders permanecen deshabilitadas hasta que existan contratos OpenAPI de escritura con concurrencia e idempotencia definidas. Los fixtures del módulo se usan solo en pruebas.
+La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. El manifiesto de despacho permite escoger exclusivamente un agente marcado como elegible; contrato, posición y servicios son decisiones del backend y se muestran como datos bloqueados. La web no reintenta automáticamente el comando. Un `409`, `412`, `404` o resultado de red ambiguo obliga a refrescar opciones y planificación antes de una nueva confirmación.
+
+El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Crear vuelos, editar la planificación y generar Work Orders permanecen deshabilitados hasta que existan contratos OpenAPI de escritura revisados. Los fixtures del módulo se usan solo en pruebas.
 
 ## Frontera de seguridad
 

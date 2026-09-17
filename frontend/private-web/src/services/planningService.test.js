@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   createPrivateWebApiClient: vi.fn(),
   getOccPlanningSnapshot: vi.fn(),
-  getOccPlanningOptions: vi.fn(),
+  getOccPlanningOptionsWithMetadata: vi.fn(),
+  assignOccPlanningOperationWithMetadata: vi.fn(),
   handleUnauthorizedResponse: vi.fn(),
   readSession: vi.fn(),
 }));
@@ -40,15 +41,38 @@ const options = {
   services: [],
   agents: [],
 };
+const optionsMetadata = { options, etag: '"planning-options-v1"' };
+const assignmentMetadata = {
+  assignment: {
+    turnaroundId,
+    operationId: '70000000-0000-0000-0000-000000000016',
+    operationStatus: 'Assigned',
+    agent: {
+      assignmentId: '70000000-0000-0000-0000-000000000017',
+      agentId: '30000000-0000-0000-0000-000000000001',
+      displayName: 'Riley Ramp',
+      employeeNumber: 'DEV-RA-001',
+      operationalPositionId: '30000000-0000-0000-0000-000000000002',
+      operationalPositionCode: 'RAMP-AGENT',
+      operationalPositionName: 'Ramp Agent',
+      assignmentRole: 'primary',
+      assignedAt: '2026-08-19T11:00:00-04:00',
+    },
+    services: [],
+  },
+  etag: '"assigned-v2"',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.readSession.mockReturnValue({ token: 'current-access-token' });
   mocks.getOccPlanningSnapshot.mockResolvedValue(snapshot);
-  mocks.getOccPlanningOptions.mockResolvedValue(options);
+  mocks.getOccPlanningOptionsWithMetadata.mockResolvedValue(optionsMetadata);
+  mocks.assignOccPlanningOperationWithMetadata.mockResolvedValue(assignmentMetadata);
   mocks.createPrivateWebApiClient.mockReturnValue({
     getOccPlanningSnapshot: mocks.getOccPlanningSnapshot,
-    getOccPlanningOptions: mocks.getOccPlanningOptions,
+    getOccPlanningOptionsWithMetadata: mocks.getOccPlanningOptionsWithMetadata,
+    assignOccPlanningOperationWithMetadata: mocks.assignOccPlanningOperationWithMetadata,
   });
 });
 
@@ -84,9 +108,9 @@ describe('planningService', () => {
 
     await expect(
       planningService.getPlanningOptions(turnaroundId, { signal: controller.signal })
-    ).resolves.toBe(options);
+    ).resolves.toBe(optionsMetadata);
 
-    expect(mocks.getOccPlanningOptions).toHaveBeenCalledWith(turnaroundId, {
+    expect(mocks.getOccPlanningOptionsWithMetadata).toHaveBeenCalledWith(turnaroundId, {
       signal: controller.signal,
     });
   });
@@ -101,9 +125,9 @@ describe('planningService', () => {
         observedTokens.push(clientOptions.getAccessToken());
         return snapshot;
       },
-      getOccPlanningOptions: async () => {
+      getOccPlanningOptionsWithMetadata: async () => {
         observedTokens.push(clientOptions.getAccessToken());
-        return options;
+        return optionsMetadata;
       },
     }));
 
@@ -161,8 +185,8 @@ describe('planningService', () => {
     expect(error).not.toHaveProperty('traceId');
   });
 
-  it('classifies an options HTTP 409 as a recoverable contractual ambiguity', async () => {
-    mocks.getOccPlanningOptions.mockRejectedValue(
+  it('classifies an options HTTP 409 as a recoverable operational conflict', async () => {
+    mocks.getOccPlanningOptionsWithMetadata.mockRejectedValue(
       new ElevantApiError({
         kind: 'http',
         status: 409,
@@ -178,9 +202,9 @@ describe('planningService', () => {
     expect(error).toMatchObject({
       name: 'PlanningServiceError',
       status: 409,
-      code: 'contract-ambiguity',
+      code: 'options-conflict',
       recoverable: true,
-      message: 'No fue posible determinar un contrato operativo único para este vuelo.',
+      message: 'No fue posible preparar una versión asignable de esta operación. Actualice la planificación y revise su estado.',
     });
     expect(error.message).not.toContain('Two internal contracts overlap');
   });
@@ -208,8 +232,121 @@ describe('planningService', () => {
     expect(mocks.handleUnauthorizedResponse).not.toHaveBeenCalled();
   });
 
-  it('does not expose prototype write operations before API write contracts exist', () => {
+  it('exposes only the reviewed assignment write and not the removed prototype writes', () => {
     expect(planningService).not.toHaveProperty('createPlannedFlight');
     expect(planningService).not.toHaveProperty('assignPlannedFlight');
+    expect(planningService.assignPlanningOperation).toBeTypeOf('function');
+  });
+
+  it('assigns one agent with the exact strong ETag and preserves the AbortSignal', async () => {
+    const controller = new AbortController();
+    const agentId = '30000000-0000-0000-0000-000000000001';
+
+    await expect(
+      planningService.assignPlanningOperation(
+        turnaroundId,
+        agentId,
+        '"planning-options-v1"',
+        { signal: controller.signal }
+      )
+    ).resolves.toBe(assignmentMetadata);
+
+    expect(mocks.assignOccPlanningOperationWithMetadata).toHaveBeenCalledWith(
+      turnaroundId,
+      { agentId },
+      '"planning-options-v1"',
+      { signal: controller.signal }
+    );
+  });
+
+  it.each([
+    [403, 'forbidden', false, 'Su cuenta no tiene permiso para asignar esta operación.'],
+    [404, 'not-found', true, 'La escala ya no está disponible para asignación. La planificación se actualizará.'],
+    [409, 'conflict', true, 'La operación o el agente cambiaron mientras preparaba la asignación. Revise las opciones actualizadas.'],
+    [412, 'stale', true, 'Las opciones de asignación cambiaron. Revise la versión actual antes de confirmar nuevamente.'],
+  ])(
+    'classifies assignment HTTP %s without exposing server details',
+    async (status, code, refreshRequired, message) => {
+      mocks.assignOccPlanningOperationWithMetadata.mockRejectedValue(
+        new ElevantApiError({
+          kind: 'http',
+          status,
+          title: 'Sensitive internal assignment state',
+          traceId: 'private-trace',
+        })
+      );
+
+      const error = await planningService
+        .assignPlanningOperation(
+          turnaroundId,
+          '30000000-0000-0000-0000-000000000001',
+          '"planning-options-v1"'
+        )
+        .catch(reason => reason);
+
+      expect(error).toMatchObject({ status, code, refreshRequired, message });
+      expect(error.message).not.toContain('Sensitive internal assignment state');
+      expect(error).not.toHaveProperty('traceId');
+    }
+  );
+
+  it('expires the session when an assignment returns HTTP 401', async () => {
+    mocks.assignOccPlanningOperationWithMetadata.mockRejectedValue(
+      new ElevantApiError({ kind: 'http', status: 401, title: 'Sensitive token detail' })
+    );
+
+    const error = await planningService
+      .assignPlanningOperation(
+        turnaroundId,
+        '30000000-0000-0000-0000-000000000001',
+        '"planning-options-v1"'
+      )
+      .catch(reason => reason);
+
+    expect(mocks.handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+    expect(error).toMatchObject({ status: 401, code: 'unauthorized', recoverable: false });
+    expect(error.message).not.toContain('Sensitive token detail');
+  });
+
+  it('treats a network assignment failure as an ambiguous outcome that requires refresh', async () => {
+    mocks.assignOccPlanningOperationWithMetadata.mockRejectedValue(
+      new TypeError('socket and private infrastructure details')
+    );
+
+    const error = await planningService
+      .assignPlanningOperation(
+        turnaroundId,
+        '30000000-0000-0000-0000-000000000001',
+        '"planning-options-v1"'
+      )
+      .catch(reason => reason);
+
+    expect(error).toMatchObject({
+      code: 'unknown-outcome',
+      refreshRequired: true,
+      message:
+        'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.',
+    });
+    expect(error.message).not.toContain('socket');
+  });
+
+  it('treats an aborted assignment request as an ambiguous outcome that requires reconciliation', async () => {
+    const abortError = new DOMException('The operation was aborted.', 'AbortError');
+    mocks.assignOccPlanningOperationWithMetadata.mockRejectedValue(abortError);
+
+    const error = await planningService
+      .assignPlanningOperation(
+        turnaroundId,
+        '30000000-0000-0000-0000-000000000001',
+        '"planning-options-v1"'
+      )
+      .catch(reason => reason);
+
+    expect(error).toMatchObject({
+      code: 'unknown-outcome',
+      refreshRequired: true,
+      message:
+        'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.',
+    });
   });
 });

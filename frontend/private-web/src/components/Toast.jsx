@@ -24,7 +24,7 @@ export default function Toast({ toasts, onDismiss }) {
         return (
           <div
             key={toast.id}
-            role="status"
+            role={toast.tone === 'danger' ? 'alert' : 'status'}
             className={`flex items-start gap-2 rounded-xl border bg-white/95 p-3 shadow-lg backdrop-blur-md dark:bg-surface-dark-card ${
               TONE_CLASSES[toast.tone] ?? TONE_CLASSES.success
             }`}

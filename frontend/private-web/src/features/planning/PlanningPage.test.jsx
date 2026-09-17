@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PlanningPage from './PlanningPage';
 import { usePlanningOptions } from './usePlanningOptions';
+import { usePlanningAssignment } from './usePlanningAssignment';
 import {
   createPlanningFlight,
   createPlanningSnapshot,
@@ -12,6 +13,17 @@ import {
 } from './testing/planningFixtures';
 
 vi.mock('./usePlanningOptions', () => ({ usePlanningOptions: vi.fn() }));
+vi.mock('./usePlanningAssignment', () => ({ usePlanningAssignment: vi.fn() }));
+
+const assignmentHook = {
+  status: 'idle',
+  data: null,
+  error: null,
+  reason: null,
+  refreshRequired: false,
+  assign: vi.fn(),
+  reset: vi.fn(),
+};
 
 const BASE_ASSIGNED_FLIGHT = createPlanningFlight();
 const ASSIGNED_FLIGHT = createPlanningFlight({
@@ -21,7 +33,7 @@ const UNASSIGNED_DELAYED_FLIGHT = createPlanningFlight({
   id: '91000000-0000-0000-0000-000000000003',
   turnaroundId: '91000000-0000-0000-0000-000000000003',
   operationCode: 'DEV-TAT-0003',
-  status: 'Delayed',
+  status: 'Confirmed',
   stand: null,
   position: null,
   terminal: null,
@@ -61,6 +73,11 @@ function renderPage(overrides = {}) {
 beforeEach(() => {
   vi.mocked(usePlanningOptions).mockReset();
   vi.mocked(usePlanningOptions).mockReturnValue(OPTIONS_STATE_SUCCESS);
+  assignmentHook.assign.mockReset();
+  assignmentHook.reset.mockReset();
+  assignmentHook.assign.mockResolvedValue({ ok: true, data: { assignment: {} } });
+  vi.mocked(usePlanningAssignment).mockReset();
+  vi.mocked(usePlanningAssignment).mockReturnValue(assignmentHook);
 });
 
 describe('PlanningPage', () => {
@@ -153,7 +170,7 @@ describe('PlanningPage', () => {
     expect(screen.getByText('DEV-TAT-0003')).toBeInTheDocument();
   });
 
-  it('opens canonical detail and loads authorized options for its turnaround', async () => {
+  it('opens assigned detail without requesting an obsolete assignment version', async () => {
     renderPage();
 
     await userEvent.click(screen.getByText('DEV-TAT-0002'));
@@ -161,36 +178,87 @@ describe('PlanningPage', () => {
     expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith({
       turnaroundId: ASSIGNED_FLIGHT.turnaroundId,
       refreshToken: 0,
-      enabled: true,
+      enabled: false,
     });
-    expect(screen.getByText(/DEV-CONTRACT · versión 1 · USD/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('ya tiene un agente activo');
 
     await userEvent.click(screen.getByRole('button', { name: 'Cerrar panel' }));
     expect(screen.queryByTestId('planning-drawer')).not.toBeInTheDocument();
   });
 
-  it('retries a recoverable 409 options state for the selected turnaround', async () => {
+  it('retries a recoverable options conflict for the selected turnaround', async () => {
     vi.mocked(usePlanningOptions).mockReturnValue({
       status: 'error',
       data: null,
       error: new Error('safe conflict'),
-      reason: 'contract-ambiguity',
+      reason: 'options-conflict',
       recoverable: true,
     });
     renderPage();
 
-    await userEvent.click(screen.getByText('DEV-TAT-0002'));
-    expect(screen.getByRole('alert')).toHaveTextContent('Hay más de un contrato aplicable');
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    expect(screen.getByRole('alert')).toHaveTextContent('La operación cambió o no tiene una versión asignable');
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
 
     await waitFor(() => {
       expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith({
-        turnaroundId: ASSIGNED_FLIGHT.turnaroundId,
+        turnaroundId: UNASSIGNED_DELAYED_FLIGHT.turnaroundId,
         refreshToken: 1,
         enabled: true,
       });
     });
   });
+
+  it('submits an eligible initial assignment, refreshes the snapshot, and confirms success', async () => {
+    const onRetry = vi.fn();
+    renderPage({ onRetry });
+
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    await userEvent.click(screen.getByRole('radio', { name: /Riley Ramp/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Asignar operación' }));
+
+    await waitFor(() => {
+      expect(assignmentHook.assign).toHaveBeenCalledWith({
+        turnaroundId: UNASSIGNED_DELAYED_FLIGHT.turnaroundId,
+        agentId: 'agent-1',
+        etag: '"planning-options-v1"',
+      });
+    });
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(assignmentHook.reset).toHaveBeenCalled();
+    expect(screen.queryByTestId('planning-drawer')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Operación asignada a Riley Ramp.');
+  });
+
+  it.each([
+    ['not-found', 'La escala ya no está disponible para asignación.'],
+    ['conflict', 'La operación o el agente cambiaron mientras preparaba la asignación.'],
+    ['stale', 'Las opciones de asignación cambiaron.'],
+    ['unknown-outcome', 'No fue posible confirmar la asignación.'],
+  ])(
+    'closes and refreshes after %s without resubmitting the command',
+    async (reason, message) => {
+      const onRetry = vi.fn();
+      const safeError = new Error(message);
+      assignmentHook.assign.mockResolvedValue({
+        ok: false,
+        error: safeError,
+        reason,
+        refreshRequired: true,
+      });
+      renderPage({ onRetry });
+
+      await userEvent.click(screen.getByText('DEV-TAT-0003'));
+      await userEvent.click(screen.getByRole('radio', { name: /Riley Ramp/ }));
+      await userEvent.click(screen.getByRole('button', { name: 'Asignar operación' }));
+
+      await waitFor(() => expect(screen.queryByTestId('planning-drawer')).not.toBeInTheDocument());
+      expect(assignmentHook.assign).toHaveBeenCalledTimes(1);
+      expect(assignmentHook.reset).toHaveBeenCalled();
+      expect(onRetry).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('alert')).toHaveTextContent(message);
+    }
+  );
 
   it('keeps alternative views explicitly unavailable instead of inventing data', async () => {
     renderPage();
