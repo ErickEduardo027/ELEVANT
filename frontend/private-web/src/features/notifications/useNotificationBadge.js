@@ -11,13 +11,14 @@ export function requestNotificationsRefresh() {
   window.dispatchEvent(new CustomEvent(NOTIFICATIONS_REFRESH_EVENT));
 }
 
-export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000 } = {}) {
+export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000, enabled = true } = {}) {
   const [count, setCount] = useState(fallback);
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('idle');
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setStatus('loading');
     try {
       const snapshot = await getNotifications();
@@ -29,9 +30,11 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
     } catch {
       if (mounted.current) setStatus('error');
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
+
     mounted.current = true;
     void refresh();
     const timer = window.setInterval(refresh, intervalMs);
@@ -50,7 +53,7 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
       window.removeEventListener('focus', onFocus);
       window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, onRequestedRefresh);
     };
-  }, [intervalMs, refresh]);
+  }, [enabled, intervalMs, refresh]);
 
   const markAsRead = useCallback(async id => {
     const updated = await markNotificationAsRead(id);

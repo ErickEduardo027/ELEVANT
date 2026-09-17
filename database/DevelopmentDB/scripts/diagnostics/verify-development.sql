@@ -53,7 +53,8 @@ VALUES
     (N'20260817201608_V1_03_WorkforceCommercial'),
     (N'20260817202135_V1_04_Operations'),
     (N'20260817202420_V1_05_MobileAudit'),
-    (N'20260916151935_V1_06_DevelopmentAccountCredentialRotation');
+    (N'20260916151935_V1_06_DevelopmentAccountCredentialRotation'),
+    (N'20260917161921_V1_07_DevelopmentHumanResourcesAccount');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
@@ -132,34 +133,73 @@ WHERE ([code] = N'AVIAM' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-
    OR ([code] = N'DEMO-AIR' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-0000-7000-8000-000000000002'));
 
 INSERT INTO @seed_checks
-SELECT N'persons-natural-keys', COUNT_BIG(*), 3
+SELECT N'persons-natural-keys', COUNT_BIG(*), 4
 FROM [iam].[persons]
 WHERE [primary_email] IN (
     N'admin.occ@dev.elevant.test',
     N'ramp.agent@dev.elevant.test',
-    N'airline.client@dev.elevant.test'
+    N'airline.client@dev.elevant.test',
+    N'gestion.humana@dev.elevant.test'
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 3
+SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 4
 FROM [iam].[accounts]
 WHERE [public_id] IN (
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000001'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000002'),
-    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000003')
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000003'),
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000004')
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 3
+SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 4
 FROM [iam].[accounts]
 WHERE [normalized_email] IN (
     N'ADMIN.OCC@DEV.ELEVANT.TEST',
     N'RAMP.AGENT@DEV.ELEVANT.TEST',
-    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
+    N'GESTION.HUMANA@DEV.ELEVANT.TEST'
 )
   AND [lockout_enabled] = CONVERT(bit, 1)
   AND NULLIF([password_hash], N'') IS NOT NULL
   AND NULLIF([security_stamp], N'') IS NOT NULL;
+
+INSERT INTO @seed_checks
+SELECT N'human-resources-identity-access', COUNT_BIG(*), 1
+FROM [iam].[accounts] AS accounts
+INNER JOIN [iam].[persons] AS persons
+    ON persons.[id] = accounts.[person_id]
+INNER JOIN [iam].[account_roles] AS account_roles
+    ON account_roles.[user_id] = accounts.[id]
+INNER JOIN [iam].[roles] AS roles
+    ON roles.[id] = account_roles.[role_id]
+INNER JOIN [iam].[organization_memberships] AS memberships
+    ON memberships.[account_id] = accounts.[id]
+INNER JOIN [iam].[organizations] AS organizations
+    ON organizations.[id] = memberships.[organization_id]
+INNER JOIN [iam].[account_station_scopes] AS station_scopes
+    ON station_scopes.[account_id] = accounts.[id]
+INNER JOIN [ref].[stations] AS stations
+    ON stations.[id] = station_scopes.[station_id]
+WHERE accounts.[normalized_email] = N'GESTION.HUMANA@DEV.ELEVANT.TEST'
+  AND accounts.[public_id] = CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000004')
+  AND persons.[public_id] = CONVERT(uniqueidentifier, N'30000000-0000-7000-8000-000000000004')
+  AND persons.[first_name] = N'Camila'
+  AND persons.[last_name] = N'Development'
+  AND persons.[identification_number] = N'DEV-HR-001'
+  AND roles.[name] = N'Gestión Humana'
+  AND roles.[normalized_name] = N'GESTION_HUMANA'
+  AND roles.[portal] = N'BackOffice'
+  AND roles.[user_type] = N'human_resources'
+  AND organizations.[code] = N'AVIAM'
+  AND memberships.[kind] = N'InternalStaff'
+  AND memberships.[status] = N'Active'
+  AND memberships.[job_title] = N'Gestión Humana'
+  AND memberships.[valid_from] = CONVERT(date, N'2026-01-01')
+  AND memberships.[valid_to] IS NULL
+  AND stations.[code] = N'PUJ'
+  AND station_scopes.[revoked_at] IS NULL;
 
 INSERT INTO @seed_checks
 SELECT N'reference-airports', COUNT_BIG(*), 2

@@ -1,6 +1,6 @@
 namespace Elevant.Infrastructure.Persistence.Seed;
 
-/// <summary>Distinct deployment secrets for the three synthetic Development actors.</summary>
+/// <summary>Distinct deployment secrets for the four synthetic Development actors.</summary>
 public sealed class DevelopmentAccountPasswords
 {
     public const int MinimumLength = 14;
@@ -18,18 +18,24 @@ public sealed class DevelopmentAccountPasswords
     public DevelopmentAccountPasswords(
         string adminOcc,
         string rampAgent,
-        string airlineClient)
+        string airlineClient,
+        string humanResources)
     {
         AdminOcc = Validate(adminOcc, nameof(adminOcc));
         RampAgent = Validate(rampAgent, nameof(rampAgent));
         AirlineClient = Validate(airlineClient, nameof(airlineClient));
+        HumanResources = Validate(humanResources, nameof(humanResources));
 
-        if (string.Equals(AdminOcc, RampAgent, StringComparison.Ordinal) ||
-            string.Equals(AdminOcc, AirlineClient, StringComparison.Ordinal) ||
-            string.Equals(RampAgent, AirlineClient, StringComparison.Ordinal))
+        if (new HashSet<string>(StringComparer.Ordinal)
+            {
+                AdminOcc,
+                RampAgent,
+                AirlineClient,
+                HumanResources,
+            }.Count != 4)
         {
             throw new InvalidOperationException(
-                "Synthetic Development accounts must use three distinct passwords.");
+                "Synthetic Development accounts must use four distinct passwords.");
         }
     }
 
@@ -39,8 +45,10 @@ public sealed class DevelopmentAccountPasswords
 
     public string AirlineClient { get; }
 
+    public string HumanResources { get; }
+
     public override string ToString() =>
-        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED] }}";
+        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED], HumanResources = [REDACTED] }}";
 
     private static string Validate(string password, string parameterName)
     {

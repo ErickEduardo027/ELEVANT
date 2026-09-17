@@ -232,23 +232,35 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             "airline.client@dev.elevant.test",
             "DEV-CLIENT-001",
             cancellationToken);
+        var humanResourcesPerson = await SeedPersonAsync(
+            "30000000-0000-7000-8000-000000000004",
+            "Camila",
+            "Development",
+            "gestion.humana@dev.elevant.test",
+            "DEV-HR-001",
+            cancellationToken);
 
         var adminRole = await SeedRoleAsync("Admin OCC", "ADMIN_OCC", PortalKind.BackOffice, "admin_occ", cancellationToken);
         var agentRole = await SeedRoleAsync("Ramp Agent", "RAMP_AGENT", PortalKind.RampMobileApp, "ramp_agent", cancellationToken);
         var clientRole = await SeedRoleAsync("Airline Client", "AIRLINE_CLIENT", PortalKind.AirlinePortal, "airline_client", cancellationToken);
+        var humanResourcesRole = await SeedRoleAsync("Gestión Humana", "GESTION_HUMANA", PortalKind.BackOffice, "human_resources", cancellationToken);
 
         var adminAccount = await SeedAccountAsync(adminPerson, accountPasswords.AdminOcc, "40000000-0000-7000-8000-000000000001", cancellationToken);
         var agentAccount = await SeedAccountAsync(agentPerson, accountPasswords.RampAgent, "40000000-0000-7000-8000-000000000002", cancellationToken);
         var clientAccount = await SeedAccountAsync(clientPerson, accountPasswords.AirlineClient, "40000000-0000-7000-8000-000000000003", cancellationToken);
+        var humanResourcesAccount = await SeedAccountAsync(humanResourcesPerson, accountPasswords.HumanResources, "40000000-0000-7000-8000-000000000004", cancellationToken);
 
         await EnsureUserRoleAsync(adminAccount.Id, adminRole.Id, cancellationToken);
         await EnsureUserRoleAsync(agentAccount.Id, agentRole.Id, cancellationToken);
         await EnsureUserRoleAsync(clientAccount.Id, clientRole.Id, cancellationToken);
+        await EnsureUserRoleAsync(humanResourcesAccount.Id, humanResourcesRole.Id, cancellationToken);
         await EnsureMembershipAsync(adminAccount.Id, aviam.Id, MembershipKind.InternalStaff, "OCC administrator", cancellationToken);
         await EnsureMembershipAsync(agentAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Ramp agent", cancellationToken);
         await EnsureMembershipAsync(clientAccount.Id, airlineOrganization.Id, MembershipKind.AirlineClient, "Operations contact", cancellationToken);
+        await EnsureMembershipAsync(humanResourcesAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Gestión Humana", cancellationToken);
         await EnsureAccountStationScopeAsync(adminAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(agentAccount.Id, station.Id, cancellationToken);
+        await EnsureAccountStationScopeAsync(humanResourcesAccount.Id, station.Id, cancellationToken);
 
         var rampAgent = await GetOrAddAsync(
             context.RampAgents,

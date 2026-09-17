@@ -12,20 +12,22 @@ function SkeletonRows() {
   );
 }
 
-export default function ExpirationList({ expirations, loading = false }) {
+export default function ExpirationList({ expirations, loading = false, actionsEnabled = true }) {
   const navigate = useNavigate();
 
   return (
     <div className="rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">Vencimientos próximos</h2>
-        <button
-          type="button"
-          onClick={() => navigate('/gestion-humana/certifications')}
-          className="text-xs font-medium text-accent-600 hover:underline"
-        >
-          Ver todos
-        </button>
+        {actionsEnabled && (
+          <button
+            type="button"
+            onClick={() => navigate('/gestion-humana/certifications')}
+            className="text-xs font-medium text-accent-600 hover:underline"
+          >
+            Ver todos
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -43,7 +45,7 @@ export default function ExpirationList({ expirations, loading = false }) {
       ) : (
         <div className="space-y-2">
           {expirations.slice(0, 6).map(expiration => (
-            <ExpirationListItem key={expiration.id} expiration={expiration} />
+            <ExpirationListItem key={expiration.id} expiration={expiration} actionsEnabled={actionsEnabled} />
           ))}
         </div>
       )}

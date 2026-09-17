@@ -629,8 +629,9 @@ validar la promoción antes de reactivar el schedule. Esto evita registrar un
 
 El primer rollout de sesión requiere coordinar Database y API antes de fusionar:
 el Environment root-only de Database Release incorpora
-`ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD`, `ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD` y
-`ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD`, con valores distintos; el Environment
+`ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD`, `ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD`,
+`ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD` y
+`ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD`, con valores distintos; el Environment
 de API incorpora `ELEVANT_API_AUTH_ISSUER`, `ELEVANT_API_AUTH_AUDIENCE` y
 `ELEVANT_API_AUTH_SIGNING_KEY_BASE64`, y puede fijar
 `ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES`. La clave de firma se genera como 32–128

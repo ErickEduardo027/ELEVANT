@@ -3,13 +3,20 @@ import AppShell from '../shell/AppShell';
 import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_MODULE_IDS } from './navigation';
 import { CURRENT_USER_MOCK } from './mockData';
 import { useUnreadNotificationsCount } from './notifications/useUnreadNotificationsCount';
+import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
 
-export default function HumanResourcesLayout({ user = CURRENT_USER_MOCK, onLogout }) {
-  const unreadNotificationsCount = useUnreadNotificationsCount();
+export default function HumanResourcesLayout({
+  user = CURRENT_USER_MOCK,
+  onLogout,
+  dashboardReadOnlyDemo = HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO,
+}) {
+  const unreadNotificationsCount = useUnreadNotificationsCount({ enabled: !dashboardReadOnlyDemo });
 
   const navigation = useMemo(
     () =>
-      HUMAN_RESOURCES_NAVIGATION.map(item =>
+      HUMAN_RESOURCES_NAVIGATION
+        .filter(item => !dashboardReadOnlyDemo || item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD)
+        .map(item =>
         item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
           ? {
               ...item,
@@ -17,7 +24,7 @@ export default function HumanResourcesLayout({ user = CURRENT_USER_MOCK, onLogou
             }
           : item
       ),
-    [unreadNotificationsCount]
+    [dashboardReadOnlyDemo, unreadNotificationsCount]
   );
 
   return (
@@ -26,7 +33,9 @@ export default function HumanResourcesLayout({ user = CURRENT_USER_MOCK, onLogou
       roleLabel="Gestión Humana"
       user={user}
       onLogout={onLogout}
-      notificationsPath={`${HUMAN_RESOURCES_BASE_PATH}/notifications`}
+      notificationsPath={dashboardReadOnlyDemo ? undefined : `${HUMAN_RESOURCES_BASE_PATH}/notifications`}
+      notificationsEnabled={!dashboardReadOnlyDemo}
+      profileActionsEnabled={!dashboardReadOnlyDemo}
     />
   );
 }
