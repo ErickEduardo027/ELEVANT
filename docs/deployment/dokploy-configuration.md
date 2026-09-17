@@ -643,10 +643,15 @@ de DB/API/Web, se guardan los Raw exactos revisados y se ejecutan los dry-runs
 antes del merge. La promoción se acepta en orden Database → API → webs.
 
 La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
-El slice actual implementa autenticación y contexto de actor, pero la
-autorización fina por rol, tenant y estación y los endpoints de negocio continúan
-fuera de este incremento. Development permanece 100 % tailnet-only y con datos
-sintéticos.
+Además de autenticación y contexto de actor, el primer slice OCC publica dos
+lecturas bajo `/api/v1/occ/planning`. Estas aplican rol, membresía y scope de
+estación en el backend; no introducen secretos ni variables runtime nuevas. El
+seed sintético agrega una escala determinista para validar la lectura, por lo
+que una entrega de este corte se promueve en orden Database → API y, cuando el
+cliente lo consuma, AVIAM Web. No se pausa ni reconfigura el control plane por
+una entrega ordinaria cuyo Compose certificado no cambie: los controladores
+existentes descubren y promueven los bundles según su dependencia. Development
+permanece 100 % tailnet-only y con datos sintéticos.
 
 ## Handoff: publicar las webs Development y activar su CD
 
@@ -827,12 +832,13 @@ si ese rollback falla, pausa solo el perfil afectado. Nunca ejecutar
 
 ### Alcance de aceptación
 
-La primera entrega es un preview técnico compartido. Health, HTML y navegación
-pueden pasar aunque los flujos prototipo todavía carezcan de endpoints reales de
-autenticación/negocio. Esas llamadas apuntan a la API Development y pueden
-responder error hasta su implementación; no se despliega `backend-prototipo`
-ni se usa localhost como backend remoto. Mobile Agent continúa únicamente en
-emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
+La entrega sigue siendo un preview técnico compartido. Sesión y las consultas
+OCC de snapshot/opciones son contratos reales de la API; creación de escalas,
+asignación, ejecución mobile, revisión y el resto de flujos del prototipo siguen
+pendientes y no deben presentarse como funcionales. No se despliega
+`backend-prototipo` ni se usa localhost como backend remoto. Mobile Agent
+continúa únicamente en emulador/tablet y su artefacto APK/EAS nunca es un
+servicio Dokploy.
 
 ## Aceptación
 
@@ -868,8 +874,9 @@ emulador/tablet y su artefacto APK/EAS nunca es un servicio Dokploy.
 - AVIAM Web escucha solo en `127.0.0.1:18081` y Public Web solo en
   `127.0.0.1:18082`; ambas son no-root, healthy, visibles exclusivamente por su
   Service Tailscale y no pertenecen a ninguna red SQL. Funnel continúa apagado.
-- La aceptación web se etiqueta como preview técnico y no como validación de
-  endpoints de autenticación/negocio aún inexistentes.
+- La aceptación web se etiqueta como preview técnico. Solo sesión y las dos
+  lecturas OCC publicadas por OpenAPI cuentan como negocio validable; no acredita
+  comandos de creación/asignación, ejecución mobile ni otros módulos pendientes.
 - Quedan más de 2 GiB de memoria disponible y 15 GB de disco libre, sin OOM.
 
 ## Rollback

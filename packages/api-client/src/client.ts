@@ -1,9 +1,15 @@
 import {
   getCreateSessionUrl,
   getGetCurrentSessionUrl,
+  getGetOccPlanningOptionsUrl,
+  getGetOccPlanningSnapshotUrl,
   getGetSystemPingUrl,
   type CreateSessionRequest,
   type CurrentSessionResponse,
+  type GetOccPlanningOptionsParams,
+  type GetOccPlanningSnapshotParams,
+  type OccPlanningOptionsResponse,
+  type OccPlanningSnapshotResponse,
   type SessionActorResponse,
   type SessionResponse,
   type SystemPingResponse,
@@ -31,6 +37,14 @@ export type ElevantRequestInit = Omit<RequestInit, "headers"> & {
 export type GetSystemPingOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetOccPlanningSnapshotOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type GetOccPlanningOptionsOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
 
 export interface ElevantApiClient {
   createSession(
@@ -38,6 +52,14 @@ export interface ElevantApiClient {
     options?: CreateSessionOptions,
   ): Promise<SessionResponse>;
   getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
+  getOccPlanningSnapshot(
+    parameters?: GetOccPlanningSnapshotParams,
+    options?: GetOccPlanningSnapshotOptions,
+  ): Promise<OccPlanningSnapshotResponse>;
+  getOccPlanningOptions(
+    turnaroundId: string,
+    options?: GetOccPlanningOptionsOptions,
+  ): Promise<OccPlanningOptionsResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -203,6 +225,424 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    ) &&
+    value.toLowerCase() !== "00000000-0000-0000-0000-000000000000"
+  );
+}
+
+function isDateOnly(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+    value.startsWith("0000-")
+  ) {
+    return false;
+  }
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isDateTimeOffset(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+
+  const match = /^(\d{4}-\d{2}-\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,7})?([zZ]|[+-](\d{2}):(\d{2}))$/.exec(
+    value,
+  );
+  if (!match || !isDateOnly(match[1])) return false;
+
+  const hour = Number(match[2]);
+  const minute = Number(match[3]);
+  const second = Number(match[4]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+
+  if (match[5]?.toLowerCase() !== "z") {
+    const offsetHour = Number(match[6]);
+    const offsetMinute = Number(match[7]);
+    if (
+      offsetHour > 14 ||
+      offsetMinute > 59 ||
+      (offsetHour === 14 && offsetMinute !== 0)
+    ) {
+      return false;
+    }
+  }
+
+  return !Number.isNaN(Date.parse(value));
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isInt32(value: unknown): value is number {
+  return (
+    isFiniteNumber(value) &&
+    Number.isInteger(value) &&
+    value >= -2_147_483_648 &&
+    value <= 2_147_483_647
+  );
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isOptionalNullable(
+  value: unknown,
+  predicate: (candidate: unknown) => boolean,
+) {
+  return value === undefined || value === null || predicate(value);
+}
+
+function isOccStationResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "code", "name", "ianaTimeZone"]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isString(value.name) &&
+    isString(value.ianaTimeZone)
+  );
+}
+
+function isOccTerminalResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "code", "name"]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isString(value.name)
+  );
+}
+
+function isOccStandResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "code", "terminal"]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isOptionalNullable(value.terminal, isOccTerminalResponse)
+  );
+}
+
+function isOccAirlineResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "iataCode", "icaoCode", "name"]) &&
+    isUuid(value.id) &&
+    isString(value.iataCode) &&
+    isString(value.icaoCode) &&
+    isString(value.name)
+  );
+}
+
+function isOccAircraftResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "icaoCode",
+      "iataCode",
+      "manufacturer",
+      "model",
+      "registration",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.icaoCode) &&
+    isOptionalNullable(value.iataCode, isString) &&
+    isString(value.manufacturer) &&
+    isString(value.model) &&
+    isOptionalNullable(value.registration, isString)
+  );
+}
+
+function isOccAirportResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["id", "iataCode", "icaoCode", "name"]) &&
+    isUuid(value.id) &&
+    isString(value.iataCode) &&
+    isString(value.icaoCode) &&
+    isString(value.name)
+  );
+}
+
+function isOccFlightLegResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "flightNumber",
+      "origin",
+      "destination",
+      "scheduledAt",
+      "estimatedAt",
+      "actualAt",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.flightNumber) &&
+    isOccAirportResponse(value.origin) &&
+    isOccAirportResponse(value.destination) &&
+    isDateTimeOffset(value.scheduledAt) &&
+    isOptionalNullable(value.estimatedAt, isDateTimeOffset) &&
+    isOptionalNullable(value.actualAt, isDateTimeOffset)
+  );
+}
+
+function isOccGroundOperationResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "status",
+      "plannedStartAt",
+      "plannedEndAt",
+      "actualStartAt",
+      "actualEndAt",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.status) &&
+    isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.plannedEndAt, isDateTimeOffset) &&
+    isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.actualEndAt, isDateTimeOffset)
+  );
+}
+
+function isOccAssignedAgentResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "assignmentId",
+      "agentId",
+      "displayName",
+      "employeeNumber",
+      "positionId",
+      "positionCode",
+      "positionName",
+      "assignmentRole",
+      "assignedAt",
+    ]) &&
+    isUuid(value.assignmentId) &&
+    isUuid(value.agentId) &&
+    isString(value.displayName) &&
+    isString(value.employeeNumber) &&
+    isOptionalNullable(value.positionId, isUuid) &&
+    isOptionalNullable(value.positionCode, isString) &&
+    isOptionalNullable(value.positionName, isString) &&
+    isString(value.assignmentRole) &&
+    isDateTimeOffset(value.assignedAt)
+  );
+}
+
+function isOccAssignedEquipmentResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "assignmentId",
+      "equipmentId",
+      "assetCode",
+      "equipmentTypeId",
+      "equipmentTypeCode",
+      "equipmentTypeName",
+      "status",
+      "assignedAt",
+    ]) &&
+    isUuid(value.assignmentId) &&
+    isUuid(value.equipmentId) &&
+    isString(value.assetCode) &&
+    isUuid(value.equipmentTypeId) &&
+    isString(value.equipmentTypeCode) &&
+    isString(value.equipmentTypeName) &&
+    isString(value.status) &&
+    isDateTimeOffset(value.assignedAt)
+  );
+}
+
+function isOccOperationServiceResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "lineNumber",
+      "serviceDefinitionId",
+      "code",
+      "name",
+      "contractedQuantity",
+      "executedQuantity",
+      "billingUnit",
+      "status",
+    ]) &&
+    isUuid(value.id) &&
+    isInt32(value.lineNumber) &&
+    isUuid(value.serviceDefinitionId) &&
+    isString(value.code) &&
+    isString(value.name) &&
+    isFiniteNumber(value.contractedQuantity) &&
+    isFiniteNumber(value.executedQuantity) &&
+    isString(value.billingUnit) &&
+    isString(value.status)
+  );
+}
+
+function isOccTurnaroundResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "operationCode",
+      "operationDate",
+      "status",
+      "airline",
+      "aircraft",
+      "stand",
+      "arrival",
+      "departure",
+      "operation",
+      "agents",
+      "equipment",
+      "services",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.operationCode) &&
+    isDateOnly(value.operationDate) &&
+    isString(value.status) &&
+    isOccAirlineResponse(value.airline) &&
+    isOptionalNullable(value.aircraft, isOccAircraftResponse) &&
+    isOptionalNullable(value.stand, isOccStandResponse) &&
+    isOptionalNullable(value.arrival, isOccFlightLegResponse) &&
+    isOptionalNullable(value.departure, isOccFlightLegResponse) &&
+    isOptionalNullable(value.operation, isOccGroundOperationResponse) &&
+    Array.isArray(value.agents) &&
+    value.agents.every(isOccAssignedAgentResponse) &&
+    Array.isArray(value.equipment) &&
+    value.equipment.every(isOccAssignedEquipmentResponse) &&
+    Array.isArray(value.services) &&
+    value.services.every(isOccOperationServiceResponse)
+  );
+}
+
+function isOccPlanningSnapshotResponse(
+  value: unknown,
+): value is OccPlanningSnapshotResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["station", "date", "turnarounds"]) &&
+    isOccStationResponse(value.station) &&
+    isDateOnly(value.date) &&
+    Array.isArray(value.turnarounds) &&
+    value.turnarounds.every(isOccTurnaroundResponse)
+  );
+}
+
+function isOccContractOptionResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "code",
+      "version",
+      "validFrom",
+      "validTo",
+      "currencyCode",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isInt32(value.version) &&
+    isDateOnly(value.validFrom) &&
+    isOptionalNullable(value.validTo, isDateOnly) &&
+    isString(value.currencyCode)
+  );
+}
+
+function isOccServiceOptionResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "serviceDefinitionId",
+      "code",
+      "name",
+      "billingUnit",
+      "minimumQuantity",
+      "unitPrice",
+      "currencyCode",
+    ]) &&
+    isUuid(value.id) &&
+    isUuid(value.serviceDefinitionId) &&
+    isString(value.code) &&
+    isString(value.name) &&
+    isString(value.billingUnit) &&
+    isFiniteNumber(value.minimumQuantity) &&
+    isFiniteNumber(value.unitPrice) &&
+    isString(value.currencyCode)
+  );
+}
+
+function isOccAgentOptionResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "displayName",
+      "employeeNumber",
+      "eligible",
+      "eligibilityReasons",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.displayName) &&
+    isString(value.employeeNumber) &&
+    typeof value.eligible === "boolean" &&
+    Array.isArray(value.eligibilityReasons) &&
+    value.eligibilityReasons.every(isString)
+  );
+}
+
+function isOccPlanningTurnaroundContextResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "operationCode",
+      "operationDate",
+      "station",
+      "stand",
+      "referenceTime",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.operationCode) &&
+    isDateOnly(value.operationDate) &&
+    isOccStationResponse(value.station) &&
+    isOptionalNullable(value.stand, isOccStandResponse) &&
+    isDateTimeOffset(value.referenceTime)
+  );
+}
+
+function isOccPlanningOptionsResponse(
+  value: unknown,
+): value is OccPlanningOptionsResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["turnaround", "contract", "services", "agents"]) &&
+    isOccPlanningTurnaroundContextResponse(value.turnaround) &&
+    isOptionalNullable(value.contract, isOccContractOptionResponse) &&
+    Array.isArray(value.services) &&
+    value.services.every(isOccServiceOptionResponse) &&
+    Array.isArray(value.agents) &&
+    value.agents.every(isOccAgentOptionResponse)
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -277,6 +717,38 @@ function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRe
   }
 
   return request;
+}
+
+function validatedOccPlanningSnapshotParams(
+  parameters: GetOccPlanningSnapshotParams,
+): GetOccPlanningSnapshotParams {
+  if (!isRecord(parameters)) {
+    throw new TypeError("OCC planning parameters must be an object.");
+  }
+
+  const stationId = parameters.stationId;
+  const date = parameters.date;
+  if (stationId !== undefined && !isUuid(stationId)) {
+    throw new TypeError("stationId must be a non-empty canonical UUID.");
+  }
+  if (date !== undefined && !isDateOnly(date)) {
+    throw new TypeError("date must be a valid calendar date in YYYY-MM-DD format.");
+  }
+
+  return {
+    ...(stationId === undefined ? {} : { stationId }),
+    ...(date === undefined ? {} : { date }),
+  };
+}
+
+function validatedOccPlanningOptionsParams(
+  turnaroundId: string,
+): GetOccPlanningOptionsParams {
+  if (!isUuid(turnaroundId)) {
+    throw new TypeError("turnaroundId must be a non-empty canonical UUID.");
+  }
+
+  return { turnaroundId };
 }
 
 function validatedAccessToken(value: AccessToken) {
@@ -374,6 +846,42 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isCurrentSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccPlanningSnapshot(
+      parameters: GetOccPlanningSnapshotParams = {},
+      options?: GetOccPlanningSnapshotOptions,
+    ) {
+      const result = await execute(
+        getGetOccPlanningSnapshotUrl(validatedOccPlanningSnapshotParams(parameters)),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isOccPlanningSnapshotResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getOccPlanningOptions(
+      turnaroundId: string,
+      options?: GetOccPlanningOptionsOptions,
+    ) {
+      const result = await execute(
+        getGetOccPlanningOptionsUrl(
+          validatedOccPlanningOptionsParams(turnaroundId),
+        ),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isOccPlanningOptionsResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
       return result.data;
     },
     async getSystemPing(options?: GetSystemPingOptions) {

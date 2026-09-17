@@ -1,0 +1,257 @@
+using System.Security.Claims;
+using Asp.Versioning;
+using Elevant.Api.Configuration;
+using Elevant.Application.Operations;
+using Elevant.Application.Operations.GetOccPlanningOptions;
+using Elevant.Application.Operations.GetOccPlanningSnapshot;
+using Elevant.Contracts.Operations;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.IdentityModel.JsonWebTokens;
+
+namespace Elevant.Api.Controllers;
+
+/// <summary>Exposes station-scoped, read-only OCC planning projections.</summary>
+[ApiController]
+[ApiVersion("1.0")]
+[Authorize]
+[PrivateResponse]
+[Route("api/v{version:apiVersion}/occ/planning")]
+public sealed class OccPlanningController(
+    GetOccPlanningSnapshotHandler snapshotHandler,
+    GetOccPlanningOptionsHandler optionsHandler) : ControllerBase
+{
+    /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
+    [HttpGet(Name = "GetOccPlanningSnapshot")]
+    [ProducesResponseType<OccPlanningSnapshotResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<OccPlanningSnapshotResponse>> GetSnapshot(
+        [FromQuery] Guid? stationId,
+        [FromQuery] DateOnly? date,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+        {
+            return UnauthorizedResult<OccPlanningSnapshotResponse>();
+        }
+
+        var result = await snapshotHandler.HandleAsync(
+            new GetOccPlanningSnapshotQuery(accountId, stationId, date),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Ok(Map(result.Snapshot!))
+            : FailureResult<OccPlanningSnapshotResponse>(result.Failure!.Value);
+    }
+
+    /// <summary>Returns contract services and agent eligibility for one scoped turnaround.</summary>
+    [HttpGet("options", Name = "GetOccPlanningOptions")]
+    [ProducesResponseType<OccPlanningOptionsResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<OccPlanningOptionsResponse>> GetOptions(
+        [FromQuery, BindRequired] Guid turnaroundId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+        {
+            return UnauthorizedResult<OccPlanningOptionsResponse>();
+        }
+
+        var result = await optionsHandler.HandleAsync(
+            new GetOccPlanningOptionsQuery(accountId, turnaroundId),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Ok(Map(result.Options!))
+            : FailureResult<OccPlanningOptionsResponse>(result.Failure!.Value);
+    }
+
+    private bool TryGetAccountId(out Guid accountId) =>
+        Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
+        accountId != Guid.Empty;
+
+    private ActionResult<T> FailureResult<T>(OccPlanningFailure failure) => failure switch
+    {
+        OccPlanningFailure.Unauthorized => UnauthorizedResult<T>(),
+        OccPlanningFailure.Forbidden => ProblemResult<T>(
+            StatusCodes.Status403Forbidden,
+            "Access to OCC planning is forbidden."),
+        OccPlanningFailure.InvalidRequest => ProblemResult<T>(
+            StatusCodes.Status400BadRequest,
+            "The OCC planning request is invalid."),
+        OccPlanningFailure.NotFound => ProblemResult<T>(
+            StatusCodes.Status404NotFound,
+            "The OCC planning resource was not found."),
+        OccPlanningFailure.Conflict => ProblemResult<T>(
+            StatusCodes.Status409Conflict,
+            "The OCC planning request conflicts with current operational data."),
+        _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, "Unsupported failure."),
+    };
+
+    private ActionResult<T> UnauthorizedResult<T>()
+    {
+        Response.Headers.WWWAuthenticate = "Bearer";
+        return ProblemResult<T>(
+            StatusCodes.Status401Unauthorized,
+            "Authentication failed.");
+    }
+
+    private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
+        new ObjectResult(new ProblemDetails
+        {
+            Status = statusCode,
+            Title = title,
+            Instance = HttpContext.Request.Path,
+        })
+        {
+            StatusCode = statusCode,
+        };
+
+    private static OccPlanningSnapshotResponse Map(OccPlanningSnapshotData snapshot) => new(
+        Map(snapshot.Station),
+        snapshot.Date,
+        snapshot.Turnarounds.Select(Map).ToArray());
+
+    private static OccTurnaroundResponse Map(OccTurnaroundData turnaround) => new(
+        turnaround.Id,
+        turnaround.OperationCode,
+        turnaround.OperationDate,
+        turnaround.Status,
+        new OccAirlineResponse(
+            turnaround.Airline.Id,
+            turnaround.Airline.IataCode,
+            turnaround.Airline.IcaoCode,
+            turnaround.Airline.Name),
+        turnaround.Aircraft is null
+            ? null
+            : new OccAircraftResponse(
+                turnaround.Aircraft.Id,
+                turnaround.Aircraft.IcaoCode,
+                turnaround.Aircraft.IataCode,
+                turnaround.Aircraft.Manufacturer,
+                turnaround.Aircraft.Model,
+                turnaround.Aircraft.Registration),
+        Map(turnaround.Stand),
+        Map(turnaround.Arrival),
+        Map(turnaround.Departure),
+        turnaround.Operation is null
+            ? null
+            : new OccGroundOperationResponse(
+                turnaround.Operation.Id,
+                turnaround.Operation.Status,
+                turnaround.Operation.PlannedStartAt,
+                turnaround.Operation.PlannedEndAt,
+                turnaround.Operation.ActualStartAt,
+                turnaround.Operation.ActualEndAt),
+        turnaround.Agents.Select(agent => new OccAssignedAgentResponse(
+            agent.AssignmentId,
+            agent.AgentId,
+            agent.DisplayName,
+            agent.EmployeeNumber,
+            agent.PositionId,
+            agent.PositionCode,
+            agent.PositionName,
+            agent.AssignmentRole,
+            agent.AssignedAt)).ToArray(),
+        turnaround.Equipment.Select(item => new OccAssignedEquipmentResponse(
+            item.AssignmentId,
+            item.EquipmentId,
+            item.AssetCode,
+            item.EquipmentTypeId,
+            item.EquipmentTypeCode,
+            item.EquipmentTypeName,
+            item.Status,
+            item.AssignedAt)).ToArray(),
+        turnaround.Services.Select(service => new OccOperationServiceResponse(
+            service.Id,
+            service.LineNumber,
+            service.ServiceDefinitionId,
+            service.Code,
+            service.Name,
+            service.ContractedQuantity,
+            service.ExecutedQuantity,
+            service.BillingUnit,
+            service.Status)).ToArray());
+
+    private static OccFlightLegResponse? Map(OccFlightLegData? leg) => leg is null
+        ? null
+        : new OccFlightLegResponse(
+            leg.Id,
+            leg.FlightNumber,
+            new OccAirportResponse(
+                leg.Origin.Id,
+                leg.Origin.IataCode,
+                leg.Origin.IcaoCode,
+                leg.Origin.Name),
+            new OccAirportResponse(
+                leg.Destination.Id,
+                leg.Destination.IataCode,
+                leg.Destination.IcaoCode,
+                leg.Destination.Name),
+            leg.ScheduledAt,
+            leg.EstimatedAt,
+            leg.ActualAt);
+
+    private static OccStandResponse? Map(OccStandData? stand) => stand is null
+        ? null
+        : new OccStandResponse(
+            stand.Id,
+            stand.Code,
+            stand.Terminal is null
+                ? null
+                : new OccTerminalResponse(
+                    stand.Terminal.Id,
+                    stand.Terminal.Code,
+                    stand.Terminal.Name));
+
+    private static OccStationResponse Map(OccStationData station) => new(
+        station.Id,
+        station.Code,
+        station.Name,
+        station.IanaTimeZone);
+
+    private static OccPlanningOptionsResponse Map(OccPlanningOptionsData options) => new(
+        new OccPlanningTurnaroundContextResponse(
+            options.Turnaround.Id,
+            options.Turnaround.OperationCode,
+            options.Turnaround.OperationDate,
+            Map(options.Turnaround.Station),
+            Map(options.Turnaround.Stand),
+            options.Turnaround.ReferenceTime),
+        options.Contract is null
+            ? null
+            : new OccContractOptionResponse(
+                options.Contract.Id,
+                options.Contract.Code,
+                options.Contract.Version,
+                options.Contract.ValidFrom,
+                options.Contract.ValidTo,
+                options.Contract.CurrencyCode),
+        options.Services.Select(service => new OccServiceOptionResponse(
+            service.Id,
+            service.ServiceDefinitionId,
+            service.Code,
+            service.Name,
+            service.BillingUnit,
+            service.MinimumQuantity,
+            service.UnitPrice,
+            service.CurrencyCode)).ToArray(),
+        options.Agents.Select(agent => new OccAgentOptionResponse(
+            agent.Id,
+            agent.DisplayName,
+            agent.EmployeeNumber,
+            agent.Eligible,
+            agent.EligibilityReasons)).ToArray());
+}

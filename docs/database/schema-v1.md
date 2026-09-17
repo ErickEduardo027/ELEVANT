@@ -40,13 +40,13 @@ ref (aerolíneas, estaciones, servicios, aeronaves, equipos)
 
 El diseño del portal público exige partir de una membresía activa y scopes
 autorizados, sin confiar en un airline/organization recibido del navegador.
-El acceso interno previsto combina permisos de rol con
-`account_station_scopes`. Hoy esas tablas y relaciones existen en el esquema,
-y el slice de sesión valida credenciales y resuelve desde SQL los roles,
-membresías activas y station scopes del actor. `GET /api/v1/auth/session` repite
-esa resolución para no confiar el contexto al JWT. Todavía no hay autorización
-fina de recursos por tenant/rol/estación ni endpoints de negocio que apliquen
-esas reglas.
+El acceso interno combina permisos de rol con `account_station_scopes`. El
+slice de sesión valida credenciales y resuelve desde SQL los roles, membresías
+activas y station scopes del actor. `GET /api/v1/auth/session` repite esa
+resolución para no confiar el contexto al JWT. Las lecturas OCC vuelven a
+resolver el actor, exigen `ADMIN_OCC` + `BackOffice`, membresía interna AVIAM y
+scope de estación, y filtran las estaciones/escalas autorizadas dentro de SQL.
+Ese control no debe generalizarse a módulos todavía no implementados.
 
 En el slice actual, `organization_memberships.ValidFrom` y `ValidTo` son fechas
 civiles inclusivas y se comparan con la fecha UTC del servidor. Es una semántica
@@ -61,8 +61,11 @@ debe autorizarse contra el estado vigente dentro de su propia operación.
 
 El esquema permite que una solicitud conserve estaciones, ítems e historial de
 estados, y que un contrato tenga eventos de estado y versiones con estaciones
-y tarifas. No existe todavía un handler que imponga la renovación sin
-sobrescribir una versión histórica.
+y tarifas. La lectura de opciones OCC selecciona únicamente contratos activos y
+versiones aprobadas vigentes para la aerolínea, estación y fecha de la escala;
+expone sus tarifas como catálogo predeterminado y falla cerrado ante más de una
+versión aplicable. No existe todavía un handler que cree, renueve o modifique
+contratos sin sobrescribir una versión histórica.
 
 ### Operación
 
@@ -71,6 +74,15 @@ llegada/salida. El esquema ubica la ejecución en `ground_operations` y las
 asignaciones de stand, agentes y equipos en relaciones temporales propias.
 `operation_services` tiene columnas para cantidad y snapshot comercial; la
 prohibición de repricing histórico requiere lógica de aplicación adicional.
+
+`GET /api/v1/occ/planning` proyecta este grafo sin seguimiento EF: turnaround,
+tramos, stand/terminal, operación, asignaciones vigentes, equipos y servicios.
+`GET /api/v1/occ/planning/options` deriva el contexto de la escala y calcula la
+elegibilidad de agentes desde cuentas mobile, membresía, scopes laborales y de
+cuenta, cualificación, permisos aeroportuarios y cobertura del turno en la zona
+horaria de la estación. Esos resultados calculados no son nuevas tablas ni
+constituyen una asignación. Este corte reutiliza el esquema v1 y no añade una
+migración.
 
 El modelo de checklist conecta template -> versión -> ítems -> instancia de
 operación -> respuestas. `operation_submissions` y `review_decisions` modelan

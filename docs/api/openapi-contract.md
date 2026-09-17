@@ -23,9 +23,26 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
-Este contrato solo cubre creación y consulta de sesión. No implica refresh,
-logout, revocación de `jti`, autorización fina por rol/tenant/estación ni
-endpoints de negocio.
+Además de creación y consulta de sesión, el contrato publica dos operaciones
+de negocio autenticadas y de solo lectura para OCC:
+
+- `GetOccPlanningSnapshot` (`GET /api/v1/occ/planning`) proyecta las escalas de
+  una estación y fecha operativa;
+- `GetOccPlanningOptions` (`GET /api/v1/occ/planning/options`) proyecta el
+  catálogo de servicios del contrato aplicable y la elegibilidad de agentes
+  para una escala concreta.
+
+Ambas vuelven a resolver el actor en SQL y exigen simultáneamente el rol
+`ADMIN_OCC` del portal `BackOffice`, una membresía interna activa en una
+organización AVIAM y el scope de estación correspondiente. La persistencia
+aplica el scope antes de materializar los recursos. Una estación o escala fuera
+del scope responde igual que un recurso inexistente, sin revelar su existencia.
+Si más de una versión contractual activa y aprobada resulta aplicable a la
+misma aerolínea, estación y fecha, las opciones fallan cerrado con `409` en vez
+de escoger una de forma implícita.
+
+Este incremento no implica refresh, logout, revocación de `jti`, creación de
+escalas, asignación de agentes, ejecución mobile ni otra escritura de negocio.
 
 ## Snapshot canónico para TypeScript
 

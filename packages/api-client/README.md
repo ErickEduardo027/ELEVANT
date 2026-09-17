@@ -19,6 +19,15 @@ const api = createElevantApiClient({
 const session = await api.createSession({ email, password });
 accessToken = session.accessToken;
 const currentSession = await api.getCurrentSession();
+const station = currentSession.actor.stationScopes[0];
+if (!station) throw new Error("The OCC actor has no station scope.");
+const planning = await api.getOccPlanningSnapshot({
+  stationId: station.stationId,
+  date: "2026-08-19",
+});
+const turnaround = planning.turnarounds[0];
+if (!turnaround) throw new Error("No turnarounds are planned for that date.");
+const options = await api.getOccPlanningOptions(turnaround.id);
 const status = await api.getSystemPing({ signal: abortController.signal });
 ```
 
@@ -29,6 +38,16 @@ Los encabezados `Authorization` duraderos se rechazan: use `getAccessToken`.
 `createSession` y `getSystemPing` nunca adjuntan un Bearer previo; el consumidor
 decide cómo mantener el token corto en memoria y debe evitar almacenamiento
 persistente no protegido.
+
+`getOccPlanningSnapshot` y `getOccPlanningOptions` son lecturas OCC autenticadas.
+La primera acepta únicamente `stationId` UUID y `date` civil `YYYY-MM-DD`; la
+segunda recibe el UUID del turnaround como argumento. El cliente construye la
+query con los helpers generados, solicita un token fresco por llamada y valida
+la proyección completa antes de entregarla al consumidor. Crear vuelos,
+asignar recursos o modificar servicios todavía no forma parte de este cliente.
+Las respuestas OCC también rechazan propiedades no declaradas porque sus
+esquemas OpenAPI publican `additionalProperties: false`; cualquier ampliación
+del contrato debe regenerar y revisar el cliente antes de desplegarse.
 
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
 error expone solo `status`, un `title` saneado y el `traceId` opcional. Su

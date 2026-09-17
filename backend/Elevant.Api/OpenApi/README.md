@@ -19,6 +19,8 @@ limit as throughput capacity.
 
 Every operation must define a stable route name used as its `operationId`, exact
 success and Problem Details response media types, and all responses that the
-pipeline can produce. Non-nullable DTO members are emitted as required. These
+pipeline can produce. Non-nullable DTO members are emitted as required.
+Reference-valued nullable members are emitted as `allOf` plus `nullable: true`
+so generated TypeScript preserves both omission and explicit JSON `null`. These
 are client compatibility contracts: rename or removal requires an explicit
 coordinated release rather than an incidental controller refactor.

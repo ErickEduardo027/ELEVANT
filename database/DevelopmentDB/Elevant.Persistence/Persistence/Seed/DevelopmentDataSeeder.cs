@@ -19,6 +19,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
 {
     private static readonly DateTimeOffset FixtureInstant = new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly FixtureDate = new(2026, 8, 18);
+    private static readonly DateOnly SecondFixtureDate = new(2026, 8, 19);
 
     public async Task SeedAsync(
         DevelopmentAccountPasswords accountPasswords,
@@ -132,6 +133,19 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 StandType = "Contact",
                 IsActive = true,
             }, "20000000-0000-7000-8000-000000000005"),
+            cancellationToken);
+
+        var secondStand = await GetOrAddAsync(
+            context.Stands,
+            item => item.StationId == station.Id && item.Code == "A02",
+            () => Stamp(new Stand
+            {
+                StationId = station.Id,
+                TerminalId = terminal.Id,
+                Code = "A02",
+                StandType = "Contact",
+                IsActive = true,
+            }, "20000000-0000-7000-8000-000000000011"),
             cancellationToken);
 
         var baggageService = await GetOrAddAsync(
@@ -284,6 +298,22 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 EndsAtLocal = new TimeOnly(14, 0),
                 Block = ShiftBlock.Morning,
             }, "50000000-0000-7000-8000-000000000005"),
+            cancellationToken);
+
+        await GetOrAddAsync(
+            context.ShiftAssignments,
+            shift => shift.RampAgentId == rampAgent.Id && shift.WorkDate == SecondFixtureDate,
+            () => Stamp(new ShiftAssignment
+            {
+                RampAgentId = rampAgent.Id,
+                StationId = station.Id,
+                TerminalId = terminal.Id,
+                OperationalPositionId = rampPosition.Id,
+                WorkDate = SecondFixtureDate,
+                StartsAtLocal = new TimeOnly(6, 0),
+                EndsAtLocal = new TimeOnly(14, 0),
+                Block = ShiftBlock.Morning,
+            }, "50000000-0000-7000-8000-000000000006"),
             cancellationToken);
 
         var serviceRequest = await GetOrAddAsync(
@@ -472,6 +502,85 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 ChecklistTemplateVersionId = templateVersion.Id,
                 Status = ChecklistStatus.NotStarted,
             }, "70000000-0000-7000-8000-000000000011"),
+            cancellationToken);
+
+        var secondTurnaround = await GetOrAddAsync(
+            context.Turnarounds,
+            item => item.OperationCode == "DEV-TAT-0002",
+            () => Stamp(new Turnaround
+            {
+                OperationCode = "DEV-TAT-0002",
+                AirlineId = airline.Id,
+                StationId = station.Id,
+                OperationDate = SecondFixtureDate,
+                AircraftTypeId = aircraftType.Id,
+                AircraftRegistration = "HI-DEV2",
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+            }, "70000000-0000-7000-8000-000000000012"),
+            cancellationToken);
+
+        var secondArrival = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+        var secondDeparture = new DateTimeOffset(2026, 8, 19, 15, 0, 0, TimeSpan.Zero);
+        await SeedFlightLegAsync(
+            secondTurnaround.Id,
+            FlightDirection.Arrival,
+            "ZZ102",
+            mia.Id,
+            puj.Id,
+            secondArrival,
+            "70000000-0000-7000-8000-000000000013",
+            cancellationToken);
+        await SeedFlightLegAsync(
+            secondTurnaround.Id,
+            FlightDirection.Departure,
+            "ZZ103",
+            puj.Id,
+            mia.Id,
+            secondDeparture,
+            "70000000-0000-7000-8000-000000000014",
+            cancellationToken);
+        await GetOrAddAsync(
+            context.Set<StandAssignment>(),
+            assignment => assignment.TurnaroundId == secondTurnaround.Id && assignment.AssignedTo == null,
+            () => Stamp(new StandAssignment
+            {
+                TurnaroundId = secondTurnaround.Id,
+                StandId = secondStand.Id,
+                AssignedFrom = secondArrival.AddMinutes(-30),
+                AssignedByAccountId = adminAccount.Id,
+                Reason = "Synthetic Development assignment.",
+            }, "70000000-0000-7000-8000-000000000015"),
+            cancellationToken);
+
+        var secondOperation = await GetOrAddAsync(
+            context.GroundOperations,
+            item => item.TurnaroundId == secondTurnaround.Id,
+            () => Stamp(new GroundOperation
+            {
+                TurnaroundId = secondTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                PlannedStartAt = new DateTimeOffset(2026, 8, 19, 12, 15, 0, TimeSpan.Zero),
+                PlannedEndAt = new DateTimeOffset(2026, 8, 19, 14, 30, 0, TimeSpan.Zero),
+            }, "70000000-0000-7000-8000-000000000016"),
+            cancellationToken);
+
+        await GetOrAddAsync(
+            context.OperationServices,
+            service => service.GroundOperationId == secondOperation.Id && service.LineNumber == 1,
+            () => Stamp(new OperationService
+            {
+                GroundOperationId = secondOperation.Id,
+                LineNumber = 1,
+                ServiceDefinitionId = baggageService.Id,
+                ContractServiceRateId = rate.Id,
+                ContractedQuantity = 1m,
+                ExecutedQuantity = 0m,
+                BillingUnitSnapshot = rate.BillingUnit,
+                UnitPriceSnapshot = rate.UnitPrice,
+                CurrencyCodeSnapshot = contractVersion.CurrencyCode,
+                CurrentStatus = ServiceExecutionStatus.Planned,
+            }, "70000000-0000-7000-8000-000000000017"),
             cancellationToken);
     }
 

@@ -61,6 +61,14 @@ a 60 minutos y usa 15 por defecto.
 - `/health`, `/health/ready` y `/api/v1/system/ping` permiten acceso anónimo.
 - `POST /api/v1/auth/session` valida credenciales y emite la sesión; `GET` sobre
   la misma ruta exige Bearer y vuelve a resolver en SQL el actor efectivo.
+- `GET /api/v1/occ/planning` publica el snapshot OCC de una fecha y estación
+  dentro del scope efectivo del actor. Si se omite la fecha, selecciona la más
+  reciente con operaciones; la estación solo se puede omitir cuando el actor
+  tiene exactamente un scope.
+- `GET /api/v1/occ/planning/options?turnaroundId=...` deriva estación, terminal
+  y hora desde el turnaround y devuelve el catálogo contractual junto con la
+  elegibilidad explicable de agentes. Ambos endpoints OCC exigen `ADMIN_OCC`,
+  portal BackOffice, membresía interna AVIAM vigente y scope de estación.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
@@ -70,8 +78,9 @@ GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión
 compatible. El bootstrap inicial del VPS sigue siendo manual y verificable.
-La autenticación actual es un slice acotado de sesión, no una autorización de
-negocio completa. El host aplica una política fallback autenticada a controllers
+La autenticación actual es un slice acotado de sesión. OCC Planning es la primera
+autorización de negocio fina; los demás módulos todavía deben implementar la suya.
+El host aplica una política fallback autenticada a controllers
 y hubs que no declaren acceso anónimo; los dos hubs SignalR exigen Bearer, aunque
 siguen sin métodos ni mensajes de negocio. El JWT es corto (15 minutos por
 defecto), está firmado con HS256 mediante `Authentication__SigningKeyBase64` inyectada
@@ -89,8 +98,9 @@ redactarla. Los hubs no deben transportar eventos reales hasta implementar
 revalidación de actor, autorización por scope y cierre/renovación al expirar o
 revocarse el token.
 
-No existen aún refresh, logout, revocación por `jti`, autorización fina por rol,
-tenant o estación, ni endpoints de negocio. Development debe permanecer dentro
+No existen aún refresh, logout ni revocación por `jti`. Fuera del corte de lectura
+OCC tampoco existe todavía autorización fina por rol, tenant o estación.
+Development debe permanecer dentro
 del tailnet; el secreto real de firma se guarda junto con los demás valores
 root-only del ambiente y nunca en Git.
 
@@ -105,4 +115,6 @@ docker compose --env-file database/DevelopmentDB/.env `
 
 El flujo local es `SQL -> provisioner -> migrator -> seeder-development -> API`. La API no ejecuta migraciones ni seeds al arrancar.
 
-Los próximos endpoints de negocio deben implementarse como vertical slices y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF directamente.
+Los siguientes endpoints de negocio deben conservar el patrón de vertical slices
+y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF
+directamente.

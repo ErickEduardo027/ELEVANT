@@ -1,7 +1,9 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Operations;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -51,6 +53,7 @@ public static class DependencyInjection
 
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
+        services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
 
         services
             .AddHealthChecks()
