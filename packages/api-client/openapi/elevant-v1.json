@@ -580,6 +580,72 @@
         ]
       }
     },
+    "/api/v1/ramp/operations": {
+      "get": {
+        "tags": [
+          "RampOperations"
+        ],
+        "summary": "Returns only active operations assigned to the current ramp agent.",
+        "operationId": "GetRampAssignedOperations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampAssignedOperationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/system/ping": {
       "get": {
         "tags": [
@@ -1435,6 +1501,478 @@
         },
         "additionalProperties": { }
       },
+      "RampAgentAssignmentResponse": {
+        "required": [
+          "agentId",
+          "assignedAt",
+          "assignmentRole",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampOperationalPositionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "assignmentRole": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAircraftResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "registration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAirlineResponse": {
+        "required": [
+          "iataCode",
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAirportResponse": {
+        "required": [
+          "iataCode",
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAssignedOperationResponse": {
+        "required": [
+          "assignment",
+          "operation",
+          "services",
+          "turnaround"
+        ],
+        "type": "object",
+        "properties": {
+          "assignment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampAgentAssignmentResponse"
+              }
+            ]
+          },
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampGroundOperationResponse"
+              }
+            ]
+          },
+          "turnaround": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampTurnaroundResponse"
+              }
+            ]
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampOperationServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAssignedOperationsResponse": {
+        "required": [
+          "operations"
+        ],
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAssignedOperationResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampFlightLegResponse": {
+        "required": [
+          "destination",
+          "flightNumber",
+          "id",
+          "origin",
+          "scheduledAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "origin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampAirportResponse"
+              }
+            ]
+          },
+          "destination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampAirportResponse"
+              }
+            ]
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampGroundOperationResponse": {
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "plannedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "plannedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampOperationServiceResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "contractedQuantity",
+          "executedQuantity",
+          "id",
+          "lineNumber",
+          "name",
+          "serviceDefinitionId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceDefinitionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampOperationalPositionResponse": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampStandResponse": {
+        "required": [
+          "code",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampTerminalResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampStationResponse": {
+        "required": [
+          "code",
+          "ianaTimeZone",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampTerminalResponse": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampTurnaroundResponse": {
+        "required": [
+          "airline",
+          "id",
+          "operationCode",
+          "operationDate",
+          "station",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "station": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampStationResponse"
+              }
+            ]
+          },
+          "airline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampAirlineResponse"
+              }
+            ]
+          },
+          "aircraft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampAircraftResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "stand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampStandResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "arrival": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampFlightLegResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "departure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampFlightLegResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionActorResponse": {
         "required": [
           "accountId",
@@ -1661,6 +2199,9 @@
     },
     {
       "name": "OccPlanning"
+    },
+    {
+      "name": "RampOperations"
     },
     {
       "name": "System"

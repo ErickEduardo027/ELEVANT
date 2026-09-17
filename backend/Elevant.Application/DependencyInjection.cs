@@ -3,6 +3,7 @@ using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
+using Elevant.Application.Operations.GetRampAssignedOperations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elevant.Application;
@@ -21,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();
         services.AddScoped<AssignOccOperationHandler>();
+        services.AddScoped<GetRampAssignedOperationsHandler>();
         return services;
     }
 }

@@ -55,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
+        services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
 
         services
             .AddHealthChecks()
