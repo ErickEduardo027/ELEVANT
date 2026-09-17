@@ -24,7 +24,7 @@ const FLIGHTS = [
 
 describe('FlightTimeline', () => {
   it('groups canonical turnarounds chronologically and preserves missing-time rows', () => {
-    render(<FlightTimeline flights={FLIGHTS} now="2026-08-19T11:00:00-04:00" onSelectFlight={() => {}} />);
+    render(<FlightTimeline flights={FLIGHTS} now="2026-08-19T11:00:00-04:00" timeZone="America/Santo_Domingo" onSelectFlight={() => {}} />);
 
     expect(screen.getByText('12:00')).toBeInTheDocument();
     expect(screen.getByText('13:00')).toBeInTheDocument();
@@ -34,7 +34,7 @@ describe('FlightTimeline', () => {
 
   it('returns the selected turnaround id', async () => {
     const onSelectFlight = vi.fn();
-    render(<FlightTimeline flights={FLIGHTS} now="2026-08-19T11:00:00-04:00" onSelectFlight={onSelectFlight} />);
+    render(<FlightTimeline flights={FLIGHTS} now="2026-08-19T11:00:00-04:00" timeZone="America/Santo_Domingo" onSelectFlight={onSelectFlight} />);
 
     await userEvent.click(screen.getByText('TAT-A'));
     expect(onSelectFlight).toHaveBeenCalledWith('flight-a');
