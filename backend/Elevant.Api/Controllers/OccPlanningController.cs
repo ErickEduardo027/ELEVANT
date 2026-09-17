@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Contracts.Operations;
@@ -12,7 +13,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
 
-/// <summary>Exposes station-scoped, read-only OCC planning projections.</summary>
+/// <summary>Exposes station-scoped OCC planning projections and guarded commands.</summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
@@ -20,7 +21,8 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/occ/planning")]
 public sealed class OccPlanningController(
     GetOccPlanningSnapshotHandler snapshotHandler,
-    GetOccPlanningOptionsHandler optionsHandler) : ControllerBase
+    GetOccPlanningOptionsHandler optionsHandler,
+    AssignOccOperationHandler assignmentHandler) : ControllerBase
 {
     /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
     [HttpGet(Name = "GetOccPlanningSnapshot")]
@@ -73,9 +75,74 @@ public sealed class OccPlanningController(
             new GetOccPlanningOptionsQuery(accountId, turnaroundId),
             cancellationToken);
 
-        return result.IsSuccess
-            ? Ok(Map(result.Options!))
-            : FailureResult<OccPlanningOptionsResponse>(result.Failure!.Value);
+        if (!result.IsSuccess)
+        {
+            return FailureResult<OccPlanningOptionsResponse>(result.Failure!.Value);
+        }
+
+        SetEntityTag(result.Options!.Turnaround.ConcurrencyToken);
+        return Ok(Map(result.Options));
+    }
+
+    /// <summary>Assigns one eligible agent and materializes all applicable contracted services.</summary>
+    [RequestSizeLimit(ApiConfiguration.OccAssignmentRequestBodyLimitBytes)]
+    [HttpPost("turnarounds/{turnaroundId:guid}/assignment", Name = "AssignOccPlanningOperation")]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccAssignmentResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<OccAssignmentResponse>> Assign(
+        [FromRoute] Guid turnaroundId,
+        [FromHeader(Name = "If-Match")] string? ifMatch,
+        [FromBody, BindRequired] AssignOccOperationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+        {
+            return UnauthorizedResult<OccAssignmentResponse>();
+        }
+
+        var precondition = ParseStrongEntityTag(ifMatch);
+        if (precondition.Status == EntityTagParseStatus.Missing)
+        {
+            return ProblemResult<OccAssignmentResponse>(
+                StatusCodes.Status428PreconditionRequired,
+                "An If-Match precondition is required.");
+        }
+
+        if (precondition.Status == EntityTagParseStatus.Invalid)
+        {
+            return ProblemResult<OccAssignmentResponse>(
+                StatusCodes.Status400BadRequest,
+                "The OCC planning request is invalid.");
+        }
+
+        var result = await assignmentHandler.HandleAsync(
+            new AssignOccOperationCommand(
+                accountId,
+                turnaroundId,
+                request.AgentId,
+                precondition.Token!,
+                Guid.NewGuid(),
+                HttpContext.TraceIdentifier),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return FailureResult<OccAssignmentResponse>(result.Failure!.Value);
+        }
+
+        SetEntityTag(result.Assignment!.ConcurrencyToken);
+        return Ok(Map(result.Assignment));
     }
 
     private bool TryGetAccountId(out Guid accountId) =>
@@ -97,6 +164,9 @@ public sealed class OccPlanningController(
         OccPlanningFailure.Conflict => ProblemResult<T>(
             StatusCodes.Status409Conflict,
             "The OCC planning request conflicts with current operational data."),
+        OccPlanningFailure.PreconditionFailed => ProblemResult<T>(
+            StatusCodes.Status412PreconditionFailed,
+            "The OCC planning context has changed."),
         _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, "Unsupported failure."),
     };
 
@@ -254,4 +324,71 @@ public sealed class OccPlanningController(
             agent.EmployeeNumber,
             agent.Eligible,
             agent.EligibilityReasons)).ToArray());
+
+    private static OccAssignmentResponse Map(OccAssignmentData assignment) => new(
+        assignment.TurnaroundId,
+        new OccGroundOperationResponse(
+            assignment.Operation.Id,
+            assignment.Operation.Status,
+            assignment.Operation.PlannedStartAt,
+            assignment.Operation.PlannedEndAt,
+            assignment.Operation.ActualStartAt,
+            assignment.Operation.ActualEndAt),
+        new OccAssignedAgentResponse(
+            assignment.Assignment.AssignmentId,
+            assignment.Assignment.AgentId,
+            assignment.Assignment.DisplayName,
+            assignment.Assignment.EmployeeNumber,
+            assignment.Assignment.PositionId,
+            assignment.Assignment.PositionCode,
+            assignment.Assignment.PositionName,
+            assignment.Assignment.AssignmentRole,
+            assignment.Assignment.AssignedAt),
+        assignment.Services.Select(service => new OccOperationServiceResponse(
+            service.Id,
+            service.LineNumber,
+            service.ServiceDefinitionId,
+            service.Code,
+            service.Name,
+            service.ContractedQuantity,
+            service.ExecutedQuantity,
+            service.BillingUnit,
+            service.Status)).ToArray());
+
+    private void SetEntityTag(string token)
+    {
+        Response.Headers.ETag = $"\"{token}\"";
+    }
+
+    private static EntityTagParseResult ParseStrongEntityTag(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return new(EntityTagParseStatus.Missing, null);
+        }
+
+        if (value.Trim() != value ||
+            value.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ||
+            value.Length < 3 ||
+            value[0] != '"' ||
+            value[^1] != '"' ||
+            value.AsSpan(1, value.Length - 2).Contains('"'))
+        {
+            return new(EntityTagParseStatus.Invalid, null);
+        }
+
+        var token = value[1..^1];
+        return OccPlanningConcurrencyToken.TryDecode(token, out _)
+            ? new(EntityTagParseStatus.Valid, token)
+            : new(EntityTagParseStatus.Invalid, null);
+    }
+
+    private enum EntityTagParseStatus
+    {
+        Missing,
+        Invalid,
+        Valid,
+    }
+
+    private sealed record EntityTagParseResult(EntityTagParseStatus Status, string? Token);
 }

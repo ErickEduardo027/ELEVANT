@@ -140,3 +140,9 @@ public sealed record OccAgentOptionResponse(
     string EmployeeNumber,
     bool Eligible,
     IReadOnlyList<string> EligibilityReasons);
+
+public sealed record OccAssignmentResponse(
+    Guid TurnaroundId,
+    OccGroundOperationResponse Operation,
+    OccAssignedAgentResponse Assignment,
+    IReadOnlyList<OccOperationServiceResponse> Services);

@@ -6,9 +6,11 @@ Web y móvil consumen contratos publicados por Api. No importan ensamblados
 .NET, no conocen tablas y no llaman al proveedor de vuelos. Según ADR-0007, los
 tres clientes incorporan `@elevant/api-client`, generado desde el snapshot
 OpenAPI versionado y adaptado mediante una capa `fetch` común y sin estado global.
-Hoy el snapshot contiene `GetSystemPing`, `CreateSession` y
-`GetCurrentSession`: depender del paquete no demuestra que sus flujos de negocio
-estén integrados con la API.
+El snapshot contiene salud funcional, sesión y el corredor OCC de lectura y
+asignación inicial. `GetOccPlanningOptions` entrega la precondición `ETag` y
+`AssignOccPlanningOperation` la consume mediante `If-Match`; el cliente nunca
+elige servicios ni valores comerciales. Depender del paquete no demuestra por
+sí solo que cada flujo visual esté integrado con la API.
 
 ## Backend a SQL Server
 

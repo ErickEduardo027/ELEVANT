@@ -56,6 +56,7 @@ public sealed class GetOccPlanningOptionsHandler(
             {
                 OccPlanningOptionsReadFailure.NotFound => OccPlanningFailure.NotFound,
                 OccPlanningOptionsReadFailure.ContractConflict => OccPlanningFailure.Conflict,
+                OccPlanningOptionsReadFailure.OperationalConflict => OccPlanningFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "Unsupported OCC options read failure."),
             });

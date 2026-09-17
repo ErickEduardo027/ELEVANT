@@ -34,6 +34,7 @@ public static class SwaggerConfiguration
             });
 
             options.OperationFilter<BearerSecurityOperationFilter>();
+            options.OperationFilter<OccPlanningConcurrencyOperationFilter>();
             options.SchemaFilter<SessionCredentialSchemaFilter>();
 
             options.DocInclusionPredicate((documentName, description) =>

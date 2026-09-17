@@ -1,6 +1,7 @@
 export {
   createElevantApiClient,
   type CreateSessionOptions,
+  type AssignOccPlanningOperationOptions,
   type ElevantApiClient,
   type ElevantApiClientOptions,
   type ElevantRequestInit,
@@ -8,12 +9,15 @@ export {
   type GetOccPlanningOptionsOptions,
   type GetOccPlanningSnapshotOptions,
   type GetSystemPingOptions,
+  type OccAssignmentWithMetadata,
+  type OccPlanningOptionsWithMetadata,
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
   SessionMembershipKind,
   SessionOrganizationType,
   SessionPortal,
+  type AssignOccOperationRequest,
   type CreateSessionRequest,
   type CurrentSessionResponse,
   type GetOccPlanningOptionsParams,
@@ -24,6 +28,7 @@ export {
   type OccAirportResponse,
   type OccAssignedAgentResponse,
   type OccAssignedEquipmentResponse,
+  type OccAssignmentResponse,
   type OccContractOptionResponse,
   type OccFlightLegResponse,
   type OccGroundOperationResponse,

@@ -1,5 +1,6 @@
 using Elevant.Application.Identity.CreateSession;
 using Elevant.Application.Identity.GetCurrentSession;
+using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();
+        services.AddScoped<AssignOccOperationHandler>();
         return services;
     }
 }

@@ -27,7 +27,17 @@ const planning = await api.getOccPlanningSnapshot({
 });
 const turnaround = planning.turnarounds[0];
 if (!turnaround) throw new Error("No turnarounds are planned for that date.");
-const options = await api.getOccPlanningOptions(turnaround.id);
+const { options, etag } = await api.getOccPlanningOptionsWithMetadata(
+  turnaround.id,
+);
+const agent = options.agents.find((candidate) => candidate.eligible);
+if (!agent) throw new Error("No eligible agent is available.");
+const { assignment, etag: assignedEtag } =
+  await api.assignOccPlanningOperationWithMetadata(
+    turnaround.id,
+    { agentId: agent.id },
+    etag,
+  );
 const status = await api.getSystemPing({ signal: abortController.signal });
 ```
 
@@ -43,8 +53,19 @@ persistente no protegido.
 La primera acepta únicamente `stationId` UUID y `date` civil `YYYY-MM-DD`; la
 segunda recibe el UUID del turnaround como argumento. El cliente construye la
 query con los helpers generados, solicita un token fresco por llamada y valida
-la proyección completa antes de entregarla al consumidor. Crear vuelos,
-asignar recursos o modificar servicios todavía no forma parte de este cliente.
+la proyección completa antes de entregarla al consumidor.
+`getOccPlanningOptionsWithMetadata` conserva el mismo cuerpo y entrega además el
+`ETag` fuerte. `assignOccPlanningOperation` acepta únicamente `agentId`, envía
+ese valor exacto en `If-Match` y valida la proyección canónica devuelta. Los
+consumidores que continuarán el flujo con la versión resultante usan
+`assignOccPlanningOperationWithMetadata`, que entrega `{ assignment, etag }`.
+Ambos ETags son valores fuertes y opacos: se conservan exactamente, sin
+decodificarlos ni reconstruirlos. El de opciones versiona la representación
+asignable completa; el de la respuesta de asignación no se reutiliza como
+precondición de otro comando. Los servicios, cantidades, precios, contrato,
+posición y scope son siempre
+decisiones del servidor. Crear vuelos, reasignar o ejecutar servicios todavía
+no forma parte de este cliente.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus
 esquemas OpenAPI publican `additionalProperties: false`; cualquier ampliación
 del contrato debe regenerar y revisar el cliente antes de desplegarse.
@@ -61,6 +82,11 @@ Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
   esquema, huella SHA-256 canónica y ruta Swagger.
 - `generated/elevant-api.ts`: salida determinista de Orval; no se edita a mano.
 - `src`: fábrica y transporte compartido, sin dependencias de ejecución.
+
+Las aplicaciones importan exclusivamente el punto de entrada público de
+`@elevant/api-client`; no consumen `generated/elevant-api.ts` directamente. El
+wrapper es quien agrega autenticación fresca, valida respuestas y adjunta el
+`If-Match` exigido por el comando OCC.
 
 La generación requiere Node.js 24 y npm:
 

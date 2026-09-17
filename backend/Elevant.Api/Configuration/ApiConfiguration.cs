@@ -7,4 +7,5 @@ public static class ApiConfiguration
     public const string ApiRateLimitPolicy = "api-by-client-ip";
     public const string ApiVersion = "v1";
     public const int SessionRequestBodyLimitBytes = 4096;
+    public const int OccAssignmentRequestBodyLimitBytes = 1024;
 }

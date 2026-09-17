@@ -2,6 +2,7 @@ using Elevant.Api.Configuration;
 using Elevant.Api.HealthChecks;
 using Elevant.Api.Hubs;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Elevant.Api.Extensions;
@@ -54,6 +55,7 @@ public static class ApplicationBuilderExtensions
         }
 
         app.UseRouting();
+        app.UseCors(ApiConfiguration.CorsPolicy);
         app.Use(async (context, next) =>
         {
             if (context.GetEndpoint()?.Metadata.GetMetadata<PrivateResponseAttribute>() is not null)
@@ -67,8 +69,12 @@ public static class ApplicationBuilderExtensions
                 }, context.Response);
             }
 
-            if (context.GetEndpoint()?.Metadata.GetMetadata<SessionCreationRateLimitAttribute>() is not null &&
-                context.Request.ContentLength is > ApiConfiguration.SessionRequestBodyLimitBytes)
+            var requestSizeLimit = context.GetEndpoint()?.Metadata
+                .GetMetadata<IRequestSizeLimitMetadata>()
+                ?.MaxRequestBodySize;
+            if (requestSizeLimit.HasValue &&
+                context.Request.ContentLength is long contentLength &&
+                contentLength > requestSizeLimit.Value)
             {
                 context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
                 var problemDetailsService = context.RequestServices
@@ -89,7 +95,6 @@ public static class ApplicationBuilderExtensions
 
             await next(context);
         });
-        app.UseCors(ApiConfiguration.CorsPolicy);
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();

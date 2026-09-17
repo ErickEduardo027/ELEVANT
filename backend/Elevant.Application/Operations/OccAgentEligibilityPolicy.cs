@@ -28,7 +28,12 @@ public static class OccAgentEligibilityPolicy
             reasons.Add("terminal_scope_missing");
         }
 
-        if (!candidate.HasCurrentQualification)
+        if (candidate.HasCompatibleShift && candidate.OperationalPositionId is null)
+        {
+            reasons.Add("operational_position_unavailable");
+        }
+
+        if (candidate.OperationalPositionId is not null && !candidate.HasCurrentQualification)
         {
             reasons.Add("qualification_not_current");
         }
@@ -46,6 +51,11 @@ public static class OccAgentEligibilityPolicy
         if (!candidate.HasCompatibleShift)
         {
             reasons.Add("shift_not_compatible");
+        }
+
+        if (candidate.HasAssignmentConflict)
+        {
+            reasons.Add("assignment_conflict");
         }
 
         return new OccAgentOptionData(

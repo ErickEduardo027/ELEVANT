@@ -101,7 +101,8 @@ public sealed record OccPlanningTurnaroundContextData(
     DateOnly OperationDate,
     OccStationData Station,
     OccStandData? Stand,
-    DateTimeOffset ReferenceTime);
+    DateTimeOffset ReferenceTime,
+    string ConcurrencyToken);
 
 public sealed record OccContractOptionData(
     Guid Id,
@@ -132,7 +133,9 @@ public sealed record OccAgentCandidateData(
     bool HasCurrentQualification,
     bool HasCurrentAirportId,
     bool HasCurrentRampDriverLicense,
-    bool HasCompatibleShift);
+    bool HasCompatibleShift,
+    Guid? OperationalPositionId,
+    bool HasAssignmentConflict);
 
 public sealed record OccPlanningOptionsSourceData(
     OccPlanningTurnaroundContextData Turnaround,
@@ -144,6 +147,7 @@ public enum OccPlanningOptionsReadFailure
 {
     NotFound,
     ContractConflict,
+    OperationalConflict,
 }
 
 public sealed record OccPlanningOptionsReadResult(

@@ -54,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
+        services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
 
         services
             .AddHealthChecks()
