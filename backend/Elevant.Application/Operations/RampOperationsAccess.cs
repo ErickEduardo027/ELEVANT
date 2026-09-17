@@ -3,7 +3,7 @@ using Elevant.Domain.Enumerations;
 
 namespace Elevant.Application.Operations;
 
-internal static class RampOperationsAccess
+public static class RampOperationsAccess
 {
     public static bool IsAuthorized(ActorContext actor) =>
         actor.Roles.Any(role =>

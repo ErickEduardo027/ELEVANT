@@ -12,6 +12,8 @@ export {
   type GetSystemPingOptions,
   type OccAssignmentWithMetadata,
   type OccPlanningOptionsWithMetadata,
+  type RegisterMobileDeviceOptions,
+  type StartRampOperationOptions,
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
@@ -53,10 +55,13 @@ export {
   type RampGroundOperationResponse,
   type RampOperationalPositionResponse,
   type RampOperationServiceResponse,
+  type RampOperationStartResponse,
   type RampStandResponse,
   type RampStationResponse,
   type RampTerminalResponse,
   type RampTurnaroundResponse,
+  type RegisterMobileDeviceRequest,
+  type RegisterMobileDeviceResponse,
   type SessionActorResponse,
   type SessionMembershipResponse,
   type SessionResponse,

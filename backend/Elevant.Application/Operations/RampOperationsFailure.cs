@@ -4,4 +4,7 @@ public enum RampOperationsFailure
 {
     Unauthorized,
     Forbidden,
+    InvalidRequest,
+    NotFound,
+    Conflict,
 }

@@ -22,6 +22,14 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
         Guid.Parse("40000000-0000-7000-8000-000000000002");
     private static readonly Guid StationId =
         Guid.Parse("20000000-0000-7000-8000-000000000003");
+    private static readonly Guid OperationId =
+        Guid.Parse("70000000-0000-7000-8000-000000000016");
+    private static readonly Guid InstallationId =
+        Guid.Parse("81000000-0000-7000-8000-000000000001");
+    private static readonly Guid IdempotencyKey =
+        Guid.Parse("82000000-0000-7000-8000-000000000001");
+    private static readonly Guid ReceiptId =
+        Guid.Parse("83000000-0000-7000-8000-000000000001");
 
     [Fact]
     public async Task AssignedOperationsRequireBearerAuthenticationAndAreNeverCached()
@@ -130,6 +138,127 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task StartRequiresBearerAuthenticationAndIsNeverCached()
+    {
+        await using var application = CreateApplication(new RampState());
+        using var client = application.CreateClient();
+        using var request = CreateStartRequest();
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
+    }
+
+    [Fact]
+    public async Task StartUsesRouteAndRequiredUuidHeadersAndReturnsCanonicalReceipt()
+    {
+        var now = new DateTimeOffset(2026, 9, 17, 12, 0, 0, TimeSpan.Zero);
+        var start = new RampOperationStartData(
+            ReceiptId,
+            new RampGroundOperationData(
+                OperationId,
+                "InProgress",
+                now.AddMinutes(-15),
+                now.AddHours(2),
+                now,
+                null));
+        var state = new RampState
+        {
+            Actor = CreateActor(),
+            StartResult = RampOperationStartWriteResult.Success(start, ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateStartRequest();
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateResponse(response);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(ReceiptId, payload.GetProperty("receiptId").GetGuid());
+        var operation = payload.GetProperty("operation");
+        Assert.Equal(OperationId, operation.GetProperty("id").GetGuid());
+        Assert.Equal("InProgress", operation.GetProperty("status").GetString());
+        Assert.Equal(now, operation.GetProperty("actualStartAt").GetDateTimeOffset());
+        Assert.Equal(2, payload.EnumerateObject().Count());
+        Assert.NotNull(state.StartRequest);
+        Assert.Equal(AccountId, state.StartRequest.ActorAccountId);
+        Assert.Equal(OperationId, state.StartRequest.OperationId);
+        Assert.Equal(InstallationId, state.StartRequest.InstallationId);
+        Assert.Equal(IdempotencyKey, state.StartRequest.IdempotencyKey);
+    }
+
+    [Theory]
+    [InlineData(null, "82000000-0000-7000-8000-000000000001")]
+    [InlineData("not-a-uuid", "82000000-0000-7000-8000-000000000001")]
+    [InlineData("81000000-0000-7000-8000-000000000001", null)]
+    [InlineData("81000000-0000-7000-8000-000000000001", "not-a-uuid")]
+    public async Task StartRejectsMissingOrMalformedUuidHeaders(
+        string? installationId,
+        string? idempotencyKey)
+    {
+        var state = new RampState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/ramp/operations/{OperationId:D}/start");
+        if (installationId is not null)
+        {
+            request.Headers.TryAddWithoutValidation("X-Elevant-Installation-Id", installationId);
+        }
+
+        if (idempotencyKey is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+        }
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(state.StartRequest);
+    }
+
+    [Theory]
+    [InlineData(RampOperationStartWriteFailure.Forbidden, HttpStatusCode.Forbidden)]
+    [InlineData(RampOperationStartWriteFailure.NotFound, HttpStatusCode.NotFound)]
+    [InlineData(RampOperationStartWriteFailure.Conflict, HttpStatusCode.Conflict)]
+    [InlineData(RampOperationStartWriteFailure.IdempotencyKeyConflict, HttpStatusCode.Conflict)]
+    public async Task StartMapsStoreFailuresToStableHttpResponses(
+        RampOperationStartWriteFailure failure,
+        HttpStatusCode expectedStatus)
+    {
+        var state = new RampState
+        {
+            Actor = CreateActor(),
+            StartResult = RampOperationStartWriteResult.Failed(failure),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateStartRequest();
+
+        using var response = await client.SendAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        AssertPrivateResponse(response);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal((int)expectedStatus, problem.GetProperty("status").GetInt32());
+    }
+
+    [Fact]
     public async Task OpenApiPublishesTheAuthenticatedParameterlessRampRead()
     {
         using var client = factory.CreateClient();
@@ -176,14 +305,57 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
             "RampStandResponse");
     }
 
+    [Fact]
+    public async Task OpenApiPublishesHeaderIdempotentRampStart()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var document = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+
+        var post = document
+            .GetProperty("paths")
+            .GetProperty("/api/v1/ramp/operations/{operationId}/start")
+            .GetProperty("post");
+        Assert.Equal("StartRampOperation", post.GetProperty("operationId").GetString());
+        Assert.False(post.TryGetProperty("requestBody", out _));
+        var parameters = post.GetProperty("parameters").EnumerateArray().ToArray();
+        Assert.Equal(3, parameters.Length);
+        foreach (var name in new[]
+                 {
+                     "operationId", "X-Elevant-Installation-Id", "Idempotency-Key",
+                 })
+        {
+            var parameter = Assert.Single(parameters, item =>
+                string.Equals(item.GetProperty("name").GetString(), name, StringComparison.Ordinal));
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+            Assert.Equal("uuid", parameter.GetProperty("schema").GetProperty("format").GetString());
+        }
+
+        var responses = post.GetProperty("responses");
+        foreach (var responseCode in new[] { "200", "400", "401", "403", "404", "409", "429", "500" })
+        {
+            Assert.True(responses.TryGetProperty(responseCode, out _), responseCode);
+        }
+
+        var security = Assert.Single(post.GetProperty("security").EnumerateArray());
+        Assert.True(security.TryGetProperty("Bearer", out _));
+    }
+
     private WebApplicationFactory<Program> CreateApplication(RampState state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IRampOperationsReadStore>();
+            services.RemoveAll<IRampOperationsCommandStore>();
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IRampOperationsReadStore>(_ => state);
+            services.AddScoped<IRampOperationsCommandStore>(_ => state);
         }));
 
     private static HttpClient CreateAuthenticatedClient(
@@ -300,6 +472,16 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
             ]);
     }
 
+    private static HttpRequestMessage CreateStartRequest()
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/ramp/operations/{OperationId:D}/start");
+        request.Headers.Add("X-Elevant-Installation-Id", InstallationId.ToString("D"));
+        request.Headers.Add("Idempotency-Key", IdempotencyKey.ToString("D"));
+        return request;
+    }
+
     private static void AssertPrivateResponse(HttpResponseMessage response)
     {
         Assert.Contains(
@@ -326,16 +508,24 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
             reference.GetProperty("$ref").GetString());
     }
 
-    private sealed class RampState : IActorContextResolver, IRampOperationsReadStore
+    private sealed class RampState :
+        IActorContextResolver,
+        IRampOperationsReadStore,
+        IRampOperationsCommandStore
     {
         public ActorContext? Actor { get; init; }
 
         public RampOperationsReadResult ReadResult { get; init; } =
             RampOperationsReadResult.Success([]);
 
+        public RampOperationStartWriteResult StartResult { get; init; } =
+            RampOperationStartWriteResult.Failed(RampOperationStartWriteFailure.Conflict);
+
         public Guid? RequestedAccountId { get; private set; }
 
         public IReadOnlyCollection<Guid>? RequestedStationIds { get; private set; }
+
+        public RampOperationStartWriteRequest? StartRequest { get; private set; }
 
         public Task<ActorContext?> ResolveAsync(
             Guid accountId,
@@ -354,6 +544,15 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
             RequestedAccountId = accountId;
             RequestedStationIds = allowedStationIds;
             return Task.FromResult(ReadResult);
+        }
+
+        public Task<RampOperationStartWriteResult> StartOperationAsync(
+            RampOperationStartWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartRequest = request;
+            return Task.FromResult(StartResult);
         }
     }
 }

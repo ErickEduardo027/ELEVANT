@@ -16,6 +16,7 @@ import {
   asMobileServiceError,
   MobileServiceError,
 } from './mobile-service-error';
+import { registerCurrentMobileDevice } from './mobile-device';
 
 const SESSION_SCHEMA_VERSION = 1 as const;
 const uuidPattern =
@@ -350,7 +351,29 @@ export async function loginMobileAgent(
       actor: currentActor,
       expiresAt: issued.expiresAt,
     };
-    await writeStoredMobileSession(issued.accessToken, metadata);
+    const sessionId = await writeStoredMobileSession(issued.accessToken, metadata);
+    try {
+      await registerCurrentMobileDevice(
+        { accessToken: issued.accessToken },
+        options,
+      );
+      const confirmedState = await localSessionState();
+      if (
+        confirmedState.kind !== 'active' ||
+        confirmedState.sessionId !== sessionId
+      ) {
+        throw new MobileServiceError('cancelled');
+      }
+    } catch (registrationError) {
+      const normalized = asMobileServiceError(registrationError);
+      try {
+        const cleared = await clearStoredMobileSessionIfCurrent(sessionId);
+        if (!cleared) throw new MobileServiceError('cancelled');
+      } catch (cleanupError) {
+        throw asMobileServiceError(cleanupError);
+      }
+      throw normalized;
+    }
     return publicSession(metadata);
   } catch (error) {
     throw asMobileServiceError(error, 'login');

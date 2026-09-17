@@ -396,6 +396,49 @@ export interface RampAssignedOperationsResponse {
   operations: RampAssignedOperationResponse[];
 }
 
+export interface RampOperationStartResponse {
+  receiptId: string;
+  operation: RampGroundOperationResponse;
+}
+
+export interface RegisterMobileDeviceRequest {
+  installationId: string;
+  /**
+     * @minLength 1
+     * @pattern ^(Android|Ios)$
+     */
+  platform: string;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  appVersion: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
+  deviceName?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     * @nullable
+     */
+  operatingSystemVersion?: string | null;
+}
+
+export interface RegisterMobileDeviceResponse {
+  installationId: string;
+  /** @pattern ^(Android|Ios)$ */
+  platform: string;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  appVersion: string;
+  lastSeenAt: string;
+}
+
 export interface SessionResponse {
   accessToken: string;
   tokenType: string;
@@ -482,6 +525,43 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRegisterMobileDeviceUrl = () => {
+
+
+
+
+  return `/api/v1/mobile/device`
+}
+
+/**
+ * @summary Creates or refreshes the current account's fail-closed device binding.
+ */
+export const registerMobileDevice = async (registerMobileDeviceRequest: RegisterMobileDeviceRequest, options?: RequestInit): Promise<RegisterMobileDeviceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegisterMobileDeviceUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(registerMobileDeviceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RegisterMobileDeviceResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -627,6 +707,37 @@ export const getRampAssignedOperations = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampAssignedOperationsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getStartRampOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/start`
+}
+
+/**
+ * @summary Starts one operation assigned to the authenticated ramp agent.
+ */
+export const startRampOperation = async (operationId: string, options?: RequestInit): Promise<RampOperationStartResponse> => {
+
+  const res = await fetch(getStartRampOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampOperationStartResponse = body ? JSON.parse(body) : {}
   return data
 }
 

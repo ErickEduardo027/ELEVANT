@@ -4,9 +4,11 @@ import * as SecureStore from 'expo-secure-store';
 
 const ENVELOPE_SCHEMA_VERSION = 1 as const;
 const SESSION_CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
+const MOBILE_INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
 const SESSION_METADATA_KEY = 'elevant:mobile:session-metadata:v1';
 const ASSIGNED_OPERATIONS_CACHE_PREFIX =
   'elevant:mobile:assigned-operations:v1:';
+const RAMP_START_COMMAND_PREFIX = 'elevant:mobile:ramp-start-command:v1:';
 
 const LEGACY_ATOMIC_ENVELOPE_KEY = 'elevant.mobile.session.v1';
 const LEGACY_ACCESS_TOKEN_KEY = 'elevant.mobile.access_token.v1';
@@ -67,6 +69,10 @@ export type CurrentMobileCacheWrite =
   | 'written'
   | 'cache-unavailable'
   | 'not-current';
+
+export type CurrentRampStartCommand =
+  | Readonly<{ kind: 'current'; idempotencyKey: string }>
+  | Readonly<{ kind: 'not-current' }>;
 
 let storageQueue: Promise<void> = Promise.resolve();
 
@@ -202,6 +208,10 @@ function allAssignedOperationCacheKeys(appKeys: readonly string[]) {
   );
 }
 
+function allRampStartCommandKeys(appKeys: readonly string[]) {
+  return appKeys.filter((key) => key.startsWith(RAMP_START_COMMAND_PREFIX));
+}
+
 function staleAsyncKeys(appKeys: readonly string[]) {
   return [
     LEGACY_METADATA_KEY,
@@ -222,6 +232,7 @@ async function removeSessionAndCaches(appKeys: readonly string[]) {
     AsyncStorage.multiRemove([
       SESSION_METADATA_KEY,
       ...new Set(staleAsyncKeys(appKeys)),
+      ...allRampStartCommandKeys(appKeys),
     ]),
   ]);
 
@@ -349,8 +360,72 @@ function assertAssignedOperationsCacheKey(key: string) {
   }
 }
 
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    uuidPattern.test(value) &&
+    value.toLowerCase() !== '00000000-0000-0000-0000-000000000000'
+  );
+}
+
+function rampStartCommandKey(accountId: string, operationId: string) {
+  if (!isUuid(accountId) || !isUuid(operationId)) {
+    throw new MobileSessionStorageError();
+  }
+
+  return `${RAMP_START_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
 export function assignedOperationsCacheKey(accountId: string) {
   return `${ASSIGNED_OPERATIONS_CACHE_PREFIX}${accountId}`;
+}
+
+export async function readOrCreateMobileInstallationId() {
+  return withStorageLock(async () => {
+    try {
+      await ensureSecureStoreAvailable();
+      const current = await SecureStore.getItemAsync(MOBILE_INSTALLATION_ID_KEY);
+      if (isUuid(current)) return current.toLowerCase();
+
+      const installationId = Crypto.randomUUID().toLowerCase();
+      await SecureStore.setItemAsync(
+        MOBILE_INSTALLATION_ID_KEY,
+        installationId,
+        secureStoreOptions,
+      );
+      return installationId;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function getOrCreateRampStartCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+): Promise<CurrentRampStartCommand> {
+  const key = rampStartCommandKey(accountId, operationId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentSessionUnlocked(sessionId))) {
+        return { kind: 'not-current' };
+      }
+
+      const stored = await AsyncStorage.getItem(key);
+      if (isUuid(stored)) {
+        return { kind: 'current', idempotencyKey: stored.toLowerCase() };
+      }
+
+      const idempotencyKey = Crypto.randomUUID().toLowerCase();
+      await AsyncStorage.setItem(key, idempotencyKey);
+      return { kind: 'current', idempotencyKey };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
 }
 
 export async function clearStoredMobileSession() {
