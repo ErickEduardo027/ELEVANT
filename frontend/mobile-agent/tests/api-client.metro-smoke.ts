@@ -5,6 +5,11 @@ export const apiClientBundleSmoke = createMobileAgentApiClient({
   fetch: globalThis.fetch,
 });
 
-if (typeof apiClientBundleSmoke.getSystemPing !== 'function') {
+if (
+  typeof apiClientBundleSmoke.createSession !== 'function' ||
+  typeof apiClientBundleSmoke.getCurrentSession !== 'function' ||
+  typeof apiClientBundleSmoke.getRampAssignedOperations !== 'function' ||
+  typeof apiClientBundleSmoke.getSystemPing !== 'function'
+) {
   throw new Error('The shared ELEVANT API client was not bundled correctly.');
 }

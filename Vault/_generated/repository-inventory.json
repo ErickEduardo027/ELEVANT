@@ -1005,7 +1005,7 @@
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
-        "sha256": "4bc32c7e89c28a7756d494503418358f70ff0775942cdb06ab007b0b32d5d676"
+        "sha256": "1ba91517bc3fb882f2667468c0589d1ae5fb6ab0212ef40a7370b0b6235d1814"
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
