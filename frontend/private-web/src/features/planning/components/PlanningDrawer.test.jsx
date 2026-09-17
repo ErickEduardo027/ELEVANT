@@ -8,7 +8,16 @@ import {
   OPTIONS_STATE_SUCCESS,
 } from '../testing/planningFixtures';
 
-const FLIGHT = createPlanningFlight();
+const ASSIGNED_FLIGHT = createPlanningFlight();
+const FLIGHT = createPlanningFlight({
+  assignedAgents: [],
+  agents: [],
+  resourceState: {
+    ...ASSIGNED_FLIGHT.resourceState,
+    agentsAssigned: false,
+  },
+  hasAssignmentGap: true,
+});
 
 function renderDrawer(overrides = {}) {
   const props = {
@@ -23,7 +32,7 @@ function renderDrawer(overrides = {}) {
 }
 
 function optionsSection() {
-  return screen.getByRole('heading', { name: 'Opciones autorizadas' }).closest('section');
+  return screen.getByRole('heading', { name: 'Asignación OCC' }).closest('section');
 }
 
 function DrawerHarness() {
@@ -50,7 +59,7 @@ describe('PlanningDrawer', () => {
   });
 
   it('renders canonical context, both legs, and assigned resources', () => {
-    renderDrawer();
+    renderDrawer({ flight: ASSIGNED_FLIGHT });
 
     expect(screen.getByText('DEV-TAT-0002')).toBeInTheDocument();
     expect(screen.getByText('19/08/2026')).toBeInTheDocument();
@@ -70,7 +79,7 @@ describe('PlanningDrawer', () => {
     renderDrawer();
     const section = within(optionsSection());
 
-    expect(section.getByText(/DEV-CONTRACT · versión 1 · USD/)).toBeInTheDocument();
+    expect(section.getByText('DEV-CONTRACT').closest('p')).toHaveTextContent('DEV-CONTRACT · versión 1 · USD');
     expect(section.getByText('BAGGAGE').parentElement).toHaveTextContent('BAGGAGE · Baggage handling');
     expect(section.getByText('Elegible')).toBeInTheDocument();
     expect(section.getByText('No elegible')).toBeInTheDocument();
@@ -108,12 +117,12 @@ describe('PlanningDrawer', () => {
         status: 'error',
         data: null,
         error: new Error('safe view error'),
-        reason: 'contract-ambiguity',
+        reason: 'options-conflict',
         recoverable: true,
       },
     });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Hay más de un contrato aplicable');
+    expect(screen.getByRole('alert')).toHaveTextContent('La operación cambió o no tiene una versión asignable');
     await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(props.onRetryOptions).toHaveBeenCalledTimes(1);
   });
@@ -166,10 +175,13 @@ describe('PlanningDrawer', () => {
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 
-  it('keeps all drawer write actions disabled', () => {
-    renderDrawer();
+  it('keeps unavailable drawer actions disabled and blocks reassignment', () => {
+    renderDrawer({ flight: ASSIGNED_FLIGHT });
 
-    for (const label of ['Asignar recursos', 'Editar planificación', 'Crear Work Order']) {
+    expect(screen.getByRole('button', { name: 'Asignar operación' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('ya tiene un agente activo');
+
+    for (const label of ['Editar planificación', 'Crear Work Order']) {
       const button = screen.getByRole('button', { name: label });
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute('title', 'Próximamente');
@@ -182,6 +194,23 @@ describe('PlanningDrawer', () => {
     expect(screen.getByRole('button', { name: 'Cerrar panel' })).toHaveFocus();
     await userEvent.keyboard('{Escape}');
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('cannot be dismissed while the assignment command is in flight', async () => {
+    const { props } = renderDrawer({
+      flight: createPlanningFlight({ assignedAgents: [], agents: [] }),
+      assignmentState: {
+        status: 'submitting',
+        data: null,
+        error: null,
+        reason: null,
+        refreshRequired: false,
+      },
+    });
+
+    expect(screen.getByRole('button', { name: 'Cerrar panel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(props.onClose).not.toHaveBeenCalled();
   });
 
   it('traps keyboard focus inside the modal drawer', async () => {
@@ -249,7 +278,7 @@ describe('PlanningDrawer', () => {
     expect(dialog).toHaveAttribute('aria-labelledby', 'planning-drawer-title');
     expect(dialog).toHaveAttribute('aria-describedby', 'planning-drawer-description');
     expect(dialog).toHaveAccessibleName('DEV-TAT-0002');
-    expect(dialog).toHaveAccessibleDescription('Escala operativa · consulta de solo lectura');
+    expect(dialog).toHaveAccessibleDescription('Escala operativa · asignación controlada');
     expect(screen.getByText('Sin estación')).toBeInTheDocument();
     expect(screen.getByText('Sin aerolínea')).toBeInTheDocument();
     expect(screen.getByText('Sin operación creada')).toBeInTheDocument();

@@ -4,6 +4,7 @@ import { getPlanningOptions } from '../../services/planningService';
 const IDLE_STATE = {
   status: 'idle',
   data: null,
+  etag: null,
   error: null,
   reason: null,
   recoverable: false,
@@ -11,8 +12,8 @@ const IDLE_STATE = {
 const GENERIC_LOAD_ERROR = 'No fue posible cargar las opciones de planificación.';
 const UNAUTHORIZED_ERROR = 'La sesión expiró. Inicia sesión nuevamente.';
 const FORBIDDEN_ERROR = 'Su cuenta no tiene permiso para consultar estas opciones.';
-const CONTRACT_AMBIGUITY_ERROR =
-  'No fue posible determinar un contrato operativo único para este vuelo.';
+const OPTIONS_CONFLICT_ERROR =
+  'No fue posible preparar una versión asignable de esta operación. Actualice la planificación y revise su estado.';
 
 function isAbortError(error) {
   return error !== null && typeof error === 'object' && error.name === 'AbortError';
@@ -44,18 +45,20 @@ export function usePlanningOptions({
     setState({
       status: 'loading',
       data: null,
+      etag: null,
       error: null,
       reason: null,
       recoverable: false,
     });
 
     getPlanningOptions(turnaroundId, { signal: controller.signal })
-      .then(data => {
+      .then(({ options, etag }) => {
         if (controller.signal.aborted) return;
-        const isEmpty = data.services.length === 0 && data.agents.length === 0;
+        const isEmpty = options.services.length === 0 && options.agents.length === 0;
         setState({
           status: isEmpty ? 'empty' : 'success',
-          data,
+          data: options,
+          etag,
           error: null,
           reason: null,
           recoverable: false,
@@ -68,6 +71,7 @@ export function usePlanningOptions({
           setState({
             status: 'unauthorized',
             data: null,
+            etag: null,
             error: safeViewError(UNAUTHORIZED_ERROR, error, 'unauthorized'),
             reason: 'unauthorized',
             recoverable: false,
@@ -79,6 +83,7 @@ export function usePlanningOptions({
           setState({
             status: 'forbidden',
             data: null,
+            etag: null,
             error: safeViewError(FORBIDDEN_ERROR, error, 'forbidden'),
             reason: 'forbidden',
             recoverable: false,
@@ -86,16 +91,17 @@ export function usePlanningOptions({
           return;
         }
 
-        if (error?.status === 409 || error?.code === 'contract-ambiguity') {
+        if (error?.status === 409 || error?.code === 'options-conflict') {
           setState({
             status: 'error',
             data: null,
+            etag: null,
             error: safeViewError(
-              CONTRACT_AMBIGUITY_ERROR,
+              OPTIONS_CONFLICT_ERROR,
               error,
-              'contract-ambiguity'
+              'options-conflict'
             ),
-            reason: 'contract-ambiguity',
+            reason: 'options-conflict',
             recoverable: true,
           });
           return;
@@ -104,6 +110,7 @@ export function usePlanningOptions({
         setState({
           status: 'error',
           data: null,
+          etag: null,
           error: safeViewError(GENERIC_LOAD_ERROR, error),
           reason: 'request-failed',
           recoverable: true,

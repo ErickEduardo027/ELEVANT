@@ -11,11 +11,19 @@ import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
 import { usePlanningFilters } from './usePlanningFilters';
 import { usePlanningOptions } from './usePlanningOptions';
-import { computeKpis, getFilterOptions } from './planningMappers';
+import { usePlanningAssignment } from './usePlanningAssignment';
+import {
+  computeKpis,
+  getFilterOptions,
+  isInitialAssignmentCandidate,
+} from './planningMappers';
+import { useToast } from '../../hooks/useToast';
+import Toast from '../../components/Toast';
 
 const EMPTY_OPTIONS_STATE = {
   status: 'idle',
   data: null,
+  etag: null,
   error: null,
   reason: null,
   recoverable: false,
@@ -76,6 +84,8 @@ export default function PlanningPage({
   const [selectedFlightId, setSelectedFlightId] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [optionsRetryToken, setOptionsRetryToken] = useState(0);
+  const assignment = usePlanningAssignment();
+  const { toasts, showToast, dismissToast } = useToast();
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date().toISOString()), 30000);
@@ -93,10 +103,11 @@ export default function PlanningPage({
   const kpis = computeKpis(flights);
   const options = getFilterOptions(flights);
   const selectedFlight = flights.find(flight => flight.id === selectedFlightId) ?? null;
+  const canLoadAssignmentOptions = isInitialAssignmentCandidate(selectedFlight);
   const planningOptions = usePlanningOptions({
     turnaroundId: selectedFlight?.turnaroundId,
     refreshToken: optionsRetryToken,
-    enabled: Boolean(selectedFlight),
+    enabled: canLoadAssignmentOptions,
   });
 
   useEffect(() => {
@@ -106,8 +117,42 @@ export default function PlanningPage({
   }, [flights, selectedFlightId]);
 
   function selectFlight(flightId) {
+    assignment.reset();
     setOptionsRetryToken(0);
     setSelectedFlightId(flightId);
+  }
+
+  async function assignOperation(agentId) {
+    if (!selectedFlight || !planningOptions.etag) return;
+
+    const selectedAgent = planningOptions.data?.agents.find(agent => agent.id === agentId);
+    const outcome = await assignment.assign({
+      turnaroundId: selectedFlight.turnaroundId,
+      agentId,
+      etag: planningOptions.etag,
+    });
+
+    if (outcome.detached) return;
+
+    if (outcome.ok) {
+      const agentName = selectedAgent?.displayName ?? 'el agente seleccionado';
+      setSelectedFlightId(null);
+      assignment.reset();
+      onRetry();
+      showToast(`Operación asignada a ${agentName}.`, 'success');
+      return;
+    }
+
+    if (outcome.refreshRequired) {
+      setSelectedFlightId(null);
+      setOptionsRetryToken(0);
+      assignment.reset();
+      onRetry();
+    }
+
+    if (outcome.error?.message) {
+      showToast(outcome.error.message, 'danger', 6500);
+    }
   }
 
   return (
@@ -161,10 +206,16 @@ export default function PlanningPage({
 
       <PlanningDrawer
         flight={selectedFlight}
-        onClose={() => setSelectedFlightId(null)}
+        onClose={() => {
+          assignment.reset();
+          setSelectedFlightId(null);
+        }}
         optionsState={selectedFlight ? planningOptions : EMPTY_OPTIONS_STATE}
+        assignmentState={assignment}
+        onAssign={assignOperation}
         onRetryOptions={() => setOptionsRetryToken(token => token + 1)}
       />
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

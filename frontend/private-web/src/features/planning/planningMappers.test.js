@@ -6,6 +6,7 @@ import {
   getFilterOptions,
   groupFlightsByHour,
   hasEstimatedDelay,
+  isInitialAssignmentCandidate,
   isPendingAssignment,
   mapOccPlanningSnapshot,
 } from './planningMappers';
@@ -229,6 +230,39 @@ describe('resource and operational derivations', () => {
     expect(isPendingAssignment({ resourceState: { standAssigned: true, agentsAssigned: true } })).toBe(false);
     expect(isPendingAssignment({ resourceState: { standAssigned: false, agentsAssigned: true } })).toBe(true);
     expect(isPendingAssignment({ resourceState: { standAssigned: true, agentsAssigned: false } })).toBe(true);
+  });
+
+  it('offers initial assignment only for an assignable turnaround and planned window', () => {
+    const candidate = {
+      status: 'Confirmed',
+      operationStatus: 'Planned',
+      operation: {
+        plannedStartAt: '2026-08-19T12:15:00-04:00',
+        plannedEndAt: '2026-08-19T14:30:00-04:00',
+      },
+      assignedAgents: [],
+    };
+
+    expect(isInitialAssignmentCandidate(candidate)).toBe(true);
+    expect(isInitialAssignmentCandidate({ ...candidate, status: 'Cancelled' })).toBe(false);
+    expect(isInitialAssignmentCandidate({ ...candidate, operationStatus: 'Assigned' })).toBe(false);
+    expect(isInitialAssignmentCandidate({ ...candidate, assignedAgents: [{}] })).toBe(false);
+    expect(
+      isInitialAssignmentCandidate({
+        ...candidate,
+        operation: { ...candidate.operation, plannedEndAt: null },
+      })
+    ).toBe(false);
+    expect(
+      isInitialAssignmentCandidate({
+        ...candidate,
+        operation: {
+          plannedStartAt: candidate.operation.plannedEndAt,
+          plannedEndAt: candidate.operation.plannedStartAt,
+        },
+      })
+    ).toBe(false);
+    expect(isInitialAssignmentCandidate(null)).toBe(false);
   });
 
   it('detects a delay only from an explicit delayed status or a later estimate', () => {

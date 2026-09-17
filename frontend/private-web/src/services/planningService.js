@@ -4,18 +4,36 @@ import { handleUnauthorizedResponse, readSession } from '../features/auth/authSe
 
 const PLANNING_LOAD_ERROR = 'No fue posible cargar la planificación operativa.';
 const OPTIONS_LOAD_ERROR = 'No fue posible cargar las opciones de planificación.';
+const ASSIGNMENT_UNKNOWN_ERROR =
+  'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.';
 const UNAUTHORIZED_ERROR = 'La sesión expiró. Inicia sesión nuevamente.';
 const FORBIDDEN_ERROR = 'Su cuenta no tiene permiso para consultar esta planificación.';
-const CONTRACT_AMBIGUITY_ERROR =
-  'No fue posible determinar un contrato operativo único para este vuelo.';
+const ASSIGNMENT_FORBIDDEN_ERROR = 'Su cuenta no tiene permiso para asignar esta operación.';
+const ASSIGNMENT_NOT_FOUND_ERROR =
+  'La escala ya no está disponible para asignación. La planificación se actualizará.';
+const ASSIGNMENT_CONFLICT_ERROR =
+  'La operación o el agente cambiaron mientras preparaba la asignación. Revise las opciones actualizadas.';
+const ASSIGNMENT_STALE_ERROR =
+  'Las opciones de asignación cambiaron. Revise la versión actual antes de confirmar nuevamente.';
+const OPTIONS_CONFLICT_ERROR =
+  'No fue posible preparar una versión asignable de esta operación. Actualice la planificación y revise su estado.';
 
 class PlanningServiceError extends Error {
-  constructor(message, { status = null, code = 'request-failed', recoverable = true } = {}) {
+  constructor(
+    message,
+    {
+      status = null,
+      code = 'request-failed',
+      recoverable = true,
+      refreshRequired = false,
+    } = {}
+  ) {
     super(message);
     this.name = 'PlanningServiceError';
     this.status = status;
     this.code = code;
     this.recoverable = recoverable;
+    this.refreshRequired = refreshRequired;
   }
 }
 
@@ -31,7 +49,11 @@ function createPlanningClient() {
   });
 }
 
-function safeRequestError(error, fallbackMessage, { conflictMessage = null } = {}) {
+function safeRequestError(
+  error,
+  fallbackMessage,
+  { conflictMessage = null, conflictCode = 'request-conflict' } = {}
+) {
   if (isAbortError(error)) return error;
 
   if (error instanceof ElevantApiError && error.status === 401) {
@@ -54,13 +76,62 @@ function safeRequestError(error, fallbackMessage, { conflictMessage = null } = {
   if (error instanceof ElevantApiError && error.status === 409 && conflictMessage) {
     return new PlanningServiceError(conflictMessage, {
       status: 409,
-      code: 'contract-ambiguity',
+      code: conflictCode,
       recoverable: true,
     });
   }
 
   return new PlanningServiceError(fallbackMessage, {
     status: error instanceof ElevantApiError ? error.status : null,
+  });
+}
+
+function safeAssignmentError(error) {
+  if (error instanceof ElevantApiError && error.status === 401) {
+    handleUnauthorizedResponse({ status: 401 });
+    return new PlanningServiceError(UNAUTHORIZED_ERROR, {
+      status: 401,
+      code: 'unauthorized',
+      recoverable: false,
+    });
+  }
+
+  if (error instanceof ElevantApiError && error.status === 403) {
+    return new PlanningServiceError(ASSIGNMENT_FORBIDDEN_ERROR, {
+      status: 403,
+      code: 'forbidden',
+      recoverable: false,
+    });
+  }
+
+  if (error instanceof ElevantApiError && error.status === 404) {
+    return new PlanningServiceError(ASSIGNMENT_NOT_FOUND_ERROR, {
+      status: 404,
+      code: 'not-found',
+      refreshRequired: true,
+    });
+  }
+
+  if (error instanceof ElevantApiError && error.status === 409) {
+    return new PlanningServiceError(ASSIGNMENT_CONFLICT_ERROR, {
+      status: 409,
+      code: 'conflict',
+      refreshRequired: true,
+    });
+  }
+
+  if (error instanceof ElevantApiError && error.status === 412) {
+    return new PlanningServiceError(ASSIGNMENT_STALE_ERROR, {
+      status: 412,
+      code: 'stale',
+      refreshRequired: true,
+    });
+  }
+
+  return new PlanningServiceError(ASSIGNMENT_UNKNOWN_ERROR, {
+    status: error instanceof ElevantApiError ? error.status : null,
+    code: 'unknown-outcome',
+    refreshRequired: true,
   });
 }
 
@@ -86,8 +157,26 @@ export async function getPlanningSnapshot({ stationId, date, signal } = {}) {
 
 export async function getPlanningOptions(turnaroundId, { signal } = {}) {
   return executeSafely(
-    () => createPlanningClient().getOccPlanningOptions(turnaroundId, { signal }),
+    () => createPlanningClient().getOccPlanningOptionsWithMetadata(turnaroundId, { signal }),
     OPTIONS_LOAD_ERROR,
-    { conflictMessage: CONTRACT_AMBIGUITY_ERROR }
+    { conflictMessage: OPTIONS_CONFLICT_ERROR, conflictCode: 'options-conflict' }
   );
+}
+
+export async function assignPlanningOperation(
+  turnaroundId,
+  agentId,
+  etag,
+  { signal } = {}
+) {
+  try {
+    return await createPlanningClient().assignOccPlanningOperationWithMetadata(
+      turnaroundId,
+      { agentId },
+      etag,
+      { signal }
+    );
+  } catch (error) {
+    throw safeAssignmentError(error);
+  }
 }

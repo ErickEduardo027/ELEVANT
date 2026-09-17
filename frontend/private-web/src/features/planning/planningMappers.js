@@ -126,6 +126,21 @@ export function isPendingAssignment(flight) {
   return !hasStand || !Array.isArray(agents) || agents.length === 0;
 }
 
+export function isInitialAssignmentCandidate(flight) {
+  const turnaroundStatus = String(flight?.status).toLowerCase();
+  const plannedStart = validTimestamp(flight?.operation?.plannedStartAt);
+  const plannedEnd = validTimestamp(flight?.operation?.plannedEndAt);
+
+  return (
+    (turnaroundStatus === 'scheduled' || turnaroundStatus === 'confirmed') &&
+    String(flight?.operationStatus).toLowerCase() === 'planned' &&
+    (flight?.assignedAgents?.length ?? 0) === 0 &&
+    plannedStart !== null &&
+    plannedEnd !== null &&
+    plannedStart < plannedEnd
+  );
+}
+
 function validTimestamp(value) {
   if (typeof value !== 'string' || value.length === 0) return null;
   const timestamp = Date.parse(value);

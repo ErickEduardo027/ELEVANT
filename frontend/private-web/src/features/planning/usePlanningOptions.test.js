@@ -15,6 +15,7 @@ const planningOptions = {
   services: [{ id: 'service-1', code: 'BAGGAGE' }],
   agents: [{ id: 'agent-1', eligible: true }],
 };
+const optionsMetadata = { options: planningOptions, etag: '"planning-options-v1"' };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -29,6 +30,7 @@ describe('usePlanningOptions', () => {
     expect(result.current).toEqual({
       status: 'idle',
       data: null,
+      etag: null,
       error: null,
       reason: null,
       recoverable: false,
@@ -50,7 +52,7 @@ describe('usePlanningOptions', () => {
   it('loads options lazily for the selected turnaround and preserves the AbortSignal', async () => {
     const serviceSpy = vi
       .spyOn(planningService, 'getPlanningOptions')
-      .mockResolvedValue(planningOptions);
+      .mockResolvedValue(optionsMetadata);
 
     const { result } = renderHook(() =>
       usePlanningOptions({ turnaroundId: firstTurnaroundId })
@@ -63,12 +65,16 @@ describe('usePlanningOptions', () => {
     expect(serviceSpy.mock.calls[0][0]).toBe(firstTurnaroundId);
     expect(serviceSpy.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
     expect(result.current.data).toBe(planningOptions);
+    expect(result.current.etag).toBe('"planning-options-v1"');
     expect(result.current.error).toBeNull();
   });
 
   it('returns empty when neither contracted services nor agents are available', async () => {
     const emptyOptions = { ...planningOptions, contract: null, services: [], agents: [] };
-    vi.spyOn(planningService, 'getPlanningOptions').mockResolvedValue(emptyOptions);
+    vi.spyOn(planningService, 'getPlanningOptions').mockResolvedValue({
+      options: emptyOptions,
+      etag: '"empty-options-v1"',
+    });
 
     const { result } = renderHook(() =>
       usePlanningOptions({ turnaroundId: firstTurnaroundId })
@@ -76,6 +82,7 @@ describe('usePlanningOptions', () => {
 
     await waitFor(() => expect(result.current.status).toBe('empty'));
     expect(result.current.data).toBe(emptyOptions);
+    expect(result.current.etag).toBe('"empty-options-v1"');
     expect(result.current.error).toBeNull();
   });
 
@@ -93,6 +100,7 @@ describe('usePlanningOptions', () => {
     await waitFor(() => expect(result.current.status).toBe('unauthorized'));
     expect(result.current).toMatchObject({
       data: null,
+      etag: null,
       reason: 'unauthorized',
       recoverable: false,
     });
@@ -118,6 +126,7 @@ describe('usePlanningOptions', () => {
     await waitFor(() => expect(result.current.status).toBe('forbidden'));
     expect(result.current).toMatchObject({
       data: null,
+      etag: null,
       reason: 'forbidden',
       recoverable: false,
     });
@@ -132,7 +141,7 @@ describe('usePlanningOptions', () => {
   it('classifies HTTP 409 as a recoverable contractual ambiguity', async () => {
     const serviceError = Object.assign(new Error('overlapping internal contract data'), {
       status: 409,
-      code: 'contract-ambiguity',
+      code: 'options-conflict',
     });
     vi.spyOn(planningService, 'getPlanningOptions').mockRejectedValue(serviceError);
 
@@ -143,14 +152,15 @@ describe('usePlanningOptions', () => {
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current).toMatchObject({
       data: null,
-      reason: 'contract-ambiguity',
+      etag: null,
+      reason: 'options-conflict',
       recoverable: true,
     });
     expect(result.current.error).toMatchObject({
       status: 409,
-      code: 'contract-ambiguity',
+      code: 'options-conflict',
       recoverable: true,
-      message: 'No fue posible determinar un contrato operativo único para este vuelo.',
+      message: 'No fue posible preparar una versión asignable de esta operación. Actualice la planificación y revise su estado.',
     });
     expect(result.current.error.message).not.toContain('internal contract');
   });
@@ -167,6 +177,7 @@ describe('usePlanningOptions', () => {
     await waitFor(() => expect(result.current.status).toBe('error'));
     expect(result.current).toMatchObject({
       data: null,
+      etag: null,
       reason: 'request-failed',
       recoverable: true,
     });
@@ -189,8 +200,11 @@ describe('usePlanningOptions', () => {
           });
         }
         return Promise.resolve({
-          ...planningOptions,
-          turnaround: { ...planningOptions.turnaround, id: secondTurnaroundId },
+          options: {
+            ...planningOptions,
+            turnaround: { ...planningOptions.turnaround, id: secondTurnaroundId },
+          },
+          etag: '"planning-options-v2"',
         });
       }
     );
@@ -206,5 +220,6 @@ describe('usePlanningOptions', () => {
     await waitFor(() => expect(firstSignal.aborted).toBe(true));
     await waitFor(() => expect(result.current.status).toBe('success'));
     expect(result.current.data.turnaround.id).toBe(secondTurnaroundId);
+    expect(result.current.etag).toBe('"planning-options-v2"');
   });
 });
