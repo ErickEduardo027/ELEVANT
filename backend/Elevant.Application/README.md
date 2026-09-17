@@ -1,5 +1,10 @@
 # Application layer
 
-Use cases are organized as vertical slices under `Features`. This layer depends only on `Elevant.Domain`; infrastructure implementations are injected through abstractions.
+Use cases are organized as vertical slices under their capability, such as
+`Identity` and `Operations`. This layer depends only on `Elevant.Domain`;
+infrastructure implementations are injected through abstractions.
 
-The future `CreateFlight` slice, for example, should keep its command, validator, handler and result together inside `Features/Flights/CreateFlight`. It is documentation only until its rules and public contract are agreed.
+OCC planning keeps snapshot and options queries in separate slices. Persistence
+returns internal read models through `IOccPlanningReadStore`; the application
+revalidates the actor, selects safe scope defaults and evaluates stable agent
+eligibility reasons before the API maps the result to public contracts.

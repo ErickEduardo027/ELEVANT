@@ -78,6 +78,180 @@ export interface CurrentSessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface OccAgentOptionResponse {
+  id: string;
+  displayName: string;
+  employeeNumber: string;
+  eligible: boolean;
+  eligibilityReasons: string[];
+}
+
+export interface OccAircraftResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  registration?: string | null;
+}
+
+export interface OccAirlineResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface OccAirportResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface OccAssignedAgentResponse {
+  assignmentId: string;
+  agentId: string;
+  displayName: string;
+  employeeNumber: string;
+  /** @nullable */
+  positionId?: string | null;
+  /** @nullable */
+  positionCode?: string | null;
+  /** @nullable */
+  positionName?: string | null;
+  assignmentRole: string;
+  assignedAt: string;
+}
+
+export interface OccAssignedEquipmentResponse {
+  assignmentId: string;
+  equipmentId: string;
+  assetCode: string;
+  equipmentTypeId: string;
+  equipmentTypeCode: string;
+  equipmentTypeName: string;
+  status: string;
+  assignedAt: string;
+}
+
+export interface OccContractOptionResponse {
+  id: string;
+  code: string;
+  version: number;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+}
+
+export interface OccFlightLegResponse {
+  id: string;
+  flightNumber: string;
+  origin: OccAirportResponse;
+  destination: OccAirportResponse;
+  scheduledAt: string;
+  /** @nullable */
+  estimatedAt?: string | null;
+  /** @nullable */
+  actualAt?: string | null;
+}
+
+export interface OccGroundOperationResponse {
+  id: string;
+  status: string;
+  /** @nullable */
+  plannedStartAt?: string | null;
+  /** @nullable */
+  plannedEndAt?: string | null;
+  /** @nullable */
+  actualStartAt?: string | null;
+  /** @nullable */
+  actualEndAt?: string | null;
+}
+
+export interface OccOperationServiceResponse {
+  id: string;
+  lineNumber: number;
+  serviceDefinitionId: string;
+  code: string;
+  name: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+  status: string;
+}
+
+export interface OccStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
+export interface OccTerminalResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface OccStandResponse {
+  id: string;
+  code: string;
+  terminal?: OccTerminalResponse | null;
+}
+
+export interface OccPlanningTurnaroundContextResponse {
+  id: string;
+  operationCode: string;
+  operationDate: string;
+  station: OccStationResponse;
+  stand?: OccStandResponse | null;
+  referenceTime: string;
+}
+
+export interface OccServiceOptionResponse {
+  id: string;
+  serviceDefinitionId: string;
+  code: string;
+  name: string;
+  billingUnit: string;
+  minimumQuantity: number;
+  unitPrice: number;
+  currencyCode: string;
+}
+
+export interface OccPlanningOptionsResponse {
+  turnaround: OccPlanningTurnaroundContextResponse;
+  contract?: OccContractOptionResponse | null;
+  services: OccServiceOptionResponse[];
+  agents: OccAgentOptionResponse[];
+}
+
+export interface OccTurnaroundResponse {
+  id: string;
+  operationCode: string;
+  operationDate: string;
+  status: string;
+  airline: OccAirlineResponse;
+  aircraft?: OccAircraftResponse | null;
+  stand?: OccStandResponse | null;
+  arrival?: OccFlightLegResponse | null;
+  departure?: OccFlightLegResponse | null;
+  operation?: OccGroundOperationResponse | null;
+  agents: OccAssignedAgentResponse[];
+  equipment: OccAssignedEquipmentResponse[];
+  services: OccOperationServiceResponse[];
+}
+
+export interface OccPlanningSnapshotResponse {
+  station: OccStationResponse;
+  date: string;
+  turnarounds: OccTurnaroundResponse[];
+}
+
 export interface ProblemDetails {
   /** @nullable */
   type?: string | null;
@@ -105,6 +279,15 @@ export interface SystemPingResponse {
   environment: string;
   timestampUtc: string;
 }
+
+export type GetOccPlanningSnapshotParams = {
+stationId?: string;
+date?: string;
+};
+
+export type GetOccPlanningOptionsParams = {
+turnaroundId: string;
+};
 
 export const getCreateSessionUrl = () => {
 
@@ -169,6 +352,82 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccPlanningSnapshotUrl = (params?: GetOccPlanningSnapshotParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning?${stringifiedParams}` : `/api/v1/occ/planning`
+}
+
+/**
+ * @summary Returns the planning snapshot for an authorized station and operation date.
+ */
+export const getOccPlanningSnapshot = async (params?: GetOccPlanningSnapshotParams, options?: RequestInit): Promise<OccPlanningSnapshotResponse> => {
+
+  const res = await fetch(getGetOccPlanningSnapshotUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPlanningSnapshotResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccPlanningOptionsUrl = (params: GetOccPlanningOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/options?${stringifiedParams}` : `/api/v1/occ/planning/options`
+}
+
+/**
+ * @summary Returns contract services and agent eligibility for one scoped turnaround.
+ */
+export const getOccPlanningOptions = async (params: GetOccPlanningOptionsParams, options?: RequestInit): Promise<OccPlanningOptionsResponse> => {
+
+  const res = await fetch(getGetOccPlanningOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPlanningOptionsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

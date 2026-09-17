@@ -17,17 +17,29 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateSessionRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateSessionRequest"
+                  }
+                ]
               }
             },
             "text/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateSessionRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateSessionRequest"
+                  }
+                ]
               }
             },
             "application/*+json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateSessionRequest"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateSessionRequest"
+                  }
+                ]
               }
             }
           },
@@ -171,6 +183,217 @@
         ]
       }
     },
+    "/api/v1/occ/planning": {
+      "get": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "Returns the planning snapshot for an authorized station and operation date.",
+        "operationId": "GetOccPlanningSnapshot",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccPlanningSnapshotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/options": {
+      "get": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "Returns contract services and agent eligibility for one scoped turnaround.",
+        "operationId": "GetOccPlanningOptions",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccPlanningOptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/system/ping": {
       "get": {
         "tags": [
@@ -245,7 +468,707 @@
         "type": "object",
         "properties": {
           "actor": {
-            "$ref": "#/components/schemas/SessionActorResponse"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionActorResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAgentOptionResponse": {
+        "required": [
+          "displayName",
+          "eligibilityReasons",
+          "eligible",
+          "employeeNumber",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "eligibilityReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAircraftResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "registration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirlineResponse": {
+        "required": [
+          "iataCode",
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAirportResponse": {
+        "required": [
+          "iataCode",
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAssignedAgentResponse": {
+        "required": [
+          "agentId",
+          "assignedAt",
+          "assignmentId",
+          "assignmentRole",
+          "displayName",
+          "employeeNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "positionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "positionName": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignmentRole": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAssignedEquipmentResponse": {
+        "required": [
+          "assetCode",
+          "assignedAt",
+          "assignmentId",
+          "equipmentId",
+          "equipmentTypeCode",
+          "equipmentTypeId",
+          "equipmentTypeName",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "equipmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assetCode": {
+            "type": "string"
+          },
+          "equipmentTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "equipmentTypeCode": {
+            "type": "string"
+          },
+          "equipmentTypeName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccContractOptionResponse": {
+        "required": [
+          "code",
+          "currencyCode",
+          "id",
+          "validFrom",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccFlightLegResponse": {
+        "required": [
+          "destination",
+          "flightNumber",
+          "id",
+          "origin",
+          "scheduledAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "origin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirportResponse"
+              }
+            ]
+          },
+          "destination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirportResponse"
+              }
+            ]
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccGroundOperationResponse": {
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "plannedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "plannedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccOperationServiceResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "contractedQuantity",
+          "executedQuantity",
+          "id",
+          "lineNumber",
+          "name",
+          "serviceDefinitionId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceDefinitionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccPlanningOptionsResponse": {
+        "required": [
+          "agents",
+          "services",
+          "turnaround"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaround": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccPlanningTurnaroundContextResponse"
+              }
+            ]
+          },
+          "contract": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccContractOptionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccServiceOptionResponse"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAgentOptionResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccPlanningSnapshotResponse": {
+        "required": [
+          "date",
+          "station",
+          "turnarounds"
+        ],
+        "type": "object",
+        "properties": {
+          "station": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStationResponse"
+              }
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "turnarounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccTurnaroundResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccPlanningTurnaroundContextResponse": {
+        "required": [
+          "id",
+          "operationCode",
+          "operationDate",
+          "referenceTime",
+          "station"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "station": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStationResponse"
+              }
+            ]
+          },
+          "stand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStandResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "referenceTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccServiceOptionResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "currencyCode",
+          "id",
+          "minimumQuantity",
+          "name",
+          "serviceDefinitionId",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceDefinitionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "minimumQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "currencyCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccStandResponse": {
+        "required": [
+          "code",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccTerminalResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccStationResponse": {
+        "required": [
+          "code",
+          "ianaTimeZone",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccTerminalResponse": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccTurnaroundResponse": {
+        "required": [
+          "agents",
+          "airline",
+          "equipment",
+          "id",
+          "operationCode",
+          "operationDate",
+          "services",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "airline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirlineResponse"
+              }
+            ]
+          },
+          "aircraft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAircraftResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "stand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStandResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "arrival": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccFlightLegResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "departure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccFlightLegResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccGroundOperationResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAssignedAgentResponse"
+            }
+          },
+          "equipment": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAssignedEquipmentResponse"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccOperationServiceResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -352,10 +1275,18 @@
             "type": "string"
           },
           "organizationType": {
-            "$ref": "#/components/schemas/SessionOrganizationType"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionOrganizationType"
+              }
+            ]
           },
           "kind": {
-            "$ref": "#/components/schemas/SessionMembershipKind"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionMembershipKind"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -395,7 +1326,11 @@
             "format": "date-time"
           },
           "actor": {
-            "$ref": "#/components/schemas/SessionActorResponse"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionActorResponse"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -421,7 +1356,11 @@
             "type": "string"
           },
           "portal": {
-            "$ref": "#/components/schemas/SessionPortal"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionPortal"
+              }
+            ]
           },
           "userType": {
             "type": "string"
@@ -484,6 +1423,9 @@
   "tags": [
     {
       "name": "Authentication"
+    },
+    {
+      "name": "OccPlanning"
     },
     {
       "name": "System"

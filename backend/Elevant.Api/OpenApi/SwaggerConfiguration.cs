@@ -16,6 +16,7 @@ public static class SwaggerConfiguration
         {
             options.SupportNonNullableReferenceTypes();
             options.NonNullableReferenceTypesAsRequired();
+            options.UseAllOfToExtendReferenceSchemas();
 
             options.SwaggerDoc(ApiConfiguration.ApiVersion, new OpenApiInfo
             {

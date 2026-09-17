@@ -215,15 +215,14 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
                 .Select(response => response.Name)
                 .Order()
                 .ToArray());
-        Assert.Equal(
-            "#/components/schemas/CreateSessionRequest",
+        AssertSchemaReference(
             createSession
                 .GetProperty("requestBody")
                 .GetProperty("content")
                 .GetProperty("application/json")
-                .GetProperty("schema")
-                .GetProperty("$ref")
-                .GetString());
+                .GetProperty("schema"),
+            "#/components/schemas/CreateSessionRequest",
+            nullable: false);
         Assert.True(createSession.GetProperty("requestBody").GetProperty("required").GetBoolean());
         AssertResponseContent(
             createSession.GetProperty("responses"),
@@ -306,13 +305,26 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Equal(
             [mediaType],
             content.EnumerateObject().Select(entry => entry.Name).ToArray());
-        Assert.Equal(
+        AssertSchemaReference(
+            content.GetProperty(mediaType).GetProperty("schema"),
             schemaReference,
-            content
-                .GetProperty(mediaType)
-                .GetProperty("schema")
-                .GetProperty("$ref")
-                .GetString());
+            nullable: false);
+    }
+
+    private static void AssertSchemaReference(
+        JsonElement schema,
+        string expectedReference,
+        bool nullable)
+    {
+        var reference = schema.TryGetProperty("$ref", out var directReference)
+            ? directReference
+            : Assert.Single(schema.GetProperty("allOf").EnumerateArray())
+                .GetProperty("$ref");
+        Assert.Equal(expectedReference, reference.GetString());
+        Assert.Equal(
+            nullable,
+            schema.TryGetProperty("nullable", out var nullableProperty) &&
+            nullableProperty.GetBoolean());
     }
 
     private static void AssertStringProperty(

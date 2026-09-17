@@ -1,5 +1,7 @@
 using Elevant.Application.Identity.CreateSession;
 using Elevant.Application.Identity.GetCurrentSession;
+using Elevant.Application.Operations.GetOccPlanningOptions;
+using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elevant.Application;
@@ -15,6 +17,8 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<CreateSessionHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
+        services.AddScoped<GetOccPlanningSnapshotHandler>();
+        services.AddScoped<GetOccPlanningOptionsHandler>();
         return services;
     }
 }
