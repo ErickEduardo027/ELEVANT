@@ -4,10 +4,12 @@ import {
   subscribeHumanResourcesNotifications,
 } from '../../../services/humanResourcesNotificationsService';
 
-export function useUnreadNotificationsCount() {
+export function useUnreadNotificationsCount({ enabled = true } = {}) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    if (!enabled) return undefined;
+
     let mounted = true;
 
     getHumanResourcesUnreadNotificationsCount().then(value => {
@@ -24,8 +26,7 @@ export function useUnreadNotificationsCount() {
       mounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [enabled]);
 
   return count;
 }
-

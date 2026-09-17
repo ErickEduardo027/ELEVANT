@@ -3,7 +3,7 @@ import DashboardListRow from './DashboardListRow';
 import StatusBadge from '../../../../components/StatusBadge';
 import { TONE_HEX } from '../../../../components/toneColors';
 
-export default function ExpirationListItem({ expiration }) {
+export default function ExpirationListItem({ expiration, actionsEnabled = true }) {
   const navigate = useNavigate();
 
   return (
@@ -13,7 +13,7 @@ export default function ExpirationListItem({ expiration }) {
       subtitle={expiration.itemLabel}
       meta={expiration.dueLabel}
       badge={<StatusBadge tone={expiration.statusTone} label={expiration.statusLabel} />}
-      action={{ label: 'Ver', onClick: () => navigate(expiration.modulePath) }}
+      action={actionsEnabled ? { label: 'Ver', onClick: () => navigate(expiration.modulePath) } : undefined}
     />
   );
 }

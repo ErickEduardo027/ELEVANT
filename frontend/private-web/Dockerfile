@@ -12,8 +12,10 @@ COPY frontend/private-web/ ./
 
 ARG VITE_ELEVANT_API_URL
 ARG VITE_PROTOTYPE_API_URL
+ARG VITE_HR_DEMO_MODE
 ENV VITE_ELEVANT_API_URL=${VITE_ELEVANT_API_URL} \
-    VITE_PROTOTYPE_API_URL=${VITE_PROTOTYPE_API_URL}
+    VITE_PROTOTYPE_API_URL=${VITE_PROTOTYPE_API_URL} \
+    VITE_HR_DEMO_MODE=${VITE_HR_DEMO_MODE}
 
 RUN npm run build
 
@@ -26,6 +28,7 @@ ARG SOURCE_RUN_ID=unknown
 ARG REQUIRED_API_MANIFEST=unknown
 ARG OPENAPI_SHA256=unknown
 ARG VITE_ELEVANT_API_URL=unknown
+ARG VITE_HR_DEMO_MODE=unknown
 
 LABEL org.opencontainers.image.title="ELEVANT AVIAM Web" \
       org.opencontainers.image.description="Tailnet-only Development preview for internal AVIAM workflows" \
@@ -37,7 +40,8 @@ LABEL org.opencontainers.image.title="ELEVANT AVIAM Web" \
       io.elevant.source.run-id=${SOURCE_RUN_ID} \
       io.elevant.api.required-manifest=${REQUIRED_API_MANIFEST} \
       io.elevant.openapi.sha256=${OPENAPI_SHA256} \
-      io.elevant.web.api-origin=${VITE_ELEVANT_API_URL}
+      io.elevant.web.api-origin=${VITE_ELEVANT_API_URL} \
+      io.elevant.web.hr-demo-mode=${VITE_HR_DEMO_MODE}
 
 COPY --from=build --chown=101:101 /workspace/frontend/private-web/dist/ /usr/share/nginx/html/
 COPY --chown=101:101 frontend/private-web/nginx/default.conf /etc/nginx/conf.d/default.conf

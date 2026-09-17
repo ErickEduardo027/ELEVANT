@@ -18,7 +18,7 @@ function LogoMark({ className = '' }) {
   );
 }
 
-function UserMenu({ user, expanded, presentation, onLogout }) {
+function UserMenu({ user, expanded, presentation, onLogout, profileActionsEnabled = true }) {
   const [open, setOpen] = useState(false);
   const menuPosition =
     presentation === 'overlay' || expanded
@@ -61,20 +61,24 @@ function UserMenu({ user, expanded, presentation, onLogout }) {
           role="menu"
           className={`absolute z-30 rounded-lg border border-black/10 bg-white/95 py-1 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card ${menuPosition}`}
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
-          >
-            Perfil
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
-          >
-            Configuración
-          </button>
+          {profileActionsEnabled && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
+              >
+                Perfil
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
+              >
+                Configuración
+              </button>
+            </>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -124,6 +128,7 @@ function SidebarContent({
   onToggle,
   onCloseOverlay,
   onLogout,
+  profileActionsEnabled,
 }) {
   const items = navigation ?? modules?.map(item => ({ ...item, badge: badgeCounts?.[item.id], path: item.path ?? `#${item.id}` })) ?? [];
   const useModuleNavigation = Boolean(modules?.length && !navigation);
@@ -171,7 +176,7 @@ function SidebarContent({
       </nav>
 
       <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
-        <UserMenu user={user} expanded={expanded} presentation={presentation} onLogout={onLogout} />
+        <UserMenu user={user} expanded={expanded} presentation={presentation} onLogout={onLogout} profileActionsEnabled={profileActionsEnabled} />
         <SidebarFooter expanded={expanded} onLogout={onLogout} />
       </div>
     </div>
@@ -186,6 +191,7 @@ export default function Sidebar({
   badgeCounts = {},
   user,
   onLogout,
+  profileActionsEnabled = true,
   breakpoint,
   railVisible,
   railExpanded,
@@ -215,6 +221,7 @@ export default function Sidebar({
             onToggle={onToggle}
             onCloseOverlay={onCloseOverlay}
             onLogout={onLogout}
+            profileActionsEnabled={profileActionsEnabled}
           />
         </aside>
       )}
@@ -248,6 +255,7 @@ export default function Sidebar({
             onToggle={onCloseOverlay}
             onCloseOverlay={onCloseOverlay}
             onLogout={onLogout}
+            profileActionsEnabled={profileActionsEnabled}
           />
         </aside>
       )}

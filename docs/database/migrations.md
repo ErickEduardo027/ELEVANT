@@ -11,7 +11,7 @@ Desde la raíz:
 ```powershell
 $env:ELEVANT_DATABASE_ENVIRONMENT = 'Development'
 $env:ConnectionStrings__ElevantDatabase = 'Server=localhost;Initial Catalog=ElevantDevelopmentDb;Integrated Security=True;TrustServerCertificate=True'
-./database/DevelopmentDB/scripts/add-migration.ps1 -Name V1_06_DescriptiveName
+./database/DevelopmentDB/scripts/add-migration.ps1 -Name V1_08_DescriptiveName
 ```
 
 El script fuerza Development y comprueba que no quede drift. Después:

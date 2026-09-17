@@ -6,6 +6,7 @@ const string connectionVariable = "ConnectionStrings__ElevantDatabase";
 const string adminPasswordVariable = "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD";
 const string rampPasswordVariable = "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD";
 const string airlinePasswordVariable = "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD";
+const string humanResourcesPasswordVariable = "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD";
 
 if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development"))
 {
@@ -45,7 +46,8 @@ try
     var passwords = new DevelopmentAccountPasswords(
         ReadSecret(adminPasswordVariable),
         ReadSecret(rampPasswordVariable),
-        ReadSecret(airlinePasswordVariable));
+        ReadSecret(airlinePasswordVariable),
+        ReadSecret(humanResourcesPasswordVariable));
 
     await new DevelopmentDataSeeder(context).SeedAsync(passwords);
     Console.WriteLine("Synthetic Development fixtures are present.");

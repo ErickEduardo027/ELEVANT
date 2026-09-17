@@ -14,6 +14,7 @@ import HumanResourcesReportsPage from '../features/human-resources/reports/Repor
 import AuditRoute from '../features/human-resources/audit/AuditRoute';
 import HumanResourcesNotificationsRoute from '../features/human-resources/notifications/NotificationsRoute';
 import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_MODULE_IDS } from '../features/human-resources/navigation';
+import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../config/hrDemoMode';
 import AdminOccLayout from '../features/admin-occ/AdminOccLayout';
 import { AdminOccPreviewProvider } from '../features/admin-occ/AdminOccPreviewContext';
 import { ADMIN_OCC_BASE_PATH } from '../features/admin-occ/navigation';
@@ -50,18 +51,35 @@ function AdminProtectedLayout() {
   return <AdminOccPreviewProvider><AdminOccLayout user={{ name: session.name, role: session.roleLabel }} onLogout={logout} /></AdminOccPreviewProvider>;
 }
 
-const humanResourcesChildren = HUMAN_RESOURCES_NAVIGATION.map(item => ({
-  path: item.path.slice(HUMAN_RESOURCES_BASE_PATH.length + 1),
-  element: item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ? <HumanResourcesDashboardPage />
-    : item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ? <UsersPage />
-      : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ? <CertificationsPage />
-        : item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ? <PermitsPage />
-          : item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ? <SchedulesPage />
-            : item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ? <HumanResourcesReportsPage />
-              : item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ? <AuditRoute />
-                : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ? <HumanResourcesNotificationsRoute />
-                  : <ModulePlaceholder icon={item.icon} label={item.label} description={item.description} />,
-}));
+export function createHumanResourcesChildren(
+  dashboardReadOnlyDemo = HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO,
+) {
+  const routes = HUMAN_RESOURCES_NAVIGATION.map(item => ({
+    path: item.path.slice(HUMAN_RESOURCES_BASE_PATH.length + 1),
+    element: item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD
+      ? <HumanResourcesDashboardPage dashboardReadOnlyDemo={dashboardReadOnlyDemo} />
+      : item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ? <UsersPage />
+        : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ? <CertificationsPage />
+          : item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ? <PermitsPage />
+            : item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ? <SchedulesPage />
+              : item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ? <HumanResourcesReportsPage />
+                : item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ? <AuditRoute />
+                  : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ? <HumanResourcesNotificationsRoute />
+                    : <ModulePlaceholder icon={item.icon} label={item.label} description={item.description} />,
+  }));
+
+  if (!dashboardReadOnlyDemo) return routes;
+
+  return [
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD),
+    {
+      path: '*',
+      element: <Navigate to={`${HUMAN_RESOURCES_BASE_PATH}/dashboard`} replace />,
+    },
+  ];
+}
+
+const humanResourcesChildren = createHumanResourcesChildren();
 
 const router = createBrowserRouter([
   { path: '/', element: <Navigate to={ROUTE_PATHS.LOGIN} replace /> },
