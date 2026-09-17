@@ -16,6 +16,8 @@ using Elevant.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -28,11 +30,13 @@ public sealed class SqlServerMigrationTests
     private static readonly DevelopmentAccountPasswords InitialPasswords = new(
         "Synthetic-Admin!234",
         "Synthetic-Ramp!2345",
-        "Synthetic-Airline!234");
+        "Synthetic-Airline!234",
+        "Synthetic-HumanResources!234");
     private static readonly DevelopmentAccountPasswords RotatedPasswords = new(
         "Rotated-Admin!5678",
         InitialPasswords.RampAgent,
-        InitialPasswords.AirlineClient);
+        InitialPasswords.AirlineClient,
+        InitialPasswords.HumanResources);
 
     [Fact]
     public void DevelopmentPasswordsRejectSharedOrWeakSecrets()
@@ -40,15 +44,18 @@ public sealed class SqlServerMigrationTests
         Assert.Throws<InvalidOperationException>(() => new DevelopmentAccountPasswords(
             "Synthetic-Shared!234",
             "Synthetic-Shared!234",
-            "Synthetic-Airline!234"));
+            "Synthetic-Airline!234",
+            "Synthetic-HumanResources!234"));
         Assert.Throws<InvalidOperationException>(() => new DevelopmentAccountPasswords(
             "all-lowercase-password",
             "Synthetic-Ramp!2345",
-            "Synthetic-Airline!234"));
+            "Synthetic-Airline!234",
+            "Synthetic-HumanResources!234"));
         Assert.Throws<InvalidOperationException>(() => new DevelopmentAccountPasswords(
             "REPLACE_ME_AdminAccount!2026",
             "Synthetic-Ramp!2345",
-            "Synthetic-Airline!234"));
+            "Synthetic-Airline!234",
+            "Synthetic-HumanResources!234"));
     }
 
     [Fact]
@@ -69,7 +76,7 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Users.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Turnarounds.AsNoTracking().ToListAsync(cancellationToken));
-        Assert.Equal(6, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
+        Assert.Equal(7, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
 
         var productionCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
             context.Database.ExecuteSqlRawAsync(
@@ -80,6 +87,52 @@ public sealed class SqlServerMigrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => new DevelopmentDataSeeder(context).SeedAsync(InitialPasswords, cancellationToken));
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
+    }
+
+    [Fact]
+    public async Task HumanResourcesCredentialMigrationDownRestoresPreviousAllowlist()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null)
+        {
+            return;
+        }
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection,
+            "Development",
+            cancellationToken);
+        await using var migrationContext = CreateContext(database.ConnectionString);
+        var migrator = migrationContext.GetService<IMigrator>();
+        await migrator.MigrateAsync(cancellationToken: cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(
+                InitialPasswords,
+                cancellationToken);
+            await seederContext.Database.ExecuteSqlRawAsync(
+                "EXEC [iam].[set_development_account_credential] N'GESTION.HUMANA@DEV.ELEVANT.TEST', '40000000-0000-7000-8000-000000000004', NULL, NULL;",
+                cancellationToken);
+        }
+
+        await migrator.MigrateAsync(
+            "20260916151935_V1_06_DevelopmentAccountCredentialRotation",
+            cancellationToken);
+
+        await using var downgradedSeederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken);
+        await using var downgradedSeederContext = CreateContext(downgradedSeederConnection);
+        var humanResourcesCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
+            downgradedSeederContext.Database.ExecuteSqlRawAsync(
+                "EXEC [iam].[set_development_account_credential] N'GESTION.HUMANA@DEV.ELEVANT.TEST', '40000000-0000-7000-8000-000000000004', NULL, NULL;",
+                cancellationToken));
+        Assert.Equal(52101, humanResourcesCredentialMutation.Number);
+        await downgradedSeederContext.Database.ExecuteSqlRawAsync(
+            "EXEC [iam].[set_development_account_credential] N'ADMIN.OCC@DEV.ELEVANT.TEST', '40000000-0000-7000-8000-000000000001', NULL, NULL;",
+            cancellationToken);
     }
 
     [Fact]
@@ -111,6 +164,67 @@ public sealed class SqlServerMigrationTests
 
         var seeder = new DevelopmentDataSeeder(context);
         await seeder.SeedAsync(InitialPasswords, cancellationToken);
+
+        var humanResourcesPerson = await context.Persons
+            .AsNoTracking()
+            .SingleAsync(
+                person => person.PrimaryEmail == "gestion.humana@dev.elevant.test",
+                cancellationToken);
+        Assert.Equal(Guid.Parse("30000000-0000-7000-8000-000000000004"), humanResourcesPerson.PublicId);
+        Assert.Equal("Camila", humanResourcesPerson.FirstName);
+        Assert.Equal("Development", humanResourcesPerson.LastName);
+        Assert.Equal("DEV-HR-001", humanResourcesPerson.IdentificationNumber);
+
+        var humanResourcesAccount = await context.Users
+            .AsNoTracking()
+            .SingleAsync(
+                account => account.NormalizedEmail == "GESTION.HUMANA@DEV.ELEVANT.TEST",
+                cancellationToken);
+        Assert.Equal(Guid.Parse("40000000-0000-7000-8000-000000000004"), humanResourcesAccount.PublicId);
+        Assert.Equal(humanResourcesPerson.Id, humanResourcesAccount.PersonId);
+        Assert.Equal(AccountLifecycleStatus.Active, humanResourcesAccount.Status);
+        Assert.Equal(InvitationStatus.Accepted, humanResourcesAccount.InvitationStatus);
+
+        var humanResourcesRole = await context.Roles
+            .AsNoTracking()
+            .SingleAsync(role => role.NormalizedName == "GESTION_HUMANA", cancellationToken);
+        Assert.Equal("Gestión Humana", humanResourcesRole.Name);
+        Assert.Equal(PortalKind.BackOffice, humanResourcesRole.Portal);
+        Assert.Equal("human_resources", humanResourcesRole.UserType);
+        Assert.True(await context.Set<IdentityUserRole<long>>()
+            .AsNoTracking()
+            .AnyAsync(
+                link => link.UserId == humanResourcesAccount.Id &&
+                    link.RoleId == humanResourcesRole.Id,
+                cancellationToken));
+
+        var aviamOrganizationId = await context.Organizations
+            .AsNoTracking()
+            .Where(organization => organization.Code == "AVIAM")
+            .Select(organization => organization.Id)
+            .SingleAsync(cancellationToken);
+        var humanResourcesMembership = await context.OrganizationMemberships
+            .AsNoTracking()
+            .SingleAsync(
+                membership => membership.AccountId == humanResourcesAccount.Id &&
+                    membership.OrganizationId == aviamOrganizationId,
+                cancellationToken);
+        Assert.Equal(MembershipKind.InternalStaff, humanResourcesMembership.Kind);
+        Assert.Equal(MembershipStatus.Active, humanResourcesMembership.Status);
+        Assert.Equal("Gestión Humana", humanResourcesMembership.JobTitle);
+
+        var pujStationId = await context.Stations
+            .AsNoTracking()
+            .Where(item => item.Code == "PUJ")
+            .Select(item => item.Id)
+            .SingleAsync(cancellationToken);
+        var humanResourcesStationScope = await context.AccountStationScopes
+            .AsNoTracking()
+            .SingleAsync(
+                scope => scope.AccountId == humanResourcesAccount.Id &&
+                    scope.StationId == pujStationId,
+                cancellationToken);
+        Assert.Null(humanResourcesStationScope.RevokedAt);
 
         var legacyTurnaround = await context.Turnarounds
             .AsNoTracking()
@@ -2292,22 +2406,31 @@ public sealed class SqlServerMigrationTests
         Dictionary<string, ApplicationUser> accounts,
         DevelopmentAccountPasswords passwords)
     {
-        Assert.Equal(3, accounts.Count);
+        Assert.Equal(4, accounts.Count);
         AssertPassword(
             accounts["ADMIN.OCC@DEV.ELEVANT.TEST"],
             passwords.AdminOcc,
             passwords.RampAgent,
-            passwords.AirlineClient);
+            passwords.AirlineClient,
+            passwords.HumanResources);
         AssertPassword(
             accounts["RAMP.AGENT@DEV.ELEVANT.TEST"],
             passwords.RampAgent,
             passwords.AdminOcc,
-            passwords.AirlineClient);
+            passwords.AirlineClient,
+            passwords.HumanResources);
         AssertPassword(
             accounts["AIRLINE.CLIENT@DEV.ELEVANT.TEST"],
             passwords.AirlineClient,
             passwords.AdminOcc,
-            passwords.RampAgent);
+            passwords.RampAgent,
+            passwords.HumanResources);
+        AssertPassword(
+            accounts["GESTION.HUMANA@DEV.ELEVANT.TEST"],
+            passwords.HumanResources,
+            passwords.AdminOcc,
+            passwords.RampAgent,
+            passwords.AirlineClient);
     }
 
     private static void AssertPassword(

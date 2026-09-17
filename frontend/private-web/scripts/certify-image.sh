@@ -13,6 +13,7 @@ readonly EXPECTED_API_ORIGIN="${4:-}"
 readonly EXPECTED_API_MANIFEST="${5:-}"
 readonly EXPECTED_OPENAPI_SHA256="${6:-}"
 readonly EXPECTED_RUN_ID="${7:-}"
+readonly EXPECTED_HR_DEMO_MODE="dashboard-read-only"
 
 [[ -n "$IMAGE" ]] || {
   echo "An AVIAM Web image reference is required." >&2
@@ -41,6 +42,7 @@ readonly EXPECTED_RUN_ID="${7:-}"
 
 VITE_ELEVANT_API_URL="$EXPECTED_API_ORIGIN" \
 VITE_PROTOTYPE_API_URL="$EXPECTED_API_ORIGIN" \
+VITE_HR_DEMO_MODE="$EXPECTED_HR_DEMO_MODE" \
   node frontend/private-web/scripts/validate-development-env.mjs >/dev/null
 
 container=""
@@ -87,6 +89,10 @@ inspect_label() {
 }
 [[ "$(inspect_label io.elevant.web.api-origin)" == "$EXPECTED_API_ORIGIN" ]] || {
   echo "AVIAM Web image API origin label is invalid." >&2
+  exit 1
+}
+[[ "$(inspect_label io.elevant.web.hr-demo-mode)" == "$EXPECTED_HR_DEMO_MODE" ]] || {
+  echo "AVIAM Web image HR demo mode label is invalid." >&2
   exit 1
 }
 
@@ -212,6 +218,14 @@ mkdir "$response_root/html"
 docker cp "$container:/usr/share/nginx/html/." "$response_root/html/"
 grep -R --binary-files=text -Fq -- "$EXPECTED_API_ORIGIN" "$response_root/html" || {
   echo "AVIAM Web bundle does not contain the certified API origin." >&2
+  exit 1
+}
+grep -R --binary-files=text -Fq -- "$EXPECTED_HR_DEMO_MODE" "$response_root/html" || {
+  echo "AVIAM Web bundle does not contain the certified HR demo mode." >&2
+  exit 1
+}
+grep -R --binary-files=text -Fq -- 'Datos sintéticos · Solo lectura' "$response_root/html" || {
+  echo "AVIAM Web bundle does not contain the permanent synthetic-data banner." >&2
   exit 1
 }
 if grep -R --binary-files=text -Fq -- 'http://localhost:4310' "$response_root/html"; then

@@ -369,6 +369,8 @@ jobs:
               "previewMode": True,
               "prototypeApiOrigin": api,
           }
+          if application == "aviam-web":
+              document["hrDemoMode"] = "dashboard-read-only"
           path = pathlib.Path("artifacts/build-configuration.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8", newline="\n")
@@ -381,6 +383,9 @@ jobs:
           set -Eeuo pipefail
           export VITE_ELEVANT_API_URL="$WEB_API_ORIGIN"
           export VITE_PROTOTYPE_API_URL="$WEB_API_ORIGIN"
+          if [[ "${{ matrix.application }}" == aviam-web ]]; then
+            export VITE_HR_DEMO_MODE=dashboard-read-only
+          fi
           export VCS_REF="$GITHUB_SHA"
           export OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           export REQUIRED_API_MANIFEST="${{ steps.api.outputs.reference }}"
@@ -426,6 +431,7 @@ jobs:
             docker build "${common_args[@]}" \
               --build-arg "VITE_ELEVANT_API_URL=$WEB_API_ORIGIN" \
               --build-arg "VITE_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
+              --build-arg VITE_HR_DEMO_MODE=dashboard-read-only \
               --file frontend/private-web/Dockerfile \
               --tag "$LOCAL_IMAGE" .
           else
@@ -556,10 +562,14 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as stream:
               data = json.load(stream)
           expected = {"apiOrigin", "application", "applicationOrigin", "previewMode", "prototypeApiOrigin"}
+          if data.get("application") == "aviam-web":
+              expected.add("hrDemoMode")
           if set(data) != expected or data["application"] != sys.argv[2] or data["previewMode"] is not True:
               raise SystemExit("Transferred web build configuration has an invalid shape.")
           if data["prototypeApiOrigin"] != data["apiOrigin"]:
               raise SystemExit("Prototype adapter origin must equal the real Development API origin.")
+          if data["application"] == "aviam-web" and data["hrDemoMode"] != "dashboard-read-only":
+              raise SystemExit("AVIAM Web must use the certified dashboard-only HR demo mode.")
           PY
 
       - name: Log in to GHCR

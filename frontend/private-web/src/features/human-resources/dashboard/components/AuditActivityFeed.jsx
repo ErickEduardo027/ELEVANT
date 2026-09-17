@@ -13,20 +13,22 @@ function SkeletonRows() {
   );
 }
 
-export default function AuditActivityFeed({ activity, loading = false }) {
+export default function AuditActivityFeed({ activity, loading = false, actionsEnabled = true }) {
   const navigate = useNavigate();
 
   return (
     <div className="rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">Actividad reciente</h2>
-        <button
-          type="button"
-          onClick={() => navigate('/gestion-humana/audit')}
-          className="text-xs font-medium text-accent-600 hover:underline"
-        >
-          Ver historial completo
-        </button>
+        {actionsEnabled && (
+          <button
+            type="button"
+            onClick={() => navigate('/gestion-humana/audit')}
+            className="text-xs font-medium text-accent-600 hover:underline"
+          >
+            Ver historial completo
+          </button>
+        )}
       </div>
 
       {loading ? (

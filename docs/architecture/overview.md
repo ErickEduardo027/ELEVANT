@@ -10,7 +10,7 @@ ELEVANT organiza su único backend desplegable como monolito modular en .NET 10.
 4. **Elevant.Domain** contiene entidades y bases para invariantes/eventos sin dependencias de infraestructura; todavía no dispone de comportamiento completo de agregado.
 5. **Elevant.Contracts** contiene contratos públicos estables de la API; no expone entidades de persistencia.
 6. **Elevant.Infrastructure** emite los access tokens JWT y prepara otros adaptadores externos no persistentes; FlightAware aún no tiene adaptador funcional.
-7. **Elevant.Persistence** posee EF Core, SQL Server, Identity y seis migraciones v1 bajo `database/DevelopmentDB`; implementa los puertos de Application para verificar credenciales, resolver el actor y construir proyecciones OCC con scope de estación aplicado en SQL.
+7. **Elevant.Persistence** posee EF Core, SQL Server, Identity y siete migraciones v1 bajo `database/DevelopmentDB`; implementa los puertos de Application para verificar credenciales, resolver el actor y construir proyecciones OCC con scope de estación aplicado en SQL.
 8. **Elevant.DatabaseTool** verifica destinos y ejecuta el seed sintético explícito de Development; la API no migra ni siembra al arrancar.
 9. **SQL Server 2022** almacena el estado del backend y solo es accesible desde servicios autorizados; Development contempla acceso humano privado y controlado para datos de prueba.
 10. **FlightAware** representa una integración futura detrás de un puerto de Application; no es consumido por clientes.

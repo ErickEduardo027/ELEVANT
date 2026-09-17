@@ -85,6 +85,7 @@ $passwords = @{
     DemoAdminRotated = "CertDemoAdmin-Bb2!$suffix"
     DemoRamp = "CertDemoRamp-Aa1!$suffix"
     DemoAirline = "CertDemoAirline-Aa1!$suffix"
+    DemoHumanResources = "CertDemoHumanResources-Aa1!$suffix"
     TeamErick = "CertTeamErick-Aa1!$suffix"
     TeamEliezer = "CertTeamEliezer-Aa1!$suffix"
     TeamLaisha = "CertTeamLaisha-Aa1!$suffix"
@@ -437,7 +438,8 @@ function Invoke-Release {
         $arguments += @(
             '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$adminPassword",
             '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
-            '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)"
+            '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+            '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)"
         )
     }
     $arguments += @($ReleaseImage, $Command)
@@ -667,8 +669,8 @@ $productionConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantProduction
 $developmentMigratorConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=$($passwords.Migrator);Encrypt=True;TrustServerCertificate=True"
 $developmentSeederConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=$($passwords.Seeder);Encrypt=True;TrustServerCertificate=True"
 $productionIntegrityQuery = @'
-IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> 6
-    THROW 53000, 'Production does not contain the six v1 migrations.', 1;
+IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> 7
+    THROW 53000, 'Production does not contain the seven v1 migrations.', 1;
 
 IF (SELECT COUNT_BIG(*) FROM [infra].[database_instances]) <> 1
    OR NOT EXISTS (
@@ -778,6 +780,7 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -792,6 +795,7 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -879,13 +883,14 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', 'ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=REPLACE_ME_AdminAccount!2026',
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'
     )
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Development seed unexpectedly accepted a shared account secret.' `
-        -ExpectedErrorPattern 'must use three distinct passwords' `
+        -ExpectedErrorPattern 'must use four distinct passwords' `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
@@ -893,6 +898,7 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'
@@ -908,7 +914,8 @@ FROM [iam].[accounts]
 WHERE [normalized_email] IN (
     N'ADMIN.OCC@DEV.ELEVANT.TEST',
     N'RAMP.AGENT@DEV.ELEVANT.TEST',
-    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
+    N'GESTION.HUMANA@DEV.ELEVANT.TEST'
 );
 '@
     $adminCredentialStateQuery = @'
@@ -926,7 +933,8 @@ SELECT STRING_AGG(
 FROM [iam].[accounts]
 WHERE [normalized_email] IN (
     N'RAMP.AGENT@DEV.ELEVANT.TEST',
-    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST'
+    N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
+    N'GESTION.HUMANA@DEV.ELEVANT.TEST'
 );
 '@
 

@@ -12,13 +12,14 @@ npm test
 npm run test:delivery
 $env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
 $env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
+$env:VITE_HR_DEMO_MODE = "dashboard-read-only"
 npm run dev
 npm run build
 ```
 
 Vite sirve localmente en `http://localhost:5173`. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
 
-Ambas variables `VITE_*` son públicas. El build falla si falta alguna, si no usa HTTPS, si apunta a localhost, si contiene una ruta o si no representan el mismo origen. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido. `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores, pero en una imagen certificada también apunta a la API real de Development. Nunca use tokens, contraseñas ni cadenas SQL en variables `VITE_*`.
+Las tres variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development. El modo de Gestión Humana conserva la autenticación real, pero limita ese módulo a un dashboard de datos sintéticos y solo lectura: no llama endpoints `/api/hr`, no expone rutas profundas ni ofrece acciones de escritura o exportación.
 
 El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Solo acepta roles conocidos del portal `back_office`, conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
 
@@ -57,6 +58,7 @@ La imagen se construye desde la raíz del monorepo porque consume `packages/api-
 docker build --file frontend/private-web/Dockerfile `
   --build-arg VITE_ELEVANT_API_URL=https://api.elevant.test `
   --build-arg VITE_PROTOTYPE_API_URL=https://api.elevant.test `
+  --build-arg VITE_HR_DEMO_MODE=dashboard-read-only `
   --tag elevant-private-web:local .
 ```
 

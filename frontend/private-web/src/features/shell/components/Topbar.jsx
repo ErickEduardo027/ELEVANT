@@ -6,6 +6,7 @@ import NotificationPopover from '../../notifications/components/NotificationPopo
 export default function Topbar({
   station,
   notificationsCount,
+  notificationsEnabled = true,
   theme,
   onToggleTheme,
   user,
@@ -13,6 +14,7 @@ export default function Topbar({
   onOpenMenu,
   onOpenNotifications,
   notificationCenter,
+  profileActionsEnabled = true,
   onLogout,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -68,7 +70,7 @@ export default function Topbar({
           </button>
         )}
 
-        <div className="relative">
+        {notificationsEnabled && <div className="relative">
           <button
             type="button"
             onClick={() => {
@@ -92,7 +94,7 @@ export default function Topbar({
           {notificationCenter && notificationsOpen && (
             <NotificationPopover center={notificationCenter} onClose={() => setNotificationsOpen(false)} />
           )}
-        </div>
+        </div>}
 
         <button
           type="button"
@@ -133,13 +135,15 @@ export default function Topbar({
               <div className="px-3 py-1.5 text-xs text-text-secondary-light dark:text-text-secondary-dark">
                 {user.role}
               </div>
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
-              >
-                Perfil
-              </button>
+              {profileActionsEnabled && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-900 hover:bg-black/5 dark:text-text-primary-dark dark:hover:bg-white/5"
+                >
+                  Perfil
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"

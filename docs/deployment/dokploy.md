@@ -183,7 +183,7 @@ Validar tras el primer deploy desde un job/red privada:
 - Provider: Raw, con la misma verificación de revisión, hash y Preview Compose.
 - Fuente certificada: `database/DevelopmentDB/compose.development.release.yml`.
 - AutoDeploy: desactivado; Git/Dokploy no reconstruye este Compose ni SQL.
-- Variables: imagen release con digest, cadena migrator, cadena seeder y password de cuenta demo.
+- Variables: imagen release con digest, cadena migrator, cadena seeder y los cuatro passwords distintos de las cuentas demo.
 - El migrator usa `elevant_dev_migrator`; el seed usa `elevant_dev_seeder`.
 - Ambos declaran Development y validan marcador; el seeder depende del migrator exitoso.
 

@@ -9,6 +9,7 @@ const VARIABLE_NAMES = [
   'VITE_ELEVANT_API_URL',
   'VITE_PROTOTYPE_API_URL',
 ];
+const REQUIRED_HR_DEMO_MODE = 'dashboard-read-only';
 
 export class DevelopmentEnvironmentError extends Error {}
 
@@ -74,14 +75,23 @@ export function validateDevelopmentEnvironment(environment = process.env) {
     );
   }
 
-  return Object.freeze({ apiOrigin: origins.VITE_ELEVANT_API_URL });
+  if (environment.VITE_HR_DEMO_MODE !== REQUIRED_HR_DEMO_MODE) {
+    fail(`VITE_HR_DEMO_MODE must equal ${REQUIRED_HR_DEMO_MODE}.`);
+  }
+
+  return Object.freeze({
+    apiOrigin: origins.VITE_ELEVANT_API_URL,
+    hrDemoMode: REQUIRED_HR_DEMO_MODE,
+  });
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 if (invokedPath === fileURLToPath(import.meta.url)) {
   try {
     const result = validateDevelopmentEnvironment();
-    process.stdout.write(`PRIVATE_WEB_DEVELOPMENT_ENV_OK origin=${result.apiOrigin}\n`);
+    process.stdout.write(
+      `PRIVATE_WEB_DEVELOPMENT_ENV_OK origin=${result.apiOrigin} hr_demo_mode=${result.hrDemoMode}\n`,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`private_web_environment: ERROR: ${message}\n`);

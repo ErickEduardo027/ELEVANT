@@ -10,15 +10,18 @@ import {
 } from './validate-development-env.mjs';
 
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const repositoryRoot = path.resolve(projectRoot, '../..');
 
 const validEnvironment = {
   VITE_ELEVANT_API_URL: 'https://api.elevant.test',
   VITE_PROTOTYPE_API_URL: 'https://api.elevant.test',
+  VITE_HR_DEMO_MODE: 'dashboard-read-only',
 };
 
 test('accepts one shared remote HTTPS API origin', () => {
   assert.deepEqual(validateDevelopmentEnvironment(validEnvironment), {
     apiOrigin: 'https://api.elevant.test',
+    hrDemoMode: 'dashboard-read-only',
   });
 });
 
@@ -35,6 +38,8 @@ for (const [name, overrides, expected] of [
   ['a query', { VITE_ELEVANT_API_URL: 'https://api.elevant.test?preview=1' }, /must be an origin only/],
   ['a trailing slash', { VITE_PROTOTYPE_API_URL: 'https://api.elevant.test/' }, /exact origin without a trailing slash/],
   ['different origins', { VITE_PROTOTYPE_API_URL: 'https://other.elevant.test' }, /must use the same HTTPS origin/],
+  ['a missing HR demo mode', { VITE_HR_DEMO_MODE: '' }, /must equal dashboard-read-only/],
+  ['another HR demo mode', { VITE_HR_DEMO_MODE: 'full-access' }, /must equal dashboard-read-only/],
 ]) {
   test(`rejects ${name}`, () => {
     assert.throws(
@@ -45,11 +50,13 @@ for (const [name, overrides, expected] of [
 }
 
 test('delivery files preserve the private, non-root runtime boundary', async () => {
-  const [compose, dockerfile, nginx, securityHeaders] = await Promise.all([
+  const [compose, dockerfile, nginx, securityHeaders, certifier, webCi] = await Promise.all([
     readFile(path.join(projectRoot, 'compose.development.aviam-web.yml'), 'utf8'),
     readFile(path.join(projectRoot, 'Dockerfile'), 'utf8'),
     readFile(path.join(projectRoot, 'nginx/default.conf'), 'utf8'),
     readFile(path.join(projectRoot, 'nginx/security-headers.conf'), 'utf8'),
+    readFile(path.join(projectRoot, 'scripts/certify-image.sh'), 'utf8'),
+    readFile(path.join(repositoryRoot, '.github/workflows/web-ci.yml'), 'utf8'),
   ]);
 
   assert.match(compose, /127\.0\.0\.1:18081:8080/);
@@ -65,8 +72,17 @@ test('delivery files preserve the private, non-root runtime boundary', async () 
   assert.match(dockerfile, /USER 101:101/);
   assert.match(dockerfile, /io\.elevant\.application="aviam-web"/);
   assert.match(dockerfile, /io\.elevant\.web\.api-origin=/);
+  assert.match(dockerfile, /io\.elevant\.web\.hr-demo-mode=\$\{VITE_HR_DEMO_MODE\}/);
+  assert.match(dockerfile, /VITE_HR_DEMO_MODE=\$\{VITE_HR_DEMO_MODE\}/);
   assert.match(dockerfile, /s\|__ELEVANT_API_ORIGIN__\|\$\{VITE_ELEVANT_API_URL\}\|g/);
   assert.doesNotMatch(dockerfile, /backend-prototipo|database\//i);
+
+  assert.match(certifier, /EXPECTED_HR_DEMO_MODE="dashboard-read-only"/);
+  assert.match(certifier, /inspect_label io\.elevant\.web\.hr-demo-mode/);
+  assert.match(certifier, /permanent synthetic-data banner/);
+  assert.match(webCi, /document\["hrDemoMode"\] = "dashboard-read-only"/);
+  assert.match(webCi, /expected\.add\("hrDemoMode"\)/);
+  assert.match(webCi, /--build-arg VITE_HR_DEMO_MODE=dashboard-read-only/);
 
   assert.match(nginx, /location = \/healthz/);
   assert.match(nginx, /try_files \/healthz =404/);
