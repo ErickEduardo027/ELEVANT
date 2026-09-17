@@ -1001,7 +1001,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "d29c561508522fa394f25df7491387aa9d086872baab229fd01ce83674e35991"
+        "sha256": "3a2710a19527a37a1c6dad581129a13f3d6d0d11f8581ff339bc1aa431634474"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1017,7 +1017,7 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "b5021d5692b69e43475f7d50e2c5f799d58010e78d33c78d6b15c97a9321044b"
+        "sha256": "34dd739c5700f36fab268ec675795a547f1bd437f5b69de348e3ff326e5f77d9"
       }
     ],
     "openapi": [
@@ -1070,6 +1070,12 @@
         "name": "V1_06_DevelopmentAccountCredentialRotation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260916151935_V1_06_DevelopmentAccountCredentialRotation.cs",
         "sha256": "fc61c8582531f27d514ac3f6eaa231f5c2791ba71b8f9e7e479fc9ef801f02d6"
+      },
+      {
+        "id": "20260917161921",
+        "name": "V1_07_DevelopmentHumanResourcesAccount",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260917161921_V1_07_DevelopmentHumanResourcesAccount.cs",
+        "sha256": "d253d1bf40032ea228dd0790caafacedd3a570c20ec32a6ddcc50c83cd902918"
       }
     ],
     "manifestContracts": [
