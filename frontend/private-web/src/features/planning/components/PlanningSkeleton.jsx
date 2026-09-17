@@ -1,6 +1,6 @@
 export default function PlanningSkeleton() {
   return (
-    <div data-testid="planning-skeleton" className="space-y-3">
+    <div data-testid="planning-skeleton" role="status" aria-label="Cargando planificación operativa" className="space-y-3">
       {Array.from({ length: 6 }, (_, index) => (
         <div
           key={index}

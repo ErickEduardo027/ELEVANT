@@ -1,75 +1,107 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PlanningFilters from './PlanningFilters';
+import { STATION_ID, STATION_SCOPES } from '../testing/planningFixtures';
 
 const FILTERS = {
-  date: '',
-  airportCode: '',
   airlineIata: '',
   status: '',
   aircraftType: '',
   position: '',
-  supervisor: '',
+  terminal: '',
   agent: '',
   search: '',
 };
 
 const OPTIONS = {
-  dates: ['2026-08-05'],
-  airports: ['PUJ'],
-  airlines: ['AA', 'DM'],
-  statuses: ['delayed', 'scheduled'],
+  airlines: ['AA', 'ZZ'],
+  statuses: ['Delayed', 'Confirmed'],
   aircraftTypes: ['A320', 'B787'],
-  positions: ['A5', 'B21'],
-  supervisors: ['J. Ramírez'],
-  agents: ['M. Castillo'],
+  positions: ['A02', 'B21'],
+  terminals: ['A', 'B'],
+  agents: ['Riley Ramp'],
 };
 
+function renderFilters(overrides = {}) {
+  const props = {
+    filters: FILTERS,
+    onFilterChange: vi.fn(),
+    quickFilter: 'none',
+    onQuickFilter: vi.fn(),
+    onReset: vi.fn(),
+    options: OPTIONS,
+    stationScopes: STATION_SCOPES,
+    selectedStationId: STATION_ID,
+    onStationChange: vi.fn(),
+    selectedDate: '2026-08-19',
+    onDateChange: vi.fn(),
+    ...overrides,
+  };
+
+  render(<PlanningFilters {...props} />);
+  return props;
+}
+
 describe('PlanningFilters', () => {
-  it('calls onFilterChange with the new value when the airline select changes', async () => {
-    const onFilterChange = vi.fn();
-    render(
-      <PlanningFilters filters={FILTERS} onFilterChange={onFilterChange} quickFilter="none" onQuickFilter={() => {}} options={OPTIONS} />
-    );
+  it('changes the API station and operational date scope explicitly', async () => {
+    const props = renderFilters();
+
+    expect(screen.getByLabelText('Estación')).toHaveValue(STATION_ID);
+    expect(screen.getByLabelText('Fecha operativa')).toHaveValue('2026-08-19');
+    await userEvent.selectOptions(screen.getByLabelText('Estación'), STATION_ID);
+    fireEvent.change(screen.getByLabelText('Fecha operativa'), { target: { value: '2026-08-20' } });
+
+    expect(props.onStationChange).toHaveBeenCalledWith(STATION_ID);
+    expect(props.onDateChange).toHaveBeenLastCalledWith('2026-08-20');
+    expect(screen.getByText('La API aplica sus permisos de estación a cada consulta.')).toBeInTheDocument();
+  });
+
+  it('keeps scope controls available while loading so a slow request can be superseded', () => {
+    renderFilters({ loading: true });
+
+    expect(screen.getByLabelText('Estación')).toBeEnabled();
+    expect(screen.getByLabelText('Fecha operativa')).toBeEnabled();
+  });
+
+  it('emits canonical filter values for selects and search', async () => {
+    const props = renderFilters();
+
     await userEvent.selectOptions(screen.getByLabelText('Aerolínea'), 'AA');
-    expect(onFilterChange).toHaveBeenCalledWith('airlineIata', 'AA');
+    await userEvent.selectOptions(screen.getByLabelText('Terminal'), 'B');
+    await userEvent.type(screen.getByLabelText('Búsqueda'), 'ZZ');
+
+    expect(props.onFilterChange).toHaveBeenCalledWith('airlineIata', 'AA');
+    expect(props.onFilterChange).toHaveBeenCalledWith('terminal', 'B');
+    expect(props.onFilterChange).toHaveBeenCalledWith('search', 'Z');
   });
 
-  it('calls onFilterChange with the search text as the user types', async () => {
-    const onFilterChange = vi.fn();
-    render(
-      <PlanningFilters filters={FILTERS} onFilterChange={onFilterChange} quickFilter="none" onQuickFilter={() => {}} options={OPTIONS} />
-    );
-    await userEvent.type(screen.getByLabelText('Búsqueda'), 'DM');
-    expect(onFilterChange).toHaveBeenCalledWith('search', 'D');
-    expect(onFilterChange).toHaveBeenCalledWith('search', 'M');
+  it('offers only delayed and pending-resource quick filters', async () => {
+    const props = renderFilters();
+    const delayed = screen.getByRole('button', { name: 'Con retraso' });
+    const pending = screen.getByRole('button', { name: 'Pendientes de recursos' });
+
+    expect(delayed).toBeInTheDocument();
+    expect(pending).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hoy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mañana' })).not.toBeInTheDocument();
+    await userEvent.click(delayed);
+    expect(props.onQuickFilter).toHaveBeenCalledWith('delayed');
   });
 
-  it('renders the five quick-filter chips and calls onQuickFilter when clicked', async () => {
-    const onQuickFilter = vi.fn();
-    render(
-      <PlanningFilters filters={FILTERS} onFilterChange={() => {}} quickFilter="none" onQuickFilter={onQuickFilter} options={OPTIONS} />
-    );
-    for (const label of ['Hoy', 'Mañana', 'Retrasados', 'Sin asignación', 'Pendientes']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
-    }
-    await userEvent.click(screen.getByRole('button', { name: 'Retrasados' }));
-    expect(onQuickFilter).toHaveBeenCalledWith('delayed');
+  it('marks the active quick filter and can reset all filters', async () => {
+    const props = renderFilters({ quickFilter: 'unassigned' });
+
+    expect(screen.getByRole('button', { name: 'Pendientes de recursos' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+    expect(props.onReset).toHaveBeenCalledTimes(1);
   });
 
-  it('marks the active quick filter with aria-pressed', () => {
-    render(
-      <PlanningFilters filters={FILTERS} onFilterChange={() => {}} quickFilter="delayed" onQuickFilter={() => {}} options={OPTIONS} />
-    );
-    expect(screen.getByRole('button', { name: 'Retrasados' })).toHaveAttribute('aria-pressed', 'true');
-  });
+  it('uses the shared status vocabulary', () => {
+    renderFilters();
 
-  it('renders the Spanish status label from statusMeta, not a locally duplicated map', () => {
-    render(
-      <PlanningFilters filters={FILTERS} onFilterChange={() => {}} quickFilter="none" onQuickFilter={() => {}} options={OPTIONS} />
-    );
     const statusSelect = screen.getByLabelText('Estado');
-    expect(within(statusSelect).getByText('Retrasado')).toBeInTheDocument();
+    expect(within(statusSelect).getByText('Retrasada')).toBeInTheDocument();
+    expect(within(statusSelect).getByText('Confirmada')).toBeInTheDocument();
   });
 });

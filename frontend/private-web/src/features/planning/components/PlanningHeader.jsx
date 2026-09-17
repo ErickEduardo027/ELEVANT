@@ -20,7 +20,7 @@ function ActionButton({ icon: ActionIcon, label, onClick, disabled }) {
   );
 }
 
-export default function PlanningHeader({ onRefresh, onNewFlight }) {
+export default function PlanningHeader({ onRefresh }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -30,11 +30,11 @@ export default function PlanningHeader({ onRefresh, onNewFlight }) {
         <div>
           <h1 className="text-lg font-semibold text-ink-900 dark:text-text-primary-dark">Planificación Operativa</h1>
           <p className="mt-1 max-w-xl text-sm text-text-secondary-light dark:text-text-secondary-dark">
-            Gestione la planificación operacional de vuelos, recursos y posiciones.
+            Consulte las escalas, sus tramos y los recursos operativos autorizados para cada estación.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ActionButton icon={PlusIcon} label="Nuevo vuelo" onClick={onNewFlight} />
+          <ActionButton icon={PlusIcon} label="Nuevo vuelo" disabled />
           <ActionButton icon={UploadIcon} label="Importar vuelos" disabled />
           <ActionButton icon={RefreshCwIcon} label="Actualizar" onClick={onRefresh} />
           <ActionButton icon={DownloadIcon} label="Exportar" disabled />

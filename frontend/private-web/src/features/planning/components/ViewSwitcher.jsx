@@ -7,7 +7,7 @@ const VIEWS = [
 export default function ViewSwitcher({ active, onChange }) {
   return (
     <div
-      role="tablist"
+      role="group"
       aria-label="Vistas de planificación"
       className="inline-flex rounded-xl border border-black/10 bg-white/70 p-1 dark:border-white/10 dark:bg-surface-dark-card"
     >
@@ -15,8 +15,7 @@ export default function ViewSwitcher({ active, onChange }) {
         <button
           key={view.id}
           type="button"
-          role="tab"
-          aria-selected={active === view.id}
+          aria-pressed={active === view.id}
           onClick={() => onChange(view.id)}
           className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
             active === view.id

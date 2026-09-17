@@ -1,42 +1,187 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+
+const mapperMocks = vi.hoisted(() => ({
+  mapOccPlanningSnapshot: vi.fn(),
+}));
+
+vi.mock('./planningMappers', () => ({
+  mapOccPlanningSnapshot: mapperMocks.mapOccPlanningSnapshot,
+}));
+
 import { usePlanningData } from './usePlanningData';
 import * as planningService from '../../services/planningService';
 
+const stationId = '20000000-0000-0000-0000-000000000001';
+const rawSnapshot = {
+  station: { id: stationId, code: 'PUJ' },
+  date: '2026-08-19',
+  turnarounds: [{ id: '91000000-0000-0000-0000-000000000002' }],
+};
+
+beforeEach(() => {
+  mapperMocks.mapOccPlanningSnapshot.mockImplementation(snapshot => ({
+    station: snapshot.station,
+    date: snapshot.date,
+    flights: snapshot.turnarounds,
+  }));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  mapperMocks.mapOccPlanningSnapshot.mockReset();
+});
+
 describe('usePlanningData', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it('stays idle and does not fetch while disabled', () => {
+    const serviceSpy = vi.spyOn(planningService, 'getPlanningSnapshot');
+
+    const { result } = renderHook(() =>
+      usePlanningData({ stationId, enabled: false })
+    );
+
+    expect(result.current).toEqual({ status: 'idle', data: null, error: null });
+    expect(serviceSpy).not.toHaveBeenCalled();
   });
 
-  it('starts in loading state then resolves to success with the snapshot', async () => {
-    const fakeSnapshot = { station: { code: 'PUJ' }, date: '2026-08-05', flights: [] };
-    vi.spyOn(planningService, 'getPlanningSnapshot').mockResolvedValue(fakeSnapshot);
+  it('loads, maps, and exposes a successful planning snapshot', async () => {
+    const serviceSpy = vi
+      .spyOn(planningService, 'getPlanningSnapshot')
+      .mockResolvedValue(rawSnapshot);
 
-    const { result } = renderHook(() => usePlanningData('PUJ'));
+    const { result } = renderHook(() =>
+      usePlanningData({ stationId, date: '2026-08-19' })
+    );
+
     expect(result.current.status).toBe('loading');
-
     await waitFor(() => expect(result.current.status).toBe('success'));
-    expect(result.current.data).toEqual(fakeSnapshot);
+
+    expect(serviceSpy).toHaveBeenCalledTimes(1);
+    expect(serviceSpy.mock.calls[0][0]).toMatchObject({ stationId, date: '2026-08-19' });
+    expect(serviceSpy.mock.calls[0][0].signal).toBeInstanceOf(AbortSignal);
+    expect(mapperMocks.mapOccPlanningSnapshot).toHaveBeenCalledWith(rawSnapshot);
+    expect(result.current.data).toEqual({
+      station: rawSnapshot.station,
+      date: rawSnapshot.date,
+      flights: rawSnapshot.turnarounds,
+    });
     expect(result.current.error).toBeNull();
   });
 
-  it('moves to error state when the service rejects', async () => {
-    vi.spyOn(planningService, 'getPlanningSnapshot').mockRejectedValue(new Error('network down'));
+  it('omits an undefined date and re-fetches when refreshToken changes', async () => {
+    const serviceSpy = vi
+      .spyOn(planningService, 'getPlanningSnapshot')
+      .mockResolvedValue(rawSnapshot);
+    const { result, rerender } = renderHook(
+      ({ refreshToken }) => usePlanningData({ stationId, refreshToken }),
+      { initialProps: { refreshToken: 0 } }
+    );
 
-    const { result } = renderHook(() => usePlanningData('PUJ'));
-    await waitFor(() => expect(result.current.status).toBe('error'));
-    expect(result.current.data).toBeNull();
-    expect(result.current.error).toBeInstanceOf(Error);
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    expect(serviceSpy.mock.calls[0][0]).not.toHaveProperty('date');
+
+    rerender({ refreshToken: 1 });
+    await waitFor(() => expect(serviceSpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    expect(serviceSpy.mock.calls[1][0]).not.toHaveProperty('date');
   });
 
-  it('re-fetches when refreshToken changes', async () => {
-    const spy = vi.spyOn(planningService, 'getPlanningSnapshot').mockResolvedValue({ flights: [] });
-    const { rerender } = renderHook(({ token }) => usePlanningData('PUJ', undefined, token), {
-      initialProps: { token: 0 },
-    });
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  it('preserves the mapped station and date in an empty state', async () => {
+    const emptySnapshot = { ...rawSnapshot, turnarounds: [] };
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockResolvedValue(emptySnapshot);
 
-    rerender({ token: 1 });
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+    const { result } = renderHook(() => usePlanningData({ stationId }));
+
+    await waitFor(() => expect(result.current.status).toBe('empty'));
+    expect(result.current.data).toEqual({
+      station: emptySnapshot.station,
+      date: emptySnapshot.date,
+      flights: [],
+    });
+    expect(result.current.error).toBeNull();
+  });
+
+  it('exposes a dedicated unauthorized state without leaking service metadata', async () => {
+    const serviceError = Object.assign(new Error('private authorization details'), {
+      status: 401,
+      code: 'unauthorized',
+    });
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockRejectedValue(serviceError);
+
+    const { result } = renderHook(() => usePlanningData({ stationId }));
+
+    await waitFor(() => expect(result.current.status).toBe('unauthorized'));
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toMatchObject({
+      name: 'PlanningViewError',
+      status: 401,
+      code: 'unauthorized',
+      message: 'La sesión expiró. Inicia sesión nuevamente.',
+    });
+    expect(result.current.error.message).not.toContain('private authorization details');
+  });
+
+  it('exposes a non-recoverable forbidden state without leaking policy detail', async () => {
+    const serviceError = Object.assign(new Error('private policy details'), {
+      status: 403,
+      code: 'forbidden',
+    });
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockRejectedValue(serviceError);
+
+    const { result } = renderHook(() => usePlanningData({ stationId }));
+
+    await waitFor(() => expect(result.current.status).toBe('forbidden'));
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toMatchObject({
+      name: 'PlanningViewError',
+      status: 403,
+      code: 'forbidden',
+      message: 'Su cuenta no tiene permiso para consultar esta planificación.',
+    });
+    expect(result.current.error.message).not.toContain('private policy details');
+  });
+
+  it('exposes a generic sanitized recoverable error', async () => {
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockRejectedValue(
+      new Error('socket and internal host details')
+    );
+
+    const { result } = renderHook(() => usePlanningData({ stationId }));
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.data).toBeNull();
+    expect(result.current.error.message).toBe(
+      'No fue posible cargar la planificación operativa.'
+    );
+    expect(result.current.error.message).not.toContain('internal host');
+  });
+
+  it('aborts a superseded request and ignores its AbortError', async () => {
+    let firstSignal;
+    let requestNumber = 0;
+    vi.spyOn(planningService, 'getPlanningSnapshot').mockImplementation(({ signal }) => {
+      requestNumber += 1;
+      if (requestNumber === 1) {
+        firstSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      }
+      return Promise.resolve(rawSnapshot);
+    });
+
+    const { result, rerender } = renderHook(
+      ({ refreshToken }) => usePlanningData({ stationId, refreshToken }),
+      { initialProps: { refreshToken: 0 } }
+    );
+
+    await waitFor(() => expect(firstSignal).toBeInstanceOf(AbortSignal));
+    rerender({ refreshToken: 1 });
+
+    await waitFor(() => expect(firstSignal.aborted).toBe(true));
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    expect(result.current.error).toBeNull();
   });
 });
