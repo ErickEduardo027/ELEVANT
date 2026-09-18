@@ -8,4 +8,5 @@ public static class ApiConfiguration
     public const string ApiVersion = "v1";
     public const int SessionRequestBodyLimitBytes = 4096;
     public const int OccAssignmentRequestBodyLimitBytes = 1024;
+    public const int MobileDeviceRequestBodyLimitBytes = 2048;
 }

@@ -1,6 +1,7 @@
 import type {
   RampAssignedOperationResponse,
   RampFlightLegResponse,
+  RampGroundOperationResponse,
   RampOperationServiceResponse,
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,10 +30,16 @@ import {
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
+import { startAssignedRampOperation } from '../../services/ramp-operation-start';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 
 type DetailState = 'loading' | 'ready' | 'not-found' | 'offline' | 'unavailable';
+type StartNotice = Readonly<{
+  tone: 'success' | 'warning' | 'error';
+  title: string;
+  message: string;
+}>;
 
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -40,20 +47,39 @@ export default function OperationDetailScreen() {
   const [state, setState] = useState<DetailState>('loading');
   const [cached, setCached] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startNotice, setStartNotice] = useState<StartNotice | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const startRequestRef = useRef<AbortController | null>(null);
+  const startInFlightRef = useRef(false);
+  const lastStartedOperationRef = useRef<RampGroundOperationResponse | null>(null);
 
   const load = useCallback(async (refresh = false) => {
     requestRef.current?.abort();
     const request = new AbortController();
     requestRef.current = request;
     if (refresh) setRefreshing(true);
-    else setState('loading');
+    else {
+      setState('loading');
+      setStarting(false);
+      setStartNotice(null);
+      lastStartedOperationRef.current = null;
+    }
 
     try {
       const snapshot = await getAssignedOperations({ signal: request.signal });
       if (request.signal.aborted) return;
 
-      const found = snapshot.operations.find(item => item.operation.id === id) ?? null;
+      let found = snapshot.operations.find(item => item.operation.id === id) ?? null;
+      const lastStartedOperation = lastStartedOperationRef.current;
+      if (
+        found &&
+        snapshot.source === 'cache' &&
+        lastStartedOperation?.id === found.operation.id
+      ) {
+        found = { ...found, operation: lastStartedOperation };
+      }
+      if (snapshot.source === 'network') lastStartedOperationRef.current = null;
       setOperation(found);
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
@@ -71,7 +97,10 @@ export default function OperationDetailScreen() {
           resetToLogin('access_revoked');
           return;
         }
-        if (error.code === 'network_unavailable') {
+        if (
+          error.code === 'network_unavailable' ||
+          error.code === 'request_timeout'
+        ) {
           setState('offline');
           return;
         }
@@ -84,8 +113,79 @@ export default function OperationDetailScreen() {
 
   useFocusEffect(useCallback(() => {
     void load();
-    return () => requestRef.current?.abort();
+    return () => {
+      requestRef.current?.abort();
+      startRequestRef.current?.abort();
+      startInFlightRef.current = false;
+    };
   }, [load]));
+
+  const startOperation = useCallback(async () => {
+    if (
+      startInFlightRef.current ||
+      !operation ||
+      cached ||
+      operation.operation.status !== 'Assigned'
+    ) {
+      return;
+    }
+
+    startRequestRef.current?.abort();
+    const request = new AbortController();
+    startRequestRef.current = request;
+    startInFlightRef.current = true;
+    setStarting(true);
+    setStartNotice(null);
+
+    try {
+      const response = await startAssignedRampOperation(operation.operation.id, {
+        signal: request.signal,
+      });
+      if (request.signal.aborted) return;
+
+      lastStartedOperationRef.current = response.operation;
+      setOperation(current => {
+        if (!current || current.operation.id !== response.operation.id) {
+          return current;
+        }
+        return { ...current, operation: response.operation };
+      });
+      setCached(false);
+      setStartNotice({
+        tone: 'success',
+        title: 'Operación iniciada',
+        message: 'El inicio quedó registrado y la operación ya está en atención.',
+      });
+      await load(true);
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError) {
+        if (error.code === 'cancelled') return;
+        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
+          resetToLogin('session_expired');
+          return;
+        }
+        if (error.code === 'forbidden') {
+          resetToLogin('access_revoked');
+          return;
+        }
+
+        setStartNotice(startErrorNotice(error));
+        if (error.code === 'not_found' || error.code === 'conflict') {
+          await load(true);
+        }
+        return;
+      }
+      setStartNotice({
+        tone: 'error',
+        title: 'Inicio no confirmado',
+        message: 'No pudimos iniciar la operación. Actualiza el detalle y vuelve a intentarlo.',
+      });
+    } finally {
+      startInFlightRef.current = false;
+      if (!request.signal.aborted) setStarting(false);
+    }
+  }, [cached, load, operation]);
 
   if (state !== 'ready' || !operation) {
     return <DetailStateScreen onRetry={() => void load()} state={state} />;
@@ -134,6 +234,15 @@ export default function OperationDetailScreen() {
           <Meta icon="airplane-outline" label={operationAircraftLabel(operation)} />
         </View>
       </Card>
+
+      <OperationStartControl
+        cached={cached}
+        notice={startNotice}
+        onStart={() => void startOperation()}
+        operation={operation.operation}
+        starting={starting}
+        timeZone={timeZone}
+      />
 
       <SectionTitle title="Movimiento aéreo" subtitle={`Horario local · ${timeZone}`} />
       <View style={styles.legs}>
@@ -193,14 +302,181 @@ export default function OperationDetailScreen() {
           <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
         </View>
         <View style={styles.nextPhaseCopy}>
-          <Text style={styles.nextPhaseTitle}>Consulta operativa segura</Text>
+          <Text style={styles.nextPhaseTitle}>Siguiente etapa operativa</Text>
           <Text style={styles.nextPhaseText}>
-            El inicio, el checklist, las incidencias y el cierre estarán disponibles en una próxima etapa. Esta versión mantiene la operación en modo consulta.
+            El checklist, las incidencias y el cierre estarán disponibles en una próxima etapa. Por ahora, los servicios permanecen en modo consulta.
           </Text>
         </View>
       </View>
     </ScrollView>
   );
+}
+
+function OperationStartControl({
+  cached,
+  notice,
+  onStart,
+  operation,
+  starting,
+  timeZone,
+}: {
+  readonly cached: boolean;
+  readonly notice: StartNotice | null;
+  readonly onStart: () => void;
+  readonly operation: RampGroundOperationResponse;
+  readonly starting: boolean;
+  readonly timeZone: string;
+}) {
+  const isAssigned = operation.status === 'Assigned';
+  const isInProgress = operation.status === 'InProgress';
+
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      style={[
+        styles.startControl,
+        isInProgress && styles.startControlActive,
+      ]}
+    >
+      <View style={styles.startRail} />
+      <View style={styles.startBody}>
+        <View style={styles.startHeading}>
+          <View
+            style={[
+              styles.startIcon,
+              isInProgress && styles.startIconActive,
+            ]}
+          >
+            <Ionicons
+              name={isInProgress ? 'play' : 'flag-outline'}
+              size={22}
+              color={isInProgress ? colors.success : colors.orange}
+            />
+          </View>
+          <View style={styles.startCopy}>
+            <Text style={styles.startEyebrow}>CONTROL DE OPERACIÓN</Text>
+            <Text accessibilityRole="header" style={styles.startTitle}>
+              {isInProgress
+                ? 'Operación en atención'
+                : isAssigned
+                  ? 'Lista para iniciar'
+                  : 'Inicio no disponible'}
+            </Text>
+          </View>
+        </View>
+
+        {isInProgress ? (
+          <View style={styles.startedAtRow}>
+            <Ionicons name="checkmark-circle" size={19} color={colors.success} />
+            <Text style={styles.startedAtText}>
+              {operation.actualStartAt
+                ? `Inicio registrado ${formatDateTime(operation.actualStartAt, timeZone)}`
+                : 'Inicio confirmado por ELEVANT'}
+            </Text>
+          </View>
+        ) : isAssigned ? (
+          <>
+            <Text style={styles.startDescription}>
+              Confirma que estás en posición y listo para atender esta operación.
+            </Text>
+            {cached && (
+              <View style={styles.startOfflineHint}>
+                <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
+                <Text style={styles.startOfflineText}>
+                  Reconecta y actualiza el detalle antes de iniciar.
+                </Text>
+              </View>
+            )}
+            <PrimaryButton
+              disabled={cached || starting}
+              icon="play"
+              onPress={onStart}
+              title={starting ? 'INICIANDO…' : 'INICIAR OPERACIÓN'}
+            />
+          </>
+        ) : (
+          <Text style={styles.startDescription}>
+            El estado actual no permite registrar un nuevo inicio.
+          </Text>
+        )}
+
+        {notice && (
+          <View
+            accessibilityLiveRegion={notice.tone === 'error' ? 'assertive' : 'polite'}
+            style={[
+              styles.startNotice,
+              notice.tone === 'success' && styles.startNoticeSuccess,
+              notice.tone === 'warning' && styles.startNoticeWarning,
+              notice.tone === 'error' && styles.startNoticeError,
+            ]}
+          >
+            <Ionicons
+              name={notice.tone === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+              size={20}
+              color={notice.tone === 'success' ? colors.success : notice.tone === 'warning' ? colors.warning : colors.danger}
+            />
+            <View style={styles.startNoticeCopy}>
+              <Text style={styles.startNoticeTitle}>{notice.title}</Text>
+              <Text style={styles.startNoticeText}>{notice.message}</Text>
+            </View>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function startErrorNotice(error: MobileServiceError): StartNotice {
+  if (error.code === 'not_found') {
+    return {
+      tone: 'warning',
+      title: 'Asignación no disponible',
+      message: 'La operación ya no pertenece a tu lista. Estamos actualizando el detalle.',
+    };
+  }
+  if (error.code === 'conflict') {
+    return {
+      tone: 'warning',
+      title: 'La operación cambió',
+      message: 'Actualizamos el estado canónico. Revísalo antes de volver a intentar.',
+    };
+  }
+  if (error.code === 'network_unavailable') {
+    return {
+      tone: 'warning',
+      title: 'Inicio pendiente de confirmación',
+      message: 'Se perdió la conexión antes de confirmar el estado. Sin cerrar sesión, reconecta y vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+    };
+  }
+  if (error.code === 'request_timeout') {
+    return {
+      tone: 'warning',
+      title: 'Inicio pendiente de confirmación',
+      message: 'La respuesta tardó demasiado. Sin cerrar sesión, vuelve a intentar: ELEVANT reutilizará el mismo comando sin duplicar el inicio.',
+    };
+  }
+  if (error.code === 'storage_unavailable') {
+    return {
+      tone: 'error',
+      title: 'Dispositivo no disponible',
+      message: 'No pudimos proteger la identidad del dispositivo. Desbloquéalo y vuelve a intentar.',
+    };
+  }
+  if (error.code === 'device_conflict') {
+    return {
+      tone: 'error',
+      title: 'Registro del dispositivo en conflicto',
+      message: 'Cierra la sesión, abre la aplicación nuevamente y vuelve a intentar. Si persiste, contacta a AVIAM.',
+    };
+  }
+
+  return {
+    tone: 'error',
+    title: 'Inicio no confirmado',
+    message: error.retryable
+      ? 'No pudimos confirmar el inicio. Actualiza el detalle y vuelve a intentarlo.'
+      : 'El inicio fue rechazado. Actualiza el detalle antes de continuar.',
+  };
 }
 
 function DetailStateScreen({ onRetry, state }: { readonly onRetry: () => void; readonly state: DetailState }) {
@@ -365,6 +641,68 @@ const styles = StyleSheet.create({
   flight: { color: colors.white, fontSize: 26, fontWeight: '900', marginTop: 5 },
   airline: { color: '#C5D4EB', fontSize: 12, marginTop: 3 },
   heroMeta: { borderTopWidth: 1, borderTopColor: '#34558A', marginTop: 17, paddingTop: 14, gap: 9 },
+  startControl: {
+    borderWidth: 1,
+    borderColor: '#FFD0B7',
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    shadowColor: '#081C3A',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  startControlActive: { borderColor: '#B9DFC9', backgroundColor: '#F8FCFA' },
+  startRail: { width: 6, backgroundColor: colors.orange },
+  startBody: { flex: 1, minWidth: 0, padding: 16, gap: 12 },
+  startHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  startIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paleOrange,
+  },
+  startIconActive: { backgroundColor: '#E9F7EF' },
+  startCopy: { flex: 1, minWidth: 0 },
+  startEyebrow: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.25 },
+  startTitle: { color: colors.ink, fontSize: 19, fontWeight: '900', marginTop: 2 },
+  startDescription: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  startOfflineHint: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#FFF8EA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  startOfflineText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '700' },
+  startedAtRow: {
+    paddingTop: 11,
+    borderTopWidth: 1,
+    borderTopColor: '#D7EBDF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  startedAtText: { flex: 1, color: colors.success, fontSize: 13, fontWeight: '800' },
+  startNotice: {
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  startNoticeSuccess: { borderColor: '#B9DFC9', backgroundColor: '#E9F7EF' },
+  startNoticeWarning: { borderColor: '#F0C474', backgroundColor: '#FFF8EA' },
+  startNoticeError: { borderColor: '#F1BBBB', backgroundColor: '#FDECEC' },
+  startNoticeCopy: { flex: 1, minWidth: 0 },
+  startNoticeTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  startNoticeText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   metaText: { flex: 1, color: colors.white, fontSize: 12, fontWeight: '700' },
   metaTextDark: { color: colors.ink },

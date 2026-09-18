@@ -3,9 +3,11 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Operations;
 using Elevant.Application.Operations.GetRampAssignedOperations;
+using Elevant.Application.Operations.StartRampOperation;
 using Elevant.Contracts.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
@@ -17,7 +19,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampOperationsController(
-    GetRampAssignedOperationsHandler handler) : ControllerBase
+    GetRampAssignedOperationsHandler handler,
+    StartRampOperationHandler startHandler) : ControllerBase
 {
     /// <summary>Returns only active operations assigned to the current ramp agent.</summary>
     [HttpGet(Name = "GetRampAssignedOperations")]
@@ -54,6 +57,46 @@ public sealed class RampOperationsController(
             : FailureResult<RampAssignedOperationsResponse>(result.Failure!.Value);
     }
 
+    /// <summary>Starts one operation assigned to the authenticated ramp agent.</summary>
+    [HttpPost("{operationId:guid}/start", Name = "StartRampOperation")]
+    [ProducesResponseType<RampOperationStartResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<RampOperationStartResponse>> Start(
+        [FromRoute] Guid operationId,
+        [FromHeader(Name = "X-Elevant-Installation-Id"), BindRequired] Guid installationId,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+        {
+            return UnauthorizedResult<RampOperationStartResponse>();
+        }
+
+        var result = await startHandler.HandleAsync(
+            new StartRampOperationCommand(
+                accountId,
+                operationId,
+                installationId,
+                idempotencyKey,
+                idempotencyKey,
+                HttpContext.TraceIdentifier),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return FailureResult<RampOperationStartResponse>(result.Failure!.Value);
+        }
+
+        var start = result.Start!;
+        return Ok(new RampOperationStartResponse(start.ReceiptId, Map(start.Operation)));
+    }
+
     private bool TryGetAccountId(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
@@ -64,6 +107,15 @@ public sealed class RampOperationsController(
         RampOperationsFailure.Forbidden => ProblemResult<T>(
             StatusCodes.Status403Forbidden,
             "Access to ramp operations is forbidden."),
+        RampOperationsFailure.InvalidRequest => ProblemResult<T>(
+            StatusCodes.Status400BadRequest,
+            "The ramp operation request is invalid."),
+        RampOperationsFailure.NotFound => ProblemResult<T>(
+            StatusCodes.Status404NotFound,
+            "The ramp operation was not found."),
+        RampOperationsFailure.Conflict => ProblemResult<T>(
+            StatusCodes.Status409Conflict,
+            "The ramp operation request conflicts with current operational data."),
         _ => throw new ArgumentOutOfRangeException(
             nameof(failure),
             failure,
@@ -119,6 +171,14 @@ public sealed class RampOperationsController(
             service.ExecutedQuantity,
             service.BillingUnit,
             service.Status)).ToArray());
+
+    private static RampGroundOperationResponse Map(RampGroundOperationData operation) => new(
+        operation.Id,
+        operation.Status,
+        operation.PlannedStartAt,
+        operation.PlannedEndAt,
+        operation.ActualStartAt,
+        operation.ActualEndAt);
 
     private static RampTurnaroundResponse Map(RampTurnaroundData turnaround) => new(
         turnaround.Id,

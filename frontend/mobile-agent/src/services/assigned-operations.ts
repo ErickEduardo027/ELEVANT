@@ -513,7 +513,12 @@ export async function getAssignedOperations(
       if (!cleared) throw new MobileServiceError('cancelled');
       throw normalized;
     }
-    if (normalized.code !== 'network_unavailable') throw normalized;
+    if (
+      normalized.code !== 'network_unavailable' &&
+      normalized.code !== 'request_timeout'
+    ) {
+      throw normalized;
+    }
 
     const confirmedContext = await getMobileSessionRequestContext();
     if (confirmedContext.sessionId !== context.sessionId) {

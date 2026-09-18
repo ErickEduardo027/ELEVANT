@@ -3,6 +3,10 @@ namespace Elevant.Contracts.Operations;
 public sealed record RampAssignedOperationsResponse(
     IReadOnlyList<RampAssignedOperationResponse> Operations);
 
+public sealed record RampOperationStartResponse(
+    Guid ReceiptId,
+    RampGroundOperationResponse Operation);
+
 public sealed record RampAssignedOperationResponse(
     RampAgentAssignmentResponse Assignment,
     RampGroundOperationResponse Operation,

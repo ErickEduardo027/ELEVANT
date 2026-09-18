@@ -194,8 +194,15 @@ function loginErrorMessage(error: unknown) {
 
   if (error.code === 'cancelled') return '';
   if (error.code === 'authentication_failed') return 'El correo o la contraseña no son válidos.';
+  if (error.code === 'unauthenticated' || error.code === 'session_expired') {
+    return 'La sesión no pudo confirmarse. Inicia sesión nuevamente.';
+  }
   if (error.code === 'forbidden') return 'Esta cuenta no tiene acceso a la aplicación de rampa.';
+  if (error.code === 'device_conflict') {
+    return 'El registro seguro del dispositivo entró en conflicto. Abre la aplicación nuevamente y vuelve a intentar. Si persiste, contacta a AVIAM.';
+  }
   if (error.code === 'network_unavailable') return 'No hay conexión con la red privada de ELEVANT.';
+  if (error.code === 'request_timeout') return 'ELEVANT tardó demasiado en responder. Inténtalo nuevamente.';
   if (error.code === 'storage_unavailable') return 'No pudimos proteger la sesión en este dispositivo.';
   return 'No pudimos iniciar sesión. Inténtalo nuevamente.';
 }

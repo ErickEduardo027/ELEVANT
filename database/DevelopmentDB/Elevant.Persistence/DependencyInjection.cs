@@ -1,8 +1,10 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Integration;
 using Elevant.Persistence.Operations;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -56,6 +58,8 @@ public static class DependencyInjection
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
+        services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
+        services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
 
         services
             .AddHealthChecks()

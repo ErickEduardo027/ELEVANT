@@ -1,6 +1,8 @@
+using System.Data;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Operations;
+using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +33,27 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
         {
             return RampOperationsReadResult.Success([]);
         }
+
+        var strategy = context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+            var result = await GetActiveAssignedOperationsInsideTransactionAsync(
+                accountId,
+                stationIds,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        });
+    }
+
+    private async Task<RampOperationsReadResult> GetActiveAssignedOperationsInsideTransactionAsync(
+        Guid accountId,
+        Guid[] stationIds,
+        CancellationToken cancellationToken)
+    {
 
         var agentProfiles = await (
                 from account in context.Users.AsNoTracking()
@@ -70,7 +93,34 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                 where assignment.RampAgentId == agentProfile.Id &&
                       assignment.ReleasedAt == null &&
                       station.IsActive &&
-                      stationIds.Contains(station.PublicId)
+                      stationIds.Contains(station.PublicId) &&
+                      context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
+                          scope.RampAgentId == agentProfile.Id &&
+                          scope.StationId == station.Id &&
+                          scope.ValidFrom <= turnaround.OperationDate &&
+                          (scope.ValidTo == null ||
+                           scope.ValidTo >= turnaround.OperationDate)) &&
+                      context.Set<StandAssignment>().AsNoTracking()
+                          .Where(standAssignment =>
+                              standAssignment.TurnaroundId == turnaround.Id &&
+                              standAssignment.AssignedTo == null)
+                          .All(standAssignment => context.Stands.AsNoTracking().Any(stand =>
+                              stand.Id == standAssignment.StandId &&
+                              stand.IsActive &&
+                              stand.StationId == station.Id &&
+                              (stand.TerminalId == null ||
+                               context.Terminals.AsNoTracking().Any(terminal =>
+                                   terminal.Id == stand.TerminalId &&
+                                   terminal.IsActive &&
+                                   terminal.StationId == station.Id &&
+                                   context.Set<RampAgentTerminalScope>()
+                                       .AsNoTracking()
+                                       .Any(scope =>
+                                           scope.RampAgentId == agentProfile.Id &&
+                                           scope.TerminalId == terminal.Id &&
+                                           scope.ValidFrom <= turnaround.OperationDate &&
+                                           (scope.ValidTo == null ||
+                                            scope.ValidTo >= turnaround.OperationDate))))))
                 orderby operation.PlannedStartAt == null,
                     operation.PlannedStartAt,
                     turnaround.OperationDate,
@@ -153,8 +203,10 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                       assignment.AssignedTo == null &&
                       station.IsActive &&
                       stationIds.Contains(station.PublicId) &&
+                      stand.IsActive &&
                       stand.StationId == station.Id &&
-                      (terminal == null || terminal.StationId == station.Id)
+                      (terminal == null ||
+                       (terminal.IsActive && terminal.StationId == station.Id))
                 select new
                 {
                     assignment.TurnaroundId,

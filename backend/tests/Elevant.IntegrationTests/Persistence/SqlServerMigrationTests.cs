@@ -1,10 +1,13 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
+using Elevant.Application.Integration;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
@@ -1969,6 +1972,311 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task MobileRegistrationAndRampStartAreFailClosedAtomicAndIdempotent()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null)
+        {
+            return;
+        }
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection,
+            "Development",
+            cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext)
+                .SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        var accountId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var installationId = Guid.Parse("81000000-0000-7000-8000-000000000011");
+        var idempotencyKey = Guid.Parse("82000000-0000-7000-8000-000000000011");
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString,
+            new PasswordHashCounter());
+
+        async Task<MobileDeviceRegistrationWriteResult> RegisterAsync(
+            MobilePlatform platform = MobilePlatform.Android)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(
+                    new MobileDeviceRegistrationWriteRequest(
+                        accountId,
+                        installationId,
+                        platform,
+                        "1.2.3",
+                        "SQL test tablet",
+                        "Android 16"),
+                    cancellationToken);
+        }
+
+        async Task<RampOperationStartWriteResult> StartAsync(
+            Guid commandKey,
+            Guid requestedOperationId)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsCommandStore>()
+                .StartOperationAsync(
+                    new RampOperationStartWriteRequest(
+                        accountId,
+                        [stationId],
+                        requestedOperationId,
+                        installationId,
+                        commandKey,
+                        commandKey,
+                        "ramp-start-sql-test"),
+                    cancellationToken);
+        }
+
+        var rampAgentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        await using (var inactiveProfileContext = CreateContext(database.ConnectionString))
+        {
+            await inactiveProfileContext.RampAgents
+                .Where(item => item.PublicId == rampAgentId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.IsActive, false),
+                    cancellationToken);
+        }
+
+        var inactiveProfileRegistration = await RegisterAsync();
+        Assert.Equal(
+            MobileDeviceRegistrationWriteFailure.Forbidden,
+            inactiveProfileRegistration.Failure);
+        await using (var restoreProfileContext = CreateContext(database.ConnectionString))
+        {
+            Assert.False(await restoreProfileContext.MobileDevices
+                .AnyAsync(item => item.InstallationId == installationId, cancellationToken));
+            await restoreProfileContext.RampAgents
+                .Where(item => item.PublicId == rampAgentId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.IsActive, true),
+                    cancellationToken);
+        }
+
+        var firstRegistration = await RegisterAsync();
+        var repeatedRegistration = await RegisterAsync();
+        Assert.True(firstRegistration.IsSuccess);
+        Assert.True(repeatedRegistration.IsSuccess);
+        Assert.Equal(
+            firstRegistration.CommitReceiptId,
+            repeatedRegistration.CommitReceiptId);
+        Assert.Equal(installationId, repeatedRegistration.Device!.InstallationId);
+        Assert.Equal("Android", repeatedRegistration.Device.Platform);
+        Assert.Equal(0, repeatedRegistration.Device.LastSeenAt.Ticks %
+            TimeSpan.TicksPerMillisecond);
+
+        var platformConflict = await RegisterAsync(MobilePlatform.Ios);
+        Assert.Equal(
+            MobileDeviceRegistrationWriteFailure.Conflict,
+            platformConflict.Failure);
+
+        var startGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<RampOperationStartWriteResult> StartWhenReleasedAsync(Guid commandKey)
+        {
+            await startGate.Task.WaitAsync(cancellationToken);
+            return await StartAsync(commandKey, operationId);
+        }
+
+        var concurrentStarts = new[]
+        {
+            StartWhenReleasedAsync(idempotencyKey),
+            StartWhenReleasedAsync(idempotencyKey),
+        };
+        startGate.SetResult();
+        var outcomes = await Task.WhenAll(concurrentStarts);
+        Assert.All(outcomes, outcome => Assert.True(outcome.IsSuccess));
+        Assert.Single(outcomes.Select(outcome => outcome.CommitReceiptId).Distinct());
+        Assert.Single(outcomes.Select(outcome => outcome.Start).Distinct());
+
+        var firstStart = outcomes[0];
+        var replay = await StartAsync(idempotencyKey, operationId);
+        Assert.True(replay.IsSuccess);
+        Assert.Equal(firstStart.Start, replay.Start);
+        Assert.Equal("InProgress", firstStart.Start!.Operation.Status);
+        Assert.NotNull(firstStart.Start.Operation.ActualStartAt);
+        Assert.Equal(
+            0,
+            firstStart.Start.Operation.ActualStartAt.Value.Ticks %
+                TimeSpan.TicksPerMillisecond);
+
+        var keyReuse = await StartAsync(idempotencyKey, Guid.NewGuid());
+        Assert.Equal(
+            RampOperationStartWriteFailure.IdempotencyKeyConflict,
+            keyReuse.Failure);
+
+        var postStartKey = Guid.Parse("82000000-0000-7000-8000-000000000013");
+        var alreadyStarted = await StartAsync(postStartKey, operationId);
+        Assert.Equal(RampOperationStartWriteFailure.Conflict, alreadyStarted.Failure);
+        var rejectedReplay = await StartAsync(postStartKey, operationId);
+        Assert.Equal(alreadyStarted.Failure, rejectedReplay.Failure);
+        Assert.Equal(alreadyStarted.CommitReceiptId, rejectedReplay.CommitReceiptId);
+
+        await using (var verificationContext = CreateContext(database.ConnectionString))
+        {
+            var device = await verificationContext.MobileDevices
+                .SingleAsync(
+                    item => item.InstallationId == installationId,
+                    cancellationToken);
+            Assert.Null(device.RevokedAt);
+            Assert.Single(await verificationContext.Set<MobileDeviceAccountBinding>()
+                .Where(item => item.MobileDeviceId == device.Id && item.UnboundAt == null)
+                .ToArrayAsync(cancellationToken));
+
+            var operation = await verificationContext.GroundOperations
+                .SingleAsync(item => item.PublicId == operationId, cancellationToken);
+            Assert.Equal(GroundOperationStatus.InProgress, operation.CurrentStatus);
+            Assert.Equal(firstStart.Start.Operation.ActualStartAt, operation.ActualStartAt);
+            Assert.Single(await verificationContext.Set<GroundOperationStatusEvent>()
+                .Where(item => item.GroundOperationId == operation.Id &&
+                    item.FromStatus == GroundOperationStatus.Assigned &&
+                    item.ToStatus == GroundOperationStatus.InProgress)
+                .ToArrayAsync(cancellationToken));
+
+            var audit = Assert.Single(await verificationContext.AuditEntries
+                .Where(item => item.EntityPublicId == operationId &&
+                    item.Action == "ramp.operation.started" &&
+                    item.Source == AuditSource.MobileSync)
+                .ToArrayAsync(cancellationToken));
+            Assert.Equal(2, await verificationContext.AuditChanges
+                .CountAsync(item => item.AuditEntryId == audit.Id, cancellationToken));
+
+            var receipts = await verificationContext.MobileCommandReceipts
+                .Where(item => item.MobileDeviceId == device.Id)
+                .OrderBy(item => item.IdempotencyKey)
+                .ToArrayAsync(cancellationToken);
+            Assert.Equal(2, receipts.Length);
+            var processed = Assert.Single(
+                receipts,
+                item => item.IdempotencyKey == idempotencyKey.ToString("D"));
+            Assert.Equal(MobileCommandStatus.Processed, processed.Status);
+            Assert.NotNull(processed.ResultJson);
+            var postStartRejection = Assert.Single(
+                receipts,
+                item => item.IdempotencyKey == postStartKey.ToString("D"));
+            Assert.Equal(MobileCommandStatus.Rejected, postStartRejection.Status);
+            Assert.Equal("conflict", postStartRejection.ErrorCode);
+
+        }
+
+        await using (var revokedContext = CreateContext(database.ConnectionString))
+        {
+            var device = await revokedContext.MobileDevices
+                .SingleAsync(item => item.InstallationId == installationId, cancellationToken);
+            device.RevokedAt = device.LastSeenAt.AddMilliseconds(1);
+            await revokedContext.SaveChangesAsync(cancellationToken);
+        }
+
+        var revokedDeviceStart = await StartAsync(
+            Guid.Parse("82000000-0000-7000-8000-000000000014"),
+            operationId);
+        Assert.Equal(RampOperationStartWriteFailure.Forbidden, revokedDeviceStart.Failure);
+        await using (var restoreDeviceContext = CreateContext(database.ConnectionString))
+        {
+            await restoreDeviceContext.MobileDevices
+                .Where(item => item.InstallationId == installationId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.RevokedAt, (DateTimeOffset?)null),
+                    cancellationToken);
+        }
+
+        long rampAgentInternalId;
+        DateOnly operationDate;
+        await using (var scopeContext = CreateContext(database.ConnectionString))
+        {
+            rampAgentInternalId = await scopeContext.RampAgents
+                .Where(item => item.PublicId == rampAgentId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            operationDate = await (
+                    from operation in scopeContext.GroundOperations
+                    join turnaround in scopeContext.Turnarounds
+                        on operation.TurnaroundId equals turnaround.Id
+                    where operation.PublicId == operationId
+                    select turnaround.OperationDate)
+                .SingleAsync(cancellationToken);
+            await scopeContext.Set<RampAgentStationScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId && item.ValidTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.ValidTo,
+                        operationDate.AddDays(-1)),
+                    cancellationToken);
+        }
+
+        var expiredStationScope = await StartAsync(
+            Guid.Parse("82000000-0000-7000-8000-000000000015"),
+            operationId);
+        Assert.Equal(RampOperationStartWriteFailure.NotFound, expiredStationScope.Failure);
+        await using (var scopeContext = CreateContext(database.ConnectionString))
+        {
+            await scopeContext.Set<RampAgentStationScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.ValidTo, (DateOnly?)null),
+                    cancellationToken);
+            await scopeContext.Set<RampAgentTerminalScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId && item.ValidTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.ValidTo,
+                        operationDate.AddDays(-1)),
+                    cancellationToken);
+        }
+
+        var expiredTerminalScope = await StartAsync(
+            Guid.Parse("82000000-0000-7000-8000-000000000016"),
+            operationId);
+        Assert.Equal(RampOperationStartWriteFailure.NotFound, expiredTerminalScope.Failure);
+        await using (var bindingContext = CreateContext(database.ConnectionString))
+        {
+            await bindingContext.Set<RampAgentTerminalScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.ValidTo, (DateOnly?)null),
+                    cancellationToken);
+            var deviceInternalId = await bindingContext.MobileDevices
+                .Where(item => item.InstallationId == installationId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var adminInternalId = await bindingContext.Users
+                .Where(item => item.PublicId ==
+                    Guid.Parse("40000000-0000-7000-8000-000000000001"))
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            await bindingContext.Set<MobileDeviceAccountBinding>()
+                .Where(item => item.MobileDeviceId == deviceInternalId && item.UnboundAt == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.AccountId, adminInternalId),
+                    cancellationToken);
+        }
+
+        var foreignBinding = await RegisterAsync();
+        Assert.Equal(
+            MobileDeviceRegistrationWriteFailure.Forbidden,
+            foreignBinding.Failure);
+        var foreignBindingStart = await StartAsync(
+            Guid.Parse("82000000-0000-7000-8000-000000000017"),
+            operationId);
+        Assert.Equal(RampOperationStartWriteFailure.Forbidden, foreignBindingStart.Failure);
+    }
+
+    [Fact]
     public async Task RampOperationsReadStoreDerivesAgentAndEnforcesAssignmentAndStationScope()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -2185,9 +2493,71 @@ public sealed class SqlServerMigrationTests
                 [otherStationId],
                 cancellationToken);
             Assert.True(otherStation.IsSuccess);
-            Assert.Equal(
-                otherStationOperationId,
-                Assert.Single(otherStation.Operations!).Operation.Id);
+            Assert.Empty(otherStation.Operations!);
+        }
+
+        long rampAgentInternalId;
+        DateOnly ownOperationDate;
+        await using (var authorizationContext = CreateContext(database.ConnectionString))
+        {
+            rampAgentInternalId = await authorizationContext.RampAgents
+                .Where(item => item.PublicId == agentId)
+                .Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            ownOperationDate = await authorizationContext.Turnarounds
+                .Where(item => item.OperationCode == "DEV-TAT-0001")
+                .Select(item => item.OperationDate)
+                .SingleAsync(cancellationToken);
+            await authorizationContext.Set<RampAgentStationScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId && item.ValidTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.ValidTo,
+                        ownOperationDate.AddDays(-1)),
+                    cancellationToken);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var expiredStationScope = await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsReadStore>()
+                .GetActiveAssignedOperationsAsync(accountId, [stationId], cancellationToken);
+            Assert.True(expiredStationScope.IsSuccess);
+            Assert.Empty(expiredStationScope.Operations!);
+        }
+
+        await using (var authorizationContext = CreateContext(database.ConnectionString))
+        {
+            await authorizationContext.Set<RampAgentStationScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.ValidTo, (DateOnly?)null),
+                    cancellationToken);
+            await authorizationContext.Set<RampAgentTerminalScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId && item.ValidTo == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        item => item.ValidTo,
+                        ownOperationDate.AddDays(-1)),
+                    cancellationToken);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var expiredTerminalScope = await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsReadStore>()
+                .GetActiveAssignedOperationsAsync(accountId, [stationId], cancellationToken);
+            Assert.True(expiredTerminalScope.IsSuccess);
+            Assert.Empty(expiredTerminalScope.Operations!);
+        }
+
+        await using (var authorizationContext = CreateContext(database.ConnectionString))
+        {
+            await authorizationContext.Set<RampAgentTerminalScope>()
+                .Where(item => item.RampAgentId == rampAgentInternalId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.ValidTo, (DateOnly?)null),
+                    cancellationToken);
         }
 
         await using (var profileContext = CreateContext(database.ConnectionString))

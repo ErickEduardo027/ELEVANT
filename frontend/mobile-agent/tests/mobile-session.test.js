@@ -41,6 +41,8 @@ jest.mock('expo-crypto', () => ({
 const {
   assignedOperationsCacheKey,
   clearStoredMobileSession,
+  getOrCreateRampStartCommandIfCurrent,
+  readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
   updateStoredMobileSessionMetadata,
@@ -52,7 +54,10 @@ const SecureStore = require('expo-secure-store');
 
 const ACCOUNT_A = '20000000-0000-4000-8000-000000000001';
 const ACCOUNT_B = '20000000-0000-4000-8000-000000000002';
+const OPERATION_A = '70000000-0000-4000-8000-000000000001';
+const OPERATION_B = '70000000-0000-4000-8000-000000000002';
 const CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
+const INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
 const METADATA_KEY = 'elevant:mobile:session-metadata:v1';
 
 function metadata(accountId, extra = {}) {
@@ -168,4 +173,48 @@ test('distinguishes optional cache failure from session validation failure', asy
     kind: 'active',
     sessionId,
   });
+});
+
+test('keeps one installation identity outside the login session lifecycle', async () => {
+  const installationId = await readOrCreateMobileInstallationId();
+  await expect(readOrCreateMobileInstallationId()).resolves.toBe(installationId);
+
+  await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  await clearStoredMobileSession();
+
+  expect(mockSecureData.get(INSTALLATION_ID_KEY)).toBe(installationId);
+  await expect(readOrCreateMobileInstallationId()).resolves.toBe(installationId);
+});
+
+test('reuses a start idempotency key per account and operation until logout', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const first = await getOrCreateRampStartCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+  );
+
+  await expect(
+    getOrCreateRampStartCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A),
+  ).resolves.toEqual(first);
+  await expect(
+    getOrCreateRampStartCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_B),
+  ).resolves.not.toEqual(first);
+
+  await clearStoredMobileSession();
+  await expect(
+    getOrCreateRampStartCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A),
+  ).resolves.toEqual({ kind: 'not-current' });
+
+  const nextSessionId = await writeStoredMobileSession(
+    'token-a-next',
+    metadata(ACCOUNT_A),
+  );
+  await expect(
+    getOrCreateRampStartCommandIfCurrent(
+      nextSessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+    ),
+  ).resolves.not.toEqual(first);
 });

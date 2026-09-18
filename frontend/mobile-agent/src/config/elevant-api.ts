@@ -15,9 +15,16 @@ export type MobileAgentApiClientOptions = Omit<
 };
 
 export class MobileAgentNetworkError extends Error {
-  constructor() {
-    super('The ELEVANT API network is unavailable.');
+  readonly reason: 'unavailable' | 'timeout';
+
+  constructor(reason: 'unavailable' | 'timeout' = 'unavailable') {
+    super(
+      reason === 'timeout'
+        ? 'The ELEVANT API request timed out.'
+        : 'The ELEVANT API network is unavailable.',
+    );
     this.name = 'MobileAgentNetworkError';
+    this.reason = reason;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
@@ -58,7 +65,7 @@ function networkAwareFetch(
         signal: controller.signal,
       });
     } catch (error) {
-      if (timedOut) throw new MobileAgentNetworkError();
+      if (timedOut) throw new MobileAgentNetworkError('timeout');
       if (callerSignal?.aborted || isAbortError(error)) throw error;
       throw new MobileAgentNetworkError();
     } finally {

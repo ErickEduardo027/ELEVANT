@@ -9,6 +9,8 @@ if (
   typeof apiClientBundleSmoke.createSession !== 'function' ||
   typeof apiClientBundleSmoke.getCurrentSession !== 'function' ||
   typeof apiClientBundleSmoke.getRampAssignedOperations !== 'function' ||
+  typeof apiClientBundleSmoke.registerMobileDevice !== 'function' ||
+  typeof apiClientBundleSmoke.startRampOperation !== 'function' ||
   typeof apiClientBundleSmoke.getSystemPing !== 'function'
 ) {
   throw new Error('The shared ELEVANT API client was not bundled correctly.');

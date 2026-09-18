@@ -6,6 +6,8 @@ import {
   getGetOccPlanningSnapshotUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
+  getRegisterMobileDeviceUrl,
+  getStartRampOperationUrl,
   type AssignOccOperationRequest,
   type CreateSessionRequest,
   type CurrentSessionResponse,
@@ -14,7 +16,11 @@ import {
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
   type OccAssignmentResponse,
+  type RampGroundOperationResponse,
+  type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
+  type RegisterMobileDeviceRequest,
+  type RegisterMobileDeviceResponse,
   type SessionActorResponse,
   type SessionResponse,
   type SystemPingResponse,
@@ -55,6 +61,14 @@ export type AssignOccPlanningOperationOptions = Omit<
   "body" | "method"
 >;
 export type GetRampAssignedOperationsOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type RegisterMobileDeviceOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type StartRampOperationOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
@@ -102,6 +116,16 @@ export interface ElevantApiClient {
   getRampAssignedOperations(
     options?: GetRampAssignedOperationsOptions,
   ): Promise<RampAssignedOperationsResponse>;
+  registerMobileDevice(
+    request: RegisterMobileDeviceRequest,
+    options?: RegisterMobileDeviceOptions,
+  ): Promise<RegisterMobileDeviceResponse>;
+  startRampOperation(
+    operationId: string,
+    installationId: string,
+    idempotencyKey: string,
+    options?: StartRampOperationOptions,
+  ): Promise<RampOperationStartResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -442,7 +466,9 @@ function isOccFlightLegResponse(value: unknown) {
   );
 }
 
-function isOccGroundOperationResponse(value: unknown) {
+function isOccGroundOperationResponse(
+  value: unknown,
+): value is RampGroundOperationResponse {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, [
@@ -777,6 +803,33 @@ function isRampAssignedOperationsResponse(
   );
 }
 
+function isRegisterMobileDeviceResponse(
+  value: unknown,
+): value is RegisterMobileDeviceResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["installationId", "platform", "appVersion", "lastSeenAt"]) &&
+    isUuid(value.installationId) &&
+    (value.platform === "Android" || value.platform === "Ios") &&
+    isNonEmptyString(value.appVersion) &&
+    isDateTimeOffset(value.lastSeenAt)
+  );
+}
+
+function isRampOperationStartResponse(
+  value: unknown,
+): value is RampOperationStartResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "operation"]) &&
+    isUuid(value.receiptId) &&
+    isOccGroundOperationResponse(value.operation) &&
+    value.operation.status === "InProgress" &&
+    isDateTimeOffset(value.operation.actualStartAt) &&
+    value.operation.actualEndAt === null
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -897,6 +950,75 @@ function validatedOccAssignmentRequest(
   }
 
   return { agentId: request.agentId };
+}
+
+function validatedOptionalDeviceText(
+  value: unknown,
+  field: string,
+  maximumLength: number,
+) {
+  if (value === undefined || value === null) return value;
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > maximumLength ||
+    value.trim() !== value ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new TypeError(`${field} is not a valid mobile device value.`);
+  }
+  return value;
+}
+
+function validatedMobileDeviceRequest(
+  request: RegisterMobileDeviceRequest,
+): RegisterMobileDeviceRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, [
+      "installationId",
+      "platform",
+      "appVersion",
+      "deviceName",
+      "operatingSystemVersion",
+    ]) ||
+    !isUuid(request.installationId) ||
+    (request.platform !== "Android" && request.platform !== "Ios") ||
+    typeof request.appVersion !== "string" ||
+    request.appVersion.length === 0 ||
+    request.appVersion.length > 32 ||
+    request.appVersion.trim() !== request.appVersion ||
+    /[\u0000-\u001f\u007f]/.test(request.appVersion)
+  ) {
+    throw new TypeError("Mobile device registration is invalid.");
+  }
+
+  const deviceName = validatedOptionalDeviceText(
+    request.deviceName,
+    "deviceName",
+    120,
+  );
+  const operatingSystemVersion = validatedOptionalDeviceText(
+    request.operatingSystemVersion,
+    "operatingSystemVersion",
+    64,
+  );
+  return {
+    installationId: request.installationId,
+    platform: request.platform,
+    appVersion: request.appVersion,
+    ...(deviceName === undefined ? {} : { deviceName }),
+    ...(operatingSystemVersion === undefined
+      ? {}
+      : { operatingSystemVersion }),
+  };
+}
+
+function validatedUuid(value: string, field: string) {
+  if (!isUuid(value)) {
+    throw new TypeError(`${field} must be a non-empty canonical UUID.`);
+  }
+  return value.toLowerCase();
 }
 
 function isStrongEtag(value: unknown): value is string {
@@ -1148,6 +1270,54 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isRampAssignedOperationsResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async registerMobileDevice(
+      request: RegisterMobileDeviceRequest,
+      options?: RegisterMobileDeviceOptions,
+    ) {
+      const registration = validatedMobileDeviceRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(
+        getRegisterMobileDeviceUrl(),
+        {
+          ...options,
+          method: "PUT",
+          headers,
+          body: JSON.stringify(registration),
+        },
+        true,
+      );
+      if (!isRegisterMobileDeviceResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async startRampOperation(
+      operationId: string,
+      installationId: string,
+      idempotencyKey: string,
+      options?: StartRampOperationOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getStartRampOperationUrl(operation),
+        {
+          ...options,
+          method: "POST",
+          headers,
+        },
+        true,
+      );
+      if (!isRampOperationStartResponse(result.data)) {
         throw malformedResponse(result.status);
       }
       return result.data;
