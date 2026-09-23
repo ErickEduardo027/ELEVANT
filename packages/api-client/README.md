@@ -65,8 +65,9 @@ decodificarlos ni reconstruirlos. El de opciones versiona la representación
 asignable completa; el de la respuesta de asignación no se reutiliza como
 precondición de otro comando. Los servicios, cantidades, precios, contrato,
 posición y scope son siempre
-decisiones del servidor. Crear vuelos, reasignar o ejecutar servicios todavía
-no forma parte de este cliente.
+decisiones del servidor. Crear vuelos y reasignar siguen fuera de este cliente;
+la ejecución posterior de servicios corresponde exclusivamente al agente
+asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus
 esquemas OpenAPI publican `additionalProperties: false`; cualquier ampliación
 del contrato debe regenerar y revisar el cliente antes de desplegarse.
@@ -77,8 +78,14 @@ estación ni tenant. La API los deriva de la sesión y devuelve solamente las
 asignaciones activas propias. El wrapper valida recursivamente la proyección
 cerrada antes de entregarla, acepta `operations: []` como cola válida y rechaza
 identificadores, fechas o propiedades fuera del contrato. Iniciar una operación,
-registrar checklist, adjuntar evidencias o completar servicios siguen fuera de
-este incremento de solo lectura.
+leer y enviar su checklist, y transicionar sus servicios son comandos
+autenticados del mismo cliente. Los comandos exigen UUID canónicos en
+`X-Elevant-Installation-Id` e `Idempotency-Key`; el wrapper sobrescribe esos
+encabezados aunque el consumidor intente introducir otros valores, limita los
+cuerpos al contrato y valida que la respuesta corresponda a los identificadores
+de la ruta. La identidad, el agente, la estación, el tenant, los timestamps y
+los recibos siguen siendo autoridad del servidor. Adjuntar evidencias permanece
+fuera de este incremento.
 
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
 error expone solo `status`, un `title` saneado y el `traceId` opcional. Su

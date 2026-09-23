@@ -20,6 +20,54 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
     private static readonly DateTimeOffset FixtureInstant = new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly FixtureDate = new(2026, 8, 18);
     private static readonly DateOnly SecondFixtureDate = new(2026, 8, 19);
+    private static readonly ChecklistFixtureItem[] TurnaroundChecklistV2Items =
+    [
+        new("PREUSE-EXTERIOR", "Chequeo preuso", "Exterior completo del puente"),
+        new("PREUSE-SERVICE-STAIR", "Chequeo preuso", "Escalera de servicio"),
+        new("PREUSE-BAGGAGE-SLIDE", "Chequeo preuso", "Tobogán de equipaje"),
+        new("PREUSE-CABLES-HOSES", "Chequeo preuso", "Cables y mangueras en posición"),
+        new("PREUSE-INTERIOR", "Chequeo preuso", "Interior completo del puente"),
+        new("PREUSE-AUTOLEVEL", "Chequeo preuso", "Prueba del autonivelador"),
+        new("PREUSE-LAMP-TEST", "Chequeo preuso", "Botón de prueba de lámparas"),
+        new("PREUSE-LIGHTS", "Chequeo preuso", "Luces del puente"),
+        new("PREUSE-SAFETY-CHAIN", "Chequeo preuso", "Cadena de seguridad"),
+        new("PREUSE-SLIDING-DOOR", "Chequeo preuso", "Puerta corrediza del puente"),
+        new("PREUSE-EXTEND-RETRACT", "Chequeo preuso", "Extender y retraer puente"),
+        new("PREUSE-RAISE-LOWER", "Chequeo preuso", "Subida y bajada del puente"),
+        new("PREUSE-CABIN-ROTATION", "Chequeo preuso", "Giro izquierdo y derecho de cabina"),
+        new("ARRIVAL-CANOPY", "Antes de la llegada", "Canopy retraído"),
+        new("ARRIVAL-AUTOLEVEL", "Antes de la llegada", "Autonivelador retraído"),
+        new("ARRIVAL-LAMP-TEST", "Antes de la llegada", "Botón de prueba de lámparas"),
+        new("ARRIVAL-LIGHTS", "Antes de la llegada", "Luces encendidas"),
+        new("ARRIVAL-PARKING", "Antes de la llegada", "Puente en posición de parqueo"),
+        new("ARRIVAL-AIRCRAFT-LEVEL", "Antes de la llegada", "Nivelar puente al tipo de avión"),
+        new("ARRIVAL-CABLES-HOSES", "Antes de la llegada", "Cables y mangueras en posición"),
+        new("ARRIVAL-EQUIPMENT-CLEAR", "Antes de la llegada", "Equipos fuera del alcance del puente"),
+        new("ARRIVAL-CHAIN", "Antes de la llegada", "Cadena en posición"),
+        new("ARRIVAL-ROLLING-DOOR", "Antes de la llegada", "Puerta enrollable abierta"),
+        new("ARRIVAL-RAMP-CONFIRM", "Antes de la llegada", "Confirmación de rampa"),
+        new("ARRIVAL-BELL", "Antes de la llegada", "Sonar timbre del puente"),
+        new("ARRIVAL-DOCK", "Antes de la llegada", "Mover puente al avión"),
+        new("DEPARTURE-RAMP-CONFIRM", "Antes de la salida", "Confirmación de rampa"),
+        new("DEPARTURE-GPU-OFF", "Antes de la salida", "Cable GPU desactivado"),
+        new("DEPARTURE-AIR-HOSE-OFF", "Antes de la salida", "Manguera de aire desactivada"),
+        new("DEPARTURE-GPU-CABLES", "Antes de la salida", "Subida y bajada de cables GPU"),
+        new("DEPARTURE-BUMPERS", "Antes de la salida", "Gomas perpendiculares al avión"),
+        new("DEPARTURE-AIRCRAFT-DOOR", "Antes de la salida", "Puerta del avión cerrada"),
+        new("DEPARTURE-AUTOLEVEL", "Antes de la salida", "Retraer autonivelador"),
+        new("DEPARTURE-CANOPY", "Antes de la salida", "Retraer canopy"),
+        new("DEPARTURE-BELL", "Antes de la salida", "Sonar timbre del puente"),
+        new("DEPARTURE-UNDOCK", "Antes de la salida", "Retirar el puente"),
+        new("POSTDEPARTURE-BELL", "Después de la salida", "Sonar timbre del puente"),
+        new("POSTDEPARTURE-CABIN", "Después de la salida", "Girar cabina a posición"),
+        new("POSTDEPARTURE-PARKING", "Después de la salida", "Posicionar puente en parqueo"),
+        new("POSTDEPARTURE-CHAIN", "Después de la salida", "Cadena en posición"),
+        new("POSTDEPARTURE-ROLLING-DOOR", "Después de la salida", "Cerrar puerta enrollable"),
+        new("POSTDEPARTURE-A320-LEVEL", "Después de la salida", "Nivelar puente al A320"),
+        new("POSTDEPARTURE-KEY-OFF", "Después de la salida", "Colocar llave en OFF"),
+        new("POSTDEPARTURE-KEY-STORED", "Después de la salida", "Quitar y guardar llave"),
+        new("POSTDEPARTURE-LIGHTS-OFF", "Después de la salida", "Apagar luces del puente"),
+    ];
 
     public async Task SeedAsync(
         DevelopmentAccountPasswords accountPasswords,
@@ -159,6 +207,19 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 DefaultBillingUnit = "operation",
                 IsActive = true,
             }, "20000000-0000-7000-8000-000000000006"),
+            cancellationToken);
+
+        var passengerBridgeService = await GetOrAddAsync(
+            context.ServiceDefinitions,
+            service => service.Code == "PASSENGER-BRIDGE",
+            () => Stamp(new ServiceDefinition
+            {
+                Code = "PASSENGER-BRIDGE",
+                Name = "Passenger boarding bridge operation",
+                Description = "Synthetic Development service exercised by the ramp checklist.",
+                DefaultBillingUnit = "operation",
+                IsActive = true,
+            }, DeterministicGuid("service-definition:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
 
         var gpuType = await GetOrAddAsync(
@@ -389,6 +450,19 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 MinimumQuantity = 1m,
             }, "60000000-0000-7000-8000-000000000004"),
             cancellationToken);
+        var passengerBridgeRate = await GetOrAddAsync(
+            context.ContractServiceRates,
+            item => item.ContractVersionId == contractVersion.Id &&
+                item.ServiceDefinitionId == passengerBridgeService.Id,
+            () => Stamp(new ContractServiceRate
+            {
+                ContractVersionId = contractVersion.Id,
+                ServiceDefinitionId = passengerBridgeService.Id,
+                BillingUnit = "operation",
+                UnitPrice = 95.00m,
+                MinimumQuantity = 1m,
+            }, DeterministicGuid("contract-rate:DEV-CONTRACT-0001:PASSENGER-BRIDGE").ToString("D")),
+            cancellationToken);
 
         var turnaround = await GetOrAddAsync(
             context.Turnarounds,
@@ -465,6 +539,24 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             }, "70000000-0000-7000-8000-000000000007"),
             cancellationToken);
 
+        await GetOrAddAsync(
+            context.OperationServices,
+            service => service.GroundOperationId == operation.Id && service.LineNumber == 2,
+            () => Stamp(new OperationService
+            {
+                GroundOperationId = operation.Id,
+                LineNumber = 2,
+                ServiceDefinitionId = passengerBridgeService.Id,
+                ContractServiceRateId = passengerBridgeRate.Id,
+                ContractedQuantity = 1m,
+                ExecutedQuantity = 0m,
+                BillingUnitSnapshot = passengerBridgeRate.BillingUnit,
+                UnitPriceSnapshot = passengerBridgeRate.UnitPrice,
+                CurrencyCodeSnapshot = contractVersion.CurrencyCode,
+                CurrentStatus = ServiceExecutionStatus.Planned,
+            }, DeterministicGuid("operation-service:DEV-TAT-0001:PASSENGER-BRIDGE").ToString("D")),
+            cancellationToken);
+
         var template = await GetOrAddAsync(
             context.Set<ChecklistTemplate>(),
             item => item.Code == "TURNAROUND-BASE",
@@ -475,6 +567,14 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 IsActive = true,
             }, "70000000-0000-7000-8000-000000000008"),
             cancellationToken);
+        if (template.PublicId != Guid.Parse("70000000-0000-7000-8000-000000000008") ||
+            !string.Equals(template.Code, "TURNAROUND-BASE", StringComparison.Ordinal) ||
+            !string.Equals(template.Name, "Turnaround base checklist", StringComparison.Ordinal) ||
+            !template.IsActive)
+        {
+            throw new InvalidOperationException(
+                "Synthetic Development checklist template drift was detected.");
+        }
 
         var templateVersion = await GetOrAddAsync(
             context.Set<ChecklistTemplateVersion>(),
@@ -514,6 +614,89 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 ChecklistTemplateVersionId = templateVersion.Id,
                 Status = ChecklistStatus.NotStarted,
             }, "70000000-0000-7000-8000-000000000011"),
+            cancellationToken);
+
+        var templateVersionV2 = await GetOrAddAsync(
+            context.Set<ChecklistTemplateVersion>(),
+            version => version.ChecklistTemplateId == template.Id && version.VersionNumber == 2,
+            () => Stamp(new ChecklistTemplateVersion
+            {
+                ChecklistTemplateId = template.Id,
+                VersionNumber = 2,
+                Status = ChecklistVersionStatus.Published,
+                EffectiveFrom = FixtureDate,
+                PublishedAt = FixtureInstant,
+                PublishedByAccountId = adminAccount.Id,
+            }, DeterministicGuid("checklist:TURNAROUND-BASE:v2").ToString("D")),
+            cancellationToken);
+        var expectedTemplateVersionV2Id = DeterministicGuid("checklist:TURNAROUND-BASE:v2");
+        if (templateVersionV2.PublicId != expectedTemplateVersionV2Id ||
+            templateVersionV2.ChecklistTemplateId != template.Id ||
+            templateVersionV2.VersionNumber != 2 ||
+            templateVersionV2.Status != ChecklistVersionStatus.Published ||
+            templateVersionV2.EffectiveFrom != FixtureDate ||
+            templateVersionV2.EffectiveTo is not null ||
+            templateVersionV2.PublishedAt != FixtureInstant ||
+            templateVersionV2.PublishedByAccountId != adminAccount.Id)
+        {
+            throw new InvalidOperationException(
+                "Synthetic Development checklist template version drift was detected.");
+        }
+
+        for (var index = 0; index < TurnaroundChecklistV2Items.Length; index++)
+        {
+            var fixtureItem = TurnaroundChecklistV2Items[index];
+            var templateItem = await GetOrAddAsync(
+                context.Set<ChecklistTemplateItem>(),
+                item => item.ChecklistTemplateVersionId == templateVersionV2.Id &&
+                    item.ItemCode == fixtureItem.Code,
+                () => Stamp(new ChecklistTemplateItem
+                {
+                    ChecklistTemplateVersionId = templateVersionV2.Id,
+                    ItemCode = fixtureItem.Code,
+                    SectionName = fixtureItem.Section,
+                    Label = fixtureItem.Label,
+                    SortOrder = index + 1,
+                    RequiresNoteWhenNotOk = true,
+                    IsRequired = true,
+                }, DeterministicGuid($"checklist:TURNAROUND-BASE:v2:{fixtureItem.Code}").ToString("D")),
+                cancellationToken);
+            var expectedItemId = DeterministicGuid(
+                $"checklist:TURNAROUND-BASE:v2:{fixtureItem.Code}");
+            if (templateItem.PublicId != expectedItemId ||
+                templateItem.ChecklistTemplateVersionId != templateVersionV2.Id ||
+                !string.Equals(templateItem.ItemCode, fixtureItem.Code, StringComparison.Ordinal) ||
+                !string.Equals(templateItem.SectionName, fixtureItem.Section, StringComparison.Ordinal) ||
+                !string.Equals(templateItem.Label, fixtureItem.Label, StringComparison.Ordinal) ||
+                templateItem.SortOrder != index + 1 ||
+                !templateItem.IsRequired ||
+                !templateItem.RequiresNoteWhenNotOk)
+            {
+                throw new InvalidOperationException(
+                    $"Synthetic Development checklist item drift was detected for {fixtureItem.Code}.");
+            }
+        }
+
+        var templateVersionV2ItemCount = await context.Set<ChecklistTemplateItem>()
+            .CountAsync(
+                item => item.ChecklistTemplateVersionId == templateVersionV2.Id,
+                cancellationToken);
+        if (templateVersionV2ItemCount != TurnaroundChecklistV2Items.Length)
+        {
+            throw new InvalidOperationException(
+                "Synthetic Development checklist template contains unexpected items.");
+        }
+
+        await GetOrAddAsync(
+            context.OperationChecklists,
+            checklist => checklist.GroundOperationId == operation.Id &&
+                checklist.ChecklistTemplateVersionId == templateVersionV2.Id,
+            () => Stamp(new OperationChecklist
+            {
+                GroundOperationId = operation.Id,
+                ChecklistTemplateVersionId = templateVersionV2.Id,
+                Status = ChecklistStatus.NotStarted,
+            }, DeterministicGuid("checklist:DEV-TAT-0001:v2").ToString("D")),
             cancellationToken);
 
         var secondTurnaround = await GetOrAddAsync(
@@ -594,6 +777,45 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 CurrentStatus = ServiceExecutionStatus.Planned,
             }, "70000000-0000-7000-8000-000000000017"),
             cancellationToken);
+
+        await GetOrAddAsync(
+            context.OperationServices,
+            service => service.GroundOperationId == secondOperation.Id && service.LineNumber == 2,
+            () => Stamp(new OperationService
+            {
+                GroundOperationId = secondOperation.Id,
+                LineNumber = 2,
+                ServiceDefinitionId = passengerBridgeService.Id,
+                ContractServiceRateId = passengerBridgeRate.Id,
+                ContractedQuantity = 1m,
+                ExecutedQuantity = 0m,
+                BillingUnitSnapshot = passengerBridgeRate.BillingUnit,
+                UnitPriceSnapshot = passengerBridgeRate.UnitPrice,
+                CurrencyCodeSnapshot = contractVersion.CurrencyCode,
+                CurrentStatus = ServiceExecutionStatus.Planned,
+            }, DeterministicGuid("operation-service:DEV-TAT-0002:PASSENGER-BRIDGE").ToString("D")),
+            cancellationToken);
+
+        var secondOperationHasActiveAssignment = await context.OperationAgentAssignments
+            .AsNoTracking()
+            .AnyAsync(
+                assignment => assignment.GroundOperationId == secondOperation.Id &&
+                    assignment.ReleasedAt == null,
+                cancellationToken);
+        if (secondOperationHasActiveAssignment)
+        {
+            await GetOrAddAsync(
+                context.OperationChecklists,
+                checklist => checklist.GroundOperationId == secondOperation.Id &&
+                    checklist.ChecklistTemplateVersionId == templateVersionV2.Id,
+                () => Stamp(new OperationChecklist
+                {
+                    GroundOperationId = secondOperation.Id,
+                    ChecklistTemplateVersionId = templateVersionV2.Id,
+                    Status = ChecklistStatus.NotStarted,
+                }, DeterministicGuid("checklist:DEV-TAT-0002:v2").ToString("D")),
+                cancellationToken);
+        }
     }
 
     private async Task<Person> SeedPersonAsync(
@@ -886,4 +1108,9 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         guidBytes[8] = (byte)((guidBytes[8] & 0x3F) | 0x80);
         return new Guid(guidBytes);
     }
+
+    private sealed record ChecklistFixtureItem(
+        string Code,
+        string Section,
+        string Label);
 }

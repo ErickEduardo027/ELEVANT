@@ -82,6 +82,50 @@ export interface CurrentSessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface RampChecklistTemplateResponse {
+  code: string;
+  name: string;
+  version: number;
+}
+
+export interface RampChecklistAnswerResponse {
+  value: string;
+  /** @nullable */
+  note?: string | null;
+  answeredAt: string;
+}
+
+export interface RampChecklistItemResponse {
+  id: string;
+  code: string;
+  label: string;
+  sortOrder: number;
+  isRequired: boolean;
+  requiresNoteWhenNotOk: boolean;
+  answer?: RampChecklistAnswerResponse | null;
+}
+
+export interface RampChecklistSectionResponse {
+  name: string;
+  items: RampChecklistItemResponse[];
+}
+
+export interface RampChecklistResponse {
+  id: string;
+  status: string;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  submittedAt?: string | null;
+  template: RampChecklistTemplateResponse;
+  sections: RampChecklistSectionResponse[];
+}
+
+export interface GetRampOperationChecklistResponse {
+  operationId: string;
+  checklist: RampChecklistResponse;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -396,6 +440,47 @@ export interface RampAssignedOperationsResponse {
   operations: RampAssignedOperationResponse[];
 }
 
+export interface RampChecklistAnswerRequest {
+  itemId: string;
+  /**
+     * @minLength 1
+     * @pattern ^(Ok|NotApplicable|NotOk)$
+     */
+  value: string;
+  /**
+     * @minLength 0
+     * @maxLength 1000
+     * @nullable
+     */
+  note?: string | null;
+}
+
+export interface RampChecklistSubmissionSummaryResponse {
+  id: string;
+  status: string;
+  startedAt: string;
+  submittedAt: string;
+  answerCount: number;
+}
+
+export interface RampChecklistSubmissionResponse {
+  receiptId: string;
+  checklist: RampChecklistSubmissionSummaryResponse;
+}
+
+export interface RampOperationServiceExecutionResponse {
+  id: string;
+  status: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+}
+
+export interface RampOperationServiceTransitionResponse {
+  receiptId: string;
+  service: RampOperationServiceExecutionResponse;
+}
+
 export interface RampOperationStartResponse {
   receiptId: string;
   operation: RampGroundOperationResponse;
@@ -446,11 +531,36 @@ export interface SessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface SubmitRampOperationChecklistRequest {
+  checklistId: string;
+  /**
+     * @minItems 1
+     * @maxItems 256
+     */
+  answers: RampChecklistAnswerRequest[];
+}
+
 export interface SystemPingResponse {
   application: string;
   status: string;
   environment: string;
   timestampUtc: string;
+}
+
+export interface TransitionRampOperationServiceRequest {
+  /**
+     * @minLength 1
+     * @pattern ^(InProgress|Completed|NotPerformed|Exception)$
+     */
+  targetStatus: string;
+  /** @nullable */
+  executedQuantity?: number | null;
+  /**
+     * @minLength 0
+     * @maxLength 1000
+     * @nullable
+     */
+  note?: string | null;
 }
 
 export type GetOccPlanningSnapshotParams = {
@@ -681,6 +791,75 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
 
 
 
+export const getGetRampOperationChecklistUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/checklist`
+}
+
+/**
+ * @summary Returns the canonical checklist assigned to one accessible operation.
+ */
+export const getRampOperationChecklist = async (operationId: string, options?: RequestInit): Promise<GetRampOperationChecklistResponse> => {
+
+  const res = await fetch(getGetRampOperationChecklistUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GetRampOperationChecklistResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitRampOperationChecklistUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/checklist/submit`
+}
+
+/**
+ * @summary Atomically submits every answer in one operation checklist.
+ */
+export const submitRampOperationChecklist = async (operationId: string,
+    submitRampOperationChecklistRequest: SubmitRampOperationChecklistRequest, options?: RequestInit): Promise<RampChecklistSubmissionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitRampOperationChecklistUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitRampOperationChecklistRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampChecklistSubmissionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetRampAssignedOperationsUrl = () => {
 
 
@@ -738,6 +917,46 @@ export const startRampOperation = async (operationId: string, options?: RequestI
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampOperationStartResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getTransitionRampOperationServiceUrl = (operationId: string,
+    serviceId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/services/${serviceId}/transition`
+}
+
+/**
+ * @summary Applies one audited, idempotent service status transition.
+ */
+export const transitionRampOperationService = async (operationId: string,
+    serviceId: string,
+    transitionRampOperationServiceRequest: TransitionRampOperationServiceRequest, options?: RequestInit): Promise<RampOperationServiceTransitionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getTransitionRampOperationServiceUrl(operationId,serviceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(transitionRampOperationServiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampOperationServiceTransitionResponse = body ? JSON.parse(body) : {}
   return data
 }
 

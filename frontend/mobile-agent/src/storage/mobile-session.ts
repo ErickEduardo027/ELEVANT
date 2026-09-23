@@ -3,12 +3,19 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
 const ENVELOPE_SCHEMA_VERSION = 1 as const;
+const RAMP_EXECUTION_COMMAND_SCHEMA_VERSION = 1 as const;
 const SESSION_CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const MOBILE_INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
 const SESSION_METADATA_KEY = 'elevant:mobile:session-metadata:v1';
 const ASSIGNED_OPERATIONS_CACHE_PREFIX =
   'elevant:mobile:assigned-operations:v1:';
 const RAMP_START_COMMAND_PREFIX = 'elevant:mobile:ramp-start-command:v1:';
+const RAMP_CHECKLIST_DRAFT_PREFIX =
+  'elevant:mobile:ramp-checklist-draft:v1:';
+const RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX =
+  'elevant:mobile:ramp-checklist-submit-command:v1:';
+const RAMP_SERVICE_TRANSITION_COMMAND_PREFIX =
+  'elevant:mobile:ramp-service-transition-command:v1:';
 
 const LEGACY_ATOMIC_ENVELOPE_KEY = 'elevant.mobile.session.v1';
 const LEGACY_ACCESS_TOKEN_KEY = 'elevant.mobile.access_token.v1';
@@ -73,6 +80,34 @@ export type CurrentMobileCacheWrite =
 export type CurrentRampStartCommand =
   | Readonly<{ kind: 'current'; idempotencyKey: string }>
   | Readonly<{ kind: 'not-current' }>;
+
+export type CurrentRampExecutionValue =
+  | Readonly<{ kind: 'current'; value: string | null }>
+  | Readonly<{ kind: 'not-current' }>;
+
+export type CurrentRampExecutionCommand =
+  | Readonly<{
+      kind: 'current';
+      idempotencyKey: string;
+      payload: string;
+    }>
+  | Readonly<{ kind: 'not-current' }>;
+
+export type CurrentRampExecutionCommandRead =
+  | Readonly<{
+      kind: 'current';
+      command: Readonly<{
+        idempotencyKey: string;
+        payload: string;
+      }> | null;
+    }>
+  | Readonly<{ kind: 'not-current' }>;
+
+type StoredRampExecutionCommand = Readonly<{
+  schemaVersion: typeof RAMP_EXECUTION_COMMAND_SCHEMA_VERSION;
+  idempotencyKey: string;
+  payload: string;
+}>;
 
 let storageQueue: Promise<void> = Promise.resolve();
 
@@ -212,6 +247,15 @@ function allRampStartCommandKeys(appKeys: readonly string[]) {
   return appKeys.filter((key) => key.startsWith(RAMP_START_COMMAND_PREFIX));
 }
 
+function allRampExecutionKeys(appKeys: readonly string[]) {
+  return appKeys.filter(
+    (key) =>
+      key.startsWith(RAMP_CHECKLIST_DRAFT_PREFIX) ||
+      key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX),
+  );
+}
+
 function staleAsyncKeys(appKeys: readonly string[]) {
   return [
     LEGACY_METADATA_KEY,
@@ -233,6 +277,7 @@ async function removeSessionAndCaches(appKeys: readonly string[]) {
       SESSION_METADATA_KEY,
       ...new Set(staleAsyncKeys(appKeys)),
       ...allRampStartCommandKeys(appKeys),
+      ...allRampExecutionKeys(appKeys),
     ]),
   ]);
 
@@ -300,6 +345,19 @@ async function readStoredMobileSessionUnlocked(): Promise<StoredMobileSessionSta
 async function currentSessionUnlocked(expectedSessionId: string) {
   const state = await readStoredMobileSessionUnlocked();
   return state.kind === 'active' && state.sessionId === expectedSessionId;
+}
+
+async function currentAccountSessionUnlocked(
+  expectedSessionId: string,
+  expectedAccountId: string,
+) {
+  const state = await readStoredMobileSessionUnlocked();
+  return (
+    state.kind === 'active' &&
+    state.sessionId === expectedSessionId &&
+    safeAccountId(state.metadata)?.toLowerCase() ===
+      expectedAccountId.toLowerCase()
+  );
 }
 
 async function persistSessionUnlocked(
@@ -376,6 +434,157 @@ function rampStartCommandKey(accountId: string, operationId: string) {
   return `${RAMP_START_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
 }
 
+function rampChecklistDraftKey(
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+) {
+  assertRampExecutionIds(accountId, operationId, checklistId);
+  return `${RAMP_CHECKLIST_DRAFT_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${checklistId.toLowerCase()}`;
+}
+
+function rampChecklistSubmitCommandKey(
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+) {
+  assertRampExecutionIds(accountId, operationId, checklistId);
+  return `${RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${checklistId.toLowerCase()}`;
+}
+
+function rampServiceTransitionCommandKey(
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  targetStatus: string,
+) {
+  assertRampExecutionIds(accountId, operationId, serviceId);
+  if (!/^[A-Za-z][A-Za-z0-9]{1,31}$/.test(targetStatus)) {
+    throw new MobileSessionStorageError();
+  }
+  return `${RAMP_SERVICE_TRANSITION_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${serviceId.toLowerCase()}:${targetStatus.toLowerCase()}`;
+}
+
+function assertRampExecutionIds(...values: readonly string[]) {
+  if (!values.every(isUuid)) throw new MobileSessionStorageError();
+}
+
+function isJsonObjectString(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 524_288) {
+    return false;
+  }
+  const parsed = parseJson(value);
+  return isRecord(parsed);
+}
+
+function parseRampExecutionCommand(
+  raw: string | null,
+): StoredRampExecutionCommand | undefined {
+  const candidate = parseJson(raw);
+  if (
+    !isRecord(candidate) ||
+    !hasExactKeys(candidate, ['schemaVersion', 'idempotencyKey', 'payload']) ||
+    candidate.schemaVersion !== RAMP_EXECUTION_COMMAND_SCHEMA_VERSION ||
+    !isUuid(candidate.idempotencyKey) ||
+    !isJsonObjectString(candidate.payload)
+  ) {
+    return undefined;
+  }
+  return {
+    schemaVersion: RAMP_EXECUTION_COMMAND_SCHEMA_VERSION,
+    idempotencyKey: candidate.idempotencyKey.toLowerCase(),
+    payload: candidate.payload,
+  };
+}
+
+async function readRampExecutionValueIfCurrent(
+  sessionId: string,
+  accountId: string,
+  key: string,
+): Promise<CurrentRampExecutionValue> {
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return { kind: 'not-current' };
+      }
+      return { kind: 'current', value: await AsyncStorage.getItem(key) };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+async function getOrCreateRampExecutionCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  key: string,
+  payload: string,
+): Promise<CurrentRampExecutionCommand> {
+  if (!isJsonObjectString(payload)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return { kind: 'not-current' };
+      }
+
+      const rawStored = await AsyncStorage.getItem(key);
+      const stored = parseRampExecutionCommand(rawStored);
+      if (stored) {
+        return {
+          kind: 'current',
+          idempotencyKey: stored.idempotencyKey,
+          payload: stored.payload,
+        };
+      }
+      if (rawStored !== null) throw new MobileSessionStorageError();
+
+      const command: StoredRampExecutionCommand = {
+        schemaVersion: RAMP_EXECUTION_COMMAND_SCHEMA_VERSION,
+        idempotencyKey: Crypto.randomUUID().toLowerCase(),
+        payload,
+      };
+      await AsyncStorage.setItem(key, serializeEnvelope(command));
+      return {
+        kind: 'current',
+        idempotencyKey: command.idempotencyKey,
+        payload: command.payload,
+      };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+async function removeRampExecutionCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  key: string,
+  expectedIdempotencyKey: string,
+): Promise<'removed' | 'changed' | 'not-current'> {
+  if (!isUuid(expectedIdempotencyKey)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return 'not-current';
+      }
+      const stored = parseRampExecutionCommand(await AsyncStorage.getItem(key));
+      if (
+        !stored ||
+        stored.idempotencyKey !== expectedIdempotencyKey.toLowerCase()
+      ) {
+        return 'changed';
+      }
+      await AsyncStorage.removeItem(key);
+      return 'removed';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
 export function assignedOperationsCacheKey(accountId: string) {
   return `${ASSIGNED_OPERATIONS_CACHE_PREFIX}${accountId}`;
 }
@@ -409,7 +618,7 @@ export async function getOrCreateRampStartCommandIfCurrent(
   const key = rampStartCommandKey(accountId, operationId);
   return withStorageLock(async () => {
     try {
-      if (!(await currentSessionUnlocked(sessionId))) {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
         return { kind: 'not-current' };
       }
 
@@ -417,6 +626,7 @@ export async function getOrCreateRampStartCommandIfCurrent(
       if (isUuid(stored)) {
         return { kind: 'current', idempotencyKey: stored.toLowerCase() };
       }
+      if (stored !== null) throw new MobileSessionStorageError();
 
       const idempotencyKey = Crypto.randomUUID().toLowerCase();
       await AsyncStorage.setItem(key, idempotencyKey);
@@ -426,6 +636,193 @@ export async function getOrCreateRampStartCommandIfCurrent(
       throw new MobileSessionStorageError();
     }
   });
+}
+
+export async function readRampChecklistDraftIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+): Promise<CurrentRampExecutionValue> {
+  const key = rampChecklistDraftKey(accountId, operationId, checklistId);
+  return readRampExecutionValueIfCurrent(sessionId, accountId, key);
+}
+
+export async function writeRampChecklistDraftIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+  value: string,
+): Promise<'written' | 'not-current'> {
+  const key = rampChecklistDraftKey(accountId, operationId, checklistId);
+  if (!isJsonObjectString(value)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return 'not-current';
+      }
+      await AsyncStorage.setItem(key, value);
+      return 'written';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function removeRampChecklistDraftIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+): Promise<'removed' | 'not-current'> {
+  const key = rampChecklistDraftKey(accountId, operationId, checklistId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return 'not-current';
+      }
+      await AsyncStorage.removeItem(key);
+      return 'removed';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function readRampChecklistSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+): Promise<CurrentRampExecutionCommandRead> {
+  const key = rampChecklistSubmitCommandKey(
+    accountId,
+    operationId,
+    checklistId,
+  );
+  const result = await readRampExecutionValueIfCurrent(
+    sessionId,
+    accountId,
+    key,
+  );
+  if (result.kind !== 'current') return result;
+  const command = parseRampExecutionCommand(result.value);
+  if (result.value !== null && !command) throw new MobileSessionStorageError();
+  return {
+    kind: 'current',
+    command: command
+      ? {
+          idempotencyKey: command.idempotencyKey,
+          payload: command.payload,
+        }
+      : null,
+  };
+}
+
+export async function getOrCreateRampChecklistSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+  payload: string,
+): Promise<CurrentRampExecutionCommand> {
+  return getOrCreateRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampChecklistSubmitCommandKey(accountId, operationId, checklistId),
+    payload,
+  );
+}
+
+export async function removeRampChecklistSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  checklistId: string,
+  expectedIdempotencyKey: string,
+) {
+  return removeRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampChecklistSubmitCommandKey(accountId, operationId, checklistId),
+    expectedIdempotencyKey,
+  );
+}
+
+export async function readRampServiceTransitionCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  targetStatus: string,
+): Promise<CurrentRampExecutionCommandRead> {
+  const result = await readRampExecutionValueIfCurrent(
+    sessionId,
+    accountId,
+    rampServiceTransitionCommandKey(
+      accountId,
+      operationId,
+      serviceId,
+      targetStatus,
+    ),
+  );
+  if (result.kind !== 'current') return result;
+  const command = parseRampExecutionCommand(result.value);
+  if (result.value !== null && !command) throw new MobileSessionStorageError();
+  return {
+    kind: 'current',
+    command: command
+      ? {
+          idempotencyKey: command.idempotencyKey,
+          payload: command.payload,
+        }
+      : null,
+  };
+}
+
+export async function getOrCreateRampServiceTransitionCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  targetStatus: string,
+  payload: string,
+): Promise<CurrentRampExecutionCommand> {
+  return getOrCreateRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampServiceTransitionCommandKey(
+      accountId,
+      operationId,
+      serviceId,
+      targetStatus,
+    ),
+    payload,
+  );
+}
+
+export async function removeRampServiceTransitionCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  targetStatus: string,
+  expectedIdempotencyKey: string,
+) {
+  return removeRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampServiceTransitionCommandKey(
+      accountId,
+      operationId,
+      serviceId,
+      targetStatus,
+    ),
+    expectedIdempotencyKey,
+  );
 }
 
 export async function clearStoredMobileSession() {

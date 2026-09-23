@@ -5,7 +5,10 @@ using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.GetRampAssignedOperations;
+using Elevant.Application.Operations.GetRampOperationChecklist;
 using Elevant.Application.Operations.StartRampOperation;
+using Elevant.Application.Operations.SubmitRampOperationChecklist;
+using Elevant.Application.Operations.TransitionRampOperationService;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elevant.Application;
@@ -27,6 +30,9 @@ public static class DependencyInjection
         services.AddScoped<GetRampAssignedOperationsHandler>();
         services.AddScoped<RegisterMobileDeviceHandler>();
         services.AddScoped<StartRampOperationHandler>();
+        services.AddScoped<GetRampOperationChecklistHandler>();
+        services.AddScoped<SubmitRampOperationChecklistHandler>();
+        services.AddScoped<TransitionRampOperationServiceHandler>();
         return services;
     }
 }

@@ -9,11 +9,14 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
 
 - inicio de sesión y revalidación de la cuenta actual;
 - operaciones/turnarounds y servicios asignados al agente autenticado;
-- caché de solo lectura por cuenta para conectividad intermitente.
+- caché de solo lectura por cuenta para conectividad intermitente;
+- registro estable de la instalación y comienzo idempotente de la operación;
+- checklist canónico con borrador local por cuenta y envío idempotente;
+- ejecución de servicios con transiciones y replay exacto de comandos inciertos.
 
-Los comandos de atención, checklists, incidencias, chat, evidencias y
-sincronización permanecen deshabilitados hasta contar con contratos canónicos.
-La aplicación no simula esas escrituras ni conserva una outbox prototípica.
+El envío final de la operación, incidencias, chat, evidencias y la sincronización
+general permanecen deshabilitados hasta contar con contratos canónicos. La
+aplicación no simula esas escrituras ni conserva la outbox prototípica.
 
 El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
 OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados
@@ -57,15 +60,18 @@ La API determina la cuenta, el perfil de agente y las estaciones autorizadas. El
 dispositivo no envía `agentId` ni `stationId` al consultar sus asignaciones. La
 sesión solo se conserva cuando la respuesta y la revalidación actual contienen
 el rol exacto `RAMP_AGENT` del portal `ramp_mobile_app`, membresía interna de
-AVIAM y al menos un scope de estación.
+AVIAM y al menos un scope de estación. Los comandos operativos registran primero
+la instalación actual y la API vuelve a validar cuenta, asignación, estación y
+vínculo del dispositivo antes de aceptar cualquier escritura.
 
 El bearer token se guarda exclusivamente con `expo-secure-store`; nunca forma
 parte del objeto de sesión entregado a la UI, AsyncStorage ni logs. Token y
 metadata se enlazan mediante una revisión aleatoria: una pareja incompleta o
-inconsistente se rechaza en cerrado. AsyncStorage conserva solo actor/expiración
-no secretos y una caché versionada por `accountId` y revisión. Una sesión
-vencida se elimina en cerrado. Logout, `401`, `403` y un cambio de autorización
-eliminan token, metadata, cachés de cuentas y todo estado sensible no namespaced
+inconsistente se rechaza en cerrado. AsyncStorage conserva actor/expiración no
+secretos, la caché versionada por `accountId`, borradores del checklist y
+comandos pendientes namespaced por cuenta y operación. Nunca conserva el bearer
+token. Una sesión vencida se elimina en cerrado. Logout, `401` y `403` eliminan
+token, metadata, cachés, borradores, comandos pendientes y todo estado sensible
 heredado del prototipo.
 
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
@@ -76,9 +82,16 @@ evitar que la interfaz quede bloqueada cuando una ruta privada deja de responder
 
 Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-compatible, tamaño/tipos, retención y autorización. SQL Server no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
 
-## Próxima sincronización offline
+## Escrituras idempotentes y próxima sincronización offline
 
-Cada escritura offline debe conservar:
+El inicio de operación, el envío del checklist y cada transición de servicio
+reservan el payload y la clave de idempotencia antes de tocar la red. Ante
+timeout, desconexión, `429` o `5xx`, la interfaz bloquea la edición incompatible
+y el siguiente intento reutiliza exactamente el mismo comando. Un rechazo
+determinístico descarta la reserva y obliga a consultar nuevamente el estado
+canónico.
+
+Una futura outbox general para nuevas escrituras offline deberá conservar:
 
 - un identificador estable del dispositivo registrado;
 - una clave de idempotencia estable por comando;

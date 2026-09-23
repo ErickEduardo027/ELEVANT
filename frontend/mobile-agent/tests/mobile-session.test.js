@@ -41,11 +41,16 @@ jest.mock('expo-crypto', () => ({
 const {
   assignedOperationsCacheKey,
   clearStoredMobileSession,
+  getOrCreateRampChecklistSubmitCommandIfCurrent,
+  getOrCreateRampServiceTransitionCommandIfCurrent,
   getOrCreateRampStartCommandIfCurrent,
+  readRampChecklistDraftIfCurrent,
+  readRampChecklistSubmitCommandIfCurrent,
   readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
   updateStoredMobileSessionMetadata,
+  writeRampChecklistDraftIfCurrent,
   writeAssignedOperationsCacheIfCurrent,
   writeStoredMobileSession,
 } = require('../src/storage/mobile-session');
@@ -56,6 +61,8 @@ const ACCOUNT_A = '20000000-0000-4000-8000-000000000001';
 const ACCOUNT_B = '20000000-0000-4000-8000-000000000002';
 const OPERATION_A = '70000000-0000-4000-8000-000000000001';
 const OPERATION_B = '70000000-0000-4000-8000-000000000002';
+const CHECKLIST_A = '71000000-0000-4000-8000-000000000001';
+const SERVICE_A = '72000000-0000-4000-8000-000000000001';
 const CREDENTIAL_KEY = 'elevant.mobile.session-credential.v1';
 const INSTALLATION_ID_KEY = 'elevant.mobile.installation-id.v1';
 const METADATA_KEY = 'elevant:mobile:session-metadata:v1';
@@ -217,4 +224,186 @@ test('reuses a start idempotency key per account and operation until logout', as
       OPERATION_A,
     ),
   ).resolves.not.toEqual(first);
+});
+
+test('namespaces checklist drafts by account, operation, and checklist', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const draft = JSON.stringify({ answers: { itemA: { result: 'Ok' } } });
+
+  await expect(
+    writeRampChecklistDraftIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      CHECKLIST_A,
+      draft,
+    ),
+  ).resolves.toBe('written');
+  await expect(
+    readRampChecklistDraftIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      CHECKLIST_A,
+    ),
+  ).resolves.toEqual({ kind: 'current', value: draft });
+  await expect(
+    readRampChecklistDraftIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_B,
+      CHECKLIST_A,
+    ),
+  ).resolves.toEqual({ kind: 'current', value: null });
+  await expect(
+    readRampChecklistDraftIfCurrent(
+      sessionId,
+      ACCOUNT_B,
+      OPERATION_A,
+      CHECKLIST_A,
+    ),
+  ).resolves.toEqual({ kind: 'not-current' });
+});
+
+test('freezes checklist payload and idempotency key before an uncertain request', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const firstPayload = JSON.stringify({ answers: [{ itemId: SERVICE_A, result: 'Ok' }] });
+  const changedPayload = JSON.stringify({ answers: [{ itemId: SERVICE_A, result: 'NotOk', note: 'changed' }] });
+  const first = await getOrCreateRampChecklistSubmitCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    CHECKLIST_A,
+    firstPayload,
+  );
+
+  await expect(
+    getOrCreateRampChecklistSubmitCommandIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      CHECKLIST_A,
+      changedPayload,
+    ),
+  ).resolves.toEqual(first);
+  await expect(
+    readRampChecklistSubmitCommandIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      CHECKLIST_A,
+    ),
+  ).resolves.toEqual({
+    kind: 'current',
+    command: {
+      idempotencyKey: first.idempotencyKey,
+      payload: firstPayload,
+    },
+  });
+});
+
+test('fails closed instead of minting a new key over a corrupt pending command', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  await getOrCreateRampChecklistSubmitCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    CHECKLIST_A,
+    JSON.stringify({ answers: [{ itemId: SERVICE_A, result: 'Ok' }] }),
+  );
+  const commandKey = [...mockAsyncData.keys()].find(key =>
+    key.includes('ramp-checklist-submit-command'),
+  );
+  mockAsyncData.set(commandKey, '{"schemaVersion":1,"corrupt":true}');
+
+  await expect(
+    getOrCreateRampChecklistSubmitCommandIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      CHECKLIST_A,
+      JSON.stringify({ answers: [{ itemId: SERVICE_A, result: 'NotOk' }] }),
+    ),
+  ).rejects.toThrow('Mobile session storage is unavailable.');
+});
+
+test('uses one frozen service command per target status and clears execution data on logout', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const startPayload = JSON.stringify({ targetStatus: 'InProgress' });
+  const completePayload = JSON.stringify({ targetStatus: 'Completed', executedQuantity: 2 });
+  const start = await getOrCreateRampServiceTransitionCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    SERVICE_A,
+    'InProgress',
+    startPayload,
+  );
+  const complete = await getOrCreateRampServiceTransitionCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    SERVICE_A,
+    'Completed',
+    completePayload,
+  );
+
+  expect(start).toMatchObject({ kind: 'current', payload: startPayload });
+  expect(complete).toMatchObject({ kind: 'current', payload: completePayload });
+  expect(complete.idempotencyKey).not.toBe(start.idempotencyKey);
+  await expect(
+    getOrCreateRampServiceTransitionCommandIfCurrent(
+      sessionId,
+      ACCOUNT_A,
+      OPERATION_A,
+      SERVICE_A,
+      'InProgress',
+      JSON.stringify({ targetStatus: 'InProgress', note: 'changed' }),
+    ),
+  ).resolves.toEqual(start);
+
+  await clearStoredMobileSession();
+  expect(
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist')),
+  ).toBe(false);
+  expect(
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-service-transition')),
+  ).toBe(false);
+});
+
+test('removes account-scoped execution data when the owning session expires', async () => {
+  const sessionId = await writeStoredMobileSession(
+    'token-a',
+    metadata(ACCOUNT_A),
+  );
+  await writeRampChecklistDraftIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    CHECKLIST_A,
+    JSON.stringify({ schemaVersion: 1, checklistId: CHECKLIST_A, answers: {} }),
+  );
+  await getOrCreateRampServiceTransitionCommandIfCurrent(
+    sessionId,
+    ACCOUNT_A,
+    OPERATION_A,
+    SERVICE_A,
+    'InProgress',
+    JSON.stringify({ targetStatus: 'InProgress' }),
+  );
+
+  const metadataEnvelope = JSON.parse(mockAsyncData.get(METADATA_KEY));
+  metadataEnvelope.metadata.expiresAt = new Date(Date.now() - 1_000).toISOString();
+  mockAsyncData.set(METADATA_KEY, JSON.stringify(metadataEnvelope));
+
+  await expect(readStoredMobileSession()).resolves.toEqual({
+    kind: 'expired',
+    accountId: ACCOUNT_A,
+  });
+  expect(
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist')),
+  ).toBe(false);
+  expect(
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-service-transition')),
+  ).toBe(false);
 });
