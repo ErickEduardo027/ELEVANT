@@ -2814,6 +2814,114 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task RampIncidentsAreScopedIdempotentAndKeepDescriptionOutOfAudit()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+        {
+            await migration.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+        {
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        var accountId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var installationId = Guid.Parse("81000000-0000-7000-8000-000000000031");
+        var startKey = Guid.Parse("82000000-0000-7000-8000-000000000031");
+        var incidentKey = Guid.Parse("83000000-0000-7000-8000-000000000031");
+        const string sensitiveDescription = "SENSITIVE-INCIDENT-DESCRIPTION-NOT-FOR-AUDIT";
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    accountId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Incident SQL test tablet", "Android 16"), cancellationToken);
+            Assert.True(registration.IsSuccess);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var started = await scope.ServiceProvider
+                .GetRequiredService<IRampOperationsCommandStore>()
+                .StartOperationAsync(new RampOperationStartWriteRequest(
+                    accountId, [stationId], operationId, installationId,
+                    startKey, startKey, "incident-test-start"), cancellationToken);
+            Assert.True(started.IsSuccess);
+        }
+
+        DateTimeOffset occurredAt;
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            occurredAt = await context.GroundOperations
+                .Where(item => item.PublicId == operationId)
+                .Select(item => item.ActualStartAt!.Value)
+                .SingleAsync(cancellationToken);
+        }
+
+        async Task<RampIncidentWriteResult> ReportAsync(Guid key, string description)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IRampIncidentStore>()
+                .ReportAsync(new RampIncidentWriteRequest(
+                    accountId, [stationId], operationId, "Safety", IncidentSeverity.High,
+                    description, occurredAt, installationId, key, key,
+                    "incident-sql-test"), cancellationToken);
+        }
+
+        var reported = await ReportAsync(incidentKey, sensitiveDescription);
+        Assert.True(reported.IsSuccess);
+        Assert.Equal(incidentKey, reported.Receipt!.IncidentId);
+        Assert.Equal("Open", reported.Receipt.Status);
+
+        var replay = await ReportAsync(incidentKey, sensitiveDescription);
+        Assert.True(replay.IsSuccess);
+        Assert.Equal(reported.Receipt, replay.Receipt);
+        Assert.Equal(reported.CommitReceiptId, replay.CommitReceiptId);
+
+        var collision = await ReportAsync(incidentKey, "Otro incidente distinto");
+        Assert.Equal(RampOperationsFailure.Conflict, collision.Failure);
+        Assert.Null(collision.CommitReceiptId);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var read = await scope.ServiceProvider.GetRequiredService<IRampIncidentStore>()
+                .GetAsync(new RampIncidentReadRequest(
+                    accountId, [stationId], operationId), cancellationToken);
+            Assert.True(read.IsSuccess);
+            Assert.Equal(sensitiveDescription, Assert.Single(read.Incidents!).Description);
+            var outsideScope = await scope.ServiceProvider.GetRequiredService<IRampIncidentStore>()
+                .GetAsync(new RampIncidentReadRequest(
+                    accountId, [Guid.NewGuid()], operationId), cancellationToken);
+            Assert.False(outsideScope.IsSuccess);
+        }
+
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Single(await verify.Incidents.Where(item => item.PublicId == incidentKey)
+            .ToArrayAsync(cancellationToken));
+        var audit = Assert.Single(await verify.AuditEntries.Where(item =>
+            item.Action == "ramp.operation.incident.reported" &&
+            item.EntityPublicId == incidentKey).ToArrayAsync(cancellationToken));
+        Assert.DoesNotContain(sensitiveDescription, audit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+        var receipt = Assert.Single(await verify.MobileCommandReceipts.Where(item =>
+            item.IdempotencyKey == incidentKey.ToString("D")).ToArrayAsync(cancellationToken));
+        Assert.Equal(MobileCommandStatus.Processed, receipt.Status);
+        Assert.DoesNotContain(sensitiveDescription, receipt.ResultJson ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RampOperationsReadStoreDerivesAgentAndEnforcesAssignmentAndStationScope()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

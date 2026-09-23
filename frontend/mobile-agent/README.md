@@ -12,9 +12,11 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
 - caché de solo lectura por cuenta para conectividad intermitente;
 - registro estable de la instalación y comienzo idempotente de la operación;
 - checklist canónico con borrador local por cuenta y envío idempotente;
-- ejecución de servicios con transiciones y replay exacto de comandos inciertos.
+- ejecución de servicios con transiciones y replay exacto de comandos inciertos;
+- incidencias estructuradas con cola local por cuenta y operación, reintento
+  idempotente y conciliación contra la lectura canónica de la API.
 
-El envío final de la operación, incidencias, chat, evidencias y la sincronización
+El envío final de la operación, chat, evidencias y la sincronización
 general permanecen deshabilitados hasta contar con contratos canónicos. La
 aplicación no simula esas escrituras ni conserva la outbox prototípica.
 
@@ -90,6 +92,14 @@ timeout, desconexión, `429` o `5xx`, la interfaz bloquea la edición incompatib
 y el siguiente intento reutiliza exactamente el mismo comando. Un rechazo
 determinístico descarta la reserva y obliga a consultar nuevamente el estado
 canónico.
+
+Cada incidencia se guarda primero en una cola local acotada de 25 reportes por
+operación. Incluye tipo, impacto, descripción, hora UTC de ocurrencia y una
+clave estable. Se envía en orden y se conserva si falla la red, hay timeout o
+una respuesta incierta; la lectura canónica puede confirmar un envío cuya
+respuesta se perdió. Un rechazo determinístico queda visible como bloqueado,
+sin descartar un posible evento de seguridad. La cola se borra al cerrar o
+revocar la sesión; no incluye fotos ni otras evidencias binarias.
 
 Una futura outbox general para nuevas escrituras offline deberá conservar:
 

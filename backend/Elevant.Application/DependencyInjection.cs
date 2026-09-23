@@ -6,6 +6,7 @@ using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.GetRampAssignedOperations;
 using Elevant.Application.Operations.GetRampOperationChecklist;
+using Elevant.Application.Operations;
 using Elevant.Application.Operations.StartRampOperation;
 using Elevant.Application.Operations.SubmitRampOperationChecklist;
 using Elevant.Application.Operations.TransitionRampOperationService;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<GetRampOperationChecklistHandler>();
         services.AddScoped<SubmitRampOperationChecklistHandler>();
         services.AddScoped<TransitionRampOperationServiceHandler>();
+        services.AddScoped<RampIncidentHandler>();
         return services;
     }
 }

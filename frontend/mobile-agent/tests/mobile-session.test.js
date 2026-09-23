@@ -46,11 +46,14 @@ const {
   getOrCreateRampStartCommandIfCurrent,
   readRampChecklistDraftIfCurrent,
   readRampChecklistSubmitCommandIfCurrent,
+  readRampIncidentOutboxIfCurrent,
   readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
   updateStoredMobileSessionMetadata,
   writeRampChecklistDraftIfCurrent,
+  reserveRampIncidentOutboxItemIfCurrent,
+  updateRampIncidentOutboxItemIfCurrent,
   writeAssignedOperationsCacheIfCurrent,
   writeStoredMobileSession,
 } = require('../src/storage/mobile-session');
@@ -263,6 +266,46 @@ test('namespaces checklist drafts by account, operation, and checklist', async (
       CHECKLIST_A,
     ),
   ).resolves.toEqual({ kind: 'not-current' });
+});
+
+test('reserves multiple incident reports before network and preserves FIFO keys', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const firstPayload = JSON.stringify({ incidentType: 'Safety', severity: 'High', description: 'Equipo inmovilizado', occurredAt: '2026-09-23T12:00:00Z' });
+  const secondPayload = JSON.stringify({ incidentType: 'Equipment', severity: 'Low', description: 'Equipo revisado', occurredAt: '2026-09-23T12:01:00Z' });
+  const first = await reserveRampIncidentOutboxItemIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, firstPayload);
+  const second = await reserveRampIncidentOutboxItemIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, secondPayload);
+  expect(first.kind).toBe('current');
+  expect(second.items).toHaveLength(2);
+  expect(second.items.map(item => item.payload)).toEqual([firstPayload, secondPayload]);
+  expect(second.items[0].idempotencyKey).toBe(first.items[0].idempotencyKey);
+  await expect(readRampIncidentOutboxIfCurrent(sessionId, ACCOUNT_A, OPERATION_B))
+    .resolves.toEqual({ kind: 'current', items: [] });
+  await expect(readRampIncidentOutboxIfCurrent(sessionId, ACCOUNT_B, OPERATION_A))
+    .resolves.toEqual({ kind: 'not-current' });
+
+  const blocked = await updateRampIncidentOutboxItemIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, first.items[0].idempotencyKey, 'block');
+  expect(blocked.items[0].state).toBe('blocked');
+  expect(blocked.items[1].state).toBe('pending');
+  const removed = await updateRampIncidentOutboxItemIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, first.items[0].idempotencyKey, 'remove');
+  expect(removed.items).toHaveLength(1);
+  expect(removed.items[0].payload).toBe(secondPayload);
+
+  await clearStoredMobileSession();
+  await expect(readRampIncidentOutboxIfCurrent(sessionId, ACCOUNT_A, OPERATION_A))
+    .resolves.toEqual({ kind: 'not-current' });
+  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-incident-outbox'))).toBe(false);
+});
+
+test('does not overwrite a malformed incident outbox or lose reserved reports', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const key = `elevant:mobile:ramp-incident-outbox:v1:${ACCOUNT_A}:${OPERATION_A}`;
+  mockAsyncData.set(key, '{invalid');
+  await expect(reserveRampIncidentOutboxItemIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, '{"description":"test report"}',
+  )).rejects.toThrow('Mobile session storage is unavailable.');
+  expect(mockAsyncData.get(key)).toBe('{invalid');
 });
 
 test('freezes checklist payload and idempotency key before an uncertain request', async () => {

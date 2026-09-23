@@ -92,6 +92,11 @@ error expone solo `status`, un `title` saneado y el `traceId` opcional. Su
 mensaje nunca incorpora el token, URL, cuerpo crudo ni `ProblemDetails.detail`.
 Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
 
+`getRampIncidents` lee las incidencias de una operación asignada sin aceptar
+identificadores de agente o estación. `reportRampIncident` envía solo tipo,
+impacto, descripción y hora de ocurrencia con instalación y clave de
+idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
+
 ## Contrato y generación
 
 - `openapi/elevant-v1.json`: snapshot canónico certificado.
@@ -118,6 +123,15 @@ Para comparar estructuralmente el snapshot con un archivo o una API local:
 ```bash
 npm run check:openapi -- ./swagger.json
 npm run check:openapi -- http://127.0.0.1:8080/swagger/v1/swagger.json
+```
+
+Para capturar el contrato de una API compilada localmente en modo Testing y
+actualizar el descriptor de forma reproducible:
+
+```bash
+npm run refresh:openapi -- http://127.0.0.1:8080/swagger/v1/swagger.json
+npm run generate
+npm run check
 ```
 
 La comparación ignora espacios y el orden de propiedades JSON, pero detecta

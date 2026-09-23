@@ -82,6 +82,21 @@ export interface CurrentSessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface RampIncidentResponse {
+  id: string;
+  incidentType: string;
+  severity: string;
+  status: string;
+  description: string;
+  occurredAt: string;
+  reportedAt: string;
+}
+
+export interface GetRampIncidentsResponse {
+  operationId: string;
+  incidents: RampIncidentResponse[];
+}
+
 export interface RampChecklistTemplateResponse {
   code: string;
   name: string;
@@ -468,6 +483,15 @@ export interface RampChecklistSubmissionResponse {
   checklist: RampChecklistSubmissionSummaryResponse;
 }
 
+export interface RampIncidentReceiptResponse {
+  receiptId: string;
+  operationId: string;
+  incidentId: string;
+  status: string;
+  occurredAt: string;
+  reportedAt: string;
+}
+
 export interface RampOperationServiceExecutionResponse {
   id: string;
   status: string;
@@ -522,6 +546,25 @@ export interface RegisterMobileDeviceResponse {
      */
   appVersion: string;
   lastSeenAt: string;
+}
+
+export interface ReportRampIncidentRequest {
+  /**
+     * @minLength 1
+     * @pattern ^(Operational|Safety|Equipment|Documentation)$
+     */
+  incidentType: string;
+  /**
+     * @minLength 1
+     * @pattern ^(Low|Medium|High|Critical)$
+     */
+  severity: string;
+  /**
+     * @minLength 8
+     * @maxLength 2000
+     */
+  description: string;
+  occurredAt: string;
 }
 
 export interface SessionResponse {
@@ -786,6 +829,75 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetRampIncidentsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary Returns canonical incidents visible to the assigned ramp agent.
+ */
+export const getRampIncidents = async (operationId: string, options?: RequestInit): Promise<GetRampIncidentsResponse> => {
+
+  const res = await fetch(getGetRampIncidentsUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GetRampIncidentsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReportRampIncidentUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary Atomically reports one incident without duplicating offline retries.
+ */
+export const reportRampIncident = async (operationId: string,
+    reportRampIncidentRequest: ReportRampIncidentRequest, options?: RequestInit): Promise<RampIncidentReceiptResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReportRampIncidentUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportRampIncidentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampIncidentReceiptResponse = body ? JSON.parse(body) : {}
   return data
 }
 

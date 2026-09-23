@@ -84,6 +84,13 @@ a 60 minutos y usa 15 por defecto.
   y limita la respuesta a 100 operaciones ordenadas. Exige `RAMP_AGENT`, portal
   `RampMobileApp` y membresía interna AVIAM; una cuenta sin perfil compatible
   falla cerrada con `403` y una cola legítimamente vacía responde `200`.
+- `GET /api/v1/ramp/operations/{operationId}/incidents` y `POST` en la misma
+  ruta leen y reportan incidencias de una operación asignada. El servidor
+  comprueba rol, membresía, estación, terminal, asignación y vínculo del
+  dispositivo; solo admite un reporte de una operación en curso. El `POST`
+  exige identificadores UUID de instalación e idempotencia y acepta únicamente
+  tipo, severidad, descripción y hora. El recibo no devuelve la descripción,
+  y la auditoría tampoco la guarda en metadatos.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
