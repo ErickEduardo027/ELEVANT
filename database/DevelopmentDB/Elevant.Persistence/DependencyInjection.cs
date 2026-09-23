@@ -60,6 +60,9 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
         services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
         services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
+        services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
+        services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
+        services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
 
         services
             .AddHealthChecks()

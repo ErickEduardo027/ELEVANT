@@ -20,6 +20,8 @@ internal sealed class EfOccPlanningCommandStore(
     TimeProvider timeProvider) : IOccPlanningCommandStore
 {
     private const string PrimaryAssignmentRole = "primary";
+    private const string TurnaroundChecklistCode = "TURNAROUND-BASE";
+    private const string PassengerBridgeServiceCode = "PASSENGER-BRIDGE";
 
     public async Task<OccAssignmentWriteResult> AssignOperationAsync(
         OccAssignmentWriteRequest request,
@@ -321,6 +323,24 @@ internal sealed class EfOccPlanningCommandStore(
             return Conflict();
         }
 
+        MaterializedChecklist? materializedChecklist = null;
+        if (contractedServices.Any(service =>
+                string.Equals(
+                    service.ServiceCode,
+                    PassengerBridgeServiceCode,
+                    StringComparison.Ordinal)))
+        {
+            materializedChecklist = await MaterializeChecklistAsync(
+                operation.Id,
+                scope.OperationDate,
+                now,
+                cancellationToken);
+            if (materializedChecklist is null)
+            {
+                return Conflict();
+            }
+        }
+
         var assignment = new OperationAgentAssignment
         {
             PublicId = Guid.CreateVersion7(),
@@ -368,6 +388,9 @@ internal sealed class EfOccPlanningCommandStore(
                 agentId = agent.PublicId,
                 operationalPositionId = position.PublicId,
                 serviceCount = materializedServices.Count,
+                checklistId = materializedChecklist?.Entity.PublicId,
+                checklistTemplateVersion = materializedChecklist?.VersionNumber,
+                checklistItemCount = materializedChecklist?.ItemCount ?? 0,
             }),
         };
         context.AuditEntries.Add(auditEntry);
@@ -405,6 +428,15 @@ internal sealed class EfOccPlanningCommandStore(
                 PropertyName = "OperationalPositionId",
                 NewValue = position.PublicId.ToString("D"),
             });
+        if (materializedChecklist is not null)
+        {
+            context.AuditChanges.Add(new AuditChange
+            {
+                AuditEntryId = auditEntry.Id,
+                PropertyName = "OperationChecklistId",
+                NewValue = materializedChecklist.Entity.PublicId.ToString("D"),
+            });
+        }
         await context.SaveChangesAsync(cancellationToken);
 
         var assignmentData = new OccAssignmentData(
@@ -448,6 +480,81 @@ internal sealed class EfOccPlanningCommandStore(
         };
 
         return OccAssignmentWriteResult.Success(assignmentData, auditEntry.PublicId);
+    }
+
+    private async Task<MaterializedChecklist?> MaterializeChecklistAsync(
+        long operationId,
+        DateOnly operationDate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var applicableVersion = await (
+                from template in context.Set<ChecklistTemplate>().AsNoTracking()
+                join version in context.Set<ChecklistTemplateVersion>().AsNoTracking()
+                    on template.Id equals version.ChecklistTemplateId
+                where template.Code == TurnaroundChecklistCode &&
+                      template.IsActive &&
+                      version.Status == ChecklistVersionStatus.Published &&
+                      version.EffectiveFrom <= operationDate &&
+                      (version.EffectiveTo == null || version.EffectiveTo >= operationDate)
+                orderby version.VersionNumber descending, version.PublicId
+                select new ChecklistVersionProjection(
+                    version.Id,
+                    version.VersionNumber))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (applicableVersion is null)
+        {
+            return null;
+        }
+
+        var itemCount = await context.Set<ChecklistTemplateItem>()
+            .AsNoTracking()
+            .CountAsync(
+                item => item.ChecklistTemplateVersionId == applicableVersion.Id,
+                cancellationToken);
+        if (itemCount == 0)
+        {
+            return null;
+        }
+
+        var existing = await context.OperationChecklists
+            .SingleOrDefaultAsync(
+                checklist => checklist.GroundOperationId == operationId &&
+                    checklist.ChecklistTemplateVersionId == applicableVersion.Id,
+                cancellationToken);
+        if (existing is not null)
+        {
+            var hasAnswers = await context.Set<ChecklistAnswer>()
+                .AsNoTracking()
+                .AnyAsync(
+                    answer => answer.OperationChecklistId == existing.Id,
+                    cancellationToken);
+            return !hasAnswers &&
+                   existing.Status == ChecklistStatus.NotStarted &&
+                   existing.StartedAt is null &&
+                   existing.SubmittedAt is null &&
+                   existing.SubmittedByRampAgentId is null
+                ? new MaterializedChecklist(
+                    existing,
+                    applicableVersion.VersionNumber,
+                    itemCount)
+                : null;
+        }
+
+        var checklist = new OperationChecklist
+        {
+            PublicId = Guid.CreateVersion7(),
+            GroundOperationId = operationId,
+            ChecklistTemplateVersionId = applicableVersion.Id,
+            Status = ChecklistStatus.NotStarted,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        context.OperationChecklists.Add(checklist);
+        return new MaterializedChecklist(
+            checklist,
+            applicableVersion.VersionNumber,
+            itemCount);
     }
 
     private List<MaterializedService>? ReconcileServices(
@@ -577,4 +684,11 @@ internal sealed class EfOccPlanningCommandStore(
         OperationService Entity,
         ContractedServiceProjection Contract,
         bool IsNew);
+
+    private sealed record ChecklistVersionProjection(long Id, int VersionNumber);
+
+    private sealed record MaterializedChecklist(
+        OperationChecklist Entity,
+        int VersionNumber,
+        int ItemCount);
 }

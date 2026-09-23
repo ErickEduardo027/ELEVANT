@@ -4,26 +4,34 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetRampOperationChecklistUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
   getStartRampOperationUrl,
+  getSubmitRampOperationChecklistUrl,
+  getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
   type CreateSessionRequest,
   type CurrentSessionResponse,
+  type GetRampOperationChecklistResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
   type OccAssignmentResponse,
   type RampGroundOperationResponse,
+  type RampChecklistSubmissionResponse,
+  type RampOperationServiceTransitionResponse,
   type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
   type RegisterMobileDeviceRequest,
   type RegisterMobileDeviceResponse,
   type SessionActorResponse,
   type SessionResponse,
+  type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
+  type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
 import { ElevantApiError } from "./errors";
 
@@ -69,6 +77,18 @@ export type RegisterMobileDeviceOptions = Omit<
   "body" | "method"
 >;
 export type StartRampOperationOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type GetRampOperationChecklistOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type SubmitRampOperationChecklistOptions = Omit<
+  ElevantRequestInit,
+  "body" | "method"
+>;
+export type TransitionRampOperationServiceOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
@@ -126,6 +146,25 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: StartRampOperationOptions,
   ): Promise<RampOperationStartResponse>;
+  getRampOperationChecklist(
+    operationId: string,
+    options?: GetRampOperationChecklistOptions,
+  ): Promise<GetRampOperationChecklistResponse>;
+  submitRampOperationChecklist(
+    operationId: string,
+    request: SubmitRampOperationChecklistRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: SubmitRampOperationChecklistOptions,
+  ): Promise<RampChecklistSubmissionResponse>;
+  transitionRampOperationService(
+    operationId: string,
+    serviceId: string,
+    request: TransitionRampOperationServiceRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: TransitionRampOperationServiceOptions,
+  ): Promise<RampOperationServiceTransitionResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -830,6 +869,179 @@ function isRampOperationStartResponse(
   );
 }
 
+const rampChecklistStatuses = ["NotStarted", "InProgress", "Submitted"] as const;
+const rampChecklistAnswerValues = ["Ok", "NotApplicable", "NotOk"] as const;
+const rampServiceTargetStatuses = [
+  "InProgress",
+  "Completed",
+  "NotPerformed",
+  "Exception",
+] as const;
+const maximumExecutedQuantityExclusive = 100_000_000_000_000;
+
+function isOneOf<const TValue extends readonly string[]>(
+  value: unknown,
+  values: TValue,
+): value is TValue[number] {
+  return typeof value === "string" && values.includes(value);
+}
+
+function isRampChecklistAnswerResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["value", "note", "answeredAt"]) &&
+    isOneOf(value.value, rampChecklistAnswerValues) &&
+    isOptionalNullable(value.note, isString) &&
+    isDateTimeOffset(value.answeredAt)
+  );
+}
+
+function isRampChecklistItemResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id",
+      "code",
+      "label",
+      "sortOrder",
+      "isRequired",
+      "requiresNoteWhenNotOk",
+      "answer",
+    ]) &&
+    isUuid(value.id) &&
+    isString(value.code) &&
+    isString(value.label) &&
+    isInt32(value.sortOrder) &&
+    value.sortOrder >= 0 &&
+    typeof value.isRequired === "boolean" &&
+    typeof value.requiresNoteWhenNotOk === "boolean" &&
+    isOptionalNullable(value.answer, isRampChecklistAnswerResponse)
+  );
+}
+
+function isRampChecklistResponse(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "id",
+      "status",
+      "startedAt",
+      "submittedAt",
+      "template",
+      "sections",
+    ]) ||
+    !isUuid(value.id) ||
+    !isOneOf(value.status, rampChecklistStatuses) ||
+    !isOptionalNullable(value.startedAt, isDateTimeOffset) ||
+    !isOptionalNullable(value.submittedAt, isDateTimeOffset) ||
+    !isRecord(value.template) ||
+    !hasOnlyKeys(value.template, ["code", "name", "version"]) ||
+    !isString(value.template.code) ||
+    !isString(value.template.name) ||
+    !isInt32(value.template.version) ||
+    value.template.version < 1 ||
+    !Array.isArray(value.sections)
+  ) {
+    return false;
+  }
+
+  if (
+    value.status === "Submitted" &&
+    (!isDateTimeOffset(value.startedAt) || !isDateTimeOffset(value.submittedAt))
+  ) {
+    return false;
+  }
+
+  const itemIds = new Set<string>();
+  for (const section of value.sections) {
+    if (
+      !isRecord(section) ||
+      !hasOnlyKeys(section, ["name", "items"]) ||
+      !isString(section.name) ||
+      !Array.isArray(section.items) ||
+      !section.items.every(isRampChecklistItemResponse)
+    ) {
+      return false;
+    }
+
+    for (const item of section.items) {
+      const itemId = (item as Record<string, unknown>).id as string;
+      if (itemIds.has(itemId.toLowerCase())) return false;
+      itemIds.add(itemId.toLowerCase());
+    }
+  }
+
+  return true;
+}
+
+function isGetRampOperationChecklistResponse(
+  value: unknown,
+  operationId: string,
+): value is GetRampOperationChecklistResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "checklist"]) &&
+    isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    isRampChecklistResponse(value.checklist)
+  );
+}
+
+function isRampChecklistSubmissionResponse(
+  value: unknown,
+  checklistId: string,
+  answerCount: number,
+): value is RampChecklistSubmissionResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "checklist"]) &&
+    isUuid(value.receiptId) &&
+    isRecord(value.checklist) &&
+    hasOnlyKeys(value.checklist, [
+      "id",
+      "status",
+      "startedAt",
+      "submittedAt",
+      "answerCount",
+    ]) &&
+    isUuid(value.checklist.id) &&
+    value.checklist.id.toLowerCase() === checklistId &&
+    value.checklist.status === "Submitted" &&
+    isDateTimeOffset(value.checklist.startedAt) &&
+    isDateTimeOffset(value.checklist.submittedAt) &&
+    isInt32(value.checklist.answerCount) &&
+    value.checklist.answerCount === answerCount
+  );
+}
+
+function isRampOperationServiceTransitionResponse(
+  value: unknown,
+  serviceId: string,
+  targetStatus: string,
+): value is RampOperationServiceTransitionResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "service"]) &&
+    isUuid(value.receiptId) &&
+    isRecord(value.service) &&
+    hasOnlyKeys(value.service, [
+      "id",
+      "status",
+      "contractedQuantity",
+      "executedQuantity",
+      "billingUnit",
+    ]) &&
+    isUuid(value.service.id) &&
+    value.service.id.toLowerCase() === serviceId &&
+    value.service.status === targetStatus &&
+    isFiniteNumber(value.service.contractedQuantity) &&
+    value.service.contractedQuantity >= 0 &&
+    isFiniteNumber(value.service.executedQuantity) &&
+    value.service.executedQuantity >= 0 &&
+    isString(value.service.billingUnit)
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -1011,6 +1223,114 @@ function validatedMobileDeviceRequest(
     ...(operatingSystemVersion === undefined
       ? {}
       : { operatingSystemVersion }),
+  };
+}
+
+function validatedChecklistSubmissionRequest(
+  request: SubmitRampOperationChecklistRequest,
+): SubmitRampOperationChecklistRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, ["checklistId", "answers"]) ||
+    !isUuid(request.checklistId) ||
+    !Array.isArray(request.answers) ||
+    request.answers.length < 1 ||
+    request.answers.length > 256
+  ) {
+    throw new TypeError("Ramp checklist submission is invalid.");
+  }
+
+  const itemIds = new Set<string>();
+  const answers = request.answers.map((answer) => {
+    if (
+      !isRecord(answer) ||
+      !hasOnlyKeys(answer, ["itemId", "value", "note"]) ||
+      !isUuid(answer.itemId) ||
+      !isOneOf(answer.value, rampChecklistAnswerValues) ||
+      !isOptionalNullable(
+        answer.note,
+        (note) => typeof note === "string" && note.length <= 1_000,
+      )
+    ) {
+      throw new TypeError("Ramp checklist submission is invalid.");
+    }
+
+    const itemId = answer.itemId.toLowerCase();
+    if (itemIds.has(itemId)) {
+      throw new TypeError("Ramp checklist submission contains duplicate items.");
+    }
+    itemIds.add(itemId);
+
+    return {
+      itemId,
+      value: answer.value,
+      ...(answer.note === undefined ? {} : { note: answer.note }),
+    };
+  });
+
+  return { checklistId: request.checklistId.toLowerCase(), answers };
+}
+
+function hasAtMostFourDecimalPlaces(value: number) {
+  const [coefficient = "", exponentText] = value
+    .toString()
+    .toLowerCase()
+    .split("e");
+  const decimalPlaces = coefficient.includes(".")
+    ? coefficient.length - coefficient.indexOf(".") - 1
+    : 0;
+  const exponent = exponentText === undefined ? 0 : Number(exponentText);
+  return Number.isInteger(exponent) && Math.max(0, decimalPlaces - exponent) <= 4;
+}
+
+function validatedServiceTransitionRequest(
+  request: TransitionRampOperationServiceRequest,
+): TransitionRampOperationServiceRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, ["targetStatus", "executedQuantity", "note"]) ||
+    !isOneOf(request.targetStatus, rampServiceTargetStatuses) ||
+    !isOptionalNullable(
+      request.note,
+      (note) => typeof note === "string" && note.length <= 1_000,
+    )
+  ) {
+    throw new TypeError("Ramp service transition is invalid.");
+  }
+
+  const quantity = request.executedQuantity;
+  if (request.targetStatus === "InProgress") {
+    if (quantity !== undefined && quantity !== null) {
+      throw new TypeError("InProgress service transitions cannot set a quantity.");
+    }
+  } else if (
+    !isFiniteNumber(quantity) ||
+    quantity < 0 ||
+    quantity >= maximumExecutedQuantityExclusive ||
+    !hasAtMostFourDecimalPlaces(quantity)
+  ) {
+    throw new TypeError("Terminal service transitions require a valid quantity.");
+  }
+
+  if (
+    request.targetStatus === "NotPerformed" &&
+    (quantity !== 0 ||
+      typeof request.note !== "string" ||
+      request.note.trim().length === 0)
+  ) {
+    throw new TypeError("NotPerformed service transitions require a zero quantity and note.");
+  }
+  if (
+    request.targetStatus === "Exception" &&
+    (typeof request.note !== "string" || request.note.trim().length === 0)
+  ) {
+    throw new TypeError("Exception service transitions require a note.");
+  }
+
+  return {
+    targetStatus: request.targetStatus,
+    ...(quantity === undefined ? {} : { executedQuantity: quantity }),
+    ...(request.note === undefined ? {} : { note: request.note }),
   };
 }
 
@@ -1318,6 +1638,98 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isRampOperationStartResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getRampOperationChecklist(
+      operationId: string,
+      options?: GetRampOperationChecklistOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetRampOperationChecklistUrl(operation),
+        {
+          ...options,
+          method: "GET",
+        },
+        true,
+      );
+      if (!isGetRampOperationChecklistResponse(result.data, operation)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async submitRampOperationChecklist(
+      operationId: string,
+      request: SubmitRampOperationChecklistRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: SubmitRampOperationChecklistOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const submission = validatedChecklistSubmissionRequest(request);
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getSubmitRampOperationChecklistUrl(operation),
+        {
+          ...options,
+          method: "POST",
+          headers,
+          body: JSON.stringify(submission),
+        },
+        true,
+      );
+      if (
+        !isRampChecklistSubmissionResponse(
+          result.data,
+          submission.checklistId,
+          submission.answers.length,
+        )
+      ) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async transitionRampOperationService(
+      operationId: string,
+      serviceId: string,
+      request: TransitionRampOperationServiceRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: TransitionRampOperationServiceOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const service = validatedUuid(serviceId, "serviceId");
+      const transition = validatedServiceTransitionRequest(request);
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getTransitionRampOperationServiceUrl(operation, service),
+        {
+          ...options,
+          method: "POST",
+          headers,
+          body: JSON.stringify(transition),
+        },
+        true,
+      );
+      if (
+        !isRampOperationServiceTransitionResponse(
+          result.data,
+          service,
+          transition.targetStatus,
+        )
+      ) {
         throw malformedResponse(result.status);
       }
       return result.data;

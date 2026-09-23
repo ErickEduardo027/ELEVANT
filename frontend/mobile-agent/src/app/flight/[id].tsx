@@ -17,6 +17,10 @@ import {
 } from 'react-native';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
 import {
+  RampServiceExecutionCard,
+  type ServiceExecutionNotice,
+} from '../../components/ramp-service-execution-card';
+import {
   flightLegTimeLabel,
   formatOperationDate,
   formatOperationTime,
@@ -26,11 +30,18 @@ import {
   operationStatusLabel,
   operationStatusTone,
   serviceStatusLabel,
-  serviceStatusTone,
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
 import { startAssignedRampOperation } from '../../services/ramp-operation-start';
+import {
+  readRampOperationServicePendingTransition,
+  transitionRampOperationService,
+  type RampOperationServiceExecutionResponse,
+  type RampOperationServiceTargetStatus,
+  type RampServicePendingTransition,
+  type TransitionRampOperationServiceRequest,
+} from '../../services/ramp-operation-service-execution';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 
@@ -49,10 +60,17 @@ export default function OperationDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startNotice, setStartNotice] = useState<StartNotice | null>(null);
+  const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
+  const [serviceReconciliationRequired, setServiceReconciliationRequired] = useState(false);
+  const [serviceNotices, setServiceNotices] = useState<Readonly<Record<string, ServiceExecutionNotice>>>({});
+  const [pendingServiceCommands, setPendingServiceCommands] = useState<Readonly<Record<string, RampServicePendingTransition>>>({});
   const requestRef = useRef<AbortController | null>(null);
   const startRequestRef = useRef<AbortController | null>(null);
+  const serviceRequestRef = useRef<AbortController | null>(null);
   const startInFlightRef = useRef(false);
+  const serviceInFlightRef = useRef(false);
   const lastStartedOperationRef = useRef<RampGroundOperationResponse | null>(null);
+  const lastServiceExecutionsRef = useRef(new Map<string, RampOperationServiceExecutionResponse>());
 
   const load = useCallback(async (refresh = false) => {
     requestRef.current?.abort();
@@ -63,7 +81,11 @@ export default function OperationDetailScreen() {
       setState('loading');
       setStarting(false);
       setStartNotice(null);
+      setBusyServiceId(null);
+      setServiceNotices({});
+      setPendingServiceCommands({});
       lastStartedOperationRef.current = null;
+      lastServiceExecutionsRef.current.clear();
     }
 
     try {
@@ -79,10 +101,35 @@ export default function OperationDetailScreen() {
       ) {
         found = { ...found, operation: lastStartedOperation };
       }
-      if (snapshot.source === 'network') lastStartedOperationRef.current = null;
+      if (found && snapshot.source === 'cache' && lastServiceExecutionsRef.current.size > 0) {
+        found = {
+          ...found,
+          services: found.services.map((service) => {
+            const execution = lastServiceExecutionsRef.current.get(service.id);
+            return execution ? { ...service, ...execution } : service;
+          }),
+        };
+      }
+      if (snapshot.source === 'network') {
+        lastStartedOperationRef.current = null;
+        lastServiceExecutionsRef.current.clear();
+      }
+      let pendingCommands: Readonly<Record<string, RampServicePendingTransition>> | undefined;
+      if (found && snapshot.source === 'network') {
+        pendingCommands = await findPendingServiceCommands(
+          found.operation.id,
+          found.services,
+        );
+      }
+      if (request.signal.aborted) return;
       setOperation(found);
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
+      if (snapshot.source === 'network') {
+        setServiceReconciliationRequired(false);
+      }
+      if (pendingCommands) setPendingServiceCommands(pendingCommands);
+      else if (!found) setPendingServiceCommands({});
     } catch (error) {
       if (request.signal.aborted) return;
       if (error instanceof MobileServiceError) {
@@ -116,7 +163,9 @@ export default function OperationDetailScreen() {
     return () => {
       requestRef.current?.abort();
       startRequestRef.current?.abort();
+      serviceRequestRef.current?.abort();
       startInFlightRef.current = false;
+      serviceInFlightRef.current = false;
     };
   }, [load]));
 
@@ -182,8 +231,171 @@ export default function OperationDetailScreen() {
         message: 'No pudimos iniciar la operación. Actualiza el detalle y vuelve a intentarlo.',
       });
     } finally {
-      startInFlightRef.current = false;
-      if (!request.signal.aborted) setStarting(false);
+      if (startRequestRef.current === request) {
+        startRequestRef.current = null;
+        startInFlightRef.current = false;
+        if (!request.signal.aborted) setStarting(false);
+      }
+    }
+  }, [cached, load, operation]);
+
+  const transitionService = useCallback(async (
+    service: RampOperationServiceResponse,
+    transitionRequest: TransitionRampOperationServiceRequest,
+  ) => {
+    if (
+      serviceInFlightRef.current ||
+      !operation ||
+      cached ||
+      operation.operation.status !== 'InProgress' ||
+      isTerminalServiceStatus(service.status)
+    ) {
+      return;
+    }
+
+    serviceRequestRef.current?.abort();
+    const request = new AbortController();
+    serviceRequestRef.current = request;
+    serviceInFlightRef.current = true;
+    setBusyServiceId(service.id);
+    setServiceNotices((current) => {
+      const next = { ...current };
+      delete next[service.id];
+      return next;
+    });
+
+    try {
+      const response = await transitionRampOperationService(
+        operation.operation.id,
+        service.id,
+        transitionRequest,
+        { signal: request.signal },
+      );
+      if (request.signal.aborted) return;
+
+      lastServiceExecutionsRef.current.set(service.id, response.service);
+      setServiceReconciliationRequired(false);
+      setOperation((current) => current
+        ? {
+            ...current,
+            services: current.services.map((candidate) =>
+              candidate.id === response.service.id
+                ? { ...candidate, ...response.service }
+                : candidate),
+          }
+        : current);
+      setPendingServiceCommands((current) => {
+        const next = { ...current };
+        delete next[service.id];
+        return next;
+      });
+      setServiceNotices((current) => ({
+        ...current,
+        [service.id]: {
+          tone: 'success',
+          title: 'Servicio actualizado',
+          message: `${service.name} quedó en estado ${serviceStatusLabel(response.service.status).toLowerCase()}.`,
+        },
+      }));
+      await load(true);
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError) {
+        if (error.code === 'unauthenticated' || error.code === 'session_expired') {
+          resetToLogin('session_expired');
+          return;
+        }
+        if (error.code === 'forbidden') {
+          resetToLogin('access_revoked');
+          return;
+        }
+        let reservedPending: RampServicePendingTransition | null = null;
+        let pendingReadFailed = false;
+        try {
+          reservedPending = await readRampOperationServicePendingTransition(
+            operation.operation.id,
+            service.id,
+            transitionRequest.targetStatus,
+          );
+          setPendingServiceCommands((current) => {
+            const next = { ...current };
+            if (reservedPending) next[service.id] = reservedPending;
+            else delete next[service.id];
+            return next;
+          });
+          setServiceReconciliationRequired(false);
+        } catch {
+          pendingReadFailed = true;
+          setServiceReconciliationRequired(true);
+        }
+        if (pendingReadFailed) {
+          setServiceNotices((current) => ({
+            ...current,
+            [service.id]: {
+              tone: 'error',
+              title: 'Estado local por conciliar',
+              message: 'No pudimos verificar el comando reservado. Actualiza el detalle; mientras tanto, todos los comandos de servicio permanecen bloqueados.',
+            },
+          }));
+          return;
+        }
+        if (error.code === 'cancelled') {
+          setServiceNotices((current) => ({
+            ...current,
+            [service.id]: {
+              tone: 'warning',
+              title: 'Sesión actualizada',
+              message: 'La revisión de sesión cambió durante el comando. Verificaremos el estado canónico y el replay reservado.',
+            },
+          }));
+          await load(true);
+          return;
+        }
+        if (error.code === 'network_unavailable' || error.code === 'request_timeout') {
+          setServiceNotices((current) => ({
+            ...current,
+            [service.id]: serviceTransitionErrorNotice(error),
+          }));
+          return;
+        }
+        setServiceNotices((current) => ({
+          ...current,
+          [service.id]: serviceTransitionErrorNotice(error),
+        }));
+        if (error.code === 'not_found' || error.code === 'conflict') {
+          await load(true);
+        }
+        if (
+          reservedPending &&
+          error.code !== 'not_found' &&
+          error.code !== 'conflict' &&
+          error.code !== 'device_conflict'
+        ) {
+          setServiceNotices((current) => ({
+            ...current,
+            [service.id]: {
+              tone: 'warning',
+              title: 'Respuesta no confirmada',
+              message: 'El payload quedó reservado. El próximo intento reutilizará exactamente el mismo comando.',
+            },
+          }));
+        }
+        return;
+      }
+      setServiceNotices((current) => ({
+        ...current,
+        [service.id]: {
+          tone: 'error',
+          title: 'Servicio no actualizado',
+          message: 'No pudimos registrar el cambio. Actualiza el detalle y vuelve a intentarlo.',
+        },
+      }));
+    } finally {
+      if (serviceRequestRef.current === request) {
+        serviceRequestRef.current = null;
+        serviceInFlightRef.current = false;
+        if (!request.signal.aborted) setBusyServiceId(null);
+      }
     }
   }, [cached, load, operation]);
 
@@ -193,6 +405,10 @@ export default function OperationDetailScreen() {
 
   const { assignment, turnaround } = operation;
   const timeZone = turnaround.station.ianaTimeZone;
+  const pendingServiceId = Object.keys(pendingServiceCommands)[0] ?? null;
+  const hasOperationalChecklist = operation.services.some(
+    service => service.code === 'PASSENGER-BRIDGE',
+  );
 
   return (
     <ScrollView
@@ -267,20 +483,92 @@ export default function OperationDetailScreen() {
         title="Servicios contratados"
         subtitle={`${operation.services.length} ${operation.services.length === 1 ? 'línea' : 'líneas'} de servicio`}
       />
-      <Card style={styles.servicesCard}>
-        {operation.services.length > 0 ? operation.services.map((service, index) => (
-          <ServiceRow
+      <View style={styles.servicesList}>
+        {operation.services.length > 0 ? operation.services.map((service) => (
+          <RampServiceExecutionCard
+            actionable={
+              !cached &&
+              !serviceReconciliationRequired &&
+              operation.operation.status === 'InProgress' &&
+              (pendingServiceId === null || pendingServiceId === service.id) &&
+              (busyServiceId === null || busyServiceId === service.id)
+            }
+            busy={busyServiceId === service.id}
+            disabledReason={
+              cached
+                ? 'Reconecta y actualiza el detalle antes de registrar un cambio.'
+                : serviceReconciliationRequired
+                  ? 'Actualiza el detalle para conciliar el comando local antes de continuar.'
+                : operation.operation.status !== 'InProgress'
+                  ? 'Inicia la operación antes de ejecutar sus servicios.'
+                  : pendingServiceId && pendingServiceId !== service.id
+                    ? 'Confirma primero el comando pendiente del otro servicio.'
+                  : busyServiceId && busyServiceId !== service.id
+                    ? 'Espera a que termine el comando del otro servicio.'
+                    : undefined
+            }
             key={service.id}
-            last={index === operation.services.length - 1}
+            notice={serviceNotices[service.id]}
+            onTransition={(transitionRequest) => void transitionService(service, transitionRequest)}
+            pending={pendingServiceCommands[service.id]}
             service={service}
           />
         )) : (
-          <View style={styles.noServices}>
+          <Card style={styles.noServices}>
             <Ionicons name="construct-outline" size={23} color={colors.muted} />
             <Text style={styles.noServicesText}>No hay servicios asociados a esta operación.</Text>
-          </View>
+          </Card>
         )}
-      </Card>
+      </View>
+
+      {hasOperationalChecklist && (
+        <View style={styles.nextPhase}>
+          <View style={styles.nextPhaseIcon}>
+            <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
+          </View>
+          <View style={styles.nextPhaseCopy}>
+            <Text style={styles.nextPhaseTitle}>Checklist operativo</Text>
+            <Text style={styles.nextPhaseText}>
+              Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.
+            </Text>
+            {cached && (
+              <Text style={styles.nextPhaseWarning}>
+                Reconecta y actualiza el detalle para abrir el checklist canónico.
+              </Text>
+            )}
+            {operation.operation.status === 'Assigned' && (
+              <Text style={styles.nextPhaseWarning}>
+                Inicia la operación antes de completar el checklist.
+              </Text>
+            )}
+            {pendingServiceId && (
+              <Text style={styles.nextPhaseWarning}>
+                Confirma primero el comando de servicio pendiente.
+              </Text>
+            )}
+            {serviceReconciliationRequired && (
+              <Text style={styles.nextPhaseWarning}>
+                Actualiza el detalle para conciliar el comando local antes de abrir el checklist.
+              </Text>
+            )}
+            <PrimaryButton
+              disabled={
+                cached ||
+                operation.operation.status !== 'InProgress' ||
+                busyServiceId !== null ||
+                pendingServiceId !== null ||
+                serviceReconciliationRequired
+              }
+              icon="clipboard-outline"
+              onPress={() => router.push({
+                pathname: '/checklist/[id]',
+                params: { id: operation.operation.id },
+              })}
+              title="ABRIR CHECKLIST"
+            />
+          </View>
+        </View>
+      )}
 
       <SectionTitle title="Asignación" />
       <Card style={styles.assignmentCard}>
@@ -297,17 +585,6 @@ export default function OperationDetailScreen() {
         />
       </Card>
 
-      <View style={styles.nextPhase}>
-        <View style={styles.nextPhaseIcon}>
-          <Ionicons name="shield-checkmark-outline" size={26} color={colors.navy} />
-        </View>
-        <View style={styles.nextPhaseCopy}>
-          <Text style={styles.nextPhaseTitle}>Siguiente etapa operativa</Text>
-          <Text style={styles.nextPhaseText}>
-            El checklist, las incidencias y el cierre estarán disponibles en una próxima etapa. Por ahora, los servicios permanecen en modo consulta.
-          </Text>
-        </View>
-      </View>
     </ScrollView>
   );
 }
@@ -424,6 +701,98 @@ function OperationStartControl({
       </View>
     </View>
   );
+}
+
+async function findPendingServiceCommands(
+  operationId: string,
+  services: readonly RampOperationServiceResponse[],
+) {
+  const pending: Record<string, RampServicePendingTransition> = {};
+  for (const service of services) {
+    const targets = allowedServiceTargets(service.status);
+    for (const target of targets) {
+      const command = await readRampOperationServicePendingTransition(
+        operationId,
+        service.id,
+        target,
+      );
+      if (command) {
+        pending[service.id] = command;
+        break;
+      }
+    }
+  }
+  return pending;
+}
+
+function allowedServiceTargets(
+  status: string,
+): readonly RampOperationServiceTargetStatus[] {
+  if (status === 'Planned') {
+    return ['InProgress', 'NotPerformed', 'Exception'];
+  }
+  if (status === 'InProgress') {
+    return ['Completed', 'NotPerformed', 'Exception'];
+  }
+  return [];
+}
+
+function isTerminalServiceStatus(status: string) {
+  return status === 'Completed' || status === 'NotPerformed' || status === 'Exception';
+}
+
+function serviceTransitionErrorNotice(
+  error: MobileServiceError,
+): ServiceExecutionNotice {
+  if (error.code === 'network_unavailable') {
+    return {
+      tone: 'warning',
+      title: 'Estado pendiente de confirmación',
+      message: 'La conexión se perdió antes de confirmar el resultado. Sin cerrar sesión, reintenta: ELEVANT reutilizará exactamente el mismo payload y la misma clave.',
+    };
+  }
+  if (error.code === 'request_timeout') {
+    return {
+      tone: 'warning',
+      title: 'Estado pendiente de confirmación',
+      message: 'La respuesta tardó demasiado y el resultado es incierto. Sin cerrar sesión, reintenta: ELEVANT reutilizará exactamente el mismo payload y la misma clave.',
+    };
+  }
+  if (error.code === 'conflict') {
+    return {
+      tone: 'warning',
+      title: 'El servicio cambió',
+      message: 'Actualizamos el estado canónico. Revísalo antes de registrar otro resultado.',
+    };
+  }
+  if (error.code === 'not_found') {
+    return {
+      tone: 'warning',
+      title: 'Servicio no disponible',
+      message: 'El servicio o la asignación ya no están disponibles para esta cuenta.',
+    };
+  }
+  if (error.code === 'device_conflict') {
+    return {
+      tone: 'error',
+      title: 'Dispositivo no autorizado',
+      message: 'Cierra sesión y solicita a AVIAM revisar el vínculo de esta instalación.',
+    };
+  }
+  if (error.code === 'storage_unavailable') {
+    return {
+      tone: 'error',
+      title: 'Comando no protegido',
+      message: 'No pudimos guardar el payload idempotente. Desbloquea el dispositivo y vuelve a intentar.',
+    };
+  }
+  return {
+    tone: 'error',
+    title: 'Servicio no actualizado',
+    message: error.retryable
+      ? 'No pudimos confirmar el cambio. Actualiza el detalle y vuelve a intentarlo.'
+      : 'El cambio fue rechazado. Revisa el estado canónico antes de continuar.',
+  };
 }
 
 function startErrorNotice(error: MobileServiceError): StartNotice {
@@ -562,28 +931,6 @@ function Airport({ align = 'left', code, name }: { readonly align?: 'left' | 'ri
   );
 }
 
-function ServiceRow({
-  last,
-  service,
-}: {
-  readonly last: boolean;
-  readonly service: RampOperationServiceResponse;
-}) {
-  return (
-    <View style={[styles.serviceRow, !last && styles.serviceSeparator]}>
-      <View style={styles.serviceNumber}><Text style={styles.serviceNumberText}>{service.lineNumber}</Text></View>
-      <View style={styles.serviceCopy}>
-        <Text style={styles.serviceName}>{service.name}</Text>
-        <Text style={styles.serviceCode}>{service.code}</Text>
-        <Text style={styles.serviceQuantity}>
-          {formatQuantity(service.executedQuantity)} / {formatQuantity(service.contractedQuantity)} {service.billingUnit}
-        </Text>
-      </View>
-      <StatusPill text={serviceStatusLabel(service.status)} tone={serviceStatusTone(service.status)} />
-    </View>
-  );
-}
-
 function Meta({
   dark = false,
   icon,
@@ -599,10 +946,6 @@ function Meta({
       <Text style={[styles.metaText, dark && styles.metaTextDark]}>{label}</Text>
     </View>
   );
-}
-
-function formatQuantity(value: number) {
-  return new Intl.NumberFormat('es-DO', { maximumFractionDigits: 2 }).format(value);
 }
 
 function formatDateTime(value: string, timeZone: string) {
@@ -739,6 +1082,7 @@ const styles = StyleSheet.create({
   pendingCopy: { flex: 1 },
   pendingTitle: { color: colors.ink, fontWeight: '900' },
   pendingText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  servicesList: { gap: 10 },
   servicesCard: { paddingVertical: 6 },
   serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   serviceSeparator: { borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -763,9 +1107,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   nextPhaseIcon: { width: 45, height: 45, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
-  nextPhaseCopy: { flex: 1 },
+  nextPhaseCopy: { flex: 1, gap: 10 },
   nextPhaseTitle: { color: colors.navy, fontWeight: '900' },
-  nextPhaseText: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  nextPhaseText: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  nextPhaseWarning: { color: colors.warning, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   stateScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 13, backgroundColor: colors.background },
   stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF8EA' },
   stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', textAlign: 'center' },
