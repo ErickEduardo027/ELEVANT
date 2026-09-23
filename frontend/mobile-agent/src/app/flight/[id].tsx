@@ -521,6 +521,25 @@ export default function OperationDetailScreen() {
         )}
       </View>
 
+      {operation.operation.status === 'InProgress' && (
+        <View style={styles.nextPhase}>
+          <View style={styles.nextPhaseIcon}>
+            <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
+          </View>
+          <View style={styles.nextPhaseCopy}>
+            <Text style={styles.nextPhaseTitle}>Incidencias</Text>
+            <Text style={styles.nextPhaseText}>
+              Registra eventos operativos, de seguridad, equipo o documentación. El reporte se conserva localmente si pierdes la conexión.
+            </Text>
+            <PrimaryButton
+              icon="alert-circle-outline"
+              onPress={() => router.push({ pathname: '/incident/[id]', params: { id: operation.operation.id } })}
+              title="ABRIR INCIDENCIAS"
+            />
+          </View>
+        </View>
+      )}
+
       {hasOperationalChecklist && (
         <View style={styles.nextPhase}>
           <View style={styles.nextPhaseIcon}>

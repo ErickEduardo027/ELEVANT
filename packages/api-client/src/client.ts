@@ -5,9 +5,11 @@ import {
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
   getGetRampOperationChecklistUrl,
+  getGetRampIncidentsUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
+  getReportRampIncidentUrl,
   getStartRampOperationUrl,
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
@@ -15,6 +17,7 @@ import {
   type CreateSessionRequest,
   type CurrentSessionResponse,
   type GetRampOperationChecklistResponse,
+  type GetRampIncidentsResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type OccPlanningOptionsResponse,
@@ -22,6 +25,8 @@ import {
   type OccAssignmentResponse,
   type RampGroundOperationResponse,
   type RampChecklistSubmissionResponse,
+  type RampIncidentReceiptResponse,
+  type ReportRampIncidentRequest,
   type RampOperationServiceTransitionResponse,
   type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
@@ -84,6 +89,8 @@ export type GetRampOperationChecklistOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetRampIncidentsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationChecklistOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -150,6 +157,17 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetRampOperationChecklistOptions,
   ): Promise<GetRampOperationChecklistResponse>;
+  getRampIncidents(
+    operationId: string,
+    options?: GetRampIncidentsOptions,
+  ): Promise<GetRampIncidentsResponse>;
+  reportRampIncident(
+    operationId: string,
+    request: ReportRampIncidentRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<RampIncidentReceiptResponse>;
   submitRampOperationChecklist(
     operationId: string,
     request: SubmitRampOperationChecklistRequest,
@@ -870,6 +888,9 @@ function isRampOperationStartResponse(
 }
 
 const rampChecklistStatuses = ["NotStarted", "InProgress", "Submitted"] as const;
+const rampIncidentTypes = ["Operational", "Safety", "Equipment", "Documentation"] as const;
+const rampIncidentSeverities = ["Low", "Medium", "High", "Critical"] as const;
+const rampIncidentStatuses = ["Open", "InReview", "Resolved", "Closed"] as const;
 const rampChecklistAnswerValues = ["Ok", "NotApplicable", "NotOk"] as const;
 const rampServiceTargetStatuses = [
   "InProgress",
@@ -1039,6 +1060,63 @@ function isRampOperationServiceTransitionResponse(
     isFiniteNumber(value.service.executedQuantity) &&
     value.service.executedQuantity >= 0 &&
     isString(value.service.billingUnit)
+  );
+}
+
+function isRampIncidentResponse(value: unknown) {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "id", "incidentType", "severity", "status", "description", "occurredAt", "reportedAt",
+    ]) &&
+    isUuid(value.id) &&
+    typeof value.incidentType === "string" &&
+    value.incidentType.length > 0 &&
+    value.incidentType.length <= 80 &&
+    isOneOf(value.severity, rampIncidentSeverities) &&
+    isOneOf(value.status, rampIncidentStatuses) &&
+    typeof value.description === "string" &&
+    value.description.length > 0 &&
+    value.description.length <= 4_000 &&
+    isDateTimeOffset(value.occurredAt) &&
+    isDateTimeOffset(value.reportedAt)
+  );
+}
+
+function isGetRampIncidentsResponse(
+  value: unknown,
+  operationId: string,
+): value is GetRampIncidentsResponse {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["operationId", "incidents"]) ||
+    !isUuid(value.operationId) ||
+    value.operationId.toLowerCase() !== operationId ||
+    !Array.isArray(value.incidents) ||
+    !value.incidents.every(isRampIncidentResponse)
+  ) return false;
+  const ids = value.incidents.map(item => item.id.toLowerCase());
+  return new Set(ids).size === ids.length;
+}
+
+function isRampIncidentReceiptResponse(
+  value: unknown,
+  operationId: string,
+  idempotencyKey: string,
+  occurredAt: string,
+): value is RampIncidentReceiptResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "operationId", "incidentId", "status", "occurredAt", "reportedAt"]) &&
+    isUuid(value.receiptId) &&
+    isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    isUuid(value.incidentId) &&
+    value.incidentId.toLowerCase() === idempotencyKey &&
+    isOneOf(value.status, rampIncidentStatuses) &&
+    isDateTimeOffset(value.occurredAt) &&
+    Date.parse(value.occurredAt) === Date.parse(occurredAt) &&
+    isDateTimeOffset(value.reportedAt)
   );
 }
 
@@ -1331,6 +1409,29 @@ function validatedServiceTransitionRequest(
     targetStatus: request.targetStatus,
     ...(quantity === undefined ? {} : { executedQuantity: quantity }),
     ...(request.note === undefined ? {} : { note: request.note }),
+  };
+}
+
+function validatedIncidentReportRequest(
+  request: ReportRampIncidentRequest,
+): ReportRampIncidentRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, ["incidentType", "severity", "description", "occurredAt"]) ||
+    !isOneOf(request.incidentType, rampIncidentTypes) ||
+    !isOneOf(request.severity, rampIncidentSeverities) ||
+    typeof request.description !== "string" ||
+    request.description.length > 2_000 ||
+    request.description.trim().length < 8 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.description) ||
+    !isDateTimeOffset(request.occurredAt)
+  ) throw new TypeError("Ramp incident report is invalid.");
+
+  return {
+    incidentType: request.incidentType,
+    severity: request.severity,
+    description: request.description.trim(),
+    occurredAt: request.occurredAt,
   };
 }
 
@@ -1658,6 +1759,46 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isGetRampOperationChecklistResponse(result.data, operation)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getRampIncidents(
+      operationId: string,
+      options?: GetRampIncidentsOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetRampIncidentsUrl(operation),
+        { ...options, method: "GET" },
+        true,
+      );
+      if (!isGetRampIncidentsResponse(result.data, operation)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async reportRampIncident(
+      operationId: string,
+      request: ReportRampIncidentRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const report = validatedIncidentReportRequest(request);
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getReportRampIncidentUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify(report) },
+        true,
+      );
+      if (!isRampIncidentReceiptResponse(
+        result.data, operation, commandKey, report.occurredAt,
+      )) throw malformedResponse(result.status);
       return result.data;
     },
     async submitRampOperationChecklist(

@@ -16,6 +16,9 @@ const RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX =
   'elevant:mobile:ramp-checklist-submit-command:v1:';
 const RAMP_SERVICE_TRANSITION_COMMAND_PREFIX =
   'elevant:mobile:ramp-service-transition-command:v1:';
+const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
+const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
+const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
 
 const LEGACY_ATOMIC_ENVELOPE_KEY = 'elevant.mobile.session.v1';
 const LEGACY_ACCESS_TOKEN_KEY = 'elevant.mobile.access_token.v1';
@@ -101,6 +104,17 @@ export type CurrentRampExecutionCommandRead =
         payload: string;
       }> | null;
     }>
+  | Readonly<{ kind: 'not-current' }>;
+
+export type StoredRampIncidentOutboxItem = Readonly<{
+  idempotencyKey: string;
+  payload: string;
+  createdAt: string;
+  state: 'pending' | 'blocked';
+}>;
+
+export type CurrentRampIncidentOutbox =
+  | Readonly<{ kind: 'current'; items: readonly StoredRampIncidentOutboxItem[] }>
   | Readonly<{ kind: 'not-current' }>;
 
 type StoredRampExecutionCommand = Readonly<{
@@ -252,7 +266,8 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
     (key) =>
       key.startsWith(RAMP_CHECKLIST_DRAFT_PREFIX) ||
       key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX),
+      key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX),
   );
 }
 
@@ -463,6 +478,121 @@ function rampServiceTransitionCommandKey(
     throw new MobileSessionStorageError();
   }
   return `${RAMP_SERVICE_TRANSITION_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${serviceId.toLowerCase()}:${targetStatus.toLowerCase()}`;
+}
+
+function rampIncidentOutboxKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${RAMP_INCIDENT_OUTBOX_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
+function parseRampIncidentOutbox(raw: string | null): StoredRampIncidentOutboxItem[] {
+  if (raw === null) return [];
+  const value = parseJson(raw);
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ['schemaVersion', 'items']) ||
+    value.schemaVersion !== RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION ||
+    !Array.isArray(value.items) ||
+    value.items.length > MAXIMUM_INCIDENT_OUTBOX_ITEMS
+  ) throw new MobileSessionStorageError();
+
+  const items: StoredRampIncidentOutboxItem[] = [];
+  const keys = new Set<string>();
+  for (const item of value.items) {
+    if (
+      !isRecord(item) ||
+      !hasExactKeys(item, ['idempotencyKey', 'payload', 'createdAt', 'state']) ||
+      !isUuid(item.idempotencyKey) ||
+      !isJsonObjectString(item.payload) ||
+      typeof item.createdAt !== 'string' ||
+      !Number.isFinite(Date.parse(item.createdAt)) ||
+      (item.state !== 'pending' && item.state !== 'blocked') ||
+      keys.has(item.idempotencyKey.toLowerCase())
+    ) throw new MobileSessionStorageError();
+    keys.add(item.idempotencyKey.toLowerCase());
+    items.push({
+      idempotencyKey: item.idempotencyKey.toLowerCase(),
+      payload: item.payload,
+      createdAt: item.createdAt,
+      state: item.state,
+    });
+  }
+  return items;
+}
+
+export async function readRampIncidentOutboxIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+): Promise<CurrentRampIncidentOutbox> {
+  const key = rampIncidentOutboxKey(accountId, operationId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      return { kind: 'current', items: parseRampIncidentOutbox(await AsyncStorage.getItem(key)) };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function reserveRampIncidentOutboxItemIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  payload: string,
+): Promise<CurrentRampIncidentOutbox> {
+  if (!isJsonObjectString(payload) || payload.length > 16_384) throw new MobileSessionStorageError();
+  const key = rampIncidentOutboxKey(accountId, operationId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const items = parseRampIncidentOutbox(await AsyncStorage.getItem(key));
+      if (items.length >= MAXIMUM_INCIDENT_OUTBOX_ITEMS) throw new MobileSessionStorageError();
+      items.push({
+        idempotencyKey: Crypto.randomUUID().toLowerCase(),
+        payload,
+        createdAt: new Date().toISOString(),
+        state: 'pending',
+      });
+      await AsyncStorage.setItem(key, serializeEnvelope({
+        schemaVersion: RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION, items,
+      }));
+      return { kind: 'current', items };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function updateRampIncidentOutboxItemIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  idempotencyKey: string,
+  action: 'block' | 'remove',
+): Promise<CurrentRampIncidentOutbox> {
+  if (!isUuid(idempotencyKey)) throw new MobileSessionStorageError();
+  const key = rampIncidentOutboxKey(accountId, operationId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const items = parseRampIncidentOutbox(await AsyncStorage.getItem(key));
+      const index = items.findIndex(item => item.idempotencyKey === idempotencyKey.toLowerCase());
+      if (index < 0) return { kind: 'current', items };
+      if (action === 'remove') items.splice(index, 1);
+      else items[index] = { ...items[index], state: 'blocked' };
+      await AsyncStorage.setItem(key, serializeEnvelope({
+        schemaVersion: RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION, items,
+      }));
+      return { kind: 'current', items };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
 }
 
 function assertRampExecutionIds(...values: readonly string[]) {

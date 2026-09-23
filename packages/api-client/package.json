@@ -29,6 +29,7 @@
   },
   "scripts": {
     "generate": "orval --config ./orval.config.ts",
+    "refresh:openapi": "node ./scripts/refresh-local-openapi.mjs",
     "check:generated": "node ./scripts/check-generated.mjs",
     "check:openapi": "node ./scripts/check-openapi.mjs",
     "typecheck": "tsc --noEmit",

@@ -63,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
+        services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
 
         services
             .AddHealthChecks()
