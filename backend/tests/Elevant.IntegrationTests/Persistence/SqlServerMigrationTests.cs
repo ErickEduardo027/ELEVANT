@@ -2370,8 +2370,10 @@ public sealed class SqlServerMigrationTests
         Assert.Equal(RampOperationStartWriteFailure.Forbidden, foreignBindingStart.Failure);
     }
 
-    [Fact]
-    public async Task RampChecklistAndServiceExecutionAreCanonicalAtomicAndIdempotent()
+    [Theory]
+    [InlineData("Approved")]
+    [InlineData("Returned")]
+    public async Task RampChecklistAndServiceExecutionAreCanonicalAtomicAndIdempotent(string reviewOutcome)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var masterConnection = ResolveMasterConnection();
@@ -2912,6 +2914,66 @@ public sealed class SqlServerMigrationTests
         var handoffAudit = await handoffCheck.AuditEntries.AsNoTracking()
             .SingleAsync(item => item.Action == "ramp.operation.submitted", cancellationToken);
         Assert.DoesNotContain(AgentNote, handoffAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+
+        var occAccountId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        OccReviewDetailData reviewDetail;
+        await using (var reviewScope = provider.CreateAsyncScope())
+        {
+            var reviewStore = reviewScope.ServiceProvider.GetRequiredService<IOccReviewStore>();
+            var queue = await reviewStore.GetQueueAsync(stationId, cancellationToken);
+            Assert.NotNull(queue);
+            Assert.Contains(queue.Operations, item =>
+                item.OperationId == operationId && item.Status == "PendingReview");
+            Assert.Null(await reviewStore.GetDetailAsync(
+                operationId, [Guid.Parse("20000000-0000-7000-8000-000000000013")],
+                cancellationToken));
+            reviewDetail = Assert.IsType<OccReviewDetailData>(await reviewStore.GetDetailAsync(
+                operationId, [stationId], cancellationToken));
+            Assert.Equal(handoffKey, reviewDetail.SubmissionId);
+            Assert.Equal("Submitted", reviewDetail.ChecklistStatus);
+            Assert.NotEmpty(reviewDetail.ChecklistAnswers);
+            Assert.All(reviewDetail.Services, service =>
+                Assert.True(service.Status is "Completed" or "NotPerformed" or "Exception"));
+        }
+
+        async Task<OccReviewDecisionWriteResult> DecideAsync(Guid actorId, string token, string outcome,
+            string? reason = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IOccReviewStore>()
+                .DecideAsync(new OccReviewDecisionWriteRequest(
+                    actorId, [stationId], operationId, handoffKey,
+                    token, outcome, reason, Guid.CreateVersion7(), "occ-review-sql-test"),
+                    cancellationToken);
+        }
+
+        const string CorrectionReason = "Corregir la ejecución antes de reenviar la operación.";
+        var decisionReason = reviewOutcome == "Returned" ? CorrectionReason : null;
+        Assert.Equal(OccReviewFailure.NotFound,
+            (await DecideAsync(accountId, reviewDetail.ConcurrencyToken, reviewOutcome, decisionReason)).Failure);
+        Assert.Equal(OccReviewFailure.PreconditionFailed,
+            (await DecideAsync(occAccountId, "\"" + new string('0', 64) + "\"", reviewOutcome, decisionReason)).Failure);
+        var decided = await DecideAsync(occAccountId, reviewDetail.ConcurrencyToken, reviewOutcome, decisionReason);
+        Assert.True(decided.IsSuccess);
+        Assert.Equal(reviewOutcome, decided.Decision!.Status);
+        Assert.Equal(OccReviewFailure.PreconditionFailed,
+            (await DecideAsync(occAccountId, reviewDetail.ConcurrencyToken, reviewOutcome, decisionReason)).Failure);
+
+        await using var decisionCheck = CreateContext(database.ConnectionString);
+        Assert.Equal(reviewOutcome == "Approved"
+                ? GroundOperationStatus.Approved : GroundOperationStatus.Returned,
+            (await decisionCheck.GroundOperations.AsNoTracking()
+                .SingleAsync(item => item.Id == operationInternalId, cancellationToken)).CurrentStatus);
+        var savedDecision = Assert.Single(await decisionCheck.ReviewDecisions.AsNoTracking()
+            .Where(item => item.OperationSubmissionId ==
+                decisionCheck.OperationSubmissions.Where(submission => submission.PublicId == handoffKey)
+                    .Select(submission => submission.Id).Single())
+            .ToArrayAsync(cancellationToken));
+        Assert.Equal(decisionReason, savedDecision.Reason);
+        var reviewAudit = await decisionCheck.AuditEntries.AsNoTracking()
+            .SingleAsync(item => item.Action == "occ.operation.review.decided", cancellationToken);
+        Assert.DoesNotContain(AgentNote, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotContain(CorrectionReason, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]

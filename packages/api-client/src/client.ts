@@ -4,6 +4,9 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetOccReviewQueueUrl,
+  getGetOccReviewDetailUrl,
+  getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
   getGetRampAssignedOperationsUrl,
@@ -21,6 +24,11 @@ import {
   type GetRampIncidentsResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
+  type GetOccReviewQueueParams,
+  type OccReviewQueueResponse,
+  type OccReviewDetailResponse,
+  type DecideOccReviewRequest,
+  type DecideOccReviewResponse,
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
   type OccAssignmentResponse,
@@ -72,6 +80,8 @@ export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -132,6 +142,20 @@ export interface ElevantApiClient {
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
   ): Promise<OccPlanningOptionsWithMetadata>;
+  getOccReviewQueue(
+    stationId: string,
+    options?: GetOccReviewOptions,
+  ): Promise<OccReviewQueueResponse>;
+  getOccReviewDetail(
+    operationId: string,
+    options?: GetOccReviewOptions,
+  ): Promise<OccReviewDetailResponse>;
+  decideOccReview(
+    operationId: string,
+    request: DecideOccReviewRequest,
+    etag: string,
+    options?: DecideOccReviewOptions,
+  ): Promise<DecideOccReviewResponse>;
   assignOccPlanningOperation(
     turnaroundId: string,
     request: AssignOccOperationRequest,
@@ -1158,6 +1182,110 @@ function isRampOperationSubmissionResponse(
   );
 }
 
+const occReviewStatuses = ["PendingReview", "InReview", "Approved", "Returned"] as const;
+
+function isOccReviewQueueResponse(value: unknown, stationId: string): value is OccReviewQueueResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["stationId", "stationCode", "stationName", "ianaTimeZone", "operations", "hasMore"]) &&
+    isUuid(value.stationId) && value.stationId.toLowerCase() === stationId &&
+    isNonEmptyString(value.stationCode) && isNonEmptyString(value.stationName) &&
+    isNonEmptyString(value.ianaTimeZone) && typeof value.hasMore === "boolean" &&
+    Array.isArray(value.operations) && value.operations.length <= 100 &&
+    value.operations.every((item: unknown) => isRecord(item) &&
+      hasOnlyKeys(item, ["operationId", "submissionId", "revisionNumber", "status",
+        "operationCode", "operationDate", "airlineName", "agentName", "submittedAt",
+        "serviceCount", "incidentCount"]) &&
+      isUuid(item.operationId) && isUuid(item.submissionId) &&
+      isInt32(item.revisionNumber) && item.revisionNumber > 0 &&
+      isOneOf(item.status, occReviewStatuses) && isNonEmptyString(item.operationCode) &&
+      isDateOnly(item.operationDate) && isNonEmptyString(item.airlineName) &&
+      isNonEmptyString(item.agentName) && isDateTimeOffset(item.submittedAt) &&
+      isInt32(item.serviceCount) && item.serviceCount >= 0 &&
+      isInt32(item.incidentCount) && item.incidentCount >= 0);
+}
+
+function isOccReviewDetailResponse(
+  value: unknown, operationId: string,
+): value is OccReviewDetailResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "submissionId", "revisionNumber", "status",
+      "operationCode", "operationDate", "stationId", "stationCode", "ianaTimeZone",
+      "airlineName", "agentName", "plannedStartAt", "plannedEndAt", "actualStartAt",
+      "actualEndAt", "submittedAt", "agentNote", "checklistStatus", "checklistAnswers",
+      "services", "incidents", "decision", "reviewVersion"]) &&
+    isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isUuid(value.submissionId) && isInt32(value.revisionNumber) && value.revisionNumber > 0 &&
+    isOneOf(value.status, occReviewStatuses) && isNonEmptyString(value.operationCode) &&
+    isDateOnly(value.operationDate) && isUuid(value.stationId) &&
+    isNonEmptyString(value.stationCode) && isNonEmptyString(value.ianaTimeZone) &&
+    isNonEmptyString(value.airlineName) && isNonEmptyString(value.agentName) &&
+    isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.plannedEndAt, isDateTimeOffset) &&
+    isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.actualEndAt, isDateTimeOffset) &&
+    isDateTimeOffset(value.submittedAt) &&
+    isOptionalNullable(value.agentNote, (note) => typeof note === "string" && note.length <= 2000) &&
+    value.checklistStatus === "Submitted" &&
+    Array.isArray(value.checklistAnswers) && value.checklistAnswers.every((answer: unknown) =>
+      isRecord(answer) && hasOnlyKeys(answer, ["section", "code", "label", "value", "note"]) &&
+      isNonEmptyString(answer.section) && isNonEmptyString(answer.code) &&
+      isNonEmptyString(answer.label) && isOneOf(answer.value, ["Ok", "NotOk", "NotApplicable"] as const) &&
+      isOptionalNullable(answer.note, (note) => typeof note === "string" && note.length <= 1000)) &&
+    Array.isArray(value.services) && value.services.every((service: unknown) =>
+      isRecord(service) && hasOnlyKeys(service, ["id", "code", "name", "status",
+        "contractedQuantity", "executedQuantity", "unit"]) &&
+      isUuid(service.id) && isNonEmptyString(service.code) && isNonEmptyString(service.name) &&
+      isOneOf(service.status, ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"] as const) &&
+      isFiniteNumber(service.contractedQuantity) && isFiniteNumber(service.executedQuantity) &&
+      isNonEmptyString(service.unit)) &&
+    Array.isArray(value.incidents) && value.incidents.every((incident: unknown) =>
+      isRecord(incident) && hasOnlyKeys(incident, ["id", "type", "severity", "status",
+        "description", "occurredAt"]) && isUuid(incident.id) &&
+      isNonEmptyString(incident.type) &&
+      isOneOf(incident.severity, ["Low", "Medium", "High", "Critical"] as const) &&
+      isOneOf(incident.status, ["Open", "InReview", "Resolved", "Closed"] as const) &&
+      isNonEmptyString(incident.description) && isDateTimeOffset(incident.occurredAt)) &&
+    isOptionalNullable(value.decision, (decision) => isRecord(decision) &&
+      hasOnlyKeys(decision, ["outcome", "reason", "decidedAt"]) &&
+      isOneOf(decision.outcome, ["Approved", "Returned"] as const) &&
+      isOptionalNullable(decision.reason, (reason) => typeof reason === "string" && reason.length <= 2000) &&
+      isDateTimeOffset(decision.decidedAt)) &&
+    isStrongEtag(value.reviewVersion);
+}
+
+function validatedOccReviewDecisionRequest(request: DecideOccReviewRequest): DecideOccReviewRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["submissionId", "outcome", "reason"]) ||
+      !isUuid(request.submissionId) ||
+      !isOneOf(request.outcome, ["Approved", "Returned"] as const)) {
+    throw new TypeError("OCC review decision is invalid.");
+  }
+  if (request.outcome === "Approved") {
+    if (request.reason !== undefined && request.reason !== null && request.reason.trim()) {
+      throw new TypeError("Approval cannot carry a correction reason.");
+    }
+    return { submissionId: request.submissionId.toLowerCase(), outcome: "Approved" };
+  }
+  if (typeof request.reason !== "string" || request.reason.trim().length < 8 ||
+      request.reason.length > 2000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.reason)) {
+    throw new TypeError("A correction reason is required.");
+  }
+  return { submissionId: request.submissionId.toLowerCase(),
+    outcome: "Returned", reason: request.reason.trim() };
+}
+
+function isOccReviewDecisionResponse(
+  value: unknown, operationId: string, request: DecideOccReviewRequest,
+): value is DecideOccReviewResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "submissionId", "status", "outcome", "decidedAt", "reason"]) &&
+    isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isUuid(value.submissionId) && value.submissionId.toLowerCase() === request.submissionId &&
+    value.status === request.outcome && value.outcome === request.outcome &&
+    isDateTimeOffset(value.decidedAt) &&
+    (value.reason ?? null) === (request.reason ?? null);
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -1703,6 +1831,39 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       }
       return { options: result.data, etag: result.etag };
+    },
+    async getOccReviewQueue(stationId: string, options?: GetOccReviewOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      const result = await execute(
+        getGetOccReviewQueueUrl({ stationId: station }),
+        { ...options, method: "GET" }, true);
+      if (!isOccReviewQueueResponse(result.data, station)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccReviewDetail(operationId: string, options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetOccReviewDetailUrl(operation), { ...options, method: "GET" }, true);
+      if (!isOccReviewDetailResponse(result.data, operation) ||
+          result.data.reviewVersion !== result.etag) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async decideOccReview(
+      operationId: string,
+      request: DecideOccReviewRequest,
+      etag: string,
+      options?: DecideOccReviewOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const decision = validatedOccReviewDecisionRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("if-match", validatedStrongEtag(etag));
+      const result = await execute(getDecideOccReviewUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify(decision) }, true);
+      if (!isOccReviewDecisionResponse(result.data, operation, decision))
+        throw malformedResponse(result.status);
+      return result.data;
     },
     async assignOccPlanningOperation(
       turnaroundId: string,

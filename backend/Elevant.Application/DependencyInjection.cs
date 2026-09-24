@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<TransitionRampOperationServiceHandler>();
         services.AddScoped<RampIncidentHandler>();
         services.AddScoped<RampOperationSubmissionHandler>();
+        services.AddScoped<OccReviewHandler>();
         return services;
     }
 }

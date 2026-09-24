@@ -99,6 +99,21 @@ a 60 minutos y usa 15 por defecto.
   y auditoría sin copiar la nota del agente a los metadatos. Un reintento con
   la misma instalación, clave y payload devuelve el mismo recibo; una clave
   reutilizada con otro contenido responde `409`.
+- `GET /api/v1/occ/review/queue?stationId=...` entrega las últimas revisiones
+  de una estación autorizada, primero las pendientes, con límite de 100 y
+  `hasMore` explícito. `GET /api/v1/occ/review/operations/{operationId}`
+  devuelve el detalle canónico de la última entrega: checklist, servicios,
+  incidencias y decisión registrada. Su `ETag` fuerte se repite en
+  `reviewVersion` y representa la versión de operación y entrega observada.
+- `POST /api/v1/occ/review/operations/{operationId}/decision` aprueba o
+  devuelve una sola entrega pendiente. Exige `If-Match` con ese ETag,
+  `submissionId` exacto y un motivo de 8 a 2000 caracteres al devolver.
+  Revalida rol OCC, membresía AVIAM y estación en SQL dentro de una
+  transacción serializable; cambia operación y entrega, crea una decisión,
+  evento y auditoría atómicos. `409`/`412` obligan a releer el detalle; el
+  cliente nunca reintenta automáticamente una decisión de resultado incierto.
+  Esta versión no implementa todavía la corrección y nueva entrega por parte
+  del agente tras una devolución, ni adjuntos de evidencia.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
