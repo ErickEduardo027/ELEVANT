@@ -91,6 +91,14 @@ a 60 minutos y usa 15 por defecto.
   exige identificadores UUID de instalación e idempotencia y acepta únicamente
   tipo, severidad, descripción y hora. El recibo no devuelve la descripción,
   y la auditoría tampoco la guarda en metadatos.
+- `POST /api/v1/ramp/operations/{operationId}/submit` entrega una operación
+  ejecutada a OCC. Exige cuenta de rampa, dispositivo vinculado, asignación y
+  scope vigentes, checklist `TURNAROUND-BASE` enviado y todos los servicios en
+  estado terminal. En una transacción serializable cierra la ejecución,
+  registra la primera revisión `PendingReview`, recibo idempotente, transición
+  y auditoría sin copiar la nota del agente a los metadatos. Un reintento con
+  la misma instalación, clave y payload devuelve el mismo recibo; una clave
+  reutilizada con otro contenido responde `409`.
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.

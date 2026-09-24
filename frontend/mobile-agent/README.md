@@ -86,12 +86,20 @@ Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-comp
 
 ## Escrituras idempotentes y próxima sincronización offline
 
-El inicio de operación, el envío del checklist y cada transición de servicio
+El inicio de operación, el envío del checklist, cada transición de servicio y
+la entrega final a OCC
 reservan el payload y la clave de idempotencia antes de tocar la red. Ante
 timeout, desconexión, `429` o `5xx`, la interfaz bloquea la edición incompatible
 y el siguiente intento reutiliza exactamente el mismo comando. Un rechazo
 determinístico descarta la reserva y obliga a consultar nuevamente el estado
 canónico.
+
+La entrega a OCC requiere conexión, checklist enviado, servicios terminados y
+cola de incidencias sincronizada. El agente confirma explícitamente el cierre
+y puede agregar una nota opcional. Si se pierde la respuesta, la app congela la
+nota y reintenta el mismo comando; nunca genera una segunda entrega por
+incertidumbre. El estado confirmado pasa a `PendingReview`, donde la ejecución
+queda cerrada a nuevas escrituras del agente.
 
 Cada incidencia se guarda primero en una cola local acotada de 25 reportes por
 operación. Incluye tipo, impacto, descripción, hora UTC de ocurrencia y una

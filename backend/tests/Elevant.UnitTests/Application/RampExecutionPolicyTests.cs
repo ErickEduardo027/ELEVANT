@@ -174,4 +174,35 @@ public sealed class RampExecutionPolicyTests
             1.25m,
             null));
     }
+
+    [Fact]
+    public void HandoffRequiresSubmittedChecklistAndEveryServiceTerminal()
+    {
+        Assert.True(RampOperationSubmissionPolicy.CanSubmit(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress, StartedAt, null,
+            ChecklistStatus.Submitted,
+            [ServiceExecutionStatus.Completed, ServiceExecutionStatus.NotPerformed]));
+        Assert.False(RampOperationSubmissionPolicy.CanSubmit(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress, StartedAt, null,
+            ChecklistStatus.InProgress, [ServiceExecutionStatus.Completed]));
+        Assert.False(RampOperationSubmissionPolicy.CanSubmit(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress, StartedAt, null,
+            ChecklistStatus.Submitted, [ServiceExecutionStatus.Planned]));
+        Assert.False(RampOperationSubmissionPolicy.CanSubmit(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress, StartedAt, null,
+            ChecklistStatus.Submitted, []));
+        Assert.False(RampOperationSubmissionPolicy.CanSubmit(
+            TurnaroundStatus.InProgress, GroundOperationStatus.PendingReview, StartedAt, StartedAt,
+            ChecklistStatus.Submitted, [ServiceExecutionStatus.Completed]));
+    }
+
+    [Fact]
+    public void HandoffNoteRejectsControlsAndOversizedText()
+    {
+        Assert.True(RampOperationSubmissionPolicy.HasValidNote(null));
+        Assert.True(RampOperationSubmissionPolicy.HasValidNote("Sin observaciones"));
+        Assert.False(RampOperationSubmissionPolicy.HasValidNote(new string('x', 2001)));
+        Assert.True(RampOperationSubmissionPolicy.HasValidNote("texto\nnormal"));
+        Assert.False(RampOperationSubmissionPolicy.HasValidNote("texto\0inyectado"));
+    }
 }

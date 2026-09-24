@@ -108,7 +108,9 @@ idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
 Las aplicaciones importan exclusivamente el punto de entrada público de
 `@elevant/api-client`; no consumen `generated/elevant-api.ts` directamente. El
 wrapper es quien agrega autenticación fresca, valida respuestas y adjunta el
-`If-Match` exigido por el comando OCC.
+`If-Match` exigido por el comando OCC. Los comandos móviles añaden
+`X-Elevant-Installation-Id` e `Idempotency-Key` y validan el recibo, incluyendo
+la entrega de operación a OCC.
 
 La generación requiere Node.js 24 y npm:
 

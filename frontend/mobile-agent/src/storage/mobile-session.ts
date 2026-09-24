@@ -16,6 +16,8 @@ const RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX =
   'elevant:mobile:ramp-checklist-submit-command:v1:';
 const RAMP_SERVICE_TRANSITION_COMMAND_PREFIX =
   'elevant:mobile:ramp-service-transition-command:v1:';
+const RAMP_OPERATION_SUBMIT_COMMAND_PREFIX =
+  'elevant:mobile:ramp-operation-submit-command:v1:';
 const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
@@ -267,6 +269,7 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
       key.startsWith(RAMP_CHECKLIST_DRAFT_PREFIX) ||
       key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX),
   );
 }
@@ -483,6 +486,11 @@ function rampServiceTransitionCommandKey(
 function rampIncidentOutboxKey(accountId: string, operationId: string) {
   assertRampExecutionIds(accountId, operationId);
   return `${RAMP_INCIDENT_OUTBOX_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
+function rampOperationSubmitCommandKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${RAMP_OPERATION_SUBMIT_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
 }
 
 function parseRampIncidentOutbox(raw: string | null): StoredRampIncidentOutboxItem[] {
@@ -951,6 +959,48 @@ export async function removeRampServiceTransitionCommandIfCurrent(
       serviceId,
       targetStatus,
     ),
+    expectedIdempotencyKey,
+  );
+}
+
+export async function readRampOperationSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+): Promise<CurrentRampExecutionCommandRead> {
+  const result = await readRampExecutionValueIfCurrent(
+    sessionId, accountId, rampOperationSubmitCommandKey(accountId, operationId));
+  if (result.kind !== 'current') return result;
+  const command = parseRampExecutionCommand(result.value);
+  if (result.value !== null && !command) throw new MobileSessionStorageError();
+  return {
+    kind: 'current',
+    command: command
+      ? { idempotencyKey: command.idempotencyKey, payload: command.payload }
+      : null,
+  };
+}
+
+export async function getOrCreateRampOperationSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  payload: string,
+): Promise<CurrentRampExecutionCommand> {
+  return getOrCreateRampExecutionCommandIfCurrent(
+    sessionId, accountId, rampOperationSubmitCommandKey(accountId, operationId), payload);
+}
+
+export async function removeRampOperationSubmitCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  expectedIdempotencyKey: string,
+) {
+  return removeRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampOperationSubmitCommandKey(accountId, operationId),
     expectedIdempotencyKey,
   );
 }

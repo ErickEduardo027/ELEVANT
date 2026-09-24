@@ -2811,6 +2811,107 @@ public sealed class SqlServerMigrationTests
                 receipt.ResultJson ?? string.Empty,
                 StringComparison.Ordinal);
         });
+
+        var bridgeServiceId = await (
+                from service in verificationContext.OperationServices.AsNoTracking()
+                join definition in verificationContext.ServiceDefinitions.AsNoTracking()
+                    on service.ServiceDefinitionId equals definition.Id
+                where service.GroundOperationId == operationInternalId &&
+                      definition.Code == "PASSENGER-BRIDGE"
+                select service.PublicId)
+            .SingleAsync(cancellationToken);
+        var prematureKey = Guid.Parse("85000000-0000-7000-8000-000000000021");
+        var handoffKey = Guid.Parse("85000000-0000-7000-8000-000000000022");
+        const string AgentNote = "Se reportó la verificación final del servicio.";
+
+        async Task<RampOperationSubmissionWriteResult> HandOffAsync(
+            Guid commandKey,
+            string? note,
+            IReadOnlyCollection<Guid>? stationIds = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IRampOperationSubmissionStore>()
+                .SubmitAsync(new RampOperationSubmissionWriteRequest(
+                    accountId,
+                    stationIds ?? [stationId],
+                    operationId,
+                    installationId,
+                    commandKey,
+                    note,
+                    commandKey,
+                    "ramp-handoff-sql-test"), cancellationToken);
+        }
+
+        var premature = await HandOffAsync(prematureKey, AgentNote);
+        Assert.Equal(RampOperationsFailure.Conflict, premature.Failure);
+        Assert.NotNull(premature.CommitReceiptId);
+        Assert.Empty(await verificationContext.OperationSubmissions.AsNoTracking()
+            .Where(item => item.GroundOperationId == operationInternalId)
+            .ToArrayAsync(cancellationToken));
+
+        var bridgeFinished = await TransitionServiceAsync(
+            Guid.Parse("84000000-0000-7000-8000-000000000024"),
+            bridgeServiceId,
+            ServiceExecutionStatus.NotPerformed,
+            0m,
+            "Puente no disponible en el turno de prueba");
+        Assert.True(bridgeFinished.IsSuccess);
+
+        var outOfScope = await HandOffAsync(
+            Guid.Parse("85000000-0000-7000-8000-000000000023"),
+            AgentNote,
+            [Guid.Parse("20000000-0000-7000-8000-000000000013")]);
+        Assert.Equal(RampOperationsFailure.NotFound, outOfScope.Failure);
+        Assert.Null(outOfScope.CommitReceiptId);
+
+        var handedOff = await HandOffAsync(handoffKey, AgentNote);
+        Assert.True(handedOff.IsSuccess);
+        Assert.Equal(handoffKey, handedOff.Submission!.SubmissionId);
+        Assert.Equal(canonicalChecklist.Id, handedOff.Submission.ChecklistId);
+        Assert.Equal("PendingReview", handedOff.Submission.Status);
+        Assert.Equal(1, handedOff.Submission.RevisionNumber);
+        Assert.Equal(AgentNote, handedOff.Submission.AgentNote);
+        Assert.Equal(handedOff.Submission.SubmittedAt, handedOff.Submission.ActualEndAt);
+
+        var replay = await HandOffAsync(handoffKey, AgentNote);
+        Assert.True(replay.IsSuccess);
+        Assert.Equal(handedOff.Submission, replay.Submission);
+        Assert.Equal(handedOff.CommitReceiptId, replay.CommitReceiptId);
+        var keyCollision = await HandOffAsync(handoffKey, "Different note");
+        Assert.Equal(RampOperationsFailure.Conflict, keyCollision.Failure);
+        Assert.Null(keyCollision.CommitReceiptId);
+        var secondHandoff = await HandOffAsync(
+            Guid.Parse("85000000-0000-7000-8000-000000000024"), AgentNote);
+        Assert.Equal(RampOperationsFailure.Conflict, secondHandoff.Failure);
+        Assert.NotNull(secondHandoff.CommitReceiptId);
+
+        await using (var expiryContext = CreateContext(database.ConnectionString))
+        {
+            await expiryContext.MobileCommandReceipts
+                .Where(item => item.PublicId == handedOff.CommitReceiptId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        var lateReplay = await HandOffAsync(handoffKey, AgentNote);
+        Assert.True(lateReplay.IsSuccess);
+        Assert.NotEqual(handedOff.CommitReceiptId, lateReplay.CommitReceiptId);
+        Assert.Equal(handoffKey, lateReplay.Submission!.SubmissionId);
+
+        await using var handoffCheck = CreateContext(database.ConnectionString);
+        var operationAfter = await handoffCheck.GroundOperations.AsNoTracking()
+            .SingleAsync(item => item.Id == operationInternalId, cancellationToken);
+        Assert.Equal(GroundOperationStatus.PendingReview, operationAfter.CurrentStatus);
+        Assert.Equal(handedOff.Submission.ActualEndAt, operationAfter.ActualEndAt);
+        Assert.Single(await handoffCheck.OperationSubmissions.AsNoTracking()
+            .Where(item => item.GroundOperationId == operationInternalId)
+            .ToArrayAsync(cancellationToken));
+        Assert.Single(await handoffCheck.Set<GroundOperationStatusEvent>().AsNoTracking()
+            .Where(item => item.GroundOperationId == operationInternalId &&
+                item.ToStatus == GroundOperationStatus.PendingReview)
+            .ToArrayAsync(cancellationToken));
+        var handoffAudit = await handoffCheck.AuditEntries.AsNoTracking()
+            .SingleAsync(item => item.Action == "ramp.operation.submitted", cancellationToken);
+        Assert.DoesNotContain(AgentNote, handoffAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]

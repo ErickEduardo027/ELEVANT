@@ -510,6 +510,19 @@ export interface RampOperationStartResponse {
   operation: RampGroundOperationResponse;
 }
 
+export interface RampOperationSubmissionResponse {
+  receiptId: string;
+  operationId: string;
+  submissionId: string;
+  checklistId: string;
+  revisionNumber: number;
+  status: string;
+  submittedAt: string;
+  actualEndAt: string;
+  /** @nullable */
+  agentNote?: string | null;
+}
+
 export interface RegisterMobileDeviceRequest {
   installationId: string;
   /**
@@ -581,6 +594,14 @@ export interface SubmitRampOperationChecklistRequest {
      * @maxItems 256
      */
   answers: RampChecklistAnswerRequest[];
+}
+
+export interface SubmitRampOperationRequest {
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  agentNote?: string | null;
 }
 
 export interface SystemPingResponse {
@@ -1069,6 +1090,44 @@ const res = await fetch(getTransitionRampOperationServiceUrl(operationId,service
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampOperationServiceTransitionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitRampOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/submit`
+}
+
+/**
+ * @summary Atomically closes execution and records an idempotent submission.
+ */
+export const submitRampOperation = async (operationId: string,
+    submitRampOperationRequest: SubmitRampOperationRequest, options?: RequestInit): Promise<RampOperationSubmissionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitRampOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitRampOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampOperationSubmissionResponse = body ? JSON.parse(body) : {}
   return data
 }
 
