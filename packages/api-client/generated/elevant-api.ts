@@ -557,11 +557,20 @@ export interface RampOperationServiceResponse {
   status: string;
 }
 
+export interface RampReviewFeedbackResponse {
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  /** @nullable */
+  returnReason?: string | null;
+}
+
 export interface RampAssignedOperationResponse {
   assignment: RampAgentAssignmentResponse;
   operation: RampGroundOperationResponse;
   turnaround: RampTurnaroundResponse;
   services: RampOperationServiceResponse[];
+  review?: RampReviewFeedbackResponse | null;
 }
 
 export interface RampAssignedOperationsResponse {
@@ -603,6 +612,16 @@ export interface RampIncidentReceiptResponse {
   status: string;
   occurredAt: string;
   reportedAt: string;
+}
+
+export interface RampOperationCorrectionResponse {
+  receiptId: string;
+  operationId: string;
+  previousSubmissionId: string;
+  checklistId: string;
+  revisionNumber: number;
+  status: string;
+  returnReason: string;
 }
 
 export interface RampOperationServiceExecutionResponse {
@@ -1041,6 +1060,39 @@ export const getOccReviewDetail = async (operationId: string, options?: RequestI
 
 
 
+export const getGetOccReviewSubmissionDetailUrl = (operationId: string,
+    submissionId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/submissions/${submissionId}`
+}
+
+/**
+ * @summary Reads one immutable historical handoff, including its review decision.
+ */
+export const getOccReviewSubmissionDetail = async (operationId: string,
+    submissionId: string, options?: RequestInit): Promise<OccReviewDetailResponse> => {
+
+  const res = await fetch(getGetOccReviewSubmissionDetailUrl(operationId,submissionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getDecideOccReviewUrl = (operationId: string,) => {
 
 
@@ -1212,6 +1264,34 @@ const res = await fetch(getSubmitRampOperationChecklistUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampChecklistSubmissionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenRampOperationCorrectionUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/correction`
+}
+
+export const reopenRampOperationCorrection = async (operationId: string, options?: RequestInit): Promise<RampOperationCorrectionResponse> => {
+
+  const res = await fetch(getReopenRampOperationCorrectionUrl(operationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampOperationCorrectionResponse = body ? JSON.parse(body) : {}
   return data
 }
 

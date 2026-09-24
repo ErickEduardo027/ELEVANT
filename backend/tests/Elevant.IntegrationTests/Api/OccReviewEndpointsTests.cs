@@ -82,6 +82,15 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         Assert.Single(body.GetProperty("incidents").EnumerateArray());
         Assert.Equal(Token, body.GetProperty("reviewVersion").GetString());
         Assert.Equal([StationId], state.DetailStations);
+
+        using var historical = await client.GetAsync(
+            $"/api/v1/occ/review/operations/{OperationId:D}/submissions/{SubmissionId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, historical.StatusCode);
+        var historicalJson = await historical.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(SubmissionId, historicalJson.GetProperty("submissionId").GetGuid());
+        Assert.Equal([StationId], state.DetailStations);
     }
 
     [Fact]
@@ -124,6 +133,11 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         Assert.True(paths.GetProperty("/api/v1/occ/review/queue").TryGetProperty("get", out _));
         Assert.True(paths.GetProperty("/api/v1/occ/review/operations/{operationId}")
             .TryGetProperty("get", out _));
+        Assert.True(paths.GetProperty(
+            "/api/v1/occ/review/operations/{operationId}/submissions/{submissionId}")
+            .TryGetProperty("get", out _));
+        Assert.True(paths.GetProperty("/api/v1/ramp/operations/{operationId}/correction")
+            .TryGetProperty("post", out _));
         var decision = paths.GetProperty("/api/v1/occ/review/operations/{operationId}/decision")
             .GetProperty("post");
         Assert.True(decision.GetProperty("responses").TryGetProperty("412", out _));
@@ -226,6 +240,14 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         {
             DetailStations = allowedStationIds;
             return Task.FromResult(Detail);
+        }
+
+        public Task<OccReviewDetailData?> GetSubmissionDetailAsync(Guid operationId,
+            Guid submissionId, IReadOnlyCollection<Guid> allowedStationIds,
+            CancellationToken cancellationToken = default)
+        {
+            DetailStations = allowedStationIds;
+            return Task.FromResult(Detail?.SubmissionId == submissionId ? Detail : null);
         }
 
         public Task<OccReviewDecisionWriteResult> DecideAsync(

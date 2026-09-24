@@ -18,6 +18,8 @@ const RAMP_SERVICE_TRANSITION_COMMAND_PREFIX =
   'elevant:mobile:ramp-service-transition-command:v1:';
 const RAMP_OPERATION_SUBMIT_COMMAND_PREFIX =
   'elevant:mobile:ramp-operation-submit-command:v1:';
+const RAMP_CORRECTION_COMMAND_PREFIX =
+  'elevant:mobile:ramp-correction-command:v1:';
 const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
@@ -270,6 +272,7 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
       key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
       key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_CORRECTION_COMMAND_PREFIX) ||
       key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX),
   );
 }
@@ -491,6 +494,11 @@ function rampIncidentOutboxKey(accountId: string, operationId: string) {
 function rampOperationSubmitCommandKey(accountId: string, operationId: string) {
   assertRampExecutionIds(accountId, operationId);
   return `${RAMP_OPERATION_SUBMIT_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
+function rampCorrectionCommandKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${RAMP_CORRECTION_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
 }
 
 function parseRampIncidentOutbox(raw: string | null): StoredRampIncidentOutboxItem[] {
@@ -1003,6 +1011,35 @@ export async function removeRampOperationSubmitCommandIfCurrent(
     rampOperationSubmitCommandKey(accountId, operationId),
     expectedIdempotencyKey,
   );
+}
+
+export async function readRampCorrectionCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string,
+): Promise<CurrentRampExecutionCommandRead> {
+  const result = await readRampExecutionValueIfCurrent(
+    sessionId, accountId, rampCorrectionCommandKey(accountId, operationId));
+  if (result.kind !== 'current') return result;
+  const command = parseRampExecutionCommand(result.value);
+  if (result.value !== null && !command) throw new MobileSessionStorageError();
+  return { kind: 'current', command: command
+    ? { idempotencyKey: command.idempotencyKey, payload: command.payload }
+    : null };
+}
+
+export async function getOrCreateRampCorrectionCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string,
+): Promise<CurrentRampExecutionCommand> {
+  return getOrCreateRampExecutionCommandIfCurrent(
+    sessionId, accountId, rampCorrectionCommandKey(accountId, operationId), '{}');
+}
+
+export async function removeRampCorrectionCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string,
+  expectedIdempotencyKey: string,
+) {
+  return removeRampExecutionCommandIfCurrent(
+    sessionId, accountId, rampCorrectionCommandKey(accountId, operationId),
+    expectedIdempotencyKey);
 }
 
 export async function clearStoredMobileSession() {

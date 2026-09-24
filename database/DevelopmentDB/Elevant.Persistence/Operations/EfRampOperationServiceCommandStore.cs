@@ -166,6 +166,16 @@ internal sealed class EfRampOperationServiceCommandStore(
                 cancellationToken);
         }
 
+        var latestSubmission = await context.OperationSubmissions.AsNoTracking()
+            .Where(item => item.GroundOperationId == scope.Operation.Id)
+            .OrderByDescending(item => item.RevisionNumber)
+            .Select(item => new { item.RevisionNumber, item.Status })
+            .FirstOrDefaultAsync(cancellationToken);
+        var isCorrectionRound = latestSubmission is { Status: SubmissionStatus.Returned } &&
+            await context.OperationChecklists.AsNoTracking().AnyAsync(item =>
+                item.GroundOperationId == scope.Operation.Id &&
+                item.RevisionNumber == latestSubmission.RevisionNumber + 1,
+                cancellationToken);
         if (!RampOperationServiceTransitionPolicy.CanTransition(
                 scope.TurnaroundStatus,
                 scope.Operation.CurrentStatus,
@@ -174,7 +184,8 @@ internal sealed class EfRampOperationServiceCommandStore(
                 service.CurrentStatus,
                 request.TargetStatus,
                 request.ExecutedQuantity,
-                request.Note))
+                request.Note,
+                isCorrectionRound))
         {
             return await RejectAsync(
                 receipt,
@@ -188,7 +199,13 @@ internal sealed class EfRampOperationServiceCommandStore(
         var previousStatus = service.CurrentStatus;
         var previousQuantity = service.ExecutedQuantity;
         service.CurrentStatus = request.TargetStatus;
-        if (request.TargetStatus != ServiceExecutionStatus.InProgress)
+        if (request.TargetStatus == ServiceExecutionStatus.InProgress &&
+            previousStatus is ServiceExecutionStatus.Completed or
+                ServiceExecutionStatus.NotPerformed or ServiceExecutionStatus.Exception)
+        {
+            service.ExecutedQuantity = 0m;
+        }
+        else if (request.TargetStatus != ServiceExecutionStatus.InProgress)
         {
             service.ExecutedQuantity = request.ExecutedQuantity!.Value;
         }

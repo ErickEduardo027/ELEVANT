@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Elevant.IntegrationTests;
 
@@ -19,6 +20,9 @@ public sealed class ElevantApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        // Test hosts must not write to Windows Event Log, which is unavailable to
+        // unprivileged runners and can hide the actual HTTP assertion failure.
+        builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.UseSetting("ConnectionStrings:ElevantDatabase", TestConnectionString);
         builder.UseSetting("Authentication:Issuer", AuthenticationIssuer);
         builder.UseSetting("Authentication:Audience", AuthenticationAudience);

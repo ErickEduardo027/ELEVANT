@@ -83,7 +83,14 @@ public sealed record RampAssignedOperationData(
     RampAgentAssignmentData Assignment,
     RampGroundOperationData Operation,
     RampTurnaroundData Turnaround,
-    IReadOnlyList<RampOperationServiceData> Services);
+    IReadOnlyList<RampOperationServiceData> Services,
+    RampReviewFeedbackData? Review = null);
+
+public sealed record RampReviewFeedbackData(
+    Guid SubmissionId,
+    int RevisionNumber,
+    string Status,
+    string? ReturnReason);
 
 public enum RampOperationsReadFailure
 {

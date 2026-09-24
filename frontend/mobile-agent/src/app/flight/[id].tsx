@@ -37,6 +37,10 @@ import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
 import { startAssignedRampOperation } from '../../services/ramp-operation-start';
 import {
+  readPendingRampCorrection,
+  reopenRampOperationCorrection,
+} from '../../services/ramp-operation-correction';
+import {
   readRampOperationPendingSubmission,
   submitRampOperation,
   type RampOperationPendingSubmission,
@@ -76,13 +80,18 @@ export default function OperationDetailScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submissionNotice, setSubmissionNotice] = useState<StartNotice | null>(null);
   const [submissionReconciliationRequired, setSubmissionReconciliationRequired] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionPending, setCorrectionPending] = useState(false);
+  const [correctionNotice, setCorrectionNotice] = useState<StartNotice | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const startRequestRef = useRef<AbortController | null>(null);
   const serviceRequestRef = useRef<AbortController | null>(null);
   const submissionRequestRef = useRef<AbortController | null>(null);
+  const correctionRequestRef = useRef<AbortController | null>(null);
   const startInFlightRef = useRef(false);
   const serviceInFlightRef = useRef(false);
   const submissionInFlightRef = useRef(false);
+  const correctionInFlightRef = useRef(false);
   const lastStartedOperationRef = useRef<RampGroundOperationResponse | null>(null);
   const lastServiceExecutionsRef = useRef(new Map<string, RampOperationServiceExecutionResponse>());
 
@@ -102,6 +111,8 @@ export default function OperationDetailScreen() {
       setSubmissionNote('');
       setSubmissionNotice(null);
       setSubmissionReconciliationRequired(false);
+      setCorrectionPending(false);
+      setCorrectionNotice(null);
       lastStartedOperationRef.current = null;
       lastServiceExecutionsRef.current.clear();
     }
@@ -142,6 +153,7 @@ export default function OperationDetailScreen() {
       }
       if (found) {
         pendingHandoff = await readRampOperationPendingSubmission(found.operation.id);
+        setCorrectionPending(await readPendingRampCorrection(found.operation.id));
       }
       if (request.signal.aborted) return;
       setOperation(found);
@@ -190,9 +202,11 @@ export default function OperationDetailScreen() {
       startRequestRef.current?.abort();
       serviceRequestRef.current?.abort();
       submissionRequestRef.current?.abort();
+      correctionRequestRef.current?.abort();
       startInFlightRef.current = false;
       serviceInFlightRef.current = false;
       submissionInFlightRef.current = false;
+      correctionInFlightRef.current = false;
     };
   }, [load]));
 
@@ -275,7 +289,9 @@ export default function OperationDetailScreen() {
       !operation ||
       cached ||
       operation.operation.status !== 'InProgress' ||
-      isTerminalServiceStatus(service.status)
+      (isTerminalServiceStatus(service.status) &&
+        !(operation.review?.status === 'Returned' &&
+          transitionRequest.targetStatus === 'InProgress'))
     ) {
       return;
     }
@@ -459,6 +475,12 @@ export default function OperationDetailScreen() {
               status: response.status,
               actualEndAt: response.actualEndAt,
             },
+            review: {
+              submissionId: response.submissionId,
+              revisionNumber: response.revisionNumber,
+              status: response.status,
+              returnReason: null,
+            },
           }
         : current);
       setPendingSubmission(null);
@@ -517,6 +539,72 @@ export default function OperationDetailScreen() {
       ],
     );
   }, [handoffOperation, pendingSubmission]);
+
+  const reopenCorrection = useCallback(async () => {
+    if (correctionInFlightRef.current || !operation || cached ||
+        (!correctionPending && (operation.operation.status !== 'Returned' ||
+          operation.review?.status !== 'Returned' ||
+          !operation.review.returnReason))) return;
+    correctionRequestRef.current?.abort();
+    const request = new AbortController();
+    correctionRequestRef.current = request;
+    correctionInFlightRef.current = true;
+    setCorrecting(true);
+    setCorrectionNotice(null);
+    try {
+      const result = await reopenRampOperationCorrection(
+        operation.operation.id, { signal: request.signal });
+      if (request.signal.aborted) return;
+      setCorrectionPending(false);
+      setOperation(current => current?.operation.id === result.operationId
+        ? { ...current, operation: {
+          ...current.operation, status: result.status, actualEndAt: null,
+        } }
+        : current);
+      await load(true);
+      setCorrectionNotice({
+        tone: 'success', title: `Corrección ${result.revisionNumber} abierta`,
+        message: 'El checklist nuevo está listo. El envío anterior permanece intacto.',
+      });
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError &&
+          (error.code === 'unauthenticated' || error.code === 'session_expired')) {
+        resetToLogin('session_expired'); return;
+      }
+      if (error instanceof MobileServiceError && error.code === 'forbidden') {
+        resetToLogin('access_revoked'); return;
+      }
+      try {
+        const pending = await readPendingRampCorrection(operation.operation.id);
+        setCorrectionPending(pending);
+        setCorrectionNotice({
+          tone: 'warning', title: pending ? 'Corrección por confirmar' : 'No se abrió la corrección',
+          message: pending
+            ? 'La respuesta no se confirmó. Reintenta con la misma clave sin cerrar sesión.'
+            : 'Actualiza el detalle y comprueba que OCC devolvió la operación.',
+        });
+      } catch {
+        setCorrectionNotice({ tone: 'error', title: 'Estado local por conciliar',
+          message: 'Actualiza el detalle antes de intentar otro comando.' });
+      }
+    } finally {
+      if (correctionRequestRef.current === request) {
+        correctionRequestRef.current = null;
+        correctionInFlightRef.current = false;
+        if (!request.signal.aborted) setCorrecting(false);
+      }
+    }
+  }, [cached, correctionPending, load, operation]);
+
+  const confirmCorrection = useCallback(() => {
+    if (correctionPending) { void reopenCorrection(); return; }
+    Alert.alert('Abrir corrección',
+      'Se creará un checklist nuevo. El envío anterior, sus respuestas y la decisión de OCC permanecerán intactos.', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Abrir corrección', onPress: () => void reopenCorrection() },
+      ]);
+  }, [correctionPending, reopenCorrection]);
 
   if (state !== 'ready' || !operation) {
     return <DetailStateScreen onRetry={() => void load()} state={state} />;
@@ -579,6 +667,38 @@ export default function OperationDetailScreen() {
         timeZone={timeZone}
       />
 
+      {(operation.review?.status === 'Returned' || correctionPending) && (
+        <View style={styles.handoffCard}>
+          <Text accessibilityRole="header" style={styles.handoffTitle}>
+            {operation.operation.status === 'Returned' ? 'Devuelta por OCC' : 'Corrección en curso'}
+          </Text>
+          <Text style={styles.startDescription}>
+            Revisión {operation.review?.revisionNumber ?? '—'} · Motivo de devolución:
+          </Text>
+          <Text style={styles.nextPhaseWarning}>
+            {operation.review?.returnReason ?? 'Actualiza el detalle para consultar el motivo.'}
+          </Text>
+          <Text style={styles.startDescription}>
+            El checklist y los servicios enviados anteriormente se conservan como historial.
+          </Text>
+          {(operation.operation.status === 'Returned' || correctionPending) && (
+            <PrimaryButton
+              disabled={cached || correcting ||
+                (!correctionPending && !operation.review?.returnReason)}
+              icon={correctionPending ? 'refresh-outline' : 'create-outline'}
+              onPress={confirmCorrection}
+              title={correcting ? 'ABRIENDO…' : correctionPending
+                ? 'REINTENTAR CORRECCIÓN' : 'ABRIR CORRECCIÓN'}
+            />
+          )}
+          {correctionNotice && (
+            <Text accessibilityLiveRegion="polite" style={styles.nextPhaseWarning}>
+              {correctionNotice.title}. {correctionNotice.message}
+            </Text>
+          )}
+        </View>
+      )}
+
       <SectionTitle title="Movimiento aéreo" subtitle={`Horario local · ${timeZone}`} />
       <View style={styles.legs}>
         {turnaround.arrival && (
@@ -613,6 +733,8 @@ export default function OperationDetailScreen() {
               (busyServiceId === null || busyServiceId === service.id)
             }
             busy={busyServiceId === service.id}
+            correctionMode={operation.operation.status === 'InProgress' &&
+              operation.review?.status === 'Returned'}
             disabledReason={
               cached
                 ? 'Reconecta y actualiza el detalle antes de registrar un cambio.'
@@ -719,6 +841,8 @@ export default function OperationDetailScreen() {
           onChangeNote={setSubmissionNote}
           onSubmit={confirmHandoff}
           operation={operation.operation}
+          correctionRevision={operation.review?.status === 'Returned'
+            ? operation.review.revisionNumber + 1 : null}
           pending={pendingSubmission}
           servicesReady={operation.services.length > 0 && operation.services.every(
             service => isTerminalServiceStatus(service.status))}
@@ -866,6 +990,7 @@ function OperationSubmissionControl({
   onChangeNote,
   onSubmit,
   operation,
+  correctionRevision,
   pending,
   servicesReady,
   submitting,
@@ -876,6 +1001,7 @@ function OperationSubmissionControl({
   readonly onChangeNote: (value: string) => void;
   readonly onSubmit: () => void;
   readonly operation: RampGroundOperationResponse;
+  readonly correctionRevision: number | null;
   readonly pending: RampOperationPendingSubmission | null;
   readonly servicesReady: boolean;
   readonly submitting: boolean;
@@ -897,7 +1023,8 @@ function OperationSubmissionControl({
         <View style={styles.handoffCopy}>
           <Text style={styles.startEyebrow}>CIERRE DE EJECUCIÓN</Text>
           <Text accessibilityRole="header" style={styles.handoffTitle}>
-            {delivered ? 'Pendiente de revisión OCC' : 'Entregar operación a OCC'}
+            {delivered ? 'Pendiente de revisión OCC' : correctionRevision
+              ? `Reenviar corrección ${correctionRevision} a OCC` : 'Entregar operación a OCC'}
           </Text>
         </View>
       </View>
@@ -1001,6 +1128,7 @@ function allowedServiceTargets(
   if (status === 'InProgress') {
     return ['Completed', 'NotPerformed', 'Exception'];
   }
+  if (isTerminalServiceStatus(status)) return ['InProgress'];
   return [];
 }
 

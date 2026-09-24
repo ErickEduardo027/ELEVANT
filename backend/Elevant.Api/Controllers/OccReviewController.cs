@@ -66,7 +66,29 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
         if (!result.IsSuccess) return FailureResult<OccReviewDetailResponse>(result.Failure!.Value);
         var detail = result.Detail!;
         Response.Headers.ETag = detail.ConcurrencyToken;
-        return Ok(new OccReviewDetailResponse(
+        return Ok(MapDetail(detail));
+    }
+
+    /// <summary>Reads one immutable historical handoff, including its review decision.</summary>
+    [HttpGet("operations/{operationId:guid}/submissions/{submissionId:guid}",
+        Name = "GetOccReviewSubmissionDetail")]
+    [ProducesResponseType<OccReviewDetailResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccReviewDetailResponse>> GetSubmissionDetail(
+        [FromRoute] Guid operationId, [FromRoute] Guid submissionId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return UnauthorizedResult<OccReviewDetailResponse>();
+        var result = await handler.GetSubmissionDetailAsync(
+            accountId, operationId, submissionId, cancellationToken);
+        if (!result.IsSuccess) return FailureResult<OccReviewDetailResponse>(result.Failure!.Value);
+        return Ok(MapDetail(result.Detail!));
+    }
+
+    private static OccReviewDetailResponse MapDetail(OccReviewDetailData detail) =>
+        new(
             detail.OperationId, detail.SubmissionId, detail.RevisionNumber, detail.Status,
             detail.OperationCode, detail.OperationDate, detail.StationId, detail.StationCode,
             detail.IanaTimeZone, detail.AirlineName, detail.AgentName,
@@ -82,8 +104,7 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
                 item.OccurredAt)).ToArray(),
             detail.Decision is null ? null : new OccReviewDecisionResponse(
                 detail.Decision.Outcome, detail.Decision.Reason, detail.Decision.DecidedAt),
-            detail.ConcurrencyToken));
-    }
+            detail.ConcurrencyToken);
 
     /// <summary>Approves or returns one pending submission using its strong snapshot token.</summary>
     [RequestSizeLimit(BodyLimitBytes)]

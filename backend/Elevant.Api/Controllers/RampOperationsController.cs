@@ -170,7 +170,12 @@ public sealed class RampOperationsController(
             service.ContractedQuantity,
             service.ExecutedQuantity,
             service.BillingUnit,
-            service.Status)).ToArray());
+            service.Status)).ToArray(),
+        operation.Review is null ? null : new RampReviewFeedbackResponse(
+            operation.Review.SubmissionId,
+            operation.Review.RevisionNumber,
+            operation.Review.Status,
+            operation.Review.ReturnReason));
 
     private static RampGroundOperationResponse Map(RampGroundOperationData operation) => new(
         operation.Id,

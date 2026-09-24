@@ -286,11 +286,14 @@ internal static class OperationsConfiguration
         modelBuilder.Entity<OperationChecklist>(builder =>
         {
             builder.ToTable("operation_checklists", "ops", table =>
-                table.HasCheckConstraint("ck_operation_checklist_dates", "[submitted_at] IS NULL OR [started_at] IS NULL OR [submitted_at] >= [started_at]"));
+            {
+                table.HasCheckConstraint("ck_operation_checklist_dates", "[submitted_at] IS NULL OR [started_at] IS NULL OR [submitted_at] >= [started_at]");
+                table.HasCheckConstraint("ck_operation_checklist_revision", "[revision_number] > 0");
+            });
             builder.Property(checklist => checklist.Status).HasConversion<string>().HasMaxLength(16);
             builder.Property(checklist => checklist.StartedAt).HasPrecision(3);
             builder.Property(checklist => checklist.SubmittedAt).HasPrecision(3);
-            builder.HasIndex(checklist => new { checklist.GroundOperationId, checklist.ChecklistTemplateVersionId }).IsUnique();
+            builder.HasIndex(checklist => new { checklist.GroundOperationId, checklist.ChecklistTemplateVersionId, checklist.RevisionNumber }).IsUnique();
             AddReference<GroundOperation, OperationChecklist>(builder, checklist => checklist.GroundOperationId);
             AddReference<ChecklistTemplateVersion, OperationChecklist>(builder, checklist => checklist.ChecklistTemplateVersionId);
             AddReference<RampAgent, OperationChecklist>(builder, checklist => checklist.SubmittedByRampAgentId);
@@ -336,6 +339,7 @@ internal static class OperationsConfiguration
             builder.Property(submission => submission.Status).HasConversion<string>().HasMaxLength(24);
             builder.Property(submission => submission.SubmittedAt).HasPrecision(3);
             builder.Property(submission => submission.AgentNote).HasMaxLength(2000);
+            builder.Property(submission => submission.EvidenceJson).HasColumnType("nvarchar(max)");
             builder.HasIndex(submission => new { submission.GroundOperationId, submission.RevisionNumber }).IsUnique();
             builder.HasIndex(submission => new { submission.Status, submission.SubmittedAt });
             AddReference<GroundOperation, OperationSubmission>(builder, submission => submission.GroundOperationId);

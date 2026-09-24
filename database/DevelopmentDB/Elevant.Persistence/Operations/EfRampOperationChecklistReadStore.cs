@@ -72,7 +72,8 @@ internal sealed class EfRampOperationChecklistReadStore(
                     on version.ChecklistTemplateId equals template.Id
                 where operationChecklist.GroundOperationId == scope.Operation.Id &&
                       template.Code == TurnaroundChecklistCode
-                orderby version.VersionNumber descending, operationChecklist.PublicId
+                orderby operationChecklist.RevisionNumber descending,
+                    version.VersionNumber descending
                 select new ChecklistProjection(
                     operationChecklist.Id,
                     operationChecklist.PublicId,

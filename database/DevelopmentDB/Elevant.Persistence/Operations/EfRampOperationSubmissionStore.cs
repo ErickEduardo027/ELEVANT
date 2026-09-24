@@ -158,12 +158,14 @@ internal sealed class EfRampOperationSubmissionStore(
                     on version.ChecklistTemplateId equals template.Id
                 where operationChecklist.GroundOperationId == scope.Operation.Id &&
                       template.Code == ChecklistCode
-                orderby version.VersionNumber descending, operationChecklist.PublicId
+                orderby operationChecklist.RevisionNumber descending,
+                    version.VersionNumber descending
                 select new
                 {
                     operationChecklist.Id,
                     operationChecklist.PublicId,
                     operationChecklist.Status,
+                    operationChecklist.RevisionNumber,
                 })
             .FirstOrDefaultAsync(cancellationToken);
         var statuses = await context.OperationServices.AsNoTracking()
@@ -192,6 +194,10 @@ internal sealed class EfRampOperationSubmissionStore(
         }
 
         var revision = checked((previous?.RevisionNumber ?? 0) + 1);
+        if (checklist.RevisionNumber != revision)
+        {
+            return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
+        }
         var submission = new OperationSubmission
         {
             PublicId = request.IdempotencyKey,
@@ -202,6 +208,8 @@ internal sealed class EfRampOperationSubmissionStore(
             SubmittedByRampAgentId = actor.RampAgentInternalId,
             SubmittedAt = now,
             AgentNote = request.AgentNote,
+            EvidenceJson = (await OperationSubmissionEvidence.CaptureAsync(
+                context, scope.Operation.Id, cancellationToken)).ToJson(),
             CreatedAt = now,
             UpdatedAt = now,
         };

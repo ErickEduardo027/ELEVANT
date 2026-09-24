@@ -8,8 +8,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$connectionVariable = Get-Item -LiteralPath 'Env:ConnectionStrings__ElevantDatabase' -ErrorAction SilentlyContinue
-if ($null -eq $connectionVariable -or [string]::IsNullOrWhiteSpace($connectionVariable.Value)) {
+$connectionValue = [System.Environment]::GetEnvironmentVariable('ConnectionStrings__ElevantDatabase')
+if ([string]::IsNullOrWhiteSpace($connectionValue)) {
     throw 'Configure ConnectionStrings__ElevantDatabase con Initial Catalog=ElevantDevelopmentDb.'
 }
 
@@ -48,8 +48,7 @@ try {
         --project $persistenceProject `
         --startup-project $startupProject `
         --context ElevantDbContext `
-        --configuration Release `
-        --no-build
+        --configuration Release
 
     if ($LASTEXITCODE -ne 0) {
         throw 'El modelo aún tiene cambios sin migración.'

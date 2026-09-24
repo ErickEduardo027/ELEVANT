@@ -76,6 +76,27 @@ describe("OCC review API client", () => {
     await expect(client.getOccReviewDetail(operationId)).rejects.toMatchObject({ kind: "malformed-response" });
   });
 
+  it("loads one historical handoff by both IDs and rejects a different submission", async () => {
+    const paths: string[] = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async (input) => {
+        paths.push(String(input));
+        return json({ ...detail, status: "Returned", decision: {
+          outcome: "Returned", reason: "Corregir el servicio",
+          decidedAt: "2026-09-23T12:05:00.000Z",
+        } });
+      },
+    });
+    await expect(client.getOccReviewSubmissionDetail(operationId, submissionId))
+      .resolves.toMatchObject({ submissionId, status: "Returned" });
+    expect(paths).toEqual([
+      `https://api.example.test/api/v1/occ/review/operations/${operationId}/submissions/${submissionId}`,
+    ]);
+    await expect(client.getOccReviewSubmissionDetail(operationId, crypto.randomUUID()))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("sends one scoped decision with If-Match and rejects malformed results", async () => {
     let headers = new Headers();
     let body = "";

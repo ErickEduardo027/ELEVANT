@@ -332,12 +332,24 @@ function isAssignedOperation(
 ): value is RampAssignedOperationResponse {
   return (
     isRecord(value) &&
-    hasExactKeys(value, ['assignment', 'operation', 'turnaround', 'services']) &&
+    hasOnlyKeys(value, ['assignment', 'operation', 'turnaround', 'services', 'review']) &&
     isAssignment(value.assignment) &&
     isGroundOperation(value.operation) &&
     isTurnaround(value.turnaround) &&
     Array.isArray(value.services) &&
-    value.services.every(isOperationService)
+    value.services.every(isOperationService) &&
+    (value.review === undefined || value.review === null || (
+      isRecord(value.review) &&
+      hasOnlyKeys(value.review, ['submissionId', 'revisionNumber', 'status', 'returnReason']) &&
+      isUuid(value.review.submissionId) &&
+      isInt32(value.review.revisionNumber) &&
+      value.review.revisionNumber > 0 &&
+      ['PendingReview', 'InReview', 'Approved', 'Returned'].includes(String(value.review.status)) &&
+      (value.review.returnReason === undefined || value.review.returnReason === null ||
+        (isString(value.review.returnReason) && value.review.returnReason.length >= 8 &&
+          value.review.returnReason.length <= 2000)) &&
+      (value.review.status !== 'Returned' || isString(value.review.returnReason))
+    ))
   );
 }
 

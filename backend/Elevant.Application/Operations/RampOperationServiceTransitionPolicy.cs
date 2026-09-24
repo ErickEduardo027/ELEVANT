@@ -50,7 +50,8 @@ public static class RampOperationServiceTransitionPolicy
         ServiceExecutionStatus currentStatus,
         ServiceExecutionStatus targetStatus,
         decimal? executedQuantity,
-        string? note)
+        string? note,
+        bool isCorrectionRound = false)
     {
         if (!RampOperationExecutionPolicy.CanExecute(
                 turnaroundStatus,
@@ -72,6 +73,10 @@ public static class RampOperationServiceTransitionPolicy
                 targetStatus is ServiceExecutionStatus.Completed or
                     ServiceExecutionStatus.NotPerformed or
                     ServiceExecutionStatus.Exception,
+            ServiceExecutionStatus.Completed or ServiceExecutionStatus.NotPerformed or
+                ServiceExecutionStatus.Exception =>
+                isCorrectionRound && targetStatus == ServiceExecutionStatus.InProgress &&
+                !string.IsNullOrWhiteSpace(note),
             _ => false,
         };
     }

@@ -58,6 +58,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 AirlineName = airline.Name,
                 AgentName = person.FirstName + " " + person.LastName,
                 submission.SubmittedAt,
+                submission.EvidenceJson,
                 ServiceCount = context.OperationServices.AsNoTracking()
                     .Count(item => item.GroundOperationId == operation.Id),
                 IncidentCount = context.Incidents.AsNoTracking()
@@ -72,13 +73,26 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 row.OperationId, row.SubmissionId, row.RevisionNumber,
                 row.Status.ToString(), row.OperationCode, row.OperationDate,
                 row.AirlineName, row.AgentName.Trim(), row.SubmittedAt,
-                row.ServiceCount, row.IncidentCount)).ToArray(),
+                row.EvidenceJson is null ? row.ServiceCount :
+                    OperationSubmissionEvidence.Parse(row.EvidenceJson).Services.Length,
+                row.EvidenceJson is null ? row.IncidentCount :
+                    OperationSubmissionEvidence.Parse(row.EvidenceJson).Incidents.Length)).ToArray(),
             rows.Length > QueueLimit);
     }
 
     public async Task<OccReviewDetailData?> GetDetailAsync(
         Guid operationId, IReadOnlyCollection<Guid> allowedStationIds,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await GetDetailCoreAsync(operationId, null, allowedStationIds, cancellationToken);
+
+    public async Task<OccReviewDetailData?> GetSubmissionDetailAsync(
+        Guid operationId, Guid submissionId, IReadOnlyCollection<Guid> allowedStationIds,
+        CancellationToken cancellationToken = default) =>
+        await GetDetailCoreAsync(operationId, submissionId, allowedStationIds, cancellationToken);
+
+    private async Task<OccReviewDetailData?> GetDetailCoreAsync(
+        Guid operationId, Guid? submissionId, IReadOnlyCollection<Guid> allowedStationIds,
+        CancellationToken cancellationToken)
     {
         if (allowedStationIds.Count == 0) return null;
         var core = await (
@@ -98,6 +112,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             join checklist in context.OperationChecklists.AsNoTracking()
                 on submission.OperationChecklistId equals checklist.Id
             where operation.PublicId == operationId && station.IsActive &&
+                  (submissionId == null || submission.PublicId == submissionId) &&
                   allowedStationIds.Contains(station.PublicId)
             orderby submission.RevisionNumber descending
             select new
@@ -115,6 +130,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 submission.Status,
                 submission.SubmittedAt,
                 submission.AgentNote,
+                submission.EvidenceJson,
                 ChecklistInternalId = checklist.Id,
                 ChecklistStatus = checklist.Status,
                 turnaround.OperationCode,
@@ -128,17 +144,10 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             .FirstOrDefaultAsync(cancellationToken);
         if (core is null) return null;
 
-        var services = await (
-            from service in context.OperationServices.AsNoTracking()
-            join definition in context.ServiceDefinitions.AsNoTracking()
-                on service.ServiceDefinitionId equals definition.Id
-            where service.GroundOperationId == core.OperationInternalId
-            orderby service.LineNumber
-            select new OccReviewServiceData(
-                service.PublicId, definition.Code, definition.Name,
-                service.CurrentStatus.ToString(), service.ContractedQuantity,
-                service.ExecutedQuantity, service.BillingUnitSnapshot))
-            .ToArrayAsync(cancellationToken);
+        var evidence = core.EvidenceJson is null
+            ? await OperationSubmissionEvidence.CaptureAsync(
+                context, core.OperationInternalId, cancellationToken)
+            : OperationSubmissionEvidence.Parse(core.EvidenceJson);
         var answers = await (
             from answer in context.Set<ChecklistAnswer>().AsNoTracking()
             join item in context.Set<ChecklistTemplateItem>().AsNoTracking()
@@ -148,13 +157,6 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             select new OccReviewChecklistAnswerData(
                 item.SectionName, item.ItemCode, item.Label,
                 answer.Value.ToString(), answer.Note))
-            .ToArrayAsync(cancellationToken);
-        var incidents = await context.Incidents.AsNoTracking()
-            .Where(item => item.GroundOperationId == core.OperationInternalId)
-            .OrderBy(item => item.OccurredAt)
-            .Select(item => new OccReviewIncidentData(
-                item.PublicId, item.IncidentType, item.Severity.ToString(),
-                item.Status.ToString(), item.Description, item.OccurredAt))
             .ToArrayAsync(cancellationToken);
         var decision = await context.ReviewDecisions.AsNoTracking()
             .Where(item => item.OperationSubmissionId == core.SubmissionInternalId)
@@ -167,9 +169,9 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             core.Status.ToString(), core.OperationCode, core.OperationDate,
             core.StationId, core.StationCode, core.IanaTimeZone,
             core.AirlineName, core.AgentName.Trim(), core.PlannedStartAt,
-            core.PlannedEndAt, core.ActualStartAt, core.ActualEndAt,
+            core.PlannedEndAt, core.ActualStartAt, core.SubmittedAt,
             core.SubmittedAt, core.AgentNote, core.ChecklistStatus.ToString(),
-            answers, services, incidents, decision,
+            answers, evidence.Services, evidence.Incidents, decision,
             ConcurrencyToken(core.OperationId, core.RowVersion, core.SubmissionId, core.Status));
     }
 

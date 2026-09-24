@@ -54,7 +54,8 @@ VALUES
     (N'20260817202135_V1_04_Operations'),
     (N'20260817202420_V1_05_MobileAudit'),
     (N'20260916151935_V1_06_DevelopmentAccountCredentialRotation'),
-    (N'20260917161921_V1_07_DevelopmentHumanResourcesAccount');
+    (N'20260917161921_V1_07_DevelopmentHumanResourcesAccount'),
+    (N'20260924125214_V1_08_RampCorrectionRevisions');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
