@@ -8,6 +8,7 @@ export const STATUS_COLORS = {
 
 export const FLIGHT_STATUS_META = {
   scheduled: { label: 'Programado', color: 'info' },
+  actualRecorded: { label: 'Hora real registrada', color: 'success' },
   boarding: { label: 'Abordando', color: 'active' },
   taxiing: { label: 'Rodaje', color: 'active' },
   leftGate: { label: 'Salió de puerta', color: 'active' },
@@ -71,6 +72,8 @@ export const CHAT_CONVERSATION_STATUS_META = {
 };
 
 export const POSITION_STATUS_META = {
+  planned: { label: 'Planificada', color: 'info' },
+  unverified: { label: 'Sin ocupación verificada', color: 'warning' },
   available: { label: 'Libre', color: 'success' },
   occupied: { label: 'Ocupada', color: 'info' },
   disabled: { label: 'Inhabilitada', color: 'danger' },

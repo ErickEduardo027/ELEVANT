@@ -58,6 +58,9 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
                     "PendingReview", "DEV-TAT-0002", new DateOnly(2026, 9, 23),
                     "Demo Air", "Riley Ramp", SubmittedAt, 2, 1)], false),
             Detail = Detail(),
+            History = new OccReviewSubmissionHistoryData(OperationId,
+                [new OccReviewSubmissionHistoryItemData(SubmissionId, 1,
+                    "PendingReview", SubmittedAt, null, null)], false),
         };
         await using var application = CreateApplication(state);
         using var client = Authorized(application);
@@ -81,6 +84,16 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         Assert.Single(body.GetProperty("services").EnumerateArray());
         Assert.Single(body.GetProperty("incidents").EnumerateArray());
         Assert.Equal(Token, body.GetProperty("reviewVersion").GetString());
+        Assert.Equal([StationId], state.DetailStations);
+
+        using var history = await client.GetAsync(
+            $"/api/v1/occ/review/operations/{OperationId:D}/submissions",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, history.StatusCode);
+        var historyJson = await history.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(SubmissionId,
+            historyJson.GetProperty("submissions")[0].GetProperty("submissionId").GetGuid());
         Assert.Equal([StationId], state.DetailStations);
 
         using var historical = await client.GetAsync(
@@ -132,6 +145,9 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         var paths = document.GetProperty("paths");
         Assert.True(paths.GetProperty("/api/v1/occ/review/queue").TryGetProperty("get", out _));
         Assert.True(paths.GetProperty("/api/v1/occ/review/operations/{operationId}")
+            .TryGetProperty("get", out _));
+        Assert.True(paths.GetProperty(
+            "/api/v1/occ/review/operations/{operationId}/submissions")
             .TryGetProperty("get", out _));
         Assert.True(paths.GetProperty(
             "/api/v1/occ/review/operations/{operationId}/submissions/{submissionId}")
@@ -218,6 +234,7 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         public ActorContext? Actor { get; init; }
         public OccReviewQueueData? Queue { get; init; }
         public OccReviewDetailData? Detail { get; init; }
+        public OccReviewSubmissionHistoryData? History { get; init; }
         public OccReviewDecisionWriteResult DecisionResult { get; init; } =
             OccReviewDecisionWriteResult.Failed(OccReviewFailure.Conflict);
         public int QueueReads { get; private set; }
@@ -248,6 +265,14 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
         {
             DetailStations = allowedStationIds;
             return Task.FromResult(Detail?.SubmissionId == submissionId ? Detail : null);
+        }
+
+        public Task<OccReviewSubmissionHistoryData?> GetSubmissionHistoryAsync(
+            Guid operationId, IReadOnlyCollection<Guid> allowedStationIds,
+            CancellationToken cancellationToken = default)
+        {
+            DetailStations = allowedStationIds;
+            return Task.FromResult(History?.OperationId == operationId ? History : null);
         }
 
         public Task<OccReviewDecisionWriteResult> DecideAsync(

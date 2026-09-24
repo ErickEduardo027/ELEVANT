@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Map as MaplibreMap, NavigationControl, AttributionControl, LngLatBounds } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PUJ_COORDINATES } from '../positionsMapMappers';
@@ -29,6 +29,7 @@ function boundsFromPositions(positions) {
 }
 
 const PositionMap = forwardRef(function PositionMap({ positions, selectedPositionId, onSelectPosition, theme, viewMode }, ref) {
+  const [mapUnavailable, setMapUnavailable] = useState(false);
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const detachLayersRef = useRef(() => {});
@@ -45,7 +46,11 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
   viewModeRef.current = viewMode;
 
   useEffect(() => {
-    const map = new MaplibreMap({
+    let map;
+    let ready = false;
+    let disposed = false;
+    try {
+      map = new MaplibreMap({
       container: containerRef.current,
       style: STYLE_URLS[theme] ?? STYLE_URLS.light,
       center: [PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude],
@@ -53,7 +58,24 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
       pitch: viewModeRef.current === '3d' ? PITCH_3D : 0,
       bearing: viewModeRef.current === '3d' ? BEARING_3D : 0,
       attributionControl: false,
-    });
+      });
+    } catch {
+      setMapUnavailable(true);
+      return undefined;
+    }
+    const timeout = setTimeout(() => {
+      if (!ready && !disposed) setMapUnavailable(true);
+    }, 8000);
+    const handleIdle = () => {
+      ready = true;
+      clearTimeout(timeout);
+      if (!disposed) setMapUnavailable(false);
+    };
+    const handleError = () => {
+      if (!ready && !disposed) setMapUnavailable(true);
+    };
+    map.on('idle', handleIdle);
+    map.on('error', handleError);
     map.addControl(new NavigationControl(), 'top-right');
     map.addControl(new AttributionControl({ compact: true, customAttribution: OSM_ATTRIBUTION }), 'bottom-right');
 
@@ -77,6 +99,10 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
     mapRef.current = map;
 
     return () => {
+      disposed = true;
+      clearTimeout(timeout);
+      map.off('idle', handleIdle);
+      map.off('error', handleError);
       map.off('style.load', setupLayers);
       detachLayersRef.current();
       map.remove();
@@ -150,6 +176,16 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
   return (
     <div className="relative h-full w-full overflow-hidden rounded-2xl">
       <div ref={containerRef} data-testid="position-map-container" className="h-full w-full" />
+      {mapUnavailable && <div role="alert" className="absolute inset-0 z-20 overflow-y-auto bg-white/95 p-5 text-ink-900 dark:bg-surface-dark-card/95 dark:text-text-primary-dark">
+        <h3 className="text-base font-semibold">La cartografía no está disponible</h3>
+        <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Puedes consultar y seleccionar las posiciones desde esta lista mientras se restablece el mapa base.</p>
+        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-7">{positions.map(position =>
+          <button key={position.id} type="button" onClick={() => onSelectPosition(position.id)}
+            aria-pressed={position.id === selectedPositionId}
+            className="min-h-11 rounded-lg border border-accent-600/30 px-2 py-2 text-sm font-semibold hover:bg-accent-600/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-600">
+            {position.id}
+          </button>)}</div>
+      </div>}
     </div>
   );
 });

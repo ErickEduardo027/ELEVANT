@@ -67,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationSubmissionStore, EfRampOperationSubmissionStore>();
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();
+        services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
 
         services
             .AddHealthChecks()

@@ -38,6 +38,24 @@ public sealed record OccReviewQueueResult(OccReviewQueueData? Queue, OccReviewFa
     public static OccReviewQueueResult Failed(OccReviewFailure failure) => new(null, failure);
 }
 
+public sealed record OccReviewSubmissionHistoryItemData(
+    Guid SubmissionId, int RevisionNumber, string Status,
+    DateTimeOffset SubmittedAt, string? Outcome, DateTimeOffset? DecidedAt);
+
+public sealed record OccReviewSubmissionHistoryData(
+    Guid OperationId, IReadOnlyList<OccReviewSubmissionHistoryItemData> Submissions,
+    bool HasMore);
+
+public sealed record OccReviewSubmissionHistoryResult(
+    OccReviewSubmissionHistoryData? History, OccReviewFailure? Failure)
+{
+    public bool IsSuccess => History is not null && Failure is null;
+    public static OccReviewSubmissionHistoryResult Success(
+        OccReviewSubmissionHistoryData value) => new(value, null);
+    public static OccReviewSubmissionHistoryResult Failed(
+        OccReviewFailure failure) => new(null, failure);
+}
+
 public sealed record OccReviewServiceData(
     Guid Id, string Code, string Name, string Status,
     decimal ContractedQuantity, decimal ExecutedQuantity, string Unit);

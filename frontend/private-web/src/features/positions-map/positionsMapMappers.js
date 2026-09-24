@@ -43,7 +43,7 @@ export function computePositionsSummary(positions) {
       summary[position.status] = (summary[position.status] ?? 0) + 1;
       return summary;
     },
-    { total: 0, available: 0, occupied: 0, disabled: 0, releasing: 0 }
+    { total: 0, planned: 0, unverified: 0, available: 0, occupied: 0, disabled: 0, releasing: 0 }
   );
 }
 

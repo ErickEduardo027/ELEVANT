@@ -21,6 +21,7 @@ const RAMP_OPERATION_SUBMIT_COMMAND_PREFIX =
 const RAMP_CORRECTION_COMMAND_PREFIX =
   'elevant:mobile:ramp-correction-command:v1:';
 const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
+const OPERATION_CHAT_COMMAND_PREFIX = 'elevant:mobile:operation-chat-command:v1:';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
 
@@ -86,6 +87,10 @@ export type CurrentMobileCacheWrite =
 
 export type CurrentRampStartCommand =
   | Readonly<{ kind: 'current'; idempotencyKey: string }>
+  | Readonly<{ kind: 'not-current' }>;
+
+export type CurrentOperationChatCommand =
+  | Readonly<{ kind: 'current'; command: Readonly<{ idempotencyKey: string; content: string }> | null }>
   | Readonly<{ kind: 'not-current' }>;
 
 export type CurrentRampExecutionValue =
@@ -273,7 +278,8 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
       key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
       key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_CORRECTION_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX),
+      key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX) ||
+      key.startsWith(OPERATION_CHAT_COMMAND_PREFIX),
   );
 }
 
@@ -453,6 +459,11 @@ function rampStartCommandKey(accountId: string, operationId: string) {
   }
 
   return `${RAMP_START_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
+function operationChatCommandKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${OPERATION_CHAT_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
 }
 
 function rampChecklistDraftKey(
@@ -777,6 +788,80 @@ export async function getOrCreateRampStartCommandIfCurrent(
       const idempotencyKey = Crypto.randomUUID().toLowerCase();
       await AsyncStorage.setItem(key, idempotencyKey);
       return { kind: 'current', idempotencyKey };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function reserveOperationChatCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string, content: string,
+): Promise<CurrentOperationChatCommand> {
+  const key = operationChatCommandKey(accountId, operationId);
+  if (content.trim().length === 0 || content.length > 2_000) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const stored = await AsyncStorage.getItem(key);
+      if (stored !== null) {
+        const parsed = parseJson(stored);
+        if (!isRecord(parsed) || !hasExactKeys(parsed, ['idempotencyKey', 'content']) ||
+            !isUuid(parsed.idempotencyKey) || typeof parsed.content !== 'string' ||
+            parsed.content.length === 0 || parsed.content.length > 2_000)
+          throw new MobileSessionStorageError();
+        return { kind: 'current', command: {
+          idempotencyKey: parsed.idempotencyKey.toLowerCase(), content: parsed.content,
+        } };
+      }
+      const command = { idempotencyKey: Crypto.randomUUID().toLowerCase(), content: content.trim() };
+      await AsyncStorage.setItem(key, JSON.stringify(command));
+      return { kind: 'current', command };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function readOperationChatCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string,
+): Promise<CurrentOperationChatCommand> {
+  const key = operationChatCommandKey(accountId, operationId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const stored = await AsyncStorage.getItem(key);
+      if (stored === null) return { kind: 'current', command: null };
+      const parsed = parseJson(stored);
+      if (!isRecord(parsed) || !hasExactKeys(parsed, ['idempotencyKey', 'content']) ||
+          !isUuid(parsed.idempotencyKey) || typeof parsed.content !== 'string' ||
+          parsed.content.length === 0 || parsed.content.length > 2_000)
+        throw new MobileSessionStorageError();
+      return { kind: 'current', command: {
+        idempotencyKey: parsed.idempotencyKey.toLowerCase(), content: parsed.content,
+      } };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export async function clearOperationChatCommandIfCurrent(
+  sessionId: string, accountId: string, operationId: string, idempotencyKey: string,
+): Promise<'cleared' | 'changed' | 'not-current'> {
+  const key = operationChatCommandKey(accountId, operationId);
+  if (!isUuid(idempotencyKey)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return 'not-current';
+      const stored = await AsyncStorage.getItem(key);
+      if (stored === null) return 'cleared';
+      const parsed = parseJson(stored);
+      if (!isRecord(parsed) || parsed.idempotencyKey !== idempotencyKey.toLowerCase()) return 'changed';
+      await AsyncStorage.removeItem(key);
+      return 'cleared';
     } catch (error) {
       if (error instanceof MobileSessionStorageError) throw error;
       throw new MobileSessionStorageError();

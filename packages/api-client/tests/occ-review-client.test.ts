@@ -3,6 +3,7 @@ import {
   createElevantApiClient,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
+  type OccReviewSubmissionHistoryResponse,
   type DecideOccReviewResponse,
 } from "../src";
 
@@ -34,6 +35,11 @@ const detail: OccReviewDetailResponse = {
 const decision: DecideOccReviewResponse = {
   operationId, submissionId, status: "Returned", outcome: "Returned",
   decidedAt: "2026-09-23T12:05:00.000Z", reason: "Corregir el servicio",
+};
+const history: OccReviewSubmissionHistoryResponse = {
+  operationId, hasMore: false,
+  submissions: [{ submissionId, revisionNumber: 1, status: "Returned",
+    submittedAt, outcome: "Returned", decidedAt: "2026-09-23T12:05:00.000Z" }],
 };
 
 function json(body: unknown, headers: HeadersInit = {}) {
@@ -94,6 +100,23 @@ describe("OCC review API client", () => {
       `https://api.example.test/api/v1/occ/review/operations/${operationId}/submissions/${submissionId}`,
     ]);
     await expect(client.getOccReviewSubmissionDetail(operationId, crypto.randomUUID()))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
+  it("loads scoped immutable revision history and rejects malformed revisions", async () => {
+    const paths: string[] = [];
+    let result: unknown = history;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async (input) => { paths.push(String(input)); return json(result); },
+    });
+    await expect(client.getOccReviewSubmissionHistory(operationId)).resolves.toEqual(history);
+    expect(paths).toEqual([
+      `https://api.example.test/api/v1/occ/review/operations/${operationId}/submissions`,
+    ]);
+    result = { ...history, submissions: [history.submissions[0], history.submissions[0]] };
+    await expect(client.getOccReviewSubmissionHistory(operationId))
       .rejects.toMatchObject({ kind: "malformed-response" });
   });
 

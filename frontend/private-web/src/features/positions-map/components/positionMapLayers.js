@@ -94,6 +94,10 @@ export function attachPositionsLayers(map, { positions, selectedPositionId, onSe
         'icon-image': [
           'match',
           ['get', 'status'],
+          'planned',
+          POSITION_ICON_KEYS.planned,
+          'unverified',
+          POSITION_ICON_KEYS.unverified,
           'occupied',
           POSITION_ICON_KEYS.occupied,
           'disabled',

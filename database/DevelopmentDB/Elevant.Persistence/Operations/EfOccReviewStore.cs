@@ -90,6 +90,46 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         CancellationToken cancellationToken = default) =>
         await GetDetailCoreAsync(operationId, submissionId, allowedStationIds, cancellationToken);
 
+    public async Task<OccReviewSubmissionHistoryData?> GetSubmissionHistoryAsync(
+        Guid operationId, IReadOnlyCollection<Guid> allowedStationIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (allowedStationIds.Count == 0) return null;
+        var rows = await (
+            from operation in context.GroundOperations.AsNoTracking()
+            join turnaround in context.Turnarounds.AsNoTracking()
+                on operation.TurnaroundId equals turnaround.Id
+            join station in context.Stations.AsNoTracking()
+                on turnaround.StationId equals station.Id
+            join submission in context.OperationSubmissions.AsNoTracking()
+                on operation.Id equals submission.GroundOperationId
+            join decisionRow in context.ReviewDecisions.AsNoTracking()
+                on submission.Id equals decisionRow.OperationSubmissionId into decisions
+            from decision in decisions.DefaultIfEmpty()
+            where operation.PublicId == operationId && station.IsActive &&
+                  allowedStationIds.Contains(station.PublicId)
+            orderby submission.RevisionNumber descending
+            select new
+            {
+                submission.PublicId,
+                submission.RevisionNumber,
+                submission.Status,
+                submission.SubmittedAt,
+                Outcome = decision == null ? (ReviewOutcome?)null : decision.Outcome,
+                DecidedAt = decision == null ? (DateTimeOffset?)null : decision.DecidedAt,
+            })
+            .Take(QueueLimit + 1)
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length == 0) return null;
+        return new OccReviewSubmissionHistoryData(
+            operationId,
+            rows.Take(QueueLimit).Select(row => new OccReviewSubmissionHistoryItemData(
+                row.PublicId, row.RevisionNumber, row.Status.ToString(),
+                row.SubmittedAt, row.Outcome?.ToString(), row.DecidedAt)).ToArray(),
+            rows.Length > QueueLimit);
+    }
+
     private async Task<OccReviewDetailData?> GetDetailCoreAsync(
         Guid operationId, Guid? submissionId, IReadOnlyCollection<Guid> allowedStationIds,
         CancellationToken cancellationToken)
@@ -299,7 +339,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         latest.Status = outcome == ReviewOutcome.Approved
             ? SubmissionStatus.Approved : SubmissionStatus.Returned;
         latest.UpdatedAt = now;
-        context.ReviewDecisions.Add(new ReviewDecision
+        var reviewDecision = new ReviewDecision
         {
             PublicId = Guid.CreateVersion7(),
             OperationSubmissionId = latest.Id,
@@ -309,7 +349,13 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             Reason = request.Reason,
             CreatedAt = now,
             UpdatedAt = now,
-        });
+        };
+        context.ReviewDecisions.Add(reviewDecision);
+        await OperationalNotificationWriter.NotifyAgentAsync(
+            context, latest.SubmittedByRampAgentId, scope.StationId,
+            operation.Id, reviewDecision.PublicId,
+            outcome == ReviewOutcome.Approved ? "operation_approved" : "operation_returned",
+            now, cancellationToken);
         context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
         {
             GroundOperationId = operation.Id,

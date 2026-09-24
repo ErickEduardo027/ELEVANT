@@ -5,7 +5,7 @@ export function isStationRelated(flight, stationCode = 'PUJ') {
 }
 
 export function extractDateFromIso(iso) {
-  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  const match = iso?.match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : '';
 }
 
@@ -40,7 +40,7 @@ function uniqueSorted(values) {
 
 export function getFilterOptions(flights) {
   return {
-    dates: uniqueSorted(flights.map(flight => extractDateFromIso(flight.eta))),
+    dates: uniqueSorted(flights.map(flight => extractDateFromIso(flight.eta ?? flight.etd))),
     airlines: uniqueSorted(flights.map(flight => flight.airline)),
     statuses: uniqueSorted(flights.map(flight => flight.status)),
     origins: uniqueSorted(flights.map(flight => flight.origin)),
@@ -49,6 +49,7 @@ export function getFilterOptions(flights) {
 }
 
 export function formatRemaining(etaIso, nowIso) {
+  if (!etaIso) return '—';
   const diffMinutes = Math.round((new Date(etaIso).getTime() - new Date(nowIso).getTime()) / 60000);
   if (diffMinutes === 0) return 'Ahora';
   if (diffMinutes > 0) return `En ${diffMinutes} min`;

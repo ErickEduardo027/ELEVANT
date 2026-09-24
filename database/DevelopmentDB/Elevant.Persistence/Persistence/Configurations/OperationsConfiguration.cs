@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Entities.Workforce;
@@ -356,6 +357,33 @@ internal static class OperationsConfiguration
             builder.HasIndex(decision => decision.OperationSubmissionId).IsUnique();
             AddReference<OperationSubmission, ReviewDecision>(builder, decision => decision.OperationSubmissionId);
             AddReference<ApplicationUser, ReviewDecision>(builder, decision => decision.ReviewerAccountId);
+        });
+
+        modelBuilder.Entity<OperationMessage>(builder =>
+        {
+            builder.ToTable("operation_messages", "ops", table =>
+                table.HasCheckConstraint("ck_operation_message_content", "LEN([content]) BETWEEN 1 AND 2000"));
+            builder.Property(message => message.SenderRole).HasMaxLength(16).IsRequired();
+            builder.Property(message => message.Content).HasMaxLength(2000).IsRequired();
+            builder.Property(message => message.SentAt).HasPrecision(3);
+            builder.HasIndex(message => new { message.GroundOperationId, message.SentAt });
+            builder.HasIndex(message => new { message.SenderAccountId, message.ClientMessageId }).IsUnique();
+            AddReference<GroundOperation, OperationMessage>(builder, message => message.GroundOperationId);
+            AddReference<ApplicationUser, OperationMessage>(builder, message => message.SenderAccountId);
+            AddReference<MobileDevice, OperationMessage>(builder, message => message.MobileDeviceId);
+        });
+
+        modelBuilder.Entity<OperationalNotification>(builder =>
+        {
+            builder.ToTable("operational_notifications", "ops");
+            builder.Property(notification => notification.Kind).HasMaxLength(40).IsRequired();
+            builder.Property(notification => notification.OccurredAt).HasPrecision(3);
+            builder.Property(notification => notification.ReadAt).HasPrecision(3);
+            builder.HasIndex(notification => new { notification.RecipientAccountId, notification.OccurredAt });
+            builder.HasIndex(notification => new { notification.RecipientAccountId, notification.Kind, notification.SourceId }).IsUnique();
+            AddReference<ApplicationUser, OperationalNotification>(builder, notification => notification.RecipientAccountId);
+            AddReference<Station, OperationalNotification>(builder, notification => notification.StationId);
+            AddReference<GroundOperation, OperationalNotification>(builder, notification => notification.GroundOperationId);
         });
     }
 

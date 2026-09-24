@@ -15,6 +15,10 @@ public interface IOccReviewStore
         Guid operationId, Guid submissionId, IReadOnlyCollection<Guid> allowedStationIds,
         CancellationToken cancellationToken = default);
 
+    Task<OccReviewSubmissionHistoryData?> GetSubmissionHistoryAsync(
+        Guid operationId, IReadOnlyCollection<Guid> allowedStationIds,
+        CancellationToken cancellationToken = default);
+
     Task<OccReviewDecisionWriteResult> DecideAsync(
         OccReviewDecisionWriteRequest request, CancellationToken cancellationToken = default);
 }

@@ -1023,13 +1023,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "55c8d21c662f4bc7b13f9065c0877bb4c52d7bcc531e70df2dde672be5e154db",
+        "sha256": "bf4e68b28924406e3234b07a0ed36a8621a4b696ef847e7af1932c4dabb87a93",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "eed5e8369a4d97035b88da7e7d46107e7e0a442d111cbc456532954e55bbbc7e",
+        "sha256": "9bae38d6bb36013da03657a4aa29c20966ae5be4dfbf5d483691ac2437e13405",
         "title": null,
         "version": null
       }
@@ -1082,6 +1082,12 @@
         "name": "V1_08_RampCorrectionRevisions",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260924125214_V1_08_RampCorrectionRevisions.cs",
         "sha256": "a9a901853e3fc15f9af302668afec160a2836b728c74445039cbe8fbfab128db"
+      },
+      {
+        "id": "20260924145534",
+        "name": "V1_09_OperationalCommunication",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260924145534_V1_09_OperationalCommunication.cs",
+        "sha256": "353db3a96f3c433f15fc2d6ffefec7f15d6409a38e746e01b5a40a9eb79466d2"
       }
     ],
     "manifestContracts": [

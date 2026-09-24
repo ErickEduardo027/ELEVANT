@@ -2333,6 +2333,93 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("ClientMessageId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("client_message_id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("GroundOperationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ground_operation_id");
+
+                    b.Property<long?>("MobileDeviceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("mobile_device_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("SenderAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sender_account_id");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("sender_role");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("sent_at");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MobileDeviceId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("GroundOperationId", "SentAt");
+
+                    b.HasIndex("SenderAccountId", "ClientMessageId")
+                        .IsUnique();
+
+                    b.ToTable("operation_messages", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_operation_message_content", "LEN([content]) BETWEEN 1 AND 2000");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMilestone", b =>
                 {
                     b.Property<long>("Id")
@@ -2663,6 +2750,91 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_operation_submission_revision", "[revision_number] > 0");
                         });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationalNotification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("GroundOperationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ground_operation_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("read_at");
+
+                    b.Property<long>("RecipientAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("recipient_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("source_id");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroundOperationId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("RecipientAccountId", "OccurredAt");
+
+                    b.HasIndex("RecipientAccountId", "Kind", "SourceId")
+                        .IsUnique();
+
+                    b.ToTable("operational_notifications", "ops");
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationalServiceRequest", b =>
@@ -5263,6 +5435,26 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMessage", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
+                        .WithMany()
+                        .HasForeignKey("GroundOperationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Integration.MobileDevice", null)
+                        .WithMany()
+                        .HasForeignKey("MobileDeviceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SenderAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMilestone", b =>
                 {
                     b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
@@ -5323,6 +5515,27 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()
                         .HasForeignKey("SubmittedByRampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationalNotification", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
+                        .WithMany()
+                        .HasForeignKey("GroundOperationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

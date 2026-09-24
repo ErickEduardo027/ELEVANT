@@ -74,7 +74,7 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
   });
 
-  it('shows the empty state instead of the list when the snapshot has no flights, while the map still renders', () => {
+  it('shows the empty state and explains the absence of telemetry when there are no flights', () => {
     render(
       <FlightMonitoringPage
         status="success"
@@ -86,7 +86,7 @@ describe('FlightMonitoringPage', () => {
       />
     );
     expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
-    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
+    expect(screen.getByText(/La posición en vivo no está disponible/)).toBeInTheDocument();
   });
 
   it('selects a flight when its list item is clicked, opening the detail popover and passing the id to the map', async () => {

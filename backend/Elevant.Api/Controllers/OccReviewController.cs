@@ -69,6 +69,30 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
         return Ok(MapDetail(detail));
     }
 
+    /// <summary>Lists immutable handoff revisions for one scoped operation, newest first.</summary>
+    [HttpGet("operations/{operationId:guid}/submissions", Name = "GetOccReviewSubmissionHistory")]
+    [ProducesResponseType<OccReviewSubmissionHistoryResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccReviewSubmissionHistoryResponse>> GetSubmissionHistory(
+        [FromRoute] Guid operationId, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId))
+            return UnauthorizedResult<OccReviewSubmissionHistoryResponse>();
+        var result = await handler.GetSubmissionHistoryAsync(
+            accountId, operationId, cancellationToken);
+        if (!result.IsSuccess)
+            return FailureResult<OccReviewSubmissionHistoryResponse>(result.Failure!.Value);
+        var history = result.History!;
+        return Ok(new OccReviewSubmissionHistoryResponse(
+            history.OperationId,
+            history.Submissions.Select(item => new OccReviewSubmissionHistoryItemResponse(
+                item.SubmissionId, item.RevisionNumber, item.Status,
+                item.SubmittedAt, item.Outcome, item.DecidedAt)).ToArray(),
+            history.HasMore));
+    }
+
     /// <summary>Reads one immutable historical handoff, including its review decision.</summary>
     [HttpGet("operations/{operationId:guid}/submissions/{submissionId:guid}",
         Name = "GetOccReviewSubmissionDetail")]

@@ -9,6 +9,8 @@
 // única fuente de verdad geográfica compartida con el preview del Dashboard. Este adaptador solo
 // añade el estado operativo (mock) sobre esas coordenadas — no las modifica ni las reinventa.
 import { RAMP_POSITIONS } from '../features/dashboard/positionsData';
+import { readSession } from '../features/auth/authService';
+import { getPlanningSnapshot } from './planningService';
 
 // --- Estado operativo inicial (mock) ---
 // Las únicas relaciones combinadas Alfa/Bravo son las declaradas aquí explícitamente:
@@ -131,6 +133,37 @@ function buildPosition(coords, overrides, nowIso) {
 }
 
 export async function getPositionsSnapshot(stationCode = 'PUJ') {
+  if (import.meta.env.MODE !== 'test') {
+    const stationScope = readSession()?.stationScopes?.find(scope => scope.stationCode === stationCode);
+    if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
+    const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
+    const plannedByStand = new Map(snapshot.turnarounds
+      .filter(turnaround => turnaround.stand?.code)
+      .map(turnaround => [turnaround.stand.code.toUpperCase(), turnaround]));
+    const nowIso = new Date().toISOString();
+    return {
+      station: { code: snapshot.station.code, localAbbr: 'AST' },
+      source: 'planning',
+      positions: RAMP_POSITIONS.map(coords => {
+        const planned = plannedByStand.get(coords.id);
+        return {
+          id: coords.id, terminal: coords.terminal,
+          latitude: coords.lat, longitude: coords.lon,
+          status: planned ? 'planned' : 'unverified',
+          flightId: planned?.arrival?.id ?? planned?.departure?.id ?? null,
+          flightNumber: planned?.arrival?.flightNumber ?? planned?.departure?.flightNumber ?? null,
+          airline: planned?.airline?.name ?? null,
+          aircraftRegistration: planned?.aircraft?.registration ?? null,
+          aircraftType: planned?.aircraft?.model ?? null,
+          assignedAgent: planned?.agents?.[0]?.displayName ?? null,
+          estimatedReleaseTime: null,
+          updatedAt: nowIso,
+          combinedConfiguration: null,
+          linkedPositionId: null,
+        };
+      }),
+    };
+  }
   const nowIso = new Date().toISOString();
   return {
     station: { code: stationCode, localAbbr: 'AST' },
@@ -158,6 +191,12 @@ const ACTIVATION_TICK = 2;
 const UPDATE_INTERVAL_MS = 6000;
 
 export function subscribeToPositionUpdates(onUpdate) {
+  if (import.meta.env.MODE !== 'test') {
+    const intervalId = setInterval(() => {
+      getPositionsSnapshot().then(snapshot => snapshot.positions.forEach(onUpdate)).catch(() => {});
+    }, 30000);
+    return () => clearInterval(intervalId);
+  }
   let tickCount = 0;
   let activated = false;
 

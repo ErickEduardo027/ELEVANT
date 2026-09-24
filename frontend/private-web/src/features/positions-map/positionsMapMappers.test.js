@@ -93,11 +93,11 @@ describe('computePositionsSummary', () => {
       position({ status: 'disabled' }),
       position({ status: 'releasing' }),
     ]);
-    expect(summary).toEqual({ total: 5, available: 2, occupied: 1, disabled: 1, releasing: 1 });
+    expect(summary).toEqual({ total: 5, planned: 0, unverified: 0, available: 2, occupied: 1, disabled: 1, releasing: 1 });
   });
 
   it('returns all-zero totals for an empty list', () => {
-    expect(computePositionsSummary([])).toEqual({ total: 0, available: 0, occupied: 0, disabled: 0, releasing: 0 });
+    expect(computePositionsSummary([])).toEqual({ total: 0, planned: 0, unverified: 0, available: 0, occupied: 0, disabled: 0, releasing: 0 });
   });
 });
 

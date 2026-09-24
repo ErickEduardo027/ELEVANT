@@ -53,9 +53,9 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
 
       <dl className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
         <dt>ETA</dt>
-        <dd>{formatClockTime(flight.eta)}</dd>
+        <dd>{flight.eta ? formatClockTime(flight.eta) : '—'}</dd>
         <dt>ETD</dt>
-        <dd>{formatClockTime(flight.etd)}</dd>
+        <dd>{flight.etd ? formatClockTime(flight.etd) : '—'}</dd>
         <dt>Hora real</dt>
         <dd>
           {flight.actualArrival ?? flight.actualDeparture
@@ -63,11 +63,11 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
             : 'Pendiente'}
         </dd>
         <dt>Altitud</dt>
-        <dd>{flight.altitude.toLocaleString('en-US')} ft</dd>
+        <dd>{flight.altitude == null ? 'Sin telemetría' : `${flight.altitude.toLocaleString('en-US')} ft`}</dd>
         <dt>Velocidad</dt>
-        <dd>{flight.speed} kt</dd>
+        <dd>{flight.speed == null ? '—' : `${flight.speed} kt`}</dd>
         <dt>Heading</dt>
-        <dd>{flight.heading}°</dd>
+        <dd>{flight.heading == null ? '—' : `${flight.heading}°`}</dd>
         <dt>Stand</dt>
         <dd>{flight.stand ?? 'Sin asignar'}</dd>
         <dt>Supervisor</dt>
@@ -75,7 +75,7 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
         <dt>Agentes</dt>
         <dd>{flight.agents}</dd>
         <dt>Tiempo restante</dt>
-        <dd>{formatRemaining(flight.eta, now)}</dd>
+        <dd>{formatRemaining(flight.eta ?? flight.etd, now)}</dd>
       </dl>
 
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
