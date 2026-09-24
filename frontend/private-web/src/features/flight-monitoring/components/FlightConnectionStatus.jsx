@@ -7,8 +7,11 @@ const STATUS_META = {
   disconnected: { title: 'FlyAware desconectado', colorClass: 'text-status-danger', dotClass: 'bg-status-danger' },
 };
 
-export default function FlightConnectionStatus({ connection, lastUpdatedAt, onRefresh }) {
+export default function FlightConnectionStatus({ source, connection, lastUpdatedAt, onRefresh }) {
   const meta = STATUS_META[connection] ?? STATUS_META.disconnected;
+  const title = source === 'planning'
+    ? { connected: 'API operativa conectada', syncing: 'API operativa sincronizando', disconnected: 'API operativa desconectada' }[connection]
+    : meta.title;
   const Icon = connection === 'disconnected' ? AlertTriangleIcon : RefreshCwIcon;
 
   return (
@@ -20,7 +23,7 @@ export default function FlightConnectionStatus({ connection, lastUpdatedAt, onRe
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dotClass}`} aria-hidden="true" />
       <Icon className={`h-4 w-4 shrink-0 ${meta.colorClass}`} />
-      <span className={`text-sm font-medium ${meta.colorClass}`}>{meta.title}</span>
+      <span className={`text-sm font-medium ${meta.colorClass}`}>{title}</span>
       <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
         {lastUpdatedAt ? `Última actualización ${formatClockTime(lastUpdatedAt)}` : 'Sin actualizaciones aún'}
       </span>

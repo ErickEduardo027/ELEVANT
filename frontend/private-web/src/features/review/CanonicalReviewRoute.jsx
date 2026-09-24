@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import {
   decideOccReview, loadOccReviewDetail, loadOccReviewQueue,
+  loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
 } from '../../services/occReviewService';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,6 +78,67 @@ function ReviewEvidence({ detail }) {
       </section>
     </div>
   );
+}
+
+function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
+  const [history, setHistory] = useState({ status: 'loading', data: null, error: null });
+  const [selectedId, setSelectedId] = useState(null);
+  const [selected, setSelected] = useState({ status: 'idle', data: null, error: null });
+  const [retryVersion, setRetryVersion] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setHistory({ status: 'loading', data: null, error: null });
+    loadOccReviewSubmissionHistory(operationId, { signal: controller.signal })
+      .then(data => {
+        if (!controller.signal.aborted) setHistory({ status: 'success', data, error: null });
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) setHistory({ status: 'error', data: null, error });
+      });
+    return () => controller.abort();
+  }, [operationId, retryVersion]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelected({ status: 'idle', data: null, error: null });
+      return undefined;
+    }
+    const controller = new AbortController();
+    setSelected({ status: 'loading', data: null, error: null });
+    loadOccReviewSubmissionDetail(operationId, selectedId, { signal: controller.signal })
+      .then(data => {
+        if (!controller.signal.aborted) setSelected({ status: 'success', data, error: null });
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) setSelected({ status: 'error', data: null, error });
+      });
+    return () => controller.abort();
+  }, [operationId, selectedId]);
+
+  return <section aria-label="Historial de entregas" className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
+    <h3 className="font-semibold">Historial de entregas</h3>
+    {history.status === 'loading' && <p role="status" className="text-sm">Cargando revisiones…</p>}
+    {history.status === 'error' && <Notice title="No se pudo cargar el historial." onRetry={() => setRetryVersion(value => value + 1)}>{history.error?.message}</Notice>}
+    {history.status === 'success' && <>
+      {history.data.hasMore && <p role="status" className="text-sm">Se muestran las 100 revisiones más recientes; las anteriores permanecen conservadas.</p>}
+      <div className="flex flex-wrap gap-2">{history.data.submissions.map(item =>
+        <button key={item.submissionId} type="button" disabled={item.submissionId === currentSubmissionId}
+          onClick={() => setSelectedId(item.submissionId === selectedId ? null : item.submissionId)}
+          aria-pressed={selectedId === item.submissionId}
+          className="min-h-11 rounded-lg border border-accent-600/40 px-3 py-2 text-sm disabled:cursor-default disabled:opacity-60">
+          Revisión {item.revisionNumber} · {STATUS_LABELS[item.status] ?? item.status}
+          {item.submissionId === currentSubmissionId ? ' (actual)' : ''}
+        </button>)}</div>
+    </>}
+    {selected.status === 'loading' && <p role="status">Cargando entrega histórica…</p>}
+    {selected.status === 'error' && <Notice title="No se pudo cargar la revisión histórica.">{selected.error?.message}</Notice>}
+    {selected.status === 'success' && <div className="space-y-3 rounded-xl bg-accent-600/5 p-4">
+      <p className="font-semibold">Revisión {selected.data.revisionNumber} · {dateTime(selected.data.submittedAt, timeZone)}</p>
+      {selected.data.decision && <p className="text-sm">Decisión: {STATUS_LABELS[selected.data.decision.outcome] ?? selected.data.decision.outcome}{selected.data.decision.reason ? ` — ${selected.data.decision.reason}` : ''}</p>}
+      <ReviewEvidence detail={selected.data} />
+    </div>}
+  </section>;
 }
 
 function ReviewStation({ stationId, selectedId, onSelectOperation }) {
@@ -205,6 +267,7 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
           <div className="grid gap-2 text-sm sm:grid-cols-2"><p>Inicio previsto: {dateTime(detail.data.plannedStartAt, detail.data.ianaTimeZone)}<br />Inicio real: {dateTime(detail.data.actualStartAt, detail.data.ianaTimeZone)}</p><p>Fin previsto: {dateTime(detail.data.plannedEndAt, detail.data.ianaTimeZone)}<br />Fin real: {dateTime(detail.data.actualEndAt, detail.data.ianaTimeZone)}</p></div>
           {detail.data.agentNote && <p className="rounded-xl bg-accent-600/10 p-3 text-sm"><strong>Nota del agente:</strong> {detail.data.agentNote}</p>}
           <ReviewEvidence detail={detail.data} />
+          <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
           {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">Decisión: <strong>{STATUS_LABELS[detail.data.decision.outcome] ?? detail.data.decision.outcome}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
           {detail.data.status === 'PendingReview' && <div className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">
             <p className="text-sm">Revisa los datos antes de aprobar o devolver esta entrega. Cada decisión afecta una sola operación.</p>

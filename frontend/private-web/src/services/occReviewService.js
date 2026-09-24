@@ -65,6 +65,22 @@ export async function loadOccReviewDetail(operationId, { signal } = {}) {
   }
 }
 
+export async function loadOccReviewSubmissionHistory(operationId, { signal } = {}) {
+  try {
+    return await client().getOccReviewSubmissionHistory(operationId, { signal });
+  } catch (error) {
+    throw safeError(error, 'history');
+  }
+}
+
+export async function loadOccReviewSubmissionDetail(operationId, submissionId, { signal } = {}) {
+  try {
+    return await client().getOccReviewSubmissionDetail(operationId, submissionId, { signal });
+  } catch (error) {
+    throw safeError(error, 'history');
+  }
+}
+
 export async function decideOccReview(operationId, request, etag, { signal } = {}) {
   try {
     return await client().decideOccReview(operationId, request, etag, { signal });

@@ -5,11 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(), queue: vi.fn(), detail: vi.fn(), decide: vi.fn(),
+  history: vi.fn(), submission: vi.fn(),
 }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
 vi.mock('../../services/occReviewService', () => ({
   loadOccReviewQueue: mocks.queue,
   loadOccReviewDetail: mocks.detail,
+  loadOccReviewSubmissionHistory: mocks.history,
+  loadOccReviewSubmissionDetail: mocks.submission,
   decideOccReview: mocks.decide,
 }));
 
@@ -23,7 +26,7 @@ const queue = {
   stationId, stationCode: 'PUJ', stationName: 'Punta Cana',
   ianaTimeZone: 'America/Santo_Domingo', hasMore: false,
   operations: [{
-    operationId, submissionId, revisionNumber: 1, status: 'PendingReview',
+    operationId, submissionId, revisionNumber: 2, status: 'PendingReview',
     operationCode: 'DEV-TAT-001', operationDate: '2026-09-23', airlineName: 'Aerolinea',
     agentName: 'Agente Uno', submittedAt: '2026-09-23T15:00:00Z', serviceCount: 1,
     incidentCount: 1,
@@ -53,6 +56,17 @@ beforeEach(() => {
   } });
   mocks.queue.mockResolvedValue(queue);
   mocks.detail.mockResolvedValue(detail);
+  mocks.history.mockResolvedValue({ operationId, hasMore: false,
+    submissions: [
+      { submissionId, revisionNumber: 2, status: 'PendingReview', submittedAt: detail.submittedAt },
+      { submissionId: '70000000-0000-0000-0000-000000000020', revisionNumber: 1,
+        status: 'Returned', submittedAt: detail.submittedAt },
+    ],
+  });
+  mocks.submission.mockResolvedValue({ ...detail, revisionNumber: 1, status: 'Returned',
+    submissionId: '70000000-0000-0000-0000-000000000020',
+    decision: { outcome: 'Returned', reason: 'Falta evidencia anterior', decidedAt: detail.submittedAt },
+  });
   mocks.decide.mockResolvedValue({ operationId, submissionId, status: 'Approved', outcome: 'Approved' });
 });
 
@@ -80,6 +94,19 @@ describe('CanonicalReviewRoute', () => {
       { submissionId, outcome: 'Approved' }, detail.reviewVersion,
       expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(await screen.findByText('Entrega aprobada y registrada.')).toBeInTheDocument();
+  });
+
+  it('loads immutable earlier handoff evidence without permitting a decision on it', async () => {
+    const user = userEvent.setup();
+    renderRoute();
+    await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+    const history = await screen.findByRole('region', { name: 'Historial de entregas' });
+    await user.click(await within(history).findByRole('button', { name: /Revisión 1/ }));
+    expect(await within(history).findByText(/Falta evidencia anterior/)).toBeInTheDocument();
+    expect(mocks.submission).toHaveBeenCalledWith(operationId,
+      '70000000-0000-0000-0000-000000000020',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(within(history).queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
   });
 
   it('requires a meaningful correction and never sends a bulk decision', async () => {

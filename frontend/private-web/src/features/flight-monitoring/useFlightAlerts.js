@@ -63,7 +63,7 @@ export function useFlightAlerts(flights, connection) {
 
     enqueueToast(`toast-connection-${idCounterRef.current++}`, {
       kind: 'error',
-      message: 'FlyAware sin conexión — los datos no se están actualizando',
+      message: 'API operativa sin conexión — los datos no se están actualizando',
     });
   }, [connection]);
 

@@ -12,6 +12,14 @@ public sealed record OccReviewQueueResponse(
     Guid StationId, string StationCode, string StationName, string IanaTimeZone,
     IReadOnlyList<OccReviewQueueItemResponse> Operations, bool HasMore);
 
+public sealed record OccReviewSubmissionHistoryItemResponse(
+    Guid SubmissionId, int RevisionNumber, string Status,
+    DateTimeOffset SubmittedAt, string? Outcome, DateTimeOffset? DecidedAt);
+
+public sealed record OccReviewSubmissionHistoryResponse(
+    Guid OperationId, IReadOnlyList<OccReviewSubmissionHistoryItemResponse> Submissions,
+    bool HasMore);
+
 public sealed record OccReviewServiceResponse(
     Guid Id, string Code, string Name, string Status,
     decimal ContractedQuantity, decimal ExecutedQuantity, string Unit);

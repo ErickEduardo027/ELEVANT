@@ -4,7 +4,7 @@ import { extractDateFromIso, isStationRelated, matchesChip } from './flightMonit
 const INITIAL_FILTERS = { date: '', airline: '', status: '', origin: '', destination: '', search: '' };
 
 function matchesFilters(flight, filters) {
-  if (filters.date && extractDateFromIso(flight.eta) !== filters.date) return false;
+  if (filters.date && extractDateFromIso(flight.eta ?? flight.etd) !== filters.date) return false;
   if (filters.airline && flight.airline !== filters.airline) return false;
   if (filters.status && flight.status !== filters.status) return false;
   if (filters.origin && flight.origin !== filters.origin) return false;

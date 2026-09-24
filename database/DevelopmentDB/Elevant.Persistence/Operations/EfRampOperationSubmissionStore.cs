@@ -214,6 +214,10 @@ internal sealed class EfRampOperationSubmissionStore(
             UpdatedAt = now,
         };
         context.OperationSubmissions.Add(submission);
+        await OperationalNotificationWriter.NotifyOccAsync(
+            context, scope.StationInternalId, scope.Operation.Id,
+            submission.PublicId, "operation_submitted", now,
+            actor.AccountInternalId, cancellationToken);
 
         scope.Operation.CurrentStatus = GroundOperationStatus.PendingReview;
         scope.Operation.ActualEndAt = now;

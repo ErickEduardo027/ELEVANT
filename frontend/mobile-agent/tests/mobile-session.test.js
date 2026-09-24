@@ -45,6 +45,9 @@ const {
   getOrCreateRampServiceTransitionCommandIfCurrent,
   getOrCreateRampOperationSubmitCommandIfCurrent,
   getOrCreateRampStartCommandIfCurrent,
+  reserveOperationChatCommandIfCurrent,
+  readOperationChatCommandIfCurrent,
+  clearOperationChatCommandIfCurrent,
   readRampChecklistDraftIfCurrent,
   readRampChecklistSubmitCommandIfCurrent,
   readRampIncidentOutboxIfCurrent,
@@ -104,6 +107,23 @@ test('keeps only the compact credential envelope in SecureStore', async () => {
   });
   expect(metadataRaw).not.toContain(token);
   expect(JSON.parse(metadataRaw).metadata).toEqual(largeMetadata);
+});
+
+test('keeps one account-scoped chat command stable across retries and purges it on logout', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const first = await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, ' Puente listo ');
+  expect(first).toMatchObject({ kind: 'current', command: { content: 'Puente listo' } });
+  const retry = await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, 'texto distinto');
+  expect(retry).toEqual(first);
+  expect(await readOperationChatCommandIfCurrent(sessionId, ACCOUNT_B, OPERATION_A))
+    .toEqual({ kind: 'not-current' });
+  expect(await clearOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A,
+    first.command.idempotencyKey)).toBe('cleared');
+  expect(await readOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A))
+    .toEqual({ kind: 'current', command: null });
+  await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, 'Otro mensaje');
+  await clearStoredMobileSession();
+  expect([...mockAsyncData.keys()].some(key => key.startsWith('elevant:mobile:operation-chat-command:v1:'))).toBe(false);
 });
 
 test('prevents an old request from repopulating cache after account change', async () => {

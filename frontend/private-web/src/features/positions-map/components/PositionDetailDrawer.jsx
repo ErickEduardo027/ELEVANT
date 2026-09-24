@@ -72,12 +72,12 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
               <Field label="Matrícula">{position.aircraftRegistration}</Field>
               <Field label="Tipo de aeronave">{position.aircraftType}</Field>
               <Field label="Agente">{position.assignedAgent ?? 'Sin asignar'}</Field>
-              <Field label="Hora estimada de liberación">
+              <Field label={position.status === 'planned' ? 'Liberación no verificada' : 'Hora estimada de liberación'}>
                 {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime) : '—'}
               </Field>
             </dl>
           ) : (
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Sin vuelo asignado</p>
+            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? 'Sin asignación visible en la planificación. Ocupación física no verificada.' : 'Sin vuelo asignado'}</p>
           )}
 
           <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">

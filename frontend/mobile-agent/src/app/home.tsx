@@ -176,6 +176,11 @@ export default function HomeScreen() {
         </View>
       )}
 
+      <View style={styles.quickActions}>
+        <Pressable accessibilityLabel="Abrir chat con OCC" accessibilityRole="button" onPress={() => router.push('/chat')} style={styles.quickAction}><Ionicons name="chatbubbles-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Chat con OCC</Text></Pressable>
+        <Pressable accessibilityLabel="Abrir notificaciones" accessibilityRole="button" onPress={() => router.push('/notifications')} style={styles.quickAction}><Ionicons name="notifications-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Notificaciones</Text></Pressable>
+      </View>
+
       <View style={styles.sectionHeader}>
         <View style={styles.sectionCopy}>
           <Text style={styles.sectionTitle}>Operaciones asignadas</Text>
@@ -326,6 +331,9 @@ function formatUpdatedAt(value: string | null) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  quickActions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 14 },
+  quickAction: { flex: 1, minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  quickActionText: { color: colors.navy, fontWeight: '800', fontSize: 12 },
   header: {
     minHeight: 158,
     backgroundColor: colors.navy,

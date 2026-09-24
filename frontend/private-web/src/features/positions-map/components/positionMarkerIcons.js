@@ -3,6 +3,8 @@
 // estado tiene su propio color de token existente y, en el caso de "disabled", un borde
 // discontinuo horneado directamente en el bitmap — así la diferencia nunca depende solo del color.
 const STATUS_COLORS = {
+  planned: '#145DC4',
+  unverified: '#D9A441',
   available: '#1E9E6B',
   occupied: '#145DC4',
   disabled: '#C4453C',
@@ -98,6 +100,8 @@ function drawSelectionRing() {
 }
 
 export const POSITION_ICON_KEYS = {
+  planned: 'elevant-position-planned',
+  unverified: 'elevant-position-unverified',
   available: 'elevant-position-available',
   occupied: 'elevant-position-occupied',
   disabled: 'elevant-position-disabled',

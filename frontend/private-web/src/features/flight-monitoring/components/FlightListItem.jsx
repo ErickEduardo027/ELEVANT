@@ -31,7 +31,7 @@ export default function FlightListItem({ flight, selected, onSelect }) {
         <span>
           {flight.origin} → {flight.destination}
         </span>
-        <span className="font-mono">ETA {formatClockTime(flight.eta)}</span>
+        <span className="font-mono">{flight.direction === 'departure' ? 'ETD' : 'ETA'} {formatClockTime(flight.eta ?? flight.etd)}</span>
         <span className="font-mono">{flight.stand ?? 'Sin stand'}</span>
         {flight.supervisor && <span className="ml-auto">{flight.supervisor}</span>}
       </div>

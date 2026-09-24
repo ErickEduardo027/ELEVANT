@@ -1,4 +1,5 @@
-import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
+import { readSession } from '../features/auth/authService';
+import { getPlanningSnapshot } from './planningService';
 
 function getOperationDate() {
   return new Date().toISOString().slice(0, 10);
@@ -56,10 +57,16 @@ function buildFlight(template, dateISO) {
 
 export async function getFlightMonitoringSnapshot(stationCode = 'PUJ') {
   if (import.meta.env.MODE !== 'test') {
-    const flights = await apiRequest('/api/occ/planning');
+    const stationScope = readSession()?.stationScopes?.find(scope => scope.stationCode === stationCode);
+    if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
+    const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
     return {
-      station: flights.station ?? { code: stationCode, localAbbr: 'AST' },
-      flights: (flights.flights ?? []).map((flight, index) => mapOperationalFlight(flight, index)),
+      station: { code: snapshot.station.code, localAbbr: 'AST' },
+      source: 'planning',
+      flights: snapshot.turnarounds.flatMap(turnaround => [
+        turnaround.arrival && mapOperationalFlight(turnaround, turnaround.arrival, 'arrival'),
+        turnaround.departure && mapOperationalFlight(turnaround, turnaround.departure, 'departure'),
+      ].filter(Boolean)),
     };
   }
   const dateISO = getOperationDate();
@@ -125,7 +132,7 @@ export function subscribeToFlightUpdates(onUpdate) {
   if (import.meta.env.MODE !== 'test') {
     const intervalId = setInterval(() => {
       getFlightMonitoringSnapshot().then(snapshot => snapshot.flights.forEach(onUpdate)).catch(() => {});
-    }, 5000);
+    }, 30000);
     return () => clearInterval(intervalId);
   }
   const dateISO = getOperationDate();
@@ -167,53 +174,40 @@ export function subscribeToFlightUpdates(onUpdate) {
   return () => clearInterval(intervalId);
 }
 
-function mapOperationalFlight(flight, index) {
-  const offset = ((index % 7) - 3) * 0.002;
+function mapOperationalFlight(turnaround, leg, direction) {
+  const scheduled = leg.scheduledAt;
+  const expected = leg.estimatedAt ?? scheduled;
+  const delayed = new Date(expected).getTime() - new Date(scheduled).getTime() > 5 * 60 * 1000;
   return {
-    id: flight.id,
-    flightNumber: flight.flightNumber,
-    airline: flight.airlineName,
-    origin: flight.origin,
-    destination: flight.destination,
-    registration: flight.registration ?? 'Sin registrar',
-    aircraft: flight.aircraftType,
-    status: flight.status ?? 'scheduled',
-    eta: flight.estimatedTime ?? flight.scheduledTime,
-    etd: flight.scheduledTime,
-    actualArrival: flight.actualArrival ?? null,
-    actualDeparture: flight.actualDeparture ?? null,
-    stand: flight.position,
-    supervisor: flight.supervisor,
-    agents: flight.agents?.length ?? 0,
-    heading: 0,
-    speed: 0,
-    altitude: 0,
-    latitude: 18.5674 + offset,
-    longitude: -68.3634 + offset,
-    services: flight.services ?? [],
+    id: leg.id,
+    turnaroundId: turnaround.id,
+    direction,
+    flightNumber: leg.flightNumber,
+    airline: turnaround.airline.name,
+    origin: leg.origin.iataCode,
+    destination: leg.destination.iataCode,
+    registration: turnaround.aircraft?.registration ?? 'Sin registrar',
+    aircraft: turnaround.aircraft?.model ?? 'Sin registrar',
+    // A recorded leg time is not proof of landing, pushback or stand occupancy.
+    status: leg.actualAt ? 'actualRecorded' : delayed ? 'delayed' : 'scheduled',
+    eta: direction === 'arrival' ? expected : null,
+    etd: direction === 'departure' ? expected : null,
+    actualArrival: direction === 'arrival' ? leg.actualAt : null,
+    actualDeparture: direction === 'departure' ? leg.actualAt : null,
+    stand: turnaround.stand?.code ?? null,
+    supervisor: null,
+    agents: turnaround.agents.length,
+    heading: null,
+    speed: null,
+    altitude: null,
+    latitude: null,
+    longitude: null,
+    services: turnaround.services.map(service => service.name),
   };
 }
 
-async function apiRequest(path, options = {}) {
-  const token = readSession()?.token;
-  let response;
-  try {
-    response = await fetch(`${PROTOTYPE_API_URL}${path}`, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...options.headers },
-    });
-  } catch {
-    throw new Error('No fue posible conectar con el backend del prototipo.');
-  }
-  const payload = await response.json().catch(() => ({}));
-  handleUnauthorizedResponse(response);
-  if (!response.ok) throw new Error(payload.error || 'No fue posible completar la solicitud.');
-  return payload;
-}
-
 export async function updateFlightStatus(flightId, status) {
-  const flight = await apiRequest(`/api/occ/flights/${flightId}/status`, {
-    method: 'PATCH', body: JSON.stringify({ status }),
-  });
-  return mapOperationalFlight(flight, 0);
+  void flightId;
+  void status;
+  throw new Error('La edición del estado del vuelo requiere un contrato aeronáutico revisado.');
 }

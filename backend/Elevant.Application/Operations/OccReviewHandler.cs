@@ -50,6 +50,21 @@ public sealed class OccReviewHandler(
             : OccReviewDetailResult.Success(detail);
     }
 
+    public async Task<OccReviewSubmissionHistoryResult> GetSubmissionHistoryAsync(
+        Guid accountId, Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        if (access.Failure is OccReviewFailure failure)
+            return OccReviewSubmissionHistoryResult.Failed(failure);
+        if (operationId == Guid.Empty)
+            return OccReviewSubmissionHistoryResult.Failed(OccReviewFailure.InvalidRequest);
+        var history = await store.GetSubmissionHistoryAsync(
+            operationId, access.Stations!, cancellationToken);
+        return history is null
+            ? OccReviewSubmissionHistoryResult.Failed(OccReviewFailure.NotFound)
+            : OccReviewSubmissionHistoryResult.Success(history);
+    }
+
     public async Task<OccReviewDecisionWriteResult> DecideAsync(
         Guid accountId,
         Guid operationId,

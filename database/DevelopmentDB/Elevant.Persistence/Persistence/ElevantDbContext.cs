@@ -91,6 +91,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
 
+    public DbSet<OperationMessage> OperationMessages => Set<OperationMessage>();
+
+    public DbSet<OperationalNotification> OperationalNotifications => Set<OperationalNotification>();
+
     public DbSet<MobileDevice> MobileDevices => Set<MobileDevice>();
 
     public DbSet<MobileCommandReceipt> MobileCommandReceipts => Set<MobileCommandReceipt>();

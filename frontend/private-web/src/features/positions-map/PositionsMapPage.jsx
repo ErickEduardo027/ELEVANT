@@ -144,8 +144,8 @@ export default function PositionsMapPage({
         fullscreen={fullscreen}
         onToggleFullscreen={handleToggleFullscreen}
       />
-      <PositionLegend />
-      <PositionSummary positions={positions} />
+      <PositionLegend source={data?.source} />
+      <PositionSummary positions={positions} source={data?.source} />
     </div>
   );
 
@@ -161,6 +161,10 @@ export default function PositionsMapPage({
         onToggleSidePanel={() => setSidePanelOpen(open => !open)}
         sidePanelOpen={sidePanelOpen}
       />
+
+      {data?.source === 'planning' && <p role="status" className="rounded-lg border border-accent-600/25 bg-accent-600/5 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+        Esta vista muestra asignaciones planificadas de la API. La ocupación física no está conectada: una posición sin plan visible no significa que esté libre.
+      </p>}
 
       {displayConnection === 'disconnected' && (
         <p

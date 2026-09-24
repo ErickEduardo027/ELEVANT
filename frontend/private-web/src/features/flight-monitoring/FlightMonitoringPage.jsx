@@ -24,16 +24,22 @@ function MonitoringMapArea({
   onClosePopover,
   onStatusChange,
 }) {
+  const geolocatedFlights = flights.filter(flight =>
+    Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
   return (
     <div className="relative min-h-[420px] flex-1">
-      <FlightMap
-        flights={flights}
-        selectedFlightId={selectedFlightId}
-        onSelectFlight={onSelectFlight}
-        theme={theme}
-        onPopoverPosition={onPopoverPosition}
-      />
-      <FlightLegend />
+      {geolocatedFlights.length > 0 ? <>
+        <FlightMap
+          flights={geolocatedFlights}
+          selectedFlightId={selectedFlightId}
+          onSelectFlight={onSelectFlight}
+          theme={theme}
+          onPopoverPosition={onPopoverPosition}
+        />
+        <FlightLegend />
+      </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
+        La API muestra vuelos y horarios operativos. La posición en vivo no está disponible hasta conectar una fuente aeronáutica verificada.
+      </div>}
       <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
     </div>
   );
@@ -145,6 +151,7 @@ export default function FlightMonitoringPage({
   return (
     <div className="mx-auto flex h-full max-w-[1440px] flex-col gap-4">
       <FlightToolbar
+        source={data?.source}
         connection={displayConnection}
         lastUpdatedAt={lastUpdatedAt}
         onRefresh={onRetry}

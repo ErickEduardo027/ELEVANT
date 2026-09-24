@@ -79,7 +79,7 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Users.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Turnarounds.AsNoTracking().ToListAsync(cancellationToken));
-        Assert.Equal(8, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
+        Assert.Equal(9, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
 
         var productionCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
             context.Database.ExecuteSqlRawAsync(
@@ -2966,6 +2966,11 @@ public sealed class SqlServerMigrationTests
         var handoffAudit = await handoffCheck.AuditEntries.AsNoTracking()
             .SingleAsync(item => item.Action == "ramp.operation.submitted", cancellationToken);
         Assert.DoesNotContain(AgentNote, handoffAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+        var occNotification = Assert.Single(await handoffCheck.OperationalNotifications.AsNoTracking()
+            .Where(item => item.GroundOperationId == operationInternalId &&
+                item.Kind == "operation_submitted" && item.SourceId == handoffKey)
+            .ToArrayAsync(cancellationToken));
+        Assert.Null(occNotification.ReadAt);
 
         var occAccountId = Guid.Parse("40000000-0000-7000-8000-000000000001");
         OccReviewDetailData reviewDetail;
@@ -3026,6 +3031,12 @@ public sealed class SqlServerMigrationTests
             .SingleAsync(item => item.Action == "occ.operation.review.decided", cancellationToken);
         Assert.DoesNotContain(AgentNote, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
         Assert.DoesNotContain(CorrectionReason, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+        var agentNotification = Assert.Single(await decisionCheck.OperationalNotifications.AsNoTracking()
+            .Where(item => item.GroundOperationId == operationInternalId &&
+                item.Kind == (reviewOutcome == "Approved" ? "operation_approved" : "operation_returned") &&
+                item.SourceId == savedDecision.PublicId)
+            .ToArrayAsync(cancellationToken));
+        Assert.Null(agentNotification.ReadAt);
 
         if (reviewOutcome == "Returned")
         {
@@ -3100,6 +3111,16 @@ public sealed class SqlServerMigrationTests
                         operationId, handoffKey, [stationId], cancellationToken));
                 var current = Assert.IsType<OccReviewDetailData>(
                     await reviewStore.GetDetailAsync(operationId, [stationId], cancellationToken));
+                Assert.Null(await reviewStore.GetSubmissionHistoryAsync(
+                    operationId, [Guid.Parse("20000000-0000-7000-8000-000000000013")],
+                    cancellationToken));
+                var history = Assert.IsType<OccReviewSubmissionHistoryData>(
+                    await reviewStore.GetSubmissionHistoryAsync(
+                        operationId, [stationId], cancellationToken));
+                Assert.Equal([correctedHandoffKey, handoffKey],
+                    history.Submissions.Select(item => item.SubmissionId).ToArray());
+                Assert.Equal([2, 1], history.Submissions.Select(item => item.RevisionNumber).ToArray());
+                Assert.Equal("Returned", history.Submissions[1].Outcome);
                 Assert.Equal(1, old.RevisionNumber);
                 Assert.Equal("Returned", old.Status);
                 Assert.Equal(CorrectionReason, old.Decision?.Reason);
@@ -3235,6 +3256,113 @@ public sealed class SqlServerMigrationTests
             item.IdempotencyKey == incidentKey.ToString("D")).ToArrayAsync(cancellationToken));
         Assert.Equal(MobileCommandStatus.Processed, receipt.Status);
         Assert.DoesNotContain(sensitiveDescription, receipt.ResultJson ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OperationalMessagesAndNotificationsPersistWithScopedIdempotentAccess()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var installationId = Guid.Parse("81000000-0000-7000-8000-000000000051");
+        var agentKey = Guid.Parse("82000000-0000-7000-8000-000000000051");
+        var occKey = Guid.Parse("82000000-0000-7000-8000-000000000052");
+        var occAccess = new OperationalAccess(occId, "occ", [stationId]);
+        var agentAccess = new OperationalAccess(agentId, "agent", [stationId]);
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registered = await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Chat SQL test tablet", "Android 16"), cancellationToken);
+            Assert.True(registered.IsSuccess);
+        }
+
+        async Task<CommunicationResult<OperationMessageData>> SendAsync(
+            OperationalAccess access, Guid key, Guid? device, string content)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IOperationalCommunicationStore>()
+                .SendMessageAsync(new SendOperationMessageCommand(
+                    access, operationId, key, device, content), cancellationToken);
+        }
+
+        var first = await SendAsync(agentAccess, agentKey, installationId, "Llegué a la posición");
+        Assert.True(first.IsSuccess);
+        var replay = await SendAsync(agentAccess, agentKey, installationId, "Llegué a la posición");
+        Assert.True(replay.IsSuccess);
+        Assert.Equal(first.Value!.Id, replay.Value!.Id);
+        var collision = await SendAsync(agentAccess, agentKey, installationId, "Otro mensaje");
+        Assert.Equal(OperationalCommunicationFailure.Conflict, collision.Failure);
+        var wrongDevice = await SendAsync(agentAccess, Guid.NewGuid(), Guid.NewGuid(), "No autorizado");
+        Assert.Equal(OperationalCommunicationFailure.NotFound, wrongDevice.Failure);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IOperationalCommunicationStore>();
+            var occInbox = await store.GetNotificationsAsync(occAccess, cancellationToken);
+            var notification = Assert.Single(occInbox.Value!.Notifications);
+            Assert.Equal("agent_message", notification.Kind);
+            Assert.Null(notification.ReadAt);
+            var marked = await store.SetNotificationReadAsync(
+                occAccess, notification.Id, true, cancellationToken);
+            Assert.NotNull(marked.Value!.ReadAt);
+            var replayedRead = await store.SetNotificationReadAsync(
+                occAccess, notification.Id, true, cancellationToken);
+            Assert.Equal(marked.Value.ReadAt, replayedRead.Value!.ReadAt);
+            var forbiddenRead = await store.SetNotificationReadAsync(
+                agentAccess, notification.Id, true, cancellationToken);
+            Assert.Equal(OperationalCommunicationFailure.NotFound, forbiddenRead.Failure);
+        }
+
+        var reply = await SendAsync(occAccess, occKey, null, "Recibido, continúa con la operación");
+        Assert.True(reply.IsSuccess);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IOperationalCommunicationStore>();
+            var agentMessages = await store.GetMessagesAsync(agentAccess, operationId, cancellationToken);
+            Assert.Equal([first.Value!.Id, reply.Value!.Id],
+                agentMessages.Value!.Messages.Select(message => message.Id));
+            var occMessages = await store.GetMessagesAsync(occAccess, operationId, cancellationToken);
+            Assert.Equal(2, occMessages.Value!.Messages.Count);
+            var occConversations = await store.GetConversationsAsync(occAccess, stationId, cancellationToken);
+            Assert.Contains(occConversations.Value!.Conversations, conversation =>
+                conversation.OperationId == operationId &&
+                conversation.LastMessage?.Id == reply.Value!.Id);
+            var agentConversations = await store.GetConversationsAsync(agentAccess, null, cancellationToken);
+            Assert.Contains(agentConversations.Value!.Conversations, conversation =>
+                conversation.OperationId == operationId &&
+                conversation.LastMessage?.Id == reply.Value!.Id);
+            var outside = await store.GetMessagesAsync(
+                new OperationalAccess(occId, "occ", [Guid.NewGuid()]),
+                operationId, cancellationToken);
+            Assert.Equal(OperationalCommunicationFailure.NotFound, outside.Failure);
+            var agentInbox = await store.GetNotificationsAsync(agentAccess, cancellationToken);
+            Assert.Equal("occ_message", Assert.Single(agentInbox.Value!.Notifications).Kind);
+        }
+
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(2, await verify.OperationMessages.AsNoTracking()
+            .CountAsync(cancellationToken));
+        Assert.Equal(2, await verify.OperationalNotifications.AsNoTracking()
+            .CountAsync(cancellationToken));
     }
 
     [Fact]

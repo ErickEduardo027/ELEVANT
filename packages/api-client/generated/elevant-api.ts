@@ -435,6 +435,73 @@ export interface OccReviewQueueResponse {
   hasMore: boolean;
 }
 
+export interface OccReviewSubmissionHistoryItemResponse {
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  submittedAt: string;
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  decidedAt?: string | null;
+}
+
+export interface OccReviewSubmissionHistoryResponse {
+  operationId: string;
+  submissions: OccReviewSubmissionHistoryItemResponse[];
+  hasMore: boolean;
+}
+
+export interface OperationMessageResponse {
+  id: string;
+  operationId: string;
+  senderAccountId: string;
+  senderRole: string;
+  senderName: string;
+  content: string;
+  sentAt: string;
+}
+
+export interface OperationConversationResponse {
+  operationId: string;
+  operationCode: string;
+  operationDate: string;
+  stationCode: string;
+  airlineName: string;
+  /** @nullable */
+  agentName?: string | null;
+  status: string;
+  lastMessage?: OperationMessageResponse | null;
+}
+
+export interface OperationConversationListResponse {
+  conversations: OperationConversationResponse[];
+  hasMore: boolean;
+}
+
+export interface OperationMessageListResponse {
+  operationId: string;
+  messages: OperationMessageResponse[];
+  hasMore: boolean;
+}
+
+export interface OperationalNotificationResponse {
+  id: string;
+  operationId: string;
+  operationCode: string;
+  stationCode: string;
+  kind: string;
+  sourceId: string;
+  occurredAt: string;
+  /** @nullable */
+  readAt?: string | null;
+}
+
+export interface OperationalNotificationListResponse {
+  notifications: OperationalNotificationResponse[];
+  hasMore: boolean;
+}
+
 export interface ProblemDetails {
   /** @nullable */
   type?: string | null;
@@ -712,11 +779,19 @@ export interface ReportRampIncidentRequest {
   occurredAt: string;
 }
 
+export interface SendOperationMessageRequest {
+  content: string;
+}
+
 export interface SessionResponse {
   accessToken: string;
   tokenType: string;
   expiresAt: string;
   actor: SessionActorResponse;
+}
+
+export interface SetOperationalNotificationReadRequest {
+  read: boolean;
 }
 
 export interface SubmitRampOperationChecklistRequest {
@@ -770,6 +845,10 @@ turnaroundId: string;
 
 export type GetOccReviewQueueParams = {
 stationId: string;
+};
+
+export type GetOperationalConversationsParams = {
+stationId?: string;
 };
 
 export const getCreateSessionUrl = () => {
@@ -1060,6 +1139,37 @@ export const getOccReviewDetail = async (operationId: string, options?: RequestI
 
 
 
+export const getGetOccReviewSubmissionHistoryUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/submissions`
+}
+
+/**
+ * @summary Lists immutable handoff revisions for one scoped operation, newest first.
+ */
+export const getOccReviewSubmissionHistory = async (operationId: string, options?: RequestInit): Promise<OccReviewSubmissionHistoryResponse> => {
+
+  const res = await fetch(getGetOccReviewSubmissionHistoryUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewSubmissionHistoryResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetOccReviewSubmissionDetailUrl = (operationId: string,
     submissionId: string,) => {
 
@@ -1126,6 +1236,167 @@ const res = await fetch(getDecideOccReviewUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: DecideOccReviewResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOperationalConversationsUrl = (params?: GetOperationalConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/chat/conversations?${stringifiedParams}` : `/api/v1/chat/conversations`
+}
+
+export const getOperationalConversations = async (params?: GetOperationalConversationsParams, options?: RequestInit): Promise<OperationConversationListResponse> => {
+
+  const res = await fetch(getGetOperationalConversationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationConversationListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOperationalMessagesUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/chat/conversations/${operationId}/messages`
+}
+
+export const getOperationalMessages = async (operationId: string, options?: RequestInit): Promise<OperationMessageListResponse> => {
+
+  const res = await fetch(getGetOperationalMessagesUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationMessageListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSendOperationalMessageUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/chat/conversations/${operationId}/messages`
+}
+
+export const sendOperationalMessage = async (operationId: string,
+    sendOperationMessageRequest: SendOperationMessageRequest, options?: RequestInit): Promise<OperationMessageResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSendOperationalMessageUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sendOperationMessageRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationMessageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOperationalNotificationsUrl = () => {
+
+
+
+
+  return `/api/v1/notifications`
+}
+
+export const getOperationalNotifications = async ( options?: RequestInit): Promise<OperationalNotificationListResponse> => {
+
+  const res = await fetch(getGetOperationalNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationalNotificationListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetOperationalNotificationReadUrl = (notificationId: string,) => {
+
+
+
+
+  return `/api/v1/notifications/${notificationId}/read`
+}
+
+export const setOperationalNotificationRead = async (notificationId: string,
+    setOperationalNotificationReadRequest: SetOperationalNotificationReadRequest, options?: RequestInit): Promise<OperationalNotificationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setOperationalNotificationReadRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
   return data
 }
 

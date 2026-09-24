@@ -28,7 +28,6 @@ export default function FlightMonitoringRoute() {
       forceState={forceState}
       theme={theme}
       focusFlightId={searchParams.get('flightId') ?? undefined}
-      onStatusChange={monitoring.changeFlightStatus}
     />
   );
 }

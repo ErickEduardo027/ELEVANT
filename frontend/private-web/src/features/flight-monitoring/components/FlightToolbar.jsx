@@ -22,6 +22,7 @@ function FilterSelect({ label, value, onChange, options, formatOption = option =
 }
 
 export default function FlightToolbar({
+  source,
   connection,
   lastUpdatedAt,
   onRefresh,
@@ -33,7 +34,7 @@ export default function FlightToolbar({
 }) {
   return (
     <div className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
-      <FlightConnectionStatus connection={connection} lastUpdatedAt={lastUpdatedAt} onRefresh={onRefresh} />
+      <FlightConnectionStatus source={source} connection={connection} lastUpdatedAt={lastUpdatedAt} onRefresh={onRefresh} />
 
       <div className="flex flex-wrap items-end gap-3">
         <FilterSelect label="Fecha" value={filters.date} onChange={value => onFilterChange('date', value)} options={options.dates} />

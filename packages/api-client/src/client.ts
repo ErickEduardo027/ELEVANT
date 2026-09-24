@@ -7,6 +7,12 @@ import {
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
   getGetOccReviewSubmissionDetailUrl,
+  getGetOccReviewSubmissionHistoryUrl,
+  getGetOperationalConversationsUrl,
+  getGetOperationalMessagesUrl,
+  getSendOperationalMessageUrl,
+  getGetOperationalNotificationsUrl,
+  getSetOperationalNotificationReadUrl,
   getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
@@ -29,6 +35,13 @@ import {
   type GetOccReviewQueueParams,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
+  type OccReviewSubmissionHistoryResponse,
+  type OperationConversationListResponse,
+  type OperationMessageListResponse,
+  type OperationMessageResponse,
+  type OperationalNotificationListResponse,
+  type OperationalNotificationResponse,
+  type SendOperationMessageRequest,
   type DecideOccReviewRequest,
   type DecideOccReviewResponse,
   type OccPlanningOptionsResponse,
@@ -84,6 +97,7 @@ export type GetOccPlanningOptionsOptions = Omit<
   "body" | "method"
 >;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -159,6 +173,33 @@ export interface ElevantApiClient {
     submissionId: string,
     options?: GetOccReviewOptions,
   ): Promise<OccReviewDetailResponse>;
+  getOccReviewSubmissionHistory(
+    operationId: string,
+    options?: GetOccReviewOptions,
+  ): Promise<OccReviewSubmissionHistoryResponse>;
+  getOperationalConversations(
+    stationId?: string,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<OperationConversationListResponse>;
+  getOperationalMessages(
+    operationId: string,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<OperationMessageListResponse>;
+  sendOperationalMessage(
+    operationId: string,
+    request: SendOperationMessageRequest,
+    idempotencyKey: string,
+    installationId?: string,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<OperationMessageResponse>;
+  getOperationalNotifications(
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<OperationalNotificationListResponse>;
+  setOperationalNotificationRead(
+    notificationId: string,
+    read: boolean,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<OperationalNotificationResponse>;
   decideOccReview(
     operationId: string,
     request: DecideOccReviewRequest,
@@ -1224,6 +1265,83 @@ function isRampOperationCorrectionResponse(
 
 const occReviewStatuses = ["PendingReview", "InReview", "Approved", "Returned"] as const;
 
+function isOperationMessageResponse(value: unknown, operationId?: string): value is OperationMessageResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["id", "operationId", "senderAccountId", "senderRole", "senderName", "content", "sentAt"]) &&
+    isUuid(value.id) && isUuid(value.operationId) &&
+    (operationId === undefined || value.operationId.toLowerCase() === operationId) &&
+    isUuid(value.senderAccountId) &&
+    isOneOf(value.senderRole, ["occ", "agent"] as const) &&
+    isNonEmptyString(value.senderName) &&
+    isNonEmptyString(value.content) && value.content.length <= 2_000 &&
+    isDateTimeOffset(value.sentAt);
+}
+
+function isOperationConversationListResponse(value: unknown): value is OperationConversationListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["conversations", "hasMore"]) &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.conversations) &&
+    value.conversations.length <= 100 && value.conversations.every((item: unknown) =>
+      isRecord(item) && hasOnlyKeys(item, ["operationId", "operationCode", "operationDate",
+        "stationCode", "airlineName", "agentName", "status", "lastMessage"]) &&
+      isUuid(item.operationId) && isNonEmptyString(item.operationCode) &&
+      isDateOnly(item.operationDate) && isNonEmptyString(item.stationCode) &&
+      isNonEmptyString(item.airlineName) &&
+      isOptionalNullable(item.agentName, isString) && isNonEmptyString(item.status) &&
+      isOptionalNullable(item.lastMessage, candidate =>
+        isOperationMessageResponse(candidate, (item.operationId as string).toLowerCase())));
+}
+
+function isOperationMessageListResponse(value: unknown, operationId: string): value is OperationMessageListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["operationId", "messages", "hasMore"]) &&
+    isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.messages) &&
+    value.messages.length <= 200 && value.messages.every((item: unknown) =>
+      isOperationMessageResponse(item, operationId));
+}
+
+function isOperationalNotificationResponse(value: unknown): value is OperationalNotificationResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "operationId", "operationCode",
+    "stationCode", "kind", "sourceId", "occurredAt", "readAt"]) &&
+    isUuid(value.id) && isUuid(value.operationId) &&
+    isNonEmptyString(value.operationCode) && isNonEmptyString(value.stationCode) &&
+    isNonEmptyString(value.kind) && isUuid(value.sourceId) &&
+    isDateTimeOffset(value.occurredAt) && isOptionalNullable(value.readAt, isDateTimeOffset);
+}
+
+function isOperationalNotificationListResponse(value: unknown): value is OperationalNotificationListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["notifications", "hasMore"]) &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.notifications) &&
+    value.notifications.length <= 100 && value.notifications.every(isOperationalNotificationResponse);
+}
+
+function isOccReviewSubmissionHistoryResponse(
+  value: unknown, operationId: string,
+): value is OccReviewSubmissionHistoryResponse {
+  if (!isRecord(value) ||
+      !hasOnlyKeys(value, ["operationId", "submissions", "hasMore"]) ||
+      !isUuid(value.operationId) || value.operationId.toLowerCase() !== operationId ||
+      typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.submissions) || value.submissions.length < 1 ||
+      value.submissions.length > 100) return false;
+  const revisions = new Set<number>();
+  const ids = new Set<string>();
+  return value.submissions.every((item: unknown) => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ["submissionId", "revisionNumber",
+      "status", "submittedAt", "outcome", "decidedAt"]) ||
+      !isUuid(item.submissionId) || !isInt32(item.revisionNumber) ||
+      item.revisionNumber < 1 || !isOneOf(item.status, occReviewStatuses) ||
+      !isDateTimeOffset(item.submittedAt) ||
+      !isOptionalNullable(item.outcome, outcome =>
+        isOneOf(outcome, ["Approved", "Returned"] as const)) ||
+      !isOptionalNullable(item.decidedAt, isDateTimeOffset)) return false;
+    const id = item.submissionId.toLowerCase();
+    if (revisions.has(item.revisionNumber) || ids.has(id)) return false;
+    revisions.add(item.revisionNumber);
+    ids.add(id);
+    return true;
+  });
+}
+
 function isOccReviewQueueResponse(value: unknown, stationId: string): value is OccReviewQueueResponse {
   return isRecord(value) &&
     hasOnlyKeys(value, ["stationId", "stationCode", "stationName", "ianaTimeZone", "operations", "hasMore"]) &&
@@ -1898,6 +2016,79 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "GET" }, true);
       if (!isOccReviewDetailResponse(result.data, operation) ||
           result.data.submissionId.toLowerCase() !== submission)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccReviewSubmissionHistory(
+      operationId: string, options?: GetOccReviewOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetOccReviewSubmissionHistoryUrl(operation),
+        { ...options, method: "GET" }, true);
+      if (!isOccReviewSubmissionHistoryResponse(result.data, operation))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOperationalConversations(
+      stationId?: string, options?: GetOperationalCommunicationOptions,
+    ) {
+      const station = stationId === undefined ? undefined : validatedUuid(stationId, "stationId");
+      const result = await execute(getGetOperationalConversationsUrl(
+        station ? { stationId: station } : undefined,
+      ), { ...options, method: "GET" }, true);
+      if (!isOperationConversationListResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOperationalMessages(
+      operationId: string, options?: GetOperationalCommunicationOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetOperationalMessagesUrl(operation),
+        { ...options, method: "GET" }, true);
+      if (!isOperationMessageListResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async sendOperationalMessage(
+      operationId: string, request: SendOperationMessageRequest,
+      idempotencyKey: string, installationId?: string,
+      options?: GetOperationalCommunicationOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      if (!isRecord(request) || !hasOnlyKeys(request, ["content"]) ||
+          typeof request.content !== "string" || request.content.trim().length === 0 ||
+          request.content.length > 2_000 ||
+          /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.content))
+        throw new TypeError("Operational message is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      if (installationId !== undefined) headers.set("x-elevant-installation-id",
+        validatedUuid(installationId, "installationId"));
+      const result = await execute(getSendOperationalMessageUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify({ content: request.content.trim() }) }, true);
+      if (!isOperationMessageResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOperationalNotifications(options?: GetOperationalCommunicationOptions) {
+      const result = await execute(getGetOperationalNotificationsUrl(),
+        { ...options, method: "GET" }, true);
+      if (!isOperationalNotificationListResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setOperationalNotificationRead(
+      notificationId: string, read: boolean,
+      options?: GetOperationalCommunicationOptions,
+    ) {
+      const notification = validatedUuid(notificationId, "notificationId");
+      if (typeof read !== "boolean") throw new TypeError("read must be a boolean.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSetOperationalNotificationReadUrl(notification),
+        { ...options, method: "PUT", headers, body: JSON.stringify({ read }) }, true);
+      if (!isOperationalNotificationResponse(result.data) || result.data.id.toLowerCase() !== notification ||
+          (read && result.data.readAt == null) || (!read && result.data.readAt != null))
         throw malformedResponse(result.status);
       return result.data;
     },
