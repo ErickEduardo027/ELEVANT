@@ -1,0 +1,53 @@
+using System.Text.Json;
+using Elevant.Application.Operations;
+using Elevant.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace Elevant.Persistence.Operations;
+
+/// <summary>
+/// The submitted evidence is a value snapshot. Live service and incident rows may change
+/// during a later correction, but an earlier OCC handoff must never change with them.
+/// </summary>
+internal sealed record OperationSubmissionEvidence(
+    int Version,
+    OccReviewServiceData[] Services,
+    OccReviewIncidentData[] Incidents)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public static async Task<OperationSubmissionEvidence> CaptureAsync(
+        ElevantDbContext context, long operationId, CancellationToken cancellationToken)
+    {
+        var services = await (
+            from service in context.OperationServices.AsNoTracking()
+            join definition in context.ServiceDefinitions.AsNoTracking()
+                on service.ServiceDefinitionId equals definition.Id
+            where service.GroundOperationId == operationId
+            orderby service.LineNumber
+            select new OccReviewServiceData(
+                service.PublicId, definition.Code, definition.Name,
+                service.CurrentStatus.ToString(), service.ContractedQuantity,
+                service.ExecutedQuantity, service.BillingUnitSnapshot))
+            .ToArrayAsync(cancellationToken);
+        var incidents = await context.Incidents.AsNoTracking()
+            .Where(item => item.GroundOperationId == operationId)
+            .OrderBy(item => item.OccurredAt)
+            .ThenBy(item => item.Id)
+            .Select(item => new OccReviewIncidentData(
+                item.PublicId, item.IncidentType, item.Severity.ToString(),
+                item.Status.ToString(), item.Description, item.OccurredAt))
+            .ToArrayAsync(cancellationToken);
+        return new OperationSubmissionEvidence(1, services, incidents);
+    }
+
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+
+    public static OperationSubmissionEvidence Parse(string json)
+    {
+        var evidence = JsonSerializer.Deserialize<OperationSubmissionEvidence>(json, JsonOptions);
+        if (evidence is not { Version: 1, Services: not null, Incidents: not null })
+            throw new InvalidOperationException("The submitted evidence snapshot is invalid.");
+        return evidence;
+    }
+}

@@ -175,6 +175,31 @@ public sealed class RampExecutionPolicyTests
             null));
     }
 
+    [Theory]
+    [InlineData(ServiceExecutionStatus.Completed)]
+    [InlineData(ServiceExecutionStatus.NotPerformed)]
+    [InlineData(ServiceExecutionStatus.Exception)]
+    public void TerminalServiceCanRestartOnlyDuringReasonedCorrection(
+        ServiceExecutionStatus previous)
+    {
+        Assert.False(RampOperationServiceTransitionPolicy.CanTransition(
+            TurnaroundStatus.Confirmed, GroundOperationStatus.InProgress,
+            StartedAt, null, previous, ServiceExecutionStatus.InProgress,
+            null, "Corrected after OCC return"));
+        Assert.False(RampOperationServiceTransitionPolicy.CanTransition(
+            TurnaroundStatus.Confirmed, GroundOperationStatus.InProgress,
+            StartedAt, null, previous, ServiceExecutionStatus.InProgress,
+            null, "  ", isCorrectionRound: true));
+        Assert.True(RampOperationServiceTransitionPolicy.CanTransition(
+            TurnaroundStatus.Confirmed, GroundOperationStatus.InProgress,
+            StartedAt, null, previous, ServiceExecutionStatus.InProgress,
+            null, "Corrected after OCC return", isCorrectionRound: true));
+        Assert.False(RampOperationServiceTransitionPolicy.CanTransition(
+            TurnaroundStatus.Confirmed, GroundOperationStatus.InProgress,
+            StartedAt, null, previous, ServiceExecutionStatus.Completed,
+            1m, "Corrected after OCC return", isCorrectionRound: true));
+    }
+
     [Fact]
     public void HandoffRequiresSubmittedChecklistAndEveryServiceTerminal()
     {

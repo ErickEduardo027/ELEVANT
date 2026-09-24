@@ -79,7 +79,7 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Users.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Turnarounds.AsNoTracking().ToListAsync(cancellationToken));
-        Assert.Equal(7, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
+        Assert.Equal(8, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
 
         var productionCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
             context.Database.ExecuteSqlRawAsync(
@@ -90,6 +90,58 @@ public sealed class SqlServerMigrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => new DevelopmentDataSeeder(context).SeedAsync(InitialPasswords, cancellationToken));
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
+    }
+
+    [Fact]
+    public async Task CorrectionRevisionMigrationUpgradesExistingDevelopmentChecklists()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+        {
+            await migration.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+        {
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await using var context = CreateContext(database.ConnectionString);
+        var originalIds = await context.OperationChecklists.AsNoTracking()
+            .Select(item => item.PublicId).OrderBy(item => item).ToArrayAsync(cancellationToken);
+        Assert.NotEmpty(originalIds);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(
+            "20260917161921_V1_07_DevelopmentHumanResourcesAccount", cancellationToken);
+        await migrator.MigrateAsync(cancellationToken: cancellationToken);
+        context.ChangeTracker.Clear();
+
+        var upgraded = await context.OperationChecklists.AsNoTracking()
+            .OrderBy(item => item.PublicId).ToArrayAsync(cancellationToken);
+        Assert.Equal(originalIds, upgraded.Select(item => item.PublicId));
+        Assert.All(upgraded, item => Assert.Equal(1, item.RevisionNumber));
+        var previous = upgraded[0];
+        context.OperationChecklists.Add(new OperationChecklist
+        {
+            PublicId = Guid.CreateVersion7(),
+            GroundOperationId = previous.GroundOperationId,
+            ChecklistTemplateVersionId = previous.ChecklistTemplateVersionId,
+            RevisionNumber = 2,
+            Status = ChecklistStatus.NotStarted,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(2, await context.OperationChecklists.AsNoTracking().CountAsync(item =>
+            item.GroundOperationId == previous.GroundOperationId &&
+            item.ChecklistTemplateVersionId == previous.ChecklistTemplateVersionId,
+            cancellationToken));
     }
 
     [Fact]
@@ -2974,6 +3026,107 @@ public sealed class SqlServerMigrationTests
             .SingleAsync(item => item.Action == "occ.operation.review.decided", cancellationToken);
         Assert.DoesNotContain(AgentNote, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
         Assert.DoesNotContain(CorrectionReason, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
+
+        if (reviewOutcome == "Returned")
+        {
+            var correctionKey = Guid.Parse("86000000-0000-7000-8000-000000000021");
+            async Task<RampOperationCorrectionWriteResult> ReopenAsync(Guid key)
+            {
+                await using var scope = provider.CreateAsyncScope();
+                return await scope.ServiceProvider.GetRequiredService<IRampOperationCorrectionStore>()
+                    .ReopenAsync(new RampOperationCorrectionWriteRequest(
+                        accountId, [stationId], operationId, installationId,
+                        key, key, "ramp-correction-sql-test"), cancellationToken);
+            }
+
+            var reopened = await ReopenAsync(correctionKey);
+            Assert.True(reopened.IsSuccess);
+            Assert.Equal(2, reopened.Correction!.RevisionNumber);
+            Assert.Equal(CorrectionReason, reopened.Correction.ReturnReason);
+            Assert.Equal(correctionKey, reopened.Correction.ChecklistId);
+            Assert.Equal(reopened.Correction, (await ReopenAsync(correctionKey)).Correction);
+            Assert.Equal(RampOperationsFailure.Conflict,
+                (await ReopenAsync(Guid.Parse("86000000-0000-7000-8000-000000000022"))).Failure);
+
+            RampOperationChecklistData correctionChecklist;
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var read = await scope.ServiceProvider
+                    .GetRequiredService<IRampOperationChecklistReadStore>()
+                    .GetChecklistAsync(new RampOperationChecklistReadRequest(
+                        accountId, [stationId], operationId), cancellationToken);
+                correctionChecklist = Assert.IsType<RampOperationChecklistData>(read.Checklist);
+            }
+            Assert.Equal(correctionKey, correctionChecklist.Id);
+            Assert.Equal("NotStarted", correctionChecklist.Status);
+            Assert.All(correctionChecklist.Sections.SelectMany(section => section.Items),
+                item => Assert.Null(item.Answer));
+            var oldChecklistRetry = await SubmitChecklistAsync(
+                Guid.Parse("86000000-0000-7000-8000-000000000023"),
+                canonicalChecklist.Id, answers);
+            Assert.Equal(RampChecklistSubmissionWriteFailure.Conflict, oldChecklistRetry.Failure);
+
+            var restartedService = await TransitionServiceAsync(
+                Guid.Parse("86000000-0000-7000-8000-000000000024"),
+                baggageServiceId, ServiceExecutionStatus.InProgress, null,
+                "OCC solicitó corregir la cantidad ejecutada");
+            Assert.True(restartedService.IsSuccess);
+            Assert.Equal(0m, restartedService.Transition!.Service.ExecutedQuantity);
+            var correctedService = await TransitionServiceAsync(
+                Guid.Parse("86000000-0000-7000-8000-000000000025"),
+                baggageServiceId, ServiceExecutionStatus.Completed, 2m,
+                "Cantidad contrastada con el agente");
+            Assert.True(correctedService.IsSuccess);
+
+            var correctedAnswers = correctionChecklist.Sections.SelectMany(section => section.Items)
+                .Select(item => new RampChecklistAnswerWriteData(
+                    item.Id, ChecklistAnswerValue.Ok, null)).ToArray();
+            var correctedChecklist = await SubmitChecklistAsync(
+                Guid.Parse("86000000-0000-7000-8000-000000000026"),
+                correctionChecklist.Id, correctedAnswers);
+            Assert.True(correctedChecklist.IsSuccess);
+            var correctedHandoffKey = Guid.Parse("86000000-0000-7000-8000-000000000027");
+            var correctedHandoff = await HandOffAsync(correctedHandoffKey,
+                "Checklist y cantidad corregidos tras devolución OCC.");
+            Assert.True(correctedHandoff.IsSuccess);
+            Assert.Equal(2, correctedHandoff.Submission!.RevisionNumber);
+            Assert.Equal(correctionChecklist.Id, correctedHandoff.Submission.ChecklistId);
+
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var reviewStore = scope.ServiceProvider.GetRequiredService<IOccReviewStore>();
+                var old = Assert.IsType<OccReviewDetailData>(
+                    await reviewStore.GetSubmissionDetailAsync(
+                        operationId, handoffKey, [stationId], cancellationToken));
+                var current = Assert.IsType<OccReviewDetailData>(
+                    await reviewStore.GetDetailAsync(operationId, [stationId], cancellationToken));
+                Assert.Equal(1, old.RevisionNumber);
+                Assert.Equal("Returned", old.Status);
+                Assert.Equal(CorrectionReason, old.Decision?.Reason);
+                Assert.Equal(SensitiveChecklistNote,
+                    Assert.Single(old.ChecklistAnswers, item => item.Value == "NotOk").Note);
+                Assert.Equal(1m, Assert.Single(old.Services,
+                    service => service.Id == baggageServiceId).ExecutedQuantity);
+                Assert.Equal(2, current.RevisionNumber);
+                Assert.Equal("PendingReview", current.Status);
+                Assert.All(current.ChecklistAnswers, answer => Assert.Equal("Ok", answer.Value));
+                Assert.Equal(2m, Assert.Single(current.Services,
+                    service => service.Id == baggageServiceId).ExecutedQuantity);
+                Assert.Null(current.Decision);
+            }
+            await using var correctionCheck = CreateContext(database.ConnectionString);
+            var revisionNumbers = await correctionCheck.OperationSubmissions.AsNoTracking()
+                .Where(item => item.GroundOperationId == operationInternalId)
+                .OrderBy(item => item.RevisionNumber)
+                .Select(item => item.RevisionNumber)
+                .ToArrayAsync(cancellationToken);
+            Assert.Equal(2, revisionNumbers.Length);
+            Assert.Equal(1, revisionNumbers[0]);
+            Assert.Equal(2, revisionNumbers[1]);
+            Assert.Equal(45, await correctionCheck.Set<ChecklistAnswer>().AsNoTracking()
+                .CountAsync(item => item.OperationChecklistId == submittedChecklist.Id,
+                    cancellationToken));
+        }
     }
 
     [Fact]

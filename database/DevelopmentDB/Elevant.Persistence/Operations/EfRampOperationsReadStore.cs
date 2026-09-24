@@ -274,6 +274,26 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                         service.CurrentStatus.ToString())))
             .ToArrayAsync(cancellationToken);
 
+        var reviews = await (
+                from submission in context.OperationSubmissions.AsNoTracking()
+                join decisionCandidate in context.ReviewDecisions.AsNoTracking()
+                    on submission.Id equals decisionCandidate.OperationSubmissionId into decisions
+                from decision in decisions.DefaultIfEmpty()
+                where operationIds.Contains(submission.GroundOperationId) &&
+                      !context.OperationSubmissions.AsNoTracking().Any(other =>
+                          other.GroundOperationId == submission.GroundOperationId &&
+                          other.RevisionNumber > submission.RevisionNumber)
+                select new
+                {
+                    submission.GroundOperationId,
+                    Review = new RampReviewFeedbackData(
+                        submission.PublicId, submission.RevisionNumber,
+                        submission.Status.ToString(),
+                        decision == null ? null : decision.Reason),
+                })
+            .ToDictionaryAsync(item => item.GroundOperationId,
+                item => item.Review, cancellationToken);
+
         var legsByTurnaround = legs.ToLookup(item => item.TurnaroundId);
         var servicesByOperation = services.ToLookup(
             item => item.GroundOperationId,
@@ -297,7 +317,8 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                         leg => leg.Direction == FlightDirection.Arrival)?.Leg,
                     turnaroundLegs.SingleOrDefault(
                         leg => leg.Direction == FlightDirection.Departure)?.Leg),
-                servicesByOperation[item.OperationInternalId].ToArray());
+                servicesByOperation[item.OperationInternalId].ToArray(),
+                reviews.GetValueOrDefault(item.OperationInternalId));
         }).ToArray();
 
         return RampOperationsReadResult.Success(result);

@@ -874,6 +874,82 @@
         ]
       }
     },
+    "/api/v1/occ/review/operations/{operationId}/submissions/{submissionId}": {
+      "get": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "Reads one immutable historical handoff, including its review decision.",
+        "operationId": "GetOccReviewSubmissionDetail",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "submissionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/review/operations/{operationId}/decision": {
       "post": {
         "tags": [
@@ -1496,6 +1572,120 @@
           },
           "500": {
             "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/correction": {
+      "post": {
+        "tags": [
+          "RampOperationCorrections"
+        ],
+        "operationId": "ReopenRampOperationCorrection",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampOperationCorrectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3467,6 +3657,14 @@
             "items": {
               "$ref": "#/components/schemas/RampOperationServiceResponse"
             }
+          },
+          "review": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampReviewFeedbackResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -3870,6 +4068,47 @@
         },
         "additionalProperties": false
       },
+      "RampOperationCorrectionResponse": {
+        "required": [
+          "checklistId",
+          "operationId",
+          "previousSubmissionId",
+          "receiptId",
+          "returnReason",
+          "revisionNumber",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousSubmissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "checklistId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "returnReason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RampOperationServiceExecutionResponse": {
         "required": [
           "billingUnit",
@@ -4060,6 +4299,32 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampReviewFeedbackResponse": {
+        "required": [
+          "revisionNumber",
+          "status",
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "returnReason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -4602,6 +4867,9 @@
     },
     {
       "name": "RampOperationChecklists"
+    },
+    {
+      "name": "RampOperationCorrections"
     },
     {
       "name": "RampOperations"

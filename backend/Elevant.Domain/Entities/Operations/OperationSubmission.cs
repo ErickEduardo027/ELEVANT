@@ -17,4 +17,7 @@ public sealed class OperationSubmission : AuditableEntity
     public DateTimeOffset SubmittedAt { get; set; }
 
     public string? AgentNote { get; set; }
+
+    /// <summary>Immutable service and incident evidence captured at handoff.</summary>
+    public string? EvidenceJson { get; set; }
 }

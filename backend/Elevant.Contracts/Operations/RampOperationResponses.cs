@@ -11,7 +11,14 @@ public sealed record RampAssignedOperationResponse(
     RampAgentAssignmentResponse Assignment,
     RampGroundOperationResponse Operation,
     RampTurnaroundResponse Turnaround,
-    IReadOnlyList<RampOperationServiceResponse> Services);
+    IReadOnlyList<RampOperationServiceResponse> Services,
+    RampReviewFeedbackResponse? Review = null);
+
+public sealed record RampReviewFeedbackResponse(
+    Guid SubmissionId,
+    int RevisionNumber,
+    string Status,
+    string? ReturnReason);
 
 public sealed record RampAgentAssignmentResponse(
     Guid Id,

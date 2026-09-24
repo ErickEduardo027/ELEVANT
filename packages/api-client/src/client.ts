@@ -6,12 +6,14 @@ import {
   getGetOccPlanningSnapshotUrl,
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
+  getGetOccReviewSubmissionDetailUrl,
   getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
+  getReopenRampOperationCorrectionUrl,
   getReportRampIncidentUrl,
   getSubmitRampOperationUrl,
   getStartRampOperationUrl,
@@ -36,6 +38,7 @@ import {
   type RampChecklistSubmissionResponse,
   type RampIncidentReceiptResponse,
   type RampOperationSubmissionResponse,
+  type RampOperationCorrectionResponse,
   type ReportRampIncidentRequest,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
@@ -105,6 +108,7 @@ export type GetRampOperationChecklistOptions = Omit<
 export type GetRampIncidentsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationChecklistOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -148,6 +152,11 @@ export interface ElevantApiClient {
   ): Promise<OccReviewQueueResponse>;
   getOccReviewDetail(
     operationId: string,
+    options?: GetOccReviewOptions,
+  ): Promise<OccReviewDetailResponse>;
+  getOccReviewSubmissionDetail(
+    operationId: string,
+    submissionId: string,
     options?: GetOccReviewOptions,
   ): Promise<OccReviewDetailResponse>;
   decideOccReview(
@@ -203,6 +212,12 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: SubmitRampOperationOptions,
   ): Promise<RampOperationSubmissionResponse>;
+  reopenRampOperationCorrection(
+    operationId: string,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReopenRampOperationCorrectionOptions,
+  ): Promise<RampOperationCorrectionResponse>;
   submitRampOperationChecklist(
     operationId: string,
     request: SubmitRampOperationChecklistRequest,
@@ -875,12 +890,21 @@ function isRampTurnaroundResponse(value: unknown) {
 function isRampAssignedOperationResponse(value: unknown) {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["assignment", "operation", "turnaround", "services"]) &&
+    hasOnlyKeys(value, ["assignment", "operation", "turnaround", "services", "review"]) &&
     isRampAgentAssignmentResponse(value.assignment) &&
     isOccGroundOperationResponse(value.operation) &&
     isRampTurnaroundResponse(value.turnaround) &&
     Array.isArray(value.services) &&
-    value.services.every(isOccOperationServiceResponse)
+    value.services.every(isOccOperationServiceResponse) &&
+    isOptionalNullable(value.review, (review) =>
+      isRecord(review) &&
+      hasOnlyKeys(review, ["submissionId", "revisionNumber", "status", "returnReason"]) &&
+      isUuid(review.submissionId) &&
+      isInt32(review.revisionNumber) && review.revisionNumber > 0 &&
+      isOneOf(review.status, ["PendingReview", "InReview", "Approved", "Returned"] as const) &&
+      isOptionalNullable(review.returnReason, (reason) =>
+        typeof reason === "string" && reason.length >= 8 && reason.length <= 2000) &&
+      (review.status !== "Returned" || typeof review.returnReason === "string"))
   );
 }
 
@@ -1180,6 +1204,22 @@ function isRampOperationSubmissionResponse(
     isDateTimeOffset(value.actualEndAt) &&
     (value.agentNote ?? null) === agentNote
   );
+}
+
+function isRampOperationCorrectionResponse(
+  value: unknown, operationId: string, checklistId: string,
+): value is RampOperationCorrectionResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "operationId", "previousSubmissionId",
+      "checklistId", "revisionNumber", "status", "returnReason"]) &&
+    isUuid(value.receiptId) && isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    isUuid(value.previousSubmissionId) && isUuid(value.checklistId) &&
+    value.checklistId.toLowerCase() === checklistId &&
+    isInt32(value.revisionNumber) && value.revisionNumber > 1 &&
+    value.status === "InProgress" &&
+    typeof value.returnReason === "string" &&
+    value.returnReason.length >= 8 && value.returnReason.length <= 2000;
 }
 
 const occReviewStatuses = ["PendingReview", "InReview", "Approved", "Returned"] as const;
@@ -1848,6 +1888,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.reviewVersion !== result.etag) throw malformedResponse(result.status);
       return result.data;
     },
+    async getOccReviewSubmissionDetail(
+      operationId: string, submissionId: string, options?: GetOccReviewOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const submission = validatedUuid(submissionId, "submissionId");
+      const result = await execute(
+        getGetOccReviewSubmissionDetailUrl(operation, submission),
+        { ...options, method: "GET" }, true);
+      if (!isOccReviewDetailResponse(result.data, operation) ||
+          result.data.submissionId.toLowerCase() !== submission)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async decideOccReview(
       operationId: string,
       request: DecideOccReviewRequest,
@@ -2039,6 +2092,22 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isRampOperationSubmissionResponse(
         result.data, operation, commandKey, submission.agentNote ?? null,
       )) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async reopenRampOperationCorrection(
+      operationId: string, installationId: string,
+      idempotencyKey: string, options?: ReopenRampOperationCorrectionOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(getReopenRampOperationCorrectionUrl(operation),
+        { ...options, method: "POST", headers }, true);
+      if (!isRampOperationCorrectionResponse(result.data, operation, commandKey))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async submitRampOperationChecklist(

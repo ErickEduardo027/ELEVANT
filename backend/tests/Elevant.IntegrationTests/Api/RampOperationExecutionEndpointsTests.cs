@@ -54,6 +54,63 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
     }
 
     [Fact]
+    public async Task CorrectionRequiresBearerAndValidCommandHeaders()
+    {
+        var state = new ExecutionState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var anonymous = application.CreateClient();
+        using var anonymousRequest = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/ramp/operations/{OperationId:D}/correction");
+        AddCommandHeaders(anonymousRequest, InstallationId.ToString("D"), IdempotencyKey.ToString("D"));
+        using var unauthorized = await anonymous.SendAsync(
+            anonymousRequest, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        AssertPrivateResponse(unauthorized);
+
+        using var authenticated = CreateAuthenticatedClient(application);
+        using var missingHeaders = await authenticated.PostAsync(
+            $"/api/v1/ramp/operations/{OperationId:D}/correction", null,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, missingHeaders.StatusCode);
+        Assert.Null(state.CorrectionRequest);
+    }
+
+    [Fact]
+    public async Task CorrectionMapsScopedActorAndExactRevisionReceipt()
+    {
+        var previousSubmissionId = Guid.Parse("85000000-0000-7000-8000-000000000022");
+        var state = new ExecutionState
+        {
+            Actor = CreateActor(),
+            CorrectionResult = RampOperationCorrectionWriteResult.Success(
+                new RampOperationCorrectionData(ReceiptId, OperationId,
+                    previousSubmissionId, IdempotencyKey, 2, "InProgress",
+                    "Corrige la cantidad del servicio."), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/ramp/operations/{OperationId:D}/correction");
+        AddCommandHeaders(request, InstallationId.ToString("D"), IdempotencyKey.ToString("D"));
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateResponse(response);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(ReceiptId, body.GetProperty("receiptId").GetGuid());
+        Assert.Equal(IdempotencyKey, body.GetProperty("checklistId").GetGuid());
+        Assert.Equal(2, body.GetProperty("revisionNumber").GetInt32());
+        Assert.Equal("InProgress", body.GetProperty("status").GetString());
+        Assert.Equal("Corrige la cantidad del servicio.", body.GetProperty("returnReason").GetString());
+        Assert.NotNull(state.CorrectionRequest);
+        Assert.Equal(AccountId, state.CorrectionRequest.ActorAccountId);
+        Assert.Equal([StationId], state.CorrectionRequest.AllowedStationIds);
+        Assert.Equal(InstallationId, state.CorrectionRequest.InstallationId);
+        Assert.Equal(IdempotencyKey, state.CorrectionRequest.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task ChecklistReadReturnsCanonicalProjectionAndServerResolvedScope()
     {
         var answeredAt = new DateTimeOffset(2026, 9, 17, 12, 15, 0, TimeSpan.Zero);
@@ -625,6 +682,7 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
             services.AddScoped<IRampOperationServiceCommandStore>(_ => state);
             services.AddScoped<IRampIncidentStore>(_ => state);
             services.AddScoped<IRampOperationSubmissionStore>(_ => state);
+            services.AddScoped<IRampOperationCorrectionStore>(_ => state);
         }));
 
     private static HttpClient CreateAuthenticatedClient(
@@ -792,9 +850,10 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         IActorContextResolver,
         IRampOperationChecklistReadStore,
         IRampOperationChecklistCommandStore,
-        IRampOperationServiceCommandStore
-        , IRampIncidentStore,
-        IRampOperationSubmissionStore
+        IRampOperationServiceCommandStore,
+        IRampIncidentStore,
+        IRampOperationSubmissionStore,
+        IRampOperationCorrectionStore
     {
         public ActorContext? Actor { get; init; }
 
@@ -829,6 +888,11 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
 
         public RampOperationSubmissionWriteResult HandoffResult { get; init; } =
             RampOperationSubmissionWriteResult.Failed(RampOperationsFailure.Conflict);
+
+        public RampOperationCorrectionWriteRequest? CorrectionRequest { get; private set; }
+
+        public RampOperationCorrectionWriteResult CorrectionResult { get; init; } =
+            RampOperationCorrectionWriteResult.Failed(RampOperationsFailure.Conflict);
 
         public Task<ActorContext?> ResolveAsync(
             Guid accountId,
@@ -887,6 +951,14 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         {
             HandoffRequest = request;
             return Task.FromResult(HandoffResult);
+        }
+
+        public Task<RampOperationCorrectionWriteResult> ReopenAsync(
+            RampOperationCorrectionWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            CorrectionRequest = request;
+            return Task.FromResult(CorrectionResult);
         }
 
     }

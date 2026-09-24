@@ -31,6 +31,7 @@ type TerminalTarget = 'Completed' | 'NotPerformed' | 'Exception';
 export function RampServiceExecutionCard({
   actionable,
   busy,
+  correctionMode = false,
   disabledReason,
   notice,
   onTransition,
@@ -39,6 +40,7 @@ export function RampServiceExecutionCard({
 }: {
   readonly actionable: boolean;
   readonly busy: boolean;
+  readonly correctionMode?: boolean;
   readonly disabledReason?: string;
   readonly notice?: ServiceExecutionNotice;
   readonly onTransition: (request: TransitionRampOperationServiceRequest) => void;
@@ -123,6 +125,47 @@ export function RampServiceExecutionCard({
           tone={serviceStatusTone(service.status)}
         />
       </View>
+
+      {terminal && correctionMode && (
+        <View style={styles.executionArea}>
+          <Text style={styles.actionPrompt}>¿Necesitas corregir este servicio?</Text>
+          <Text style={styles.helperText}>
+            Registra una justificación para reabrirlo. El resultado enviado anteriormente permanece en el historial.
+          </Text>
+          <TextInput
+            accessibilityLabel={`Motivo de corrección de ${service.name}`}
+            accessibilityHint="Explica por qué se corrige el servicio"
+            editable={actionable && !busy && !frozen}
+            maxLength={1000}
+            multiline
+            onChangeText={setNote}
+            placeholder="Describe el ajuste solicitado por OCC"
+            placeholderTextColor={colors.muted}
+            style={[styles.noteInput, validationRequested && !note.trim() && styles.inputInvalid]}
+            textAlignVertical="top"
+            value={note}
+          />
+          {validationRequested && !note.trim() && (
+            <Text accessibilityLiveRegion="polite" style={styles.inlineError}>
+              Explica el motivo antes de corregir el servicio.
+            </Text>
+          )}
+          {frozen && pending?.request.targetStatus === 'InProgress' && (
+            <Text style={styles.replayHintText}>
+              Reintenta con el mismo motivo y la misma clave reservada.
+            </Text>
+          )}
+          <PrimaryButton
+            disabled={!actionable || busy}
+            icon="create-outline"
+            onPress={() => {
+              if (!note.trim()) { setValidationRequested(true); return; }
+              onTransition({ targetStatus: 'InProgress', note: note.trim() });
+            }}
+            title={busy ? 'REGISTRANDO…' : frozen ? 'REINTENTAR CORRECCIÓN' : 'CORREGIR SERVICIO'}
+          />
+        </View>
+      )}
 
       {!terminal && (
         <View style={styles.executionArea}>

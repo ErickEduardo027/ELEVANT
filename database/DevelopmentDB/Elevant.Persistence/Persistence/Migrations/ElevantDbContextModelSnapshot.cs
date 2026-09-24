@@ -2198,6 +2198,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("revision_number");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -2241,12 +2245,14 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SubmittedByRampAgentId");
 
-                    b.HasIndex("GroundOperationId", "ChecklistTemplateVersionId")
+                    b.HasIndex("GroundOperationId", "ChecklistTemplateVersionId", "RevisionNumber")
                         .IsUnique();
 
                     b.ToTable("operation_checklists", "ops", t =>
                         {
                             t.HasCheckConstraint("ck_operation_checklist_dates", "[submitted_at] IS NULL OR [started_at] IS NULL OR [submitted_at] >= [started_at]");
+
+                            t.HasCheckConstraint("ck_operation_checklist_revision", "[revision_number] > 0");
                         });
                 });
 
@@ -2587,6 +2593,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("evidence_json");
 
                     b.Property<long>("GroundOperationId")
                         .HasColumnType("bigint")
