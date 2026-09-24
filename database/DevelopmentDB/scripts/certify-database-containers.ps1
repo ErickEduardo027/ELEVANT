@@ -668,9 +668,30 @@ function Assert-ImageContract {
 $productionConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantProductionDb;User ID=sa;Password=$($passwords.Sa);Encrypt=True;TrustServerCertificate=True"
 $developmentMigratorConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_migrator;Password=$($passwords.Migrator);Encrypt=True;TrustServerCertificate=True"
 $developmentSeederConnection = "Server=$sqlAlias,1433;Initial Catalog=ElevantDevelopmentDb;User ID=elevant_dev_seeder;Password=$($passwords.Seeder);Encrypt=True;TrustServerCertificate=True"
-$productionIntegrityQuery = @'
-IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> 7
-    THROW 53000, 'Production does not contain the seven v1 migrations.', 1;
+$migrationDirectory = Join-Path $developmentDatabaseRoot 'Elevant.Persistence/Persistence/Migrations'
+$migrationSources = @(Get-ChildItem -LiteralPath $migrationDirectory -File -Filter '*.cs' |
+    Where-Object { $_.Name -ne 'ElevantDbContextModelSnapshot.cs' -and $_.Name -notlike '*.Designer.cs' })
+if ($migrationSources.Count -eq 0 -or @($migrationSources |
+    Where-Object { $_.BaseName -notmatch '^[0-9]{14}_[A-Za-z0-9_]+$' }).Count -ne 0) {
+    throw 'The reviewed EF migration source set is missing or contains an unexpected filename.'
+}
+$expectedMigrationIds = @($migrationSources | ForEach-Object { $_.BaseName } | Sort-Object -Unique)
+if ($expectedMigrationIds.Count -ne $migrationSources.Count) {
+    throw 'The reviewed EF migration source set contains duplicate identifiers.'
+}
+$expectedMigrationValues = ($expectedMigrationIds | ForEach-Object { "    (N'$_')" }) -join ",`n"
+$productionIntegrityQuery = @"
+IF (SELECT COUNT_BIG(*) FROM [infra].[__EFMigrationsHistory]) <> $($expectedMigrationIds.Count)
+   OR EXISTS (
+       SELECT history.[MigrationId]
+       FROM [infra].[__EFMigrationsHistory] AS history
+       EXCEPT
+       SELECT expected.[MigrationId]
+       FROM (VALUES
+$expectedMigrationValues
+       ) AS expected([MigrationId])
+   )
+    THROW 53000, 'Production migrations differ from the reviewed EF source.', 1;
 
 IF (SELECT COUNT_BIG(*) FROM [infra].[database_instances]) <> 1
    OR NOT EXISTS (
@@ -694,7 +715,7 @@ IF EXISTS (
       AND COALESCE(counts.[row_count], 0) <> 0
 )
     THROW 53002, 'Production contains business rows.', 1;
-'@
+"@
 $succeeded = $false
 
 try {
