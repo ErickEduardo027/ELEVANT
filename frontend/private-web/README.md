@@ -37,6 +37,20 @@ El módulo incluye estados de carga, vacío, error recuperable, sesión expirada
 
 ## Frontera de seguridad
 
+La ruta `/admin-occ/review` consume exclusivamente la API canónica de revisión:
+cola limitada por la estación del actor, detalle de la última entrega y decisión
+individual. Muestra checklist, servicios, incidencias y nota del agente sin
+convertir los fixtures históricos en datos reales. Aprobar o devolver requiere
+confirmación; devolver exige un motivo. Cada decisión usa `If-Match` con la
+versión fuerte del detalle. Ante `409`, `412` o un resultado de red ambiguo, la
+web refresca la cola y el detalle y no reenvía el comando automáticamente.
+No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas. Las
+devoluciones aún no tienen un flujo de corrección y reentrega en Mobile Agent.
+
+La pantalla ofrece carga, cola vacía, error recuperable, sesión caducada,
+permiso denegado y ausencia de scopes. El backend sigue siendo quien impone
+rol, membresía y estación; el selector del navegador solo organiza la vista.
+
 Los roles, tenants y scopes de estación se validan en el servidor. Filtros, menús ocultos y sesiones del prototipo no autorizan datos. La web solo consume la API HTTPS versionada; no accede directamente a SQL Server, proveedores de aviación ni almacenamiento de objetos.
 
 ## Módulos observados

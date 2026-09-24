@@ -92,6 +92,14 @@ error expone solo `status`, un `title` saneado y el `traceId` opcional. Su
 mensaje nunca incorpora el token, URL, cuerpo crudo ni `ProblemDetails.detail`.
 Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
 
+`getOccReviewQueue(stationId)` consulta una estación incluida en el alcance
+OCC; la API vuelve a validar ese alcance. `getOccReviewDetail(operationId)`
+verifica la respuesta cerrada y exige que `reviewVersion` coincida con el
+`ETag` fuerte de la cabecera. `decideOccReview(operationId, request, etag)`
+envía un único resultado `Approved` o `Returned`, el UUID de la entrega exacta
+y el motivo obligatorio al devolver. El cliente valida la respuesta y nunca
+reconstruye, almacena como secreto ni reintenta automáticamente ese ETag.
+
 `getRampIncidents` lee las incidencias de una operación asignada sin aceptar
 identificadores de agente o estación. `reportRampIncident` envía solo tipo,
 impacto, descripción y hora de ocurrencia con instalación y clave de

@@ -22,7 +22,7 @@ import DashboardRoute from '../features/dashboard/DashboardRoute';
 import PlanningRoute from '../features/planning/PlanningRoute';
 import FlightMonitoringRoute from '../features/flight-monitoring/FlightMonitoringRoute';
 import PositionsMapRoute from '../features/positions-map/PositionsMapRoute';
-import ReviewRoute from '../features/review/ReviewRoute';
+import ReviewRoute from '../features/review/CanonicalReviewRoute';
 import ReportsRoute from '../features/reports/ReportsRoute';
 import NotificationsRoute from '../features/notifications/NotificationsRoute';
 import ChatRoute from '../features/chat/ChatRoute';

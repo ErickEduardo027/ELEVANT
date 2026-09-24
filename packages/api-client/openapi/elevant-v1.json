@@ -700,6 +700,338 @@
         ]
       }
     },
+    "/api/v1/occ/review/queue": {
+      "get": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "Returns the bounded latest-submission queue for one authorized station.",
+        "operationId": "GetOccReviewQueue",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewQueueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/review/operations/{operationId}": {
+      "get": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "Returns the latest submitted execution and its review evidence.",
+        "operationId": "GetOccReviewDetail",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/review/operations/{operationId}/decision": {
+      "post": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "Approves or returns one pending submission using its strong snapshot token.",
+        "operationId": "DecideOccReview",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideOccReviewRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideOccReviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/ramp/operations/{operationId}/incidents": {
       "get": {
         "tags": [
@@ -1784,6 +2116,64 @@
         },
         "additionalProperties": false
       },
+      "DecideOccReviewRequest": {
+        "required": [
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "maxLength": 16,
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "maxLength": 2000,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecideOccReviewResponse": {
+        "required": [
+          "decidedAt",
+          "operationId",
+          "outcome",
+          "status",
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "GetRampIncidentsResponse": {
         "required": [
           "incidents",
@@ -2343,6 +2733,346 @@
           "referenceTime": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewChecklistAnswerResponse": {
+        "required": [
+          "code",
+          "label",
+          "section",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewDecisionResponse": {
+        "required": [
+          "decidedAt",
+          "outcome"
+        ],
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewDetailResponse": {
+        "required": [
+          "agentName",
+          "airlineName",
+          "checklistAnswers",
+          "checklistStatus",
+          "ianaTimeZone",
+          "incidents",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "reviewVersion",
+          "revisionNumber",
+          "services",
+          "stationCode",
+          "stationId",
+          "status",
+          "submissionId",
+          "submittedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "plannedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "plannedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "checklistStatus": {
+            "type": "string"
+          },
+          "checklistAnswers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewChecklistAnswerResponse"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewServiceResponse"
+            }
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewIncidentResponse"
+            }
+          },
+          "decision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccReviewDecisionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "reviewVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewIncidentResponse": {
+        "required": [
+          "description",
+          "id",
+          "occurredAt",
+          "severity",
+          "status",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewQueueItemResponse": {
+        "required": [
+          "agentName",
+          "airlineName",
+          "incidentCount",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "revisionNumber",
+          "serviceCount",
+          "status",
+          "submissionId",
+          "submittedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "serviceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "incidentCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewQueueResponse": {
+        "required": [
+          "hasMore",
+          "ianaTimeZone",
+          "operations",
+          "stationCode",
+          "stationId",
+          "stationName"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "stationName": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewQueueItemResponse"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewServiceResponse": {
+        "required": [
+          "code",
+          "contractedQuantity",
+          "executedQuantity",
+          "id",
+          "name",
+          "status",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "unit": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -3863,6 +4593,9 @@
     },
     {
       "name": "OccPlanning"
+    },
+    {
+      "name": "OccReview"
     },
     {
       "name": "RampIncidents"

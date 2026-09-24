@@ -82,6 +82,30 @@ export interface CurrentSessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface DecideOccReviewRequest {
+  submissionId: string;
+  /**
+     * @maxLength 16
+     * @nullable
+     */
+  outcome?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  reason?: string | null;
+}
+
+export interface DecideOccReviewResponse {
+  operationId: string;
+  submissionId: string;
+  status: string;
+  outcome: string;
+  decidedAt: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface RampIncidentResponse {
   id: string;
   incidentType: string;
@@ -320,6 +344,95 @@ export interface OccPlanningSnapshotResponse {
   station: OccStationResponse;
   date: string;
   turnarounds: OccTurnaroundResponse[];
+}
+
+export interface OccReviewChecklistAnswerResponse {
+  section: string;
+  code: string;
+  label: string;
+  value: string;
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface OccReviewDecisionResponse {
+  outcome: string;
+  /** @nullable */
+  reason?: string | null;
+  decidedAt: string;
+}
+
+export interface OccReviewServiceResponse {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  unit: string;
+}
+
+export interface OccReviewIncidentResponse {
+  id: string;
+  type: string;
+  severity: string;
+  status: string;
+  description: string;
+  occurredAt: string;
+}
+
+export interface OccReviewDetailResponse {
+  operationId: string;
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  operationCode: string;
+  operationDate: string;
+  stationId: string;
+  stationCode: string;
+  ianaTimeZone: string;
+  airlineName: string;
+  agentName: string;
+  /** @nullable */
+  plannedStartAt?: string | null;
+  /** @nullable */
+  plannedEndAt?: string | null;
+  /** @nullable */
+  actualStartAt?: string | null;
+  /** @nullable */
+  actualEndAt?: string | null;
+  submittedAt: string;
+  /** @nullable */
+  agentNote?: string | null;
+  checklistStatus: string;
+  checklistAnswers: OccReviewChecklistAnswerResponse[];
+  services: OccReviewServiceResponse[];
+  incidents: OccReviewIncidentResponse[];
+  decision?: OccReviewDecisionResponse | null;
+  reviewVersion: string;
+}
+
+export interface OccReviewQueueItemResponse {
+  operationId: string;
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  operationCode: string;
+  operationDate: string;
+  airlineName: string;
+  agentName: string;
+  submittedAt: string;
+  serviceCount: number;
+  incidentCount: number;
+}
+
+export interface OccReviewQueueResponse {
+  stationId: string;
+  stationCode: string;
+  stationName: string;
+  ianaTimeZone: string;
+  operations: OccReviewQueueItemResponse[];
+  hasMore: boolean;
 }
 
 export interface ProblemDetails {
@@ -636,6 +749,10 @@ export type GetOccPlanningOptionsParams = {
 turnaroundId: string;
 };
 
+export type GetOccReviewQueueParams = {
+stationId: string;
+};
+
 export const getCreateSessionUrl = () => {
 
 
@@ -850,6 +967,113 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccReviewQueueUrl = (params: GetOccReviewQueueParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/review/queue?${stringifiedParams}` : `/api/v1/occ/review/queue`
+}
+
+/**
+ * @summary Returns the bounded latest-submission queue for one authorized station.
+ */
+export const getOccReviewQueue = async (params: GetOccReviewQueueParams, options?: RequestInit): Promise<OccReviewQueueResponse> => {
+
+  const res = await fetch(getGetOccReviewQueueUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewQueueResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccReviewDetailUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}`
+}
+
+/**
+ * @summary Returns the latest submitted execution and its review evidence.
+ */
+export const getOccReviewDetail = async (operationId: string, options?: RequestInit): Promise<OccReviewDetailResponse> => {
+
+  const res = await fetch(getGetOccReviewDetailUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDecideOccReviewUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/decision`
+}
+
+/**
+ * @summary Approves or returns one pending submission using its strong snapshot token.
+ */
+export const decideOccReview = async (operationId: string,
+    decideOccReviewRequest: DecideOccReviewRequest, options?: RequestInit): Promise<DecideOccReviewResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideOccReviewUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(decideOccReviewRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DecideOccReviewResponse = body ? JSON.parse(body) : {}
   return data
 }
 

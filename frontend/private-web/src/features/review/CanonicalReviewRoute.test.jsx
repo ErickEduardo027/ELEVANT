@@ -1,0 +1,125 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+
+const mocks = vi.hoisted(() => ({
+  useAuth: vi.fn(), queue: vi.fn(), detail: vi.fn(), decide: vi.fn(),
+}));
+vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
+vi.mock('../../services/occReviewService', () => ({
+  loadOccReviewQueue: mocks.queue,
+  loadOccReviewDetail: mocks.detail,
+  decideOccReview: mocks.decide,
+}));
+
+import CanonicalReviewRoute from './CanonicalReviewRoute';
+
+const stationId = '20000000-0000-0000-0000-000000000001';
+const otherStationId = '20000000-0000-0000-0000-000000000002';
+const operationId = '70000000-0000-0000-0000-000000000016';
+const submissionId = '70000000-0000-0000-0000-000000000017';
+const queue = {
+  stationId, stationCode: 'PUJ', stationName: 'Punta Cana',
+  ianaTimeZone: 'America/Santo_Domingo', hasMore: false,
+  operations: [{
+    operationId, submissionId, revisionNumber: 1, status: 'PendingReview',
+    operationCode: 'DEV-TAT-001', operationDate: '2026-09-23', airlineName: 'Aerolinea',
+    agentName: 'Agente Uno', submittedAt: '2026-09-23T15:00:00Z', serviceCount: 1,
+    incidentCount: 1,
+  }],
+};
+const detail = {
+  ...queue.operations[0], stationId, stationCode: 'PUJ',
+  ianaTimeZone: queue.ianaTimeZone,
+  plannedStartAt: null, plannedEndAt: null, actualStartAt: null, actualEndAt: null,
+  agentNote: 'Sin novedad', checklistStatus: 'Submitted',
+  checklistAnswers: [{ section: 'Puente', code: 'BRIDGE', label: 'Verificado', value: 'Yes', note: null }],
+  services: [{ id: '70000000-0000-0000-0000-000000000018', code: 'GPU', name: 'GPU',
+    status: 'Completed', contractedQuantity: 1, executedQuantity: 1, unit: 'unidad' }],
+  incidents: [{ id: '70000000-0000-0000-0000-000000000019', type: 'Safety',
+    severity: 'Low', status: 'Open', description: 'Detalle visible', occurredAt: '2026-09-23T14:00:00Z' }],
+  decision: null, reviewVersion: '"strong-token"',
+};
+
+function renderRoute(initial = '/admin-occ/review') {
+  return render(<MemoryRouter initialEntries={[initial]}><CanonicalReviewRoute /></MemoryRouter>);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.useAuth.mockReturnValue({ session: {
+    stationScopes: [{ stationId, stationCode: 'PUJ' }],
+  } });
+  mocks.queue.mockResolvedValue(queue);
+  mocks.detail.mockResolvedValue(detail);
+  mocks.decide.mockResolvedValue({ operationId, submissionId, status: 'Approved', outcome: 'Approved' });
+});
+
+describe('CanonicalReviewRoute', () => {
+  it('shows no data or command when the session has no station scope', () => {
+    mocks.useAuth.mockReturnValue({ session: { stationScopes: [] } });
+    renderRoute();
+    expect(screen.getByText(/Sin estaciones habilitadas/)).toBeInTheDocument();
+    expect(mocks.queue).not.toHaveBeenCalled();
+  });
+
+  it('loads the station queue and canonical evidence then approves after confirmation', async () => {
+    const user = userEvent.setup();
+    renderRoute();
+    expect(await screen.findByText('DEV-TAT-001')).toBeInTheDocument();
+    expect(mocks.queue).toHaveBeenCalledWith(stationId, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    expect(await within(panel).findByText(/Detalle visible/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Verificado/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Aprobar' }));
+    expect(mocks.decide).not.toHaveBeenCalled();
+    await user.click(within(panel).getByRole('button', { name: 'Confirmar decisión' }));
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith(operationId,
+      { submissionId, outcome: 'Approved' }, detail.reviewVersion,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })));
+    expect(await screen.findByText('Entrega aprobada y registrada.')).toBeInTheDocument();
+  });
+
+  it('requires a meaningful correction and never sends a bulk decision', async () => {
+    const user = userEvent.setup();
+    renderRoute();
+    await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+    const panel = await screen.findByRole('region', { name: 'Detalle de entrega' });
+    await within(panel).findByText(/Detalle visible/);
+    await user.click(within(panel).getByRole('button', { name: 'Devolver con correcciones' }));
+    const confirm = within(panel).getByRole('button', { name: 'Confirmar decisión' });
+    expect(confirm).toBeDisabled();
+    await user.type(within(panel).getByRole('textbox', { name: /Correcciones necesarias/ }), 'Falta');
+    expect(confirm).toBeDisabled();
+    await user.type(within(panel).getByRole('textbox', { name: /Correcciones necesarias/ }), ' evidencia');
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+    await waitFor(() => expect(mocks.decide).toHaveBeenCalledWith(operationId,
+      { submissionId, outcome: 'Returned', reason: 'Falta evidencia' }, detail.reviewVersion,
+      expect.any(Object)));
+  });
+
+  it('refuses an operation outside the selected station even if it is within the actor scope', async () => {
+    const user = userEvent.setup();
+    mocks.detail.mockResolvedValue({ ...detail, stationId: otherStationId });
+    renderRoute();
+    await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+    expect(await screen.findByText(/La entrega pertenece a otra estación/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+    expect(mocks.decide).not.toHaveBeenCalled();
+  });
+
+  it('refreshes canonical data after a stale decision instead of automatically retrying', async () => {
+    const user = userEvent.setup();
+    mocks.decide.mockRejectedValue(new Error('La entrega cambió. Actualiza el detalle antes de decidir.'));
+    renderRoute();
+    await user.click(await screen.findByRole('button', { name: 'Ver detalle' }));
+    await screen.findByText(/Detalle visible/);
+    await user.click(screen.getByRole('button', { name: 'Aprobar' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar decisión' }));
+    await waitFor(() => expect(mocks.detail).toHaveBeenCalledTimes(2));
+    expect(mocks.decide).toHaveBeenCalledTimes(1);
+  });
+});
