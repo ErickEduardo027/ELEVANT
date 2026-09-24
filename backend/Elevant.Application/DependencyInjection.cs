@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<SubmitRampOperationChecklistHandler>();
         services.AddScoped<TransitionRampOperationServiceHandler>();
         services.AddScoped<RampIncidentHandler>();
+        services.AddScoped<RampOperationSubmissionHandler>();
         return services;
     }
 }

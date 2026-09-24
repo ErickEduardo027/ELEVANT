@@ -401,6 +401,89 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         AssertUuidParameters(incidentPost, "operationId", "X-Elevant-Installation-Id", "Idempotency-Key");
         AssertResponses(incidentPost, "200", "400", "401", "403", "404", "409", "413", "415", "429");
         AssertBearerSecurity(incidentPost);
+
+        var handoff = paths
+            .GetProperty("/api/v1/ramp/operations/{operationId}/submit")
+            .GetProperty("post");
+        Assert.Equal("SubmitRampOperation", handoff.GetProperty("operationId").GetString());
+        AssertUuidParameters(handoff, "operationId", "X-Elevant-Installation-Id", "Idempotency-Key");
+        AssertResponses(handoff, "200", "400", "401", "403", "404", "409", "413", "415", "429");
+        AssertBearerSecurity(handoff);
+    }
+
+    [Fact]
+    public async Task HandoffRequiresBearerAuthenticationAndIsNeverCached()
+    {
+        await using var application = CreateApplication(new ExecutionState());
+        using var client = application.CreateClient();
+        using var request = CreateHandoffRequest();
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        AssertPrivateResponse(response);
+    }
+
+    [Fact]
+    public async Task HandoffUsesServerOwnedScopeAndReturnsVersionedReceipt()
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var state = new ExecutionState
+        {
+            Actor = CreateActor(),
+            HandoffResult = RampOperationSubmissionWriteResult.Success(
+                new RampOperationSubmissionData(
+                    ReceiptId, OperationId, IdempotencyKey, ChecklistId,
+                    1, "PendingReview", now, now, "OperaciÃ³n lista"), ReceiptId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateHandoffRequest();
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateResponse(response);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(ReceiptId, body.GetProperty("receiptId").GetGuid());
+        Assert.Equal(IdempotencyKey, body.GetProperty("submissionId").GetGuid());
+        Assert.Equal(1, body.GetProperty("revisionNumber").GetInt32());
+        Assert.Equal("PendingReview", body.GetProperty("status").GetString());
+        Assert.Equal("OperaciÃ³n lista", state.HandoffRequest?.AgentNote);
+        Assert.Equal([StationId], state.HandoffRequest?.AllowedStationIds);
+        Assert.Equal(AccountId, state.HandoffRequest?.ActorAccountId);
+        Assert.Equal(InstallationId, state.HandoffRequest?.InstallationId);
+    }
+
+    [Theory]
+    [InlineData("{\"actorId\":\"40000000-0000-7000-8000-000000000002\"}")]
+    [InlineData("{\"agentNote\":\"x\\u0000y\"}")]
+    public async Task HandoffRejectsUnknownOrUnsafeBodyBeforeStore(string json)
+    {
+        var state = new ExecutionState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateHandoffRequest(json);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(state.HandoffRequest);
+    }
+
+    [Theory]
+    [InlineData(null, "82000000-0000-7000-8000-000000000010")]
+    [InlineData("81000000-0000-7000-8000-000000000001", null)]
+    [InlineData("not-a-uuid", "82000000-0000-7000-8000-000000000010")]
+    public async Task HandoffRequiresBothValidDeviceCommandHeaders(
+        string? installationId, string? idempotencyKey)
+    {
+        var state = new ExecutionState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateHandoffRequest();
+        request.Headers.Remove("X-Elevant-Installation-Id");
+        request.Headers.Remove("Idempotency-Key");
+        AddCommandHeaders(request, installationId, idempotencyKey);
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(state.HandoffRequest);
     }
 
     [Fact]
@@ -511,6 +594,21 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         return request;
     }
 
+    private static HttpRequestMessage CreateHandoffRequest(string? json = null)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/v1/ramp/operations/{OperationId:D}/submit")
+        {
+            Content = new StringContent(
+                json ?? """{"agentNote":"OperaciÃ³n lista"}""",
+                Encoding.UTF8,
+                "application/json"),
+        };
+        AddCommandHeaders(request, InstallationId.ToString("D"), IdempotencyKey.ToString("D"));
+        return request;
+    }
+
     private WebApplicationFactory<Program> CreateApplication(ExecutionState state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -519,12 +617,14 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
             services.RemoveAll<IRampOperationChecklistCommandStore>();
             services.RemoveAll<IRampOperationServiceCommandStore>();
             services.RemoveAll<IRampIncidentStore>();
+            services.RemoveAll<IRampOperationSubmissionStore>();
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IRampOperationChecklistReadStore>(_ => state);
             services.AddScoped<IRampOperationChecklistCommandStore>(_ => state);
             services.AddScoped<IRampOperationServiceCommandStore>(_ => state);
             services.AddScoped<IRampIncidentStore>(_ => state);
+            services.AddScoped<IRampOperationSubmissionStore>(_ => state);
         }));
 
     private static HttpClient CreateAuthenticatedClient(
@@ -693,7 +793,8 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         IRampOperationChecklistReadStore,
         IRampOperationChecklistCommandStore,
         IRampOperationServiceCommandStore
-        , IRampIncidentStore
+        , IRampIncidentStore,
+        IRampOperationSubmissionStore
     {
         public ActorContext? Actor { get; init; }
 
@@ -723,6 +824,11 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
 
         public RampIncidentWriteResult IncidentWriteResult { get; init; } =
             RampIncidentWriteResult.Failed(RampOperationsFailure.Conflict);
+
+        public RampOperationSubmissionWriteRequest? HandoffRequest { get; private set; }
+
+        public RampOperationSubmissionWriteResult HandoffResult { get; init; } =
+            RampOperationSubmissionWriteResult.Failed(RampOperationsFailure.Conflict);
 
         public Task<ActorContext?> ResolveAsync(
             Guid accountId,
@@ -773,6 +879,14 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         {
             IncidentWriteRequest = request;
             return Task.FromResult(IncidentWriteResult);
+        }
+
+        public Task<RampOperationSubmissionWriteResult> SubmitAsync(
+            RampOperationSubmissionWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            HandoffRequest = request;
+            return Task.FromResult(HandoffResult);
         }
 
     }

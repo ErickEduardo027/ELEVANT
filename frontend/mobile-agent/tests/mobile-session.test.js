@@ -43,16 +43,19 @@ const {
   clearStoredMobileSession,
   getOrCreateRampChecklistSubmitCommandIfCurrent,
   getOrCreateRampServiceTransitionCommandIfCurrent,
+  getOrCreateRampOperationSubmitCommandIfCurrent,
   getOrCreateRampStartCommandIfCurrent,
   readRampChecklistDraftIfCurrent,
   readRampChecklistSubmitCommandIfCurrent,
   readRampIncidentOutboxIfCurrent,
+  readRampOperationSubmitCommandIfCurrent,
   readOrCreateMobileInstallationId,
   readAssignedOperationsCacheIfCurrent,
   readStoredMobileSession,
   updateStoredMobileSessionMetadata,
   writeRampChecklistDraftIfCurrent,
   reserveRampIncidentOutboxItemIfCurrent,
+  removeRampOperationSubmitCommandIfCurrent,
   updateRampIncidentOutboxItemIfCurrent,
   writeAssignedOperationsCacheIfCurrent,
   writeStoredMobileSession,
@@ -306,6 +309,26 @@ test('does not overwrite a malformed incident outbox or lose reserved reports', 
     sessionId, ACCOUNT_A, OPERATION_A, '{"description":"test report"}',
   )).rejects.toThrow('Mobile session storage is unavailable.');
   expect(mockAsyncData.get(key)).toBe('{invalid');
+});
+
+test('freezes one operation handoff per account and scrubs it on logout', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const first = await getOrCreateRampOperationSubmitCommandIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ agentNote: 'Listo' }));
+  const second = await getOrCreateRampOperationSubmitCommandIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ agentNote: 'Cambiado' }));
+  expect(second).toEqual(first);
+  await expect(readRampOperationSubmitCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_B))
+    .resolves.toEqual({ kind: 'current', command: null });
+  await expect(readRampOperationSubmitCommandIfCurrent(sessionId, ACCOUNT_B, OPERATION_A))
+    .resolves.toEqual({ kind: 'not-current' });
+  await expect(readRampOperationSubmitCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A))
+    .resolves.toMatchObject({ kind: 'current', command: { idempotencyKey: first.idempotencyKey } });
+  expect(await removeRampOperationSubmitCommandIfCurrent(
+    sessionId, ACCOUNT_A, OPERATION_A, '90000000-0000-4000-8000-000000000001'))
+    .toBe('changed');
+  await clearStoredMobileSession();
+  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-submit'))).toBe(false);
 });
 
 test('freezes checklist payload and idempotency key before an uncertain request', async () => {

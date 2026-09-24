@@ -10,6 +10,7 @@ import {
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
   getReportRampIncidentUrl,
+  getSubmitRampOperationUrl,
   getStartRampOperationUrl,
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
@@ -26,7 +27,9 @@ import {
   type RampGroundOperationResponse,
   type RampChecklistSubmissionResponse,
   type RampIncidentReceiptResponse,
+  type RampOperationSubmissionResponse,
   type ReportRampIncidentRequest,
+  type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
   type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
@@ -91,6 +94,7 @@ export type GetRampOperationChecklistOptions = Omit<
 >;
 export type GetRampIncidentsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationChecklistOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -168,6 +172,13 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: ReportRampIncidentOptions,
   ): Promise<RampIncidentReceiptResponse>;
+  submitRampOperation(
+    operationId: string,
+    request: SubmitRampOperationRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: SubmitRampOperationOptions,
+  ): Promise<RampOperationSubmissionResponse>;
   submitRampOperationChecklist(
     operationId: string,
     request: SubmitRampOperationChecklistRequest,
@@ -1120,6 +1131,33 @@ function isRampIncidentReceiptResponse(
   );
 }
 
+function isRampOperationSubmissionResponse(
+  value: unknown,
+  operationId: string,
+  idempotencyKey: string,
+  agentNote: string | null,
+): value is RampOperationSubmissionResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "receiptId", "operationId", "submissionId", "checklistId", "revisionNumber",
+      "status", "submittedAt", "actualEndAt", "agentNote",
+    ]) &&
+    isUuid(value.receiptId) &&
+    isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    isUuid(value.submissionId) &&
+    value.submissionId.toLowerCase() === idempotencyKey &&
+    isUuid(value.checklistId) &&
+    Number.isInteger(value.revisionNumber) &&
+    (value.revisionNumber as number) > 0 &&
+    isOneOf(value.status, ["PendingReview", "InReview", "Approved", "Returned"] as const) &&
+    isDateTimeOffset(value.submittedAt) &&
+    isDateTimeOffset(value.actualEndAt) &&
+    (value.agentNote ?? null) === agentNote
+  );
+}
+
 function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   if (!isRecord(value)) return false;
   if (
@@ -1433,6 +1471,22 @@ function validatedIncidentReportRequest(
     description: request.description.trim(),
     occurredAt: request.occurredAt,
   };
+}
+
+function validatedRampOperationSubmissionRequest(
+  request: SubmitRampOperationRequest,
+): SubmitRampOperationRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["agentNote"])) {
+    throw new TypeError("Ramp operation submission is invalid.");
+  }
+  if (request.agentNote === null || request.agentNote === undefined) return {};
+  if (
+    typeof request.agentNote !== "string" ||
+    request.agentNote.length > 2_000 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.agentNote)
+  ) throw new TypeError("Ramp operation note is invalid.");
+  const note = request.agentNote.trim();
+  return note.length > 0 ? { agentNote: note } : {};
 }
 
 function validatedUuid(value: string, field: string) {
@@ -1798,6 +1852,31 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       );
       if (!isRampIncidentReceiptResponse(
         result.data, operation, commandKey, report.occurredAt,
+      )) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async submitRampOperation(
+      operationId: string,
+      request: SubmitRampOperationRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: SubmitRampOperationOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const submission = validatedRampOperationSubmissionRequest(request);
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getSubmitRampOperationUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify(submission) },
+        true,
+      );
+      if (!isRampOperationSubmissionResponse(
+        result.data, operation, commandKey, submission.agentNote ?? null,
       )) throw malformedResponse(result.status);
       return result.data;
     },

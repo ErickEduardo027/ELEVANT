@@ -9,10 +9,12 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
@@ -34,6 +36,11 @@ import {
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
 import { startAssignedRampOperation } from '../../services/ramp-operation-start';
+import {
+  readRampOperationPendingSubmission,
+  submitRampOperation,
+  type RampOperationPendingSubmission,
+} from '../../services/ramp-operation-submission';
 import {
   readRampOperationServicePendingTransition,
   transitionRampOperationService,
@@ -64,11 +71,18 @@ export default function OperationDetailScreen() {
   const [serviceReconciliationRequired, setServiceReconciliationRequired] = useState(false);
   const [serviceNotices, setServiceNotices] = useState<Readonly<Record<string, ServiceExecutionNotice>>>({});
   const [pendingServiceCommands, setPendingServiceCommands] = useState<Readonly<Record<string, RampServicePendingTransition>>>({});
+  const [pendingSubmission, setPendingSubmission] = useState<RampOperationPendingSubmission | null>(null);
+  const [submissionNote, setSubmissionNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState<StartNotice | null>(null);
+  const [submissionReconciliationRequired, setSubmissionReconciliationRequired] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   const startRequestRef = useRef<AbortController | null>(null);
   const serviceRequestRef = useRef<AbortController | null>(null);
+  const submissionRequestRef = useRef<AbortController | null>(null);
   const startInFlightRef = useRef(false);
   const serviceInFlightRef = useRef(false);
+  const submissionInFlightRef = useRef(false);
   const lastStartedOperationRef = useRef<RampGroundOperationResponse | null>(null);
   const lastServiceExecutionsRef = useRef(new Map<string, RampOperationServiceExecutionResponse>());
 
@@ -84,6 +98,10 @@ export default function OperationDetailScreen() {
       setBusyServiceId(null);
       setServiceNotices({});
       setPendingServiceCommands({});
+      setPendingSubmission(null);
+      setSubmissionNote('');
+      setSubmissionNotice(null);
+      setSubmissionReconciliationRequired(false);
       lastStartedOperationRef.current = null;
       lastServiceExecutionsRef.current.clear();
     }
@@ -115,11 +133,15 @@ export default function OperationDetailScreen() {
         lastServiceExecutionsRef.current.clear();
       }
       let pendingCommands: Readonly<Record<string, RampServicePendingTransition>> | undefined;
+      let pendingHandoff: RampOperationPendingSubmission | null = null;
       if (found && snapshot.source === 'network') {
         pendingCommands = await findPendingServiceCommands(
           found.operation.id,
           found.services,
         );
+      }
+      if (found) {
+        pendingHandoff = await readRampOperationPendingSubmission(found.operation.id);
       }
       if (request.signal.aborted) return;
       setOperation(found);
@@ -130,6 +152,9 @@ export default function OperationDetailScreen() {
       }
       if (pendingCommands) setPendingServiceCommands(pendingCommands);
       else if (!found) setPendingServiceCommands({});
+      setPendingSubmission(pendingHandoff);
+      if (pendingHandoff) setSubmissionNote(pendingHandoff.request.agentNote ?? '');
+      setSubmissionReconciliationRequired(false);
     } catch (error) {
       if (request.signal.aborted) return;
       if (error instanceof MobileServiceError) {
@@ -164,8 +189,10 @@ export default function OperationDetailScreen() {
       requestRef.current?.abort();
       startRequestRef.current?.abort();
       serviceRequestRef.current?.abort();
+      submissionRequestRef.current?.abort();
       startInFlightRef.current = false;
       serviceInFlightRef.current = false;
+      submissionInFlightRef.current = false;
     };
   }, [load]));
 
@@ -399,6 +426,98 @@ export default function OperationDetailScreen() {
     }
   }, [cached, load, operation]);
 
+  const handoffOperation = useCallback(async () => {
+    if (
+      submissionInFlightRef.current || !operation || cached ||
+      busyServiceId !== null || Object.keys(pendingServiceCommands).length > 0 ||
+      serviceReconciliationRequired || submissionReconciliationRequired ||
+      (!pendingSubmission && (
+        operation.operation.status !== 'InProgress' ||
+        operation.services.length === 0 ||
+        operation.services.some(service => !isTerminalServiceStatus(service.status))
+      ))
+    ) return;
+
+    submissionRequestRef.current?.abort();
+    const request = new AbortController();
+    submissionRequestRef.current = request;
+    submissionInFlightRef.current = true;
+    setSubmitting(true);
+    setSubmissionNotice(null);
+    try {
+      const response = await submitRampOperation(
+        operation.operation.id,
+        pendingSubmission?.request ?? { agentNote: submissionNote.trim() || undefined },
+        { signal: request.signal },
+      );
+      if (request.signal.aborted) return;
+      setOperation(current => current?.operation.id === response.operationId
+        ? {
+            ...current,
+            operation: {
+              ...current.operation,
+              status: response.status,
+              actualEndAt: response.actualEndAt,
+            },
+          }
+        : current);
+      setPendingSubmission(null);
+      setSubmissionReconciliationRequired(false);
+      setSubmissionNotice({
+        tone: 'success',
+        title: 'Entregada a OCC',
+        message: `La revisión de la operación quedó solicitada. Revisión ${response.revisionNumber}.`,
+      });
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof MobileServiceError &&
+          (error.code === 'unauthenticated' || error.code === 'session_expired')) {
+        resetToLogin('session_expired');
+        return;
+      }
+      if (error instanceof MobileServiceError && error.code === 'forbidden') {
+        resetToLogin('access_revoked');
+        return;
+      }
+      try {
+        const pending = await readRampOperationPendingSubmission(operation.operation.id);
+        setPendingSubmission(pending);
+        if (pending) setSubmissionNote(pending.request.agentNote ?? '');
+        setSubmissionReconciliationRequired(false);
+        setSubmissionNotice(submissionErrorNotice(error, Boolean(pending)));
+      } catch {
+        setSubmissionReconciliationRequired(true);
+        setSubmissionNotice({
+          tone: 'error',
+          title: 'Entrega por conciliar',
+          message: 'No pudimos verificar el comando reservado. Actualiza el detalle antes de volver a enviar.',
+        });
+      }
+    } finally {
+      if (submissionRequestRef.current === request) {
+        submissionRequestRef.current = null;
+        submissionInFlightRef.current = false;
+        if (!request.signal.aborted) setSubmitting(false);
+      }
+    }
+  }, [busyServiceId, cached, operation, pendingServiceCommands, pendingSubmission,
+    serviceReconciliationRequired, submissionNote, submissionReconciliationRequired]);
+
+  const confirmHandoff = useCallback(() => {
+    if (pendingSubmission) {
+      void handoffOperation();
+      return;
+    }
+    Alert.alert(
+      'Entregar operación a OCC',
+      'Confirma que el checklist está enviado, los servicios terminaron y las incidencias pendientes están sincronizadas. Una vez entregada, la ejecución queda cerrada para revisión.',
+      [
+        { text: 'Seguir revisando', style: 'cancel' },
+        { text: 'Entregar a OCC', onPress: () => void handoffOperation() },
+      ],
+    );
+  }, [handoffOperation, pendingSubmission]);
+
   if (state !== 'ready' || !operation) {
     return <DetailStateScreen onRetry={() => void load()} state={state} />;
   }
@@ -589,6 +708,24 @@ export default function OperationDetailScreen() {
         </View>
       )}
 
+      {(hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
+        <OperationSubmissionControl
+          blocked={
+            cached || busyServiceId !== null || pendingServiceId !== null ||
+            serviceReconciliationRequired || submissionReconciliationRequired
+          }
+          note={submissionNote}
+          notice={submissionNotice}
+          onChangeNote={setSubmissionNote}
+          onSubmit={confirmHandoff}
+          operation={operation.operation}
+          pending={pendingSubmission}
+          servicesReady={operation.services.length > 0 && operation.services.every(
+            service => isTerminalServiceStatus(service.status))}
+          submitting={submitting}
+        />
+      )}
+
       <SectionTitle title="Asignación" />
       <Card style={styles.assignmentCard}>
         <Meta icon="briefcase-outline" label={assignment.assignmentRole} dark />
@@ -722,6 +859,117 @@ function OperationStartControl({
   );
 }
 
+function OperationSubmissionControl({
+  blocked,
+  note,
+  notice,
+  onChangeNote,
+  onSubmit,
+  operation,
+  pending,
+  servicesReady,
+  submitting,
+}: {
+  readonly blocked: boolean;
+  readonly note: string;
+  readonly notice: StartNotice | null;
+  readonly onChangeNote: (value: string) => void;
+  readonly onSubmit: () => void;
+  readonly operation: RampGroundOperationResponse;
+  readonly pending: RampOperationPendingSubmission | null;
+  readonly servicesReady: boolean;
+  readonly submitting: boolean;
+}) {
+  const delivered = operation.status === 'PendingReview' && !pending;
+  const canSubmit = !blocked && !submitting && (
+    pending !== null || (operation.status === 'InProgress' && servicesReady));
+
+  return (
+    <View style={[styles.handoffCard, delivered && styles.handoffDelivered]}>
+      <View style={styles.handoffHeader}>
+        <View style={styles.handoffIcon}>
+          <Ionicons
+            name={delivered ? 'checkmark-done-outline' : 'send-outline'}
+            size={22}
+            color={delivered ? colors.success : colors.orange}
+          />
+        </View>
+        <View style={styles.handoffCopy}>
+          <Text style={styles.startEyebrow}>CIERRE DE EJECUCIÓN</Text>
+          <Text accessibilityRole="header" style={styles.handoffTitle}>
+            {delivered ? 'Pendiente de revisión OCC' : 'Entregar operación a OCC'}
+          </Text>
+        </View>
+      </View>
+      <Text style={styles.startDescription}>
+        {delivered
+          ? 'La ejecución quedó cerrada. OCC revisará el checklist, los servicios y las incidencias registradas.'
+          : 'Antes de entregar, envía el checklist y termina todos los servicios. Las incidencias pendientes deben sincronizarse.'}
+      </Text>
+      {operation.status === 'InProgress' && !pending && (
+        <View style={styles.handoffNoteGroup}>
+          <Text style={styles.handoffLabel}>Nota para OCC · opcional</Text>
+          <TextInput
+            accessibilityLabel="Nota opcional para OCC"
+            editable={!blocked && !submitting}
+            maxLength={2000}
+            multiline
+            onChangeText={onChangeNote}
+            placeholder="Agrega un dato útil para la revisión"
+            placeholderTextColor={colors.muted}
+            style={styles.handoffNoteInput}
+            textAlignVertical="top"
+            value={note}
+          />
+          <Text style={styles.handoffCounter}>{note.length}/2000</Text>
+        </View>
+      )}
+      {pending && (
+        <Text style={styles.nextPhaseWarning}>
+          Hay un envío reservado con nota fija. Reconecta y reintenta; no se creará una segunda entrega.
+        </Text>
+      )}
+      {!servicesReady && operation.status === 'InProgress' && !pending && (
+        <Text style={styles.nextPhaseWarning}>Termina todos los servicios antes de entregar.</Text>
+      )}
+      {blocked && !delivered && (
+        <Text style={styles.nextPhaseWarning}>
+          Actualiza en línea y concilia los comandos pendientes antes de entregar.
+        </Text>
+      )}
+      {(operation.status === 'InProgress' || pending) && (
+        <PrimaryButton
+          disabled={!canSubmit}
+          icon={pending ? 'refresh-outline' : 'send-outline'}
+          onPress={onSubmit}
+          title={submitting ? 'ENVIANDO…' : pending ? 'REINTENTAR ENTREGA' : 'ENTREGAR A OCC'}
+        />
+      )}
+      {notice && (
+        <View
+          accessibilityLiveRegion={notice.tone === 'error' ? 'assertive' : 'polite'}
+          style={[
+            styles.startNotice,
+            notice.tone === 'success' && styles.startNoticeSuccess,
+            notice.tone === 'warning' && styles.startNoticeWarning,
+            notice.tone === 'error' && styles.startNoticeError,
+          ]}
+        >
+          <Ionicons
+            name={notice.tone === 'success' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+            size={20}
+            color={notice.tone === 'success' ? colors.success : notice.tone === 'warning' ? colors.warning : colors.danger}
+          />
+          <View style={styles.startNoticeCopy}>
+            <Text style={styles.startNoticeTitle}>{notice.title}</Text>
+            <Text style={styles.startNoticeText}>{notice.message}</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 async function findPendingServiceCommands(
   operationId: string,
   services: readonly RampOperationServiceResponse[],
@@ -811,6 +1059,37 @@ function serviceTransitionErrorNotice(
     message: error.retryable
       ? 'No pudimos confirmar el cambio. Actualiza el detalle y vuelve a intentarlo.'
       : 'El cambio fue rechazado. Revisa el estado canónico antes de continuar.',
+  };
+}
+
+function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
+  if (pending) {
+    return {
+      tone: 'warning',
+      title: 'Entrega pendiente de confirmación',
+      message: 'El comando quedó protegido. Reintenta con la misma sesión y la misma clave; no edites la nota ni crees otra entrega.',
+    };
+  }
+  if (error instanceof MobileServiceError) {
+    if (error.code === 'conflict' || error.code === 'not_found') {
+      return {
+        tone: 'warning',
+        title: 'Operación por actualizar',
+        message: 'El estado cambió o falta un requisito. Actualiza el detalle y revisa el checklist, los servicios y las incidencias.',
+      };
+    }
+    if (error.code === 'storage_unavailable') {
+      return {
+        tone: 'error',
+        title: 'Comando no protegido',
+        message: 'No pudimos guardar la entrega en el dispositivo. Desbloquéalo y vuelve a intentar.',
+      };
+    }
+  }
+  return {
+    tone: 'error',
+    title: 'Entrega no confirmada',
+    message: 'No pudimos confirmar la entrega. Actualiza el detalle antes de intentar de nuevo.',
   };
 }
 
@@ -1065,6 +1344,42 @@ const styles = StyleSheet.create({
   startNoticeCopy: { flex: 1, minWidth: 0 },
   startNoticeTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   startNoticeText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  handoffCard: {
+    marginTop: 8,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#FFD0B7',
+    backgroundColor: colors.white,
+    gap: 12,
+  },
+  handoffDelivered: { borderColor: '#B9DFC9', backgroundColor: '#F8FCFA' },
+  handoffHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  handoffIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paleOrange,
+  },
+  handoffCopy: { flex: 1, minWidth: 0 },
+  handoffTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 2 },
+  handoffNoteGroup: { gap: 6 },
+  handoffLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  handoffNoteInput: {
+    minHeight: 96,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    color: colors.ink,
+    backgroundColor: colors.white,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  handoffCounter: { alignSelf: 'flex-end', color: colors.muted, fontSize: 11 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   metaText: { flex: 1, color: colors.white, fontSize: 12, fontWeight: '700' },
   metaTextDark: { color: colors.ink },
