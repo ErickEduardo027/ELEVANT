@@ -643,6 +643,18 @@ Como cambian ambos Compose certificados, se pausan los controladores y schedules
 de DB/API/Web, se guardan los Raw exactos revisados y se ejecutan los dry-runs
 antes del merge. La promoción se acepta en orden Database → API → webs.
 
+Para incorporar las cuentas sintéticas de Contratos y Finanzas en una entrega
+posterior, Database Release también necesita
+`ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD` y
+`ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD` en su Environment root-only y las dos
+entradas correspondientes en el Compose vivo. Ambos valores deben ser nuevos y
+distintos de las otras cuatro cuentas. El operador compara primero el Compose
+vivo con el candidato certificado, prepara los dos valores sin mostrarlos en
+terminal ni PR y realiza `--dry-run` antes de reanudar la promoción. El seed
+crea cuentas ausentes, pero nunca vuelve a escribir contraseñas existentes.
+La recuperación de Gestión Humana es un comando manual separado,
+`rotate-development-human-resources`, fuera de los schedules.
+
 La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
 Además de autenticación y contexto de actor, el primer slice OCC publica dos
 lecturas bajo `/api/v1/occ/planning`. Estas aplican rol, membresía y scope de

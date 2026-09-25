@@ -7,8 +7,8 @@ const BASE_SNAPSHOT = {
     approvalsPending: 4,
   },
   flyAware: {
-    status: 'online',
-    lastSyncMinutesAgo: 2,
+    status: 'unavailable',
+    lastSyncMinutesAgo: null,
   },
   flightStatusDistribution: [
     { status: 'scheduled', count: 14 },

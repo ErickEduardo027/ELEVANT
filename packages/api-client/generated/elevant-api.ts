@@ -43,6 +43,24 @@ export interface AssignOccOperationRequest {
   agentId: string;
 }
 
+export interface ChangePasswordRequest {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  currentPassword: string;
+  /**
+     * @minLength 14
+     * @maxLength 256
+     */
+  newPassword: string;
+}
+
 export interface CreateSessionRequest {
   /**
      * @minLength 1
@@ -976,6 +994,43 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangePasswordUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password-change`
+}
+
+/**
+ * @summary Changes a verified password, then requires a fresh login.
+ */
+export const changePassword = async (changePasswordRequest: ChangePasswordRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangePasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changePasswordRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 

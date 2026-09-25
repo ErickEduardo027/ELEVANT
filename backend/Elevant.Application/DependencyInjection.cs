@@ -25,6 +25,7 @@ public static class DependencyInjection
 
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<CreateSessionHandler>();
+        services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();

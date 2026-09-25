@@ -740,7 +740,7 @@ jobs:
               9b4319896a1d0b25caa6119122e2842fa6f0313ac8fdcbfa90598903cfc10b21 \
               "$DATABASE_COMPOSE"
             printf '%s  %s\n' \
-              dde629d5dac5a767525dec48e334176be53653f9df75c28799fb21947afd6ece \
+              04c5d330b6421cc89f9e7c45e069698427755f1fc5f8646446aae823ccec1c0a \
               "$RELEASE_COMPOSE"
             printf '%s  %s\n' \
               408a76510e6ffa9b7fc9119b88313f7d9eb5683bf8e68ebd0f323dbda2115034 \

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { AUTH_EXPIRED_EVENT, login as createSession, logout as closeBackendSession, readSession } from './authService';
+import { AUTH_EXPIRED_EVENT, changePassword as changeBackendPassword, login as createSession, logout as closeBackendSession, readSession } from './authService';
 
 const AuthContext = createContext(null);
 
@@ -16,6 +16,9 @@ export function AuthProvider({ children }) {
       const nextSession = await createSession(credentials);
       setSession(nextSession);
       return nextSession;
+    },
+    async changePassword(credentials) {
+      await changeBackendPassword(credentials);
     },
     logout() {
       closeBackendSession();

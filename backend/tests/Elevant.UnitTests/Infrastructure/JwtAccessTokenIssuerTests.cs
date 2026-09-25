@@ -1,4 +1,5 @@
 using Elevant.Application.Identity;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,7 @@ public sealed class JwtAccessTokenIssuerTests
         var claimTypes = token.Claims.Select(claim => claim.Type).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(JwtRegisteredClaimNames.Sub, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Jti, claimTypes);
+        Assert.Contains(SessionSecurityVersion.ClaimType, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Iat, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Nbf, claimTypes);
         Assert.Contains(JwtRegisteredClaimNames.Exp, claimTypes);
@@ -103,7 +105,14 @@ public sealed class JwtAccessTokenIssuerTests
             Audience = Audience,
             SigningKeyBase64 = signingKeyBase64,
         }),
-        new FixedTimeProvider(Now));
+        new FixedTimeProvider(Now),
+        new StubSecurityVersionStore());
+
+    private sealed class StubSecurityVersionStore : ISessionSecurityVersionStore
+    {
+        public Task<string?> GetCurrentAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(accountId == AccountId ? "unit-test-security-stamp" : null);
+    }
 
     private static ActorContext CreateActor() => new(
         AccountId,

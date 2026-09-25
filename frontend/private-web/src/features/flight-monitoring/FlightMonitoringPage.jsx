@@ -3,6 +3,7 @@ import FlightToolbar from './components/FlightToolbar';
 import FlightListPanel from './components/FlightListPanel';
 import FlightListDrawer from './components/FlightListDrawer';
 import FlightMap from './components/FlightMap';
+import GoogleFlightMap from './components/GoogleFlightMap';
 import FlightLegend from './components/FlightLegend';
 import FlightDetailPopover from './components/FlightDetailPopover';
 import FlightToastStack from './components/FlightToast';
@@ -26,10 +27,12 @@ function MonitoringMapArea({
 }) {
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
+  const useGoogle = Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  const BaseMap = useGoogle ? GoogleFlightMap : FlightMap;
   return (
     <div className="relative min-h-[420px] flex-1">
-      {geolocatedFlights.length > 0 ? <>
-        <FlightMap
+      {geolocatedFlights.length > 0 || useGoogle ? <>
+        <BaseMap
           flights={geolocatedFlights}
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}
@@ -37,6 +40,9 @@ function MonitoringMapArea({
           onPopoverPosition={onPopoverPosition}
         />
         <FlightLegend />
+        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
+          Sin posición de aeronaves en vivo: el mapa muestra PUJ, no trayectorias simuladas.
+        </p>}
       </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
         La API muestra vuelos y horarios operativos. La posición en vivo no está disponible hasta conectar una fuente aeronáutica verificada.
       </div>}

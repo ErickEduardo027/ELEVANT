@@ -36,6 +36,7 @@ describe('DashboardPage', () => {
   it('renders KPI labels and content once data is provided', () => {
     render(<DashboardPage status="success" data={SNAPSHOT} error={null} onRetry={() => {}} />);
     expect(screen.getByText('Vuelos programados hoy')).toBeInTheDocument();
+    expect(screen.getByText(/vista previa con indicadores, vuelos y alertas sintéticos/i)).toBeInTheDocument();
     expect(screen.getByText('Agentes en operaciones activas')).toBeInTheDocument();
     expect(screen.getByText('DM161 · DM')).toBeInTheDocument();
     expect(screen.getByText('Vuelo DM161 no llegó a la posición asignada según hora estimada')).toBeInTheDocument();

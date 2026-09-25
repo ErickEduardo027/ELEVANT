@@ -33,6 +33,11 @@ public sealed class CreateSessionHandler(
             return CreateSessionResult.Failed(CreateSessionFailure.InvalidCredentials);
         }
 
+        if (verifiedCredential.MustChangePassword)
+        {
+            return CreateSessionResult.Failed(CreateSessionFailure.PasswordChangeRequired);
+        }
+
         var actor = await actorContextResolver.ResolveAsync(
             verifiedCredential.AccountId,
             cancellationToken);

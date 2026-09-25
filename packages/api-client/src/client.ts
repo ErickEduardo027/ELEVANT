@@ -2,6 +2,7 @@ import {
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
+  getChangePasswordUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
@@ -29,6 +30,7 @@ import {
   type AssignOccOperationRequest,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
+  type ChangePasswordRequest,
   type CurrentSessionResponse,
   type GetRampOperationChecklistResponse,
   type GetRampIncidentsResponse,
@@ -89,6 +91,7 @@ export type ElevantRequestInit = Omit<RequestInit, "headers"> & {
 
 export type GetSystemPingOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningSnapshotOptions = Omit<
@@ -150,6 +153,10 @@ export interface ElevantApiClient {
     request: CreateSessionRequest,
     options?: CreateSessionOptions,
   ): Promise<SessionResponse>;
+  changePassword(
+    request: ChangePasswordRequest,
+    options?: ChangePasswordOptions,
+  ): Promise<void>;
   getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
   getAirlinePortalBootstrap(
     options?: GetAirlinePortalBootstrapOptions,
@@ -1554,6 +1561,23 @@ function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRe
   return request;
 }
 
+function validatedChangePasswordRequest(request: ChangePasswordRequest): ChangePasswordRequest {
+  if (
+    !isRecord(request) ||
+    !hasOnlyKeys(request, ["email", "currentPassword", "newPassword"]) ||
+    !isNonEmptyString(request.email) ||
+    request.email.length > 256 ||
+    !isNonEmptyString(request.currentPassword) ||
+    request.currentPassword.length > 256 ||
+    !isNonEmptyString(request.newPassword) ||
+    request.newPassword.length > 256
+  ) {
+    throw new TypeError("Password change request is invalid.");
+  }
+
+  return request as unknown as ChangePasswordRequest;
+}
+
 function validatedOccPlanningSnapshotParams(
   parameters: GetOccPlanningSnapshotParams,
 ): GetOccPlanningSnapshotParams {
@@ -1953,6 +1977,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       );
       if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async changePassword(request: ChangePasswordRequest, options?: ChangePasswordOptions) {
+      const body = validatedChangePasswordRequest(request);
+      const result = await execute(
+        getChangePasswordUrl(),
+        {
+          ...options,
+          method: "POST",
+          headers: {
+            ...Object.fromEntries(headersFrom(options?.headers, "Request headers")),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+        false,
+      );
+      if (result.status !== 204 || result.data !== undefined) {
+        throw malformedResponse(result.status);
+      }
     },
     async getCurrentSession(options?: GetCurrentSessionOptions) {
       const result = await execute(

@@ -61,6 +61,11 @@ a 60 minutos y usa 15 por defecto.
 - `/health`, `/health/ready` y `/api/v1/system/ping` permiten acceso anónimo.
 - `POST /api/v1/auth/session` valida credenciales y emite la sesión; `GET` sobre
   la misma ruta exige Bearer y vuelve a resolver en SQL el actor efectivo.
+- Una credencial temporal válida recibe `409` con `code=password_change_required`,
+  nunca un token. `POST /api/v1/auth/password-change` verifica la contraseña
+  vigente, aplica la política de Identity, registra auditoría y exige volver a
+  iniciar sesión; cambiarla invalida los JWT anteriores mediante la versión
+  de seguridad comprobada en cada petición autenticada.
 - `GET /api/v1/occ/planning` publica el snapshot OCC de una fecha y estación
   dentro del scope efectivo del actor. Si se omite la fecha, selecciona la más
   reciente con operaciones; la estación solo se puede omitir cuando el actor

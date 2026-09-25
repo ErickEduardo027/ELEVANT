@@ -18,7 +18,7 @@ internal static class AuthenticationServiceCollectionExtensions
                 "Authentication JWT settings must provide issuer, audience, a base64 signing key that decodes to 32-128 bytes, and a lifetime from 1 to 60 minutes.")
             .ValidateOnStart();
 
-        services.AddSingleton<IAccessTokenIssuer, JwtAccessTokenIssuer>();
+        services.AddScoped<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         return services;
     }
 }

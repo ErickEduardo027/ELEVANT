@@ -1,6 +1,7 @@
 export {
   createElevantApiClient,
   type CreateSessionOptions,
+  type ChangePasswordOptions,
   type AssignOccPlanningOperationOptions,
   type ElevantApiClient,
   type ElevantApiClientOptions,
@@ -35,6 +36,7 @@ export {
   type AirlinePortalBootstrapResponse,
   type AirlinePortalStationResponse,
   type CreateSessionRequest,
+  type ChangePasswordRequest,
   type CurrentSessionResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,

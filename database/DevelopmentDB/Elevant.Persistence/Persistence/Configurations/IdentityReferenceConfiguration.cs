@@ -23,6 +23,7 @@ internal static class IdentityReferenceConfiguration
             builder.Property(account => account.PublicId).HasDefaultValueSql("NEWSEQUENTIALID()");
             builder.Property(account => account.Status).HasConversion<string>().HasMaxLength(32);
             builder.Property(account => account.InvitationStatus).HasConversion<string>().HasMaxLength(32);
+            builder.Property(account => account.MustChangePassword).HasDefaultValue(false);
             builder.Property(account => account.InvitationSentAt).HasPrecision(3);
             builder.Property(account => account.LastLoginAt).HasPrecision(3);
             builder.Property(account => account.CreatedAt).HasPrecision(3).HasDefaultValueSql("SYSUTCDATETIME()");

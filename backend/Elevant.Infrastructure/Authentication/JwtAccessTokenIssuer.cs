@@ -10,12 +10,13 @@ namespace Elevant.Infrastructure.Authentication;
 /// <summary>Issues a minimal signed JWT whose subject is resolved again by the server.</summary>
 internal sealed class JwtAccessTokenIssuer(
     IOptions<JwtAccessTokenOptions> options,
-    TimeProvider timeProvider) : IAccessTokenIssuer
+    TimeProvider timeProvider,
+    ISessionSecurityVersionStore securityVersionStore) : IAccessTokenIssuer
 {
     private static readonly JsonWebTokenHandler TokenHandler = new();
     private readonly JwtAccessTokenOptions settings = options.Value;
 
-    public Task<IssuedAccessToken?> IssueAsync(
+    public async Task<IssuedAccessToken?> IssueAsync(
         ActorContext actor,
         CancellationToken cancellationToken = default)
     {
@@ -26,7 +27,14 @@ internal sealed class JwtAccessTokenIssuer(
             !settings.IsValid() ||
             !settings.TryGetSigningKey(out var signingKey))
         {
-            return Task.FromResult<IssuedAccessToken?>(null);
+            return null;
+        }
+
+        var securityStamp = await securityVersionStore.GetCurrentAsync(
+            actor.AccountId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(securityStamp))
+        {
+            return null;
         }
 
         var issuedAt = timeProvider.GetUtcNow();
@@ -35,6 +43,7 @@ internal sealed class JwtAccessTokenIssuer(
         [
             new Claim(JwtRegisteredClaimNames.Sub, actor.AccountId.ToString("D")),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+            new Claim(SessionSecurityVersion.ClaimType, SessionSecurityVersion.Fingerprint(securityStamp)),
         ]);
 
         var descriptor = new SecurityTokenDescriptor
@@ -53,7 +62,7 @@ internal sealed class JwtAccessTokenIssuer(
 
         var value = TokenHandler.CreateToken(descriptor);
         IssuedAccessToken token = new(value, expiresAt);
-        return Task.FromResult<IssuedAccessToken?>(token);
+        return token;
     }
 
     private static bool IsSafeActor(ActorContext actor)

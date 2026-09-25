@@ -27,7 +27,12 @@ describe('FlyAwareStatusPanel', () => {
 
   it('handles unrecognized status gracefully with fallback treatment', () => {
     render(<FlyAwareStatusPanel status="unknown" lastSyncMinutesAgo={15} />);
-    expect(screen.getByText(/sin conexión/i)).toBeInTheDocument();
+    expect(screen.getByText(/fuente aeronáutica no conectada/i)).toBeInTheDocument();
     expect(screen.getByText(/hace 15 min/i)).toBeInTheDocument();
+  });
+
+  it('does not invent a synchronization time when no provider is connected', () => {
+    render(<FlyAwareStatusPanel status="unavailable" lastSyncMinutesAgo={null} />);
+    expect(screen.getByText(/sin sincronización verificada/i)).toBeInTheDocument();
   });
 });

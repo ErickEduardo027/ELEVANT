@@ -50,13 +50,14 @@ for (const [name, overrides, expected] of [
 }
 
 test('delivery files preserve the private, non-root runtime boundary', async () => {
-  const [compose, dockerfile, nginx, securityHeaders, certifier, webCi] = await Promise.all([
+  const [compose, dockerfile, nginx, securityHeaders, certifier, webCi, html] = await Promise.all([
     readFile(path.join(projectRoot, 'compose.development.aviam-web.yml'), 'utf8'),
     readFile(path.join(projectRoot, 'Dockerfile'), 'utf8'),
     readFile(path.join(projectRoot, 'nginx/default.conf'), 'utf8'),
     readFile(path.join(projectRoot, 'nginx/security-headers.conf'), 'utf8'),
     readFile(path.join(projectRoot, 'scripts/certify-image.sh'), 'utf8'),
     readFile(path.join(repositoryRoot, '.github/workflows/web-ci.yml'), 'utf8'),
+    readFile(path.join(projectRoot, 'index.html'), 'utf8'),
   ]);
 
   assert.match(compose, /127\.0\.0\.1:18081:8080/);
@@ -90,6 +91,8 @@ test('delivery files preserve the private, non-root runtime boundary', async () 
   assert.match(nginx, /try_files \$uri \$uri\/ \/index\.html/);
   assert.match(securityHeaders, /style-src[^;]*https:\/\/fonts\.googleapis\.com/);
   assert.match(securityHeaders, /font-src[^;]*https:\/\/fonts\.gstatic\.com/);
+  assert.match(html, /<link rel="icon" type="image\/png" href="\/brand\/elevant-logo\.png" \/>/);
+  assert.match(certifier, /AVIAM Web brand icon did not match the reviewed asset/);
   assert.match(
     securityHeaders,
     /connect-src 'self' __ELEVANT_API_ORIGIN__ https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org;/,
