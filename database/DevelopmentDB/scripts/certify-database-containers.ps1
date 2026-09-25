@@ -999,26 +999,49 @@ SET [lockout_enabled] = CONVERT(bit, 0),
     [lockout_end] = CONVERT(datetimeoffset, N'2099-12-30T12:34:56+00:00')
 WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';
 '@
-    Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development
-    $credentialsAfterLockoutRepair = Invoke-SqlScalar `
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Development seed unexpectedly repaired credential drift.' `
+        -ExpectedErrorPattern 'credential drift was detected; use the reviewed rotation path before seeding' `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Development',
+        '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
+        '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
+        '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
+        '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+        '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+        '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
+        $ReleaseImage,
+        'seed-development'
+    )
+    $credentialsAfterRejectedRepair = Invoke-SqlScalar `
         -User 'elevant_dev_seeder' `
         -Password $passwords.Seeder `
         -Database 'ElevantDevelopmentDb' `
         -Query $allCredentialStateQuery
-    if ($credentialsAfterLockoutRepair -cne $credentialsBeforeRepeat) {
-        throw 'Lockout hardening unexpectedly rehashed an unchanged account password.'
+    if ($credentialsAfterRejectedRepair -cne $credentialsBeforeRepeat) {
+        throw 'Rejected credential repair unexpectedly rehashed an account password.'
     }
     Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
 IF NOT EXISTS (
     SELECT 1
     FROM [iam].[accounts]
     WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST'
-      AND [lockout_enabled] = CONVERT(bit, 1)
+      AND [lockout_enabled] = CONVERT(bit, 0)
       AND [access_failed_count] = 4
       AND [lockout_end] = CONVERT(datetimeoffset, N'2099-12-30T12:34:56+00:00')
 )
-    THROW 53024, 'Credential hardening reset or unlocked the synthetic account.', 1;
+    THROW 53024, 'Rejected seed unexpectedly changed the synthetic account lockout state.', 1;
 '@
+
+    Invoke-SqlClient -User 'elevant_dev_migrator' -Password $passwords.Migrator -Database 'ElevantDevelopmentDb' -Query @'
+UPDATE [iam].[accounts]
+SET [lockout_enabled] = CONVERT(bit, 1)
+WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';
+'@
+    Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development
 
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Seeder unexpectedly obtained direct UPDATE on iam.accounts.' `
@@ -1078,8 +1101,8 @@ IF NOT EXISTS (
         -Password $passwords.Seeder `
         -Database 'ElevantDevelopmentDb' `
         -Query $nonAdminCredentialStateQuery
-    if ($adminCredentialAfterRotation -ceq $adminCredentialBeforeRotation) {
-        throw 'Rotating the admin Development secret did not change its stored credential state.'
+    if ($adminCredentialAfterRotation -cne $adminCredentialBeforeRotation) {
+        throw 'Seeder unexpectedly replaced an existing admin account password.'
     }
     if ($nonAdminCredentialsAfterRotation -cne $nonAdminCredentialsBeforeRotation) {
         throw 'Rotating the admin Development secret changed another synthetic account.'
