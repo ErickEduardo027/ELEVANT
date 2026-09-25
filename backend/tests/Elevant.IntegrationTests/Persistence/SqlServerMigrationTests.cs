@@ -1,3 +1,4 @@
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
@@ -59,6 +60,52 @@ public sealed class SqlServerMigrationTests
             "Synthetic-Ramp!2345",
             "Synthetic-Airline!234",
             "Synthetic-HumanResources!234"));
+    }
+
+    [Fact]
+    public async Task AirlinePortalReadStoreReturnsOnlyActiveContractStations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+        var organizationId = Guid.Parse("10000000-0000-7000-8000-000000000002");
+
+        var active = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2026, 9, 25), cancellationToken);
+        Assert.NotNull(active);
+        Assert.Equal(organizationId, active.OrganizationId);
+        Assert.Equal("Demo Airlines", active.Name);
+        Assert.Collection(active.Stations, station => Assert.Equal("PUJ", station.Code));
+
+        var expired = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2100, 1, 1), cancellationToken);
+        Assert.NotNull(expired);
+        Assert.Empty(expired.Stations);
+        Assert.Null(await store.GetBootstrapAsync(
+            Guid.NewGuid(), new DateOnly(2026, 9, 25), cancellationToken));
     }
 
     [Fact]

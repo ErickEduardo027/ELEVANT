@@ -1023,13 +1023,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "bf4e68b28924406e3234b07a0ed36a8621a4b696ef847e7af1932c4dabb87a93",
+        "sha256": "737c3da7a25d04074190f96c5a68b7a425426a168602824032d2261475c62d49",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "9bae38d6bb36013da03657a4aa29c20966ae5be4dfbf5d483691ac2437e13405",
+        "sha256": "00d5ec7b4d5a4d3d5e7ab6c6db9b090097facebc1638e01f942f0adef308fcb5",
         "title": null,
         "version": null
       }

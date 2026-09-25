@@ -1,4 +1,5 @@
 import {
+  getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
   getGetCurrentSessionUrl,
@@ -26,6 +27,7 @@ import {
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
+  type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
   type CurrentSessionResponse,
   type GetRampOperationChecklistResponse,
@@ -88,6 +90,7 @@ export type ElevantRequestInit = Omit<RequestInit, "headers"> & {
 export type GetSystemPingOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -148,6 +151,9 @@ export interface ElevantApiClient {
     options?: CreateSessionOptions,
   ): Promise<SessionResponse>;
   getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
+  getAirlinePortalBootstrap(
+    options?: GetAirlinePortalBootstrapOptions,
+  ): Promise<AirlinePortalBootstrapResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1507,6 +1513,20 @@ function isCurrentSessionResponse(value: unknown): value is CurrentSessionRespon
   return isRecord(value) && isSessionActorResponse(value.actor);
 }
 
+function isAirlinePortalBootstrapResponse(
+  value: unknown,
+): value is AirlinePortalBootstrapResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations"]) &&
+    isUuid(value.airlineId) && isUuid(value.organizationId) &&
+    isNonEmptyString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
+    isNonEmptyString(value.name) && Array.isArray(value.stations) &&
+    value.stations.every((station) => isRecord(station) &&
+      hasOnlyKeys(station, ["id", "code", "name", "ianaTimeZone"]) &&
+      isUuid(station.id) && isNonEmptyString(station.code) &&
+      isNonEmptyString(station.name) && isNonEmptyString(station.ianaTimeZone));
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -1930,6 +1950,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isCurrentSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePortalBootstrap(options?: GetAirlinePortalBootstrapOptions) {
+      const result = await execute(
+        getGetAirlinePortalBootstrapUrl(),
+        { ...options, method: "GET" },
+        true,
+      );
+      if (!isAirlinePortalBootstrapResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
       return result.data;
     },
     async getOccPlanningSnapshot(

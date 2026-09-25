@@ -5,6 +5,22 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
+export interface AirlinePortalStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
+export interface AirlinePortalBootstrapResponse {
+  airlineId: string;
+  organizationId: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+  stations: AirlinePortalStationResponse[];
+}
+
 export interface AssignOccOperationRequest {
   agentId: string;
 }
@@ -850,6 +866,34 @@ stationId: string;
 export type GetOperationalConversationsParams = {
 stationId?: string;
 };
+
+export const getGetAirlinePortalBootstrapUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/bootstrap`
+}
+
+export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise<AirlinePortalBootstrapResponse> => {
+
+  const res = await fetch(getGetAirlinePortalBootstrapUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
 
 export const getCreateSessionUrl = () => {
 

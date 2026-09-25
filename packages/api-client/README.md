@@ -87,6 +87,13 @@ de la ruta. La identidad, el agente, la estación, el tenant, los timestamps y
 los recibos siguen siendo autoridad del servidor. Adjuntar evidencias permanece
 fuera de este incremento.
 
+`getAirlinePortalBootstrap` resuelve el tenant de aerolínea y sus estaciones
+contratadas desde la sesión del servidor. No acepta IDs de tenant, estación
+ni parámetros de búsqueda del navegador. El wrapper exige una respuesta
+cerrada con UUID y campos de estación válidos antes de entregarla a Public
+Web. Este bootstrap no convierte todavía los módulos de portal que usan
+fixtures en datos persistentes.
+
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
 error expone solo `status`, un `title` saneado y el `traceId` opcional. Su
 mensaje nunca incorpora el token, URL, cuerpo crudo ni `ProblemDetails.detail`.

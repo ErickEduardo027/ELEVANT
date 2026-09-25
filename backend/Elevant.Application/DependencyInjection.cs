@@ -1,4 +1,5 @@
 using Elevant.Application.Identity.CreateSession;
+using Elevant.Application.Commercial;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration.RegisterMobileDevice;
 using Elevant.Application.Operations.AssignOccOperation;
@@ -24,6 +25,7 @@ public static class DependencyInjection
 
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<CreateSessionHandler>();
+        services.AddScoped<GetAirlinePortalBootstrapHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();

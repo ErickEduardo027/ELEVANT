@@ -6,6 +6,61 @@
     "version": "v1"
   },
   "paths": {
+    "/api/v1/airline/portal/bootstrap": {
+      "get": {
+        "tags": [
+          "AirlinePortal"
+        ],
+        "operationId": "GetAirlinePortalBootstrap",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlinePortalBootstrapResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/session": {
       "post": {
         "tags": [
@@ -2712,6 +2767,68 @@
   },
   "components": {
     "schemas": {
+      "AirlinePortalBootstrapResponse": {
+        "required": [
+          "airlineId",
+          "iataCode",
+          "icaoCode",
+          "name",
+          "organizationId",
+          "stations"
+        ],
+        "type": "object",
+        "properties": {
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlinePortalStationResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePortalStationResponse": {
+        "required": [
+          "code",
+          "ianaTimeZone",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AssignOccOperationRequest": {
         "required": [
           "agentId"
@@ -5585,6 +5702,9 @@
     }
   },
   "tags": [
+    {
+      "name": "AirlinePortal"
+    },
     {
       "name": "Authentication"
     },
