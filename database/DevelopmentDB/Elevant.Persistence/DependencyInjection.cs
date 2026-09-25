@@ -1,9 +1,11 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Integration;
 using Elevant.Persistence.Operations;
 using Microsoft.AspNetCore.Identity;
@@ -55,6 +57,7 @@ public static class DependencyInjection
 
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
+        services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();

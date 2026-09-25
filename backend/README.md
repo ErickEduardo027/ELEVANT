@@ -84,6 +84,12 @@ a 60 minutos y usa 15 por defecto.
   y limita la respuesta a 100 operaciones ordenadas. Exige `RAMP_AGENT`, portal
   `RampMobileApp` y membresía interna AVIAM; una cuenta sin perfil compatible
   falla cerrada con `403` y una cola legítimamente vacía responde `200`.
+- `GET /api/v1/airline/portal/bootstrap` obtiene la aerolínea de la única
+  membresía `AIRLINE_CLIENT` vigente del actor autenticado y proyecta solo
+  estaciones cubiertas por una versión aprobada de contrato activo en la
+  fecha UTC. No acepta un identificador de aerolínea o estación desde el
+  navegador; exige Bearer y responde sin caché. La ausencia de estaciones
+  contratadas es una lista vacía, no autorización para ver otra aerolínea.
 - `GET /api/v1/ramp/operations/{operationId}/incidents` y `POST` en la misma
   ruta leen y reportan incidencias de una operación asignada. El servidor
   comprueba rol, membresía, estación, terminal, asignación y vínculo del
