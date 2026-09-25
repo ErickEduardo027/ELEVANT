@@ -8,7 +8,7 @@
     "dev": "vite",
     "validate:development-env": "node ./scripts/validate-development-env.mjs",
     "test:delivery": "node --test ./scripts/test-development-delivery.mjs",
-    "build": "npm run validate:development-env && vite build --configLoader runner",
+    "build": "npm run validate:development-env && vite build --configLoader runner && node ./scripts/verify-maplibre-worker.mjs",
     "preview": "vite preview",
     "test": "vitest run --configLoader runner"
   },
