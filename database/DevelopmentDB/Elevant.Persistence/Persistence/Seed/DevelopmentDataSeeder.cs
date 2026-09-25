@@ -630,7 +630,9 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
 
         await GetOrAddAsync(
             context.OperationChecklists,
-            checklist => checklist.GroundOperationId == operation.Id && checklist.ChecklistTemplateVersionId == templateVersion.Id,
+            checklist => checklist.GroundOperationId == operation.Id &&
+                checklist.ChecklistTemplateVersionId == templateVersion.Id &&
+                checklist.RevisionNumber == 1,
             () => Stamp(new OperationChecklist
             {
                 GroundOperationId = operation.Id,
@@ -713,7 +715,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         await GetOrAddAsync(
             context.OperationChecklists,
             checklist => checklist.GroundOperationId == operation.Id &&
-                checklist.ChecklistTemplateVersionId == templateVersionV2.Id,
+                checklist.ChecklistTemplateVersionId == templateVersionV2.Id &&
+                checklist.RevisionNumber == 1,
             () => Stamp(new OperationChecklist
             {
                 GroundOperationId = operation.Id,
@@ -830,7 +833,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             await GetOrAddAsync(
                 context.OperationChecklists,
                 checklist => checklist.GroundOperationId == secondOperation.Id &&
-                    checklist.ChecklistTemplateVersionId == templateVersionV2.Id,
+                    checklist.ChecklistTemplateVersionId == templateVersionV2.Id &&
+                    checklist.RevisionNumber == 1,
                 () => Stamp(new OperationChecklist
                 {
                     GroundOperationId = secondOperation.Id,

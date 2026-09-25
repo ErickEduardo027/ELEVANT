@@ -1,3 +1,4 @@
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
@@ -69,6 +70,72 @@ public sealed class SqlServerMigrationTests
             "Synthetic-HumanResources!234",
             "Synthetic-Contracts!234",
             "Synthetic-Finance!234"));
+    }
+
+    [Fact]
+    public async Task AirlinePortalReadStoreReturnsOnlyActiveContractStations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+        var organizationId = Guid.Parse("10000000-0000-7000-8000-000000000002");
+
+        var active = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2026, 9, 25), cancellationToken);
+        Assert.NotNull(active);
+        Assert.Equal(organizationId, active.OrganizationId);
+        Assert.Equal("Demo Airlines", active.Name);
+        Assert.Collection(active.Stations, station => Assert.Equal("PUJ", station.Code));
+        Assert.Empty(active.CurrentOperations);
+
+        var fixtureDate = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2026, 8, 18), cancellationToken);
+        Assert.NotNull(fixtureDate);
+        Assert.Collection(fixtureDate.CurrentOperations,
+            operation =>
+            {
+                Assert.Equal("DEV-TAT-0001", operation.Code);
+                Assert.Equal("ZZ100", operation.ArrivalFlightNumber);
+                Assert.Equal("ZZ101", operation.DepartureFlightNumber);
+                Assert.Equal("PUJ", operation.StationCode);
+            },
+            operation =>
+            {
+                Assert.Equal("DEV-TAT-0002", operation.Code);
+                Assert.Equal("ZZ102", operation.ArrivalFlightNumber);
+                Assert.Equal("ZZ103", operation.DepartureFlightNumber);
+            });
+
+        var expired = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2100, 1, 1), cancellationToken);
+        Assert.NotNull(expired);
+        Assert.Empty(expired.Stations);
+        Assert.Empty(expired.CurrentOperations);
+        Assert.Null(await store.GetBootstrapAsync(
+            Guid.NewGuid(), new DateOnly(2026, 9, 25), cancellationToken));
     }
 
     [Fact]
@@ -152,6 +219,106 @@ public sealed class SqlServerMigrationTests
             item.GroundOperationId == previous.GroundOperationId &&
             item.ChecklistTemplateVersionId == previous.ChecklistTemplateVersionId,
             cancellationToken));
+    }
+
+    [Fact]
+    public async Task DevelopmentSeederPreservesChecklistCorrectionRevisionsForAssignedOperations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+
+        async Task SeedAsync()
+        {
+            await using var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken);
+            await using var seedContext = CreateContext(connection);
+            await new DevelopmentDataSeeder(seedContext).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await SeedAsync();
+
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var secondOperationId = await (
+                    from operation in setup.GroundOperations
+                    join turnaround in setup.Turnarounds
+                        on operation.TurnaroundId equals turnaround.Id
+                    where turnaround.OperationCode == "DEV-TAT-0002"
+                    select operation.Id)
+                .SingleAsync(cancellationToken);
+            var rampAgentId = await setup.RampAgents
+                .Select(agent => agent.Id)
+                .SingleAsync(cancellationToken);
+            var instant = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+            setup.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.CreateVersion7(),
+                GroundOperationId = secondOperationId,
+                RampAgentId = rampAgentId,
+                AssignmentRole = "regression-test",
+                AssignedAt = instant,
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        await SeedAsync(); // The second operation now receives its initial checklist.
+
+        await using var context = CreateContext(database.ConnectionString);
+        var initial = await context.OperationChecklists.AsNoTracking()
+            .Where(checklist => checklist.RevisionNumber == 1)
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(3, initial.Length); // v1 and v2 for the first operation; v2 for the second.
+        var instantForCorrections = new DateTimeOffset(2026, 8, 20, 12, 0, 0, TimeSpan.Zero);
+        foreach (var checklist in initial)
+        {
+            context.OperationChecklists.Add(new OperationChecklist
+            {
+                PublicId = Guid.CreateVersion7(),
+                GroundOperationId = checklist.GroundOperationId,
+                ChecklistTemplateVersionId = checklist.ChecklistTemplateVersionId,
+                RevisionNumber = 2,
+                Status = ChecklistStatus.NotStarted,
+                CreatedAt = instantForCorrections,
+                UpdatedAt = instantForCorrections,
+            });
+        }
+        await context.SaveChangesAsync(cancellationToken);
+
+        var before = await context.OperationChecklists.AsNoTracking()
+            .OrderBy(checklist => checklist.PublicId)
+            .Select(checklist => new
+            {
+                checklist.PublicId,
+                checklist.GroundOperationId,
+                checklist.ChecklistTemplateVersionId,
+                checklist.RevisionNumber,
+                checklist.Status,
+            })
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(6, before.Length);
+
+        await SeedAsync();
+
+        var after = await context.OperationChecklists.AsNoTracking()
+            .OrderBy(checklist => checklist.PublicId)
+            .Select(checklist => new
+            {
+                checklist.PublicId,
+                checklist.GroundOperationId,
+                checklist.ChecklistTemplateVersionId,
+                checklist.RevisionNumber,
+                checklist.Status,
+            })
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(before, after);
     }
 
     [Fact]

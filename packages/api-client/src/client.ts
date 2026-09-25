@@ -1,4 +1,5 @@
 import {
+  getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
   getChangePasswordUrl,
@@ -27,6 +28,7 @@ import {
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
+  type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
   type ChangePasswordRequest,
   type CurrentSessionResponse,
@@ -91,6 +93,7 @@ export type GetSystemPingOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -155,6 +158,9 @@ export interface ElevantApiClient {
     options?: ChangePasswordOptions,
   ): Promise<void>;
   getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
+  getAirlinePortalBootstrap(
+    options?: GetAirlinePortalBootstrapOptions,
+  ): Promise<AirlinePortalBootstrapResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1514,6 +1520,34 @@ function isCurrentSessionResponse(value: unknown): value is CurrentSessionRespon
   return isRecord(value) && isSessionActorResponse(value.actor);
 }
 
+function isAirlinePortalBootstrapResponse(
+  value: unknown,
+): value is AirlinePortalBootstrapResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations", "currentOperations"]) &&
+    isUuid(value.airlineId) && isUuid(value.organizationId) &&
+    isNonEmptyString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
+    isNonEmptyString(value.name) && Array.isArray(value.stations) &&
+    value.stations.every((station) => isRecord(station) &&
+      hasOnlyKeys(station, ["id", "code", "name", "ianaTimeZone"]) &&
+      isUuid(station.id) && isNonEmptyString(station.code) &&
+      isNonEmptyString(station.name) && isNonEmptyString(station.ianaTimeZone)) &&
+    Array.isArray(value.currentOperations) &&
+    value.currentOperations.length <= 50 &&
+    value.currentOperations.every((operation) => isRecord(operation) &&
+      hasOnlyKeys(operation, ["id", "code", "stationId", "stationCode", "operationDate",
+        "status", "arrivalFlightNumber", "departureFlightNumber", "plannedStartAt", "plannedEndAt"]) &&
+      isUuid(operation.id) && isNonEmptyString(operation.code) &&
+      isUuid(operation.stationId) && isNonEmptyString(operation.stationCode) &&
+      (value.stations as unknown[]).some((station) => isRecord(station) &&
+        station.id === operation.stationId && station.code === operation.stationCode) &&
+      isDateOnly(operation.operationDate) && isNonEmptyString(operation.status) &&
+      isOptionalNullable(operation.arrivalFlightNumber, isNonEmptyString) &&
+      isOptionalNullable(operation.departureFlightNumber, isNonEmptyString) &&
+      isOptionalNullable(operation.plannedStartAt, isDateTimeOffset) &&
+      isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -1973,6 +2007,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isCurrentSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePortalBootstrap(options?: GetAirlinePortalBootstrapOptions) {
+      const result = await execute(
+        getGetAirlinePortalBootstrapUrl(),
+        { ...options, method: "GET" },
+        true,
+      );
+      if (!isAirlinePortalBootstrapResponse(result.data)) {
+        throw malformedResponse(result.status);
+      }
       return result.data;
     },
     async getOccPlanningSnapshot(

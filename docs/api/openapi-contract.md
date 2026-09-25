@@ -54,6 +54,13 @@ devuelve una colección ordenada y acotada, y responde `200` con `operations: []
 cuando el agente no tiene trabajo vigente. Una identidad incompatible o un
 perfil ausente/ambiguo falla cerrado con `403` sin revelar su causa interna.
 
+`GetAirlinePortalBootstrap` (`GET /api/v1/airline/portal/bootstrap`) deriva una
+única aerolínea de la membresía autenticada y devuelve sus estaciones bajo
+contrato activo y aprobado. `currentOperations` contiene como máximo 50
+operaciones de esa aerolínea y esas estaciones, desde el día UTC actual hasta
+siete días después. No recibe identificadores de tenant, estación ni fechas
+del navegador y no constituye un contrato de acceso al historial anterior.
+
 La asignación vuelve a resolver esos controles dentro de una transacción
 serializable. No acepta servicios, contrato, precio, cantidad, estación ni
 posición suministrados por el cliente: deriva la posición desde el turno y

@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FlightMonitoringPage from './FlightMonitoringPage';
+
+beforeEach(() => vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', ''));
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock('./components/FlightMap', () => ({
   default: function FlightMapStub(props) {
