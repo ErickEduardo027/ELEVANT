@@ -1009,7 +1009,7 @@
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
-        "sha256": "1c45d0967b9fe67f3d99e6afd5f4b94a352d306de4e131fccf4ff636edf0e257"
+        "sha256": "bcb26c3f05f5dbc1ee080f207ae80bcdeeb801808776f17204b2fe1002890104"
       },
       {
         "path": ".github/workflows/vault-ci.yml",
