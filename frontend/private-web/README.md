@@ -17,11 +17,26 @@ npm run dev
 npm run build
 ```
 
-Vite sirve localmente en `http://localhost:5173`. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
+Vite sirve localmente en `http://localhost:5173`. Abre ese origen exacto, no `http://127.0.0.1:5173`: la política CORS de Development autoriza `localhost` y rechaza el origen alternativo. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
 
-Las tres variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development. El modo de Gestión Humana conserva la autenticación real, pero limita ese módulo a un dashboard de datos sintéticos y solo lectura: no llama endpoints `/api/hr`, no expone rutas profundas ni ofrece acciones de escritura o exportación.
+Las variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. Las tres primeras son obligatorias; la clave de Google Maps es opcional y visible en el navegador cuando se configura. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development. El modo de Gestión Humana conserva la autenticación real, pero limita ese módulo a un dashboard de datos sintéticos y solo lectura: no llama endpoints `/api/hr`, no expone rutas profundas ni ofrece acciones de escritura o exportación.
 
 El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Solo acepta roles conocidos del portal `back_office`, conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
+
+Si la API devuelve `409 password_change_required`, la web muestra una activación
+sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
+sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
+
+Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
+de API al origen HTTPS privado de Development. `VITE_GOOGLE_MAPS_API_KEY` es
+opcional: cuando está presente, el mapa de posiciones y el de vuelos usan Maps
+JavaScript API; sin ella mantienen MapLibre. La clave del navegador es visible
+para quien carga la página: restríngela en Google Cloud por los orígenes web
+autorizados y limita sus permisos a Maps JavaScript API. El modo oscuro se
+selecciona al crear el mapa y cambiar de tema recrea esa instancia, no los datos.
+Esta integración es de prueba local: la CSP actual de Nginx no permite cargar
+Maps JavaScript API en la imagen publicada. No promociones un build con la clave
+hasta certificar una política CSP compatible y revisar los dominios cargados.
 
 ## Planificación OCC remota
 
@@ -95,4 +110,4 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. La creación de sesión y la lectura de Planificación OCC usan la API real; los demás adaptadores de negocio heredados obtendrán errores controlados hasta que existan sus endpoints versionados. La imagen no incluye ni inicia `backend-prototipo`.
+Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard sigue siendo una vista sintética y se marca como tal; no demuestra disponibilidad, certificación ISO ni conexión FlyAware. Otros adaptadores heredados de Contratos, Finanzas y Gestión Humana todavía no son circuitos canónicos y pueden mostrar errores controlados. La imagen no incluye ni inicia `backend-prototipo`.

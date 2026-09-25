@@ -56,7 +56,8 @@ VALUES
     (N'20260916151935_V1_06_DevelopmentAccountCredentialRotation'),
     (N'20260917161921_V1_07_DevelopmentHumanResourcesAccount'),
     (N'20260924125214_V1_08_RampCorrectionRevisions'),
-    (N'20260924145534_V1_09_OperationalCommunication');
+    (N'20260924145534_V1_09_OperationalCommunication'),
+    (N'20260925055507_V1_10_DevelopmentCredentialActivation');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
@@ -95,6 +96,17 @@ IF NOT EXISTS (
       AND [execute_as_principal_id] = -2
 )
     THROW 52026, 'The restricted Development credential procedure must execute as owner.', 1;
+
+IF OBJECT_ID(N'[iam].[require_development_hr_password_change]', N'P') IS NULL
+    THROW 52032, 'The restricted Development HR activation procedure is missing.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.sql_modules
+    WHERE [object_id] = OBJECT_ID(N'[iam].[require_development_hr_password_change]')
+      AND [execute_as_principal_id] = -2
+)
+    THROW 52033, 'The restricted Development HR activation procedure must execute as owner.', 1;
 
 IF NOT EXISTS (
        SELECT 1
@@ -135,37 +147,61 @@ WHERE ([code] = N'AVIAM' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-
    OR ([code] = N'DEMO-AIR' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-0000-7000-8000-000000000002'));
 
 INSERT INTO @seed_checks
-SELECT N'persons-natural-keys', COUNT_BIG(*), 4
+SELECT N'persons-natural-keys', COUNT_BIG(*), 6
 FROM [iam].[persons]
 WHERE [primary_email] IN (
     N'admin.occ@dev.elevant.test',
     N'ramp.agent@dev.elevant.test',
     N'airline.client@dev.elevant.test',
-    N'gestion.humana@dev.elevant.test'
+    N'gestion.humana@dev.elevant.test',
+    N'contratos@dev.elevant.test',
+    N'finanzas@dev.elevant.test'
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 4
+SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 6
 FROM [iam].[accounts]
 WHERE [public_id] IN (
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000001'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000002'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000003'),
-    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000004')
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000004'),
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000005'),
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000006')
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 4
+SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 6
 FROM [iam].[accounts]
 WHERE [normalized_email] IN (
     N'ADMIN.OCC@DEV.ELEVANT.TEST',
     N'RAMP.AGENT@DEV.ELEVANT.TEST',
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
-    N'GESTION.HUMANA@DEV.ELEVANT.TEST'
+    N'GESTION.HUMANA@DEV.ELEVANT.TEST',
+    N'CONTRATOS@DEV.ELEVANT.TEST',
+    N'FINANZAS@DEV.ELEVANT.TEST'
 )
   AND [lockout_enabled] = CONVERT(bit, 1)
   AND NULLIF([password_hash], N'') IS NOT NULL
   AND NULLIF([security_stamp], N'') IS NOT NULL;
+
+INSERT INTO @seed_checks
+SELECT N'new-personas-role-station-scope', COUNT_BIG(*), 2
+FROM [iam].[accounts] AS accounts
+INNER JOIN [iam].[account_roles] AS account_roles ON account_roles.[user_id] = accounts.[id]
+INNER JOIN [iam].[roles] AS roles ON roles.[id] = account_roles.[role_id]
+INNER JOIN [iam].[organization_memberships] AS memberships ON memberships.[account_id] = accounts.[id]
+INNER JOIN [iam].[organizations] AS organizations ON organizations.[id] = memberships.[organization_id]
+INNER JOIN [iam].[account_station_scopes] AS station_scopes ON station_scopes.[account_id] = accounts.[id]
+INNER JOIN [ref].[stations] AS stations ON stations.[id] = station_scopes.[station_id]
+WHERE ((accounts.[normalized_email] = N'CONTRATOS@DEV.ELEVANT.TEST' AND roles.[normalized_name] = N'CONTRATOS' AND roles.[user_type] = N'contracts')
+    OR (accounts.[normalized_email] = N'FINANZAS@DEV.ELEVANT.TEST' AND roles.[normalized_name] = N'FINANZAS' AND roles.[user_type] = N'finance'))
+  AND roles.[portal] = N'BackOffice'
+  AND organizations.[code] = N'AVIAM'
+  AND memberships.[kind] = N'InternalStaff'
+  AND memberships.[status] = N'Active'
+  AND stations.[code] = N'PUJ'
+  AND station_scopes.[revoked_at] IS NULL;
 
 INSERT INTO @seed_checks
 SELECT N'human-resources-identity-access', COUNT_BIG(*), 1
@@ -428,6 +464,7 @@ INSERT INTO #permission_checks VALUES
     (N'app-insert-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'INSERT'), 0), 1),
     (N'app-delete-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'DELETE'), 0), 0),
     (N'app-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 0),
+    (N'app-execute-hr-activation-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.require_development_hr_password_change', N'OBJECT', N'EXECUTE'), 0), 0),
     (N'app-alter-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'ALTER'), 0), 0),
     (N'app-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
 REVERT;
@@ -442,6 +479,7 @@ INSERT INTO #permission_checks VALUES
     (N'seeder-delete-ops', COALESCE(HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'DELETE'), 0), 0),
     (N'seeder-execute-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'EXECUTE'), 0), 0),
     (N'seeder-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 1),
+    (N'seeder-execute-hr-activation-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.require_development_hr_password_change', N'OBJECT', N'EXECUTE'), 0), 1),
     (N'seeder-select-marker', COALESCE(HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'SELECT'), 0), 1),
     (N'seeder-alter-ref', COALESCE(HAS_PERMS_BY_NAME(N'ref', N'SCHEMA', N'ALTER'), 0), 0),
     (N'seeder-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
@@ -478,6 +516,7 @@ END;
 DECLARE @seeder_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_seeder_role');
 DECLARE @app_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_app_role');
 DECLARE @credential_procedure_id int = OBJECT_ID(N'[iam].[set_development_account_credential]', N'P');
+DECLARE @hr_activation_procedure_id int = OBJECT_ID(N'[iam].[require_development_hr_password_change]', N'P');
 
 IF NOT EXISTS (
        SELECT 1
@@ -489,25 +528,35 @@ IF NOT EXISTS (
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
    )
+   OR NOT EXISTS (
+       SELECT 1
+       FROM sys.database_permissions
+       WHERE [grantee_principal_id] = @seeder_role_id
+         AND [class] = 1
+         AND [major_id] = @hr_activation_procedure_id
+         AND [minor_id] = 0
+         AND [permission_name] = N'EXECUTE'
+         AND [state] IN (N'G', N'W')
+   )
    OR EXISTS (
        SELECT 1
        FROM sys.database_permissions
        WHERE [grantee_principal_id] = @seeder_role_id
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
-         AND NOT ([class] = 1 AND [major_id] = @credential_procedure_id AND [minor_id] = 0)
+         AND NOT ([class] = 1 AND [major_id] IN (@credential_procedure_id, @hr_activation_procedure_id) AND [minor_id] = 0)
    )
    OR EXISTS (
        SELECT 1
        FROM sys.database_permissions
        WHERE [class] = 1
-         AND [major_id] = @credential_procedure_id
+         AND [major_id] IN (@credential_procedure_id, @hr_activation_procedure_id)
          AND [minor_id] = 0
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
          AND [grantee_principal_id] <> @seeder_role_id
    )
-    THROW 52027, 'Seeder EXECUTE must be granted only on the restricted credential procedure.', 1;
+    THROW 52027, 'Seeder EXECUTE must be granted only on the restricted Development credential procedures.', 1;
 
 IF NOT EXISTS (
     SELECT 1
@@ -520,6 +569,18 @@ IF NOT EXISTS (
       AND [state] = N'D'
 )
     THROW 52029, 'Application role must be denied EXECUTE on the Development credential procedure.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_permissions
+    WHERE [grantee_principal_id] = @app_role_id
+      AND [class] = 1
+      AND [major_id] = @hr_activation_procedure_id
+      AND [minor_id] = 0
+      AND [permission_name] = N'EXECUTE'
+      AND [state] = N'D'
+)
+    THROW 52034, 'Application role must be denied EXECUTE on the Development HR activation procedure.', 1;
 
 PRINT N'PASS: SQL Server 2022 Developer Edition and database configuration.';
 PRINT N'PASS: exact ElevantDevelopmentDb target and immutable Development marker.';

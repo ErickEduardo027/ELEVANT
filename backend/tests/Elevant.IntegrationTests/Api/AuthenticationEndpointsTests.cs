@@ -7,6 +7,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
 using Elevant.Contracts.Identity;
 using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -70,6 +71,65 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
             cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(current);
         Assert.Equivalent(session.Actor, current.Actor, strict: true);
+    }
+
+    [Fact]
+    public async Task TemporaryCredentialMustBeChangedBeforeAnySessionIsIssued()
+    {
+        var state = new AuthenticationState { MustChangePassword = true };
+        await using var application = CreateApplication(state);
+        using var client = application.CreateClient();
+
+        using var blocked = await client.PostAsJsonAsync(
+            "/api/v1/auth/session",
+            new CreateSessionRequest(Email, Password),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        AssertPrivateResponseHeaders(blocked);
+        using var problem = await ReadJsonAsync(blocked);
+        Assert.Equal("password_change_required", problem.RootElement.GetProperty("code").GetString());
+        Assert.False(problem.RootElement.TryGetProperty("accessToken", out _));
+
+        const string replacement = "New-Development-Password!2026";
+        using var changed = await client.PostAsJsonAsync(
+            "/api/v1/auth/password-change",
+            new ChangePasswordRequest(Email, Password, replacement),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        AssertPrivateResponseHeaders(changed);
+
+        using var oldCredential = await client.PostAsJsonAsync(
+            "/api/v1/auth/session",
+            new CreateSessionRequest(Email, Password),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, oldCredential.StatusCode);
+
+        using var activated = await client.PostAsJsonAsync(
+            "/api/v1/auth/session",
+            new CreateSessionRequest(Email, replacement),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangingPasswordRevokesPreviouslyIssuedBearerToken()
+    {
+        var state = new AuthenticationState();
+        await using var application = CreateApplication(state);
+        using var client = application.CreateClient();
+        var previousToken = await CreateAccessTokenAsync(client);
+
+        using var changed = await client.PostAsJsonAsync(
+            "/api/v1/auth/password-change",
+            new ChangePasswordRequest(Email, Password, "Another-Development-Password!2026"),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", previousToken);
+
+        using var revoked = await client.GetAsync(
+            "/api/v1/auth/session", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, revoked.StatusCode);
+        Assert.Equal(1, state.ActorResolutionCount);
     }
 
     [Theory]
@@ -288,9 +348,13 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
         {
             services.RemoveAll<ICredentialVerifier>();
             services.RemoveAll<IActorContextResolver>();
+            services.RemoveAll<ISessionSecurityVersionStore>();
+            services.RemoveAll<IPasswordChangeStore>();
             services.AddSingleton(state);
             services.AddScoped<ICredentialVerifier>(_ => new StubCredentialVerifier(state));
             services.AddScoped<IActorContextResolver>(_ => new StubActorContextResolver(state));
+            services.AddScoped<ISessionSecurityVersionStore>(_ => new StubSecurityVersionStore(state));
+            services.AddScoped<IPasswordChangeStore>(_ => new StubPasswordChangeStore(state));
         }));
 
     private static async Task<string> CreateAccessTokenAsync(HttpClient client)
@@ -361,6 +425,10 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
         {
             yield return new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D"));
         }
+
+        yield return new Claim(
+            SessionSecurityVersion.ClaimType,
+            SessionSecurityVersion.Fingerprint(ElevantApiFactory.TestSecurityStamp));
     }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
@@ -381,6 +449,12 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
     private sealed class AuthenticationState
     {
         public bool IsActorActive { get; set; } = true;
+
+        public bool MustChangePassword { get; set; }
+
+        public string Password { get; set; } = AuthenticationEndpointsTests.Password;
+
+        public string SecurityStamp { get; set; } = ElevantApiFactory.TestSecurityStamp;
 
         public int ActorResolutionCount { get; set; }
 
@@ -412,10 +486,38 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
             cancellationToken.ThrowIfCancellationRequested();
             VerifiedCredential? credential = state.IsActorActive &&
                 string.Equals(email, Email, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(password, Password, StringComparison.Ordinal)
-                    ? new VerifiedCredential(AccountId)
+                string.Equals(password, state.Password, StringComparison.Ordinal)
+                    ? new VerifiedCredential(AccountId, state.MustChangePassword)
                     : null;
             return Task.FromResult(credential);
+        }
+    }
+
+    private sealed class StubSecurityVersionStore(AuthenticationState state) : ISessionSecurityVersionStore
+    {
+        public Task<string?> GetCurrentAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(accountId == AccountId && !state.MustChangePassword
+                ? state.SecurityStamp
+                : null);
+    }
+
+    private sealed class StubPasswordChangeStore(AuthenticationState state) : IPasswordChangeStore
+    {
+        public Task<PasswordChangeOutcome> ChangeAsync(
+            Guid accountId,
+            string currentPassword,
+            string newPassword,
+            CancellationToken cancellationToken = default)
+        {
+            if (accountId != AccountId || currentPassword != state.Password)
+            {
+                return Task.FromResult(PasswordChangeOutcome.InvalidCredentials);
+            }
+
+            state.Password = newPassword;
+            state.MustChangePassword = false;
+            state.SecurityStamp = Guid.NewGuid().ToString("D");
+            return Task.FromResult(PasswordChangeOutcome.Succeeded);
         }
     }
 

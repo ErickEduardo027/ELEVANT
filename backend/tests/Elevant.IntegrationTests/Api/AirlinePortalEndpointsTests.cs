@@ -6,6 +6,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Application.Identity;
 using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -115,6 +116,9 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             [
                 new System.Security.Claims.Claim(JwtRegisteredClaimNames.Sub, AccountId.ToString("D")),
                 new System.Security.Claims.Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+                new System.Security.Claims.Claim(
+                    SessionSecurityVersion.ClaimType,
+                    SessionSecurityVersion.Fingerprint(ElevantApiFactory.TestSecurityStamp)),
             ]),
             TokenType = "at+jwt",
         });

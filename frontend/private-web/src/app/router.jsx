@@ -1,6 +1,8 @@
-import { cloneElement } from 'react';
+import { cloneElement, useState } from 'react';
 import { createBrowserRouter, Navigate, useNavigate } from 'react-router-dom';
 import LoginPage from '../features/auth/LoginPage';
+import PasswordChangePage from '../features/auth/PasswordChangePage';
+import { PasswordChangeRequiredError } from '../features/auth/authService';
 import { useAuth } from '../features/auth/AuthContext';
 import { ROLE_KEYS, ROUTE_PATHS, getRoleHomePath } from '../features/auth/roleRouting';
 import HumanResourcesLayout from '../features/human-resources/HumanResourcesLayout';
@@ -32,9 +34,30 @@ import { AlertTriangleIcon } from '../features/shell/components/icons';
 
 function LoginRoute() {
   const navigate = useNavigate();
-  const { session, login } = useAuth();
+  const { session, login, changePassword } = useAuth();
+  const [activationEmail, setActivationEmail] = useState(null);
+  const [notice, setNotice] = useState('');
   if (session) return <Navigate to={getRoleHomePath(session.role)} replace />;
-  return <LoginPage onSubmit={async credentials => navigate((await login(credentials)).homePath, { replace: true })} />;
+  if (activationEmail) return <PasswordChangePage
+    email={activationEmail}
+    onCancel={() => setActivationEmail(null)}
+    onSubmit={async credentials => {
+      await changePassword(credentials);
+      setActivationEmail(null);
+      setNotice('Contraseña actualizada. Inicia sesión con tu nueva contraseña.');
+    }}
+  />;
+  return <LoginPage notice={notice} onSubmit={async credentials => {
+    try {
+      navigate((await login(credentials)).homePath, { replace: true });
+    } catch (error) {
+      if (error instanceof PasswordChangeRequiredError) {
+        setActivationEmail(credentials.email.trim());
+        return;
+      }
+      throw error;
+    }
+  }} />;
 }
 
 function ProtectedRole({ role, children }) {

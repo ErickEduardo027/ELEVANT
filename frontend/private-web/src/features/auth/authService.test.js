@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTH_STORAGE_KEY,
   AUTH_EXPIRED_EVENT,
+  PasswordChangeRequiredError,
+  changePassword,
   clearSession,
   getMockUsers,
   login,
@@ -229,6 +231,34 @@ describe('authService', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('Credenciales inválidas.');
     expect(error.message).not.toContain('Account detail');
+    expect(readSession()).toBeNull();
+  });
+
+  it('routes a valid temporary credential to activation without persisting a session', async () => {
+    const client = { createSession: vi.fn().mockRejectedValue(new ElevantApiError({
+      kind: 'http', status: 409, title: 'Sensitive server metadata',
+    })) };
+    const error = await login({ email: 'contratos@dev.elevant.test', password: 'temporary' }, client)
+      .catch(reason => reason);
+
+    expect(error).toBeInstanceOf(PasswordChangeRequiredError);
+    expect(error.message).not.toContain('Sensitive');
+    expect(readSession()).toBeNull();
+  });
+
+  it('changes a temporary password through the API without persisting it', async () => {
+    const client = { changePassword: vi.fn().mockResolvedValue(undefined) };
+    await changePassword({
+      email: ' contratos@dev.elevant.test ',
+      currentPassword: 'Temporary-Development!2026',
+      newPassword: 'New-Development-Password!2026',
+    }, client);
+
+    expect(client.changePassword).toHaveBeenCalledWith({
+      email: 'contratos@dev.elevant.test',
+      currentPassword: 'Temporary-Development!2026',
+      newPassword: 'New-Development-Password!2026',
+    });
     expect(readSession()).toBeNull();
   });
 

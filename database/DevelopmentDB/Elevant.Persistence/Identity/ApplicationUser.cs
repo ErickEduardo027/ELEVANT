@@ -14,6 +14,8 @@ public sealed class ApplicationUser : IdentityUser<long>
 
     public InvitationStatus InvitationStatus { get; set; }
 
+    public bool MustChangePassword { get; set; }
+
     public DateTimeOffset? InvitationSentAt { get; set; }
 
     public DateTimeOffset? LastLoginAt { get; set; }

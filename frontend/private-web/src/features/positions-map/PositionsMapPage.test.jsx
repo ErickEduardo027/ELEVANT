@@ -1,8 +1,11 @@
 import { forwardRef, useImperativeHandle } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PositionsMapPage from './PositionsMapPage';
+
+beforeEach(() => vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', ''));
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock('./components/PositionMap', () => ({
   default: forwardRef(function PositionMapStub(props, ref) {

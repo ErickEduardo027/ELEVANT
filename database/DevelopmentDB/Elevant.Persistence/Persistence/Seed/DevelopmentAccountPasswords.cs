@@ -1,6 +1,6 @@
 namespace Elevant.Infrastructure.Persistence.Seed;
 
-/// <summary>Distinct deployment secrets for the four synthetic Development actors.</summary>
+/// <summary>Distinct deployment secrets for the six synthetic Development actors.</summary>
 public sealed class DevelopmentAccountPasswords
 {
     public const int MinimumLength = 14;
@@ -19,12 +19,16 @@ public sealed class DevelopmentAccountPasswords
         string adminOcc,
         string rampAgent,
         string airlineClient,
-        string humanResources)
+        string humanResources,
+        string contracts,
+        string finance)
     {
-        AdminOcc = Validate(adminOcc, nameof(adminOcc));
-        RampAgent = Validate(rampAgent, nameof(rampAgent));
-        AirlineClient = Validate(airlineClient, nameof(airlineClient));
-        HumanResources = Validate(humanResources, nameof(humanResources));
+        AdminOcc = ValidateSingle(adminOcc, nameof(adminOcc));
+        RampAgent = ValidateSingle(rampAgent, nameof(rampAgent));
+        AirlineClient = ValidateSingle(airlineClient, nameof(airlineClient));
+        HumanResources = ValidateSingle(humanResources, nameof(humanResources));
+        Contracts = ValidateSingle(contracts, nameof(contracts));
+        Finance = ValidateSingle(finance, nameof(finance));
 
         if (new HashSet<string>(StringComparer.Ordinal)
             {
@@ -32,10 +36,12 @@ public sealed class DevelopmentAccountPasswords
                 RampAgent,
                 AirlineClient,
                 HumanResources,
-            }.Count != 4)
+                Contracts,
+                Finance,
+            }.Count != 6)
         {
             throw new InvalidOperationException(
-                "Synthetic Development accounts must use four distinct passwords.");
+                "Synthetic Development accounts must use six distinct passwords.");
         }
     }
 
@@ -47,10 +53,14 @@ public sealed class DevelopmentAccountPasswords
 
     public string HumanResources { get; }
 
-    public override string ToString() =>
-        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED], HumanResources = [REDACTED] }}";
+    public string Contracts { get; }
 
-    private static string Validate(string password, string parameterName)
+    public string Finance { get; }
+
+    public override string ToString() =>
+        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED], HumanResources = [REDACTED], Contracts = [REDACTED], Finance = [REDACTED] }}";
+
+    public static string ValidateSingle(string password, string parameterName = "password")
     {
         ArgumentNullException.ThrowIfNull(password, parameterName);
 

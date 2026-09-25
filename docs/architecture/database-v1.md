@@ -54,6 +54,9 @@ misma secuencia ordenada de migraciones, pero no recibirá fixtures sintéticos.
 | 5 | `V1_05_MobileAudit` | dispositivos, idempotencia y auditoría detallada |
 | 6 | `V1_06_DevelopmentAccountCredentialRotation` | correo normalizado único y rotación restringida de credenciales sintéticas Development |
 | 7 | `V1_07_DevelopmentHumanResourcesAccount` | allowlist de rotación para la cuenta sintética de Gestión Humana |
+| 8 | `V1_08_RampCorrectionRevisions` | revisiones históricas de correcciones de rampa |
+| 9 | `V1_09_OperationalCommunication` | mensajes y notificaciones operativas persistentes |
+| 10 | `V1_10_DevelopmentCredentialActivation` | marca de cambio obligatorio de contraseña y recuperación manual de Gestión Humana |
 
 EF Core conserva un único historial en `infra.__EFMigrationsHistory`. `infra.database_instances` se crea antes de EF y se excluye de migraciones para que la herramienta pueda verificar el destino antes de modificar el esquema.
 

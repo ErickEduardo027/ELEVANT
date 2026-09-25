@@ -35,12 +35,16 @@ public sealed class SqlServerMigrationTests
         "Synthetic-Admin!234",
         "Synthetic-Ramp!2345",
         "Synthetic-Airline!234",
-        "Synthetic-HumanResources!234");
+        "Synthetic-HumanResources!234",
+        "Synthetic-Contracts!234",
+        "Synthetic-Finance!234");
     private static readonly DevelopmentAccountPasswords RotatedPasswords = new(
         "Rotated-Admin!5678",
         InitialPasswords.RampAgent,
         InitialPasswords.AirlineClient,
-        InitialPasswords.HumanResources);
+        InitialPasswords.HumanResources,
+        InitialPasswords.Contracts,
+        InitialPasswords.Finance);
 
     [Fact]
     public void DevelopmentPasswordsRejectSharedOrWeakSecrets()
@@ -49,17 +53,23 @@ public sealed class SqlServerMigrationTests
             "Synthetic-Shared!234",
             "Synthetic-Shared!234",
             "Synthetic-Airline!234",
-            "Synthetic-HumanResources!234"));
+            "Synthetic-HumanResources!234",
+            "Synthetic-Contracts!234",
+            "Synthetic-Finance!234"));
         Assert.Throws<InvalidOperationException>(() => new DevelopmentAccountPasswords(
             "all-lowercase-password",
             "Synthetic-Ramp!2345",
             "Synthetic-Airline!234",
-            "Synthetic-HumanResources!234"));
+            "Synthetic-HumanResources!234",
+            "Synthetic-Contracts!234",
+            "Synthetic-Finance!234"));
         Assert.Throws<InvalidOperationException>(() => new DevelopmentAccountPasswords(
             "REPLACE_ME_AdminAccount!2026",
             "Synthetic-Ramp!2345",
             "Synthetic-Airline!234",
-            "Synthetic-HumanResources!234"));
+            "Synthetic-HumanResources!234",
+            "Synthetic-Contracts!234",
+            "Synthetic-Finance!234"));
     }
 
     [Fact]
@@ -146,7 +156,7 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Users.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Turnarounds.AsNoTracking().ToListAsync(cancellationToken));
-        Assert.Equal(9, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
+        Assert.Equal(10, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
 
         var productionCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
             context.Database.ExecuteSqlRawAsync(
@@ -358,6 +368,51 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task ExplicitHumanResourcesRecoveryIsNotUndoneByTheDevelopmentSeeder()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+        {
+            await migration.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken);
+        await using var context = CreateContext(seederConnection);
+        var seeder = new DevelopmentDataSeeder(context);
+        await seeder.SeedAsync(InitialPasswords, cancellationToken);
+
+        const string recoveredPassword = "Synthetic-RecoveredHumanResources!234";
+        await new DevelopmentHumanResourcesCredentialRotator(context)
+            .RotateAsync(recoveredPassword, cancellationToken);
+        context.ChangeTracker.Clear();
+        var recovered = await context.Users.AsNoTracking().SingleAsync(
+            account => account.NormalizedEmail == "GESTION.HUMANA@DEV.ELEVANT.TEST",
+            cancellationToken);
+        var hasher = new PasswordHasher<ApplicationUser>();
+        Assert.NotEqual(PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(recovered, recovered.PasswordHash!, recoveredPassword));
+        Assert.True(recovered.MustChangePassword);
+        Assert.Equal(PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(recovered, recovered.PasswordHash!, InitialPasswords.HumanResources));
+        var recoveredHash = recovered.PasswordHash;
+        var recoveredStamp = recovered.SecurityStamp;
+
+        await seeder.SeedAsync(InitialPasswords, cancellationToken);
+        context.ChangeTracker.Clear();
+        var repeated = await context.Users.AsNoTracking().SingleAsync(
+            account => account.NormalizedEmail == "GESTION.HUMANA@DEV.ELEVANT.TEST",
+            cancellationToken);
+        Assert.Equal(recoveredHash, repeated.PasswordHash);
+        Assert.Equal(recoveredStamp, repeated.SecurityStamp);
+        Assert.True(repeated.MustChangePassword);
+    }
+
+    [Fact]
     public async Task DevelopmentSeederIsIdempotentAndPreservesExistingRows()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -447,6 +502,36 @@ public sealed class SqlServerMigrationTests
                     scope.StationId == pujStationId,
                 cancellationToken);
         Assert.Null(humanResourcesStationScope.RevokedAt);
+
+        foreach (var (email, roleCode, userType, publicId) in new[]
+                 {
+                     ("CONTRATOS@DEV.ELEVANT.TEST", "CONTRATOS", "contracts",
+                         Guid.Parse("40000000-0000-7000-8000-000000000005")),
+                     ("FINANZAS@DEV.ELEVANT.TEST", "FINANZAS", "finance",
+                         Guid.Parse("40000000-0000-7000-8000-000000000006")),
+                 })
+        {
+            var departmentAccount = await context.Users.AsNoTracking()
+                .SingleAsync(account => account.NormalizedEmail == email, cancellationToken);
+            Assert.Equal(publicId, departmentAccount.PublicId);
+            Assert.True(departmentAccount.LockoutEnabled);
+            Assert.True(departmentAccount.MustChangePassword);
+            var departmentRole = await context.Roles.AsNoTracking()
+                .SingleAsync(role => role.NormalizedName == roleCode, cancellationToken);
+            Assert.Equal(PortalKind.BackOffice, departmentRole.Portal);
+            Assert.Equal(userType, departmentRole.UserType);
+            Assert.True(await context.Set<IdentityUserRole<long>>().AsNoTracking()
+                .AnyAsync(link => link.UserId == departmentAccount.Id &&
+                    link.RoleId == departmentRole.Id, cancellationToken));
+            Assert.True(await context.OrganizationMemberships.AsNoTracking()
+                .AnyAsync(membership => membership.AccountId == departmentAccount.Id &&
+                    membership.OrganizationId == aviamOrganizationId &&
+                    membership.Kind == MembershipKind.InternalStaff, cancellationToken));
+            Assert.True(await context.AccountStationScopes.AsNoTracking()
+                .AnyAsync(scope => scope.AccountId == departmentAccount.Id &&
+                    scope.StationId == pujStationId && scope.RevokedAt == null,
+                    cancellationToken));
+        }
 
         var legacyTurnaround = await context.Turnarounds
             .AsNoTracking()
@@ -1460,6 +1545,16 @@ public sealed class SqlServerMigrationTests
         }
 
         context.ChangeTracker.Clear();
+        var unsafeLockout = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => seeder.SeedAsync(InitialPasswords, cancellationToken));
+        Assert.Contains("credential drift", unsafeLockout.Message, StringComparison.OrdinalIgnoreCase);
+        context.ChangeTracker.Clear();
+        await using (var administratorContext = CreateContext(database.ConnectionString))
+        {
+            await administratorContext.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE [iam].[accounts] SET [lockout_enabled] = {true} WHERE [normalized_email] = {"ADMIN.OCC@DEV.ELEVANT.TEST"};",
+                cancellationToken);
+        }
         await seeder.SeedAsync(InitialPasswords, cancellationToken);
 
         Assert.Equal(organizationCount, await context.Organizations.CountAsync(cancellationToken));
@@ -1483,11 +1578,11 @@ public sealed class SqlServerMigrationTests
         await seeder.SeedAsync(RotatedPasswords, cancellationToken);
         context.ChangeTracker.Clear();
         var rotatedAccounts = await LoadAccountsAsync(context, cancellationToken);
-        AssertPasswordSet(rotatedAccounts, RotatedPasswords);
-        Assert.NotEqual(
+        AssertPasswordSet(rotatedAccounts, InitialPasswords);
+        Assert.Equal(
             initialCredentialState["ADMIN.OCC@DEV.ELEVANT.TEST"].PasswordHash,
             rotatedAccounts["ADMIN.OCC@DEV.ELEVANT.TEST"].PasswordHash);
-        Assert.NotEqual(
+        Assert.Equal(
             initialCredentialState["ADMIN.OCC@DEV.ELEVANT.TEST"].SecurityStamp,
             rotatedAccounts["ADMIN.OCC@DEV.ELEVANT.TEST"].SecurityStamp);
         Assert.Equal(
@@ -1533,8 +1628,8 @@ public sealed class SqlServerMigrationTests
         await seeder.SeedAsync(RotatedPasswords, cancellationToken);
         context.ChangeTracker.Clear();
         var rehashedAccounts = await LoadAccountsAsync(context, cancellationToken);
-        Assert.NotEqual(legacyHash, rehashedAccounts["RAMP.AGENT@DEV.ELEVANT.TEST"].PasswordHash);
-        Assert.NotEqual(legacySecurityStamp, rehashedAccounts["RAMP.AGENT@DEV.ELEVANT.TEST"].SecurityStamp);
+        Assert.Equal(legacyHash, rehashedAccounts["RAMP.AGENT@DEV.ELEVANT.TEST"].PasswordHash);
+        Assert.Equal(legacySecurityStamp, rehashedAccounts["RAMP.AGENT@DEV.ELEVANT.TEST"].SecurityStamp);
         Assert.Equal(
             rotatedAccounts["ADMIN.OCC@DEV.ELEVANT.TEST"].PasswordHash,
             rehashedAccounts["ADMIN.OCC@DEV.ELEVANT.TEST"].PasswordHash);
@@ -4041,31 +4136,23 @@ public sealed class SqlServerMigrationTests
         Dictionary<string, ApplicationUser> accounts,
         DevelopmentAccountPasswords passwords)
     {
-        Assert.Equal(4, accounts.Count);
-        AssertPassword(
-            accounts["ADMIN.OCC@DEV.ELEVANT.TEST"],
-            passwords.AdminOcc,
-            passwords.RampAgent,
-            passwords.AirlineClient,
-            passwords.HumanResources);
-        AssertPassword(
-            accounts["RAMP.AGENT@DEV.ELEVANT.TEST"],
-            passwords.RampAgent,
-            passwords.AdminOcc,
-            passwords.AirlineClient,
-            passwords.HumanResources);
-        AssertPassword(
-            accounts["AIRLINE.CLIENT@DEV.ELEVANT.TEST"],
-            passwords.AirlineClient,
-            passwords.AdminOcc,
-            passwords.RampAgent,
-            passwords.HumanResources);
-        AssertPassword(
-            accounts["GESTION.HUMANA@DEV.ELEVANT.TEST"],
-            passwords.HumanResources,
-            passwords.AdminOcc,
-            passwords.RampAgent,
-            passwords.AirlineClient);
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ADMIN.OCC@DEV.ELEVANT.TEST"] = passwords.AdminOcc,
+            ["RAMP.AGENT@DEV.ELEVANT.TEST"] = passwords.RampAgent,
+            ["AIRLINE.CLIENT@DEV.ELEVANT.TEST"] = passwords.AirlineClient,
+            ["GESTION.HUMANA@DEV.ELEVANT.TEST"] = passwords.HumanResources,
+            ["CONTRATOS@DEV.ELEVANT.TEST"] = passwords.Contracts,
+            ["FINANZAS@DEV.ELEVANT.TEST"] = passwords.Finance,
+        };
+        Assert.Equal(expected.Count, accounts.Count);
+        foreach (var (email, password) in expected)
+        {
+            AssertPassword(accounts[email], password, expected
+                .Where(pair => pair.Key != email)
+                .Select(pair => pair.Value)
+                .ToArray());
+        }
     }
 
     private static void AssertPassword(

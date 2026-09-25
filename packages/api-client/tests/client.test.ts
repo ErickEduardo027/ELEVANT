@@ -126,6 +126,37 @@ describe("createElevantApiClient", () => {
     });
   });
 
+  it("changes a password without sending a stale bearer or retaining secrets", async () => {
+    let requestedUrl = "";
+    let authorization: string | null = null;
+    let payload: unknown;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => { throw new Error("Password change must not request a bearer token"); },
+      fetch: async (input, init) => {
+        requestedUrl = String(input);
+        authorization = new Headers(init?.headers).get("authorization");
+        payload = JSON.parse(String(init?.body));
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await expect(client.changePassword({
+      email: "contratos@dev.elevant.test",
+      currentPassword: "Temporary-Development!2026",
+      newPassword: "New-Development-Password!2026",
+    })).resolves.toBeUndefined();
+    expect(requestedUrl).toBe("https://api.example.test/api/v1/auth/password-change");
+    expect(authorization).toBeNull();
+    expect(payload).toEqual({
+      email: "contratos@dev.elevant.test",
+      currentPassword: "Temporary-Development!2026",
+      newPassword: "New-Development-Password!2026",
+    });
+    expect(client).not.toHaveProperty("currentPassword");
+    expect(client).not.toHaveProperty("newPassword");
+  });
+
   it("resolves the current session with a fresh bearer token", async () => {
     let authorization: string | null = null;
     const client = createElevantApiClient({
