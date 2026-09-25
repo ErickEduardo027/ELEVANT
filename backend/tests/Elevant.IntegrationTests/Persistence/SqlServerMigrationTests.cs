@@ -212,6 +212,106 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task DevelopmentSeederPreservesChecklistCorrectionRevisionsForAssignedOperations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+
+        async Task SeedAsync()
+        {
+            await using var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken);
+            await using var seedContext = CreateContext(connection);
+            await new DevelopmentDataSeeder(seedContext).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await SeedAsync();
+
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var secondOperationId = await (
+                    from operation in setup.GroundOperations
+                    join turnaround in setup.Turnarounds
+                        on operation.TurnaroundId equals turnaround.Id
+                    where turnaround.OperationCode == "DEV-TAT-0002"
+                    select operation.Id)
+                .SingleAsync(cancellationToken);
+            var rampAgentId = await setup.RampAgents
+                .Select(agent => agent.Id)
+                .SingleAsync(cancellationToken);
+            var instant = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+            setup.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.CreateVersion7(),
+                GroundOperationId = secondOperationId,
+                RampAgentId = rampAgentId,
+                AssignmentRole = "regression-test",
+                AssignedAt = instant,
+                CreatedAt = instant,
+                UpdatedAt = instant,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        await SeedAsync(); // The second operation now receives its initial checklist.
+
+        await using var context = CreateContext(database.ConnectionString);
+        var initial = await context.OperationChecklists.AsNoTracking()
+            .Where(checklist => checklist.RevisionNumber == 1)
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(3, initial.Length); // v1 and v2 for the first operation; v2 for the second.
+        var instantForCorrections = new DateTimeOffset(2026, 8, 20, 12, 0, 0, TimeSpan.Zero);
+        foreach (var checklist in initial)
+        {
+            context.OperationChecklists.Add(new OperationChecklist
+            {
+                PublicId = Guid.CreateVersion7(),
+                GroundOperationId = checklist.GroundOperationId,
+                ChecklistTemplateVersionId = checklist.ChecklistTemplateVersionId,
+                RevisionNumber = 2,
+                Status = ChecklistStatus.NotStarted,
+                CreatedAt = instantForCorrections,
+                UpdatedAt = instantForCorrections,
+            });
+        }
+        await context.SaveChangesAsync(cancellationToken);
+
+        var before = await context.OperationChecklists.AsNoTracking()
+            .OrderBy(checklist => checklist.PublicId)
+            .Select(checklist => new
+            {
+                checklist.PublicId,
+                checklist.GroundOperationId,
+                checklist.ChecklistTemplateVersionId,
+                checklist.RevisionNumber,
+                checklist.Status,
+            })
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(6, before.Length);
+
+        await SeedAsync();
+
+        var after = await context.OperationChecklists.AsNoTracking()
+            .OrderBy(checklist => checklist.PublicId)
+            .Select(checklist => new
+            {
+                checklist.PublicId,
+                checklist.GroundOperationId,
+                checklist.ChecklistTemplateVersionId,
+                checklist.RevisionNumber,
+                checklist.Status,
+            })
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public async Task HumanResourcesCredentialMigrationDownRestoresPreviousAllowlist()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
