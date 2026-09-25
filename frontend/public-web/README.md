@@ -39,7 +39,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 
 - `/`: landing, propuesta comercial y solicitud demo.
 - `/login`: acceso mock y afiliación local.
-- `/dev-airline`: solo en `next dev`; acceso real de aerolínea y lectura del
+- `/dev-airline`: solo en `next dev` desde `localhost` o `127.0.0.1`; acceso real de aerolínea y lectura del
   bootstrap contractual con `NEXT_PUBLIC_ELEVANT_API_URL`. El token vive solo
   en memoria y se pierde al recargar. En builds de Development/Production la
   ruta devuelve 404. Requiere que el origen local esté permitido por CORS y
