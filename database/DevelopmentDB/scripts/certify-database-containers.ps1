@@ -921,7 +921,7 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
     )
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Development seed unexpectedly accepted a shared account secret.' `
-        -ExpectedErrorPattern 'must use four distinct passwords' `
+        -ExpectedErrorPattern 'must use six distinct passwords' `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
