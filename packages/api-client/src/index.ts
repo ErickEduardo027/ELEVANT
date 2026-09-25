@@ -1,6 +1,7 @@
 export {
   createElevantApiClient,
   type CreateSessionOptions,
+  type ChangePasswordOptions,
   type AssignOccPlanningOperationOptions,
   type ElevantApiClient,
   type ElevantApiClientOptions,
@@ -32,6 +33,7 @@ export {
   SessionPortal,
   type AssignOccOperationRequest,
   type CreateSessionRequest,
+  type ChangePasswordRequest,
   type CurrentSessionResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,

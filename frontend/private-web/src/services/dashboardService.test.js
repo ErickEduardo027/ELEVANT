@@ -15,8 +15,8 @@ describe('getDashboardSnapshot', () => {
           approvalsPending: expect.any(Number),
         }),
         flyAware: expect.objectContaining({
-          status: expect.stringMatching(/^(online|degraded|error)$/),
-          lastSyncMinutesAgo: expect.any(Number),
+          status: 'unavailable',
+          lastSyncMinutesAgo: null,
         }),
         flightStatusDistribution: expect.any(Array),
         pendingApprovals: expect.any(Array),

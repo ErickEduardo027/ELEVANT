@@ -86,6 +86,8 @@ $passwords = @{
     DemoRamp = "CertDemoRamp-Aa1!$suffix"
     DemoAirline = "CertDemoAirline-Aa1!$suffix"
     DemoHumanResources = "CertDemoHumanResources-Aa1!$suffix"
+    DemoContracts = "CertDemoContracts-Aa1!$suffix"
+    DemoFinance = "CertDemoFinance-Aa1!$suffix"
     TeamErick = "CertTeamErick-Aa1!$suffix"
     TeamEliezer = "CertTeamEliezer-Aa1!$suffix"
     TeamLaisha = "CertTeamLaisha-Aa1!$suffix"
@@ -439,7 +441,9 @@ function Invoke-Release {
             '--env', "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD=$adminPassword",
             '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
             '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
-            '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)"
+            '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+            '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+            '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)"
         )
     }
     $arguments += @($ReleaseImage, $Command)
@@ -802,6 +806,8 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+        '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+        '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -817,6 +823,8 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+        '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+        '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -905,6 +913,8 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoRamp)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+        '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+        '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'
@@ -920,6 +930,8 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD=$($passwords.DemoAdmin)",
         '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
+        '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
+        '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'

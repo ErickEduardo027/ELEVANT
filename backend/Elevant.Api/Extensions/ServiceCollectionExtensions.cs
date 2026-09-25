@@ -7,6 +7,7 @@ using Elevant.Api.Configuration;
 using Elevant.Api.ExceptionHandling;
 using Elevant.Api.HealthChecks;
 using Elevant.Api.OpenApi;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -113,7 +114,7 @@ public static class ServiceCollectionExtensions
 
                         return Task.CompletedTask;
                     },
-                    OnTokenValidated = context =>
+                    OnTokenValidated = async context =>
                     {
                         var subjectClaims = context.Principal?
                             .FindAll(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)
@@ -123,18 +124,32 @@ public static class ServiceCollectionExtensions
                             .FindAll(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)
                             .Select(claim => claim.Value)
                             .ToArray() ?? [];
+                        var versionClaims = context.Principal?
+                            .FindAll(SessionSecurityVersion.ClaimType)
+                            .Select(claim => claim.Value)
+                            .ToArray() ?? [];
 
                         if (subjectClaims.Length != 1 ||
                             !Guid.TryParse(subjectClaims[0], out var subject) ||
                             subject == Guid.Empty ||
                             tokenIdClaims.Length != 1 ||
                             !Guid.TryParse(tokenIdClaims[0], out var tokenId) ||
-                            tokenId == Guid.Empty)
+                            tokenId == Guid.Empty ||
+                            versionClaims.Length != 1)
                         {
                             context.Fail("The access token identity is invalid.");
+                            return;
                         }
 
-                        return Task.CompletedTask;
+                        var store = context.HttpContext.RequestServices
+                            .GetRequiredService<ISessionSecurityVersionStore>();
+                        var currentStamp = await store.GetCurrentAsync(
+                            subject, context.HttpContext.RequestAborted);
+                        if (string.IsNullOrWhiteSpace(currentStamp) ||
+                            !SessionSecurityVersion.Matches(versionClaims[0], currentStamp))
+                        {
+                            context.Fail("The access token credential version is invalid.");
+                        }
                     },
                     OnChallenge = context =>
                     {

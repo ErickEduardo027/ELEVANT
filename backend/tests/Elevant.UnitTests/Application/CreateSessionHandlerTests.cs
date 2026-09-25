@@ -117,6 +117,25 @@ public sealed class CreateSessionHandlerTests
     }
 
     [Fact]
+    public async Task VerifiedTemporaryCredentialCannotResolveActorOrReceiveToken()
+    {
+        var verifier = new StubCredentialVerifier((_, _, _) =>
+            Task.FromResult<VerifiedCredential?>(new(IdentityTestData.AccountId, true)));
+        var resolver = StubActorContextResolver.Returning(IdentityTestData.CreateActor());
+        var issuer = StubAccessTokenIssuer.Returning(
+            new IssuedAccessToken("signed.jwt.value", Now.AddMinutes(15)));
+
+        var result = await CreateHandler(verifier, resolver, issuer).HandleAsync(
+            new CreateSessionCommand("temporary@dev.elevant.test", "valid-temporary-password"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(CreateSessionFailure.PasswordChangeRequired, result.Failure);
+        Assert.Null(result.Session);
+        Assert.Equal(0, resolver.CallCount);
+        Assert.Equal(0, issuer.CallCount);
+    }
+
+    [Fact]
     public async Task ActorForDifferentAccountIsRejectedWithoutIssuingToken()
     {
         var verifier = StubCredentialVerifier.Verified(IdentityTestData.AccountId);

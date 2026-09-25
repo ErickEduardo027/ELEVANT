@@ -9,7 +9,6 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Infrastructure.Persistence.Seed;
@@ -300,28 +299,52 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             "gestion.humana@dev.elevant.test",
             "DEV-HR-001",
             cancellationToken);
+        var contractsPerson = await SeedPersonAsync(
+            "30000000-0000-7000-8000-000000000005",
+            "Daniela",
+            "Contracts",
+            "contratos@dev.elevant.test",
+            "DEV-CONTRACTS-001",
+            cancellationToken);
+        var financePerson = await SeedPersonAsync(
+            "30000000-0000-7000-8000-000000000006",
+            "Sofia",
+            "Finance",
+            "finanzas@dev.elevant.test",
+            "DEV-FINANCE-001",
+            cancellationToken);
 
         var adminRole = await SeedRoleAsync("Admin OCC", "ADMIN_OCC", PortalKind.BackOffice, "admin_occ", cancellationToken);
         var agentRole = await SeedRoleAsync("Ramp Agent", "RAMP_AGENT", PortalKind.RampMobileApp, "ramp_agent", cancellationToken);
         var clientRole = await SeedRoleAsync("Airline Client", "AIRLINE_CLIENT", PortalKind.AirlinePortal, "airline_client", cancellationToken);
         var humanResourcesRole = await SeedRoleAsync("Gestión Humana", "GESTION_HUMANA", PortalKind.BackOffice, "human_resources", cancellationToken);
+        var contractsRole = await SeedRoleAsync("Contratos", "CONTRATOS", PortalKind.BackOffice, "contracts", cancellationToken);
+        var financeRole = await SeedRoleAsync("Finanzas", "FINANZAS", PortalKind.BackOffice, "finance", cancellationToken);
 
         var adminAccount = await SeedAccountAsync(adminPerson, accountPasswords.AdminOcc, "40000000-0000-7000-8000-000000000001", cancellationToken);
         var agentAccount = await SeedAccountAsync(agentPerson, accountPasswords.RampAgent, "40000000-0000-7000-8000-000000000002", cancellationToken);
         var clientAccount = await SeedAccountAsync(clientPerson, accountPasswords.AirlineClient, "40000000-0000-7000-8000-000000000003", cancellationToken);
         var humanResourcesAccount = await SeedAccountAsync(humanResourcesPerson, accountPasswords.HumanResources, "40000000-0000-7000-8000-000000000004", cancellationToken);
+        var contractsAccount = await SeedAccountAsync(contractsPerson, accountPasswords.Contracts, "40000000-0000-7000-8000-000000000005", cancellationToken, mustChangePasswordInitially: true);
+        var financeAccount = await SeedAccountAsync(financePerson, accountPasswords.Finance, "40000000-0000-7000-8000-000000000006", cancellationToken, mustChangePasswordInitially: true);
 
         await EnsureUserRoleAsync(adminAccount.Id, adminRole.Id, cancellationToken);
         await EnsureUserRoleAsync(agentAccount.Id, agentRole.Id, cancellationToken);
         await EnsureUserRoleAsync(clientAccount.Id, clientRole.Id, cancellationToken);
         await EnsureUserRoleAsync(humanResourcesAccount.Id, humanResourcesRole.Id, cancellationToken);
+        await EnsureUserRoleAsync(contractsAccount.Id, contractsRole.Id, cancellationToken);
+        await EnsureUserRoleAsync(financeAccount.Id, financeRole.Id, cancellationToken);
         await EnsureMembershipAsync(adminAccount.Id, aviam.Id, MembershipKind.InternalStaff, "OCC administrator", cancellationToken);
         await EnsureMembershipAsync(agentAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Ramp agent", cancellationToken);
         await EnsureMembershipAsync(clientAccount.Id, airlineOrganization.Id, MembershipKind.AirlineClient, "Operations contact", cancellationToken);
         await EnsureMembershipAsync(humanResourcesAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Gestión Humana", cancellationToken);
+        await EnsureMembershipAsync(contractsAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Contracts", cancellationToken);
+        await EnsureMembershipAsync(financeAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Finance", cancellationToken);
         await EnsureAccountStationScopeAsync(adminAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(agentAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(humanResourcesAccount.Id, station.Id, cancellationToken);
+        await EnsureAccountStationScopeAsync(contractsAccount.Id, station.Id, cancellationToken);
+        await EnsureAccountStationScopeAsync(financeAccount.Id, station.Id, cancellationToken);
 
         var rampAgent = await GetOrAddAsync(
             context.RampAgents,
@@ -872,7 +895,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         Person person,
         string password,
         string publicId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool mustChangePasswordInitially = false)
     {
         var normalizedEmail = person.PrimaryEmail!.ToUpperInvariant();
         var expectedPublicId = Guid.Parse(publicId);
@@ -895,6 +919,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 LockoutEnabled = true,
                 Status = AccountLifecycleStatus.Active,
                 InvitationStatus = InvitationStatus.Accepted,
+                MustChangePassword = mustChangePasswordInitially,
                 CreatedAt = FixtureInstant,
                 UpdatedAt = FixtureInstant,
                 SecurityStamp = DeterministicGuid($"security:{normalizedEmail}").ToString("D"),
@@ -912,40 +937,14 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 "Synthetic Development account identity drift was detected; refusing to rotate credentials or attach privileges.");
         }
 
-        var verification = string.IsNullOrEmpty(account.PasswordHash)
-            ? PasswordVerificationResult.Failed
-            : passwordHasher.VerifyHashedPassword(account, account.PasswordHash, password);
-        var rotatePassword = verification != PasswordVerificationResult.Success;
-        if (!account.LockoutEnabled || rotatePassword)
+        // The seed is insert-only for existing identities. Credential rotation is an
+        // explicit operation; a database release must not replace a user-chosen password.
+        if (!account.LockoutEnabled ||
+            string.IsNullOrWhiteSpace(account.PasswordHash) ||
+            string.IsNullOrWhiteSpace(account.SecurityStamp))
         {
-            var replacementHash = rotatePassword
-                ? passwordHasher.HashPassword(account, password)
-                : null;
-            var replacementSecurityStamp = rotatePassword
-                ? Guid.NewGuid().ToString("D")
-                : null;
-            var normalizedEmailParameter = new SqlParameter("@normalized_email", System.Data.SqlDbType.NVarChar, 256)
-            {
-                Value = normalizedEmail,
-            };
-            var publicIdParameter = new SqlParameter("@public_id", System.Data.SqlDbType.UniqueIdentifier)
-            {
-                Value = expectedPublicId,
-            };
-            var passwordHashParameter = new SqlParameter("@password_hash", System.Data.SqlDbType.NVarChar, -1)
-            {
-                Value = (object?)replacementHash ?? DBNull.Value,
-            };
-            var securityStampParameter = new SqlParameter("@security_stamp", System.Data.SqlDbType.NVarChar, -1)
-            {
-                Value = (object?)replacementSecurityStamp ?? DBNull.Value,
-            };
-
-            await context.Database.ExecuteSqlRawAsync(
-                "EXEC [iam].[set_development_account_credential] @normalized_email, @public_id, @password_hash, @security_stamp;",
-                [normalizedEmailParameter, publicIdParameter, passwordHashParameter, securityStampParameter],
-                cancellationToken);
-            await context.Entry(account).ReloadAsync(cancellationToken);
+            throw new InvalidOperationException(
+                "Synthetic Development account credential drift was detected; use the reviewed rotation path before seeding.");
         }
 
         return account;

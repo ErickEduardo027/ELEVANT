@@ -3,6 +3,8 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Identity;
 using Elevant.Application.Identity.CreateSession;
+using Elevant.Application.Identity.ChangePassword;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Contracts.Identity;
 using Elevant.Domain.Enumerations;
@@ -20,7 +22,8 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/auth/session")]
 public sealed class AuthenticationController(
     CreateSessionHandler createSessionHandler,
-    GetCurrentSessionHandler getCurrentSessionHandler) : ControllerBase
+    GetCurrentSessionHandler getCurrentSessionHandler,
+    ChangePasswordHandler changePasswordHandler) : ControllerBase
 {
     /// <summary>Exchanges valid Development credentials for a short-lived bearer token.</summary>
     [AllowAnonymous]
@@ -30,6 +33,7 @@ public sealed class AuthenticationController(
     [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
@@ -45,11 +49,21 @@ public sealed class AuthenticationController(
 
         if (!result.IsSuccess)
         {
-            return result.Failure == CreateSessionFailure.TokenUnavailable
-                ? Problem(
+            return result.Failure switch
+            {
+                CreateSessionFailure.TokenUnavailable => Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Authentication is temporarily unavailable.")
-                : UnauthorizedProblem(includeBearerChallenge: false);
+                    title: "Authentication is temporarily unavailable."),
+                CreateSessionFailure.PasswordChangeRequired => Conflict(new ProblemDetails
+                {
+                    Status = StatusCodes.Status409Conflict,
+                    Title = "Password change required.",
+                    Type = "https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict",
+                    Instance = HttpContext.Request.Path,
+                    Extensions = { ["code"] = "password_change_required" },
+                }),
+                _ => UnauthorizedProblem(includeBearerChallenge: false),
+            };
         }
 
         var session = result.Session!;
@@ -58,6 +72,32 @@ public sealed class AuthenticationController(
             TokenType: "Bearer",
             ExpiresAt: session.AccessToken.ExpiresAt,
             Actor: MapActor(session.Actor)));
+    }
+
+    /// <summary>Changes a verified password, then requires a fresh login.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("~/api/v{version:apiVersion}/auth/password-change", Name = "ChangePassword")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody, BindRequired] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var outcome = await changePasswordHandler.HandleAsync(
+            new ChangePasswordCommand(request.Email, request.CurrentPassword, request.NewPassword),
+            cancellationToken);
+        return outcome switch
+        {
+            PasswordChangeOutcome.Succeeded => NoContent(),
+            PasswordChangeOutcome.RejectedNewPassword => Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "New password does not meet the password policy."),
+            _ => UnauthorizedProblem(includeBearerChallenge: false),
+        };
     }
 
     /// <summary>Returns the current actor after revalidating its effective scope in SQL.</summary>

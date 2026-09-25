@@ -51,5 +51,6 @@ public sealed record SessionDetails
 public enum CreateSessionFailure
 {
     InvalidCredentials,
+    PasswordChangeRequired,
     TokenUnavailable,
 }

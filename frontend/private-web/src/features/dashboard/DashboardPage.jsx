@@ -20,7 +20,7 @@ export default function DashboardPage({ status, data, error, onRetry, forceState
   const flyAware =
     forceState === 'flyAwareError'
       ? { status: 'error', lastSyncMinutesAgo: data?.flyAware?.lastSyncMinutesAgo ?? 0 }
-      : data?.flyAware ?? { status: 'online', lastSyncMinutesAgo: 0 };
+      : data?.flyAware ?? { status: 'unavailable', lastSyncMinutesAgo: null };
 
   if (isError) {
     return (
@@ -47,6 +47,9 @@ export default function DashboardPage({ status, data, error, onRetry, forceState
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-4">
+      <p role="status" className="rounded-xl border border-signal-500/30 bg-signal-500/10 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+        Vista previa con indicadores, vuelos y alertas sintéticos. Para datos persistidos de Development, usa Planificación, Revisión, Reportes, Notificaciones o Chat.
+      </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Vuelos programados hoy" value={data?.kpis?.flightsToday ?? 0} icon={PlaneIcon} loading={isLoading} />
         <KpiCard

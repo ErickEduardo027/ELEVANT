@@ -19,9 +19,9 @@ const STATUS_META = {
 };
 
 const DEFAULT_META = {
-  title: 'FlyAware sin conexión',
-  colorClass: 'text-status-danger',
-  dotClass: 'bg-status-danger',
+  title: 'Fuente aeronáutica no conectada',
+  colorClass: 'text-text-secondary-light dark:text-text-secondary-dark',
+  dotClass: 'bg-text-secondary-light',
 };
 
 export default function FlyAwareStatusPanel({ status, lastSyncMinutesAgo }) {
@@ -39,7 +39,7 @@ export default function FlyAwareStatusPanel({ status, lastSyncMinutesAgo }) {
       <Icon className={`h-4 w-4 shrink-0 ${meta.colorClass}`} />
       <span className={`text-sm font-medium ${meta.colorClass}`}>{meta.title}</span>
       <span className="ml-auto text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        Última sincronización hace {lastSyncMinutesAgo} min
+        {Number.isFinite(lastSyncMinutesAgo) ? `Última sincronización hace ${lastSyncMinutesAgo} min` : 'Sin sincronización verificada'}
       </span>
     </div>
   );

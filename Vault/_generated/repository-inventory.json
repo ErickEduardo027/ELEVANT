@@ -1001,7 +1001,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "3a2710a19527a37a1c6dad581129a13f3d6d0d11f8581ff339bc1aa431634474"
+        "sha256": "6b467f69ccd3b730b2acd4f0eccd4b79b2a69588cb5d164c0de01c56cb29fa70"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1023,13 +1023,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "bf4e68b28924406e3234b07a0ed36a8621a4b696ef847e7af1932c4dabb87a93",
+        "sha256": "68909605496e614baea3e24baa09a734d623914f83aeb58126c3771ddff7cdb9",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "9bae38d6bb36013da03657a4aa29c20966ae5be4dfbf5d483691ac2437e13405",
+        "sha256": "c75d31ac244b989164d364a13856dad7ae24561d7c0af4850ef6c9f57d1cf35f",
         "title": null,
         "version": null
       }
@@ -1088,6 +1088,12 @@
         "name": "V1_09_OperationalCommunication",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260924145534_V1_09_OperationalCommunication.cs",
         "sha256": "353db3a96f3c433f15fc2d6ffefec7f15d6409a38e746e01b5a40a9eb79466d2"
+      },
+      {
+        "id": "20260925055507",
+        "name": "V1_10_DevelopmentCredentialActivation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260925055507_V1_10_DevelopmentCredentialActivation.cs",
+        "sha256": "9b85ee3492ae12a457dfd224e31cf3c556d76b3bf17a9f552b790d82c9eb4687"
       }
     ],
     "manifestContracts": [

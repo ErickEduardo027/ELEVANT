@@ -54,6 +54,8 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<ElevantDbContext>();
 
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
+        services.AddScoped<ISessionSecurityVersionStore, EfSessionSecurityVersionStore>();
+        services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();

@@ -15,6 +15,13 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 const GENERIC_AUTH_ERROR = 'No fue posible completar la autenticación.';
 let sessionExpirationTimer = null;
 
+export class PasswordChangeRequiredError extends Error {
+  constructor() {
+    super('Debes cambiar tu contraseña temporal para continuar.');
+    this.name = 'PasswordChangeRequiredError';
+  }
+}
+
 const MOCK_USERS = import.meta.env.MODE === 'test'
   ? {
       'admin@elevant.test': {
@@ -244,8 +251,26 @@ export async function login({ email, password, remember = false }, injectedApiCl
     if (error instanceof ElevantApiError && error.status === 401) {
       throw new Error('Credenciales inválidas.');
     }
+    if (error instanceof ElevantApiError && error.status === 409) {
+      throw new PasswordChangeRequiredError();
+    }
     if (error instanceof Error && error.message === 'Esta cuenta no tiene acceso a AVIAM Web.') {
       throw error;
+    }
+    throw new Error(GENERIC_AUTH_ERROR);
+  }
+}
+
+export async function changePassword({ email, currentPassword, newPassword }, injectedApiClient = null) {
+  try {
+    const client = injectedApiClient ?? createPrivateWebApiClient();
+    await client.changePassword({ email: String(email ?? '').trim(), currentPassword, newPassword });
+  } catch (error) {
+    if (error instanceof ElevantApiError && error.status === 401) {
+      throw new Error('La contraseña actual no es válida.');
+    }
+    if (error instanceof ElevantApiError && error.status === 400) {
+      throw new Error('La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.');
     }
     throw new Error(GENERIC_AUTH_ERROR);
   }

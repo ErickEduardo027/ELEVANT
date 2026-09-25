@@ -209,7 +209,7 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Equal("CreateSession", createSession.GetProperty("operationId").GetString());
         Assert.False(createSession.TryGetProperty("security", out _));
         Assert.Equal(
-            ["200", "400", "401", "413", "415", "429", "500", "503"],
+            ["200", "400", "401", "409", "413", "415", "429", "500", "503"],
             createSession
                 .GetProperty("responses")
                 .EnumerateObject()
@@ -251,6 +251,17 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         var securityRequirement = Assert.Single(
             getCurrentSession.GetProperty("security").EnumerateArray());
         Assert.Empty(securityRequirement.GetProperty("Bearer").EnumerateArray());
+
+        var changePassword = root.GetProperty("paths")
+            .GetProperty("/api/v1/auth/password-change")
+            .GetProperty("post");
+        Assert.Equal("ChangePassword", changePassword.GetProperty("operationId").GetString());
+        Assert.False(changePassword.TryGetProperty("security", out _));
+        AssertSchemaReference(
+            changePassword.GetProperty("requestBody")
+                .GetProperty("content").GetProperty("application/json").GetProperty("schema"),
+            "#/components/schemas/ChangePasswordRequest",
+            nullable: false);
 
         var schemas = components.GetProperty("schemas");
         var credentialProperties = schemas

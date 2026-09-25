@@ -137,7 +137,7 @@ function Logo({ bright = false }) {
   );
 }
 
-export default function LoginPage({ onSubmit = async () => {} }) {
+export default function LoginPage({ onSubmit = async () => {}, notice = '' }) {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [status, setStatus] = useState('idle'); // 'idle' | 'busy' | 'done'
@@ -204,16 +204,16 @@ export default function LoginPage({ onSubmit = async () => {} }) {
 
         <div className="elv-stats">
           <div className="elv-stat">
-            <div className="elv-stat-value">99.98%</div>
-            <div className="elv-stat-label">Disponibilidad de la plataforma</div>
+            <div className="elv-stat-value">3 canales</div>
+            <div className="elv-stat-label">Web interna, portal y agente móvil</div>
           </div>
           <div className="elv-stat">
-            <div className="elv-stat-value">24 / 7</div>
-            <div className="elv-stat-label">Cobertura OCC</div>
+            <div className="elv-stat-value">1 API</div>
+            <div className="elv-stat-label">Contrato compartido de Development</div>
           </div>
           <div className="elv-stat">
-            <div className="elv-stat-value">ISO 27001</div>
-            <div className="elv-stat-label">Controles certificados</div>
+            <div className="elv-stat-value">Development</div>
+            <div className="elv-stat-label">Entorno de pruebas, no producción</div>
           </div>
         </div>
       </div>
@@ -301,6 +301,7 @@ export default function LoginPage({ onSubmit = async () => {} }) {
                   {errorMessage}
                 </div>
               )}
+              {notice && <p role="status" className="elv-login-hint">{notice}</p>}
 
               <button ref={submitRef} type="submit" disabled={busy} className="elv-submit">
                 {status === 'done' && <span className="elv-submit-done-bg" />}

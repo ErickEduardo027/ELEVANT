@@ -43,6 +43,7 @@ internal sealed class IdentityCredentialVerifier(
         }
 
         var candidates = await context.Users
+            .AsNoTracking()
             .Where(account => account.NormalizedEmail == normalizedEmail)
             .Take(2)
             .ToArrayAsync(cancellationToken);
@@ -102,7 +103,7 @@ internal sealed class IdentityCredentialVerifier(
             return null;
         }
 
-        return new VerifiedCredential(verifiedPublicId);
+        return new VerifiedCredential(verifiedPublicId, account.MustChangePassword);
     }
 
     private void VerifyDummyPassword(string password) =>

@@ -7,10 +7,12 @@ const string adminPasswordVariable = "ELEVANT_DEV_ADMIN_ACCOUNT_PASSWORD";
 const string rampPasswordVariable = "ELEVANT_DEV_RAMP_ACCOUNT_PASSWORD";
 const string airlinePasswordVariable = "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD";
 const string humanResourcesPasswordVariable = "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD";
+const string contractsPasswordVariable = "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD";
+const string financePasswordVariable = "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD";
 
-if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development"))
+if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development" or "rotate-development-human-resources"))
 {
-    Console.Error.WriteLine("Usage: Elevant.DatabaseTool <verify-target|seed-development>");
+    Console.Error.WriteLine("Usage: Elevant.DatabaseTool <verify-target|seed-development|rotate-development-human-resources>");
     return 2;
 }
 
@@ -47,7 +49,17 @@ try
         ReadSecret(adminPasswordVariable),
         ReadSecret(rampPasswordVariable),
         ReadSecret(airlinePasswordVariable),
-        ReadSecret(humanResourcesPasswordVariable));
+        ReadSecret(humanResourcesPasswordVariable),
+        ReadSecret(contractsPasswordVariable),
+        ReadSecret(financePasswordVariable));
+
+    if (args[0] == "rotate-development-human-resources")
+    {
+        await new DevelopmentHumanResourcesCredentialRotator(context)
+            .RotateAsync(passwords.HumanResources);
+        Console.WriteLine("Synthetic Development HR credential rotated.");
+        return 0;
+    }
 
     await new DevelopmentDataSeeder(context).SeedAsync(passwords);
     Console.WriteLine("Synthetic Development fixtures are present.");
