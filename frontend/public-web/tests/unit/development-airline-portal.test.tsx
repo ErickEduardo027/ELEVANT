@@ -111,4 +111,28 @@ describe("Development airline portal", () => {
     );
     expect(screen.queryByText("PUJ")).not.toBeInTheDocument();
   });
+
+  it("fails closed while the connected API has not published the airline bootstrap", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/auth/session")
+        ? json(session)
+        : json({ title: "Not Found", status: 404 }, 404)));
+    const localWrite = vi.spyOn(Storage.prototype, "setItem");
+    render(<DevelopmentAirlinePortal baseUrl="https://api.example.test" />);
+
+    fireEvent.change(screen.getByLabelText("Correo corporativo"), {
+      target: { value: session.actor.email },
+    });
+    fireEvent.change(screen.getByLabelText("Contraseña"), {
+      target: { value: "synthetic-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar al portal" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "La API conectada todavía no publica el contexto de esta aerolínea.",
+    );
+    expect(screen.queryByText("PUJ")).not.toBeInTheDocument();
+    expect(screen.queryByText("DEV-TAT-0001")).not.toBeInTheDocument();
+    expect(localWrite).not.toHaveBeenCalled();
+  });
 });
