@@ -158,6 +158,16 @@ root_status="$(curl --silent --show-error --max-time 5 \
   echo "AVIAM Web root did not return HTTP 200." >&2
   exit 1
 }
+curl --silent --show-error --fail --max-time 5 \
+  --output "$response_root/favicon.png" "$base_url/brand/elevant-logo.png" || {
+  echo "AVIAM Web brand icon could not be loaded." >&2
+  exit 1
+}
+cmp -s "$response_root/favicon.png" \
+  "$REPOSITORY_ROOT/frontend/private-web/public/brand/elevant-logo.png" || {
+  echo "AVIAM Web brand icon did not match the reviewed asset." >&2
+  exit 1
+}
 
 for route in /dashboard.html /contracts.html /finance.html; do
   [[ "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 5 "$base_url$route")" == 200 ]] || {

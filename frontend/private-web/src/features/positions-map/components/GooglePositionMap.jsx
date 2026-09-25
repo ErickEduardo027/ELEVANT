@@ -4,6 +4,7 @@ import { loadGoogleMap } from '../../maps/googleMapsLoader';
 
 const INITIAL_ZOOM = 15;
 const FOCUS_ZOOM = 17;
+const LABEL_ZOOM = 17;
 const STATUS_COLORS = {
   available: '#13996f',
   occupied: '#2465c5',
@@ -23,6 +24,7 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
   const positionsRef = useRef(positions);
   const selectionRef = useRef(onSelectPosition);
   const [error, setError] = useState(false);
+  const [labelsVisible, setLabelsVisible] = useState(false);
   const [readyVersion, setReadyVersion] = useState(0);
   positionsRef.current = positions;
   selectionRef.current = onSelectPosition;
@@ -31,8 +33,10 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
     let disposed = false;
     let map = null;
     let readyListener = null;
+    let zoomListener = null;
     const timeout = window.setTimeout(() => { if (!disposed) setError(true); }, 12000);
     setError(false);
+    setLabelsVisible(false);
 
     loadGoogleMap(import.meta.env.VITE_GOOGLE_MAPS_API_KEY).then(maps => {
       if (disposed) return;
@@ -47,6 +51,9 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
         tilt: viewMode === '3d' ? 45 : 0,
       });
       mapRef.current = map;
+      zoomListener = maps.event.addListener(map, 'zoom_changed', () => {
+        if (!disposed) setLabelsVisible((map.getZoom() ?? INITIAL_ZOOM) >= LABEL_ZOOM);
+      });
       setReadyVersion(version => version + 1);
       readyListener = maps.event.addListenerOnce(map, 'idle', () => {
         window.clearTimeout(timeout);
@@ -61,6 +68,7 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
       disposed = true;
       window.clearTimeout(timeout);
       readyListener?.remove();
+      zoomListener?.remove();
       markersRef.current.forEach(marker => marker.setMap(null));
       markersRef.current = [];
       if (map && mapsRef.current) mapsRef.current.event.clearInstanceListeners(map);
@@ -79,20 +87,22 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
         map,
         position: { lat: position.latitude, lng: position.longitude },
         title: `Posición ${position.id}`,
-        label: { text: position.id, color: '#ffffff', fontWeight: '700', fontSize: '10px' },
+        label: selected || labelsVisible
+          ? { text: position.id, color: '#ffffff', fontWeight: '700', fontSize: '10px' }
+          : undefined,
         icon: {
           path: maps.SymbolPath.CIRCLE,
           fillColor: STATUS_COLORS[position.status] ?? STATUS_COLORS.unverified,
           fillOpacity: 1,
           strokeColor: selected ? '#ff6a1f' : '#ffffff',
           strokeWeight: selected ? 4 : 2,
-          scale: selected ? 18 : 15,
+          scale: selected ? 18 : labelsVisible ? 15 : 7,
         },
       });
       marker.addListener('click', () => selectionRef.current(position.id));
       return marker;
     });
-  }, [positions, selectedPositionId, readyVersion]);
+  }, [positions, selectedPositionId, labelsVisible, readyVersion]);
 
   useEffect(() => {
     mapRef.current?.setTilt(viewMode === '3d' ? 45 : 0);
