@@ -28,6 +28,18 @@ const bootstrap: AirlinePortalBootstrapResponse = {
   iataCode: "ZZ", icaoCode: "DVA", name: "Demo Airlines",
   stations: [{ id: "20000000-0000-7000-8000-000000000003", code: "PUJ",
     name: "Punta Cana", ianaTimeZone: "America/Santo_Domingo" }],
+  currentOperations: [{
+    id: "70000000-0000-7000-8000-000000000005",
+    code: "DEV-TAT-0001",
+    stationId: "20000000-0000-7000-8000-000000000003",
+    stationCode: "PUJ",
+    operationDate: "2026-09-25",
+    status: "Assigned",
+    arrivalFlightNumber: "ZZ100",
+    departureFlightNumber: "ZZ101",
+    plannedStartAt: null,
+    plannedEndAt: null,
+  }],
 };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -61,6 +73,8 @@ describe("Development airline portal", () => {
 
     await screen.findByRole("heading", { name: "Demo Airlines" });
     expect(screen.getByText("PUJ")).toBeInTheDocument();
+    expect(screen.getByText("DEV-TAT-0001")).toBeInTheDocument();
+    expect(screen.getByText("Asignada")).toBeInTheDocument();
     expect(calls.map((call) => call.url)).toEqual([
       "https://api.example.test/api/v1/auth/session",
       "https://api.example.test/api/v1/airline/portal/bootstrap",
@@ -74,6 +88,7 @@ describe("Development airline portal", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Entrar al portal" }))
       .toBeInTheDocument());
     expect(screen.queryByText("PUJ")).not.toBeInTheDocument();
+    expect(screen.queryByText("DEV-TAT-0001")).not.toBeInTheDocument();
   });
 
   it("does not show an airline context after a forbidden bootstrap", async () => {

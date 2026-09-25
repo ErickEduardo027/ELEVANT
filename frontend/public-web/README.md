@@ -5,8 +5,9 @@ Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y
 La implementación principal sigue siendo demostrativa: sesión, documentos,
 finanzas y la mayoría de los datos viven en adaptadores mock/locales. La ruta
 local `/dev-airline` es una excepción acotada para probar contra la API .NET:
-inicia sesión real, muestra el tenant y las estaciones contratadas devueltos
-por el servidor, y nunca muestra los fixtures del portal como datos reales.
+inicia sesión real, muestra el tenant, las estaciones contratadas y un resumen
+acotado de operaciones actuales devueltos por el servidor, y nunca muestra
+los fixtures del portal como datos reales.
 No representa todavía un portal operativo completo ni una conexión a Production.
 
 ## Ejecutar y validar
@@ -40,7 +41,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/`: landing, propuesta comercial y solicitud demo.
 - `/login`: acceso mock y afiliación local.
 - `/dev-airline`: solo en `next dev` desde `localhost` o `127.0.0.1`; acceso real de aerolínea y lectura del
-  bootstrap contractual con `NEXT_PUBLIC_ELEVANT_API_URL`. El token vive solo
+  bootstrap contractual y operaciones actuales con `NEXT_PUBLIC_ELEVANT_API_URL`. El token vive solo
   en memoria y se pierde al recargar. En builds de Development/Production la
   ruta devuelve 404. Requiere que el origen local esté permitido por CORS y
   que la API publique `GET /api/v1/airline/portal/bootstrap`.

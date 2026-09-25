@@ -141,6 +141,16 @@
 .stations strong { grid-row: span 2; color: #0f4dac; font-size: 1.12rem; }
 .stations small { color: #60738a; }
 .empty { padding: 1rem; border-radius: .6rem; background: #f4f7fb; color: #52667f; line-height: 1.6; }
+.operationsHeader { display: flex; justify-content: space-between; align-items: baseline; gap: .7rem; margin: 1.9rem 0 .8rem; padding-top: 1.2rem; border-top: 1px dashed #bad0e8; }
+.operationsHeader h3 { margin: 0; font-size: .95rem; }
+.operationsHeader span { color: #60738a; font-size: .74rem; }
+.operations { display: grid; gap: .7rem; margin: 0; padding: 0; list-style: none; }
+.operations li { padding: .9rem 1rem; border: 1px solid #dce5ef; border-left: .22rem solid #0f4dac; border-radius: .6rem; background: #fbfdff; }
+.operationTop { display: flex; justify-content: space-between; gap: .8rem; align-items: baseline; }
+.operationTop strong { font-size: .9rem; }
+.operationTop span { color: #0f4dac; font-size: .76rem; font-weight: 700; text-align: right; }
+.operations p { margin: .45rem 0 .2rem; color: #52667f; font-size: .82rem; }
+.operations small { color: #60738a; font-size: .76rem; }
 
 @media (max-width: 750px) {
   .content { grid-template-columns: 1fr; margin-top: 2.2rem; }

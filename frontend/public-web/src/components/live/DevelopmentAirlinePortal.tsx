@@ -14,6 +14,17 @@ type PortalView =
   | { kind: "signed-out" }
   | { kind: "ready"; actor: SessionActorResponse; bootstrap: AirlinePortalBootstrapResponse };
 
+const operationStatusLabels: Record<string, string> = {
+  Planned: "Planificada",
+  Assigned: "Asignada",
+  InProgress: "En ejecución",
+  PendingReview: "Entregada a OCC",
+  InReview: "En revisión",
+  Approved: "Aprobada",
+  Returned: "Devuelta para corrección",
+  Cancelled: "Cancelada",
+};
+
 function safeMessage(error: unknown): string {
   if (error instanceof ElevantApiError) {
     if (error.status === 401) return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
@@ -149,8 +160,30 @@ export function DevelopmentAirlinePortal({ baseUrl }: { baseUrl: string }) {
                 </li>)}
               </ul>
             )}
+            <div className={styles.operationsHeader}>
+              <h3>Operaciones actuales</h3>
+              <span>Hoy y próximos 7 días · UTC</span>
+            </div>
+            {view.bootstrap.currentOperations.length === 0 ? (
+              <p className={styles.empty}>No hay operaciones en esta ventana para tus estaciones contratadas.</p>
+            ) : (
+              <ul className={styles.operations} aria-label="Operaciones actuales de la aerolínea">
+                {view.bootstrap.currentOperations.map((operation) => (
+                  <li key={operation.id}>
+                    <div className={styles.operationTop}>
+                      <strong>{operation.code}</strong>
+                      <span>{operationStatusLabels[operation.status] ?? operation.status}</span>
+                    </div>
+                    <p>{operation.stationCode} · {operation.operationDate}</p>
+                    <small>
+                      Llegada {operation.arrivalFlightNumber ?? "sin vuelo"} · Salida {operation.departureFlightNumber ?? "sin vuelo"}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            )}
             {feedback && <p className={styles.error} role="alert">{feedback}</p>}
-            <p className={styles.note}>Las operaciones, contratos y facturas del prototipo todavía no se muestran aquí: siguen en preparación para el circuito persistente.</p>
+            <p className={styles.note}>Esta vista muestra solo operaciones de la ventana actual. El histórico, las solicitudes y las facturas siguen fuera de este recorrido real.</p>
           </section>
         )}
       </div>
