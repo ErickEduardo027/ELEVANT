@@ -97,6 +97,17 @@ IF NOT EXISTS (
 )
     THROW 52026, 'The restricted Development credential procedure must execute as owner.', 1;
 
+IF OBJECT_ID(N'[iam].[require_development_hr_password_change]', N'P') IS NULL
+    THROW 52032, 'The restricted Development HR activation procedure is missing.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.sql_modules
+    WHERE [object_id] = OBJECT_ID(N'[iam].[require_development_hr_password_change]')
+      AND [execute_as_principal_id] = -2
+)
+    THROW 52033, 'The restricted Development HR activation procedure must execute as owner.', 1;
+
 IF NOT EXISTS (
        SELECT 1
        FROM sys.indexes
@@ -429,6 +440,7 @@ INSERT INTO #permission_checks VALUES
     (N'app-insert-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'INSERT'), 0), 1),
     (N'app-delete-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'DELETE'), 0), 0),
     (N'app-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 0),
+    (N'app-execute-hr-activation-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.require_development_hr_password_change', N'OBJECT', N'EXECUTE'), 0), 0),
     (N'app-alter-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'ALTER'), 0), 0),
     (N'app-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
 REVERT;
@@ -443,6 +455,7 @@ INSERT INTO #permission_checks VALUES
     (N'seeder-delete-ops', COALESCE(HAS_PERMS_BY_NAME(N'ops', N'SCHEMA', N'DELETE'), 0), 0),
     (N'seeder-execute-iam', COALESCE(HAS_PERMS_BY_NAME(N'iam', N'SCHEMA', N'EXECUTE'), 0), 0),
     (N'seeder-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 1),
+    (N'seeder-execute-hr-activation-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.require_development_hr_password_change', N'OBJECT', N'EXECUTE'), 0), 1),
     (N'seeder-select-marker', COALESCE(HAS_PERMS_BY_NAME(N'infra.database_instances', N'OBJECT', N'SELECT'), 0), 1),
     (N'seeder-alter-ref', COALESCE(HAS_PERMS_BY_NAME(N'ref', N'SCHEMA', N'ALTER'), 0), 0),
     (N'seeder-read-migration-history', COALESCE(HAS_PERMS_BY_NAME(N'infra.__EFMigrationsHistory', N'OBJECT', N'SELECT'), 0), 0);
@@ -479,6 +492,7 @@ END;
 DECLARE @seeder_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_seeder_role');
 DECLARE @app_role_id int = DATABASE_PRINCIPAL_ID(N'elevant_app_role');
 DECLARE @credential_procedure_id int = OBJECT_ID(N'[iam].[set_development_account_credential]', N'P');
+DECLARE @hr_activation_procedure_id int = OBJECT_ID(N'[iam].[require_development_hr_password_change]', N'P');
 
 IF NOT EXISTS (
        SELECT 1
@@ -490,25 +504,35 @@ IF NOT EXISTS (
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
    )
+   OR NOT EXISTS (
+       SELECT 1
+       FROM sys.database_permissions
+       WHERE [grantee_principal_id] = @seeder_role_id
+         AND [class] = 1
+         AND [major_id] = @hr_activation_procedure_id
+         AND [minor_id] = 0
+         AND [permission_name] = N'EXECUTE'
+         AND [state] IN (N'G', N'W')
+   )
    OR EXISTS (
        SELECT 1
        FROM sys.database_permissions
        WHERE [grantee_principal_id] = @seeder_role_id
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
-         AND NOT ([class] = 1 AND [major_id] = @credential_procedure_id AND [minor_id] = 0)
+         AND NOT ([class] = 1 AND [major_id] IN (@credential_procedure_id, @hr_activation_procedure_id) AND [minor_id] = 0)
    )
    OR EXISTS (
        SELECT 1
        FROM sys.database_permissions
        WHERE [class] = 1
-         AND [major_id] = @credential_procedure_id
+         AND [major_id] IN (@credential_procedure_id, @hr_activation_procedure_id)
          AND [minor_id] = 0
          AND [permission_name] = N'EXECUTE'
          AND [state] IN (N'G', N'W')
          AND [grantee_principal_id] <> @seeder_role_id
    )
-    THROW 52027, 'Seeder EXECUTE must be granted only on the restricted credential procedure.', 1;
+    THROW 52027, 'Seeder EXECUTE must be granted only on the restricted Development credential procedures.', 1;
 
 IF NOT EXISTS (
     SELECT 1
@@ -521,6 +545,18 @@ IF NOT EXISTS (
       AND [state] = N'D'
 )
     THROW 52029, 'Application role must be denied EXECUTE on the Development credential procedure.', 1;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_permissions
+    WHERE [grantee_principal_id] = @app_role_id
+      AND [class] = 1
+      AND [major_id] = @hr_activation_procedure_id
+      AND [minor_id] = 0
+      AND [permission_name] = N'EXECUTE'
+      AND [state] = N'D'
+)
+    THROW 52034, 'Application role must be denied EXECUTE on the Development HR activation procedure.', 1;
 
 PRINT N'PASS: SQL Server 2022 Developer Edition and database configuration.';
 PRINT N'PASS: exact ElevantDevelopmentDb target and immutable Development marker.';
