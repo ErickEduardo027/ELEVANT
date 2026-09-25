@@ -4,6 +4,10 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from '../../services/notificationsService';
+import {
+  loadOperationalNotifications,
+  setOperationalNotificationRead,
+} from '../../services/operationalCommunicationService';
 
 export const NOTIFICATIONS_REFRESH_EVENT = 'elevant-notifications-refresh';
 
@@ -11,7 +15,9 @@ export function requestNotificationsRefresh() {
   window.dispatchEvent(new CustomEvent(NOTIFICATIONS_REFRESH_EVENT));
 }
 
-export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000, enabled = true } = {}) {
+const asBadgeItem = item => ({ ...item, read: item.readAt != null });
+
+export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000, enabled = true, source = 'legacy' } = {}) {
   const [count, setCount] = useState(fallback);
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState('idle');
@@ -21,16 +27,20 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
     if (!enabled) return;
     setStatus('loading');
     try {
-      const snapshot = await getNotifications();
+      const snapshot = source === 'operational'
+        ? await loadOperationalNotifications()
+        : await getNotifications();
       if (!mounted.current) return;
-      const nextItems = snapshot.notifications ?? [];
+      const nextItems = source === 'operational'
+        ? (snapshot.notifications ?? []).map(asBadgeItem)
+        : snapshot.notifications ?? [];
       setItems(nextItems);
       setCount(nextItems.filter(item => !item.read).length);
       setStatus('success');
     } catch {
       if (mounted.current) setStatus('error');
     }
-  }, [enabled]);
+  }, [enabled, source]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -56,18 +66,22 @@ export default function useNotificationBadge({ fallback = 0, intervalMs = 15_000
   }, [enabled, intervalMs, refresh]);
 
   const markAsRead = useCallback(async id => {
-    const updated = await markNotificationAsRead(id);
+    const updated = source === 'operational'
+      ? asBadgeItem(await setOperationalNotificationRead(id, true))
+      : await markNotificationAsRead(id);
     setItems(current => current.map(item => item.id === id ? updated : item));
     setCount(current => Math.max(0, current - 1));
     return updated;
-  }, []);
+  }, [source]);
 
   const markAllAsRead = useCallback(async () => {
-    const updated = await markAllNotificationsAsRead();
+    const updated = source === 'operational'
+      ? await Promise.all(items.map(item => item.read ? item : setOperationalNotificationRead(item.id, true).then(asBadgeItem)))
+      : await markAllNotificationsAsRead();
     setItems(updated);
     setCount(0);
     return updated;
-  }, []);
+  }, [items, source]);
 
   return { count, items, status, refresh, markAsRead, markAllAsRead };
 }

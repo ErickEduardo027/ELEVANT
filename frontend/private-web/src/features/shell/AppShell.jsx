@@ -13,6 +13,7 @@ export default function AppShell({
   station,
   onLogout,
   notificationsEnabled = true,
+  notificationsSource = 'legacy',
   profileActionsEnabled = true,
 }) {
   const location = useLocation();
@@ -21,7 +22,7 @@ export default function AppShell({
   const { theme, toggleTheme } = useTheme();
   const notification = navigation.find(item => item.id === 'notifications');
   const fallbackCount = typeof notification?.badge === 'number' ? notification.badge : notification?.badge?.count ?? 0;
-  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled });
+  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled, source: notificationsSource });
 
   return (
     <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
