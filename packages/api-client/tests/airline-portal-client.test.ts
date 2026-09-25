@@ -13,6 +13,18 @@ const bootstrap: AirlinePortalBootstrapResponse = {
     name: "Punta Cana",
     ianaTimeZone: "America/Santo_Domingo",
   }],
+  currentOperations: [{
+    id: "70000000-0000-7000-8000-000000000005",
+    code: "DEV-TAT-0001",
+    stationId: "20000000-0000-7000-8000-000000000003",
+    stationCode: "PUJ",
+    operationDate: "2026-09-25",
+    status: "Assigned",
+    arrivalFlightNumber: "ZZ100",
+    departureFlightNumber: "ZZ101",
+    plannedStartAt: "2026-09-25T12:45:00Z",
+    plannedEndAt: "2026-09-25T14:30:00Z",
+  }],
 };
 
 describe("airline portal bootstrap client", () => {
@@ -46,6 +58,20 @@ describe("airline portal bootstrap client", () => {
       fetch: async () => new Response(JSON.stringify({
         ...bootstrap,
         stations: [{ ...bootstrap.stations[0], airlineId: crypto.randomUUID() }],
+      }), { headers: { "content-type": "application/json" } }),
+    });
+
+    await expect(client.getAirlinePortalBootstrap()).rejects.toMatchObject({
+      kind: "malformed-response",
+    });
+  });
+
+  it("rejects a mixed-station operation payload", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({
+        ...bootstrap,
+        currentOperations: [{ ...bootstrap.currentOperations[0], stationId: crypto.randomUUID() }],
       }), { headers: { "content-type": "application/json" } }),
     });
 

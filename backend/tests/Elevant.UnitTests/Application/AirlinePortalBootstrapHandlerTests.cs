@@ -22,7 +22,8 @@ public sealed class AirlinePortalBootstrapHandlerTests
             "ZZ",
             "DVA",
             "Demo Airlines",
-            [new AirlinePortalStationData(StationId, "PUJ", "Punta Cana", "America/Santo_Domingo")]));
+            [new AirlinePortalStationData(StationId, "PUJ", "Punta Cana", "America/Santo_Domingo")],
+            []));
         var handler = CreateHandler(CreateActor(), store);
 
         var result = await handler.HandleAsync(AccountId, TestContext.Current.CancellationToken);
@@ -70,7 +71,7 @@ public sealed class AirlinePortalBootstrapHandlerTests
     public async Task MismatchedReadStoreTenantFailsClosed()
     {
         var store = new StubStore(new AirlinePortalBootstrapData(
-            AirlineId, Guid.NewGuid(), "ZZ", "DVA", "Wrong airline", []));
+            AirlineId, Guid.NewGuid(), "ZZ", "DVA", "Wrong airline", [], []));
         var result = await CreateHandler(CreateActor(), store)
             .HandleAsync(AccountId, TestContext.Current.CancellationToken);
 

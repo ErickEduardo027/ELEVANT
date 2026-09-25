@@ -99,11 +99,31 @@ public sealed class SqlServerMigrationTests
         Assert.Equal(organizationId, active.OrganizationId);
         Assert.Equal("Demo Airlines", active.Name);
         Assert.Collection(active.Stations, station => Assert.Equal("PUJ", station.Code));
+        Assert.Empty(active.CurrentOperations);
+
+        var fixtureDate = await store.GetBootstrapAsync(
+            organizationId, new DateOnly(2026, 8, 18), cancellationToken);
+        Assert.NotNull(fixtureDate);
+        Assert.Collection(fixtureDate.CurrentOperations,
+            operation =>
+            {
+                Assert.Equal("DEV-TAT-0001", operation.Code);
+                Assert.Equal("ZZ100", operation.ArrivalFlightNumber);
+                Assert.Equal("ZZ101", operation.DepartureFlightNumber);
+                Assert.Equal("PUJ", operation.StationCode);
+            },
+            operation =>
+            {
+                Assert.Equal("DEV-TAT-0002", operation.Code);
+                Assert.Equal("ZZ102", operation.ArrivalFlightNumber);
+                Assert.Equal("ZZ103", operation.DepartureFlightNumber);
+            });
 
         var expired = await store.GetBootstrapAsync(
             organizationId, new DateOnly(2100, 1, 1), cancellationToken);
         Assert.NotNull(expired);
         Assert.Empty(expired.Stations);
+        Assert.Empty(expired.CurrentOperations);
         Assert.Null(await store.GetBootstrapAsync(
             Guid.NewGuid(), new DateOnly(2026, 9, 25), cancellationToken));
     }

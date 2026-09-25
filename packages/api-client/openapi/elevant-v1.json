@@ -2770,6 +2770,7 @@
       "AirlinePortalBootstrapResponse": {
         "required": [
           "airlineId",
+          "currentOperations",
           "iataCode",
           "icaoCode",
           "name",
@@ -2800,6 +2801,65 @@
             "items": {
               "$ref": "#/components/schemas/AirlinePortalStationResponse"
             }
+          },
+          "currentOperations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlinePortalOperationResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePortalOperationResponse": {
+        "required": [
+          "code",
+          "id",
+          "operationDate",
+          "stationCode",
+          "stationId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string"
+          },
+          "arrivalFlightNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "departureFlightNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "plannedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "plannedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "additionalProperties": false

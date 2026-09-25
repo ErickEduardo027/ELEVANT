@@ -42,7 +42,10 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         {
             Bootstrap = new AirlinePortalBootstrapData(
                 AirlineId, OrganizationId, "ZZ", "DVA", "Demo Airlines",
-                [new AirlinePortalStationData(StationId, "PUJ", "Punta Cana", "America/Santo_Domingo")]),
+                [new AirlinePortalStationData(StationId, "PUJ", "Punta Cana", "America/Santo_Domingo")],
+                [new AirlinePortalOperationData(
+                    Guid.NewGuid(), "DEV-TAT-0003", StationId, "PUJ", new DateOnly(2026, 9, 25),
+                    "Assigned", "ZZ104", "ZZ105", null, null)]),
         };
         await using var application = CreateApplication(state);
         using var client = CreateAuthenticatedClient(application);
@@ -59,6 +62,8 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         Assert.Equal(AirlineId, root.GetProperty("airlineId").GetGuid());
         Assert.Equal("PUJ", root.GetProperty("stations")[0].GetProperty("code").GetString());
         Assert.Equal(1, root.GetProperty("stations").GetArrayLength());
+        Assert.Equal("DEV-TAT-0003", root.GetProperty("currentOperations")[0].GetProperty("code").GetString());
+        Assert.Equal("PUJ", root.GetProperty("currentOperations")[0].GetProperty("stationCode").GetString());
         Assert.False(root.TryGetProperty("password", out _));
     }
 

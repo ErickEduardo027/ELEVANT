@@ -60,7 +60,18 @@ public sealed class AirlinePortalController(
                 station.Id,
                 station.Code,
                 station.Name,
-                station.IanaTimeZone)).ToArray()));
+                station.IanaTimeZone)).ToArray(),
+            bootstrap.CurrentOperations.Select(operation => new AirlinePortalOperationResponse(
+                operation.Id,
+                operation.Code,
+                operation.StationId,
+                operation.StationCode,
+                operation.OperationDate,
+                operation.Status,
+                operation.ArrivalFlightNumber,
+                operation.DepartureFlightNumber,
+                operation.PlannedStartAt,
+                operation.PlannedEndAt)).ToArray()));
     }
 
     private ActionResult<AirlinePortalBootstrapResponse> ProblemResult(int statusCode, string title) =>

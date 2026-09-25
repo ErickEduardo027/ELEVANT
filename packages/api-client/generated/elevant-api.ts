@@ -12,6 +12,23 @@ export interface AirlinePortalStationResponse {
   ianaTimeZone: string;
 }
 
+export interface AirlinePortalOperationResponse {
+  id: string;
+  code: string;
+  stationId: string;
+  stationCode: string;
+  operationDate: string;
+  status: string;
+  /** @nullable */
+  arrivalFlightNumber?: string | null;
+  /** @nullable */
+  departureFlightNumber?: string | null;
+  /** @nullable */
+  plannedStartAt?: string | null;
+  /** @nullable */
+  plannedEndAt?: string | null;
+}
+
 export interface AirlinePortalBootstrapResponse {
   airlineId: string;
   organizationId: string;
@@ -19,6 +36,7 @@ export interface AirlinePortalBootstrapResponse {
   icaoCode: string;
   name: string;
   stations: AirlinePortalStationResponse[];
+  currentOperations: AirlinePortalOperationResponse[];
 }
 
 export interface AssignOccOperationRequest {

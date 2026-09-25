@@ -1517,14 +1517,28 @@ function isAirlinePortalBootstrapResponse(
   value: unknown,
 ): value is AirlinePortalBootstrapResponse {
   return isRecord(value) &&
-    hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations"]) &&
+    hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations", "currentOperations"]) &&
     isUuid(value.airlineId) && isUuid(value.organizationId) &&
     isNonEmptyString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
     isNonEmptyString(value.name) && Array.isArray(value.stations) &&
     value.stations.every((station) => isRecord(station) &&
       hasOnlyKeys(station, ["id", "code", "name", "ianaTimeZone"]) &&
       isUuid(station.id) && isNonEmptyString(station.code) &&
-      isNonEmptyString(station.name) && isNonEmptyString(station.ianaTimeZone));
+      isNonEmptyString(station.name) && isNonEmptyString(station.ianaTimeZone)) &&
+    Array.isArray(value.currentOperations) &&
+    value.currentOperations.length <= 50 &&
+    value.currentOperations.every((operation) => isRecord(operation) &&
+      hasOnlyKeys(operation, ["id", "code", "stationId", "stationCode", "operationDate",
+        "status", "arrivalFlightNumber", "departureFlightNumber", "plannedStartAt", "plannedEndAt"]) &&
+      isUuid(operation.id) && isNonEmptyString(operation.code) &&
+      isUuid(operation.stationId) && isNonEmptyString(operation.stationCode) &&
+      (value.stations as unknown[]).some((station) => isRecord(station) &&
+        station.id === operation.stationId && station.code === operation.stationCode) &&
+      isDateOnly(operation.operationDate) && isNonEmptyString(operation.status) &&
+      isOptionalNullable(operation.arrivalFlightNumber, isNonEmptyString) &&
+      isOptionalNullable(operation.departureFlightNumber, isNonEmptyString) &&
+      isOptionalNullable(operation.plannedStartAt, isDateTimeOffset) &&
+      isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
 }
 
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {

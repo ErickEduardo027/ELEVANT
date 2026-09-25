@@ -6,13 +6,26 @@ public sealed record AirlinePortalStationData(
     string Name,
     string IanaTimeZone);
 
+public sealed record AirlinePortalOperationData(
+    Guid Id,
+    string Code,
+    Guid StationId,
+    string StationCode,
+    DateOnly OperationDate,
+    string Status,
+    string? ArrivalFlightNumber,
+    string? DepartureFlightNumber,
+    DateTimeOffset? PlannedStartAt,
+    DateTimeOffset? PlannedEndAt);
+
 public sealed record AirlinePortalBootstrapData(
     Guid AirlineId,
     Guid OrganizationId,
     string IataCode,
     string IcaoCode,
     string Name,
-    IReadOnlyList<AirlinePortalStationData> Stations);
+    IReadOnlyList<AirlinePortalStationData> Stations,
+    IReadOnlyList<AirlinePortalOperationData> CurrentOperations);
 
 public enum AirlinePortalFailure
 {
