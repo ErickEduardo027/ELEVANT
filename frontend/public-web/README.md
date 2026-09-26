@@ -12,6 +12,15 @@ finanzas y reportes conservan una vista visual de demostración claramente
 marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
 No representan datos de la cuenta ni un portal operativo completo de Production.
 
+En la rama de integración, la sesión del portal revalida identidad y
+`bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
+`ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
+cuenta y vuelve a consultar el `bootstrap` cuando aparece
+`airline_operations`. El socket nunca entrega datos del tenant; si falla,
+el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
+un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
+la sesión visible. Falta medir latencia real en navegador y VPS.
+
 ## Ejecutar y validar
 
 Desde `frontend/public-web`:

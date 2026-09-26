@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ElevantApiError, type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
+import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
 export const AIRLINE_SESSION_STORAGE_KEY = "elevant-airline-session-v1";
 
@@ -84,8 +85,10 @@ function failureReason(error: unknown): Exclude<AirlineSignInResult, { ok: true 
 export function AirlineSessionProvider({ children, baseUrl }: { children: ReactNode; baseUrl?: string }) {
   const [status, setStatus] = useState<AirlineSessionStatus>("loading");
   const [session, setSession] = useState<AirlineSessionData | null>(null);
+  const accountId = session?.actor.accountId;
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
+  const refreshing = useRef(false);
 
   const load = useCallback(async (record: StoredSession): Promise<AirlineSessionData> => {
     if (Date.parse(record.expiresAt) <= Date.now()) throw new ElevantApiError({ kind: "http", status: 401 });
@@ -140,6 +143,50 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     const timer = window.setTimeout(clear, Math.max(0, remaining));
     return () => window.clearTimeout(timer);
   }, [clear, session]);
+
+  const refreshLive = useCallback(async () => {
+    const record = stored.current;
+    if (!record || refreshing.current) return;
+    const request = generation.current;
+    refreshing.current = true;
+    try {
+      const live = await load(record);
+      if (request === generation.current) setSession(live);
+    } catch (error) {
+      if (request === generation.current &&
+          ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
+      // Keep the last authorized snapshot during a transient network failure.
+    } finally {
+      refreshing.current = false;
+    }
+  }, [clear, load]);
+
+  useEffect(() => {
+    if (status !== "ready" || !accountId) return;
+    const refresh = () => { void refreshLive(); };
+    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    const timer = window.setInterval(refresh, 25_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [accountId, refreshLive, status]);
+
+  useEffect(() => {
+    if (status !== "ready" || !accountId) return;
+    const observer = createPublicAirlineChangeObserver({ baseUrl,
+      getAccessToken: () => stored.current?.accessToken ?? "",
+      onChanges: resources => {
+        if (resources.includes("airline_operations")) void refreshLive();
+      } });
+    void observer.start();
+    return () => { void observer.stop(); };
+  }, [accountId, baseUrl, refreshLive, status]);
 
   const signIn = useCallback(async (input: { email: string; password: string }): Promise<AirlineSignInResult> => {
     const request = ++generation.current;

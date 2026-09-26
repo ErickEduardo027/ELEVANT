@@ -7,6 +7,11 @@ import { AuthExperience } from "@/components/auth/AuthExperience";
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("@/lib/airline-change-observer", () => ({
+  createPublicAirlineChangeObserver: () => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 
 const actor: SessionResponse["actor"] = {
   accountId: "40000000-0000-7000-8000-000000000003",
