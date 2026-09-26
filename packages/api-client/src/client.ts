@@ -1,4 +1,9 @@
 import {
+  getGetAccountChangesUrl,
+  getGetAirlineContractsUrl,
+  getGetFinanceApprovedServicesUrl,
+  getCreatePreinvoiceDraftUrl,
+  getGetPreinvoiceDraftUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -6,6 +11,9 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetManualTurnaroundOptionsUrl,
+  getCreateManualTurnaroundUrl,
+  getProgramOccShiftUrl,
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
   getGetOccReviewSubmissionDetailUrl,
@@ -28,6 +36,14 @@ import {
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
+  type AccountChangeListResponse,
+  type AirlineContractPageResponse,
+  type FinanceApprovedServicesResponse,
+  type CreatePreinvoiceDraftRequest,
+  type CreatePreinvoiceDraftResponse,
+  type PreinvoiceDraftResponse,
+  type GetAirlineContractsParams,
+  type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
   type ChangePasswordRequest,
@@ -36,6 +52,12 @@ import {
   type GetRampIncidentsResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
+  type GetManualTurnaroundOptionsParams,
+  type CreateManualTurnaroundRequest,
+  type ManualTurnaroundOptionsResponse,
+  type ManualTurnaroundResponse,
+  type ProgramOccShiftRequest,
+  type ProgramOccShiftResponse,
   type GetOccReviewQueueParams,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
@@ -94,6 +116,15 @@ export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export interface FinanceApprovedServicesQuery {
+  readonly stationId: string;
+  readonly from: string;
+  readonly to: string;
+}
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -102,8 +133,12 @@ export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetManualTurnaroundOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -149,6 +184,10 @@ export interface OccAssignmentWithMetadata {
 }
 
 export interface ElevantApiClient {
+  getAccountChanges(
+    parameters?: GetAccountChangesParams,
+    options?: GetAccountChangesOptions,
+  ): Promise<AccountChangeListResponse>;
   createSession(
     request: CreateSessionRequest,
     options?: CreateSessionOptions,
@@ -161,6 +200,22 @@ export interface ElevantApiClient {
   getAirlinePortalBootstrap(
     options?: GetAirlinePortalBootstrapOptions,
   ): Promise<AirlinePortalBootstrapResponse>;
+  getAirlineContracts(
+    parameters?: GetAirlineContractsParams,
+    options?: GetAirlineContractsOptions,
+  ): Promise<AirlineContractPageResponse>;
+  getFinanceApprovedServices(
+    query: FinanceApprovedServicesQuery,
+    options?: GetFinanceApprovedServicesOptions,
+  ): Promise<FinanceApprovedServicesResponse>;
+  createPreinvoiceDraft(
+    request: CreatePreinvoiceDraftRequest,
+    options?: CreatePreinvoiceDraftOptions,
+  ): Promise<CreatePreinvoiceDraftResponse>;
+  getPreinvoiceDraft(
+    draftId: string, expectedStationId: string,
+    options?: GetPreinvoiceDraftOptions,
+  ): Promise<PreinvoiceDraftResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -173,6 +228,19 @@ export interface ElevantApiClient {
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
   ): Promise<OccPlanningOptionsWithMetadata>;
+  getManualTurnaroundOptions(
+    parameters: GetManualTurnaroundOptionsParams,
+    options?: GetManualTurnaroundOptionsOptions,
+  ): Promise<ManualTurnaroundOptionsResponse>;
+  createManualTurnaround(
+    request: CreateManualTurnaroundRequest,
+    options?: CreateManualTurnaroundOptions,
+  ): Promise<ManualTurnaroundResponse>;
+  programOccShift(
+    turnaroundId: string,
+    request: ProgramOccShiftRequest,
+    options?: ProgramOccShiftOptions,
+  ): Promise<ProgramOccShiftResponse>;
   getOccReviewQueue(
     stationId: string,
     options?: GetOccReviewOptions,
@@ -534,6 +602,31 @@ function isOptionalNullable(
   return value === undefined || value === null || predicate(value);
 }
 
+function isChangeCursor(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 &&
+    /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function isAccountChangeListResponse(
+  value: unknown, after: string | undefined, limit: number,
+): value is AccountChangeListResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["changes", "nextCursor", "hasMore"]) ||
+      !Array.isArray(value.changes) || value.changes.length > limit ||
+      typeof value.hasMore !== "boolean" ||
+      (value.hasMore && value.changes.length === 0)) return false;
+  if (!value.changes.every((item: unknown) =>
+    isRecord(item) &&
+    hasOnlyKeys(item, ["eventId", "cursor", "resource", "resourceId", "occurredAt"]) &&
+    isUuid(item.eventId) && isChangeCursor(item.cursor) &&
+    isNonEmptyString(item.resource) && item.resource.length <= 64 &&
+    /^[a-z0-9_-]+$/.test(item.resource) && isUuid(item.resourceId) &&
+    isDateTimeOffset(item.occurredAt))) return false;
+  const last = value.changes.at(-1) as { cursor: string } | undefined;
+  return last ? value.nextCursor === last.cursor :
+    (after === undefined ? value.nextCursor === null || value.nextCursor === undefined
+      : value.nextCursor === after);
+}
+
 function isOccStationResponse(value: unknown) {
   return (
     isRecord(value) &&
@@ -775,6 +868,34 @@ function isOccPlanningSnapshotResponse(
     Array.isArray(value.turnarounds) &&
     value.turnarounds.every(isOccTurnaroundResponse)
   );
+}
+
+function isManualTurnaroundOptionsResponse(
+  value: unknown,
+): value is ManualTurnaroundOptionsResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands"]) &&
+    isOccStationResponse(value.station) && isDateOnly(value.date) &&
+    isOccAirportResponse(value.stationAirport) &&
+    Array.isArray(value.airlines) && value.airlines.every((airline: unknown) =>
+      isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
+      isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name)) &&
+    Array.isArray(value.airports) && value.airports.every(isOccAirportResponse) &&
+    Array.isArray(value.stands) && value.stands.every(isOccStandResponse);
+}
+
+function isManualTurnaroundResponse(value: unknown): value is ManualTurnaroundResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) &&
+    typeof value.replayed === "boolean";
+}
+
+function isProgramOccShiftResponse(value: unknown): value is ProgramOccShiftResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "shiftId", "replayed"]) &&
+    isUuid(value.turnaroundId) && isUuid(value.shiftId) &&
+    typeof value.replayed === "boolean";
 }
 
 function isOccContractOptionResponse(value: unknown) {
@@ -1550,6 +1671,146 @@ function isAirlinePortalBootstrapResponse(
       isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
 }
 
+function isAirlineContractPageResponse(value: unknown): value is AirlineContractPageResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
+    isInt32(value.page) && value.page >= 1 &&
+    isInt32(value.limit) && value.limit >= 1 && value.limit <= 50 &&
+    typeof value.hasMore === "boolean" &&
+    Array.isArray(value.contracts) && value.contracts.length <= value.limit &&
+    value.contracts.every((contract) => isRecord(contract) &&
+      hasOnlyKeys(contract, ["id", "code", "status", "signedOn", "terminatedOn", "approvedVersions"]) &&
+      isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
+      isOptionalNullable(contract.signedOn, isDateOnly) &&
+      isOptionalNullable(contract.terminatedOn, isDateOnly) &&
+      Array.isArray(contract.approvedVersions) && contract.approvedVersions.length > 0 &&
+      contract.approvedVersions.every((version) => isRecord(version) &&
+        hasOnlyKeys(version, ["id", "versionNumber", "validFrom", "validTo", "currencyCode", "stations", "rates"]) &&
+        isUuid(version.id) && isInt32(version.versionNumber) && version.versionNumber > 0 &&
+        isDateOnly(version.validFrom) && isOptionalNullable(version.validTo, isDateOnly) &&
+        typeof version.currencyCode === "string" && /^[A-Z]{3}$/.test(version.currencyCode) &&
+        Array.isArray(version.stations) && version.stations.every((station) =>
+          isRecord(station) && hasOnlyKeys(station, ["id", "code", "name"]) &&
+          isUuid(station.id) && isNonEmptyString(station.code) && isNonEmptyString(station.name)) &&
+        Array.isArray(version.rates) && version.rates.every((rate) =>
+          isRecord(rate) && hasOnlyKeys(rate, ["id", "serviceCode", "serviceName", "billingUnit",
+            "unitPrice", "minimumQuantity"]) &&
+          isUuid(rate.id) && isNonEmptyString(rate.serviceCode) &&
+          isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+          isFiniteNumber(rate.unitPrice) && rate.unitPrice >= 0 &&
+          isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
+}
+
+function validatedFinanceApprovedServicesQuery(
+  query: FinanceApprovedServicesQuery,
+): FinanceApprovedServicesQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "from", "to"]) ||
+      !isUuid(query.stationId) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 30 || query.to < query.from)
+    throw new TypeError("Finance evidence station and date range are invalid.");
+  return query as unknown as FinanceApprovedServicesQuery;
+}
+
+function isFinanceApprovedServicesResponse(value: unknown): value is FinanceApprovedServicesResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["stationId", "from", "to", "services", "hasMore"]) &&
+    isUuid(value.stationId) && isDateOnly(value.from) && isDateOnly(value.to) &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.services) &&
+    value.services.length <= 200 &&
+    value.services.every((service) => isRecord(service) &&
+      hasOnlyKeys(service, ["id", "operationId", "turnaroundId", "approvedSubmissionId",
+        "operationCode", "operationDate", "airlineId", "airlineName", "flightNumber", "contractCode",
+        "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
+        "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
+        "ready", "blockingReason", "amount", "preinvoiceId"]) &&
+      isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
+      isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
+      isDateOnly(service.operationDate) && isUuid(service.airlineId) &&
+      isNonEmptyString(service.airlineName) &&
+      isString(service.flightNumber) && isOptionalNullable(service.contractCode, isNonEmptyString) &&
+      isNonEmptyString(service.serviceCode) && isNonEmptyString(service.serviceName) &&
+      ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"].includes(
+        String(service.executionStatus)) &&
+      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
+      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
+      isString(service.billingUnit) &&
+      isOptionalNullable(service.frozenUnitPrice, value => isFiniteNumber(value) && value >= 0) &&
+      isOptionalNullable(service.frozenCurrency, value =>
+        typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
+      isOptionalNullable(service.preinvoiceId, isUuid) &&
+      typeof service.ready === "boolean" &&
+      (service.ready
+        ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
+          isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
+          typeof service.frozenCurrency === "string" &&
+          /^[A-Z]{3}$/.test(service.frozenCurrency) &&
+          (service.blockingReason === null || service.blockingReason === undefined) &&
+          isFiniteNumber(service.amount) && service.amount >= 0
+        : isNonEmptyString(service.blockingReason) &&
+          (service.amount === null || service.amount === undefined)));
+}
+
+function validatedPreinvoiceDraftRequest(
+  request: CreatePreinvoiceDraftRequest,
+): CreatePreinvoiceDraftRequest {
+  if (!isRecord(request) ||
+      !hasOnlyKeys(request, ["stationId", "from", "to", "requestId", "serviceIds"]) ||
+      !isUuid(request.stationId) || !isUuid(request.requestId) ||
+      !isDateOnly(request.from) || !isDateOnly(request.to) ||
+      request.to < request.from ||
+      (Date.parse(`${request.to}T00:00:00Z`) - Date.parse(`${request.from}T00:00:00Z`)) /
+        86_400_000 > 30 || !Array.isArray(request.serviceIds) ||
+      request.serviceIds.length < 1 || request.serviceIds.length > 100 ||
+      !request.serviceIds.every(isUuid) ||
+      new Set(request.serviceIds).size !== request.serviceIds.length)
+    throw new TypeError("Preinvoice draft selection is invalid.");
+  return request as unknown as CreatePreinvoiceDraftRequest;
+}
+
+function isPreinvoiceDraftCreateResponse(value: unknown): value is CreatePreinvoiceDraftResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "replayed"]) &&
+    isUuid(value.id) && typeof value.replayed === "boolean";
+}
+
+function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
+      "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
+      !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
+      !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
+      !isDateOnly(value.to) || value.to < value.from ||
+      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
+      !isFiniteNumber(value.total) || value.total < 0 ||
+      !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+    return false;
+  return value.lines.every((line, index) => isRecord(line) &&
+    hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
+      "operationCode", "operationDate", "serviceCode", "serviceName",
+      "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
+    isUuid(line.id) && isUuid(line.operationServiceId) && isUuid(line.approvedSubmissionId) &&
+    line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
+    isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
+    String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
+    isNonEmptyString(line.serviceName) && isFiniteNumber(line.executedQuantity) &&
+    line.executedQuantity > 0 && isNonEmptyString(line.billingUnit) &&
+    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
+    line.currencyCode === value.currencyCode &&
+    isFiniteNumber(line.amount) && line.amount >= 0);
+}
+
+function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
+  if (!isRecord(parameters) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline contract paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -1610,6 +1871,82 @@ function validatedOccPlanningOptionsParams(
   }
 
   return { turnaroundId };
+}
+
+function validatedManualTurnaroundOptionsParams(
+  parameters: GetManualTurnaroundOptionsParams,
+): GetManualTurnaroundOptionsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["stationId", "date"]) ||
+      !isUuid(parameters.stationId))
+    throw new TypeError("stationId must be a canonical UUID.");
+  if (!isDateOnly(parameters.date))
+    throw new TypeError("date must be a valid calendar date.");
+  return { stationId: parameters.stationId, date: parameters.date };
+}
+
+function validatedManualTurnaroundRequest(
+  request: CreateManualTurnaroundRequest,
+): CreateManualTurnaroundRequest {
+  const keys = ["turnaroundId", "stationId", "airlineId", "standId", "operationDate",
+    "arrivalFlightNumber", "arrivalOriginIata", "arrivalScheduledAt",
+    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt"];
+  if (!isRecord(request) || !hasOnlyKeys(request, keys))
+    throw new TypeError("manual turnaround request has unknown or invalid fields.");
+  if (!isUuid(request.turnaroundId) || !isUuid(request.stationId) ||
+      !isUuid(request.airlineId) || !isUuid(request.standId) ||
+      !isDateOnly(request.operationDate))
+    throw new TypeError("manual turnaround identifiers or operationDate are invalid.");
+  const arrivalFlightNumber = typeof request.arrivalFlightNumber === "string"
+    ? request.arrivalFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const departureFlightNumber = typeof request.departureFlightNumber === "string"
+    ? request.departureFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const arrivalOriginIata = typeof request.arrivalOriginIata === "string"
+    ? request.arrivalOriginIata.trim().toUpperCase() : "";
+  const departureDestinationIata = typeof request.departureDestinationIata === "string"
+    ? request.departureDestinationIata.trim().toUpperCase() : "";
+  if (!/^[A-Z0-9]{2,16}$/.test(arrivalFlightNumber) ||
+      !/^[A-Z0-9]{2,16}$/.test(departureFlightNumber) ||
+      !/^[A-Z]{3}$/.test(arrivalOriginIata) ||
+      !/^[A-Z]{3}$/.test(departureDestinationIata))
+    throw new TypeError("manual turnaround flight or airport code is invalid.");
+  if (typeof request.arrivalScheduledAt !== "string" ||
+      typeof request.departureScheduledAt !== "string" ||
+      !isDateTimeOffset(request.arrivalScheduledAt) ||
+      !isDateTimeOffset(request.departureScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.arrivalScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.departureScheduledAt))
+    throw new TypeError("manual turnaround scheduled times must be UTC instants.");
+  const duration = Date.parse(request.departureScheduledAt) - Date.parse(request.arrivalScheduledAt);
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 24 * 60 * 60 * 1000)
+    throw new TypeError("departureScheduledAt must follow arrivalScheduledAt within 24 hours.");
+  return { turnaroundId: request.turnaroundId, stationId: request.stationId,
+    airlineId: request.airlineId, standId: request.standId,
+    operationDate: request.operationDate,
+    arrivalFlightNumber, arrivalOriginIata, arrivalScheduledAt: request.arrivalScheduledAt,
+    departureFlightNumber, departureDestinationIata,
+    departureScheduledAt: request.departureScheduledAt };
+}
+
+function validatedOccShiftRequest(request: ProgramOccShiftRequest): ProgramOccShiftRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+      ["agentId", "startsAtLocal", "endsAtLocal"]) || !isUuid(request.agentId) ||
+      typeof request.startsAtLocal !== "string" ||
+      typeof request.endsAtLocal !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.startsAtLocal) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.endsAtLocal) ||
+      request.startsAtLocal === request.endsAtLocal)
+    throw new TypeError("OCC shift requires an agentId and distinct local HH:mm:ss times.");
+  const toSeconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const start = toSeconds(request.startsAtLocal);
+  const end = toSeconds(request.endsAtLocal);
+  const duration = end > start ? end - start : end + 86400 - start;
+  if (duration > 16 * 3600)
+    throw new TypeError("OCC shift cannot exceed sixteen hours.");
+  return { agentId: request.agentId,
+    startsAtLocal: request.startsAtLocal, endsAtLocal: request.endsAtLocal };
 }
 
 function validatedOccAssignmentRequest(
@@ -1963,6 +2300,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   return Object.freeze({
+    async getAccountChanges(
+      parameters?: GetAccountChangesParams,
+      options?: GetAccountChangesOptions,
+    ) {
+      if (parameters !== undefined &&
+          (!isRecord(parameters) || !hasOnlyKeys(parameters, ["after", "limit"])))
+        throw new TypeError("Change feed parameters are invalid.");
+      const after = parameters?.after;
+      const limit = parameters?.limit ?? 50;
+      if (after !== undefined && !isChangeCursor(after))
+        throw new TypeError("Change feed cursor is invalid.");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new TypeError("Change feed limit must be an integer from 1 to 100.");
+      const result = await execute(getGetAccountChangesUrl(parameters),
+        { ...options, method: "GET" }, true);
+      if (!isAccountChangeListResponse(result.data, after, limit))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async createSession(request: CreateSessionRequest, options?: CreateSessionOptions) {
       const credentials = validatedSessionRequest(request);
       const result = await execute(
@@ -2023,6 +2379,58 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       }
       return result.data;
     },
+    async getAirlineContracts(
+      parameters: GetAirlineContractsParams = {}, options?: GetAirlineContractsOptions,
+    ) {
+      const paging = validatedAirlineContractParams(parameters);
+      const result = await execute(
+        getGetAirlineContractsUrl(paging), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineContractPageResponse(result.data) ||
+        result.data.page !== (paging.page ?? 1) ||
+        result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceApprovedServices(
+      query: FinanceApprovedServicesQuery,
+      options?: GetFinanceApprovedServicesOptions,
+    ) {
+      const scope = validatedFinanceApprovedServicesQuery(query);
+      const result = await execute(getGetFinanceApprovedServicesUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceApprovedServicesResponse(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.from !== scope.from || result.data.to !== scope.to)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createPreinvoiceDraft(
+      request: CreatePreinvoiceDraftRequest,
+      options?: CreatePreinvoiceDraftOptions,
+    ) {
+      const selection = validatedPreinvoiceDraftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreatePreinvoiceDraftUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(selection) }, true);
+      if (!isPreinvoiceDraftCreateResponse(result.data))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getPreinvoiceDraft(
+      draftId: string, expectedStationId: string,
+      options?: GetPreinvoiceDraftOptions,
+    ) {
+      const draft = validatedUuid(draftId, "draftId");
+      const station = validatedUuid(expectedStationId, "expectedStationId");
+      const result = await execute(getGetPreinvoiceDraftUrl(draft),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDraftResponse(result.data) ||
+          result.data.id !== draft || result.data.stationId !== station)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async getOccPlanningSnapshot(
       parameters: GetOccPlanningSnapshotParams = {},
       options?: GetOccPlanningSnapshotOptions,
@@ -2038,6 +2446,52 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPlanningSnapshotResponse(result.data)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getManualTurnaroundOptions(
+      parameters: GetManualTurnaroundOptionsParams,
+      options?: GetManualTurnaroundOptionsOptions,
+    ) {
+      const query = validatedManualTurnaroundOptionsParams(parameters);
+      const result = await execute(getGetManualTurnaroundOptionsUrl(query),
+        { ...options, method: "GET" }, true);
+      if (!isManualTurnaroundOptionsResponse(result.data) ||
+          result.data.station.id !== query.stationId || result.data.date !== query.date)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createManualTurnaround(
+      request: CreateManualTurnaroundRequest,
+      options?: CreateManualTurnaroundOptions,
+    ) {
+      const body = validatedManualTurnaroundRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreateManualTurnaroundUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isManualTurnaroundResponse(result.data) ||
+          result.data.turnaroundId !== body.turnaroundId ||
+          ![200, 201].includes(result.status) || result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async programOccShift(
+      turnaroundId: string,
+      request: ProgramOccShiftRequest,
+      options?: ProgramOccShiftOptions,
+    ) {
+      if (!isUuid(turnaroundId))
+        throw new TypeError("turnaroundId must be a canonical UUID.");
+      const body = validatedOccShiftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getProgramOccShiftUrl(turnaroundId),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isProgramOccShiftResponse(result.data) ||
+          result.data.turnaroundId !== turnaroundId ||
+          ![200, 201].includes(result.status) ||
+          result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getOccPlanningOptions(

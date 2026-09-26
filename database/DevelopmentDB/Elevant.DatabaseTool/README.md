@@ -17,9 +17,10 @@ Variables:
   `ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD`,
   `ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD`,
   `ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD` y
-  `ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD` para `seed-development`,
-  inyectadas como seis secretos distintos. La rotación manual usa la contraseña
-  de Gestión Humana y valida también que difiera de las otras cinco. Cada valor exige 14-256 caracteres,
+  `ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD` y
+  `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD` para `seed-development`,
+  inyectadas como siete secretos distintos. La rotación manual usa la contraseña
+  de Gestión Humana y valida también que difiera de las otras cuentas sintéticas. Cada valor exige 14-256 caracteres,
   mayúscula, minúscula, número y símbolo; los marcadores conocidos del archivo de
   ejemplo se rechazan.
 

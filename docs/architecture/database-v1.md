@@ -45,6 +45,16 @@ misma secuencia ordenada de migraciones, pero no recibirá fixtures sintéticos.
 
 ## Cadena de migraciones v1
 
+La migración 11, `AccountChangeFeed`, se prepara en esta rama y no está
+desplegada todavía. Agrega `infra.account_changes`: una pista sin contenido
+por cuenta y evento del outbox. Su identidad `bigint` ordena los commits de
+un solo distribuidor y sustenta el cursor opaco de lectura; no refleja el
+orden de asignación de IDs originales del outbox. La pareja
+`(outbox_public_id, recipient_account_id)` es única para evitar duplicados
+en reintentos. La cuenta de la API recibe solo `SELECT/INSERT/UPDATE` sobre
+`infra.outbox_messages` y `SELECT/INSERT` sobre `infra.account_changes`,
+sin `DELETE` ni permisos amplios sobre el esquema `infra`.
+
 | Orden | Migración | Módulos |
 | --- | --- | --- |
 | 1 | `V1_01_Platform` | schemas, outbox y convenciones base |
@@ -74,7 +84,10 @@ El seed de Development es un ejecutable separado, transaccional, determinista, i
 
 ## Diferido explícitamente
 
-- facturas, prefacturas y ledger de conciliación;
+- emisión de facturas, recibos y ledger de conciliación; la rama de
+  integración ya modela una prefactura interna no fiscal con líneas de
+  servicios aprobados, snapshots de precio/moneda y reserva única de la
+  línea fuente, pero no la ha promovido al VPS;
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas.

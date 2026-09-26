@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
+last_verified: "2026-09-26"
+verified_commit: "83ce325f99fea54879649f92ae1a231637a1bc2d"
 sources:
   - docs/architecture/database-v1.md
   - backend/Elevant.Domain/Entities/Commercial/ServiceRequest.cs
@@ -20,6 +20,8 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
   - frontend/public-web/src/lib/portal/types.ts
+  - backend/Elevant.Api/Controllers/AirlinePortalController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
 tags:
   - solicitudes
   - contratos
@@ -66,6 +68,12 @@ El contrato guarda aerolínea, código y estado general (`Draft`, `Active`, `Sus
 
 El esquema permite enlazar un contrato a una solicitud mediante `OriginatingServiceRequestId`, pero no prueba que la solicitud estuviera aprobada ni que perteneciera a la misma aerolínea del contrato. Tampoco impide vigencias de versiones solapadas. Esas son invariantes pendientes de aplicación y pruebas.
 
+En la rama de integración de Development, el portal dispone de una lectura
+tenant-scoped y paginada de contratos publicados (`Approved` y versiones luego
+`Superseded`). El historial vencido de la propia aerolínea permanece consultable;
+no se exponen borradores ni se habilita aprobar o editar contratos. Esta lectura
+no implementa todavía el alta de afiliación ni el flujo de aprobación.
+
 ## Solicitud operativa
 
 ```mermaid
@@ -100,6 +108,24 @@ OperationService
 ```
 
 La definición de servicio es catálogo; la tarifa pertenece a una versión contractual; la ejecución pertenece a una operación. La FK opcional no garantiza que la tarifa sea la procedencia de los snapshots. Falta validar que precio y moneda sean all-or-none, que una línea contractualmente valorizada enlace una tarifa, que tarifa y línea compartan definición, que contrato y turnaround compartan aerolínea, que la versión esté aprobada, cubra la estación y sea vigente, y que unidad/precio/moneda se copien de forma consistente y permanezcan históricos.
+
+### Lectura financiera en la rama de integración
+
+La rama `feat/integrated-cycle-realtime` expone una lectura acotada de líneas
+de operaciones cuya última entrega fue aprobada por OCC. Finanzas debe tener
+rol interno y grant vigente de la estación. La cantidad, estado y unidad de
+cada línea se contrastan con el snapshot inmutable presentado a OCC; el
+importe sólo se calcula si el servicio se completó con cantidad positiva y
+existen precio, moneda y unidad congelados válidos. Las inconsistencias se
+muestran como líneas bloqueadas, sin importe facturable, en vez de omitirlas
+silenciosamente. Una aprobación genera una pista durable dirigida a Finanzas
+en la misma transacción; el feed vuelve a comprobar rol, membresía, estación
+y estado de la operación. La misma rama añade una **prefactura interna no
+fiscal**: Finanzas selecciona servicios de una sola aerolínea, estación y
+moneda, y la API reserva cada línea fuente una sola vez con snapshots
+inmutables de cantidad y tarifa. La solicitud tiene clave idempotente; el
+detalle y la auditoría se guardan en SQL. Todavía no hay conciliación,
+factura, pago ni recibo, y esto no acredita un despliegue al VPS.
 
 ## Diferencias con Public Web
 

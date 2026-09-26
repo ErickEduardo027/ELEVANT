@@ -346,6 +346,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/04-arquitectura/feed-de-cambios-operativos.md",
+        "id": "arquitectura-feed-cambios-operativos",
+        "title": "Feed de cambios operativos",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/04-arquitectura/integraciones-externas.md",
         "id": "arquitectura-integraciones-externas",
         "title": "Integraciones externas",
@@ -401,6 +411,16 @@
         "title": "DevelopmentDB como dependencia compartida",
         "type": "architecture",
         "area": "database",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/flujo-comercial-y-gobernanza.md",
+        "id": "flujo-comercial-y-gobernanza",
+        "title": "Solicitud comercial y gobernanza",
+        "type": "capability",
+        "area": "applications",
         "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
@@ -1001,7 +1021,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "6b467f69ccd3b730b2acd4f0eccd4b79b2a69588cb5d164c0de01c56cb29fa70"
+        "sha256": "d1be1bb649a06b4e01cc5fa6dbd8a6124449258bc111658574bcd14269c2c423"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1009,7 +1029,7 @@
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
-        "sha256": "bcb26c3f05f5dbc1ee080f207ae80bcdeeb801808776f17204b2fe1002890104"
+        "sha256": "6a8fa1f5acca95f47656a11f0e33e10a25c2ab20b077b7bb1c8e7ed7ae5dde8a"
       },
       {
         "path": ".github/workflows/vault-ci.yml",
@@ -1023,13 +1043,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "2c6ca0a0b124fb646dac8ba89931ec44662618bba1d93f18e26820a19351c968",
+        "sha256": "5a8b1233842d165dc37dd3ebdb0852024cdfcb20a1411df22fd351f7c2be9292",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "18e1242ec0bbab6fef67c4fa2250ca8c0edf9d733a78dcb6054bb71f28a13686",
+        "sha256": "1c963e48b986416bfd8d1718d303e2a1c4278f98bc947ee1f052e6b78adb8cc2",
         "title": null,
         "version": null
       }
@@ -1094,6 +1114,42 @@
         "name": "V1_10_DevelopmentCredentialActivation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260925055507_V1_10_DevelopmentCredentialActivation.cs",
         "sha256": "9b85ee3492ae12a457dfd224e31cf3c556d76b3bf17a9f552b790d82c9eb4687"
+      },
+      {
+        "id": "20260926062846",
+        "name": "AccountChangeFeed",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926062846_AccountChangeFeed.cs",
+        "sha256": "b828d98296c8f50b6046ffb56ed2b484dee72358a735548e242500ac7b3ecfb5"
+      },
+      {
+        "id": "20260926175205",
+        "name": "PreinvoiceDraft",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926175205_PreinvoiceDraft.cs",
+        "sha256": "e26813521dab244cc6c91aa73b2e638c461579983e34e5d49f344f1de702c3e5"
+      },
+      {
+        "id": "20260926211142",
+        "name": "PublicCommercialIntake",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926211142_PublicCommercialIntake.cs",
+        "sha256": "8fff8eb9f769b86d681c898f41d3c8bef84ba91ba379d5e107441a17b77c5969"
+      },
+      {
+        "id": "20260926212152",
+        "name": "CommercialGovernance",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926212152_CommercialGovernance.cs",
+        "sha256": "7bb5ae16a454197527649c94493c6a6b2c6e3f485adc1cee02f11d27da64c892"
+      },
+      {
+        "id": "20260926212759",
+        "name": "CommercialProvisioning",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926212759_CommercialProvisioning.cs",
+        "sha256": "cc1261b7ae8c99058d001b9a150e64c1cdfca38db92941ac7d37732afdf1af23"
+      },
+      {
+        "id": "20260926213514",
+        "name": "ContractDraftConversation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926213514_ContractDraftConversation.cs",
+        "sha256": "74ff5f78765cd6399878bcc2e12ba44a2f816f6dc4b752efc00fdef9d85b99b0"
       }
     ],
     "manifestContracts": [

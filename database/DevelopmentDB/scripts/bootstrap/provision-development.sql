@@ -157,6 +157,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::[commercial] TO [elevan
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::[ops] TO [elevant_app_role];
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::[integration] TO [elevant_app_role];
 GRANT SELECT, INSERT ON SCHEMA::[audit] TO [elevant_app_role];
+IF OBJECT_ID(N'[infra].[outbox_messages]', N'U') IS NOT NULL
+    GRANT SELECT, INSERT, UPDATE ON OBJECT::[infra].[outbox_messages] TO [elevant_app_role];
+IF OBJECT_ID(N'[infra].[account_changes]', N'U') IS NOT NULL
+    GRANT SELECT, INSERT ON OBJECT::[infra].[account_changes] TO [elevant_app_role];
 
 GRANT SELECT, INSERT ON SCHEMA::[iam] TO [elevant_seeder_role];
 GRANT SELECT, INSERT ON SCHEMA::[ref] TO [elevant_seeder_role];

@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { loadOperationalNotifications, setOperationalNotificationRead } from '../../services/operationalCommunicationService';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const titles = {
   operation_submitted: 'Operación entregada para revisión',
@@ -16,10 +20,20 @@ function formatInstant(value) {
 }
 
 export default function CanonicalNotificationsRoute() {
+  const { session } = useAuth();
   const [state, setState] = useState({ status: 'loading', items: [], hasMore: false });
   const [revision, setRevision] = useState(0);
   const [busyId, setBusyId] = useState(null);
   const [writeError, setWriteError] = useState('');
+
+  useEffect(() => {
+    if (!UUID.test(session?.accountId ?? '')) return undefined;
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('notifications')) setRevision(value => value + 1);
+    });
+    void observer.start();
+    return () => { void observer.stop(); };
+  }, [session?.accountId]);
 
   useEffect(() => {
     const controller = new AbortController();

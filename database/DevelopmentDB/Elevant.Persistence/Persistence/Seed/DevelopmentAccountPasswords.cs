@@ -1,6 +1,6 @@
 namespace Elevant.Infrastructure.Persistence.Seed;
 
-/// <summary>Distinct deployment secrets for the six synthetic Development actors.</summary>
+/// <summary>Distinct deployment secrets for the synthetic Development actors.</summary>
 public sealed class DevelopmentAccountPasswords
 {
     public const int MinimumLength = 14;
@@ -21,7 +21,8 @@ public sealed class DevelopmentAccountPasswords
         string airlineClient,
         string humanResources,
         string contracts,
-        string finance)
+        string finance,
+        string? superAdministrator = null)
     {
         AdminOcc = ValidateSingle(adminOcc, nameof(adminOcc));
         RampAgent = ValidateSingle(rampAgent, nameof(rampAgent));
@@ -29,6 +30,8 @@ public sealed class DevelopmentAccountPasswords
         HumanResources = ValidateSingle(humanResources, nameof(humanResources));
         Contracts = ValidateSingle(contracts, nameof(contracts));
         Finance = ValidateSingle(finance, nameof(finance));
+        SuperAdministrator = superAdministrator is null ? null :
+            ValidateSingle(superAdministrator, nameof(superAdministrator));
 
         if (new HashSet<string>(StringComparer.Ordinal)
             {
@@ -38,10 +41,11 @@ public sealed class DevelopmentAccountPasswords
                 HumanResources,
                 Contracts,
                 Finance,
-            }.Count != 6)
+            }.Append(SuperAdministrator).Where(value => value is not null).Distinct(StringComparer.Ordinal).Count()
+            != (SuperAdministrator is null ? 6 : 7))
         {
             throw new InvalidOperationException(
-                "Synthetic Development accounts must use six distinct passwords.");
+                "Synthetic Development accounts must use distinct passwords.");
         }
     }
 
@@ -57,8 +61,10 @@ public sealed class DevelopmentAccountPasswords
 
     public string Finance { get; }
 
+    public string? SuperAdministrator { get; }
+
     public override string ToString() =>
-        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED], HumanResources = [REDACTED], Contracts = [REDACTED], Finance = [REDACTED] }}";
+        $"{nameof(DevelopmentAccountPasswords)} {{ AdminOcc = [REDACTED], RampAgent = [REDACTED], AirlineClient = [REDACTED], HumanResources = [REDACTED], Contracts = [REDACTED], Finance = [REDACTED], SuperAdministrator = [REDACTED] }}";
 
     public static string ValidateSingle(string password, string parameterName = "password")
     {

@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), loadQueue: vi.fn(),
   loadConversations: vi.fn(), loadMessages: vi.fn(), sendMessage: vi.fn(),
-  loadNotifications: vi.fn(), setNotificationRead: vi.fn() }));
+  loadNotifications: vi.fn(), setNotificationRead: vi.fn(), observe: vi.fn() }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: mocks.session() }) }));
 vi.mock('../../services/occReviewService', () => ({ loadOccReviewQueue: mocks.loadQueue }));
 vi.mock('../../services/operationalCommunicationService', () => ({
@@ -13,6 +13,9 @@ vi.mock('../../services/operationalCommunicationService', () => ({
   sendOperationalMessage: mocks.sendMessage,
   loadOperationalNotifications: mocks.loadNotifications,
   setOperationalNotificationRead: mocks.setNotificationRead,
+}));
+vi.mock('../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: mocks.observe,
 }));
 
 import CanonicalReportsRoute from '../reports/CanonicalReportsRoute';
@@ -42,6 +45,8 @@ const rows = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.observe.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined) });
   mocks.session.mockReturnValue({ stationScopes: [{ stationId, stationCode: 'PUJ' }] });
   mocks.loadQueue.mockResolvedValue({ stationId, stationCode: 'PUJ', ianaTimeZone: 'America/Santo_Domingo', operations: rows, hasMore: false });
   mocks.loadConversations.mockResolvedValue({ conversations: [{ operationId,
@@ -56,6 +61,16 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('OCC canonical read surfaces', () => {
+  it('invalidates the notification list when the authorized feed reports a change', async () => {
+    mocks.session.mockReturnValue({ accountId: 'b0000000-0000-0000-0000-000000000001',
+      stationScopes: [{ stationId, stationCode: 'PUJ' }] });
+    render(<MemoryRouter><CanonicalNotificationsRoute /></MemoryRouter>);
+    await waitFor(() => expect(mocks.loadNotifications).toHaveBeenCalledTimes(1));
+    expect(mocks.observe).toHaveBeenCalledOnce();
+    mocks.observe.mock.calls[0][0](['notifications']);
+    await waitFor(() => expect(mocks.loadNotifications).toHaveBeenCalledTimes(2));
+  });
+
   it('reports only approved DB-backed submissions and links to their evidence', async () => {
     render(<MemoryRouter><CanonicalReportsRoute /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText('OP-101')).toBeInTheDocument());
@@ -80,6 +95,16 @@ describe('OCC canonical read surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enviar mensaje' }));
     await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledWith(operationId,
       'Llegaré en dos minutos', expect.stringMatching(/^[0-9a-f-]{36}$/i)));
+  });
+
+  it('refreshes the selected conversation when the feed reports a message', async () => {
+    mocks.session.mockReturnValue({ accountId: 'b0000000-0000-0000-0000-000000000001',
+      stationScopes: [{ stationId, stationCode: 'PUJ' }] });
+    render(<MemoryRouter initialEntries={[`/admin-occ/chat?operationId=${operationId}`]}><CanonicalChatRoute /></MemoryRouter>);
+    await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(1));
+    mocks.observe.mock.calls[0][0](['operation_messages']);
+    await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(2));
+    expect(mocks.loadConversations).toHaveBeenCalledTimes(2);
   });
 
   it('never requests a station outside the authenticated scope', async () => {

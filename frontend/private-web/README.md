@@ -21,7 +21,9 @@ Vite sirve localmente en `http://localhost:5173`. Abre ese origen exacto, no `ht
 
 Las variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. Las tres primeras son obligatorias; la clave de Google Maps es opcional y visible en el navegador cuando se configura. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development. El modo de Gestión Humana conserva la autenticación real, pero limita ese módulo a un dashboard de datos sintéticos y solo lectura: no llama endpoints `/api/hr`, no expone rutas profundas ni ofrece acciones de escritura o exportación.
 
-El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Solo acepta roles conocidos del portal `back_office`, conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
+El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Acepta los roles internos, `SUPERADMIN` y roles personalizados del portal `back_office`; estos últimos consultan sus permisos vigentes y abren `/espacio-de-trabajo`. Conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
+
+`/superadmin` ofrece **Inicio**, **Usuarios** y **Configuración**. La bandeja de Inicio permite crear manualmente la cuenta de una aerolínea después de la aprobación por Contratos; Usuarios administra cuentas, roles y permisos comerciales de lectura/escritura. Contratos dispone de **Solicitudes**, **Servicios** y **Borradores** conectados a la API. El detalle está en [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md). Las vistas históricas de Contratos que aún usan prototipos siguen separadas.
 
 Si la API devuelve `409 password_change_required`, la web muestra una activación
 sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
@@ -44,13 +46,26 @@ La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extre
 
 - `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;
 - `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
+- `GET /api/v1/occ/planning/manual-options?stationId={stationId}&date={date}`, para elegir aerolínea con contrato vigente, aeropuertos y posición activa en la estación autorizada;
+- `POST /api/v1/occ/planning/turnarounds`, para crear una escala manual con llegada, salida y posición, usando un UUID estable para reintentos ambiguos;
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift`, para programar un turno local de un agente cuyo único impedimento es la cobertura;
 - `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones.
 
 La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. El manifiesto de despacho permite escoger exclusivamente un agente marcado como elegible; contrato, posición y servicios son decisiones del backend y se muestran como datos bloqueados. La web no reintenta automáticamente el comando. Un `409`, `412`, `404` o resultado de red ambiguo obliga a refrescar opciones y planificación antes de una nueva confirmación.
 
-El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Crear vuelos, editar la planificación y generar Work Orders permanecen deshabilitados hasta que existan contratos OpenAPI de escritura revisados. Los fixtures del módulo se usan solo en pruebas.
+El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned` y no despacha automáticamente. El panel de cobertura muestra solo agentes cuyo único impedimento es el turno; la API revalida permisos, terminal, jornada de hasta 16 horas y cobertura completa. Tras programar, la web obtiene opciones y ETag nuevos antes de permitir asignar. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Editar escalas existentes, importar vuelos y generar Work Orders permanecen deshabilitados. Los fixtures del módulo se usan solo en pruebas.
 
 ## Frontera de seguridad
+
+Las rutas canónicas `/admin-occ/chat` y `/admin-occ/notifications` recuperan
+mensajes y avisos persistentes desde la API. En la rama de integración de
+Development también escuchan `ChangedV1` en los hubs autorizados: el aviso
+solo dispara `GET /api/v1/changes`, y el recurso se vuelve a consultar por REST.
+El cursor está en memoria por pantalla, sin reemplazar la autorización del
+servidor. Al reconectar, volver a enfocar la pestaña o recuperar la red se
+reconcilia el feed; una consulta cada 25 segundos respalda WebSocket y los
+sondeos existentes de las pantallas permanecen. No implica entrega con la
+pestaña cerrada ni garantiza la latencia hasta la prueba real del VPS.
 
 La ruta `/admin-occ/review` consume exclusivamente la API canónica de revisión:
 cola limitada por la estación del actor, detalle de la última entrega y decisión
@@ -86,6 +101,19 @@ El icono de notificaciones de esos dos departamentos permanece oculto hasta
 que exista un feed autorizado para sus roles. Los módulos profundos de ambos
 departamentos siguen siendo prototipos y no deben interpretarse como consultas
 persistentes ni como un circuito completo sin endpoints heredados.
+
+En la rama de integración, **Finanzas → Servicios aprobados** es una excepción
+concreta a esa descripción histórica: consulta la API versionada con estación
+y período explícitos, muestra evidencia aprobada y razones de bloqueo reales,
+escucha el feed durable y reconsulta al recuperar foco o como máximo cada 25
+segundos. La antigua acción local «Marcar revisado» se retiró porque no
+persistía ni auditaba. Desde esta misma vista, Finanzas puede elegir hasta
+100 servicios facturables de una sola aerolínea y moneda y crear una
+prefactura de prueba persistente y auditada. La selección se reconcilia con
+las reservas de otros usuarios; un intento incierto conserva su clave para
+reintentar sin duplicar. El detalle se lee de nuevo de la API, no del estado
+del navegador. La prefactura no es una factura ni un recibo: conciliación,
+emisión y cobro siguen pendientes. No se ha promovido al VPS.
 
 ## Imagen de Development
 

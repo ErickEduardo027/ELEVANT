@@ -9,4 +9,10 @@ public interface IAirlinePortalReadStore
         Guid organizationId,
         DateOnly onDate,
         CancellationToken cancellationToken = default);
+
+    Task<AirlineContractPageData?> GetContractsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

@@ -6,7 +6,9 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Api.ExceptionHandling;
 using Elevant.Api.HealthChecks;
+using Elevant.Api.Hubs;
 using Elevant.Api.OpenApi;
+using Elevant.Api.Realtime;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -15,6 +17,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Elevant.Api.Extensions;
 
@@ -49,7 +52,13 @@ public static class ServiceCollectionExtensions
             });
 
         AddAuthentication(services, configuration);
+        services.AddSingleton(_ => new AccountChangeCursorCodec(
+            Convert.FromBase64String(configuration["Authentication:SigningKeyBase64"]!)));
         services.AddSignalR();
+        services.AddSingleton<IUserIdProvider, AccountHubUserIdProvider>();
+        services.AddSingleton<IAccountChangePush, SignalRAccountChangePush>();
+        if (configuration.GetValue<bool>("Realtime:AccountChangeDispatcherEnabled"))
+            services.AddHostedService<AccountChangeDispatchWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {

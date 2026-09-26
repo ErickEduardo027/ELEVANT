@@ -2,6 +2,12 @@
 
 EF Core es la única fuente del esquema normal. Las migraciones residen en `database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations`; la API nunca ejecuta `Migrate`, `EnsureCreated` ni seed al arrancar.
 
+Esta rama suma `PublicCommercialIntake`, `CommercialGovernance`,
+`CommercialProvisioning` y `ContractDraftConversation`: columnas y tablas
+aditivas para el [flujo comercial](../workflows/commercial-intake-and-governance.md).
+El seed sintético de Development es un paso separado; las migraciones no
+insertan servicios, aerolíneas ni cuentas.
+
 Development y Production aplican la misma cadena. Se separan por instancia, nombre, marcador, credenciales, volumen, datos y backups. Una migración no contiene DML de negocio; Production queda vacía salvo marcador e historial técnicos.
 
 ## Crear una migración

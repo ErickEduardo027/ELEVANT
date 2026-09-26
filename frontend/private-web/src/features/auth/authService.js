@@ -127,7 +127,7 @@ function isFreshSupportedSession(session) {
   if (typeof session.token !== 'string' || !session.token) return false;
   if (typeof session.email !== 'string' || !session.email) return false;
   if (typeof session.name !== 'string' || !session.name) return false;
-  if (!SUPPORTED_BACK_OFFICE_ROLES.has(session.role)) return false;
+  if (!SUPPORTED_BACK_OFFICE_ROLES.has(session.role) && !session.role?.startsWith('CUSTOM_')) return false;
 
   const expiresAt = Date.parse(session.expiresAt);
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
@@ -149,7 +149,8 @@ function readFreshFrom(storage) {
 function mapApiSession(response) {
   const roles = Array.isArray(response?.actor?.roles) ? response.actor.roles : [];
   const role = roles.find(candidate =>
-    candidate?.portal === 'back_office' && SUPPORTED_BACK_OFFICE_ROLES.has(candidate.code)
+    candidate?.portal === 'back_office' &&
+    (SUPPORTED_BACK_OFFICE_ROLES.has(candidate.code) || candidate.code?.startsWith('CUSTOM_'))
   );
 
   if (!role) {

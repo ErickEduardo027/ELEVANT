@@ -118,7 +118,11 @@ Los incidentes registran tipo, severidad, descripción y tiempos de ocurrencia, 
 
 ## Estado de disponibilidad
 
-Mobile Agent y Private Web ya presentan recorridos de asignación, atención, checklist, incidencia y revisión, pero lo hacen mediante prototipos. La API .NET aún no ofrece endpoints de negocio. Por tanto, este flujo es el modelo persistente objetivo y no una capacidad end-to-end disponible.
+En el commit histórico indicado en el frontmatter, Mobile Agent y Private Web presentaban recorridos prototípicos y la API todavía no ofrecía esos casos de uso. Esa observación no describe por sí sola la rama de integración posterior ni certifica un ciclo end-to-end desplegado.
+
+### Cambio en la rama de integración de Development
+
+La rama `feat/integrated-cycle-realtime` añade un caso de uso para que OCC cree una escala manual desde planificación. La API deriva el alcance de estación de la cuenta vigente, exige una única versión contractual aprobada y vigente para aerolínea/estación/fecha, valida ruta y fecha local, reserva una posición activa sin solapamiento y registra llegada, salida, operación planificada, historia, auditoría y aviso recuperable para la aerolínea en una transacción. El UUID de intención permite repetir el mismo cuerpo sin duplicar la escala. Un segundo comando OCC programa un turno local de agente para la estación y terminal derivadas de la escala; exige cobertura de toda la operación, aptitud vigente y ausencia de otro turno para el día. Después OCC refresca elegibilidad y usa el ETag nuevo para el despacho habitual. Programar el turno no asigna por sí solo, no factura y no debe confundirse con una promoción al VPS; el resto del ciclo continúa en implementación.
 
 ## Relacionados
 

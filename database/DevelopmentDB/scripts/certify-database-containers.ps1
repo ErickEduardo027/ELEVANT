@@ -88,6 +88,7 @@ $passwords = @{
     DemoHumanResources = "CertDemoHumanResources-Aa1!$suffix"
     DemoContracts = "CertDemoContracts-Aa1!$suffix"
     DemoFinance = "CertDemoFinance-Aa1!$suffix"
+    DemoSuperAdmin = "CertDemoSuperAdmin-Aa1!$suffix"
     TeamErick = "CertTeamErick-Aa1!$suffix"
     TeamEliezer = "CertTeamEliezer-Aa1!$suffix"
     TeamLaisha = "CertTeamLaisha-Aa1!$suffix"
@@ -443,7 +444,8 @@ function Invoke-Release {
             '--env', "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD=$($passwords.DemoAirline)",
             '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
             '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
-            '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)"
+            '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+            '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)"
         )
     }
     $arguments += @($ReleaseImage, $Command)
@@ -808,6 +810,7 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
         '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -825,6 +828,7 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
         '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)",
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
@@ -915,13 +919,14 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
         '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'
     )
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Development seed unexpectedly accepted a shared account secret.' `
-        -ExpectedErrorPattern 'must use six distinct passwords' `
+        -ExpectedErrorPattern 'Synthetic Development accounts must use distinct passwords' `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
@@ -932,6 +937,7 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
         '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'
@@ -950,7 +956,8 @@ WHERE [normalized_email] IN (
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
     N'GESTION.HUMANA@DEV.ELEVANT.TEST',
     N'CONTRATOS@DEV.ELEVANT.TEST',
-    N'FINANZAS@DEV.ELEVANT.TEST'
+    N'FINANZAS@DEV.ELEVANT.TEST',
+    N'SUPER.ADMIN@DEV.ELEVANT.TEST'
 );
 '@
     $adminCredentialStateQuery = @'
@@ -971,7 +978,8 @@ WHERE [normalized_email] IN (
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
     N'GESTION.HUMANA@DEV.ELEVANT.TEST',
     N'CONTRATOS@DEV.ELEVANT.TEST',
-    N'FINANZAS@DEV.ELEVANT.TEST'
+    N'FINANZAS@DEV.ELEVANT.TEST',
+    N'SUPER.ADMIN@DEV.ELEVANT.TEST'
 );
 '@
 
@@ -1016,6 +1024,7 @@ WHERE [normalized_email] = N'ADMIN.OCC@DEV.ELEVANT.TEST';
         '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
         '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
         '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
+        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)",
         '--env', "ConnectionStrings__ElevantDatabase=$developmentSeederConnection",
         $ReleaseImage,
         'seed-development'

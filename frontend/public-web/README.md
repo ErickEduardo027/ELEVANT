@@ -2,15 +2,27 @@
 
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
+El botón naranja **Solicitar acceso** abre `/solicitar-acceso`: servicios en carrusel, aerolínea predefinida con ficha de solo lectura y datos del representante. El catálogo y la solicitud usan la API real; Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones, además de consultar el historial aprobado. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).
+
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
 autorizadas; inicio, vuelos, detalle y perfil separan esa respuesta de las
 muestras visuales. La ruta separada `/dev-airline` fue retirada. Inicio y vuelos
 conservan una secuencia sintética del prototipo en una sección señalizada, sin
-enlaces a detalles inventados. Solicitudes, contratos, documentos,
-finanzas y reportes conservan una vista visual de demostración claramente
+enlaces a detalles inventados. Contratos consulta versiones aprobadas reales,
+incluyendo historial vencido, con cobertura y tarifas de la aerolínea
+autenticada. Solicitudes, documentos, finanzas y reportes conservan una vista visual de demostración claramente
 marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
 No representan datos de la cuenta ni un portal operativo completo de Production.
+
+En la rama de integración, la sesión del portal revalida identidad y
+`bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
+`ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
+cuenta y vuelve a consultar el `bootstrap` cuando aparece
+`airline_operations`. El socket nunca entrega datos del tenant; si falla,
+el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
+un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
+la sesión visible. Falta medir latencia real en navegador y VPS.
 
 ## Ejecutar y validar
 
@@ -40,12 +52,14 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 
 ## Rutas observadas
 
-- `/`: landing, propuesta comercial y solicitud demo.
+- `/`: landing y acceso al flujo comercial real.
+- `/solicitar-acceso`: solicitud comercial en tres pasos; no crea usuario ni acepta contraseña.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal; la afiliación sigue siendo una vista prototípica.
 - `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
 - `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
-- `/portal/solicitudes`, `/portal/contratos`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
+- `/portal/solicitudes`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 
 ## Contrato de seguridad

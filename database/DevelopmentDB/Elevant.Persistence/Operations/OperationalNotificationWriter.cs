@@ -1,6 +1,7 @@
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Operations;
@@ -36,7 +37,7 @@ internal static class OperationalNotificationWriter
             .Select(account => account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        Add(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
     }
 
     public static async Task NotifyAssignedAgentsAsync(
@@ -75,7 +76,7 @@ internal static class OperationalNotificationWriter
             select account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        Add(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
     }
 
     public static async Task NotifyAgentAsync(
@@ -110,16 +111,16 @@ internal static class OperationalNotificationWriter
             select account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        Add(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
     }
 
-    private static void Add(ElevantDbContext context, IEnumerable<long> recipients,
+    internal static void AddForRecipients(ElevantDbContext context, IEnumerable<long> recipients,
         long stationId, long operationId, Guid sourceId, string kind,
         DateTimeOffset occurredAt)
     {
         foreach (var recipientAccountId in recipients)
         {
-            context.OperationalNotifications.Add(new OperationalNotification
+            var notification = new OperationalNotification
             {
                 PublicId = Guid.CreateVersion7(),
                 RecipientAccountId = recipientAccountId,
@@ -130,7 +131,10 @@ internal static class OperationalNotificationWriter
                 OccurredAt = occurredAt,
                 CreatedAt = occurredAt,
                 UpdatedAt = occurredAt,
-            });
+            };
+            context.OperationalNotifications.Add(notification);
+            AccountChangeOutboxWriter.Add(context, recipientAccountId, stationId,
+                "notifications", notification.PublicId, occurredAt);
         }
     }
 }

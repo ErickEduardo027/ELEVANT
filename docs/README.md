@@ -21,6 +21,8 @@ Para orientarse por pregunta, evidencia y estado, usar el [Vault ELEVANT](../Vau
   [`development-hardening-backlog.md`](deployment/development-hardening-backlog.md).
 - `api`: HTTP, errores, OpenAPI y consumidores.
 - `workflows`: Git, desarrollo local y flujos por plataforma.
+  La [solicitud comercial y gobernanza](workflows/commercial-intake-and-governance.md)
+  documenta el recorrido de acceso, contrato y avisos internos de esta rama.
 - `security`: acceso SQL, secretos y línea base.
 - `onboarding`: recorridos por rol.
 - `adr`: decisiones aceptadas/propuestas.

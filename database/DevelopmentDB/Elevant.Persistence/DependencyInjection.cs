@@ -1,13 +1,17 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Abstractions.Realtime;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Integration;
 using Elevant.Persistence.Operations;
+using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -59,9 +63,23 @@ public static class DependencyInjection
         services.AddScoped<ISessionSecurityVersionStore, EfSessionSecurityVersionStore>();
         services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
+        services.AddScoped<IGovernanceStore, EfGovernanceStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IAffiliationStore, EfAffiliationStore>();
+        services.AddScoped<ICommercialIntakeStore, EfCommercialIntakeStore>();
+        services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
+        services.AddScoped<CommercialPermissionGuard>();
+        services.AddScoped<ICommercialCatalogManagementStore, EfCommercialCatalogManagementStore>();
+        services.AddScoped<ICommercialWorkflowStore, EfCommercialWorkflowStore>();
+        services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
+        services.AddScoped<IContractDraftStore, EfContractDraftStore>();
+        services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
+        services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
+        services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();
+        services.AddScoped<IManualTurnaroundOptionsStore, EfManualTurnaroundOptionsStore>();
+        services.AddScoped<IOccShiftProgrammingStore, EfOccShiftProgrammingStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
         services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
         services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
@@ -73,6 +91,8 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();
         services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
+        services.AddScoped<IAccountChangeDispatcherStore, EfAccountChangeDispatcherStore>();
+        services.AddScoped<IAccountChangeReadStore, EfAccountChangeReadStore>();
 
         services
             .AddHealthChecks()

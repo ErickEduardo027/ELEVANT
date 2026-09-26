@@ -1,5 +1,33 @@
 # Cliente API compartido
 
+El snapshot OpenAPI incluye `GetAffiliationOptions` como lectura anónima
+acotada de estaciones activas y servicios publicados, sin precios. El flujo
+público actual usa `GetPublicCommercialCatalog` y `SubmitCommercialRequest`
+para solicitar servicios sin elegir contraseña. Contratos aprueba o rechaza y
+el superadministrador crea las credenciales manualmente. Los endpoints de
+gobernanza, catálogo administrado y borradores también están en el snapshot.
+
+`getAccountChanges({ after?, limit? })` consulta el feed recuperable por
+cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan
+sin decodificarlo y vuelven a leerlo tras reconectar SignalR o al reanudar
+la aplicación. `ChangedV1` solo anuncia un cambio; los datos se consultan
+por REST con los permisos vigentes. El wrapper exige un cuerpo cerrado,
+rechaza cursores/parámetros inválidos y no permite introducir una cuenta,
+estación o tenant en la consulta. Esta capacidad se prepara en la rama de
+integración y no demuestra todavía un despliegue remoto.
+
+`getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
+para la única aerolínea derivada en la API de la sesión. El cliente valida
+estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
+un ID de tenant ni habilita acciones comerciales.
+
+`getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
+aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía
+una clave UUID estable con 1–100 servicios y valida el ID guardado;
+`getPreinvoiceDraft(id, expectedStationId)` reconsulta y valida el detalle
+persistente y su estación. Solo Finanzas interna autorizada puede usar estos
+contratos. El borrador aún no es factura, pago ni recibo.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores
@@ -65,7 +93,17 @@ decodificarlos ni reconstruirlos. El de opciones versiona la representación
 asignable completa; el de la respuesta de asignación no se reutiliza como
 precondición de otro comando. Los servicios, cantidades, precios, contrato,
 posición y scope son siempre
-decisiones del servidor. Crear vuelos y reasignar siguen fuera de este cliente;
+decisiones del servidor. `getManualTurnaroundOptions` consulta las aerolíneas
+con contrato aprobado y vigente, aeropuertos y posiciones activas de la estación
+OCC autorizada. `createManualTurnaround` envía un UUID de intención generado por
+el cliente, los dos vuelos y la posición elegida; la API revalida scope, contrato,
+fecha local, ruta y solapamiento de posición antes de escribir. Repetir el mismo
+UUID y cuerpo devuelve la misma escala sin duplicarla. Editar escalas existentes
+y reasignar siguen fuera de este cliente. `programOccShift` programa el turno
+local de un agente para una escala autorizada: el cuerpo contiene solo agente
+e intervalo, nunca estación, terminal o puesto. Tras programar, OCC debe
+obtener nuevamente las opciones y su ETag antes de asignar; programar un turno
+no constituye la asignación.
 la ejecución posterior de servicios corresponde exclusivamente al agente
 asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus
@@ -113,6 +151,13 @@ reconstruye, almacena como secreto ni reintenta automáticamente ese ETag.
 identificadores de agente o estación. `reportRampIncident` envía solo tipo,
 impacto, descripción y hora de ocurrencia con instalación y clave de
 idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
+
+`getFinanceApprovedServices({ stationId, from, to })` exige una estación y un
+intervalo inclusivo de hasta 31 días. El wrapper comprueba que el alcance
+devuelto coincide con el solicitado, limita la página a 200 líneas y rechaza
+importes listos sin precio/moneda congelados o filas con propiedades ajenas al
+contrato. La API revalida el rol financiero y la estación; esta lectura no
+emite facturas ni modifica revisiones.
 
 ## Contrato y generación
 

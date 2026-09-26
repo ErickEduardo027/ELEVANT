@@ -46,6 +46,8 @@ flowchart LR
 
 El alias mutable solo permite localizar el candidato; la identidad ejecutada es inmutable. Los controladores comprueban repositorio/ref/commit/run, manifiesto cerrado, imagen por digest y equivalencia semántica entre Compose certificado y Raw vivo. El estado y la caché persisten con acceso root-only. Una instalación o actualización del controlador sigue siendo manual; un archivo nuevo en Git no lo instala en el VPS. Ver [Database CD](../../ops/dokploy/database-cd/README.md), [API CD](../../ops/dokploy/api-cd/README.md) y [Web CD](../../ops/dokploy/web-cd/README.md).
 
+En la preparación comercial del 26-09-2026 se observó que guardar Raw y Environment en Dokploy no regeneró sus archivos `code/` antes de Deploy. El operador comprobó el Raw guardado por hash, pausó Database CD con los schedules deshabilitados y sincronizó los archivos vivos bajo copia de seguridad restringida, sin desplegar. Este checkpoint preparatorio no equivale a una promoción aceptada; el [procedimiento de Dokploy](../../docs/deployment/dokploy-configuration.md) exige después bundle certificado, `--dry-run` y las verificaciones de promoción.
+
 ## Dependencias y relojes
 
 | Carril | Frecuencia aceptada | Gate que impide adelantarlo |

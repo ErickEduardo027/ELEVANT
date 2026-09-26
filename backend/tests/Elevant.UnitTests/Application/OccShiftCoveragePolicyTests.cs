@@ -73,4 +73,38 @@ public sealed class OccShiftCoveragePolicyTests
             WorkDate,
             new TimeOnly(12, 0)));
     }
+
+    [Theory]
+    [InlineData(6, 0, 14, 0, 8, 0, 12, 0, true)]
+    [InlineData(9, 0, 13, 0, 8, 0, 12, 0, false)]
+    [InlineData(6, 0, 11, 0, 8, 0, 12, 0, false)]
+    [InlineData(6, 0, 6, 0, 8, 0, 12, 0, false)]
+    public void ProgrammedShiftMustCoverWholeOperation(
+        int startHour, int startMinute, int endHour, int endMinute,
+        int operationStartHour, int operationStartMinute,
+        int operationEndHour, int operationEndMinute, bool expected)
+    {
+        Assert.Equal(expected, OccShiftCoveragePolicy.CoversInterval(
+            WorkDate, new TimeOnly(startHour, startMinute), new TimeOnly(endHour, endMinute),
+            new DateTime(2026, 8, 19, operationStartHour, operationStartMinute, 0),
+            new DateTime(2026, 8, 19, operationEndHour, operationEndMinute, 0)));
+    }
+
+    [Fact]
+    public void OvernightShiftMayCoverNextDayDeparture()
+    {
+        Assert.True(OccShiftCoveragePolicy.CoversInterval(
+            WorkDate, new TimeOnly(21, 0), new TimeOnly(5, 0),
+            new DateTime(2026, 8, 19, 22, 0, 0),
+            new DateTime(2026, 8, 20, 2, 0, 0)));
+    }
+
+    [Fact]
+    public void ShiftLongerThanSixteenHoursIsRejected()
+    {
+        Assert.False(OccShiftCoveragePolicy.CoversInterval(
+            WorkDate, new TimeOnly(5, 0), new TimeOnly(4, 0),
+            new DateTime(2026, 8, 19, 8, 0, 0),
+            new DateTime(2026, 8, 19, 10, 0, 0)));
+    }
 }

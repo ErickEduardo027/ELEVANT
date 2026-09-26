@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AirlinePortalBootstrapResponse, SessionResponse } from "@elevant/api-client";
 import {
@@ -6,6 +6,14 @@ import {
   AirlineSessionProvider,
   useAirlineSession,
 } from "@/components/auth/AirlineSessionProvider";
+
+const observe = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/airline-change-observer", () => ({ createPublicAirlineChangeObserver: observe }));
+beforeEach(() => {
+  observe.mockReset();
+  observe.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined) });
+});
 
 const actor: SessionResponse["actor"] = {
   accountId: "40000000-0000-7000-8000-000000000003",
@@ -120,4 +128,57 @@ it("clears a stored token when the API revokes the session", async () => {
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("anonymous");
   expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).toBeNull();
+});
+
+it("refreshes the authorized airline snapshot when the connection returns", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  let currentName = "Demo Airlines";
+  const fetcher = vi.fn<typeof fetch>(async input => {
+    const path = new URL(String(input)).pathname;
+    return path === "/api/v1/auth/session" ? json({ actor }) : json({ ...bootstrap, name: currentName });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  currentName = "Airline Updated";
+  window.dispatchEvent(new Event("online"));
+  await screen.findByText("Airline Updated");
+  expect(fetcher).toHaveBeenCalledTimes(4);
+});
+
+it("revokes the visible airline context on a periodic authorization failure", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  let revoked = false;
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
+    const path = new URL(String(input)).pathname;
+    if (revoked) return json({ status: 401 }, 401);
+    return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  revoked = true;
+  window.dispatchEvent(new Event("focus"));
+  await waitFor(() => expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous"));
+  expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).toBeNull();
+});
+
+it("refreshes the server-scoped bootstrap after an authorized airline change hint", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  let currentName = "Demo Airlines";
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
+    const path = new URL(String(input)).pathname;
+    return path === "/api/v1/auth/session" ? json({ actor }) : json({ ...bootstrap, name: currentName });
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  expect(observe).toHaveBeenCalledOnce();
+  currentName = "Airline Updated";
+  observe.mock.calls[0][0].onChanges(["airline_operations"]);
+  await screen.findByText("Airline Updated");
 });

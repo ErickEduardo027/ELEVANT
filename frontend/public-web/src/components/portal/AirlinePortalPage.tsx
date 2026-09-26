@@ -5,15 +5,15 @@ import type { AirlinePortalBootstrapResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { PortalDemoPreview } from "./PortalDemoPreview";
+import { AirlineContractPage } from "./AirlineContractPage";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
   | "documents" | "finance" | "reports" | "profile";
 
-const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile">,
+const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts">,
   { title: string; description: string }> = {
   requests: { title: "Solicitudes", description: "El historial y las acciones de solicitudes todavía no están disponibles mediante la API del portal." },
-  contracts: { title: "Contratos", description: "La consulta contractual todavía no está disponible mediante la API del portal." },
   documents: { title: "Documentos", description: "Los documentos todavía no están disponibles mediante la API del portal." },
   finance: { title: "Finanzas", description: "La información financiera todavía no está disponible mediante la API del portal." },
   reports: { title: "Reportes", description: "Los reportes todavía no están disponibles mediante la API del portal." },
@@ -23,10 +23,6 @@ const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows:
   requests: {
     metrics: [["Total de ejemplo", "1"], ["En seguimiento", "1"], ["Aprobadas", "0"], ["Cancelables", "0"]],
     rows: [["DEMO-SOL-001", "Escalera adicional", "Ejemplo de solicitud recibida · sin registro real"]],
-  },
-  contracts: {
-    metrics: [["Contratos de ejemplo", "1"], ["Activos", "1"], ["Estaciones", "1"], ["Tarifas", "2"]],
-    rows: [["DEMO-CON-001", "Servicios de asistencia", "Ejemplo de cobertura y tarifario · sin vigencia real"]],
   },
   documents: {
     metrics: [["Documentos de ejemplo", "3"], ["Disponibles", "2"], ["En procesamiento", "1"], ["Descargas", "0"]],
@@ -92,6 +88,9 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
         : <p className={styles.empty}>No hay vuelos disponibles en la ventana actual.</p>}
     </section>
   </div>;
+
+  if (view === "contracts") return <AirlineContractPage
+    key={`${actor.accountId}:${bootstrap.organizationId}`} />;
 
   if (view === "flightDetail") {
     const operation = operations.find((item) => item.id === operationId);

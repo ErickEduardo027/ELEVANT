@@ -83,6 +83,8 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
+En la rama de integración de Development, planificación incorpora el alta manual de una escala OCC. La pantalla obtiene de la API las aerolíneas con contrato vigente, aeropuertos y posiciones activas para una estación autorizada; envía llegada, salida, fecha, posición y un UUID de intención estable para un reintento ambiguo. La API vuelve a comprobar alcance, contrato, ruta y disponibilidad de posición. Crear una escala deja su operación planificada. OCC puede programar después un turno local para un agente cuyo único impedimento sea la cobertura; el panel refresca opciones y ETag antes de asignar. Ninguno de esos comandos factura ni demuestra por sí solo promoción o prueba de navegador contra el VPS.
+
 ### Gestión Humana
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
@@ -100,6 +102,17 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 | Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
 | Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Contratos y Finanzas todavía no migraron sus módulos profundos de forma general. |
 | API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los resúmenes sintéticos no prueban endpoints financieros o contractuales; los módulos heredados pueden seguir fallando hasta su migración. |
+
+En la rama de integración posterior al commit histórico de esta nota,
+**Finanzas → Servicios aprobados** consume una nueva lectura canónica por
+estación y período. Presenta importes de snapshots operativos y razones de
+bloqueo, no cifras de fixtures; la antigua acción local «Marcar revisado» ya
+no aparece. Revalida por feed durable, foco y polling acotado. El resto de
+Finanzas puede crear y volver a consultar una prefactura interna no fiscal
+desde los servicios elegibles. La selección se reconcilia cuando llega una
+reserva de otro usuario y un reintento conserva su clave idempotente.
+Conciliación, emisión de factura y recibo siguen pendientes; no se ha
+promovido esta rama al VPS.
 
 ## Desarrollo local
 

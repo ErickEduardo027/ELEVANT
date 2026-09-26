@@ -1,8 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { ElevantApiError, type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
+import { ElevantApiError, type AirlineContractPageResponse,
+  type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
+import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
 export const AIRLINE_SESSION_STORAGE_KEY = "elevant-airline-session-v1";
 
@@ -10,6 +12,14 @@ export interface AirlineSessionData {
   actor: SessionActorResponse;
   bootstrap: AirlinePortalBootstrapResponse;
   expiresAt: string;
+}
+
+export interface AirlineDraftData {
+  id: string; contractId: string; contractCode: string; airline: string; status: string;
+  validFrom: string; validTo: string | null; currencyCode: string; terms: string | null;
+  stations: string[];
+  rates: { id: string; serviceName: string; billingUnit: string; unitPrice: number; minimumQuantity: number }[];
+  comments: { id: string; author: string; body: string; at: string; isAirline: boolean }[];
 }
 
 export type AirlineSessionStatus = "loading" | "anonymous" | "ready" | "unavailable";
@@ -25,6 +35,10 @@ interface AirlineSessionContextValue {
   changePassword(input: { email: string; currentPassword: string; newPassword: string }): Promise<AirlinePasswordChangeResult>;
   signOut(): void;
   retry(): Promise<void>;
+  getContracts(page?: number): Promise<AirlineContractPageResponse>;
+  getDrafts(): Promise<AirlineDraftData[]>;
+  commentDraft(versionId: string, body: string): Promise<void>;
+  draftRevision: number;
 }
 
 const AirlineSessionContext = createContext<AirlineSessionContextValue | null>(null);
@@ -84,8 +98,11 @@ function failureReason(error: unknown): Exclude<AirlineSignInResult, { ok: true 
 export function AirlineSessionProvider({ children, baseUrl }: { children: ReactNode; baseUrl?: string }) {
   const [status, setStatus] = useState<AirlineSessionStatus>("loading");
   const [session, setSession] = useState<AirlineSessionData | null>(null);
+  const [draftRevision, setDraftRevision] = useState(0);
+  const accountId = session?.actor.accountId;
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
+  const refreshing = useRef(false);
 
   const load = useCallback(async (record: StoredSession): Promise<AirlineSessionData> => {
     if (Date.parse(record.expiresAt) <= Date.now()) throw new ElevantApiError({ kind: "http", status: 401 });
@@ -141,6 +158,51 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     return () => window.clearTimeout(timer);
   }, [clear, session]);
 
+  const refreshLive = useCallback(async () => {
+    const record = stored.current;
+    if (!record || refreshing.current) return;
+    const request = generation.current;
+    refreshing.current = true;
+    try {
+      const live = await load(record);
+      if (request === generation.current) setSession(live);
+    } catch (error) {
+      if (request === generation.current &&
+          ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
+      // Keep the last authorized snapshot during a transient network failure.
+    } finally {
+      refreshing.current = false;
+    }
+  }, [clear, load]);
+
+  useEffect(() => {
+    if (status !== "ready" || !accountId) return;
+    const refresh = () => { void refreshLive(); };
+    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    const timer = window.setInterval(refresh, 25_000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [accountId, refreshLive, status]);
+
+  useEffect(() => {
+    if (status !== "ready" || !accountId) return;
+    const observer = createPublicAirlineChangeObserver({ baseUrl,
+      getAccessToken: () => stored.current?.accessToken ?? "",
+      onChanges: resources => {
+        if (resources.includes("airline_operations")) void refreshLive();
+        if (resources.includes("airline_contracts")) setDraftRevision(current => current + 1);
+      } });
+    void observer.start();
+    return () => { void observer.stop(); };
+  }, [accountId, baseUrl, refreshLive, status]);
+
   const signIn = useCallback(async (input: { email: string; password: string }): Promise<AirlineSignInResult> => {
     const request = ++generation.current;
     stored.current = null;
@@ -184,7 +246,56 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry }}>
+  const getContracts = useCallback(async (page = 1): Promise<AirlineContractPageResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineContracts(
+          { page, limit: 20 }, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current &&
+          ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
+  const draftRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const origin = (baseUrl ?? process.env.NEXT_PUBLIC_ELEVANT_API_URL)?.replace(/\/$/, "");
+    if (!origin) throw new Error("API no configurada");
+    const response = await fetch(`${origin}/api/v1${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${record.accessToken}` },
+    });
+    if (response.status === 401) { clear(); throw new AirlineAccessDenied(); }
+    if (!response.ok) throw new Error("No se pudo completar la consulta del borrador.");
+    return response.json();
+  }, [baseUrl, clear]);
+
+  const getDrafts = useCallback(async (): Promise<AirlineDraftData[]> => {
+    const result: unknown = await draftRequest("/airline/contract-drafts");
+    if (!Array.isArray(result) || !result.every(item =>
+      item && typeof item === "object" && typeof item.id === "string" &&
+      typeof item.contractCode === "string" && Array.isArray(item.rates) &&
+      Array.isArray(item.comments) && Array.isArray(item.stations)))
+      throw new Error("La respuesta de borradores no es válida.");
+    return result as AirlineDraftData[];
+  }, [draftRequest]);
+
+  const commentDraft = useCallback(async (versionId: string, body: string): Promise<void> => {
+    await draftRequest(`/airline/contract-drafts/${encodeURIComponent(versionId)}/comments`, {
+      method: "POST", body: JSON.stringify({ body }),
+    });
+    setDraftRevision(current => current + 1);
+  }, [draftRequest]);
+
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

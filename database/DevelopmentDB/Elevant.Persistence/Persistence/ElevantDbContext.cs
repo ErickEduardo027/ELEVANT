@@ -21,6 +21,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
+    public DbSet<AccountChange> AccountChanges => Set<AccountChange>();
+
     public DbSet<Organization> Organizations => Set<Organization>();
 
     public DbSet<Person> Persons => Set<Person>();
@@ -65,11 +67,18 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
 
+    public DbSet<CommercialAirlineProfile> CommercialAirlineProfiles => Set<CommercialAirlineProfile>();
+
     public DbSet<Contract> Contracts => Set<Contract>();
 
     public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
+    public DbSet<ContractDraftComment> ContractDraftComments => Set<ContractDraftComment>();
 
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
+
+    public DbSet<Preinvoice> Preinvoices => Set<Preinvoice>();
+
+    public DbSet<PreinvoiceLine> PreinvoiceLines => Set<PreinvoiceLine>();
 
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
@@ -112,6 +121,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
         builder.ConfigureWorkforceAndCommercial();
+        builder.ConfigurePreinvoices();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);

@@ -18,6 +18,30 @@ tests/scripts/                    pruebas del tooling y fixture de certificació
 
 ## Migraciones
 
+Las migraciones aditivas `PublicCommercialIntake`, `CommercialGovernance`,
+`CommercialProvisioning` y `ContractDraftConversation` agregan catálogo público,
+perfiles de aerolínea, solicitudes, roles personalizados, vinculación de cuenta
+y observaciones de borrador. No incluyen datos de negocio. El seed de Development
+requiere además `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD` para crear la cuenta
+sintética de superadministrador; el valor no se guarda aquí. El flujo y sus
+límites están en [solicitud comercial y gobernanza](../../docs/workflows/commercial-intake-and-governance.md).
+
+La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
+y concede a `elevant_app_role` permisos de objeto limitados para
+escribir/procesar el outbox y leer/insertar pistas del feed.
+`provision-development.sql` reproduce esos grants en una reprovisión y
+`verify-development.sql` comprueba sus límites efectivos. Esta migración
+no está desplegada hasta completar la certificación y la promoción controlada.
+
+La migración aditiva `PreinvoiceDraft` de la rama de integración crea
+`commercial.preinvoices` y `commercial.preinvoice_lines`. Cada línea guarda
+cantidad, unidad, precio, moneda e importe congelados junto con la entrega
+aprobada por OCC que la justifica. Índices únicos sobre `request_id` y
+`operation_service_id` impiden solicitudes duplicadas y reservar dos veces
+un servicio. Todas las FKs usan `NO ACTION`; la migración no carga datos de
+negocio. Se prueba una base limpia y la actualización de una base con
+operaciones previas. No se ha aplicado al VPS.
+
 Desde cualquier directorio:
 
 ```powershell
