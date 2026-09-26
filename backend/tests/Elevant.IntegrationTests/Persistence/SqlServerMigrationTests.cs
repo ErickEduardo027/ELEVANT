@@ -3679,6 +3679,14 @@ public sealed class SqlServerMigrationTests
             .CountAsync(cancellationToken));
         Assert.Equal(2, await verify.OperationalNotifications.AsNoTracking()
             .CountAsync(cancellationToken));
+        var changeHints = await verify.OutboxMessages.AsNoTracking()
+            .Where(message => message.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken);
+        Assert.Equal(4, changeHints.Length);
+        Assert.Equal(4, changeHints.Select(message => message.PublicId).Distinct().Count());
+        Assert.DoesNotContain(changeHints, message =>
+            message.PayloadJson.Contains("Llegu", StringComparison.Ordinal) ||
+            message.PayloadJson.Contains("Recibido", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -178,20 +178,10 @@ internal sealed class EfOperationalCommunicationStore(
 
         var now = TruncateMilliseconds(timeProvider.GetUtcNow());
         var senderName = await SenderNameAsync(scope.AccountInternalId, cancellationToken);
-        var message = new OperationMessage
-        {
-            PublicId = Guid.CreateVersion7(),
-            GroundOperationId = scope.OperationInternalId,
-            SenderAccountId = scope.AccountInternalId,
-            MobileDeviceId = scope.DeviceInternalId,
-            ClientMessageId = command.ClientMessageId,
-            SenderRole = command.Access.Role,
-            Content = command.Content,
-            SentAt = now,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-        context.OperationMessages.Add(message);
+        var message = OperationMessageChangeWriter.Add(
+            context, scope.OperationInternalId, scope.StationInternalId,
+            scope.AccountInternalId, scope.DeviceInternalId,
+            command.ClientMessageId, command.Access.Role, command.Content, now);
         if (command.Access.Role == "agent")
             await OperationalNotificationWriter.NotifyOccAsync(
                 context, scope.StationInternalId, scope.OperationInternalId,
