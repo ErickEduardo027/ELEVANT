@@ -2307,6 +2307,12 @@ public sealed class SqlServerMigrationTests
                     item.EntityPublicId == operation.PublicId &&
                     item.Action == "occ.operation.assigned")
                 .ToArrayAsync(cancellationToken));
+            var assignmentHints = (await verificationContext.OutboxMessages.AsNoTracking()
+                .Where(item => item.EventType == "account.changed.v1")
+                .ToArrayAsync(cancellationToken))
+                .Select(AccountChangeOutboxWriter.Decode).ToArray();
+            Assert.Single(assignmentHints, item => item.Resource == "airline_operations" &&
+                item.ResourceId == operation.PublicId && item.StationId == null);
         }
 
         await using (var upgradeSetupContext = CreateContext(database.ConnectionString))
@@ -2638,6 +2644,13 @@ public sealed class SqlServerMigrationTests
                 item => item.IdempotencyKey == postStartKey.ToString("D"));
             Assert.Equal(MobileCommandStatus.Rejected, postStartRejection.Status);
             Assert.Equal("conflict", postStartRejection.ErrorCode);
+
+            var startHints = (await verificationContext.OutboxMessages.AsNoTracking()
+                .Where(item => item.EventType == "account.changed.v1")
+                .ToArrayAsync(cancellationToken))
+                .Select(AccountChangeOutboxWriter.Decode).ToArray();
+            Assert.Single(startHints, item => item.Resource == "airline_operations" &&
+                item.ResourceId == operationId && item.StationId == null);
 
         }
 
@@ -3292,6 +3305,12 @@ public sealed class SqlServerMigrationTests
                 item.Kind == "operation_submitted" && item.SourceId == handoffKey)
             .ToArrayAsync(cancellationToken));
         Assert.Null(occNotification.ReadAt);
+        var handoffHints = (await handoffCheck.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode).ToArray();
+        Assert.Equal(2, handoffHints.Count(item => item.Resource == "airline_operations" &&
+            item.ResourceId == operationId)); // start + submission, despite exact replays
 
         var occAccountId = Guid.Parse("40000000-0000-7000-8000-000000000001");
         OccReviewDetailData reviewDetail;
@@ -3358,6 +3377,21 @@ public sealed class SqlServerMigrationTests
                 item.SourceId == savedDecision.PublicId)
             .ToArrayAsync(cancellationToken));
         Assert.Null(agentNotification.ReadAt);
+        var airlineAccountInternalId = await decisionCheck.Users.AsNoTracking()
+            .Where(item => item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000003"))
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var airlineHints = (await decisionCheck.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "airline_operations" &&
+                item.ResourceId == operationId).ToArray();
+        Assert.Equal(3, airlineHints.Length); // start + submission + OCC decision
+        Assert.All(airlineHints, airlineHint =>
+        {
+            Assert.Equal(airlineAccountInternalId, airlineHint.RecipientAccountId);
+            Assert.Null(airlineHint.StationId);
+        });
 
         if (reviewOutcome == "Returned")
         {
@@ -3836,7 +3870,7 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
-    public async Task AccountChangeReadRechecksRecipientAndRevokedStationScope()
+    public async Task AccountChangeReadRechecksRecipientRevokedStationAndAirlineMembership()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var masterConnection = ResolveMasterConnection();
@@ -3853,13 +3887,17 @@ public sealed class SqlServerMigrationTests
 
         var occPublicId = Guid.Parse("40000000-0000-7000-8000-000000000001");
         var agentPublicId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var airlinePublicId = Guid.Parse("40000000-0000-7000-8000-000000000003");
         long occInternalId;
+        long airlineInternalId;
         long stationInternalId;
         await using (var setup = CreateContext(database.ConnectionString))
         {
             occInternalId = await setup.Users.Where(account => account.PublicId == occPublicId)
                 .Select(account => account.Id).SingleAsync(cancellationToken);
             var agentInternalId = await setup.Users.Where(account => account.PublicId == agentPublicId)
+                .Select(account => account.Id).SingleAsync(cancellationToken);
+            airlineInternalId = await setup.Users.Where(account => account.PublicId == airlinePublicId)
                 .Select(account => account.Id).SingleAsync(cancellationToken);
             stationInternalId = await setup.Stations.Where(station => station.Code == "PUJ")
                 .Select(station => station.Id).SingleAsync(cancellationToken);
@@ -3883,6 +3921,16 @@ public sealed class SqlServerMigrationTests
                     CreatedAt = now,
                 });
             }
+            setup.AccountChanges.Add(new AccountChange
+            {
+                PublicId = Guid.NewGuid(),
+                OutboxPublicId = Guid.NewGuid(),
+                RecipientAccountId = airlineInternalId,
+                Resource = "airline_operations",
+                ResourceId = Guid.Parse("70000000-0000-7000-8000-000000000005"),
+                OccurredAt = now,
+                CreatedAt = now,
+            });
             await setup.SaveChangesAsync(cancellationToken);
         }
 
@@ -3907,6 +3955,9 @@ public sealed class SqlServerMigrationTests
         Assert.NotNull(agent);
         Assert.Single(agent.Changes);
         Assert.NotEqual(first.Changes[0].EventId, agent.Changes[0].EventId);
+        var airline = await ReadAsync(airlinePublicId, 0, 10);
+        Assert.NotNull(airline);
+        Assert.Single(airline.Changes);
 
         await using (var setup = CreateContext(database.ConnectionString))
         {
@@ -3914,11 +3965,31 @@ public sealed class SqlServerMigrationTests
                 item.AccountId == occInternalId && item.StationId == stationInternalId,
                 cancellationToken);
             scope.RevokedAt = DateTimeOffset.UtcNow;
+            var airlineMembership = await setup.OrganizationMemberships.SingleAsync(item =>
+                item.AccountId == airlineInternalId && item.Kind == MembershipKind.AirlineClient,
+                cancellationToken);
+            airlineMembership.Status = MembershipStatus.Ended;
+            var internalOrganizationId = await setup.Organizations
+                .Where(item => item.Type == OrganizationType.AviamOperator)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            setup.OrganizationMemberships.Add(new OrganizationMembership
+            {
+                PublicId = Guid.NewGuid(),
+                AccountId = airlineInternalId,
+                OrganizationId = internalOrganizationId,
+                Kind = MembershipKind.InternalStaff,
+                Status = MembershipStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
             await setup.SaveChangesAsync(cancellationToken);
         }
         var afterRevoke = await ReadAsync(occPublicId, 0, 10);
         Assert.NotNull(afterRevoke);
         Assert.Empty(afterRevoke.Changes);
+        var airlineAfterRevoke = await ReadAsync(airlinePublicId, 0, 10);
+        Assert.NotNull(airlineAfterRevoke);
+        Assert.Empty(airlineAfterRevoke.Changes);
     }
 
     [Fact]

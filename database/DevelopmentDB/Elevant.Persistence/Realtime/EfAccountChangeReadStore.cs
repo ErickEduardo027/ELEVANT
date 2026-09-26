@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Realtime;
+using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,12 +31,29 @@ internal sealed class EfAccountChangeReadStore(
         var allowedStations = actor.StationScopes
             .Select(scope => scope.StationId)
             .ToArray();
+        var airlineOrganizationIds = actor.Memberships
+            .Where(membership => membership.Kind == MembershipKind.AirlineClient &&
+                membership.OrganizationType == OrganizationType.AirlineCustomer)
+            .Select(membership => membership.OrganizationId)
+            .ToArray();
+        var hasAirlinePortalRole = actor.Roles.Any(role =>
+            role.Code == "AIRLINE_CLIENT" && role.Portal == PortalKind.AirlinePortal);
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
                 (change.StationId == null || context.Stations.Any(station =>
                     station.Id == change.StationId &&
-                    allowedStations.Contains(station.PublicId))))
+                    allowedStations.Contains(station.PublicId))) &&
+                (change.Resource != "airline_operations" ||
+                    (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
+                        operation.PublicId == change.ResourceId &&
+                        context.Turnarounds.Any(turnaround =>
+                            turnaround.Id == operation.TurnaroundId &&
+                            context.Airlines.Any(airline =>
+                                airline.Id == turnaround.AirlineId &&
+                                context.Organizations.Any(organization =>
+                                    organization.Id == airline.OrganizationId &&
+                                    airlineOrganizationIds.Contains(organization.PublicId))))))))
             .OrderBy(change => change.Id)
             .Take(limit + 1)
             .Select(change => new AccountChangeData(

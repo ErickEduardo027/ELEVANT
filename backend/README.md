@@ -130,6 +130,16 @@ a 60 minutos y usa 15 por defecto.
   respectivamente, cuando se excede cada límite.
 - `/swagger/v1/swagger.json` publica el contrato HTTP en Development.
 
+En la rama de integración de Development, la asignación OCC, el inicio y la
+entrega del agente, y la decisión OCC escriben una invalidación
+`airline_operations` por miembro vigente del portal de esa aerolínea en la
+misma transacción del cambio. El destinatario se deriva en SQL de su rol y
+membresía, no de un identificador enviado por el navegador. La pista no
+contiene contenido operativo ni usa un scope de estación del cliente: el
+portal vuelve a consultar el `bootstrap` tenant-scoped y la API revalida la
+autorización al leer el feed. Los replays idempotentes no crean otra pista.
+Esto aún no cubre servicios, facturación, documentos ni historial completo.
+
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión

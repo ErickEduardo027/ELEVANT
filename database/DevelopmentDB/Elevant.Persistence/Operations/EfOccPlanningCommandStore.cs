@@ -395,6 +395,9 @@ internal sealed class EfOccPlanningCommandStore(
         };
         context.AuditEntries.Add(auditEntry);
 
+        await AirlineOperationChangeWriter.AddAsync(context,
+            scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
+
         await context.SaveChangesAsync(cancellationToken);
 
         context.Set<OperationServiceStatusEvent>().AddRange(

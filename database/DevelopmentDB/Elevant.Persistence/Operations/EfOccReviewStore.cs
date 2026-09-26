@@ -392,6 +392,8 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             }),
         };
         context.AuditEntries.Add(audit);
+        await AirlineOperationChangeWriter.AddAsync(context,
+            scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return OccReviewDecisionWriteResult.Success(new OccReviewDecisionWriteData(
             operation.PublicId, latest.PublicId, latest.Status.ToString(), outcome.ToString(),
