@@ -1,6 +1,6 @@
 # Solicitud comercial, contrato y gobernanza
 
-Este recorrido está implementado en la rama de Development. No demuestra una publicación en el VPS. La API y la base compartida siguen siendo la autoridad para los tres clientes.
+Este recorrido está implementado en una rama de funcionalidad basada en Development. No demuestra una publicación en el VPS. La API y la base compartida siguen siendo la autoridad para los tres clientes.
 
 ## Recorrido
 
