@@ -55,6 +55,22 @@ public static class ApplicationBuilderExtensions
         }
 
         app.UseRouting();
+        var hubOrigins = app.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        app.Use(async (context, next) =>
+        {
+            if (!HubOriginGuard.IsAllowed(
+                    context.Request.Path,
+                    context.WebSockets.IsWebSocketRequest,
+                    context.Request.Headers.Origin,
+                    hubOrigins))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.Headers.CacheControl = "no-store";
+                return;
+            }
+
+            await next(context);
+        });
         app.UseCors(ApiConfiguration.CorsPolicy);
         app.Use(async (context, next) =>
         {
