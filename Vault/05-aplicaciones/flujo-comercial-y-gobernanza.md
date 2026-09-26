@@ -3,12 +3,12 @@ id: flujo-comercial-y-gobernanza
 title: "Solicitud comercial y gobernanza"
 type: capability
 area: applications
-status: documented
+status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-26"
-verified_commit: pending
+verified_commit: "d11b9ee91b4ae73134860ca2c7a287271e7d30b1"
 sources:
   - docs/workflows/commercial-intake-and-governance.md
   - backend/Elevant.Api/Controllers/PublicCommercialRequestsController.cs
