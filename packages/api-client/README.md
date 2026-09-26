@@ -1,5 +1,14 @@
 # Cliente API compartido
 
+`getAccountChanges({ after?, limit? })` consulta el feed recuperable por
+cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan
+sin decodificarlo y vuelven a leerlo tras reconectar SignalR o al reanudar
+la aplicación. `ChangedV1` solo anuncia un cambio; los datos se consultan
+por REST con los permisos vigentes. El wrapper exige un cuerpo cerrado,
+rechaza cursores/parámetros inválidos y no permite introducir una cuenta,
+estación o tenant en la consulta. Esta capacidad se prepara en la rama de
+integración y no demuestra todavía un despliegue remoto.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores

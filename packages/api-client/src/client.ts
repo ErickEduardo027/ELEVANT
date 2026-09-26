@@ -1,4 +1,5 @@
 import {
+  getGetAccountChangesUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -28,6 +29,8 @@ import {
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
+  type AccountChangeListResponse,
+  type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
   type ChangePasswordRequest,
@@ -104,6 +107,7 @@ export type GetOccPlanningOptionsOptions = Omit<
 >;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -149,6 +153,10 @@ export interface OccAssignmentWithMetadata {
 }
 
 export interface ElevantApiClient {
+  getAccountChanges(
+    parameters?: GetAccountChangesParams,
+    options?: GetAccountChangesOptions,
+  ): Promise<AccountChangeListResponse>;
   createSession(
     request: CreateSessionRequest,
     options?: CreateSessionOptions,
@@ -532,6 +540,31 @@ function isOptionalNullable(
   predicate: (candidate: unknown) => boolean,
 ) {
   return value === undefined || value === null || predicate(value);
+}
+
+function isChangeCursor(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 &&
+    /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function isAccountChangeListResponse(
+  value: unknown, after: string | undefined, limit: number,
+): value is AccountChangeListResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["changes", "nextCursor", "hasMore"]) ||
+      !Array.isArray(value.changes) || value.changes.length > limit ||
+      typeof value.hasMore !== "boolean" ||
+      (value.hasMore && value.changes.length === 0)) return false;
+  if (!value.changes.every((item: unknown) =>
+    isRecord(item) &&
+    hasOnlyKeys(item, ["eventId", "cursor", "resource", "resourceId", "occurredAt"]) &&
+    isUuid(item.eventId) && isChangeCursor(item.cursor) &&
+    isNonEmptyString(item.resource) && item.resource.length <= 64 &&
+    /^[a-z0-9_-]+$/.test(item.resource) && isUuid(item.resourceId) &&
+    isDateTimeOffset(item.occurredAt))) return false;
+  const last = value.changes.at(-1) as { cursor: string } | undefined;
+  return last ? value.nextCursor === last.cursor :
+    (after === undefined ? value.nextCursor === null || value.nextCursor === undefined
+      : value.nextCursor === after);
 }
 
 function isOccStationResponse(value: unknown) {
@@ -1963,6 +1996,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   return Object.freeze({
+    async getAccountChanges(
+      parameters?: GetAccountChangesParams,
+      options?: GetAccountChangesOptions,
+    ) {
+      if (parameters !== undefined &&
+          (!isRecord(parameters) || !hasOnlyKeys(parameters, ["after", "limit"])))
+        throw new TypeError("Change feed parameters are invalid.");
+      const after = parameters?.after;
+      const limit = parameters?.limit ?? 50;
+      if (after !== undefined && !isChangeCursor(after))
+        throw new TypeError("Change feed cursor is invalid.");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new TypeError("Change feed limit must be an integer from 1 to 100.");
+      const result = await execute(getGetAccountChangesUrl(parameters),
+        { ...options, method: "GET" }, true);
+      if (!isAccountChangeListResponse(result.data, after, limit))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async createSession(request: CreateSessionRequest, options?: CreateSessionOptions) {
       const credentials = validatedSessionRequest(request);
       const result = await execute(

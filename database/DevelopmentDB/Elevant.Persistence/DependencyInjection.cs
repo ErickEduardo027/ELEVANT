@@ -76,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();
         services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
         services.AddScoped<IAccountChangeDispatcherStore, EfAccountChangeDispatcherStore>();
+        services.AddScoped<IAccountChangeReadStore, EfAccountChangeReadStore>();
 
         services
             .AddHealthChecks()

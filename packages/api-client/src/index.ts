@@ -1,6 +1,7 @@
 export {
   createElevantApiClient,
   type CreateSessionOptions,
+  type GetAccountChangesOptions,
   type ChangePasswordOptions,
   type AssignOccPlanningOperationOptions,
   type ElevantApiClient,
@@ -29,6 +30,9 @@ export {
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
+  type AccountChangeResponse,
+  type AccountChangeListResponse,
+  type GetAccountChangesParams,
   SessionMembershipKind,
   SessionOrganizationType,
   SessionPortal,

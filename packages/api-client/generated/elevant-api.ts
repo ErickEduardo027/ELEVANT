@@ -5,6 +5,21 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
+export interface AccountChangeResponse {
+  eventId: string;
+  cursor: string;
+  resource: string;
+  resourceId: string;
+  occurredAt: string;
+}
+
+export interface AccountChangeListResponse {
+  changes: AccountChangeResponse[];
+  /** @nullable */
+  nextCursor?: string | null;
+  hasMore: boolean;
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -886,6 +901,11 @@ export interface TransitionRampOperationServiceRequest {
   note?: string | null;
 }
 
+export type GetAccountChangesParams = {
+after?: string;
+limit?: number;
+};
+
 export type GetOccPlanningSnapshotParams = {
 stationId?: string;
 date?: string;
@@ -902,6 +922,41 @@ stationId: string;
 export type GetOperationalConversationsParams = {
 stationId?: string;
 };
+
+export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/changes?${stringifiedParams}` : `/api/v1/changes`
+}
+
+export const getAccountChanges = async (params?: GetAccountChangesParams, options?: RequestInit): Promise<AccountChangeListResponse> => {
+
+  const res = await fetch(getGetAccountChangesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AccountChangeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
 
 export const getGetAirlinePortalBootstrapUrl = () => {
 

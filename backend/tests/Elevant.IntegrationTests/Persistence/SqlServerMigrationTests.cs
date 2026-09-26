@@ -3836,6 +3836,92 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task AccountChangeReadRechecksRecipientAndRevokedStationScope()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var occPublicId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentPublicId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        long occInternalId;
+        long stationInternalId;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            occInternalId = await setup.Users.Where(account => account.PublicId == occPublicId)
+                .Select(account => account.Id).SingleAsync(cancellationToken);
+            var agentInternalId = await setup.Users.Where(account => account.PublicId == agentPublicId)
+                .Select(account => account.Id).SingleAsync(cancellationToken);
+            stationInternalId = await setup.Stations.Where(station => station.Code == "PUJ")
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            var now = DateTimeOffset.UtcNow;
+            foreach (var (recipient, resource) in new[]
+            {
+                (occInternalId, "notifications"),
+                (occInternalId, "operation_messages"),
+                (agentInternalId, "notifications"),
+            })
+            {
+                setup.AccountChanges.Add(new AccountChange
+                {
+                    PublicId = Guid.NewGuid(),
+                    OutboxPublicId = Guid.NewGuid(),
+                    RecipientAccountId = recipient,
+                    StationId = stationInternalId,
+                    Resource = resource,
+                    ResourceId = Guid.NewGuid(),
+                    OccurredAt = now,
+                    CreatedAt = now,
+                });
+            }
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+        async Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+                .ReadAsync(accountId, after, limit, cancellationToken);
+        }
+
+        var first = await ReadAsync(occPublicId, 0, 1);
+        Assert.NotNull(first);
+        Assert.Single(first.Changes);
+        Assert.True(first.HasMore);
+        var next = await ReadAsync(occPublicId, first.Changes[0].Sequence, 10);
+        Assert.NotNull(next);
+        Assert.Single(next.Changes);
+        Assert.False(next.HasMore);
+        var agent = await ReadAsync(agentPublicId, 0, 10);
+        Assert.NotNull(agent);
+        Assert.Single(agent.Changes);
+        Assert.NotEqual(first.Changes[0].EventId, agent.Changes[0].EventId);
+
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var scope = await setup.AccountStationScopes.SingleAsync(item =>
+                item.AccountId == occInternalId && item.StationId == stationInternalId,
+                cancellationToken);
+            scope.RevokedAt = DateTimeOffset.UtcNow;
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        var afterRevoke = await ReadAsync(occPublicId, 0, 10);
+        Assert.NotNull(afterRevoke);
+        Assert.Empty(afterRevoke.Changes);
+    }
+
+    [Fact]
     public async Task RampOperationsReadStoreDerivesAgentAndEnforcesAssignmentAndStationScope()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
