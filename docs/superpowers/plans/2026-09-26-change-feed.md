@@ -94,8 +94,8 @@
 **Interfaces:**
 - Produces: `GET /api/v1/changes?after=<opaque>&limit=1..100`; result `{changes:[{eventId,cursor,resource,resourceId,occurredAt}],nextCursor,hasMore}`. The server ignores no scope: it resolves the current account and active station authorization before returning rows.
 
-- [ ] Write failing API tests for first page, continuation, malformed cursor, account separation and revoked station; no raw internal ID in JSON.
-- [ ] Run focused tests; expect route 404.
-- [ ] Implement versioned endpoint, strict cursor codec and authorized SQL query with stable dispatcher sequence.
-- [ ] Regenerate OpenAPI/client, run focused and full backend/API-client tests; expect passing and no secret-bearing output.
-- [ ] Commit endpoint, generated contract, tests and Vault note as `feat(realtime): expose scoped account change cursor`.
+- [x] Write failing API tests for first page, continuation, malformed cursor, account separation and revoked station; no raw internal ID in JSON.
+- [x] Run focused tests; expect a missing read contract or route failure before implementation.
+- [x] Implement versioned endpoint, strict cursor codec and authorized SQL query with stable dispatcher sequence.
+- [x] Regenerate OpenAPI/client, run focused and full backend/API-client tests; expect passing and no secret-bearing output.
+- [x] Commit endpoint, generated contract and tests; record the verified behavior and deployment limit in a reachable Vault note.

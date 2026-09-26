@@ -40,8 +40,10 @@ datos locales no son contratos ni estado de negocio.
 SQL Server es la autoridad. Cada comando de negocio persiste su estado y un
 evento de outbox en la misma transacción. Un trabajador crea un feed durable
 por destinatario autorizado y envía por `/hubs/operations` una invalidación
-`ChangedV1` sin contenido sensible (`eventId`, `cursor`, `resource`,
-`resourceId`). `GET /api/v1/changes?after&limit` entrega el feed paginado con
+`ChangedV1` sin contenido sensible (solo `eventId`); el cursor y el recurso
+se obtienen mediante lectura HTTP autorizada, para no revelar el alcance de
+una estación revocada en una conexión WebSocket aún abierta.
+`GET /api/v1/changes?after&limit` entrega el feed paginado con
 cursor opaco. Los clientes reconsultan los recursos en HTTP tras el aviso,
 al conectar/reconectar, al recuperar foco y mediante polling acotado de
 respaldo; ignoran avisos duplicados o fuera de orden. Se revalida el acceso

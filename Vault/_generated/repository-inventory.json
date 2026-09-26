@@ -346,6 +346,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/04-arquitectura/feed-de-cambios-operativos.md",
+        "id": "arquitectura-feed-cambios-operativos",
+        "title": "Feed de cambios operativos",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/04-arquitectura/integraciones-externas.md",
         "id": "arquitectura-integraciones-externas",
         "title": "Integraciones externas",
@@ -1023,13 +1033,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "2c6ca0a0b124fb646dac8ba89931ec44662618bba1d93f18e26820a19351c968",
+        "sha256": "8ce7559a5d68a3206fb80dfc0d9c28d8e0df7280b94b48b0543dd576134d843d",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "18e1242ec0bbab6fef67c4fa2250ca8c0edf9d733a78dcb6054bb71f28a13686",
+        "sha256": "5a3158a0240c459e9d36664fa8fe31e1060fe831dd6f395412cb8ada4d9bd94b",
         "title": null,
         "version": null
       }
@@ -1094,6 +1104,12 @@
         "name": "V1_10_DevelopmentCredentialActivation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260925055507_V1_10_DevelopmentCredentialActivation.cs",
         "sha256": "9b85ee3492ae12a457dfd224e31cf3c556d76b3bf17a9f552b790d82c9eb4687"
+      },
+      {
+        "id": "20260926062846",
+        "name": "AccountChangeFeed",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926062846_AccountChangeFeed.cs",
+        "sha256": "b828d98296c8f50b6046ffb56ed2b484dee72358a735548e242500ac7b3ecfb5"
       }
     ],
     "manifestContracts": [
