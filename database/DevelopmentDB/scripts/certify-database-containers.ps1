@@ -445,7 +445,7 @@ function Invoke-Release {
             '--env', "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD=$($passwords.DemoHumanResources)",
             '--env', "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD=$($passwords.DemoContracts)",
             '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
-        '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)"
+            '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)"
         )
     }
     $arguments += @($ReleaseImage, $Command)
@@ -926,7 +926,7 @@ VALUES (N'CERT-SENTINEL', N'Certification Sentinel', N'Certification Sentinel', 
     )
     Invoke-DockerExpectedFailure `
         -FailureMessage 'Development seed unexpectedly accepted a shared account secret.' `
-        -ExpectedErrorPattern 'must use six distinct passwords' `
+        -ExpectedErrorPattern 'Synthetic Development accounts must use distinct passwords' `
         -Arguments @(
         'run', '--rm',
         '--network', $networkName,
@@ -956,7 +956,8 @@ WHERE [normalized_email] IN (
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
     N'GESTION.HUMANA@DEV.ELEVANT.TEST',
     N'CONTRATOS@DEV.ELEVANT.TEST',
-    N'FINANZAS@DEV.ELEVANT.TEST'
+    N'FINANZAS@DEV.ELEVANT.TEST',
+    N'SUPER.ADMIN@DEV.ELEVANT.TEST'
 );
 '@
     $adminCredentialStateQuery = @'
@@ -977,7 +978,8 @@ WHERE [normalized_email] IN (
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
     N'GESTION.HUMANA@DEV.ELEVANT.TEST',
     N'CONTRATOS@DEV.ELEVANT.TEST',
-    N'FINANZAS@DEV.ELEVANT.TEST'
+    N'FINANZAS@DEV.ELEVANT.TEST',
+    N'SUPER.ADMIN@DEV.ELEVANT.TEST'
 );
 '@
 
