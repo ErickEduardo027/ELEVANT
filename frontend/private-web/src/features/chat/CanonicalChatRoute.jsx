@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { OccStationPicker } from '../admin-occ/OccQueueState';
 import { loadOperationalConversations, loadOperationalMessages, sendOperationalMessage } from '../../services/operationalCommunicationService';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -27,6 +28,18 @@ export default function CanonicalChatRoute() {
   const [sendError, setSendError] = useState('');
   const requestedOperation = params.get('operationId');
   const selectedOperation = conversations.items.find(item => item.operationId === requestedOperation) ?? null;
+
+  useEffect(() => {
+    if (!UUID.test(session?.accountId ?? '')) return undefined;
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('operation_messages')) {
+        setListRevision(value => value + 1);
+        setMessageRevision(value => value + 1);
+      }
+    });
+    void observer.start();
+    return () => { void observer.stop(); };
+  }, [session?.accountId]);
 
   useEffect(() => {
     if (!stationScopes.some(scope => scope.stationId === stationId)) setStationId(stationScopes[0]?.stationId ?? '');
@@ -103,7 +116,7 @@ export default function CanonicalChatRoute() {
 
   return <main className="mx-auto max-w-[1440px] space-y-5 p-1 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
-      <div><h1 className="text-xl font-semibold">Chat operativo</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Mensajes persistentes por operación entre OCC y agentes asignados. Actualización automática cada 10 segundos.</p></div>
+      <div><h1 className="text-xl font-semibold">Chat operativo</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Mensajes persistentes por operación entre OCC y agentes asignados. Los cambios se recuperan al reconectar; la consulta periódica sigue activa.</p></div>
       {stationScopes.length > 0 && <OccStationPicker stationScopes={stationScopes} stationId={stationId} onChange={value => { if (!pendingCommand) { setStationId(value); setParams({}); } }} />}
     </header>
     {conversations.status === 'empty-scope' ? <p role="status">Tu cuenta no tiene una estación OCC autorizada.</p> :

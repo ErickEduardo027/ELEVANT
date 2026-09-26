@@ -52,6 +52,16 @@ El módulo incluye estados de carga, vacío, error recuperable, sesión expirada
 
 ## Frontera de seguridad
 
+Las rutas canónicas `/admin-occ/chat` y `/admin-occ/notifications` recuperan
+mensajes y avisos persistentes desde la API. En la rama de integración de
+Development también escuchan `ChangedV1` en los hubs autorizados: el aviso
+solo dispara `GET /api/v1/changes`, y el recurso se vuelve a consultar por REST.
+El cursor está en memoria por pantalla, sin reemplazar la autorización del
+servidor. Al reconectar, volver a enfocar la pestaña o recuperar la red se
+reconcilia el feed; una consulta cada 25 segundos respalda WebSocket y los
+sondeos existentes de las pantallas permanecen. No implica entrega con la
+pestaña cerrada ni garantiza la latencia hasta la prueba real del VPS.
+
 La ruta `/admin-occ/review` consume exclusivamente la API canónica de revisión:
 cola limitada por la estación del actor, detalle de la última entrega y decisión
 individual. Muestra checklist, servicios, incidencias y nota del agente sin
