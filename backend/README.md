@@ -137,10 +137,10 @@ a 60 minutos y usa 15 por defecto.
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
 - `/swagger/v1/swagger.json` publica el contrato HTTP en Development.
-- `GET /api/v1/commercial/affiliation-options` publica a visitantes hasta 50
-  estaciones y 100 servicios activos para preparar una solicitud de
-  afiliación. No incluye tarifas ni concede acceso al portal; el envío de la
-  solicitud sigue fuera de este primer endpoint.
+- `GET /api/v1/commercial/affiliation-options` conserva una lectura acotada
+  de estaciones activas y servicios publicados para consumidores anteriores.
+  El nuevo recorrido usa `GET /api/v1/public/commercial-catalog` y
+  `POST /api/v1/public/commercial-requests`; la solicitud no crea credenciales.
 
 La lectura `GET /api/v1/airline/portal/contracts?page&limit` deriva una sola
 aerolínea de la membresía vigente de la cuenta, sin aceptar un identificador

@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-26"
-verified_commit: "d11b9ee91b4ae73134860ca2c7a287271e7d30b1"
+verified_commit: "9260622a61b6b1d32576e7559ec3e31f9f6aaf32"
 sources:
   - docs/workflows/commercial-intake-and-governance.md
   - backend/Elevant.Api/Controllers/PublicCommercialRequestsController.cs

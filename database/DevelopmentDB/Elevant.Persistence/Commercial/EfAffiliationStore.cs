@@ -19,8 +19,8 @@ internal sealed class EfAffiliationStore(ElevantDbContext context) : IAffiliatio
             .ToArrayAsync(cancellationToken);
 
         var services = await context.ServiceDefinitions.AsNoTracking()
-            .Where(service => service.IsActive)
-            .OrderBy(service => service.Code)
+            .Where(service => service.IsActive && service.IsPublic)
+            .OrderBy(service => service.DisplayOrder).ThenBy(service => service.Code)
             .Take(100)
             .Select(service => new AffiliationServiceOptionData(
                 service.PublicId, service.Code, service.Name,

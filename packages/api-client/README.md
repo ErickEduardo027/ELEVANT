@@ -1,10 +1,11 @@
 # Cliente API compartido
 
-El snapshot OpenAPI de la rama de integración incluye
-`GetAffiliationOptions`: una lectura anónima y acotada de estaciones y
-servicios activos, sin precios. Public Web todavía no envía una afiliación a
-la API; la operación de escritura se añadirá junto con su persistencia y
-validación de cuenta pendiente.
+El snapshot OpenAPI incluye `GetAffiliationOptions` como lectura anónima
+acotada de estaciones activas y servicios publicados, sin precios. El flujo
+público actual usa `GetPublicCommercialCatalog` y `SubmitCommercialRequest`
+para solicitar servicios sin elegir contraseña. Contratos aprueba o rechaza y
+el superadministrador crea las credenciales manualmente. Los endpoints de
+gobernanza, catálogo administrado y borradores también están en el snapshot.
 
 `getAccountChanges({ after?, limit? })` consulta el feed recuperable por
 cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan

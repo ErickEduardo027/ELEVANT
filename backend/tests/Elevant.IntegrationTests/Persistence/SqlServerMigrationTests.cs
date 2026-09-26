@@ -349,8 +349,11 @@ public sealed class SqlServerMigrationTests
             var station = await change.Stations.SingleAsync(item => item.Code == "PUJ", cancellationToken);
             var service = await change.ServiceDefinitions.SingleAsync(
                 item => item.Code == "BAGGAGE", cancellationToken);
+            var passengerBridge = await change.ServiceDefinitions.SingleAsync(
+                item => item.Code == "PASSENGER-BRIDGE", cancellationToken);
             station.IsActive = false;
             service.IsActive = false;
+            passengerBridge.IsPublic = true;
             await change.SaveChangesAsync(cancellationToken);
         }
 
@@ -388,6 +391,9 @@ public sealed class SqlServerMigrationTests
 
         await using (var change = CreateContext(database.ConnectionString))
         {
+            var baggage = await change.ServiceDefinitions.SingleAsync(
+                item => item.Code == "BAGGAGE", cancellationToken);
+            baggage.IsPublic = true;
             var airports = Enumerable.Range(0, 60).Select(index => new Airport
             {
                 IataCode = $"T{index:D2}",
@@ -412,6 +418,7 @@ public sealed class SqlServerMigrationTests
                 Name = $"Test service {index:D3}",
                 DefaultBillingUnit = "operation",
                 IsActive = true,
+                IsPublic = true,
             }));
             await change.SaveChangesAsync(cancellationToken);
         }
