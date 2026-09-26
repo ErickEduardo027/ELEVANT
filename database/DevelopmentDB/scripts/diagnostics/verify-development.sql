@@ -153,7 +153,7 @@ WHERE ([code] = N'AVIAM' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-
    OR ([code] = N'DEMO-AIR' AND [public_id] = CONVERT(uniqueidentifier, N'10000000-0000-7000-8000-000000000002'));
 
 INSERT INTO @seed_checks
-SELECT N'persons-natural-keys', COUNT_BIG(*), 6
+SELECT N'persons-natural-keys', COUNT_BIG(*), 7
 FROM [iam].[persons]
 WHERE [primary_email] IN (
     N'admin.occ@dev.elevant.test',
@@ -161,11 +161,12 @@ WHERE [primary_email] IN (
     N'airline.client@dev.elevant.test',
     N'gestion.humana@dev.elevant.test',
     N'contratos@dev.elevant.test',
-    N'finanzas@dev.elevant.test'
+    N'finanzas@dev.elevant.test',
+    N'super.admin@dev.elevant.test'
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 6
+SELECT N'accounts-deterministic-ids', COUNT_BIG(*), 7
 FROM [iam].[accounts]
 WHERE [public_id] IN (
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000001'),
@@ -173,11 +174,12 @@ WHERE [public_id] IN (
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000003'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000004'),
     CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000005'),
-    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000006')
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000006'),
+    CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000007')
 );
 
 INSERT INTO @seed_checks
-SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 6
+SELECT N'accounts-hardened-credentials', COUNT_BIG(*), 7
 FROM [iam].[accounts]
 WHERE [normalized_email] IN (
     N'ADMIN.OCC@DEV.ELEVANT.TEST',
@@ -185,11 +187,28 @@ WHERE [normalized_email] IN (
     N'AIRLINE.CLIENT@DEV.ELEVANT.TEST',
     N'GESTION.HUMANA@DEV.ELEVANT.TEST',
     N'CONTRATOS@DEV.ELEVANT.TEST',
-    N'FINANZAS@DEV.ELEVANT.TEST'
+    N'FINANZAS@DEV.ELEVANT.TEST',
+    N'SUPER.ADMIN@DEV.ELEVANT.TEST'
 )
   AND [lockout_enabled] = CONVERT(bit, 1)
   AND NULLIF([password_hash], N'') IS NOT NULL
   AND NULLIF([security_stamp], N'') IS NOT NULL;
+
+INSERT INTO @seed_checks
+SELECT N'superadmin-governance-access', COUNT_BIG(*), 1
+FROM [iam].[accounts] AS accounts
+INNER JOIN [iam].[account_roles] AS account_roles ON account_roles.[user_id] = accounts.[id]
+INNER JOIN [iam].[roles] AS roles ON roles.[id] = account_roles.[role_id]
+INNER JOIN [iam].[organization_memberships] AS memberships ON memberships.[account_id] = accounts.[id]
+INNER JOIN [iam].[organizations] AS organizations ON organizations.[id] = memberships.[organization_id]
+WHERE accounts.[normalized_email] = N'SUPER.ADMIN@DEV.ELEVANT.TEST'
+  AND accounts.[public_id] = CONVERT(uniqueidentifier, N'40000000-0000-7000-8000-000000000007')
+  AND roles.[normalized_name] = N'SUPERADMIN'
+  AND roles.[portal] = N'BackOffice'
+  AND roles.[user_type] = N'superadmin'
+  AND organizations.[code] = N'AVIAM'
+  AND memberships.[kind] = N'InternalStaff'
+  AND memberships.[status] = N'Active';
 
 INSERT INTO @seed_checks
 SELECT N'new-personas-role-station-scope', COUNT_BIG(*), 2
