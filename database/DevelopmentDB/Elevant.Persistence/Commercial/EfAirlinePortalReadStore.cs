@@ -10,6 +10,89 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>Applies tenant and contract-station predicates in SQL for portal bootstrap.</summary>
 internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirlinePortalReadStore
 {
+    public async Task<AirlineContractPageData?> GetContractsAsync(
+        Guid organizationId, int page, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1 || limit is < 1 or > 50)
+            throw new ArgumentOutOfRangeException(nameof(page));
+
+        var airlineId = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive
+            select (long?)airline.Id).SingleOrDefaultAsync(cancellationToken);
+        if (airlineId is null) return null;
+
+        var rows = await context.Contracts.AsNoTracking()
+            .Where(contract => contract.AirlineId == airlineId &&
+                context.ContractVersions.Any(version => version.ContractId == contract.Id &&
+                    (version.Status == ContractVersionStatus.Approved ||
+                     version.Status == ContractVersionStatus.Superseded)))
+            .OrderBy(contract => contract.ContractCode).ThenBy(contract => contract.Id)
+            .Skip((page - 1) * limit).Take(limit + 1)
+            .Select(contract => new
+            {
+                contract.Id, contract.PublicId, contract.ContractCode,
+                contract.Status, contract.SignedOn, contract.TerminatedOn,
+            }).ToArrayAsync(cancellationToken);
+        var selected = rows.Take(limit).ToArray();
+        var contractIds = selected.Select(contract => contract.Id).ToArray();
+        var versions = await context.ContractVersions.AsNoTracking()
+            .Where(version => contractIds.Contains(version.ContractId) &&
+                (version.Status == ContractVersionStatus.Approved ||
+                 version.Status == ContractVersionStatus.Superseded))
+            .OrderByDescending(version => version.VersionNumber)
+            .Select(version => new
+            {
+                version.Id, version.PublicId, version.ContractId, version.VersionNumber,
+                version.ValidFrom, version.ValidTo, version.CurrencyCode,
+            }).ToArrayAsync(cancellationToken);
+        var versionIds = versions.Select(version => version.Id).ToArray();
+        var stations = await (
+            from link in context.Set<ContractVersionStation>().AsNoTracking()
+            join station in context.Stations.AsNoTracking()
+                on link.StationId equals station.Id
+            where versionIds.Contains(link.ContractVersionId)
+            orderby station.Code
+            select new
+            {
+                link.ContractVersionId, station.PublicId, station.Code, station.Name,
+            }).ToArrayAsync(cancellationToken);
+        var rates = await (
+            from rate in context.ContractServiceRates.AsNoTracking()
+            join service in context.ServiceDefinitions.AsNoTracking()
+                on rate.ServiceDefinitionId equals service.Id
+            where versionIds.Contains(rate.ContractVersionId)
+            orderby service.Code
+            select new
+            {
+                rate.ContractVersionId, rate.PublicId, service.Code, service.Name,
+                rate.BillingUnit, rate.UnitPrice, rate.MinimumQuantity,
+            }).ToArrayAsync(cancellationToken);
+
+        return new AirlineContractPageData(
+            selected.Select(contract => new AirlineContractData(
+                contract.PublicId, contract.ContractCode, contract.Status.ToString(),
+                contract.SignedOn, contract.TerminatedOn,
+                versions.Where(version => version.ContractId == contract.Id)
+                    .Select(version => new AirlineContractVersionData(
+                        version.PublicId, version.VersionNumber, version.ValidFrom, version.ValidTo,
+                        version.CurrencyCode,
+                        stations.Where(station => station.ContractVersionId == version.Id)
+                            .Select(station => new AirlineContractStationData(
+                                station.PublicId, station.Code, station.Name)).ToArray(),
+                        rates.Where(rate => rate.ContractVersionId == version.Id)
+                            .Select(rate => new AirlineContractRateData(
+                                rate.PublicId, rate.Code, rate.Name, rate.BillingUnit,
+                                rate.UnitPrice, rate.MinimumQuantity)).ToArray()))
+                    .ToArray())).ToArray(),
+            rows.Length > limit);
+    }
+
     public async Task<AirlinePortalBootstrapData?> GetBootstrapAsync(
         Guid organizationId,
         DateOnly onDate,

@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<CreateSessionHandler>();
         services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
+        services.AddScoped<GetAirlineContractsHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();

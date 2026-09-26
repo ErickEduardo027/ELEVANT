@@ -130,6 +130,13 @@ a 60 minutos y usa 15 por defecto.
   respectivamente, cuando se excede cada límite.
 - `/swagger/v1/swagger.json` publica el contrato HTTP en Development.
 
+La lectura `GET /api/v1/airline/portal/contracts?page&limit` deriva una sola
+aerolínea de la membresía vigente de la cuenta, sin aceptar un identificador
+de tenant del navegador. Devuelve páginas de hasta 50 contratos con versiones
+aprobadas, estaciones y tarifas. Conserva las versiones aprobadas aunque el
+contrato venza, pero nunca expone borradores; el portal las consulta en modo
+solo lectura. No crea ni aprueba contratos.
+
 En la rama de integración de Development, la asignación OCC, el inicio y la
 entrega del agente, y la decisión OCC escriben una invalidación
 `airline_operations` por miembro vigente del portal de esa aerolínea en la

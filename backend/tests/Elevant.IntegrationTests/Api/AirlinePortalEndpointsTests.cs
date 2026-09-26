@@ -37,6 +37,58 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task ContractsRequireBearerAndRejectInvalidPaging()
+    {
+        await using var application = CreateApplication(CreateActor());
+        using var anonymous = application.CreateClient();
+        using var unauthorized = await anonymous.GetAsync(
+            "/api/v1/airline/portal/contracts", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        Assert.Contains("no-store", unauthorized.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+
+        using var client = CreateAuthenticatedClient(application);
+        using var badPage = await client.GetAsync(
+            "/api/v1/airline/portal/contracts?page=0", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
+        using var badLimit = await client.GetAsync(
+            "/api/v1/airline/portal/contracts?limit=51", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badLimit.StatusCode);
+    }
+
+    [Fact]
+    public async Task ContractsUseLiveAirlineTenantAndOnlyApprovedVersions()
+    {
+        var state = new StubState(CreateActor())
+        {
+            Contracts = new AirlineContractPageData(
+                [new AirlineContractData(Guid.NewGuid(), "DEV-CONTRACT-0001", "Expired",
+                    new DateOnly(2026, 1, 1), null,
+                    [new AirlineContractVersionData(Guid.NewGuid(), 1,
+                        new DateOnly(2026, 1, 1), new DateOnly(2026, 8, 31), "USD",
+                        [new AirlineContractStationData(StationId, "PUJ", "Punta Cana")],
+                        [new AirlineContractRateData(Guid.NewGuid(), "BAG", "Baggage", "operation", 125.50m, 1m)])])],
+                false),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            "/api/v1/airline/portal/contracts?page=1&limit=10", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(1, state.QueriedPage);
+        Assert.Equal(10, state.QueriedLimit);
+        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("DEV-CONTRACT-0001", json.RootElement.GetProperty("contracts")[0].GetProperty("code").GetString());
+        Assert.Equal(1, json.RootElement.GetProperty("contracts")[0].GetProperty("approvedVersions").GetArrayLength());
+        Assert.Equal(125.50m, json.RootElement.GetProperty("contracts")[0]
+            .GetProperty("approvedVersions")[0].GetProperty("rates")[0].GetProperty("unitPrice").GetDecimal());
+    }
+
+    [Fact]
     public async Task BootstrapUsesServerTenantAndReturnsContractStationOnly()
     {
         var state = new StubState(CreateActor())
@@ -83,6 +135,11 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             "/api/v1/airline/portal/bootstrap", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
+
+        using var contractResponse = await client.GetAsync(
+            "/api/v1/airline/portal/contracts", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, contractResponse.StatusCode);
         Assert.Null(state.QueriedOrganizationId);
     }
 
@@ -137,7 +194,13 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     {
         public AirlinePortalBootstrapData? Bootstrap { get; init; }
 
+        public AirlineContractPageData? Contracts { get; init; }
+
         public Guid? QueriedOrganizationId { get; private set; }
+
+        public int? QueriedPage { get; private set; }
+
+        public int? QueriedLimit { get; private set; }
 
         public Task<ActorContext?> ResolveAsync(Guid accountId, CancellationToken cancellationToken = default) =>
             Task.FromResult<ActorContext?>(actor);
@@ -147,6 +210,15 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         {
             QueriedOrganizationId = organizationId;
             return Task.FromResult(Bootstrap);
+        }
+
+        public Task<AirlineContractPageData?> GetContractsAsync(
+            Guid organizationId, int page, int limit, CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedPage = page;
+            QueriedLimit = limit;
+            return Task.FromResult(Contracts);
         }
     }
 }

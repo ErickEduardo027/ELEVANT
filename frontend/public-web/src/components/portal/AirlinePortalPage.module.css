@@ -57,4 +57,14 @@
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .previewBar { width: 100%; max-width: 23rem; height: .45rem; margin-top: .8rem; border-radius: 1rem; background: #dce6f0; }
 .previewBar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1c63d6, #5dc6ef); }
+.contractGrid { display: grid; gap: 1rem; }
+.contractVersion { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #dce6f0; }
+.contractVersion h3 { margin: 0 0 .45rem; color: #123f81; font-size: .95rem; }
+.contractVersion p { margin: .35rem 0; color: #435c76; font-size: .82rem; }
+.contractRateList { display: grid; gap: .4rem; margin-top: .8rem; }
+.contractRateList > div { display: grid; grid-template-columns: minmax(11rem, 2fr) minmax(8rem, 1fr) minmax(9rem, 1fr); gap: .7rem; padding: .65rem; border-radius: .45rem; background: #f3f7fc; font-size: .78rem; }
+.contractRateList span { color: #435c76; }
+.loadMore { justify-self: center; padding: .7rem 1rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
+.loadMore:disabled { cursor: wait; opacity: .65; }
+@media (max-width: 38rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } }
 @media (max-width: 38rem) { .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } }

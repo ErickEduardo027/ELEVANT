@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createElevantApiClient, type AirlinePortalBootstrapResponse } from "../src";
+import { createElevantApiClient, type AirlineContractPageResponse,
+  type AirlinePortalBootstrapResponse } from "../src";
 
 const bootstrap: AirlinePortalBootstrapResponse = {
   airlineId: "20000000-0000-7000-8000-000000000001",
@@ -78,5 +79,59 @@ describe("airline portal bootstrap client", () => {
     await expect(client.getAirlinePortalBootstrap()).rejects.toMatchObject({
       kind: "malformed-response",
     });
+  });
+});
+
+const contracts: AirlineContractPageResponse = {
+  page: 1,
+  limit: 20,
+  hasMore: false,
+  contracts: [{
+    id: "60000000-0000-7000-8000-000000000002",
+    code: "DEV-CONTRACT-0001",
+    status: "Active",
+    signedOn: "2026-01-01",
+    terminatedOn: null,
+    approvedVersions: [{
+      id: "60000000-0000-7000-8000-000000000003",
+      versionNumber: 1,
+      validFrom: "2026-01-01",
+      validTo: "2026-12-31",
+      currencyCode: "USD",
+      stations: [{ id: "20000000-0000-7000-8000-000000000003", code: "PUJ", name: "Punta Cana" }],
+      rates: [{ id: "60000000-0000-7000-8000-000000000004", serviceCode: "BAG",
+        serviceName: "Baggage", billingUnit: "operation", unitPrice: 125.50,
+        minimumQuantity: 1 }],
+    }],
+  }],
+};
+
+describe("airline contract client", () => {
+  it("uses the authenticated tenant and bounded paging only", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), authorization: new Headers(init?.headers).get("authorization") });
+        return new Response(JSON.stringify(contracts), { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlineContracts({ page: 1, limit: 20 })).resolves.toEqual(contracts);
+    expect(requests).toEqual([{ url: "https://api.example.test/api/v1/airline/portal/contracts?page=1&limit=20",
+      authorization: "Bearer airline-token" }]);
+    await expect(client.getAirlineContracts({ page: 0 })).rejects.toBeInstanceOf(TypeError);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("rejects malformed rate and unexpected tenant fields", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...contracts,
+        contracts: [{ ...contracts.contracts[0], organizationId: crypto.randomUUID() }],
+      }), { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getAirlineContracts()).rejects.toMatchObject({ kind: "malformed-response" });
   });
 });

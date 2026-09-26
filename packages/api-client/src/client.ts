@@ -1,5 +1,6 @@
 import {
   getGetAccountChangesUrl,
+  getGetAirlineContractsUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -30,6 +31,8 @@ import {
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
+  type AirlineContractPageResponse,
+  type GetAirlineContractsParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
@@ -97,6 +100,7 @@ export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -169,6 +173,10 @@ export interface ElevantApiClient {
   getAirlinePortalBootstrap(
     options?: GetAirlinePortalBootstrapOptions,
   ): Promise<AirlinePortalBootstrapResponse>;
+  getAirlineContracts(
+    parameters?: GetAirlineContractsParams,
+    options?: GetAirlineContractsOptions,
+  ): Promise<AirlineContractPageResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1583,6 +1591,48 @@ function isAirlinePortalBootstrapResponse(
       isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
 }
 
+function isAirlineContractPageResponse(value: unknown): value is AirlineContractPageResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
+    isInt32(value.page) && value.page >= 1 &&
+    isInt32(value.limit) && value.limit >= 1 && value.limit <= 50 &&
+    typeof value.hasMore === "boolean" &&
+    Array.isArray(value.contracts) && value.contracts.length <= value.limit &&
+    value.contracts.every((contract) => isRecord(contract) &&
+      hasOnlyKeys(contract, ["id", "code", "status", "signedOn", "terminatedOn", "approvedVersions"]) &&
+      isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
+      isOptionalNullable(contract.signedOn, isDateOnly) &&
+      isOptionalNullable(contract.terminatedOn, isDateOnly) &&
+      Array.isArray(contract.approvedVersions) && contract.approvedVersions.length > 0 &&
+      contract.approvedVersions.every((version) => isRecord(version) &&
+        hasOnlyKeys(version, ["id", "versionNumber", "validFrom", "validTo", "currencyCode", "stations", "rates"]) &&
+        isUuid(version.id) && isInt32(version.versionNumber) && version.versionNumber > 0 &&
+        isDateOnly(version.validFrom) && isOptionalNullable(version.validTo, isDateOnly) &&
+        typeof version.currencyCode === "string" && /^[A-Z]{3}$/.test(version.currencyCode) &&
+        Array.isArray(version.stations) && version.stations.every((station) =>
+          isRecord(station) && hasOnlyKeys(station, ["id", "code", "name"]) &&
+          isUuid(station.id) && isNonEmptyString(station.code) && isNonEmptyString(station.name)) &&
+        Array.isArray(version.rates) && version.rates.every((rate) =>
+          isRecord(rate) && hasOnlyKeys(rate, ["id", "serviceCode", "serviceName", "billingUnit",
+            "unitPrice", "minimumQuantity"]) &&
+          isUuid(rate.id) && isNonEmptyString(rate.serviceCode) &&
+          isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+          isFiniteNumber(rate.unitPrice) && rate.unitPrice >= 0 &&
+          isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
+}
+
+function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
+  if (!isRecord(parameters) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline contract paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -2073,6 +2123,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAirlinePortalBootstrapResponse(result.data)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getAirlineContracts(
+      parameters: GetAirlineContractsParams = {}, options?: GetAirlineContractsOptions,
+    ) {
+      const paging = validatedAirlineContractParams(parameters);
+      const result = await execute(
+        getGetAirlineContractsUrl(paging), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineContractPageResponse(result.data) ||
+        result.data.page !== (paging.page ?? 1) ||
+        result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getOccPlanningSnapshot(

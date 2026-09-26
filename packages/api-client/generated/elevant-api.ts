@@ -20,6 +20,50 @@ export interface AccountChangeListResponse {
   hasMore: boolean;
 }
 
+export interface AirlineContractStationResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface AirlineContractRateResponse {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface AirlineContractVersionResponse {
+  id: string;
+  versionNumber: number;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  stations: AirlineContractStationResponse[];
+  rates: AirlineContractRateResponse[];
+}
+
+export interface AirlineContractResponse {
+  id: string;
+  code: string;
+  status: string;
+  /** @nullable */
+  signedOn?: string | null;
+  /** @nullable */
+  terminatedOn?: string | null;
+  approvedVersions: AirlineContractVersionResponse[];
+}
+
+export interface AirlineContractPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  contracts: AirlineContractResponse[];
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -906,6 +950,11 @@ after?: string;
 limit?: number;
 };
 
+export type GetAirlineContractsParams = {
+page?: number;
+limit?: number;
+};
+
 export type GetOccPlanningSnapshotParams = {
 stationId?: string;
 date?: string;
@@ -953,6 +1002,41 @@ export const getAccountChanges = async (params?: GetAccountChangesParams, option
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AccountChangeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractsUrl = (params?: GetAirlineContractsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/contracts?${stringifiedParams}` : `/api/v1/airline/portal/contracts`
+}
+
+export const getAirlineContracts = async (params?: GetAirlineContractsParams, options?: RequestInit): Promise<AirlineContractPageResponse> => {
+
+  const res = await fetch(getGetAirlineContractsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineContractPageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

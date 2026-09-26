@@ -9,6 +9,11 @@ rechaza cursores/parámetros inválidos y no permite introducir una cuenta,
 estación o tenant en la consulta. Esta capacidad se prepara en la rama de
 integración y no demuestra todavía un despliegue remoto.
 
+`getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
+para la única aerolínea derivada en la API de la sesión. El cliente valida
+estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
+un ID de tenant ni habilita acciones comerciales.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores

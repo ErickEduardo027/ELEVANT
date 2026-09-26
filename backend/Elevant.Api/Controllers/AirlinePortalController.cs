@@ -16,8 +16,54 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/airline/portal")]
 public sealed class AirlinePortalController(
-    GetAirlinePortalBootstrapHandler bootstrapHandler) : ControllerBase
+    GetAirlinePortalBootstrapHandler bootstrapHandler,
+    GetAirlineContractsHandler contractsHandler) : ControllerBase
 {
+    [HttpGet("contracts", Name = "GetAirlineContracts")]
+    [ProducesResponseType<AirlineContractPageResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlineContractPageResponse>> GetContracts(
+        [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1 || page > 10_000 || limit is < 1 or > 50)
+            return ProblemResult<AirlineContractPageResponse>(
+                StatusCodes.Status400BadRequest, "Invalid contract page.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineContractPageResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await contractsHandler.HandleAsync(
+            accountId, page, limit, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineContractPageResponse>(statusCode, title);
+        }
+
+        return Ok(new AirlineContractPageResponse(page, limit, result.Page!.HasMore,
+            result.Page.Contracts.Select(contract => new AirlineContractResponse(
+                contract.Id, contract.Code, contract.Status, contract.SignedOn,
+                contract.TerminatedOn, contract.ApprovedVersions.Select(version =>
+                    new AirlineContractVersionResponse(
+                        version.Id, version.VersionNumber, version.ValidFrom, version.ValidTo,
+                        version.CurrencyCode, version.Stations.Select(station =>
+                            new AirlineContractStationResponse(
+                                station.Id, station.Code, station.Name)).ToArray(),
+                        version.Rates.Select(rate => new AirlineContractRateResponse(
+                            rate.Id, rate.ServiceCode, rate.ServiceName, rate.BillingUnit,
+                            rate.UnitPrice, rate.MinimumQuantity)).ToArray())).ToArray()))
+                .ToArray()));
+    }
+
     [HttpGet("bootstrap", Name = "GetAirlinePortalBootstrap")]
     [ProducesResponseType<AirlinePortalBootstrapResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
@@ -29,24 +75,18 @@ public sealed class AirlinePortalController(
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
         {
             Response.Headers.WWWAuthenticate = "Bearer";
-            return ProblemResult(StatusCodes.Status401Unauthorized, "Authentication failed.");
+            return ProblemResult<AirlinePortalBootstrapResponse>(StatusCodes.Status401Unauthorized, "Authentication failed.");
         }
 
         var result = await bootstrapHandler.HandleAsync(accountId, cancellationToken);
         if (!result.IsSuccess)
         {
-            var (statusCode, title) = result.Failure switch
-            {
-                AirlinePortalFailure.Unauthorized => (StatusCodes.Status401Unauthorized, "Authentication failed."),
-                AirlinePortalFailure.Forbidden => (StatusCodes.Status403Forbidden, "Airline portal access is forbidden."),
-                AirlinePortalFailure.NotFound => (StatusCodes.Status404NotFound, "Airline portal context was not found."),
-                _ => throw new InvalidOperationException("Unsupported airline portal failure."),
-            };
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
             if (statusCode == StatusCodes.Status401Unauthorized)
             {
                 Response.Headers.WWWAuthenticate = "Bearer";
             }
-            return ProblemResult(statusCode, title);
+            return ProblemResult<AirlinePortalBootstrapResponse>(statusCode, title);
         }
 
         var bootstrap = result.Bootstrap!;
@@ -74,7 +114,15 @@ public sealed class AirlinePortalController(
                 operation.PlannedEndAt)).ToArray()));
     }
 
-    private ActionResult<AirlinePortalBootstrapResponse> ProblemResult(int statusCode, string title) =>
+    private static (int StatusCode, string Title) MapFailure(AirlinePortalFailure failure) => failure switch
+    {
+        AirlinePortalFailure.Unauthorized => (StatusCodes.Status401Unauthorized, "Authentication failed."),
+        AirlinePortalFailure.Forbidden => (StatusCodes.Status403Forbidden, "Airline portal access is forbidden."),
+        AirlinePortalFailure.NotFound => (StatusCodes.Status404NotFound, "Airline portal context was not found."),
+        _ => throw new InvalidOperationException("Unsupported airline portal failure."),
+    };
+
+    private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
         new ObjectResult(new ProblemDetails
         {
             Status = statusCode,

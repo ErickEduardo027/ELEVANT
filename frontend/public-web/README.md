@@ -7,8 +7,9 @@ determina la aerolínea y devuelve las estaciones y operaciones actuales
 autorizadas; inicio, vuelos, detalle y perfil separan esa respuesta de las
 muestras visuales. La ruta separada `/dev-airline` fue retirada. Inicio y vuelos
 conservan una secuencia sintética del prototipo en una sección señalizada, sin
-enlaces a detalles inventados. Solicitudes, contratos, documentos,
-finanzas y reportes conservan una vista visual de demostración claramente
+enlaces a detalles inventados. Contratos consulta versiones aprobadas reales,
+incluyendo historial vencido, con cobertura y tarifas de la aerolínea
+autenticada. Solicitudes, documentos, finanzas y reportes conservan una vista visual de demostración claramente
 marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
 No representan datos de la cuenta ni un portal operativo completo de Production.
 
@@ -54,7 +55,8 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
 - `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
-- `/portal/solicitudes`, `/portal/contratos`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/portal/contratos`: consulta real, paginada y de solo lectura de contratos y versiones aprobadas; sin edición ni aceptación.
+- `/portal/solicitudes`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 
 ## Contrato de seguridad

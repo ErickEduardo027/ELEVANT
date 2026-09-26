@@ -1,0 +1,85 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import type { AirlineContractPageResponse, AirlinePortalBootstrapResponse,
+  SessionResponse } from "@elevant/api-client";
+import { AIRLINE_SESSION_STORAGE_KEY,
+  AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
+
+vi.mock("@/lib/airline-change-observer", () => ({
+  createPublicAirlineChangeObserver: () => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+const actor: SessionResponse["actor"] = {
+  accountId: "40000000-0000-7000-8000-000000000003",
+  email: "airline.client@dev.elevant.test", displayName: "Casey Airline",
+  roles: [{ roleId: "41000000-0000-7000-8000-000000000003", code: "AIRLINE_CLIENT",
+    name: "Airline Client", portal: "airline_portal", userType: "airline_client" }],
+  memberships: [{ membershipId: "42000000-0000-7000-8000-000000000003",
+    organizationId: "10000000-0000-7000-8000-000000000002", organizationCode: "DEMO-AIR",
+    organizationName: "Demo Airlines", organizationType: "airline_customer", kind: "airline_client" }],
+  stationScopes: [],
+};
+const bootstrap: AirlinePortalBootstrapResponse = {
+  airlineId: "20000000-0000-7000-8000-000000000001",
+  organizationId: actor.memberships[0].organizationId,
+  iataCode: "ZZ", icaoCode: "DVA", name: "Demo Airlines",
+  stations: [], currentOperations: [],
+};
+const contracts: AirlineContractPageResponse = {
+  page: 1, limit: 20, hasMore: false,
+  contracts: [{
+    id: "60000000-0000-7000-8000-000000000002", code: "DEV-CONTRACT-0001",
+    status: "Expired", signedOn: "2026-01-01", terminatedOn: null,
+    approvedVersions: [{
+      id: "60000000-0000-7000-8000-000000000003", versionNumber: 1,
+      validFrom: "2026-01-01", validTo: "2026-08-31", currencyCode: "USD",
+      stations: [{ id: "20000000-0000-7000-8000-000000000003",
+        code: "PUJ", name: "Punta Cana" }],
+      rates: [{ id: "60000000-0000-7000-8000-000000000004",
+        serviceCode: "BAG", serviceName: "Manejo de equipaje", billingUnit: "operation",
+        unitPrice: 125.5, minimumQuantity: 1 }],
+    }],
+  }],
+};
+
+function mount(page: AirlineContractPageResponse) {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z",
+  }));
+  const paths: string[] = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    paths.push(path);
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
+    const body = path.endsWith("/bootstrap") ? bootstrap
+      : path.endsWith("/contracts") ? page : { actor };
+    return new Response(JSON.stringify(body), { status: 200,
+      headers: { "content-type": "application/json" } });
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AirlinePortalPage view="contracts" />
+  </AirlineSessionProvider>);
+  return paths;
+}
+
+afterEach(() => {
+  cleanup(); sessionStorage.clear(); vi.unstubAllGlobals();
+});
+
+it("shows the airline's real approved contract history and rates", async () => {
+  const paths = mount(contracts);
+  expect(await screen.findByText("DEV-CONTRACT-0001")).toBeInTheDocument();
+  expect(screen.getByText("Manejo de equipaje")).toBeInTheDocument();
+  expect(screen.getByText(/125/)).toBeInTheDocument();
+  expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
+  expect(paths).toContain("/api/v1/airline/portal/contracts");
+});
+
+it("shows an honest empty state with no fabricated contract", async () => {
+  mount({ page: 1, limit: 20, hasMore: false, contracts: [] });
+  expect(await screen.findByText(/No hay contratos aprobados/i)).toBeInTheDocument();
+  expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
+});

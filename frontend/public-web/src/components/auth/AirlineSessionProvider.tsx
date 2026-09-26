@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { ElevantApiError, type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
+import { ElevantApiError, type AirlineContractPageResponse,
+  type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
@@ -26,6 +27,7 @@ interface AirlineSessionContextValue {
   changePassword(input: { email: string; currentPassword: string; newPassword: string }): Promise<AirlinePasswordChangeResult>;
   signOut(): void;
   retry(): Promise<void>;
+  getContracts(page?: number): Promise<AirlineContractPageResponse>;
 }
 
 const AirlineSessionContext = createContext<AirlineSessionContextValue | null>(null);
@@ -231,7 +233,24 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry }}>
+  const getContracts = useCallback(async (page = 1): Promise<AirlineContractPageResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineContracts(
+          { page, limit: 20 }, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current &&
+          ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

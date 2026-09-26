@@ -193,6 +193,126 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(expired.CurrentOperations);
         Assert.Null(await store.GetBootstrapAsync(
             Guid.NewGuid(), new DateOnly(2026, 9, 25), cancellationToken));
+
+        var contracts = await store.GetContractsAsync(
+            organizationId, 1, 20, cancellationToken);
+        Assert.NotNull(contracts);
+        Assert.False(contracts.HasMore);
+        var ownContract = Assert.Single(contracts.Contracts);
+        Assert.Equal("DEV-CONTRACT-0001", ownContract.Code);
+        var approved = Assert.Single(ownContract.ApprovedVersions);
+        Assert.Equal(1, approved.VersionNumber);
+        Assert.Equal("USD", approved.CurrencyCode);
+        Assert.Collection(approved.Stations, station => Assert.Equal("PUJ", station.Code));
+        Assert.Equal(2, approved.Rates.Count);
+        Assert.Contains(approved.Rates, rate => rate.UnitPrice == 125.50m &&
+            rate.BillingUnit == "operation");
+        Assert.Null(await store.GetContractsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
+
+        await using (var update = CreateContext(database.ConnectionString))
+        {
+            var contract = await update.Contracts.SingleAsync(item =>
+                item.ContractCode == "DEV-CONTRACT-0001", cancellationToken);
+            contract.Status = ContractStatus.Expired;
+            var version = await update.ContractVersions.SingleAsync(item =>
+                item.ContractId == contract.Id && item.VersionNumber == 1,
+                cancellationToken);
+            version.ValidTo = new DateOnly(2026, 8, 31);
+            version.Status = ContractVersionStatus.Superseded;
+            update.ContractVersions.Add(new ContractVersion
+            {
+                PublicId = Guid.NewGuid(),
+                ContractId = contract.Id,
+                VersionNumber = 2,
+                Status = ContractVersionStatus.Draft,
+                ValidFrom = new DateOnly(2026, 9, 1),
+                CurrencyCode = "USD",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            var sameAirlineContract = new Contract
+            {
+                PublicId = Guid.NewGuid(),
+                AirlineId = contract.AirlineId,
+                ContractCode = "DEV-CONTRACT-0002",
+                Status = ContractStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.Contracts.Add(sameAirlineContract);
+            await update.SaveChangesAsync(cancellationToken);
+            update.ContractVersions.Add(new ContractVersion
+            {
+                PublicId = Guid.NewGuid(),
+                ContractId = sameAirlineContract.Id,
+                VersionNumber = 1,
+                Status = ContractVersionStatus.Approved,
+                ValidFrom = new DateOnly(2026, 9, 1),
+                CurrencyCode = "USD",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            var foreignOrganization = new Organization
+            {
+                PublicId = Guid.NewGuid(),
+                Code = "OTHER-AIR",
+                LegalName = "OTHER TEST AIRLINE",
+                DisplayName = "Other Test Airline",
+                Type = OrganizationType.AirlineCustomer,
+                Status = OrganizationStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.Organizations.Add(foreignOrganization);
+            await update.SaveChangesAsync(cancellationToken);
+            var foreignAirline = new Airline
+            {
+                PublicId = Guid.NewGuid(),
+                OrganizationId = foreignOrganization.Id,
+                IataCode = "XY",
+                IcaoCode = "DXY",
+                Name = "Other Test Airline",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.Airlines.Add(foreignAirline);
+            await update.SaveChangesAsync(cancellationToken);
+            var foreignContract = new Contract
+            {
+                PublicId = Guid.NewGuid(),
+                AirlineId = foreignAirline.Id,
+                ContractCode = "OTHER-CONTRACT-0001",
+                Status = ContractStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.Contracts.Add(foreignContract);
+            await update.SaveChangesAsync(cancellationToken);
+            update.ContractVersions.Add(new ContractVersion
+            {
+                PublicId = Guid.NewGuid(),
+                ContractId = foreignContract.Id,
+                VersionNumber = 1,
+                Status = ContractVersionStatus.Approved,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                CurrencyCode = "USD",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await update.SaveChangesAsync(cancellationToken);
+        }
+
+        var history = await store.GetContractsAsync(organizationId, 1, 1, cancellationToken);
+        Assert.NotNull(history);
+        Assert.True(history.HasMore);
+        Assert.Equal("Expired", Assert.Single(history.Contracts).Status);
+        Assert.Equal(1, Assert.Single(Assert.Single(history.Contracts).ApprovedVersions).VersionNumber);
+        var secondPage = await store.GetContractsAsync(organizationId, 2, 1, cancellationToken);
+        Assert.NotNull(secondPage);
+        Assert.False(secondPage.HasMore);
+        Assert.Equal("DEV-CONTRACT-0002", Assert.Single(secondPage.Contracts).Code);
+        Assert.Empty((await store.GetContractsAsync(organizationId, 3, 1, cancellationToken))!.Contracts);
     }
 
     [Fact]
