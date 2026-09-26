@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-26"
-verified_commit: "02dcb6b97290126b1248c2ab4c7de7e1446cfab4"
+verified_commit: "c11b9295744502fb90b349d09aed9726939f71b4"
 sources:
   - database/DevelopmentDB/Elevant.Persistence/Realtime/AccountChangeOutboxWriter.cs
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeDispatcherStore.cs
@@ -20,6 +20,10 @@ sources:
   - backend/tests/Elevant.IntegrationTests/Api/AccountChangesEndpointsTests.cs
   - packages/api-client/openapi/elevant-v1.json
   - packages/api-client/src/client.ts
+  - frontend/private-web/src/services/accountChangeObserver.js
+  - frontend/private-web/src/services/accountChangeObserver.test.js
+  - frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx
+  - frontend/private-web/README.md
 tags:
   - arquitectura
   - tiempo-real
@@ -50,9 +54,13 @@ y el [contrato OpenAPI](../../packages/api-client/openapi/elevant-v1.json).
 
 Las [pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs)
 cubren permisos del rol de aplicación, chat idempotente, orden de proyección,
-deduplicación, evento malformado y revocación de estación. Esto **no** demuestra
-todavía conexión de Private Web, Public Web o Mobile Agent, ni latencia p95,
-sincronización al reanudar, entrega con la app cerrada o promoción remota.
-El cliente TypeScript [expone](../../packages/api-client/src/client.ts)
-`getAccountChanges`, pero las aplicaciones aún deben conectarlo y probar su
-reconciliación en navegador y emulador.
+deduplicación, evento malformado y revocación de estación. El cliente
+TypeScript [expone](../../packages/api-client/src/client.ts) `getAccountChanges`.
+En la rama, [AVIAM Web](../../frontend/private-web/src/services/accountChangeObserver.js)
+conecta los hubs y reconcilia el cursor ante aviso, foco, conexión recuperada
+y sondeo de 25 segundos. Chat y Notificaciones OCC vuelven a consultar el
+recurso por REST; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
+y [pruebas del observador](../../frontend/private-web/src/services/accountChangeObserver.test.js)
+cubren invalidación, replay, fallos y cierre de sesión. Esto **no** demuestra
+todavía navegación real con VPS, conexión de Public Web o Mobile Agent,
+latencia p95, entrega con la app cerrada ni promoción remota.
