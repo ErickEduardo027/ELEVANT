@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 
 import { PortalGuard } from "@/components/portal/PortalGuard";
 import { PortalShell } from "@/components/portal/PortalShell";
-import { PortalWorkspaceProvider } from "@/components/portal/PortalWorkspace";
 
 export const metadata: Metadata = {
   title: {
@@ -18,9 +17,7 @@ export const metadata: Metadata = {
 export default function PortalLayout({ children }: { children: ReactNode }) {
   return (
     <PortalGuard>
-      <PortalWorkspaceProvider>
-        <PortalShell>{children}</PortalShell>
-      </PortalWorkspaceProvider>
+      <PortalShell>{children}</PortalShell>
     </PortalGuard>
   );
 }

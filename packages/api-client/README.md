@@ -95,7 +95,9 @@ Web. Este bootstrap no convierte todavía los módulos de portal que usan
 fixtures en datos persistentes.
 
 Los fallos HTTP y las respuestas malformadas producen `ElevantApiError`. El
-error expone solo `status`, un `title` saneado y el `traceId` opcional. Su
+error expone solo `status`, un `title` saneado, el `traceId` opcional y el
+`code` allowlisted `password_change_required` cuando la API exige reemplazar
+una contraseña temporal. Ningún otro código remoto se propaga. Su
 mensaje nunca incorpora el token, URL, cuerpo crudo ni `ProblemDetails.detail`.
 Un `AbortError` conserva su identidad para que cada consumidor pueda cancelar.
 

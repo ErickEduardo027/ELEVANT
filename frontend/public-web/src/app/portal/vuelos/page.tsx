@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
-import { PortalDataBridge } from "@/components/portal/PortalDataBridge";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export const metadata: Metadata = {
   title: "Vuelos",
 };
 
 export default function PortalFlightsPage() {
-  return <PortalDataBridge view="flights" />;
+  return <AirlinePortalPage view="flights" />;
 }

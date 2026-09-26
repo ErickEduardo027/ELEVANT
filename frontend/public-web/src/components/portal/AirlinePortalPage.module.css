@@ -1,0 +1,50 @@
+.page { display: grid; gap: 1.25rem; max-width: 84rem; margin: 0 auto; color: #102138; }
+.kicker { display: block; color: #2360b8; font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.hero { padding: clamp(1.5rem, 4vw, 3rem); border-radius: 1rem; background: linear-gradient(135deg, #081b3a, #123f87); color: white; }
+.hero .kicker { color: #93cfff; }
+.hero h1, .pageHeader h1 { margin: .7rem 0; font-family: var(--font-display); font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; }
+.hero p, .pageHeader p { max-width: 46rem; line-height: 1.6; }
+.hero p { color: #d8e9ff; }
+.pageHeader { padding: 1.2rem 0 .35rem; }
+.pageHeader p { color: #54657b; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .8rem; }
+.metrics > div, .panel, .unavailable { padding: 1.3rem; border: 1px solid #d5e0ec; border-radius: .85rem; background: #fff; }
+.metrics span { display: block; color: #55687d; font-size: .75rem; }
+.metrics strong { display: block; margin-top: .65rem; color: #113f84; font-family: var(--font-display); font-size: 2rem; }
+.sectionHeading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.sectionHeading h2, .panel h2 { font-family: var(--font-display); font-size: 1.2rem; }
+.page a { color: #1155b4; font-weight: 720; }
+.operations { display: grid; gap: .7rem; margin-top: 1rem; padding: 0; list-style: none; }
+.operation { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem; border: 1px solid #e0e7f0; border-radius: .7rem; background: #f9fbfe; }
+.operation strong { display: block; margin-top: .4rem; font-size: 1rem; }
+.operation p { margin-top: .25rem; color: #53657b; font-size: .78rem; }
+.operationSide { display: grid; gap: .55rem; justify-items: end; text-align: right; font-size: .78rem; }
+.operationSide span { padding: .25rem .45rem; border-radius: .3rem; background: #e8f0fb; color: #1854a2; }
+.empty, .note, .unavailable p { color: #566b80; line-height: 1.6; }
+.empty { margin-top: 1rem; }
+.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; margin: 1.2rem 0; }
+.details dt { color: #62738a; font-size: .72rem; }
+.details dd { margin: .3rem 0 0; overflow-wrap: anywhere; font-weight: 700; }
+.stations { display: grid; gap: .5rem; margin: 1rem 0 0; padding-left: 1.2rem; }
+.unavailable { padding: 2rem; border-color: #bfd0e3; background: #f7faff; }
+.unavailable strong { font-family: var(--font-display); font-size: 1.15rem; }
+.unavailable p { margin-top: .75rem; }
+.profileHero { padding: clamp(1.3rem, 3vw, 2rem); border-radius: .85rem; background: linear-gradient(120deg, #061631, #0b2d68); color: #fff; }
+.profileHero .kicker { color: #8ec6fb; }
+.profileHero h2 { margin-top: .7rem; font-family: var(--font-display); font-size: clamp(1.5rem, 4vw, 2.4rem); }
+.profileHero p { margin-top: .4rem; color: #d0e2f7; }
+.profileHero div { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.1rem; }
+.profileHero div span { padding: .3rem .55rem; border-radius: 1rem; background: #fff; color: #0c397b; font-size: .7rem; font-weight: 700; }
+.demoBanner { padding: 1rem 1.25rem; border: 1px solid #f0b46b; border-left: .3rem solid #dd7c12; border-radius: .75rem; background: #fff7e9; color: #693c06; }
+.demoBanner strong { font-size: .85rem; }
+.demoBanner p { margin-top: .35rem; font-size: .75rem; line-height: 1.5; }
+.previewPill { color: #64778e; font-size: .65rem; }
+.previewRows { display: grid; gap: .75rem; margin: 1.25rem 0 0; padding: 0; list-style: none; }
+.previewRows li { padding: 1rem; border: 1px solid #dce6f0; border-radius: .7rem; background: #fbfdff; }
+.previewRows strong { display: block; margin-top: .4rem; }
+.previewRows p { margin-top: .3rem; color: #596b80; font-size: .78rem; }
+.previewRows button { margin-top: .7rem; padding: .6rem .8rem; border: 1px solid #ccd7e5; border-radius: .5rem; background: #edf1f6; color: #738093; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.previewBar { width: 100%; max-width: 23rem; height: .45rem; margin-top: .8rem; border-radius: 1rem; background: #dce6f0; }
+.previewBar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1c63d6, #5dc6ef); }
+@media (max-width: 38rem) { .operation { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } }

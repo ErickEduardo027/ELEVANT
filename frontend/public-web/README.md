@@ -2,13 +2,13 @@
 
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
-La implementación principal sigue siendo demostrativa: sesión, documentos,
-finanzas y la mayoría de los datos viven en adaptadores mock/locales. La ruta
-local `/dev-airline` es una excepción acotada para probar contra la API .NET:
-inicia sesión real, muestra el tenant, las estaciones contratadas y un resumen
-acotado de operaciones actuales devueltos por el servidor, y nunca muestra
-los fixtures del portal como datos reales.
-No representa todavía un portal operativo completo ni una conexión a Production.
+`/login` y `/portal` usan la sesión real de la API de Development. La API
+determina la aerolínea y devuelve las estaciones y operaciones actuales
+autorizadas; inicio, vuelos, detalle y perfil presentan solo esa respuesta. La
+ruta separada `/dev-airline` fue retirada. Solicitudes, contratos, documentos,
+finanzas y reportes conservan una vista visual de demostración claramente
+marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
+No representan datos de la cuenta ni un portal operativo completo de Production.
 
 ## Ejecutar y validar
 
@@ -39,20 +39,12 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 ## Rutas observadas
 
 - `/`: landing, propuesta comercial y solicitud demo.
-- `/login`: acceso mock y afiliación local.
-- `/dev-airline`: solo en `next dev` desde `localhost` o `127.0.0.1`; acceso real de aerolínea y lectura del
-  bootstrap contractual y operaciones actuales con `NEXT_PUBLIC_ELEVANT_API_URL`. El token vive solo
-  en memoria y se pierde al recargar. En builds de Development/Production la
-  ruta devuelve 404. Requiere que el origen local esté permitido por CORS y
-  que la API publique `GET /api/v1/airline/portal/bootstrap`.
-- `/portal`: resumen y actividad autorizada.
-- `/portal/vuelos` y `/portal/vuelos/[operationId]`: búsqueda y detalle de turnarounds.
-- `/portal/solicitudes`: solicitudes de servicio.
-- `/portal/contratos`: vigencia, estaciones y tarifarios.
-- `/portal/documentos`: documentos/evidencias autorizados.
-- `/portal/finanzas`: prefacturas, facturas, conciliaciones y disputas.
-- `/portal/reportes`: indicadores y exportaciones.
-- `/portal/perfil`: organización, estaciones, permisos y auditoría.
+- `/login`: sesión real de aerolínea y cambio de contraseña temporal; la afiliación sigue siendo una vista prototípica.
+- `/portal`: resumen de operaciones actuales del bootstrap autorizado.
+- `/portal/vuelos` y `/portal/vuelos/[operationId]`: lista y detalle limitado a las operaciones actuales devueltas por la API.
+- `/portal/perfil`: identidad y estaciones de la sesión real.
+- `/portal/solicitudes`, `/portal/contratos`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/dev-airline`: retirada; responde 404.
 
 ## Contrato de seguridad
 
@@ -62,7 +54,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-La interfaz ofrece una identidad `.test` solo para UX. Es material sintético, no una cuenta de Production. El formulario comercial permanece en modo preview y no transmite solicitudes mientras no exista su contrato de backend.
+Las tarjetas de ejemplo están etiquetadas como datos de demostración y no pertenecen al tenant autenticado. El formulario comercial permanece en modo preview y no transmite solicitudes mientras no exista su contrato de backend. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme».
 
 ## Criterio de promoción en Development
 
@@ -80,7 +72,7 @@ Un tag mutable o un redeploy manual no constituye una identidad de release. El c
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
 
-Esta primera publicación es un **preview privado de Development**, no un portal operacional: autenticación, tenant scope y operaciones de negocio siguen en adaptadores demostrativos hasta que existan sus contratos OpenAPI. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
+Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional: autenticación, tenant y operaciones actuales usan el contrato OpenAPI; los demás módulos aún son presentaciones sintéticas sin acciones. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
 
 El Dockerfile se construye desde la raíz del monorepo porque consume `packages/api-client`:
 

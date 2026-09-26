@@ -1,210 +1,57 @@
 import { expect, test } from "@playwright/test";
+import { stubAirlineApi } from "./airline-api";
 
-import { MOCK_AFFILIATION_REQUESTS_STORAGE_KEY } from "../../src/lib/mock-affiliation";
-import {
-  MOCK_PERSISTENT_SESSION_KEY,
-  MOCK_TRANSIENT_SESSION_KEY,
-} from "../../src/lib/mock-auth";
+async function enterAirline(page: import("@playwright/test").Page) {
+  await page.getByRole("textbox", { name: "Correo corporativo" }).fill("airline.client@dev.elevant.test");
+  await page.getByLabel("Contraseña", { exact: true }).fill("Synthetic-Password!2026");
+  await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
+}
 
-test.describe("acceso mock de aerolíneas", () => {
-  test("mantiene el login completo en escritorios de poca altura", async ({
-    page,
-  }, testInfo) => {
-    test.skip(
-      testInfo.project.name !== "desktop",
-      "La regresión corresponde al encuadre de escritorio.",
-    );
+test("public login uses the real API contract, remains tab-scoped and signs out", async ({ page }) => {
+  const paths = await stubAirlineApi(page);
+  await page.goto("/login");
+  await expect(page.getByRole("button", { name: /Usar credenciales de demostración/i })).toHaveCount(0);
+  await enterAirline(page);
+  await expect(page).toHaveURL(/\/portal$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Demo Airlines" })).toBeVisible();
+  expect(paths).toEqual(["POST /api/v1/auth/session", "GET /api/v1/auth/session", "GET /api/v1/airline/portal/bootstrap"]);
+  const stored = await page.evaluate(() => ({ session: sessionStorage.getItem("elevant-airline-session-v1"), local: localStorage.length }));
+  expect(JSON.parse(stored.session ?? "null")).toEqual({ accessToken: "synthetic-e2e-token", expiresAt: "2099-01-01T00:00:00Z" });
+  expect(stored.local).toBe(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "Demo Airlines" })).toBeVisible();
+  const mobileMenu = page.getByRole("button", { name: "Abrir navegación" });
+  if (await mobileMenu.isVisible()) await mobileMenu.click();
+  const signOut = await mobileMenu.isVisible()
+    ? page.getByRole("dialog", { name: "Navegación" }).getByRole("button", { name: "Cerrar sesión" })
+    : page.getByRole("button", { name: "Cerrar sesión" }).first();
+  await signOut.click();
+  await expect(page).toHaveURL(/\/login\?mode=login$/);
+  expect(await page.evaluate(() => sessionStorage.getItem("elevant-airline-session-v1"))).toBeNull();
+});
 
-    await page.setViewportSize({ width: 1536, height: 696 });
-    await page.goto("/login");
+test("protected portal keeps safe returnTo and rejects non-airline actors", async ({ page }) => {
+  await stubAirlineApi(page, { forbidden: true });
+  await page.goto("/portal/finanzas");
+  await expect(page).toHaveURL(/\/login\?mode=login&returnTo=%2Fportal%2Ffinanzas$/);
+  await enterAirline(page);
+  await expect(page.getByRole("tabpanel", { name: "Iniciar sesión" }).getByRole("alert")).toContainText("no tiene acceso");
+  await expect(page).not.toHaveURL(/\/portal\/finanzas$/);
+});
 
-    await expect(
-      page.getByRole("button", { name: "Iniciar sesión", exact: true }),
-    ).toBeInViewport();
-    await expect(
-      page.getByRole("button", { name: /Usar credenciales de demostración/i }),
-    ).toBeInViewport();
-    await expect(
-      page.getByText(/No concede acceso a un portal productivo/i),
-    ).toBeInViewport();
+test("temporary password must be changed before a new login", async ({ page }) => {
+  const paths = await stubAirlineApi(page, { changeRequired: true });
+  await page.goto("/login");
+  await enterAirline(page);
+  await page.getByLabel("Nueva contraseña", { exact: true }).fill("Synthetic-New-Password!2026");
+  await page.getByLabel("Confirmar nueva contraseña", { exact: true }).fill("Synthetic-New-Password!2026");
+  await page.getByRole("button", { name: "Cambiar contraseña" }).click();
+  await expect(page.getByText(/contraseña actualizada/i)).toBeVisible();
+  expect(paths).toEqual(["POST /api/v1/auth/session", "POST /api/v1/auth/password-change"]);
+  await expect(page).not.toHaveURL(/\/portal$/);
+});
 
-    const viewport = await page.evaluate(() => ({
-      height: window.innerHeight,
-      scrollHeight: document.documentElement.scrollHeight,
-    }));
-    expect(viewport.scrollHeight).toBeLessThanOrEqual(viewport.height);
-  });
-
-  test("expone tabs navegables y dirige el foco al primer error", async ({
-    page,
-  }) => {
-    await page.goto("/login");
-
-    const loginTab = page.getByRole("tab", {
-      name: "Iniciar sesión",
-      exact: true,
-    });
-    const registerTab = page.getByRole("tab", {
-      name: "Solicitar afiliación",
-      exact: true,
-    });
-
-    await expect(loginTab).toHaveAttribute("aria-selected", "true");
-    await loginTab.focus();
-    await loginTab.press("ArrowRight");
-    await expect(registerTab).toBeFocused();
-    await expect(registerTab).toHaveAttribute("aria-selected", "true");
-    await expect(page).toHaveURL(/\/login\?mode=register$/);
-
-    await registerTab.press("Home");
-    await expect(loginTab).toBeFocused();
-    await expect(page).toHaveURL(/\/login\?mode=login$/);
-
-    await page
-      .getByRole("button", { name: "Iniciar sesión", exact: true })
-      .click();
-
-    const email = page.getByRole("textbox", {
-      name: "Correo corporativo",
-      exact: true,
-    });
-    await expect(email).toBeFocused();
-    await expect(email).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByRole("alert")).toHaveCount(2);
-  });
-
-  test("inicia y cierra una sesión con las credenciales demo sin transmitir datos", async ({
-    page,
-  }, testInfo) => {
-    await page.goto("/login");
-    await page.waitForLoadState("networkidle");
-
-    const writeRequests: Array<{ method: string; url: string }> = [];
-    page.on("request", (request) => {
-      if (!["GET", "HEAD"].includes(request.method())) {
-        writeRequests.push({ method: request.method(), url: request.url() });
-      }
-    });
-
-    await page
-      .getByRole("button", { name: /Usar credenciales de demostración/i })
-      .click();
-    await page
-      .getByRole("button", { name: "Iniciar sesión", exact: true })
-      .click();
-
-    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
-
-    const storage = await page.evaluate(
-      ({ transientKey, persistentKey }) => ({
-        transient: window.sessionStorage.getItem(transientKey),
-        persistent: window.localStorage.getItem(persistentKey),
-      }),
-      {
-        transientKey: MOCK_TRANSIENT_SESSION_KEY,
-        persistentKey: MOCK_PERSISTENT_SESSION_KEY,
-      },
-    );
-    expect(storage.transient).not.toBeNull();
-    expect(storage.persistent).toBeNull();
-    expect(writeRequests).toEqual([]);
-
-    await page.goto("/login");
-    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
-    if (testInfo.project.name !== "desktop") {
-      await page
-        .getByRole("button", { name: "Abrir navegación" })
-        .click();
-    }
-    await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
-    await expect(page).toHaveURL(/\/login\?mode=login$/);
-    await expect(
-      page.getByRole("tab", { name: "Iniciar sesión", exact: true }),
-    ).toBeVisible();
-    const transientSessionAfterLogout = await page.evaluate(
-      (key) => window.sessionStorage.getItem(key),
-      MOCK_TRANSIENT_SESSION_KEY,
-    );
-    expect(transientSessionAfterLogout).toBeNull();
-  });
-
-  test("registra una solicitud de afiliación sin crear una sesión", async ({ page }) => {
-    await page.goto("/login?mode=register");
-
-    await page
-      .getByRole("textbox", { name: "Razón social", exact: true })
-      .fill("Aerolínea Horizonte, S.A.");
-    await page
-      .getByRole("textbox", { name: "Nombre comercial", exact: true })
-      .fill("Horizonte");
-    await page
-      .getByRole("textbox", { name: "Código IATA", exact: true })
-      .fill("ZZ");
-    await page
-      .getByRole("textbox", { name: "País", exact: true })
-      .fill("República Dominicana");
-    await page
-      .getByRole("textbox", { name: "Estación principal", exact: true })
-      .fill("PUJ");
-    await page
-      .getByRole("textbox", { name: "Estaciones adicionales", exact: true })
-      .fill("SDQ, STI");
-    await page
-      .getByRole("button", { name: /Continuar con el representante/i })
-      .click();
-
-    const representativeName = page.locator("#register-full-name");
-    const representativeTitle = page.locator("#register-title");
-    await representativeName.fill("Ana Pérez");
-    await expect(representativeName).toHaveValue("Ana Pérez");
-    await representativeTitle.fill("Administradora de operaciones");
-    await expect(representativeTitle).toHaveValue(
-      "Administradora de operaciones",
-    );
-    await page.locator("#register-email").fill("ana@horizonte.test");
-    await page.locator("#register-phone").fill("+1 809 555 0199");
-    await page
-      .locator("#register-services")
-      .fill("Asistencia de rampa y conciliación documental.");
-    await page
-      .getByRole("checkbox", { name: /Entiendo que esta solicitud/i })
-      .check();
-    await page
-      .getByRole("button", { name: /Enviar solicitud de afiliación/i })
-      .click();
-
-    await expect(
-      page.getByRole("status").filter({ hasText: "Solicitud recibida" }),
-    ).toBeVisible();
-    await expect(page.getByText(/ELV-AFL-/)).toBeVisible();
-
-    const documents = await page.evaluate(
-      ({ affiliationKey, sessionKey }) => ({
-        affiliation: window.localStorage.getItem(affiliationKey),
-        session: window.localStorage.getItem(sessionKey),
-      }),
-      {
-        affiliationKey: MOCK_AFFILIATION_REQUESTS_STORAGE_KEY,
-        sessionKey: MOCK_PERSISTENT_SESSION_KEY,
-      },
-    );
-    expect(documents.affiliation).toContain("ana@horizonte.test");
-    expect(documents.session).toBeNull();
-  });
-
-  test("conserva un returnTo interno y rechaza redirecciones externas", async ({ page }) => {
-    await page.goto("/login?returnTo=%2Fportal%2Fvuelos");
-    await page.getByRole("button", { name: /Usar credenciales de demostración/i }).click();
-    await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
-    await expect(page).toHaveURL(/\/portal\/vuelos$/, { timeout: 15_000 });
-
-    await page.evaluate(() => {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    });
-    await page.goto("/login?returnTo=https%3A%2F%2Fevil.example");
-    await page.getByRole("button", { name: /Usar credenciales de demostración/i }).click();
-    await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
-    await expect(page).toHaveURL(/\/portal$/, { timeout: 15_000 });
-  });
+test("retired /dev-airline route is not available", async ({ page }) => {
+  const response = await page.goto("/dev-airline");
+  expect(response?.status()).toBe(404);
 });
