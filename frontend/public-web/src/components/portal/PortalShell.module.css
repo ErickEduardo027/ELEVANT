@@ -75,6 +75,21 @@
   stroke-width: 1.7;
 }
 
+.noticeButton {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: .65rem;
+  border: 1px solid #d9e2ed;
+  border-radius: .7rem;
+  background: #f2f5f9;
+  color: #8c9caf;
+  cursor: not-allowed;
+  place-items: center;
+}
+
+.noticeButton svg { width: 1.2rem; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
 .topbarTitle {
   min-width: 0;
 }

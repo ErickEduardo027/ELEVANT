@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { PortalFinance } from "@/components/portal/PortalFinance";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export const metadata: Metadata = { title: "Finanzas" };
 
 export default function FinancePage() {
-  return <PortalFinance />;
+  return <AirlinePortalPage view="finance" />;
 }

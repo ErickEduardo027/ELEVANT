@@ -9,7 +9,7 @@ import { resolveSafeReturnTo } from "@/lib/mock-auth";
 export const metadata: Metadata = {
   title: "Acceso de aerolíneas",
   description:
-    "Acceso demostrativo y solicitud de afiliación para aerolíneas en ELEVANT.",
+    "Acceso autenticado al portal de aerolíneas en ELEVANT.",
   robots: {
     index: false,
     follow: false,

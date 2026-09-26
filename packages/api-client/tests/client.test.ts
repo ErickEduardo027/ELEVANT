@@ -333,6 +333,34 @@ describe("createElevantApiClient", () => {
     expect(error.message).not.toContain("Invalid request");
   });
 
+  it("exposes only the known password-change problem code", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            title: "Password change required.",
+            code: "password_change_required",
+            detail: "private server detail",
+          }),
+          { status: 409, headers: { "content-type": "application/problem+json" } },
+        ),
+    });
+
+    await expect(
+      client.createSession({ email: "airline.client@dev.elevant.test", password: "Synthetic-Password!2026" }),
+    ).rejects.toMatchObject({ status: 409, code: "password_change_required" });
+
+    const unknownCode = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () =>
+        new Response(JSON.stringify({ code: "private_server_code" }), { status: 409 }),
+    });
+    const error = await unknownCode.getCurrentSession().catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(ElevantApiError);
+    expect(error).not.toHaveProperty("code", "private_server_code");
+  });
+
   it("uses a safe fallback for a non-JSON error body", async () => {
     const rawBody = "raw response containing private-server-data";
     const client = createElevantApiClient({

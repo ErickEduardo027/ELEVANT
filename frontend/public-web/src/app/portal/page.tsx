@@ -1,5 +1,5 @@
-import { PortalDataBridge } from "@/components/portal/PortalDataBridge";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export default function PortalOverviewPage() {
-  return <PortalDataBridge view="overview" />;
+  return <AirlinePortalPage view="overview" />;
 }

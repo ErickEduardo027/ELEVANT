@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { PortalRequests } from "@/components/portal/PortalRequests";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export const metadata: Metadata = { title: "Solicitudes" };
 
 export default function RequestsPage() {
-  return <PortalRequests />;
+  return <AirlinePortalPage view="requests" />;
 }

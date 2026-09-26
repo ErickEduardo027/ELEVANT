@@ -12,7 +12,6 @@ import {
 
 import { BrandMark } from "@/components/marketing/BrandMark";
 import {
-  DEMO_CREDENTIALS,
   type MockSignInField,
   type MockSignInInput,
   validateSignIn,
@@ -23,6 +22,7 @@ import {
   validateAffiliation,
 } from "@/lib/mock-affiliation";
 
+import { useAirlineSession, type AirlineSignInResult } from "./AirlineSessionProvider";
 import { useMockSession } from "./MockSessionProvider";
 
 import styles from "./AuthExperience.module.css";
@@ -103,13 +103,13 @@ export function AuthExperience({
   returnTo = "/portal",
 }: AuthExperienceProps) {
   const router = useRouter();
-  const { status } = useMockSession();
+  const { status } = useAirlineSession();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const loginTabRef = useRef<HTMLButtonElement>(null);
   const registerTabRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (status === "authenticated") router.replace(returnTo);
+    if (status === "ready") router.replace(returnTo);
   }, [returnTo, router, status]);
 
   const selectMode = (nextMode: AuthMode, focusTab = false) => {
@@ -155,7 +155,7 @@ export function AuthExperience({
 
         <section className={styles.formRegion} aria-label="Acceso de aerolíneas">
           <div className={styles.formShell}>
-            {status === "loading" || status === "authenticated" ? (
+            {status === "loading" || status === "ready" ? (
               <LoadingState />
             ) : (
               <>
@@ -216,11 +216,11 @@ function CredentialPanel() {
       </div>
 
       <div className={styles.credentialContent}>
-        <p className={styles.kicker}>Portal de aerolíneas · Demo local</p>
+        <p className={styles.kicker}>Portal de aerolíneas · Development</p>
         <h1 id="auth-title">La operación, visible para quien debe verla.</h1>
         <p className={styles.credentialLead}>
-          Explora el acceso previsto para consultar rotaciones y documentos
-          autorizados. Esta experiencia no se conecta a una operación real.
+          Consulta las operaciones de tu aerolínea y las estaciones que la API
+          autoriza para tu cuenta.
         </p>
 
         <div className={styles.routeCard}>
@@ -246,7 +246,7 @@ function CredentialPanel() {
           <div className={styles.routeCardBottom}>
             <span>Estado</span>
             <strong>
-              <i aria-hidden="true" /> Entorno demostrativo
+              <i aria-hidden="true" /> Acceso autenticado
             </strong>
           </div>
         </div>
@@ -259,14 +259,29 @@ function CredentialPanel() {
   );
 }
 
+function signInFailureMessage(reason: Exclude<AirlineSignInResult, { ok: true }>["reason"]): string {
+  switch (reason) {
+    case "invalid": return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
+    case "forbidden": return "Esta cuenta no tiene acceso al portal de aerolíneas.";
+    case "context": return "El contexto de esta aerolínea no está disponible en la API.";
+    case "password-change-required": return "Debes cambiar la contraseña temporal antes de entrar.";
+    case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
+    case "unavailable": return "No se pudo conectar con la API. Comprueba la conexión y reintenta.";
+  }
+}
+
 function SignInPanel({ returnTo }: { returnTo: string }) {
   const router = useRouter();
-  const { signIn } = useMockSession();
+  const { signIn, changePassword } = useAirlineSession();
   const [input, setInput] = useState<MockSignInInput>(INITIAL_SIGN_IN);
   const [errors, setErrors] = useState<SignInErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<SignInFeedback | null>(null);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   const update = <Field extends SignInInputField>(
     field: Field,
@@ -304,32 +319,39 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     }
 
     setPending(true);
-    const result = await signIn(validation.value);
+    const result = await signIn({ email: validation.value.email, password: validation.value.password });
     setPending(false);
 
     if (result.ok) {
       router.replace(returnTo);
     } else {
-      setFeedback({ kind: "error", message: result.message });
-      if (result.fieldErrors) setErrors(result.fieldErrors);
-      if (result.firstInvalidField) {
-        focusField(SIGN_IN_IDS, result.firstInvalidField);
-      }
+      if (result.reason === "password-change-required") setPasswordChangeRequired(true);
+      setFeedback({ kind: "error", message: signInFailureMessage(result.reason) });
     }
   };
 
-  const fillDemoCredentials = () => {
-    setInput((current) => ({
-      ...current,
-      email: DEMO_CREDENTIALS.email,
-      password: DEMO_CREDENTIALS.password,
-    }));
-    setErrors({});
-    setFeedback({
-      kind: "info",
-      message: "Credenciales de demostración cargadas. Revisa y continúa.",
-    });
-    requestAnimationFrame(() => document.getElementById(SIGN_IN_IDS.email)?.focus());
+  const submitPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword.length < 14 || newPassword !== confirmPassword) {
+      setFeedback({ kind: "error", message: "La nueva contraseña debe tener al menos 14 caracteres y coincidir con la confirmación." });
+      return;
+    }
+    setPending(true);
+    const result = await changePassword({ email: input.email.trim(), currentPassword: input.password, newPassword });
+    setPending(false);
+    if (!result.ok) {
+      const message = result.reason === "invalid" ? "La contraseña actual no es válida."
+        : result.reason === "policy" ? "La nueva contraseña no cumple la política de seguridad."
+          : result.reason === "rate-limited" ? "Demasiados intentos. Espera antes de reintentar."
+            : "No se pudo cambiar la contraseña. Reintenta cuando la API esté disponible.";
+      setFeedback({ kind: "error", message });
+      return;
+    }
+    setInput(INITIAL_SIGN_IN);
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordChangeRequired(false);
+    setFeedback({ kind: "info", message: "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
   };
 
   return (
@@ -341,15 +363,15 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       tabIndex={0}
     >
       <header className={styles.formHeader}>
-        <p className={styles.formKicker}>Acceso demostrativo</p>
-        <h2>Continúa a tu sesión local.</h2>
+        <p className={styles.formKicker}>Acceso autorizado</p>
+        <h2>Continúa al portal de tu aerolínea.</h2>
         <p>
-          Usa las credenciales demo para entrar al portal de consulta de la
-          aerolínea.
+          Utiliza la cuenta emitida para tu aerolínea. El acceso y las estaciones
+          se comprueban con la API de Development.
         </p>
       </header>
 
-      <form className={styles.form} onSubmit={submit} noValidate>
+      <form className={styles.form} onSubmit={submit} noValidate hidden={passwordChangeRequired}>
         <Field
           id={SIGN_IN_IDS.email}
           name="email"
@@ -377,20 +399,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
         />
 
         <div className={styles.formOptions}>
-          <label className={styles.checkbox} htmlFor={SIGN_IN_IDS.remember}>
-            <input
-              id={SIGN_IN_IDS.remember}
-              name="remember"
-              type="checkbox"
-              checked={input.remember}
-              onChange={(event) => update("remember", event.currentTarget.checked)}
-            />
-            <span aria-hidden="true">
-              <CheckIcon />
-            </span>
-            Recordarme en este navegador
-          </label>
-          <span className={styles.localOnly}>Solo almacenamiento local</span>
+          <span className={styles.localOnly}>Sesión temporal en esta pestaña</span>
         </div>
 
         {feedback && (
@@ -419,19 +428,22 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
           )}
         </button>
 
-        <button
-          className={styles.secondaryButton}
-          type="button"
-          onClick={fillDemoCredentials}
-          disabled={pending}
-        >
-          Usar credenciales de demostración
-        </button>
       </form>
 
+      {passwordChangeRequired && <form className={styles.form} onSubmit={submitPasswordChange} noValidate>
+        <p>La API solicita reemplazar la contraseña temporal de {input.email}.</p>
+        <PasswordField id="airline-new-password" name="newPassword" label="Nueva contraseña"
+          value={newPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
+          onChange={setNewPassword} onBlur={() => {}} />
+        <PasswordField id="airline-confirm-password" name="confirmPassword" label="Confirmar nueva contraseña"
+          value={confirmPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
+          onChange={setConfirmPassword} onBlur={() => {}} />
+        {feedback && <div className={styles.feedback} data-kind={feedback.kind} role="alert"><InfoIcon /><p>{feedback.message}</p></div>}
+        <button className={styles.primaryButton} type="submit" disabled={pending}>Cambiar contraseña</button>
+      </form>}
+
       <p className={styles.formDisclaimer}>
-        La autenticación de esta versión es simulada. No concede acceso a un
-        portal productivo.
+        La sesión se revalida al recargar y termina al cerrar sesión o vencer el token.
       </p>
     </div>
   );

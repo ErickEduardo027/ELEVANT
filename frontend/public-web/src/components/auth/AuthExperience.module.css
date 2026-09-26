@@ -427,6 +427,10 @@
   margin-top: 2.2rem;
 }
 
+.form[hidden] {
+  display: none;
+}
+
 .fieldset {
   display: grid;
   gap: 1.35rem;

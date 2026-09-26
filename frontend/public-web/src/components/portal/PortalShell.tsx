@@ -12,7 +12,7 @@ import {
   type SVGProps,
 } from "react";
 
-import { useMockSession } from "@/components/auth/MockSessionProvider";
+import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { BrandMark } from "@/components/marketing/BrandMark";
 
 import {
@@ -27,7 +27,6 @@ import {
   PlaneIcon,
   UserIcon,
 } from "./PortalIcons";
-import { PortalNotifications } from "./PortalNotifications";
 import styles from "./PortalShell.module.css";
 
 type NavigationItem = {
@@ -144,10 +143,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { session, signOut } = useMockSession();
+  const { session, signOut } = useAirlineSession();
 
-  const airline = session?.airline.displayName || session?.airline.legalName || "Aerolínea";
-  const userInitials = (session?.user.fullName ?? "EA")
+  const airline = session?.bootstrap.name || "Aerolínea";
+  const userInitials = (session?.actor.displayName ?? "EA")
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0])
@@ -204,7 +203,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
             {userInitials}
           </span>
           <div>
-            <strong>{session?.user.fullName}</strong>
+            <strong>{session?.actor.displayName}</strong>
             <span>{airline}</span>
           </div>
           <button type="button" onClick={handleSignOut}>
@@ -232,13 +231,16 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
           <div className={styles.topbarContext}>
             <span>Estación autorizada</span>
-            <strong>{session?.stations.primary ?? "—"}</strong>
+            <strong>{session?.bootstrap.stations.map((station) => station.code).join(", ") || "—"}</strong>
           </div>
-          <PortalNotifications />
+          <button className={styles.noticeButton} type="button" disabled aria-label="Notificaciones no disponibles"
+            title="Notificaciones pendientes de integración">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" /></svg>
+          </button>
           <div className={styles.topbarUser} title={airline}>
             <span aria-hidden="true">{userInitials}</span>
             <div>
-              <strong>{session?.user.fullName}</strong>
+              <strong>{session?.actor.displayName}</strong>
               <small>{airline}</small>
             </div>
           </div>
@@ -276,7 +278,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
               {userInitials}
             </span>
             <div>
-              <strong>{session?.user.fullName}</strong>
+              <strong>{session?.actor.displayName}</strong>
               <span>{airline}</span>
             </div>
             <button type="button" onClick={handleSignOut}>

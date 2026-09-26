@@ -299,6 +299,7 @@ interface ApiResult {
 interface ProblemMetadata {
   readonly title?: string;
   readonly traceId?: string;
+  readonly code?: "password_change_required";
 }
 
 function validatedBaseUrl(input: string) {
@@ -395,6 +396,7 @@ function problemMetadata(value: unknown): ProblemMetadata {
   return {
     ...(typeof record.title === "string" ? { title: record.title } : {}),
     ...(typeof record.traceId === "string" ? { traceId: record.traceId } : {}),
+    ...(record.code === "password_change_required" ? { code: record.code } : {}),
   };
 }
 
@@ -1920,6 +1922,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         status: response.status,
         title: metadata.title,
         traceId: metadata.traceId,
+        code: metadata.code,
       });
     }
 

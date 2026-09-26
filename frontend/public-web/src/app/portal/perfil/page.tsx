@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { PortalProfile } from "@/components/portal/PortalProfile";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export const metadata: Metadata = { title: "Perfil" };
 
 export default function ProfilePage() {
-  return <PortalProfile />;
+  return <AirlinePortalPage view="profile" />;
 }

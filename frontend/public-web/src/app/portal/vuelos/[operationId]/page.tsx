@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { PortalDataBridge } from "@/components/portal/PortalDataBridge";
+import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
 export const metadata: Metadata = {
   title: "Detalle de vuelo",
@@ -14,5 +14,5 @@ export default async function PortalFlightDetailPage({
   params,
 }: PortalFlightDetailPageProps) {
   const { operationId } = await params;
-  return <PortalDataBridge view="flightDetail" operationId={operationId} />;
+  return <AirlinePortalPage view="flightDetail" operationId={operationId} />;
 }

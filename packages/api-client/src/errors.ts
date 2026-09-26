@@ -5,6 +5,7 @@ interface ElevantApiErrorOptions {
   readonly status: number;
   readonly title?: string | null | undefined;
   readonly traceId?: string | null | undefined;
+  readonly code?: "password_change_required" | undefined;
 }
 
 function safeMetadata(value: string | null | undefined, maximumLength: number) {
@@ -27,6 +28,7 @@ export class ElevantApiError extends Error {
   readonly status: number;
   readonly title: string;
   readonly traceId: string | undefined;
+  readonly code: "password_change_required" | undefined;
 
   constructor(options: ElevantApiErrorOptions) {
     const message =
@@ -42,6 +44,7 @@ export class ElevantApiError extends Error {
       safeMetadata(options.title, 200) ??
       (options.kind === "http" ? "API request failed" : "Malformed API response");
     this.traceId = safeMetadata(options.traceId, 128);
+    this.code = options.code;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
