@@ -73,6 +73,60 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task PasswordChangeUsesTheRetryingSqlStrategyAndPreservesOneAuditEntry()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+        {
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPasswordChangeStore>();
+        var accountId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        const string newPassword = "Synthetic-ContractsRotated!234";
+
+        Assert.Equal(PasswordChangeOutcome.Succeeded, await store.ChangeAsync(
+            accountId, InitialPasswords.Contracts, newPassword, cancellationToken));
+        Assert.Equal(PasswordChangeOutcome.InvalidCredentials, await store.ChangeAsync(
+            accountId, InitialPasswords.Contracts, "Synthetic-AnotherContracts!234", cancellationToken));
+
+        await using var inspection = CreateContext(database.ConnectionString);
+        var account = await inspection.Users.AsNoTracking().SingleAsync(
+            item => item.PublicId == accountId, cancellationToken);
+        Assert.False(account.MustChangePassword);
+        var hasher = new PasswordHasher<ApplicationUser>();
+        Assert.NotEqual(PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(account, account.PasswordHash!, newPassword));
+        Assert.Equal(PasswordVerificationResult.Failed,
+            hasher.VerifyHashedPassword(account, account.PasswordHash!, InitialPasswords.Contracts));
+        Assert.Equal(1, await inspection.AuditEntries.AsNoTracking().CountAsync(
+            entry => entry.EntityPublicId == accountId &&
+                entry.Action == "identity.password.changed",
+            cancellationToken));
+    }
+
+    [Fact]
     public async Task AirlinePortalReadStoreReturnsOnlyActiveContractStations()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
