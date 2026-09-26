@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-26"
-verified_commit: "c11b9295744502fb90b349d09aed9726939f71b4"
+verified_commit: "76170263d1b908c68066404fc0109e413f5b32d0"
 sources:
   - database/DevelopmentDB/Elevant.Persistence/Realtime/AccountChangeOutboxWriter.cs
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeDispatcherStore.cs
@@ -24,6 +24,10 @@ sources:
   - frontend/private-web/src/services/accountChangeObserver.test.js
   - frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx
   - frontend/private-web/README.md
+  - frontend/mobile-agent/src/services/mobile-change-observer.ts
+  - frontend/mobile-agent/src/services/mobile-change-feed.ts
+  - frontend/mobile-agent/tests/mobile-change-observer.test.js
+  - frontend/mobile-agent/README.md
 tags:
   - arquitectura
   - tiempo-real
@@ -61,6 +65,11 @@ conecta los hubs y reconcilia el cursor ante aviso, foco, conexión recuperada
 y sondeo de 25 segundos. Chat y Notificaciones OCC vuelven a consultar el
 recurso por REST; sus [pruebas de rutas](../../frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx)
 y [pruebas del observador](../../frontend/private-web/src/services/accountChangeObserver.test.js)
-cubren invalidación, replay, fallos y cierre de sesión. Esto **no** demuestra
-todavía navegación real con VPS, conexión de Public Web o Mobile Agent,
-latencia p95, entrega con la app cerrada ni promoción remota.
+cubren invalidación, replay, fallos y cierre de sesión. [Mobile Agent](../../frontend/mobile-agent/src/services/mobile-change-feed.ts)
+reconcilia por REST al volver al primer plano y cada 25 segundos mientras
+permanece activo; no añade SignalR nativo. Su [observador](../../frontend/mobile-agent/src/services/mobile-change-observer.ts)
+descarta respuestas de sesiones reemplazadas, reinicia el cursor al cambiar
+de cuenta y no confirma una página fallida. Las [pruebas](../../frontend/mobile-agent/tests/mobile-change-observer.test.js)
+incluyen esos casos y el bundle Android compila. Esto **no** demuestra todavía
+navegación real con VPS o emulador, conexión de Public Web, latencia p95,
+entrega con la app cerrada ni promoción remota.
