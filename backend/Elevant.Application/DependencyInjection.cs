@@ -1,5 +1,6 @@
 using Elevant.Application.Identity.CreateSession;
 using Elevant.Application.Commercial;
+using Elevant.Application.Finance;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration.RegisterMobileDevice;
 using Elevant.Application.Operations.AssignOccOperation;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
         services.AddScoped<GetAirlineContractsHandler>();
+        services.AddScoped<GetFinanceApprovedServicesHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();

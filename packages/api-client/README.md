@@ -138,6 +138,13 @@ identificadores de agente o estación. `reportRampIncident` envía solo tipo,
 impacto, descripción y hora de ocurrencia con instalación y clave de
 idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
 
+`getFinanceApprovedServices({ stationId, from, to })` exige una estación y un
+intervalo inclusivo de hasta 31 días. El wrapper comprueba que el alcance
+devuelto coincide con el solicitado, limita la página a 200 líneas y rechaza
+importes listos sin precio/moneda congelados o filas con propiedades ajenas al
+contrato. La API revalida el rol financiero y la estación; esta lectura no
+emite facturas ni modifica revisiones.
+
 ## Contrato y generación
 
 - `openapi/elevant-v1.json`: snapshot canónico certificado.

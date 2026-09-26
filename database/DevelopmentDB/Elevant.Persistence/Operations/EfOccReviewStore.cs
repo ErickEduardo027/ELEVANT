@@ -9,6 +9,7 @@ using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Finance;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -394,6 +395,9 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         context.AuditEntries.Add(audit);
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
+        if (outcome == ReviewOutcome.Approved)
+            await FinanceApprovedServiceChangeWriter.AddAsync(context,
+                scope.StationId, operation.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return OccReviewDecisionWriteResult.Success(new OccReviewDecisionWriteData(
             operation.PublicId, latest.PublicId, latest.Status.ToString(), outcome.ToString(),

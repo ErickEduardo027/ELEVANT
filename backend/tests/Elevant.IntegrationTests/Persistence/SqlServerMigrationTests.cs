@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
@@ -3719,6 +3720,91 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(airlineAccountInternalId, airlineHint.RecipientAccountId);
             Assert.Null(airlineHint.StationId);
         });
+        var financeAccountInternalId = await decisionCheck.Users.AsNoTracking()
+            .Where(item => item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000006"))
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var financeStationInternalId = await decisionCheck.Stations.AsNoTracking()
+            .Where(item => item.PublicId == stationId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var financeHints = (await decisionCheck.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "finance_approved_services" &&
+                item.ResourceId == operationId).ToArray();
+        Assert.Equal(reviewOutcome == "Approved" ? 1 : 0, financeHints.Length);
+        if (reviewOutcome == "Approved")
+        {
+            var hint = Assert.Single(financeHints);
+            Assert.Equal(financeAccountInternalId, hint.RecipientAccountId);
+            Assert.Equal(financeStationInternalId, hint.StationId);
+        }
+
+        await using (var financeScope = provider.CreateAsyncScope())
+        {
+            var finance = financeScope.ServiceProvider
+                .GetRequiredService<IFinanceApprovedServicesReadStore>();
+            var financeAccountId = Guid.Parse("40000000-0000-7000-8000-000000000006");
+            var date = new DateOnly(2026, 8, 18);
+            var evidence = await finance.GetAsync(financeAccountId, stationId,
+                date, date, cancellationToken);
+            Assert.NotNull(evidence);
+            if (reviewOutcome == "Approved")
+            {
+                var billed = Assert.Single(evidence.Services,
+                    item => item.Id == baggageServiceId);
+                Assert.True(billed.Ready);
+                Assert.True(billed.Amount > 0);
+                Assert.Equal(handoffKey, billed.ApprovedSubmissionId);
+                Assert.Equal(1m, billed.ExecutedQuantity);
+            }
+            else
+            {
+                Assert.Empty(evidence.Services);
+            }
+            Assert.Null(await finance.GetAsync(occAccountId, stationId,
+                date, date, cancellationToken));
+            Assert.Null(await finance.GetAsync(financeAccountId,
+                Guid.Parse("20000000-0000-7000-8000-000000000013"),
+                date, date, cancellationToken));
+        }
+
+        if (reviewOutcome == "Approved")
+        {
+            await using (var dispatchScope = provider.CreateAsyncScope())
+            {
+                await dispatchScope.ServiceProvider
+                    .GetRequiredService<IAccountChangeDispatcherStore>()
+                    .DispatchPendingAsync(100, cancellationToken);
+            }
+            var financePublicId = Guid.Parse("40000000-0000-7000-8000-000000000006");
+            await using (var readScope = provider.CreateAsyncScope())
+            {
+                var page = await readScope.ServiceProvider
+                    .GetRequiredService<IAccountChangeReadStore>()
+                    .ReadAsync(financePublicId, 0, 100, cancellationToken);
+                Assert.Contains(Assert.IsType<AccountChangePage>(page).Changes,
+                    item => item.Resource == "finance_approved_services" &&
+                        item.ResourceId == operationId);
+            }
+            await using (var revoke = CreateContext(database.ConnectionString))
+            {
+                await revoke.AccountStationScopes
+                    .Where(item => item.AccountId == financeAccountInternalId &&
+                        item.StationId == financeStationInternalId)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(item => item.RevokedAt, DateTimeOffset.UtcNow),
+                        cancellationToken);
+            }
+            await using (var readScope = provider.CreateAsyncScope())
+            {
+                var page = await readScope.ServiceProvider
+                    .GetRequiredService<IAccountChangeReadStore>()
+                    .ReadAsync(financePublicId, 0, 100, cancellationToken);
+                Assert.DoesNotContain(Assert.IsType<AccountChangePage>(page).Changes,
+                    item => item.Resource == "finance_approved_services");
+            }
+        }
 
         if (reviewOutcome == "Returned")
         {

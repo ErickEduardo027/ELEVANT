@@ -1,6 +1,7 @@
 import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
+  getGetFinanceApprovedServicesUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -35,6 +36,7 @@ import {
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
+  type FinanceApprovedServicesResponse,
   type GetAirlineContractsParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
@@ -110,6 +112,12 @@ export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export interface FinanceApprovedServicesQuery {
+  readonly stationId: string;
+  readonly from: string;
+  readonly to: string;
+}
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -189,6 +197,10 @@ export interface ElevantApiClient {
     parameters?: GetAirlineContractsParams,
     options?: GetAirlineContractsOptions,
   ): Promise<AirlineContractPageResponse>;
+  getFinanceApprovedServices(
+    query: FinanceApprovedServicesQuery,
+    options?: GetFinanceApprovedServicesOptions,
+  ): Promise<FinanceApprovedServicesResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1675,6 +1687,54 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
           isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
 }
 
+function validatedFinanceApprovedServicesQuery(
+  query: FinanceApprovedServicesQuery,
+): FinanceApprovedServicesQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "from", "to"]) ||
+      !isUuid(query.stationId) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 30 || query.to < query.from)
+    throw new TypeError("Finance evidence station and date range are invalid.");
+  return query as unknown as FinanceApprovedServicesQuery;
+}
+
+function isFinanceApprovedServicesResponse(value: unknown): value is FinanceApprovedServicesResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["stationId", "from", "to", "services", "hasMore"]) &&
+    isUuid(value.stationId) && isDateOnly(value.from) && isDateOnly(value.to) &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.services) &&
+    value.services.length <= 200 &&
+    value.services.every((service) => isRecord(service) &&
+      hasOnlyKeys(service, ["id", "operationId", "turnaroundId", "approvedSubmissionId",
+        "operationCode", "operationDate", "airlineName", "flightNumber", "contractCode",
+        "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
+        "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
+        "ready", "blockingReason", "amount"]) &&
+      isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
+      isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
+      isDateOnly(service.operationDate) && isNonEmptyString(service.airlineName) &&
+      isString(service.flightNumber) && isOptionalNullable(service.contractCode, isNonEmptyString) &&
+      isNonEmptyString(service.serviceCode) && isNonEmptyString(service.serviceName) &&
+      ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"].includes(
+        String(service.executionStatus)) &&
+      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
+      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
+      isString(service.billingUnit) &&
+      isOptionalNullable(service.frozenUnitPrice, value => isFiniteNumber(value) && value >= 0) &&
+      isOptionalNullable(service.frozenCurrency, value =>
+        typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
+      typeof service.ready === "boolean" &&
+      (service.ready
+        ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
+          isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
+          typeof service.frozenCurrency === "string" &&
+          /^[A-Z]{3}$/.test(service.frozenCurrency) &&
+          (service.blockingReason === null || service.blockingReason === undefined) &&
+          isFiniteNumber(service.amount) && service.amount >= 0
+        : isNonEmptyString(service.blockingReason) &&
+          (service.amount === null || service.amount === undefined)));
+}
+
 function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
   if (!isRecord(parameters) ||
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
@@ -2264,6 +2324,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAirlineContractPageResponse(result.data) ||
         result.data.page !== (paging.page ?? 1) ||
         result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceApprovedServices(
+      query: FinanceApprovedServicesQuery,
+      options?: GetFinanceApprovedServicesOptions,
+    ) {
+      const scope = validatedFinanceApprovedServicesQuery(query);
+      const result = await execute(getGetFinanceApprovedServicesUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceApprovedServicesResponse(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.from !== scope.from || result.data.to !== scope.to)
         throw malformedResponse(result.status);
       return result.data;
     },

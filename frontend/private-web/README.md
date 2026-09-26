@@ -100,6 +100,14 @@ que exista un feed autorizado para sus roles. Los módulos profundos de ambos
 departamentos siguen siendo prototipos y no deben interpretarse como consultas
 persistentes ni como un circuito completo sin endpoints heredados.
 
+En la rama de integración, **Finanzas → Servicios aprobados** es una excepción
+concreta a esa descripción histórica: consulta la API versionada con estación
+y período explícitos, muestra evidencia aprobada y razones de bloqueo reales,
+escucha el feed durable y reconsulta al recuperar foco o como máximo cada 25
+segundos. La antigua acción local «Marcar revisado» se retiró porque no
+persistía ni auditaba. El resto de Finanzas aún no constituye prefacturación,
+conciliación, factura o cobro canónico. No se ha promovido al VPS.
+
 ## Imagen de Development
 
 La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:

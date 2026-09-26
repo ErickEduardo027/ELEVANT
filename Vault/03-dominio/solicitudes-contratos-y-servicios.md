@@ -109,6 +109,20 @@ OperationService
 
 La definición de servicio es catálogo; la tarifa pertenece a una versión contractual; la ejecución pertenece a una operación. La FK opcional no garantiza que la tarifa sea la procedencia de los snapshots. Falta validar que precio y moneda sean all-or-none, que una línea contractualmente valorizada enlace una tarifa, que tarifa y línea compartan definición, que contrato y turnaround compartan aerolínea, que la versión esté aprobada, cubra la estación y sea vigente, y que unidad/precio/moneda se copien de forma consistente y permanezcan históricos.
 
+### Lectura financiera en la rama de integración
+
+La rama `feat/integrated-cycle-realtime` expone una lectura acotada de líneas
+de operaciones cuya última entrega fue aprobada por OCC. Finanzas debe tener
+rol interno y grant vigente de la estación. La cantidad, estado y unidad de
+cada línea se contrastan con el snapshot inmutable presentado a OCC; el
+importe sólo se calcula si el servicio se completó con cantidad positiva y
+existen precio, moneda y unidad congelados válidos. Las inconsistencias se
+muestran como líneas bloqueadas, sin importe facturable, en vez de omitirlas
+silenciosamente. Una aprobación genera una pista durable dirigida a Finanzas
+en la misma transacción; el feed vuelve a comprobar rol, membresía, estación
+y estado de la operación. Esta capacidad aún no crea prefactura, factura,
+pago ni recibo y no acredita un despliegue al VPS.
+
 ## Diferencias con Public Web
 
 El prototipo del portal usa tipos como `SCHEDULE_CHANGE`, `SPECIAL_ASSISTANCE` y `OTHER`, además de una forma de solicitud ligada a vuelo y estados con nombres propios. También representa facturas, conciliaciones, disputas, documentos y notificaciones. Esos tipos orientan futuras conversaciones de producto, pero no son DTO OpenAPI ni amplían las entidades actuales.

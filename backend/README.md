@@ -153,6 +153,20 @@ portal vuelve a consultar el `bootstrap` tenant-scoped y la API revalida la
 autorización al leer el feed. Los replays idempotentes no crean otra pista.
 Esto aún no cubre servicios, facturación, documentos ni historial completo.
 
+La rama `feat/integrated-cycle-realtime` añade
+`GET /api/v1/finance/approved-services?stationId&from&to` para Finanzas. La
+cuenta debe conservar rol `FINANZAS`, membresía interna AVIAM y grant de la
+estación al consultar; el intervalo inclusivo máximo es de 31 días y la
+respuesta se limita a 200 líneas con `hasMore`. Sólo operaciones con última
+entrega aprobada por OCC aparecen. Cantidad y estado se contrastan con la
+evidencia inmutable de esa entrega y el importe utiliza precio y moneda
+congelados en `OperationService`, nunca la tarifa actual. Una línea bloqueada
+conserva una razón explícita y no tiene importe facturable. La aprobación
+escribe una invalidación `finance_approved_services` dirigida a Finanzas en
+la misma transacción; el feed revalida rol, membresía, estación y estado.
+Esta lectura no crea prefacturas, facturas, pagos ni recibos, y todavía no se
+ha desplegado.
+
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión

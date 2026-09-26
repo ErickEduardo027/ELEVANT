@@ -38,12 +38,25 @@ internal sealed class EfAccountChangeReadStore(
             .ToArray();
         var hasAirlinePortalRole = actor.Roles.Any(role =>
             role.Code == "AIRLINE_CLIENT" && role.Portal == PortalKind.AirlinePortal);
+        var hasFinanceAccess = actor.Roles.Any(role =>
+            role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) &&
+            actor.Memberships.Any(membership =>
+                membership.Kind == MembershipKind.InternalStaff &&
+                membership.OrganizationType == OrganizationType.AviamOperator);
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
                 (change.StationId == null || context.Stations.Any(station =>
                     station.Id == change.StationId &&
                     allowedStations.Contains(station.PublicId))) &&
+                (change.Resource != "finance_approved_services" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.GroundOperations.Any(operation =>
+                         operation.PublicId == change.ResourceId &&
+                         operation.CurrentStatus == GroundOperationStatus.Approved &&
+                         context.Turnarounds.Any(turnaround =>
+                             turnaround.Id == operation.TurnaroundId &&
+                             turnaround.StationId == change.StationId)))) &&
                 (change.Resource != "airline_operations" ||
                     (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
                         operation.PublicId == change.ResourceId &&

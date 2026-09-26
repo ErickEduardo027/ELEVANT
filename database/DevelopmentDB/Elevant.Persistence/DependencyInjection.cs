@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Abstractions.Realtime;
@@ -7,6 +8,7 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Integration;
 using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
@@ -62,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();

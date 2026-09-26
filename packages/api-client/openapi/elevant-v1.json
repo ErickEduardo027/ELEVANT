@@ -482,6 +482,107 @@
         }
       }
     },
+    "/api/v1/finance/approved-services": {
+      "get": {
+        "tags": [
+          "FinanceApprovedServices"
+        ],
+        "operationId": "GetFinanceApprovedServices",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceApprovedServicesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/mobile/device": {
       "put": {
         "tags": [
@@ -3951,6 +4052,137 @@
         },
         "additionalProperties": false
       },
+      "FinanceApprovedServiceResponse": {
+        "required": [
+          "airlineName",
+          "approvedSubmissionId",
+          "billingUnit",
+          "contractedQuantity",
+          "executedQuantity",
+          "executionStatus",
+          "flightNumber",
+          "id",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "ready",
+          "serviceCode",
+          "serviceName",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedSubmissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "contractCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "executionStatus": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "frozenUnitPrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "frozenCurrency": {
+            "type": "string",
+            "nullable": true
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "blockingReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceApprovedServicesResponse": {
+        "required": [
+          "from",
+          "hasMore",
+          "services",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceApprovedServiceResponse"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "GetRampIncidentsResponse": {
         "required": [
           "incidents",
@@ -6859,6 +7091,9 @@
     },
     {
       "name": "Authentication"
+    },
+    {
+      "name": "FinanceApprovedServices"
     },
     {
       "name": "MobileDevices"

@@ -231,6 +231,42 @@ export interface DecideOccReviewResponse {
   reason?: string | null;
 }
 
+export interface FinanceApprovedServiceResponse {
+  id: string;
+  operationId: string;
+  turnaroundId: string;
+  approvedSubmissionId: string;
+  operationCode: string;
+  operationDate: string;
+  airlineName: string;
+  flightNumber: string;
+  /** @nullable */
+  contractCode?: string | null;
+  serviceCode: string;
+  serviceName: string;
+  executionStatus: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+  /** @nullable */
+  frozenUnitPrice?: number | null;
+  /** @nullable */
+  frozenCurrency?: string | null;
+  ready: boolean;
+  /** @nullable */
+  blockingReason?: string | null;
+  /** @nullable */
+  amount?: number | null;
+}
+
+export interface FinanceApprovedServicesResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  services: FinanceApprovedServiceResponse[];
+  hasMore: boolean;
+}
+
 export interface RampIncidentResponse {
   id: string;
   incidentType: string;
@@ -1002,6 +1038,12 @@ page?: number;
 limit?: number;
 };
 
+export type GetFinanceApprovedServicesParams = {
+stationId?: string;
+from?: string;
+to?: string;
+};
+
 export type GetOccPlanningSnapshotParams = {
 stationId?: string;
 date?: string;
@@ -1222,6 +1264,41 @@ const res = await fetch(getChangePasswordUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getGetFinanceApprovedServicesUrl = (params?: GetFinanceApprovedServicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/approved-services?${stringifiedParams}` : `/api/v1/finance/approved-services`
+}
+
+export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServicesParams, options?: RequestInit): Promise<FinanceApprovedServicesResponse> => {
+
+  const res = await fetch(getGetFinanceApprovedServicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceApprovedServicesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

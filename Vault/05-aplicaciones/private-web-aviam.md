@@ -103,6 +103,14 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 | Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Contratos y Finanzas todavía no migraron sus módulos profundos de forma general. |
 | API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los resúmenes sintéticos no prueban endpoints financieros o contractuales; los módulos heredados pueden seguir fallando hasta su migración. |
 
+En la rama de integración posterior al commit histórico de esta nota,
+**Finanzas → Servicios aprobados** consume una nueva lectura canónica por
+estación y período. Presenta importes de snapshots operativos y razones de
+bloqueo, no cifras de fixtures; la antigua acción local «Marcar revisado» ya
+no aparece. Revalida por feed durable, foco y polling acotado. El resto de
+Finanzas y la emisión de factura/recibo siguen pendientes; no se ha promovido
+esta rama al VPS.
+
 ## Desarrollo local
 
 Desde `frontend/private-web`:
