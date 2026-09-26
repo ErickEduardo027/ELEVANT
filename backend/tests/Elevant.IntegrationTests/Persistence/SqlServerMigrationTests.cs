@@ -210,7 +210,9 @@ public sealed class SqlServerMigrationTests
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Users.AsNoTracking().ToListAsync(cancellationToken));
         Assert.Empty(await context.Turnarounds.AsNoTracking().ToListAsync(cancellationToken));
-        Assert.Equal(10, (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).Count());
+        Assert.Equal(
+            context.Database.GetMigrations(),
+            await context.Database.GetAppliedMigrationsAsync(cancellationToken));
 
         var productionCredentialMutation = await Assert.ThrowsAsync<SqlException>(() =>
             context.Database.ExecuteSqlRawAsync(
@@ -3687,6 +3689,34 @@ public sealed class SqlServerMigrationTests
         Assert.DoesNotContain(changeHints, message =>
             message.PayloadJson.Contains("Llegu", StringComparison.Ordinal) ||
             message.PayloadJson.Contains("Recibido", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AccountChangeMigrationGrantsOnlyRequiredInfraDmlToApplicationRole()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await using var connection = await database.OpenAsDevelopmentAppAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CASE WHEN
+                HAS_PERMS_BY_NAME(N'infra.outbox_messages', N'OBJECT', N'SELECT') = 1 AND
+                HAS_PERMS_BY_NAME(N'infra.outbox_messages', N'OBJECT', N'INSERT') = 1 AND
+                HAS_PERMS_BY_NAME(N'infra.outbox_messages', N'OBJECT', N'UPDATE') = 1 AND
+                HAS_PERMS_BY_NAME(N'infra.outbox_messages', N'OBJECT', N'DELETE') = 0 AND
+                HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'SELECT') = 1 AND
+                HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'INSERT') = 1 AND
+                HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'UPDATE') = 0 AND
+                HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'DELETE') = 0
+                THEN 1 ELSE 0 END;
+            """;
+        Assert.Equal(1, (int)(await command.ExecuteScalarAsync(cancellationToken) ?? -1));
     }
 
     [Fact]

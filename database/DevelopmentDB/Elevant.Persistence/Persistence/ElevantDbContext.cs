@@ -21,6 +21,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
+    public DbSet<AccountChange> AccountChanges => Set<AccountChange>();
+
     public DbSet<Organization> Organizations => Set<Organization>();
 
     public DbSet<Person> Persons => Set<Person>();

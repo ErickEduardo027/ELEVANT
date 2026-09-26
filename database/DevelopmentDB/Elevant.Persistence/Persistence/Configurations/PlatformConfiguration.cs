@@ -1,4 +1,6 @@
 using Elevant.Domain.Entities.Infrastructure;
+using Elevant.Infrastructure.Identity;
+using Elevant.Domain.Entities.Reference;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Infrastructure.Persistence.Configurations;
@@ -30,6 +32,29 @@ internal static class PlatformConfiguration
             builder.Property(message => message.LastError).HasMaxLength(2000);
             builder.HasIndex(message => message.PublicId).IsUnique();
             builder.HasIndex(message => new { message.ProcessedAt, message.OccurredAt });
+        });
+
+        modelBuilder.Entity<AccountChange>(builder =>
+        {
+            builder.ToTable("account_changes", "infra", table =>
+                table.HasCheckConstraint("ck_account_changes_resource", "LEN([resource]) BETWEEN 1 AND 64"));
+            builder.HasKey(change => change.Id);
+            builder.Property(change => change.Id).UseIdentityColumn();
+            builder.Property(change => change.PublicId).IsRequired();
+            builder.Property(change => change.OutboxPublicId).IsRequired();
+            builder.Property(change => change.Resource).HasMaxLength(64).IsRequired();
+            builder.Property(change => change.ResourceId).IsRequired();
+            builder.Property(change => change.OccurredAt).HasPrecision(3).IsRequired();
+            builder.Property(change => change.CreatedAt).HasPrecision(3).IsRequired();
+            builder.HasIndex(change => change.PublicId).IsUnique();
+            builder.HasIndex(change => new { change.OutboxPublicId, change.RecipientAccountId }).IsUnique();
+            builder.HasIndex(change => new { change.RecipientAccountId, change.Id });
+            builder.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(change => change.RecipientAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<Station>().WithMany()
+                .HasForeignKey(change => change.StationId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
     }
 }

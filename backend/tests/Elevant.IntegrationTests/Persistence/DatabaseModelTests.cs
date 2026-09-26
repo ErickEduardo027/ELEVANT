@@ -1,6 +1,7 @@
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
@@ -13,6 +14,28 @@ namespace Elevant.IntegrationTests.Persistence;
 
 public sealed class DatabaseModelTests
 {
+    [Fact]
+    public void AccountChangeFeedHasStableRecipientAndOutboxIdentity()
+    {
+        using var context = CreateContext();
+        var change = context.Model.FindEntityType(typeof(AccountChange));
+
+        Assert.NotNull(change);
+        Assert.Equal("infra", change.GetSchema());
+        Assert.Equal("account_changes", change.GetTableName());
+        Assert.Equal(3, change.FindProperty(nameof(AccountChange.OccurredAt))?.GetPrecision());
+        Assert.Equal(3, change.FindProperty(nameof(AccountChange.CreatedAt))?.GetPrecision());
+        Assert.Contains(change.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(AccountChange.OutboxPublicId), nameof(AccountChange.RecipientAccountId)]));
+        Assert.Contains(change.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(AccountChange.RecipientAccountId), nameof(AccountChange.Id)]));
+        Assert.Equal(2, change.GetForeignKeys().Count());
+        Assert.All(change.GetForeignKeys(), foreignKey =>
+            Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+    }
+
     private static ElevantDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ElevantDbContext>()

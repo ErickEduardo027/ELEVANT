@@ -58,10 +58,10 @@
 **Interfaces:**
 - Produces: `infra.account_changes` with identity sequence, unique `(outbox_public_id, recipient_account_id)`, recipient account FK, nullable station FK, resource, resource UUID and occurred time. One dispatcher transaction serially creates feed rows; this identity is the cursor order.
 
-- [ ] Add a failing EF model test for table, precision, unique index and `NO ACTION` FKs.
-- [ ] Run focused model tests; expect missing entity or mapping failure.
-- [ ] Add entity, mapping and DbSet; generate an additive migration only through `database/DevelopmentDB/scripts/add-migration.ps1 -Name AccountChangeFeed` using a non-secret local Development connection setting.
-- [ ] Run `dotnet ef migrations has-pending-model-changes` and the full backend suite; expect no pending changes and all tests passing.
+- [x] Add a failing EF model test for table, precision, unique index and `NO ACTION` FKs.
+- [x] Run focused model tests; expect missing entity or mapping failure.
+- [x] Add entity, mapping and DbSet; generate an additive migration only through `database/DevelopmentDB/scripts/add-migration.ps1 -Name AccountChangeFeed` using a non-secret local Development connection setting.
+- [x] Run `dotnet ef migrations has-pending-model-changes` and the full backend suite; expect no pending changes and all tests passing.
 - [ ] Commit schema, migration, tests and schema notes as `feat(realtime): add durable account change feed`.
 
 ### Task 3: Project committed outbox and push hints

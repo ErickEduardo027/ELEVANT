@@ -18,6 +18,13 @@ tests/scripts/                    pruebas del tooling y fixture de certificació
 
 ## Migraciones
 
+La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
+y concede a `elevant_app_role` permisos de objeto limitados para
+escribir/procesar el outbox y leer/insertar pistas del feed.
+`provision-development.sql` reproduce esos grants en una reprovisión y
+`verify-development.sql` comprueba sus límites efectivos. Esta migración
+no está desplegada hasta completar la certificación y la promoción controlada.
+
 Desde cualquier directorio:
 
 ```powershell

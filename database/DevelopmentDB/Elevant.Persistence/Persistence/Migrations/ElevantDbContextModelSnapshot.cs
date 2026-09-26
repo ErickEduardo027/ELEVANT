@@ -1101,6 +1101,69 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("role_permissions", "iam");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.AccountChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("OutboxPublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("outbox_public_id");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<long>("RecipientAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("recipient_account_id");
+
+                    b.Property<string>("Resource")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("resource");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resource_id");
+
+                    b.Property<long?>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("OutboxPublicId", "RecipientAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("RecipientAccountId", "Id");
+
+                    b.ToTable("account_changes", "infra", t =>
+                        {
+                            t.HasCheckConstraint("ck_account_changes_resource", "LEN([resource]) BETWEEN 1 AND 64");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.OutboxMessage", b =>
                 {
                     b.Property<long>("Id")
@@ -5236,6 +5299,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.AccountChange", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Integration.MobileCommandReceipt", b =>
