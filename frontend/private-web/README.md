@@ -79,6 +79,14 @@ Los roles, tenants y scopes de estación se validan en el servidor. Filtros, men
 
 Los mocks describen flujos de producto, no contratos persistentes ni una frontera de autorización.
 
+Los resúmenes de Contratos y Finanzas son vistas sintéticas de solo lectura,
+señalizadas en la interfaz. No consultan los antiguos endpoints
+`/api/notifications` ni `/api/finance/summary`, ausentes del OpenAPI canónico.
+El icono de notificaciones de esos dos departamentos permanece oculto hasta
+que exista un feed autorizado para sus roles. Los módulos profundos de ambos
+departamentos siguen siendo prototipos y no deben interpretarse como consultas
+persistentes ni como un circuito completo sin endpoints heredados.
+
 ## Imagen de Development
 
 La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:

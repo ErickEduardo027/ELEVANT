@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-09-25"
+verified_commit: "c37a6028cdd5f4e269358cf0e97c5190ef89d5d5"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
@@ -18,6 +18,9 @@ sources:
   - frontend/private-web/src/features/admin-occ/navigation.js
   - frontend/private-web/src/features/human-resources/navigation.js
   - frontend/private-web/src/config/elevantApiClient.js
+  - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
+  - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
+  - frontend/private-web/src/services/financeHomeService.js
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/nginx/security-headers.conf
@@ -31,7 +34,7 @@ tags:
 
 # Private Web / AVIAM
 
-Private Web es la aplicación interna de AVIAM para OCC, administración y departamentos operativos. Sus pantallas son una fuente útil de recorridos y vocabulario; sus sesiones mock, objetos locales y rutas heredadas no son autoridad de permisos, persistencia ni contrato HTTP.
+Private Web es la aplicación interna de AVIAM para OCC, administración y departamentos operativos. Su acceso usa la sesión real de la API de Development y algunas rutas OCC consumen contratos canónicos. Las pantallas prototípicas, objetos locales y rutas heredadas restantes no son autoridad de permisos, persistencia ni contrato HTTP.
 
 ## Ficha de frontera
 
@@ -48,7 +51,7 @@ Private Web es la aplicación interna de AVIAM para OCC, administración y depar
 
 - Vite 6 y JavaScript/JSX como aplicación SPA.
 - React 18 y React DOM 18.
-- React Router 6 para rutas principales protegidas por rol prototípico.
+- React Router 6 para rutas principales seleccionadas por el rol de la sesión; la API impone la autorización real.
 - Tailwind CSS 3 y tokens CSS para presentación.
 - MapLibre GL para vistas cartográficas.
 - `@elevant/api-client` como dependencia local del monorepo.
@@ -60,7 +63,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 | Ruta | Responsabilidad observada |
 | --- | --- |
-| `src/app/router.jsx` | Router principal, redirects, guards prototípicos y composición por rol. |
+| `src/app/router.jsx` | Router principal, redirects, guards de navegación y composición por rol. |
 | `src/features/` | Interfaces y comportamiento por área: auth, OCC, planificación, monitoreo, posiciones, revisión, reportes, notificaciones, chat, contratos, finanzas y Gestión Humana. |
 | `src/services/` | Adaptadores de datos heredados y snapshots de prueba; no deben dictar el contrato futuro. |
 | `src/config/elevantApiClient.js` | Fábrica aislada para el cliente OpenAPI compartido. |
@@ -72,9 +75,9 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 ### Entrada y selección de área
 
-- `/login` presenta el acceso prototípico.
+- `/login` autentica contra la API de Development; las credenciales mock solo existen en pruebas automatizadas.
 - El rol de la sesión redirige a `/admin-occ`, `/gestion-humana`, `/contratos` o `/finanzas`.
-- Los guards del router mejoran el recorrido demostrativo, pero no son autorización de servidor.
+- Los guards del router organizan la navegación, pero no sustituyen la autorización del servidor.
 
 ### OCC / Administración
 
@@ -86,17 +89,17 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 
 ### Contratos y Finanzas
 
-`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones.
+`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones. Sus dos resúmenes iniciales están etiquetados como datos sintéticos: Finanzas usa un snapshot local en vez del endpoint heredado inexistente `/api/finance/summary`. El buzón de notificaciones heredado está oculto para ambos roles, evitando solicitudes a `/api/notifications`. Esto no certifica los módulos profundos, que todavía conservan adaptadores de prototipo.
 
 ## Estado de integración
 
 | Capa | Actual | Límite |
 | --- | --- | --- |
 | UI | Las rutas, componentes, filtros, formularios y estados son ejecutables. | Ejecutable no equivale a flujo de negocio integrado. |
-| Autenticación | `authService.js` llama endpoints heredados y persiste una sesión prototípica en el navegador; tests usan identidades sintéticas. | La API .NET no implementa autenticación actual; esta sesión no autoriza. |
-| Datos de negocio | Los servicios combinan snapshots/fixtures y llamadas a rutas del backend prototipo. | Esas formas y rutas no son OpenAPI vigente. |
-| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Las pantallas de negocio todavía no migraron de forma general a ella. |
-| API real | El build de Development alinea las dos URLs públicas hacia el mismo origen de API. | Como faltan endpoints de negocio, las llamadas heredadas deben fallar visiblemente; no aparece un backend alterno. |
+| Autenticación | `authService.js` usa el cliente OpenAPI para crear y revalidar la sesión de Development; tests usan identidades sintéticas. | La sesión en el navegador no sustituye el enforcement del backend por rol y estación. |
+| Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
+| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Contratos y Finanzas todavía no migraron sus módulos profundos de forma general. |
+| API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los resúmenes sintéticos no prueban endpoints financieros o contractuales; los módulos heredados pueden seguir fallando hasta su migración. |
 
 ## Desarrollo local
 
