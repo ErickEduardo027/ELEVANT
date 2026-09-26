@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../components/ui';
 import { MobileServiceError } from '../services/mobile-service-error';
+import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { getOperationalNotifications, setOperationalNotificationRead } from '../services/operational-communication';
 import { colors } from '../theme/colors';
 import { resetToLogin } from '../utils/session-navigation';
@@ -23,6 +24,10 @@ export default function NotificationsScreen() {
   const [revision, setRevision] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [writeError, setWriteError] = useState('');
+
+  useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
+    if (resources.includes('notifications')) setRevision(value => value + 1);
+  }), []));
 
   useFocusEffect(useCallback(() => {
     const controller = new AbortController();

@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../components/ui';
 import { MobileServiceError } from '../services/mobile-service-error';
+import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import {
   getOperationalConversations, getOperationalMessages,
   readPendingOperationMessage, sendOperationalMessage,
@@ -36,6 +37,13 @@ export default function ChatScreen() {
   const [sendError, setSendError] = useState('');
   const [listRevision, setListRevision] = useState(0);
   const [messageRevision, setMessageRevision] = useState(0);
+
+  useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
+    if (resources.includes('operation_messages')) {
+      setListRevision(value => value + 1);
+      setMessageRevision(value => value + 1);
+    }
+  }), []));
 
   useFocusEffect(useCallback(() => {
     const controller = new AbortController();
