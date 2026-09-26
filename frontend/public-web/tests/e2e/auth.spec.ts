@@ -14,7 +14,8 @@ test("public login uses the real API contract, remains tab-scoped and signs out"
   await enterAirline(page);
   await expect(page).toHaveURL(/\/portal$/);
   await expect(page.getByRole("heading", { level: 1, name: "Demo Airlines" })).toBeVisible();
-  expect(paths).toEqual(["POST /api/v1/auth/session", "GET /api/v1/auth/session", "GET /api/v1/airline/portal/bootstrap"]);
+  expect(paths.slice(0, 3)).toEqual(["POST /api/v1/auth/session", "GET /api/v1/auth/session", "GET /api/v1/airline/portal/bootstrap"]);
+  await expect.poll(() => paths.includes("GET /api/v1/changes")).toBe(true);
   const stored = await page.evaluate(() => ({ session: sessionStorage.getItem("elevant-airline-session-v1"), local: localStorage.length }));
   expect(JSON.parse(stored.session ?? "null")).toEqual({ accessToken: "synthetic-e2e-token", expiresAt: "2099-01-01T00:00:00Z" });
   expect(stored.local).toBe(0);
