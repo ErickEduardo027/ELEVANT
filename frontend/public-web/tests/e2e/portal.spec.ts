@@ -27,12 +27,12 @@ test("shows real airline data for overview, flights, detail and profile", async 
 
 test("keeps all portal modules visible as clearly marked, read-only previews", async ({ page }) => {
   for (const [path, title] of [
-    ["solicitudes", "Solicitudes"], ["contratos", "Contratos"], ["documentos", "Documentos"],
+    ["solicitudes", "Solicitudes con estado visible."], ["contratos", "Contratos"], ["documentos", "Documentos"],
     ["finanzas", "Finanzas"], ["reportes", "Reportes"],
   ]) {
     await page.goto(`/portal/${path}`);
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    await expect(page.getByText(/Datos de demostración · solo vista previa/i)).toBeVisible();
+    await expect(page.getByText(/Datos (?:de demostración|sintéticos) · (?:solo vista previa|muestra visual)/i)).toBeVisible();
     await expect(page.locator("#portal-content button:not([disabled])")).toHaveCount(0);
   }
   await page.goto("/portal/finanzas");

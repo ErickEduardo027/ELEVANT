@@ -132,7 +132,7 @@ function RotationRoute({ flight, compact = false }: { flight: PortalFlight; comp
   );
 }
 
-function FlightStrip({ flight }: { flight: PortalFlight }) {
+function FlightStrip({ flight, demo = false }: { flight: PortalFlight; demo?: boolean }) {
   return (
     <article className={styles.flightStrip}>
       <div className={styles.flightIdentity}>
@@ -148,14 +148,11 @@ function FlightStrip({ flight }: { flight: PortalFlight }) {
         <StatusPill>{flight.flightStatus}</StatusPill>
         <StatusPill>{flight.operationStatus}</StatusPill>
       </div>
-      <Link
-        className={styles.flightLink}
-        href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}
-        aria-label={`Ver detalle del vuelo ${flight.flightNumber}`}
-      >
-        <span>Ver rotación</span>
-        <ArrowRightIcon />
-      </Link>
+      {demo ? <span className={styles.flightLink} title="Ejemplo no navegable"><ArrowRightIcon /></span>
+        : <Link className={styles.flightLink} href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}
+            aria-label={`Ver detalle del vuelo ${flight.flightNumber}`}>
+            <span>Ver rotación</span><ArrowRightIcon />
+          </Link>}
     </article>
   );
 }
@@ -163,11 +160,13 @@ function FlightStrip({ flight }: { flight: PortalFlight }) {
 export interface PortalOverviewViewProps extends RefreshProps {
   overview: PortalOverview;
   station?: string;
+  demo?: boolean;
 }
 
 export function PortalOverviewView({
   overview,
   station,
+  demo = false,
   onRefresh,
   isRefreshing,
 }: PortalOverviewViewProps) {
@@ -177,7 +176,7 @@ export function PortalOverviewView({
     <div className={styles.viewStack}>
       <section className={styles.overviewHero} aria-labelledby="overview-title">
         <div className={styles.overviewHeading}>
-          <p className={styles.eyebrow}>Vista autorizada · {visibleStation}</p>
+          <p className={styles.eyebrow}>{demo ? "Secuencia de ejemplo" : "Vista autorizada"} · {visibleStation}</p>
           <h1 id="overview-title">Tu operación, en una sola secuencia.</h1>
           <p>
             Consulta vuelos, hitos y evidencias sin intervenir en la ejecución del
@@ -222,7 +221,7 @@ export function PortalOverviewView({
           <div className={styles.flightList}>
             {overview.activeFlights.length ? (
               overview.activeFlights.map((flight) => (
-                <FlightStrip flight={flight} key={flight.operationId} />
+                <FlightStrip flight={flight} key={flight.operationId} demo={demo} />
               ))
             ) : (
               <EmptyState
@@ -275,12 +274,14 @@ export interface PortalFlightSummaryViewProps extends RefreshProps {
   flights: PortalFlight[];
   filters: PortalFlightFilters;
   onFiltersChange: (filters: PortalFlightFilters) => void;
+  demo?: boolean;
 }
 
 export function PortalFlightSummaryView({
   flights,
   filters,
   onFiltersChange,
+  demo = false,
   onRefresh,
   isRefreshing,
 }: PortalFlightSummaryViewProps) {
@@ -296,9 +297,9 @@ export function PortalFlightSummaryView({
   return (
     <div className={styles.viewStack}>
       <PageHeading
-        eyebrow="Rotaciones autorizadas"
+        eyebrow={demo ? "Rotaciones de ejemplo" : "Rotaciones autorizadas"}
         title="Vuelos"
-        description="Filtra la operación y abre una rotación para revisar servicios, SLA y procedencia de cada hito."
+        description={demo ? "Prueba los filtros con rotaciones sintéticas. Los detalles permanecen deshabilitados hasta que existan datos reales." : "Filtra la operación y abre una rotación para revisar servicios, SLA y procedencia de cada hito."}
         action={<RefreshButton onRefresh={onRefresh} isRefreshing={isRefreshing} />}
       />
 
@@ -347,7 +348,7 @@ export function PortalFlightSummaryView({
           </div>
           <span className={styles.readOnlyFlag}>
             <CheckIcon />
-            Datos verificables
+            {demo ? "Datos sintéticos" : "Datos verificables"}
           </span>
         </header>
 
@@ -374,9 +375,8 @@ export function PortalFlightSummaryView({
                   {flights.map((flight) => (
                     <tr key={flight.operationId}>
                       <th scope="row">
-                        <Link href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}>
-                          {flight.flightNumber}
-                        </Link>
+                        {demo ? <span className={styles.demoFlightNumber}>{flight.flightNumber}</span>
+                          : <Link href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}>{flight.flightNumber}</Link>}
                         <small>{flight.registration}</small>
                       </th>
                       <td>
@@ -397,13 +397,9 @@ export function PortalFlightSummaryView({
                         <small>{flight.operationStatus}</small>
                       </td>
                       <td>
-                        <Link
-                          className={styles.iconLink}
-                          href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}
-                          aria-label={`Abrir rotación ${flight.flightNumber}`}
-                        >
-                          <ArrowRightIcon />
-                        </Link>
+                        {demo ? <span className={styles.iconLink} title="Ejemplo no navegable"><ArrowRightIcon /></span>
+                          : <Link className={styles.iconLink} href={`/portal/vuelos/${encodeURIComponent(flight.operationId)}`}
+                              aria-label={`Abrir rotación ${flight.flightNumber}`}><ArrowRightIcon /></Link>}
                       </td>
                     </tr>
                   ))}
@@ -413,7 +409,7 @@ export function PortalFlightSummaryView({
 
             <div className={styles.flightCards}>
               {flights.map((flight) => (
-                <FlightStrip flight={flight} key={flight.operationId} />
+                <FlightStrip flight={flight} key={flight.operationId} demo={demo} />
               ))}
             </div>
           </>

@@ -4,8 +4,10 @@ Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
-autorizadas; inicio, vuelos, detalle y perfil presentan solo esa respuesta. La
-ruta separada `/dev-airline` fue retirada. Solicitudes, contratos, documentos,
+autorizadas; inicio, vuelos, detalle y perfil separan esa respuesta de las
+muestras visuales. La ruta separada `/dev-airline` fue retirada. Inicio y vuelos
+conservan una secuencia sintética del prototipo en una sección señalizada, sin
+enlaces a detalles inventados. Solicitudes, contratos, documentos,
 finanzas y reportes conservan una vista visual de demostración claramente
 marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
 No representan datos de la cuenta ni un portal operativo completo de Production.
@@ -40,8 +42,8 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 
 - `/`: landing, propuesta comercial y solicitud demo.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal; la afiliación sigue siendo una vista prototípica.
-- `/portal`: resumen de operaciones actuales del bootstrap autorizado.
-- `/portal/vuelos` y `/portal/vuelos/[operationId]`: lista y detalle limitado a las operaciones actuales devueltas por la API.
+- `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
+- `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/solicitudes`, `/portal/contratos`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.

@@ -20,12 +20,13 @@ const bootstrap: AirlinePortalBootstrapResponse = {
     stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
     operationDate: "2026-09-25", status: "in_progress", arrivalFlightNumber: "ZZ101" }],
 };
+let currentOperations = bootstrap.currentOperations;
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap, expiresAt: "2099-01-01T00:00:00Z" } }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" } }),
 }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; });
 
 it("shows only tenant-scoped bootstrap operations in overview and flights", () => {
   const page = render(<AirlinePortalPage view="overview" />);
@@ -54,4 +55,26 @@ it("shows verified account and station scope in profile", () => {
   render(<AirlinePortalPage view="profile" />);
   expect(screen.getByText(actor.email)).toBeInTheDocument();
   expect(screen.getByText("PUJ · Punta Cana")).toBeInTheDocument();
+});
+
+it("keeps API emptiness honest while showing a clearly labelled, inert flight demonstration", () => {
+  currentOperations = [];
+  const page = render(<AirlinePortalPage view="overview" />);
+  expect(screen.getByText(/0 operaciones reales/)).toBeInTheDocument();
+  expect(screen.getByText(/datos sintéticos/i)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Vuelos activos" })).toBeInTheDocument();
+  expect(screen.getByText("EV 311")).toBeInTheDocument();
+  expect(screen.queryByText("ZZ 900")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /EV 311/ })).not.toBeInTheDocument();
+  page.rerender(<AirlinePortalPage view="flights" />);
+  expect(screen.getByRole("heading", { name: "4 rotaciones" })).toBeInTheDocument();
+  expect(screen.getByText(/0 operaciones reales/)).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /EV 311/ })).not.toBeInTheDocument();
+});
+
+it("shows the request preview as a non-actionable example", () => {
+  render(<AirlinePortalPage view="requests" />);
+  expect(screen.getByRole("heading", { name: /Solicitudes con estado visible/ })).toBeInTheDocument();
+  expect(screen.getByText("Escalera adicional")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Nueva solicitud" })).toBeDisabled();
 });
