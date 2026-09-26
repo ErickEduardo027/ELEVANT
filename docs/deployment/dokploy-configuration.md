@@ -655,6 +655,22 @@ crea cuentas ausentes, pero nunca vuelve a escribir contraseñas existentes.
 La recuperación de Gestión Humana es un comando manual separado,
 `rotate-development-human-resources`, fuera de los schedules.
 
+La entrega de gobernanza comercial añade `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD`
+al seeder de Development. Antes de publicar el commit en `Development`, el
+operador prepara una séptima contraseña distinta en el Environment root-only de
+Database Release y agrega la entrada correspondiente al Compose Raw vivo. Con
+los schedules de Database CD deshabilitados y el controlador pausado, compara
+el Compose vivo con el candidato revisado y comprueba que la única diferencia
+semántica esperada es esa variable del seeder. No pulsa **Deploy** ni ejecuta el
+seed manualmente. Tras la publicación del bundle certificado, ejecuta
+`--dry-run`, reanuda el controlador y hace un único `--poll` manual. Exige
+backup previo, migraciones, seed, verificación, backup posterior y restore-check
+en estado `succeeded/complete` antes de reactivar el schedule. Conserva el
+secreto fuera del repositorio, logs y capturas. La cuenta sintética es
+`super.admin@dev.elevant.test`; el seed no cambia su contraseña en ejecuciones
+posteriores. Después valida API, AVIAM Web y Public Web contra sus bundles
+compatibles, en ese orden.
+
 La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
 Además de autenticación y contexto de actor, el primer slice OCC publica dos
 lecturas bajo `/api/v1/occ/planning`. Estas aplican rol, membresía y scope de
