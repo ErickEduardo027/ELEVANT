@@ -555,6 +555,12 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
 
         Assert.True(paths.TryGetProperty("/api/v1/occ/planning", out var snapshot));
         Assert.True(snapshot.TryGetProperty("get", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/occ/planning/manual-options", out var manualOptions));
+        Assert.True(manualOptions.TryGetProperty("get", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/occ/planning/turnarounds", out var manualTurnaround));
+        Assert.True(manualTurnaround.TryGetProperty("post", out var createManual));
+        Assert.True(createManual.GetProperty("responses").TryGetProperty("201", out _));
+        Assert.True(createManual.GetProperty("responses").TryGetProperty("409", out _));
         Assert.True(paths.TryGetProperty("/api/v1/occ/planning/options", out var options));
         Assert.True(options.TryGetProperty("get", out var optionsGet));
         Assert.True(optionsGet.GetProperty("responses").TryGetProperty("409", out _));
@@ -619,16 +625,94 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.False(assignmentRequest.GetProperty("additionalProperties").GetBoolean());
     }
 
+    [Fact]
+    public async Task ManualTurnaroundOptionsAndCreateUseScopedContracts()
+    {
+        var airlineId = Guid.NewGuid();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            ManualOptions = new ManualTurnaroundOptionsData(
+                CreateStation(), FixtureDate,
+                new OccAirportData(Guid.NewGuid(), "PUJ", "MDPC", "Punta Cana"),
+                [new ManualTurnaroundAirlineData(airlineId, "EV", "Elevant Demo")],
+                [new OccAirportData(Guid.NewGuid(), "MIA", "KMIA", "Miami")],
+                [new OccStandData(Guid.NewGuid(), "A01", new OccTerminalData(Guid.NewGuid(), "A", "Terminal A"))]),
+            ManualWriteResult = ManualTurnaroundWriteResult.Created(TurnaroundId, "MAN-TEST"),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var options = await client.GetAsync(
+            $"/api/v1/occ/planning/manual-options?stationId={StationId:D}&date=2026-08-19",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, options.StatusCode);
+        AssertPrivateResponse(options);
+        using var optionsJson = JsonDocument.Parse(await options.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(airlineId, optionsJson.RootElement.GetProperty("airlines")[0]
+            .GetProperty("id").GetGuid());
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/v1/occ/planning/turnarounds",
+            new
+            {
+                turnaroundId = TurnaroundId,
+                stationId = StationId,
+                airlineId,
+                standId = state.ManualOptions.Stands[0].Id,
+                operationDate = "2026-08-19",
+                arrivalFlightNumber = "EV 311",
+                arrivalOriginIata = "MIA",
+                arrivalScheduledAt = "2026-08-19T13:00:00Z",
+                departureFlightNumber = "EV 312",
+                departureDestinationIata = "MIA",
+                departureScheduledAt = "2026-08-19T15:00:00Z",
+            }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal("EV311", state.ManualRequest!.ArrivalFlightNumber);
+        Assert.Equal([StationId], state.ManualRequest.AllowedStationIds);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(TurnaroundId, json.RootElement.GetProperty("turnaroundId").GetGuid());
+        Assert.False(json.RootElement.GetProperty("replayed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ManualTurnaroundRejectsUnknownJsonAndOutOfScopeStation()
+    {
+        var state = new OccState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var unknown = await client.PostAsJsonAsync(
+            "/api/v1/occ/planning/turnarounds", new { turnaroundId = TurnaroundId, extra = true },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        Assert.Null(state.ManualRequest);
+
+        using var outOfScope = await client.GetAsync(
+            $"/api/v1/occ/planning/manual-options?stationId={Guid.NewGuid():D}&date=2026-08-19",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, outOfScope.StatusCode);
+        Assert.Null(state.ManualOptionsRequest);
+    }
+
     private WebApplicationFactory<Program> CreateApplication(OccState state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IOccPlanningReadStore>();
             services.RemoveAll<IOccPlanningCommandStore>();
+            services.RemoveAll<IManualTurnaroundStore>();
+            services.RemoveAll<IManualTurnaroundOptionsStore>();
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IOccPlanningReadStore>(_ => state);
             services.AddScoped<IOccPlanningCommandStore>(_ => state);
+            services.AddScoped<IManualTurnaroundStore>(_ => state);
+            services.AddScoped<IManualTurnaroundOptionsStore>(_ => state);
         }));
 
     private static HttpRequestMessage CreateAssignmentRequest(bool includeIfMatch)
@@ -811,7 +895,8 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             reference.GetProperty("$ref").GetString());
     }
 
-    private sealed class OccState : IActorContextResolver, IOccPlanningReadStore, IOccPlanningCommandStore
+    private sealed class OccState : IActorContextResolver, IOccPlanningReadStore, IOccPlanningCommandStore,
+        IManualTurnaroundStore, IManualTurnaroundOptionsStore
     {
         public ActorContext? Actor { get; init; }
 
@@ -833,6 +918,15 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         public IReadOnlyCollection<Guid>? OptionStationIds { get; private set; }
 
         public OccAssignmentWriteRequest? AssignmentRequest { get; private set; }
+
+        public ManualTurnaroundWriteRequest? ManualRequest { get; private set; }
+
+        public (Guid AccountId, Guid StationId, DateOnly Date)? ManualOptionsRequest { get; private set; }
+
+        public ManualTurnaroundOptionsData? ManualOptions { get; init; }
+
+        public ManualTurnaroundWriteResult ManualWriteResult { get; init; } =
+            ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict);
 
 
         public Task<ActorContext?> ResolveAsync(
@@ -890,6 +984,21 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             cancellationToken.ThrowIfCancellationRequested();
             AssignmentRequest = request;
             return Task.FromResult(AssignmentWriteResult);
+        }
+
+        public Task<ManualTurnaroundWriteResult> CreateAsync(
+            ManualTurnaroundWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            ManualRequest = request;
+            return Task.FromResult(ManualWriteResult);
+        }
+
+        public Task<ManualTurnaroundOptionsData?> GetAsync(
+            Guid accountId, Guid stationId, DateOnly operationDate,
+            CancellationToken cancellationToken = default)
+        {
+            ManualOptionsRequest = (accountId, stationId, operationDate);
+            return Task.FromResult(ManualOptions);
         }
 
     }

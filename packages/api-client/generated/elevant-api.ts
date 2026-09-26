@@ -120,6 +120,20 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+export interface CreateManualTurnaroundRequest {
+  turnaroundId: string;
+  stationId: string;
+  airlineId: string;
+  standId: string;
+  operationDate: string;
+  arrivalFlightNumber: string;
+  arrivalOriginIata: string;
+  arrivalScheduledAt: string;
+  departureFlightNumber: string;
+  departureDestinationIata: string;
+  departureScheduledAt: string;
+}
+
 export interface CreateSessionRequest {
   /**
      * @minLength 1
@@ -276,6 +290,53 @@ export interface GetRampOperationChecklistResponse {
   checklist: RampChecklistResponse;
 }
 
+export interface ManualTurnaroundAirlineResponse {
+  id: string;
+  iataCode: string;
+  name: string;
+}
+
+export interface OccStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
+export interface OccAirportResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface OccTerminalResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface OccStandResponse {
+  id: string;
+  code: string;
+  terminal?: OccTerminalResponse | null;
+}
+
+export interface ManualTurnaroundOptionsResponse {
+  station: OccStationResponse;
+  date: string;
+  stationAirport: OccAirportResponse;
+  airlines: ManualTurnaroundAirlineResponse[];
+  airports: OccAirportResponse[];
+  stands: OccStandResponse[];
+}
+
+export interface ManualTurnaroundResponse {
+  turnaroundId: string;
+  operationCode: string;
+  replayed: boolean;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -296,13 +357,6 @@ export interface OccAircraftResponse {
 }
 
 export interface OccAirlineResponse {
-  id: string;
-  iataCode: string;
-  icaoCode: string;
-  name: string;
-}
-
-export interface OccAirportResponse {
   id: string;
   iataCode: string;
   icaoCode: string;
@@ -387,25 +441,6 @@ export interface OccFlightLegResponse {
   estimatedAt?: string | null;
   /** @nullable */
   actualAt?: string | null;
-}
-
-export interface OccStationResponse {
-  id: string;
-  code: string;
-  name: string;
-  ianaTimeZone: string;
-}
-
-export interface OccTerminalResponse {
-  id: string;
-  code: string;
-  name: string;
-}
-
-export interface OccStandResponse {
-  id: string;
-  code: string;
-  terminal?: OccTerminalResponse | null;
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -964,6 +999,11 @@ export type GetOccPlanningOptionsParams = {
 turnaroundId: string;
 };
 
+export type GetManualTurnaroundOptionsParams = {
+stationId: string;
+date: string;
+};
+
 export type GetOccReviewQueueParams = {
 stationId: string;
 };
@@ -1283,6 +1323,81 @@ export const getOccPlanningOptions = async (params: GetOccPlanningOptionsParams,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccPlanningOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManualTurnaroundOptionsUrl = (params: GetManualTurnaroundOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/manual-options?${stringifiedParams}` : `/api/v1/occ/planning/manual-options`
+}
+
+/**
+ * @summary Returns current contract airlines and airports for manual OCC entry.
+ */
+export const getManualTurnaroundOptions = async (params: GetManualTurnaroundOptionsParams, options?: RequestInit): Promise<ManualTurnaroundOptionsResponse> => {
+
+  const res = await fetch(getGetManualTurnaroundOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManualTurnaroundOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateManualTurnaroundUrl = () => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds`
+}
+
+/**
+ * @summary Creates one contract-covered manual flight and planned operation.
+ */
+export const createManualTurnaround = async (createManualTurnaroundRequest: CreateManualTurnaroundRequest, options?: RequestInit): Promise<ManualTurnaroundResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateManualTurnaroundUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createManualTurnaroundRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManualTurnaroundResponse = body ? JSON.parse(body) : {}
   return data
 }
 

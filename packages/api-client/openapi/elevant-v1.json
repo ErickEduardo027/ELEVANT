@@ -821,6 +821,252 @@
         ]
       }
     },
+    "/api/v1/occ/planning/manual-options": {
+      "get": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "Returns current contract airlines and airports for manual OCC entry.",
+        "operationId": "GetManualTurnaroundOptions",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualTurnaroundOptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds": {
+      "post": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "Creates one contract-covered manual flight and planned operation.",
+        "operationId": "CreateManualTurnaround",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateManualTurnaroundRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualTurnaroundResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualTurnaroundResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment": {
       "post": {
         "tags": [
@@ -3398,6 +3644,65 @@
         },
         "additionalProperties": false
       },
+      "CreateManualTurnaroundRequest": {
+        "required": [
+          "airlineId",
+          "arrivalFlightNumber",
+          "arrivalOriginIata",
+          "arrivalScheduledAt",
+          "departureDestinationIata",
+          "departureFlightNumber",
+          "departureScheduledAt",
+          "operationDate",
+          "standId",
+          "stationId",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "arrivalFlightNumber": {
+            "type": "string"
+          },
+          "arrivalOriginIata": {
+            "type": "string"
+          },
+          "arrivalScheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "departureFlightNumber": {
+            "type": "string"
+          },
+          "departureDestinationIata": {
+            "type": "string"
+          },
+          "departureScheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateSessionRequest": {
         "required": [
           "email",
@@ -3532,6 +3837,98 @@
                 "$ref": "#/components/schemas/RampChecklistResponse"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualTurnaroundAirlineResponse": {
+        "required": [
+          "iataCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualTurnaroundOptionsResponse": {
+        "required": [
+          "airlines",
+          "airports",
+          "date",
+          "stands",
+          "station",
+          "stationAirport"
+        ],
+        "type": "object",
+        "properties": {
+          "station": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStationResponse"
+              }
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "stationAirport": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccAirportResponse"
+              }
+            ]
+          },
+          "airlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualTurnaroundAirlineResponse"
+            }
+          },
+          "airports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAirportResponse"
+            }
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccStandResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManualTurnaroundResponse": {
+        "required": [
+          "operationCode",
+          "replayed",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getOccPlanningSnapshot: vi.fn(),
   getOccPlanningOptionsWithMetadata: vi.fn(),
   assignOccPlanningOperationWithMetadata: vi.fn(),
+  getManualTurnaroundOptions: vi.fn(),
+  createManualTurnaround: vi.fn(),
   handleUnauthorizedResponse: vi.fn(),
   readSession: vi.fn(),
 }));
@@ -69,14 +71,27 @@ beforeEach(() => {
   mocks.getOccPlanningSnapshot.mockResolvedValue(snapshot);
   mocks.getOccPlanningOptionsWithMetadata.mockResolvedValue(optionsMetadata);
   mocks.assignOccPlanningOperationWithMetadata.mockResolvedValue(assignmentMetadata);
+  mocks.getManualTurnaroundOptions.mockResolvedValue({ station: snapshot.station, date: snapshot.date, airlines: [], airports: [] });
+  mocks.createManualTurnaround.mockResolvedValue({ turnaroundId, operationCode: 'MAN-TEST', replayed: false });
   mocks.createPrivateWebApiClient.mockReturnValue({
     getOccPlanningSnapshot: mocks.getOccPlanningSnapshot,
     getOccPlanningOptionsWithMetadata: mocks.getOccPlanningOptionsWithMetadata,
     assignOccPlanningOperationWithMetadata: mocks.assignOccPlanningOperationWithMetadata,
+    getManualTurnaroundOptions: mocks.getManualTurnaroundOptions,
+    createManualTurnaround: mocks.createManualTurnaround,
   });
 });
 
 describe('planningService', () => {
+  it('loads manual choices and creates a flight through the shared authenticated client', async () => {
+    const request = { turnaroundId, stationId, airlineId: 'airline-1' };
+    await planningService.getManualTurnaroundOptions(stationId, '2026-08-19');
+    await planningService.createManualTurnaround(request);
+
+    expect(mocks.getManualTurnaroundOptions).toHaveBeenCalledWith(
+      { stationId, date: '2026-08-19' }, { signal: undefined });
+    expect(mocks.createManualTurnaround).toHaveBeenCalledWith(request, { signal: undefined });
+  });
   it('loads an OCC snapshot through the shared client and preserves the AbortSignal', async () => {
     const controller = new AbortController();
 

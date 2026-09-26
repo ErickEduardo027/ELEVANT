@@ -2055,6 +2055,124 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task ManualTurnaroundIsAtomicScopedAndIdempotent()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var actorId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var turnaroundId = Guid.CreateVersion7();
+        var standId = Guid.Parse("20000000-0000-7000-8000-000000000005");
+        Guid airlineId;
+        await using (var context = CreateContext(database.ConnectionString))
+            airlineId = await context.Airlines.AsNoTracking().Select(item => item.PublicId)
+                .SingleAsync(cancellationToken);
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var options = await scope.ServiceProvider
+                .GetRequiredService<IManualTurnaroundOptionsStore>()
+                .GetAsync(actorId, stationId, new DateOnly(2026, 9, 26), cancellationToken);
+            Assert.NotNull(options);
+            Assert.Equal("PUJ", options.StationAirport.IataCode);
+            Assert.Contains(options.Airlines, item => item.Id == airlineId);
+            Assert.Contains(options.Airports, item => item.IataCode == "MIA");
+            Assert.Contains(options.Stands, item => item.Id == standId);
+            Assert.Null(await scope.ServiceProvider
+                .GetRequiredService<IManualTurnaroundOptionsStore>()
+                .GetAsync(actorId, Guid.NewGuid(), new DateOnly(2026, 9, 26), cancellationToken));
+        }
+        var request = new ManualTurnaroundWriteRequest(
+            actorId, [stationId], turnaroundId, stationId, airlineId, standId,
+            new DateOnly(2026, 9, 26), "EV311", "MIA",
+            new DateTimeOffset(2026, 9, 26, 13, 0, 0, TimeSpan.Zero),
+            "EV312", "MIA",
+            new DateTimeOffset(2026, 9, 26, 15, 0, 0, TimeSpan.Zero),
+            Guid.CreateVersion7(), "manual-turnaround-test");
+
+        async Task<ManualTurnaroundWriteResult> CreateAsync(ManualTurnaroundWriteRequest input)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IManualTurnaroundStore>()
+                .CreateAsync(input, cancellationToken);
+        }
+
+        var created = await CreateAsync(request);
+        Assert.True(created.IsSuccess);
+        Assert.False(created.Replayed);
+        Assert.Equal(turnaroundId, created.TurnaroundId);
+        var replay = await CreateAsync(request with { CorrelationId = Guid.CreateVersion7() });
+        Assert.True(replay.IsSuccess);
+        Assert.True(replay.Replayed);
+        Assert.Equal(created.OperationCode, replay.OperationCode);
+        var changed = await CreateAsync(request with { DepartureFlightNumber = "EV999" });
+        Assert.Equal(ManualTurnaroundWriteFailure.Conflict, changed.Failure);
+        var overlappingStand = await CreateAsync(request with
+        {
+            TurnaroundId = Guid.CreateVersion7(),
+            ArrivalFlightNumber = "EV313",
+            DepartureFlightNumber = "EV314",
+        });
+        Assert.Equal(ManualTurnaroundWriteFailure.Conflict, overlappingStand.Failure);
+        var foreignScope = await CreateAsync(request with { AllowedStationIds = [] });
+        Assert.Equal(ManualTurnaroundWriteFailure.NotFound, foreignScope.Failure);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var planning = await scope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>()
+                .GetOptionsAsync([stationId], turnaroundId, cancellationToken);
+            Assert.True(planning.IsSuccess);
+            Assert.Equal("A01", planning.Options!.Turnaround.Stand?.Code);
+            Assert.Equal(2, planning.Options.Services.Count);
+            Assert.Contains(planning.Options.AgentCandidates, candidate =>
+                !candidate.HasCompatibleShift);
+        }
+
+        await using var inspection = CreateContext(database.ConnectionString);
+        var turnaround = await inspection.Turnarounds.AsNoTracking()
+            .SingleAsync(item => item.PublicId == turnaroundId, cancellationToken);
+        Assert.Equal(OperationalDataSource.Manual, turnaround.Source);
+        Assert.Equal(TurnaroundStatus.Confirmed, turnaround.CurrentStatus);
+        Assert.Equal(2, await inspection.FlightLegs.AsNoTracking()
+            .CountAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken));
+        Assert.Equal(1, await inspection.Set<StandAssignment>().AsNoTracking()
+            .CountAsync(item => item.TurnaroundId == turnaround.Id && item.StandId ==
+                inspection.Stands.Where(stand => stand.PublicId == standId).Select(stand => stand.Id).Single(),
+                cancellationToken));
+        var operation = await inspection.GroundOperations.AsNoTracking()
+            .SingleAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken);
+        Assert.Equal(GroundOperationStatus.Planned, operation.CurrentStatus);
+        Assert.Equal(1, await inspection.Set<TurnaroundStatusEvent>().AsNoTracking()
+            .CountAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken));
+        Assert.Equal(1, await inspection.Set<GroundOperationStatusEvent>().AsNoTracking()
+            .CountAsync(item => item.GroundOperationId == operation.Id, cancellationToken));
+        Assert.Equal(1, await inspection.AuditEntries.AsNoTracking()
+            .CountAsync(item => item.EntityPublicId == turnaroundId &&
+                item.Action == "occ.turnaround.created", cancellationToken));
+        var manualHints = (await inspection.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "airline_operations" &&
+                item.ResourceId == operation.PublicId)
+            .ToArray();
+        Assert.Single(manualHints);
+    }
+
+    [Fact]
     public async Task OccAssignmentIsAtomicContractDrivenAndConcurrencySafe()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

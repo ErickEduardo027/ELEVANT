@@ -8,6 +8,8 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetManualTurnaroundOptionsUrl,
+  getCreateManualTurnaroundUrl,
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
   getGetOccReviewSubmissionDetailUrl,
@@ -42,6 +44,10 @@ import {
   type GetRampIncidentsResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
+  type GetManualTurnaroundOptionsParams,
+  type CreateManualTurnaroundRequest,
+  type ManualTurnaroundOptionsResponse,
+  type ManualTurnaroundResponse,
   type GetOccReviewQueueParams,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
@@ -109,6 +115,8 @@ export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetManualTurnaroundOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -189,6 +197,14 @@ export interface ElevantApiClient {
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
   ): Promise<OccPlanningOptionsWithMetadata>;
+  getManualTurnaroundOptions(
+    parameters: GetManualTurnaroundOptionsParams,
+    options?: GetManualTurnaroundOptionsOptions,
+  ): Promise<ManualTurnaroundOptionsResponse>;
+  createManualTurnaround(
+    request: CreateManualTurnaroundRequest,
+    options?: CreateManualTurnaroundOptions,
+  ): Promise<ManualTurnaroundResponse>;
   getOccReviewQueue(
     stationId: string,
     options?: GetOccReviewOptions,
@@ -816,6 +832,27 @@ function isOccPlanningSnapshotResponse(
     Array.isArray(value.turnarounds) &&
     value.turnarounds.every(isOccTurnaroundResponse)
   );
+}
+
+function isManualTurnaroundOptionsResponse(
+  value: unknown,
+): value is ManualTurnaroundOptionsResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands"]) &&
+    isOccStationResponse(value.station) && isDateOnly(value.date) &&
+    isOccAirportResponse(value.stationAirport) &&
+    Array.isArray(value.airlines) && value.airlines.every((airline: unknown) =>
+      isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
+      isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name)) &&
+    Array.isArray(value.airports) && value.airports.every(isOccAirportResponse) &&
+    Array.isArray(value.stands) && value.stands.every(isOccStandResponse);
+}
+
+function isManualTurnaroundResponse(value: unknown): value is ManualTurnaroundResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) &&
+    typeof value.replayed === "boolean";
 }
 
 function isOccContractOptionResponse(value: unknown) {
@@ -1695,6 +1732,60 @@ function validatedOccPlanningOptionsParams(
   return { turnaroundId };
 }
 
+function validatedManualTurnaroundOptionsParams(
+  parameters: GetManualTurnaroundOptionsParams,
+): GetManualTurnaroundOptionsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["stationId", "date"]) ||
+      !isUuid(parameters.stationId))
+    throw new TypeError("stationId must be a canonical UUID.");
+  if (!isDateOnly(parameters.date))
+    throw new TypeError("date must be a valid calendar date.");
+  return { stationId: parameters.stationId, date: parameters.date };
+}
+
+function validatedManualTurnaroundRequest(
+  request: CreateManualTurnaroundRequest,
+): CreateManualTurnaroundRequest {
+  const keys = ["turnaroundId", "stationId", "airlineId", "standId", "operationDate",
+    "arrivalFlightNumber", "arrivalOriginIata", "arrivalScheduledAt",
+    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt"];
+  if (!isRecord(request) || !hasOnlyKeys(request, keys))
+    throw new TypeError("manual turnaround request has unknown or invalid fields.");
+  if (!isUuid(request.turnaroundId) || !isUuid(request.stationId) ||
+      !isUuid(request.airlineId) || !isUuid(request.standId) ||
+      !isDateOnly(request.operationDate))
+    throw new TypeError("manual turnaround identifiers or operationDate are invalid.");
+  const arrivalFlightNumber = typeof request.arrivalFlightNumber === "string"
+    ? request.arrivalFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const departureFlightNumber = typeof request.departureFlightNumber === "string"
+    ? request.departureFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const arrivalOriginIata = typeof request.arrivalOriginIata === "string"
+    ? request.arrivalOriginIata.trim().toUpperCase() : "";
+  const departureDestinationIata = typeof request.departureDestinationIata === "string"
+    ? request.departureDestinationIata.trim().toUpperCase() : "";
+  if (!/^[A-Z0-9]{2,16}$/.test(arrivalFlightNumber) ||
+      !/^[A-Z0-9]{2,16}$/.test(departureFlightNumber) ||
+      !/^[A-Z]{3}$/.test(arrivalOriginIata) ||
+      !/^[A-Z]{3}$/.test(departureDestinationIata))
+    throw new TypeError("manual turnaround flight or airport code is invalid.");
+  if (typeof request.arrivalScheduledAt !== "string" ||
+      typeof request.departureScheduledAt !== "string" ||
+      !isDateTimeOffset(request.arrivalScheduledAt) ||
+      !isDateTimeOffset(request.departureScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.arrivalScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.departureScheduledAt))
+    throw new TypeError("manual turnaround scheduled times must be UTC instants.");
+  const duration = Date.parse(request.departureScheduledAt) - Date.parse(request.arrivalScheduledAt);
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 24 * 60 * 60 * 1000)
+    throw new TypeError("departureScheduledAt must follow arrivalScheduledAt within 24 hours.");
+  return { turnaroundId: request.turnaroundId, stationId: request.stationId,
+    airlineId: request.airlineId, standId: request.standId,
+    operationDate: request.operationDate,
+    arrivalFlightNumber, arrivalOriginIata, arrivalScheduledAt: request.arrivalScheduledAt,
+    departureFlightNumber, departureDestinationIata,
+    departureScheduledAt: request.departureScheduledAt };
+}
+
 function validatedOccAssignmentRequest(
   request: AssignOccOperationRequest,
 ): AssignOccOperationRequest {
@@ -2153,6 +2244,33 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPlanningSnapshotResponse(result.data)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getManualTurnaroundOptions(
+      parameters: GetManualTurnaroundOptionsParams,
+      options?: GetManualTurnaroundOptionsOptions,
+    ) {
+      const query = validatedManualTurnaroundOptionsParams(parameters);
+      const result = await execute(getGetManualTurnaroundOptionsUrl(query),
+        { ...options, method: "GET" }, true);
+      if (!isManualTurnaroundOptionsResponse(result.data) ||
+          result.data.station.id !== query.stationId || result.data.date !== query.date)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createManualTurnaround(
+      request: CreateManualTurnaroundRequest,
+      options?: CreateManualTurnaroundOptions,
+    ) {
+      const body = validatedManualTurnaroundRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreateManualTurnaroundUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isManualTurnaroundResponse(result.data) ||
+          result.data.turnaroundId !== body.turnaroundId ||
+          ![200, 201].includes(result.status) || result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getOccPlanningOptions(

@@ -4,6 +4,9 @@ import { handleUnauthorizedResponse, readSession } from '../features/auth/authSe
 
 const PLANNING_LOAD_ERROR = 'No fue posible cargar la planificación operativa.';
 const OPTIONS_LOAD_ERROR = 'No fue posible cargar las opciones de planificación.';
+const MANUAL_OPTIONS_ERROR = 'No fue posible cargar las opciones del vuelo manual.';
+const MANUAL_CREATE_ERROR = 'No fue posible confirmar el nuevo vuelo. Puede reintentar con los mismos datos.';
+const MANUAL_CONFLICT_ERROR = 'El vuelo o su contrato cambiaron. Revise los datos antes de intentar otra vez.';
 const ASSIGNMENT_UNKNOWN_ERROR =
   'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.';
 const UNAUTHORIZED_ERROR = 'La sesión expiró. Inicia sesión nuevamente.';
@@ -160,6 +163,21 @@ export async function getPlanningOptions(turnaroundId, { signal } = {}) {
     () => createPlanningClient().getOccPlanningOptionsWithMetadata(turnaroundId, { signal }),
     OPTIONS_LOAD_ERROR,
     { conflictMessage: OPTIONS_CONFLICT_ERROR, conflictCode: 'options-conflict' }
+  );
+}
+
+export async function getManualTurnaroundOptions(stationId, date, { signal } = {}) {
+  return executeSafely(
+    () => createPlanningClient().getManualTurnaroundOptions({ stationId, date }, { signal }),
+    MANUAL_OPTIONS_ERROR
+  );
+}
+
+export async function createManualTurnaround(request, { signal } = {}) {
+  return executeSafely(
+    () => createPlanningClient().createManualTurnaround(request, { signal }),
+    MANUAL_CREATE_ERROR,
+    { conflictMessage: MANUAL_CONFLICT_ERROR, conflictCode: 'manual-conflict' }
   );
 }
 

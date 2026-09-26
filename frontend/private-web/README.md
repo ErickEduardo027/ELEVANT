@@ -44,11 +44,13 @@ La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extre
 
 - `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;
 - `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
+- `GET /api/v1/occ/planning/manual-options?stationId={stationId}&date={date}`, para elegir aerolínea con contrato vigente, aeropuertos y posición activa en la estación autorizada;
+- `POST /api/v1/occ/planning/turnarounds`, para crear una escala manual con llegada, salida y posición, usando un UUID estable para reintentos ambiguos;
 - `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones.
 
 La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. El manifiesto de despacho permite escoger exclusivamente un agente marcado como elegible; contrato, posición y servicios son decisiones del backend y se muestran como datos bloqueados. La web no reintenta automáticamente el comando. Un `409`, `412`, `404` o resultado de red ambiguo obliga a refrescar opciones y planificación antes de una nueva confirmación.
 
-El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Crear vuelos, editar la planificación y generar Work Orders permanecen deshabilitados hasta que existan contratos OpenAPI de escritura revisados. Los fixtures del módulo se usan solo en pruebas.
+El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned`, no crea turno de agente ni realiza despacho automáticamente. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Editar escalas existentes, importar vuelos y generar Work Orders permanecen deshabilitados. Los fixtures del módulo se usan solo en pruebas.
 
 ## Frontera de seguridad
 

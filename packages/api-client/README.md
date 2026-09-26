@@ -79,7 +79,13 @@ decodificarlos ni reconstruirlos. El de opciones versiona la representación
 asignable completa; el de la respuesta de asignación no se reutiliza como
 precondición de otro comando. Los servicios, cantidades, precios, contrato,
 posición y scope son siempre
-decisiones del servidor. Crear vuelos y reasignar siguen fuera de este cliente;
+decisiones del servidor. `getManualTurnaroundOptions` consulta las aerolíneas
+con contrato aprobado y vigente, aeropuertos y posiciones activas de la estación
+OCC autorizada. `createManualTurnaround` envía un UUID de intención generado por
+el cliente, los dos vuelos y la posición elegida; la API revalida scope, contrato,
+fecha local, ruta y solapamiento de posición antes de escribir. Repetir el mismo
+UUID y cuerpo devuelve la misma escala sin duplicarla. Editar escalas existentes
+y reasignar siguen fuera de este cliente;
 la ejecución posterior de servicios corresponde exclusivamente al agente
 asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus

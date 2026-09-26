@@ -3,7 +3,9 @@ using Elevant.Application.Commercial;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration.RegisterMobileDevice;
 using Elevant.Application.Operations.AssignOccOperation;
+using Elevant.Application.Operations.CreateManualTurnaround;
 using Elevant.Application.Operations.GetOccPlanningOptions;
+using Elevant.Application.Operations.GetManualTurnaroundOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.GetRampAssignedOperations;
 using Elevant.Application.Operations.GetRampOperationChecklist;
@@ -32,6 +34,8 @@ public static class DependencyInjection
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();
         services.AddScoped<AssignOccOperationHandler>();
+        services.AddScoped<CreateManualTurnaroundHandler>();
+        services.AddScoped<GetManualTurnaroundOptionsHandler>();
         services.AddScoped<GetRampAssignedOperationsHandler>();
         services.AddScoped<RegisterMobileDeviceHandler>();
         services.AddScoped<StartRampOperationHandler>();

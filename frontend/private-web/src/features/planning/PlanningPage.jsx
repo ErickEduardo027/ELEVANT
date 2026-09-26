@@ -6,6 +6,7 @@ import ViewSwitcher from './components/ViewSwitcher';
 import FlightTimeline from './components/FlightTimeline';
 import PlanningDrawer from './components/PlanningDrawer';
 import PlanningSkeleton from './components/PlanningSkeleton';
+import ManualTurnaroundDialog from './components/ManualTurnaroundDialog';
 import EmptyPlanningState from './components/EmptyPlanningState';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
@@ -84,6 +85,7 @@ export default function PlanningPage({
   const [selectedFlightId, setSelectedFlightId] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [optionsRetryToken, setOptionsRetryToken] = useState(0);
+  const [showCreate, setShowCreate] = useState(false);
   const assignment = usePlanningAssignment();
   const { toasts, showToast, dismissToast } = useToast();
 
@@ -110,11 +112,28 @@ export default function PlanningPage({
     enabled: canLoadAssignmentOptions,
   });
 
+  const canCreate = hasStationScope && Boolean(selectedStationId) &&
+    ['success', 'empty'].includes(status) && forceState === 'default';
+  let todayAtStation;
+  try {
+    todayAtStation = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: data?.station?.ianaTimeZone ?? 'UTC',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  } catch {
+    todayAtStation = new Date().toISOString().slice(0, 10);
+  }
+  const createDate = selectedDate && selectedDate >= todayAtStation ? selectedDate : todayAtStation;
+
   useEffect(() => {
     if (selectedFlightId && !flights.some(flight => flight.id === selectedFlightId)) {
       setSelectedFlightId(null);
     }
   }, [flights, selectedFlightId]);
+
+  useEffect(() => {
+    if (!canCreate) setShowCreate(false);
+  }, [canCreate]);
 
   function selectFlight(flightId) {
     assignment.reset();
@@ -157,7 +176,7 @@ export default function PlanningPage({
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-4">
-      <PlanningHeader onRefresh={onRetry} />
+      <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate} />
 
       {!hasStationScope ? (
         <NoStationScope />
@@ -215,6 +234,16 @@ export default function PlanningPage({
         onAssign={assignOperation}
         onRetryOptions={() => setOptionsRetryToken(token => token + 1)}
       />
+      {showCreate && canCreate && (
+        <ManualTurnaroundDialog key={selectedStationId} stationId={selectedStationId}
+          initialDate={createDate} onClose={() => setShowCreate(false)}
+          onCreated={(date, operationCode) => {
+            setShowCreate(false);
+            if (date === selectedDate) onRetry();
+            else onDateChange?.(date);
+            showToast(`Vuelo ${operationCode} creado. Puede asignar la operación desde esta planificación.`, 'success');
+          }} />
+      )}
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
