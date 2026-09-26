@@ -561,6 +561,10 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.True(manualTurnaround.TryGetProperty("post", out var createManual));
         Assert.True(createManual.GetProperty("responses").TryGetProperty("201", out _));
         Assert.True(createManual.GetProperty("responses").TryGetProperty("409", out _));
+        var shiftPath = document.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/occ/planning/turnarounds/{turnaroundId}/shift");
+        Assert.True(shiftPath.GetProperty("post").GetProperty("responses")
+            .TryGetProperty("201", out _));
         Assert.True(paths.TryGetProperty("/api/v1/occ/planning/options", out var options));
         Assert.True(options.TryGetProperty("get", out var optionsGet));
         Assert.True(optionsGet.GetProperty("responses").TryGetProperty("409", out _));
@@ -699,6 +703,47 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.Null(state.ManualOptionsRequest);
     }
 
+    [Fact]
+    public async Task ShiftProgrammingUsesScopedBodyAndPrivateResponse()
+    {
+        var shiftId = Guid.NewGuid();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            ShiftWriteResult = OccShiftWriteResult.Created(shiftId),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/shift",
+            new { agentId = AgentId, startsAtLocal = "08:00:00", endsAtLocal = "12:00:00" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        AssertPrivateResponse(response);
+        Assert.Equal([StationId], state.ShiftRequest!.AllowedStationIds);
+        Assert.Equal(AgentId, state.ShiftRequest.AgentId);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(shiftId, json.RootElement.GetProperty("shiftId").GetGuid());
+        Assert.False(json.RootElement.GetProperty("replayed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ShiftProgrammingRejectsUnknownBodyMembers()
+    {
+        var state = new OccState { Actor = CreateActor() };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/shift",
+            new { agentId = AgentId, startsAtLocal = "08:00:00", endsAtLocal = "12:00:00", stationId = Guid.NewGuid() },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(state.ShiftRequest);
+    }
+
     private WebApplicationFactory<Program> CreateApplication(OccState state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -707,12 +752,14 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             services.RemoveAll<IOccPlanningCommandStore>();
             services.RemoveAll<IManualTurnaroundStore>();
             services.RemoveAll<IManualTurnaroundOptionsStore>();
+            services.RemoveAll<IOccShiftProgrammingStore>();
             services.AddSingleton(state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IOccPlanningReadStore>(_ => state);
             services.AddScoped<IOccPlanningCommandStore>(_ => state);
             services.AddScoped<IManualTurnaroundStore>(_ => state);
             services.AddScoped<IManualTurnaroundOptionsStore>(_ => state);
+            services.AddScoped<IOccShiftProgrammingStore>(_ => state);
         }));
 
     private static HttpRequestMessage CreateAssignmentRequest(bool includeIfMatch)
@@ -896,7 +943,7 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     }
 
     private sealed class OccState : IActorContextResolver, IOccPlanningReadStore, IOccPlanningCommandStore,
-        IManualTurnaroundStore, IManualTurnaroundOptionsStore
+        IManualTurnaroundStore, IManualTurnaroundOptionsStore, IOccShiftProgrammingStore
     {
         public ActorContext? Actor { get; init; }
 
@@ -927,6 +974,11 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
 
         public ManualTurnaroundWriteResult ManualWriteResult { get; init; } =
             ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict);
+
+        public OccShiftWriteRequest? ShiftRequest { get; private set; }
+
+        public OccShiftWriteResult ShiftWriteResult { get; init; } =
+            OccShiftWriteResult.Failed(OccShiftWriteFailure.Conflict);
 
 
         public Task<ActorContext?> ResolveAsync(
@@ -999,6 +1051,13 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         {
             ManualOptionsRequest = (accountId, stationId, operationDate);
             return Task.FromResult(ManualOptions);
+        }
+
+        public Task<OccShiftWriteResult> ProgramAsync(
+            OccShiftWriteRequest request, CancellationToken cancellationToken = default)
+        {
+            ShiftRequest = request;
+            return Task.FromResult(ShiftWriteResult);
         }
 
     }

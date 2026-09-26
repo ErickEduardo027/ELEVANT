@@ -662,6 +662,18 @@ export interface ProblemDetails {
   [key: string]: unknown;
 }
 
+export interface ProgramOccShiftRequest {
+  agentId: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+}
+
+export interface ProgramOccShiftResponse {
+  turnaroundId: string;
+  shiftId: string;
+  replayed: boolean;
+}
+
 export interface RampOperationalPositionResponse {
   id: string;
   code: string;
@@ -1398,6 +1410,44 @@ const res = await fetch(getCreateManualTurnaroundUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ManualTurnaroundResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getProgramOccShiftUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/shift`
+}
+
+/**
+ * @summary Programs one scoped agent shift before the normal OCC assignment.
+ */
+export const programOccShift = async (turnaroundId: string,
+    programOccShiftRequest: ProgramOccShiftRequest, options?: RequestInit): Promise<ProgramOccShiftResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getProgramOccShiftUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(programOccShiftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ProgramOccShiftResponse = body ? JSON.parse(body) : {}
   return data
 }
 

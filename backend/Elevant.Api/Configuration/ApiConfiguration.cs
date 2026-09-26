@@ -9,5 +9,6 @@ public static class ApiConfiguration
     public const int SessionRequestBodyLimitBytes = 4096;
     public const int OccAssignmentRequestBodyLimitBytes = 1024;
     public const int ManualTurnaroundRequestBodyLimitBytes = 2048;
+    public const int OccShiftRequestBodyLimitBytes = 1024;
     public const int MobileDeviceRequestBodyLimitBytes = 2048;
 }

@@ -233,6 +233,11 @@ export default function PlanningPage({
         assignmentState={assignment}
         onAssign={assignOperation}
         onRetryOptions={() => setOptionsRetryToken(token => token + 1)}
+        onShiftProgrammed={() => {
+          assignment.reset();
+          setOptionsRetryToken(token => token + 1);
+          showToast('Turno programado. Actualizando elegibilidad antes de asignar.', 'success');
+        }}
       />
       {showCreate && canCreate && (
         <ManualTurnaroundDialog key={selectedStationId} stationId={selectedStationId}

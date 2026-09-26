@@ -7,6 +7,8 @@ using Elevant.Application.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration;
 using Elevant.Application.Operations;
+using Elevant.Application.Operations.AssignOccOperation;
+using Elevant.Application.Operations.GetRampAssignedOperations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Infrastructure;
@@ -2141,6 +2143,79 @@ public sealed class SqlServerMigrationTests
                 !candidate.HasCompatibleShift);
         }
 
+        var shiftRequest = new OccShiftWriteRequest(actorId, [stationId], turnaroundId,
+            Guid.Parse("50000000-0000-7000-8000-000000000001"),
+            new TimeOnly(8, 0), new TimeOnly(12, 0),
+            Guid.CreateVersion7(), "manual-shift-test");
+        async Task<OccShiftWriteResult> ProgramShiftAsync(OccShiftWriteRequest input)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IOccShiftProgrammingStore>()
+                .ProgramAsync(input, cancellationToken);
+        }
+        Assert.Equal(OccShiftWriteFailure.Conflict,
+            (await ProgramShiftAsync(shiftRequest with { AgentId = Guid.CreateVersion7() })).Failure);
+        Assert.Equal(OccShiftWriteFailure.Conflict,
+            (await ProgramShiftAsync(shiftRequest with { StartsAtLocal = new TimeOnly(10, 0) })).Failure);
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var agentDbId = await context.RampAgents.AsNoTracking()
+                .Where(item => item.PublicId == shiftRequest.AgentId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            await context.AirportPermitCycles.Where(item => item.RampAgentId == agentDbId &&
+                item.DocumentType == PermitDocumentType.AirportId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ExpiresOn,
+                    new DateOnly(2026, 9, 25)), cancellationToken);
+            Assert.Equal(OccShiftWriteFailure.Conflict,
+                (await ProgramShiftAsync(shiftRequest)).Failure);
+            Assert.Equal(0, await context.ShiftAssignments.AsNoTracking().CountAsync(item =>
+                item.RampAgentId == agentDbId && item.WorkDate == new DateOnly(2026, 9, 26),
+                cancellationToken));
+            await context.AirportPermitCycles.Where(item => item.RampAgentId == agentDbId &&
+                item.DocumentType == PermitDocumentType.AirportId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ExpiresOn,
+                    new DateOnly(2099, 12, 31)), cancellationToken);
+        }
+        var shift = await ProgramShiftAsync(shiftRequest);
+        Assert.True(shift.IsSuccess);
+        Assert.False(shift.Replayed);
+        var shiftReplay = await ProgramShiftAsync(shiftRequest);
+        Assert.True(shiftReplay.IsSuccess);
+        Assert.True(shiftReplay.Replayed);
+        Assert.Equal(shift.ShiftId, shiftReplay.ShiftId);
+        Assert.Equal(OccShiftWriteFailure.Conflict,
+            (await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) })).Failure);
+        Assert.Equal(OccShiftWriteFailure.NotFound,
+            (await ProgramShiftAsync(shiftRequest with { AllowedStationIds = [] })).Failure);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var planning = await scope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>()
+                .GetOptionsAsync([stationId], turnaroundId, cancellationToken);
+            Assert.True(planning.IsSuccess);
+            Assert.Contains(planning.Options!.AgentCandidates, candidate =>
+                candidate.Id == shiftRequest.AgentId && candidate.HasCompatibleShift);
+            var token = planning.Options.Turnaround.ConcurrencyToken;
+            var assigned = await new AssignOccOperationHandler(
+                    scope.ServiceProvider.GetRequiredService<IActorContextResolver>(),
+                    scope.ServiceProvider.GetRequiredService<IOccPlanningCommandStore>())
+                .HandleAsync(new AssignOccOperationCommand(actorId, turnaroundId,
+                    shiftRequest.AgentId, token, Guid.CreateVersion7(), "manual-cycle-test"),
+                    cancellationToken);
+            Assert.True(assigned.IsSuccess);
+            Assert.Equal(GroundOperationStatus.Assigned.ToString(), assigned.Assignment!.Operation.Status);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var rampQueue = await new GetRampAssignedOperationsHandler(
+                    scope.ServiceProvider.GetRequiredService<IActorContextResolver>(),
+                    scope.ServiceProvider.GetRequiredService<IRampOperationsReadStore>())
+                .HandleAsync(new GetRampAssignedOperationsQuery(
+                    Guid.Parse("40000000-0000-7000-8000-000000000002")), cancellationToken);
+            Assert.True(rampQueue.IsSuccess);
+            Assert.Contains(rampQueue.Operations!, item => item.Turnaround.Id == turnaroundId &&
+                item.Assignment.AgentId == shiftRequest.AgentId);
+        }
+
         await using var inspection = CreateContext(database.ConnectionString);
         var turnaround = await inspection.Turnarounds.AsNoTracking()
             .SingleAsync(item => item.PublicId == turnaroundId, cancellationToken);
@@ -2154,10 +2229,10 @@ public sealed class SqlServerMigrationTests
                 cancellationToken));
         var operation = await inspection.GroundOperations.AsNoTracking()
             .SingleAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken);
-        Assert.Equal(GroundOperationStatus.Planned, operation.CurrentStatus);
+        Assert.Equal(GroundOperationStatus.Assigned, operation.CurrentStatus);
         Assert.Equal(1, await inspection.Set<TurnaroundStatusEvent>().AsNoTracking()
             .CountAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken));
-        Assert.Equal(1, await inspection.Set<GroundOperationStatusEvent>().AsNoTracking()
+        Assert.Equal(2, await inspection.Set<GroundOperationStatusEvent>().AsNoTracking()
             .CountAsync(item => item.GroundOperationId == operation.Id, cancellationToken));
         Assert.Equal(1, await inspection.AuditEntries.AsNoTracking()
             .CountAsync(item => item.EntityPublicId == turnaroundId &&
@@ -2169,7 +2244,21 @@ public sealed class SqlServerMigrationTests
             .Where(item => item.Resource == "airline_operations" &&
                 item.ResourceId == operation.PublicId)
             .ToArray();
-        Assert.Single(manualHints);
+        Assert.Equal(2, manualHints.Length); // Creation and OCC assignment are separate durable changes.
+        Assert.Equal(1, await inspection.ShiftAssignments.AsNoTracking()
+            .CountAsync(item => item.PublicId == shift.ShiftId, cancellationToken));
+        Assert.Equal(1, await inspection.AuditEntries.AsNoTracking()
+            .CountAsync(item => item.EntityPublicId == shift.ShiftId &&
+                item.Action == "occ.shift.programmed", cancellationToken));
+        var actorDbId = await inspection.Users.AsNoTracking()
+            .Where(item => item.PublicId == actorId).Select(item => item.Id)
+            .SingleAsync(cancellationToken);
+        await inspection.AccountStationScopes.Where(item => item.AccountId == actorDbId &&
+            item.StationId == turnaround.StationId && item.RevokedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.RevokedAt,
+                DateTimeOffset.UtcNow), cancellationToken);
+        Assert.Equal(OccShiftWriteFailure.NotFound,
+            (await ProgramShiftAsync(shiftRequest)).Failure);
     }
 
     [Fact]

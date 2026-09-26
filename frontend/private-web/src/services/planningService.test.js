@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   assignOccPlanningOperationWithMetadata: vi.fn(),
   getManualTurnaroundOptions: vi.fn(),
   createManualTurnaround: vi.fn(),
+  programOccShift: vi.fn(),
   handleUnauthorizedResponse: vi.fn(),
   readSession: vi.fn(),
 }));
@@ -73,12 +74,14 @@ beforeEach(() => {
   mocks.assignOccPlanningOperationWithMetadata.mockResolvedValue(assignmentMetadata);
   mocks.getManualTurnaroundOptions.mockResolvedValue({ station: snapshot.station, date: snapshot.date, airlines: [], airports: [] });
   mocks.createManualTurnaround.mockResolvedValue({ turnaroundId, operationCode: 'MAN-TEST', replayed: false });
+  mocks.programOccShift.mockResolvedValue({ turnaroundId, shiftId: 'shift-1', replayed: false });
   mocks.createPrivateWebApiClient.mockReturnValue({
     getOccPlanningSnapshot: mocks.getOccPlanningSnapshot,
     getOccPlanningOptionsWithMetadata: mocks.getOccPlanningOptionsWithMetadata,
     assignOccPlanningOperationWithMetadata: mocks.assignOccPlanningOperationWithMetadata,
     getManualTurnaroundOptions: mocks.getManualTurnaroundOptions,
     createManualTurnaround: mocks.createManualTurnaround,
+    programOccShift: mocks.programOccShift,
   });
 });
 
@@ -91,6 +94,11 @@ describe('planningService', () => {
     expect(mocks.getManualTurnaroundOptions).toHaveBeenCalledWith(
       { stationId, date: '2026-08-19' }, { signal: undefined });
     expect(mocks.createManualTurnaround).toHaveBeenCalledWith(request, { signal: undefined });
+  });
+  it('programs an OCC shift through the shared client', async () => {
+    const request = { agentId: 'agent-1', startsAtLocal: '08:00:00', endsAtLocal: '12:00:00' };
+    await planningService.programPlanningShift(turnaroundId, request);
+    expect(mocks.programOccShift).toHaveBeenCalledWith(turnaroundId, request, { signal: undefined });
   });
   it('loads an OCC snapshot through the shared client and preserves the AbortSignal', async () => {
     const controller = new AbortController();

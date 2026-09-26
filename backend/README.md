@@ -80,8 +80,14 @@ a 60 minutos y usa 15 por defecto.
   scope, estado, agente, posición, turno, permisos y contrato dentro de una
   transacción serializable; crea la asignación primaria, materializa todos los
   servicios contractuales y registra transición y auditoría de forma atómica.
-  Los tres endpoints OCC exigen `ADMIN_OCC`, portal BackOffice, membresía
-  interna AVIAM vigente y scope de estación.
+- `GET /api/v1/occ/planning/manual-options` y `POST /api/v1/occ/planning/turnarounds`
+  permiten crear una escala manual con contrato vigente, ruta completa y posición
+  sin solapamiento. El UUID de intención conserva la idempotencia del alta.
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift` programa un turno
+  local de un agente sin asignarlo automáticamente: deriva estación, terminal y
+  posición, exige cobertura de la escala y aptitud vigente, y rechaza otro turno
+  para ese día. Todos estos endpoints OCC exigen `ADMIN_OCC`, portal BackOffice,
+  membresía interna AVIAM vigente y scope de estación.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

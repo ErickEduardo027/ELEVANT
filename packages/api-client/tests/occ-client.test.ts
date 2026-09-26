@@ -7,6 +7,7 @@ import {
   type OccPlanningSnapshotResponse,
   type ManualTurnaroundOptionsResponse,
   type CreateManualTurnaroundRequest,
+  type ProgramOccShiftRequest,
 } from "../src";
 
 const stationId = "20000000-0000-7000-8000-000000000003";
@@ -227,6 +228,10 @@ const manualRequest: CreateManualTurnaroundRequest = {
   departureScheduledAt: "2026-08-19T15:00:00Z",
 };
 
+const shiftRequest: ProgramOccShiftRequest = {
+  agentId, startsAtLocal: "08:00:00", endsAtLocal: "12:00:00",
+};
+
 function jsonResponse(body: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
@@ -239,6 +244,46 @@ function deepClone<T>(value: T): T {
 }
 
 describe("OCC planning API client", () => {
+  it("programs a shift with only an agent and local interval", async () => {
+    const shiftId = "50000000-0000-7000-8000-000000000099";
+    let url = "";
+    let body = "";
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async (input, init) => {
+        url = String(input);
+        body = String(init?.body);
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer occ-token");
+        return jsonResponse({ turnaroundId, shiftId, replayed: false }, 201);
+      },
+    });
+
+    await expect(client.programOccShift(turnaroundId, shiftRequest))
+      .resolves.toEqual({ turnaroundId, shiftId, replayed: false });
+    expect(url).toBe(`https://api.example.test/api/v1/occ/planning/turnarounds/${turnaroundId}/shift`);
+    expect(JSON.parse(body)).toEqual(shiftRequest);
+  });
+
+  it("rejects extra shift authority and a malformed response", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse({ turnaroundId,
+          shiftId: "50000000-0000-7000-8000-000000000099", replayed: false, stationId }, 201);
+      },
+    });
+    await expect(client.programOccShift(turnaroundId,
+      { ...shiftRequest, stationId } as never)).rejects.toThrow("OCC shift");
+    await expect(client.programOccShift(turnaroundId,
+      { ...shiftRequest, endsAtLocal: "08:00:00" })).rejects.toThrow("OCC shift");
+    expect(calls).toBe(0);
+    await expect(client.programOccShift(turnaroundId, shiftRequest))
+      .rejects.toBeInstanceOf(ElevantApiError);
+    expect(calls).toBe(1);
+  });
   it("loads scoped manual choices and posts one normalized flight", async () => {
     const urls: string[] = [];
     const requests: RequestInit[] = [];

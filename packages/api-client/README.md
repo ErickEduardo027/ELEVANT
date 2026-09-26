@@ -85,7 +85,11 @@ OCC autorizada. `createManualTurnaround` envía un UUID de intención generado p
 el cliente, los dos vuelos y la posición elegida; la API revalida scope, contrato,
 fecha local, ruta y solapamiento de posición antes de escribir. Repetir el mismo
 UUID y cuerpo devuelve la misma escala sin duplicarla. Editar escalas existentes
-y reasignar siguen fuera de este cliente;
+y reasignar siguen fuera de este cliente. `programOccShift` programa el turno
+local de un agente para una escala autorizada: el cuerpo contiene solo agente
+e intervalo, nunca estación, terminal o puesto. Tras programar, OCC debe
+obtener nuevamente las opciones y su ETag antes de asignar; programar un turno
+no constituye la asignación.
 la ejecución posterior de servicios corresponde exclusivamente al agente
 asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus

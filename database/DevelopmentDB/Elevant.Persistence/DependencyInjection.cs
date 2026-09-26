@@ -66,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();
         services.AddScoped<IManualTurnaroundOptionsStore, EfManualTurnaroundOptionsStore>();
+        services.AddScoped<IOccShiftProgrammingStore, EfOccShiftProgrammingStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
         services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
         services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();

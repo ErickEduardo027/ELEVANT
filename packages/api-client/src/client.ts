@@ -10,6 +10,7 @@ import {
   getGetOccPlanningSnapshotUrl,
   getGetManualTurnaroundOptionsUrl,
   getCreateManualTurnaroundUrl,
+  getProgramOccShiftUrl,
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
   getGetOccReviewSubmissionDetailUrl,
@@ -48,6 +49,8 @@ import {
   type CreateManualTurnaroundRequest,
   type ManualTurnaroundOptionsResponse,
   type ManualTurnaroundResponse,
+  type ProgramOccShiftRequest,
+  type ProgramOccShiftResponse,
   type GetOccReviewQueueParams,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
@@ -117,6 +120,7 @@ export type GetOccPlanningOptionsOptions = Omit<
 >;
 export type GetManualTurnaroundOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -205,6 +209,11 @@ export interface ElevantApiClient {
     request: CreateManualTurnaroundRequest,
     options?: CreateManualTurnaroundOptions,
   ): Promise<ManualTurnaroundResponse>;
+  programOccShift(
+    turnaroundId: string,
+    request: ProgramOccShiftRequest,
+    options?: ProgramOccShiftOptions,
+  ): Promise<ProgramOccShiftResponse>;
   getOccReviewQueue(
     stationId: string,
     options?: GetOccReviewOptions,
@@ -852,6 +861,13 @@ function isManualTurnaroundResponse(value: unknown): value is ManualTurnaroundRe
   return isRecord(value) &&
     hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) &&
     isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) &&
+    typeof value.replayed === "boolean";
+}
+
+function isProgramOccShiftResponse(value: unknown): value is ProgramOccShiftResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "shiftId", "replayed"]) &&
+    isUuid(value.turnaroundId) && isUuid(value.shiftId) &&
     typeof value.replayed === "boolean";
 }
 
@@ -1786,6 +1802,28 @@ function validatedManualTurnaroundRequest(
     departureScheduledAt: request.departureScheduledAt };
 }
 
+function validatedOccShiftRequest(request: ProgramOccShiftRequest): ProgramOccShiftRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+      ["agentId", "startsAtLocal", "endsAtLocal"]) || !isUuid(request.agentId) ||
+      typeof request.startsAtLocal !== "string" ||
+      typeof request.endsAtLocal !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.startsAtLocal) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.endsAtLocal) ||
+      request.startsAtLocal === request.endsAtLocal)
+    throw new TypeError("OCC shift requires an agentId and distinct local HH:mm:ss times.");
+  const toSeconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const start = toSeconds(request.startsAtLocal);
+  const end = toSeconds(request.endsAtLocal);
+  const duration = end > start ? end - start : end + 86400 - start;
+  if (duration > 16 * 3600)
+    throw new TypeError("OCC shift cannot exceed sixteen hours.");
+  return { agentId: request.agentId,
+    startsAtLocal: request.startsAtLocal, endsAtLocal: request.endsAtLocal };
+}
+
 function validatedOccAssignmentRequest(
   request: AssignOccOperationRequest,
 ): AssignOccOperationRequest {
@@ -2270,6 +2308,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isManualTurnaroundResponse(result.data) ||
           result.data.turnaroundId !== body.turnaroundId ||
           ![200, 201].includes(result.status) || result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async programOccShift(
+      turnaroundId: string,
+      request: ProgramOccShiftRequest,
+      options?: ProgramOccShiftOptions,
+    ) {
+      if (!isUuid(turnaroundId))
+        throw new TypeError("turnaroundId must be a canonical UUID.");
+      const body = validatedOccShiftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getProgramOccShiftUrl(turnaroundId),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isProgramOccShiftResponse(result.data) ||
+          result.data.turnaroundId !== turnaroundId ||
+          ![200, 201].includes(result.status) ||
+          result.data.replayed !== (result.status === 200))
         throw malformedResponse(result.status);
       return result.data;
     },

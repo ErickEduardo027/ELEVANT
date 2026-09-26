@@ -7,6 +7,8 @@ const OPTIONS_LOAD_ERROR = 'No fue posible cargar las opciones de planificación
 const MANUAL_OPTIONS_ERROR = 'No fue posible cargar las opciones del vuelo manual.';
 const MANUAL_CREATE_ERROR = 'No fue posible confirmar el nuevo vuelo. Puede reintentar con los mismos datos.';
 const MANUAL_CONFLICT_ERROR = 'El vuelo o su contrato cambiaron. Revise los datos antes de intentar otra vez.';
+const SHIFT_PROGRAM_ERROR = 'No fue posible confirmar el turno. Puede reintentar con los mismos datos.';
+const SHIFT_CONFLICT_ERROR = 'El turno, agente o alcance cambió. Actualice las opciones antes de intentarlo de nuevo.';
 const ASSIGNMENT_UNKNOWN_ERROR =
   'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.';
 const UNAUTHORIZED_ERROR = 'La sesión expiró. Inicia sesión nuevamente.';
@@ -178,6 +180,14 @@ export async function createManualTurnaround(request, { signal } = {}) {
     () => createPlanningClient().createManualTurnaround(request, { signal }),
     MANUAL_CREATE_ERROR,
     { conflictMessage: MANUAL_CONFLICT_ERROR, conflictCode: 'manual-conflict' }
+  );
+}
+
+export async function programPlanningShift(turnaroundId, request, { signal } = {}) {
+  return executeSafely(
+    () => createPlanningClient().programOccShift(turnaroundId, request, { signal }),
+    SHIFT_PROGRAM_ERROR,
+    { conflictMessage: SHIFT_CONFLICT_ERROR, conflictCode: 'shift-conflict' }
   );
 }
 

@@ -7,6 +7,7 @@ using Elevant.Application.Operations.CreateManualTurnaround;
 using Elevant.Application.Operations.GetManualTurnaroundOptions;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
+using Elevant.Application.Operations.ProgramOccShift;
 using Elevant.Contracts.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,7 +27,8 @@ public sealed class OccPlanningController(
     GetOccPlanningOptionsHandler optionsHandler,
     AssignOccOperationHandler assignmentHandler,
     GetManualTurnaroundOptionsHandler manualOptionsHandler,
-    CreateManualTurnaroundHandler createManualHandler) : ControllerBase
+    CreateManualTurnaroundHandler createManualHandler,
+    ProgramOccShiftHandler shiftHandler) : ControllerBase
 {
     /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
     [HttpGet(Name = "GetOccPlanningSnapshot")]
@@ -148,6 +150,40 @@ public sealed class OccPlanningController(
             result.OperationCode!, result.Replayed);
         return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
             response);
+    }
+
+    /// <summary>Programs one scoped agent shift before the normal OCC assignment.</summary>
+    [HttpPost("turnarounds/{turnaroundId:guid}/shift", Name = "ProgramOccShift")]
+    [RequestSizeLimit(ApiConfiguration.OccShiftRequestBodyLimitBytes)]
+    [Consumes("application/json")]
+    [ProducesResponseType<ProgramOccShiftResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProgramOccShiftResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<ProgramOccShiftResponse>> ProgramShift(
+        [FromRoute] Guid turnaroundId,
+        [FromBody, BindRequired] ProgramOccShiftRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<ProgramOccShiftResponse>();
+
+        var result = await shiftHandler.HandleAsync(new ProgramOccShiftCommand(
+            accountId, turnaroundId, request.AgentId,
+            request.StartsAtLocal, request.EndsAtLocal,
+            Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
+        if (!result.IsSuccess)
+            return FailureResult<ProgramOccShiftResponse>(result.Failure!.Value);
+
+        return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
+            new ProgramOccShiftResponse(turnaroundId, result.ShiftId!.Value, result.Replayed));
     }
 
     /// <summary>Assigns one eligible agent and materializes all applicable contracted services.</summary>
