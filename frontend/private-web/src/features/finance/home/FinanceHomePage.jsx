@@ -49,6 +49,10 @@ export default function FinanceHomePage({ status, data, error, onRetry, onNaviga
         <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen financiero</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Seguimiento de servicios aprobados, pre-facturación y conciliaciones pendientes.</p>
       </div>
+      <div role="status" className="rounded-xl border border-amber-400/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        <strong>Datos sintéticos · solo lectura</strong>
+        <p>Este resumen ilustra el diseño de Finanzas; no consulta saldos ni servicios reales de Development.</p>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Servicios aprobados" value={data?.kpis?.approvedServices ?? 0} icon={ApprovedServicesIcon} loading={isLoading} />

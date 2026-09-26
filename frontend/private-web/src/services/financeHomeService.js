@@ -19,14 +19,5 @@ const FINANCE_HOME_SNAPSHOT = {
 };
 
 export async function getFinanceHomeSnapshot() {
-  if (import.meta.env.MODE !== 'test') {
-    const session = readSession();
-    const response = await fetch(`${PROTOTYPE_API_URL}/api/finance/summary`, { headers: session?.token ? { Authorization: `Bearer ${session.token}` } : {} });
-    const payload = await response.json().catch(() => ({}));
-    handleUnauthorizedResponse(response);
-    if (!response.ok) throw new Error(payload.error || 'No se pudo cargar el resumen financiero.');
-    return payload;
-  }
   return structuredClone(FINANCE_HOME_SNAPSHOT);
 }
-import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';

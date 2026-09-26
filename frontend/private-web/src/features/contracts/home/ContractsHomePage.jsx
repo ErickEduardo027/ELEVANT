@@ -53,6 +53,10 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
         <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Seguimiento de contratos, vigencias, servicios pactados y solicitudes recibidas.</p>
       </div>
+      <div role="status" className="rounded-xl border border-amber-400/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+        <strong>Datos sintéticos · solo lectura</strong>
+        <p>Este resumen ilustra el diseño de Contratos; no consulta contratos reales de Development.</p>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Contratos activos" value={data?.kpis?.activeContracts ?? 0} icon={ContractIcon} loading={isLoading} />
