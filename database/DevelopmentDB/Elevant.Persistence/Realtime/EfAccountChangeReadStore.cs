@@ -57,6 +57,11 @@ internal sealed class EfAccountChangeReadStore(
                          context.Turnarounds.Any(turnaround =>
                              turnaround.Id == operation.TurnaroundId &&
                              turnaround.StationId == change.StationId)))) &&
+                (change.Resource != "finance_preinvoices" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.Preinvoices.Any(draft =>
+                         draft.PublicId == change.ResourceId &&
+                         draft.StationId == change.StationId))) &&
                 (change.Resource != "airline_operations" ||
                     (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
                         operation.PublicId == change.ResourceId &&

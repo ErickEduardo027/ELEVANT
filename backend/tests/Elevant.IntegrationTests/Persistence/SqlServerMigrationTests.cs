@@ -4,6 +4,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Abstractions.Realtime;
+using Elevant.Application.Finance;
 using Elevant.Application.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration;
@@ -349,6 +350,37 @@ public sealed class SqlServerMigrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => new DevelopmentDataSeeder(context).SeedAsync(InitialPasswords, cancellationToken));
         Assert.Empty(await context.Organizations.AsNoTracking().ToListAsync(cancellationToken));
+    }
+
+    [Fact]
+    public async Task PreinvoiceMigrationUpgradesPopulatedDevelopmentWithoutChangingOperations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var prior = CreateContext(database.ConnectionString))
+        {
+            await prior.GetService<IMigrator>().MigrateAsync(
+                "20260926062846_AccountChangeFeed", cancellationToken);
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var context = CreateContext(database.ConnectionString);
+        var operationIds = await context.GroundOperations.AsNoTracking()
+            .Select(item => item.PublicId).OrderBy(item => item).ToArrayAsync(cancellationToken);
+        Assert.NotEmpty(operationIds);
+        await context.GetService<IMigrator>().MigrateAsync(cancellationToken: cancellationToken);
+        Assert.Equal(operationIds, await context.GroundOperations.AsNoTracking()
+            .Select(item => item.PublicId).OrderBy(item => item).ToArrayAsync(cancellationToken));
+        Assert.Empty(await context.Preinvoices.AsNoTracking().ToArrayAsync(cancellationToken));
+        Assert.Empty(await context.PreinvoiceLines.AsNoTracking().ToArrayAsync(cancellationToken));
+        Assert.Equal(context.Database.GetMigrations(),
+            await context.Database.GetAppliedMigrationsAsync(cancellationToken));
     }
 
     [Fact]
@@ -3740,6 +3772,7 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(financeStationInternalId, hint.StationId);
         }
 
+        string? approvedServiceName = null;
         await using (var financeScope = provider.CreateAsyncScope())
         {
             var finance = financeScope.ServiceProvider
@@ -3757,6 +3790,7 @@ public sealed class SqlServerMigrationTests
                 Assert.True(billed.Amount > 0);
                 Assert.Equal(handoffKey, billed.ApprovedSubmissionId);
                 Assert.Equal(1m, billed.ExecutedQuantity);
+                approvedServiceName = billed.ServiceName;
             }
             else
             {
@@ -3767,6 +3801,79 @@ public sealed class SqlServerMigrationTests
             Assert.Null(await finance.GetAsync(financeAccountId,
                 Guid.Parse("20000000-0000-7000-8000-000000000013"),
                 date, date, cancellationToken));
+        }
+
+        if (reviewOutcome == "Approved")
+        {
+            await using (var catalog = CreateContext(database.ConnectionString))
+            {
+                var definitionId = await catalog.OperationServices.AsNoTracking()
+                    .Where(item => item.PublicId == baggageServiceId)
+                    .Select(item => item.ServiceDefinitionId)
+                    .SingleAsync(cancellationToken);
+                await catalog.ServiceDefinitions.Where(item => item.Id == definitionId)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(
+                        item => item.Name, "Renamed after OCC approval"), cancellationToken);
+            }
+            var financeAccountId = Guid.Parse("40000000-0000-7000-8000-000000000006");
+            var date = new DateOnly(2026, 8, 18);
+            var command = new CreatePreinvoiceDraftCommand(financeAccountId, stationId,
+                date, date, Guid.NewGuid(), [baggageServiceId]);
+            async Task<PreinvoiceDraftResult> CreateAsync(CreatePreinvoiceDraftCommand item)
+            {
+                await using var scope = provider.CreateAsyncScope();
+                return await scope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>()
+                    .CreateAsync(item, cancellationToken);
+            }
+
+            var competing = await Task.WhenAll(CreateAsync(command), CreateAsync(command));
+            Assert.All(competing, item => Assert.True(item.IsSuccess, item.Reason));
+            var created = Assert.Single(competing, item => !item.Replayed);
+            Assert.Single(competing, item => item.Replayed);
+            Assert.True(created.IsSuccess, created.Reason);
+            Assert.False(created.Replayed);
+            var draftReplay = await CreateAsync(command);
+            Assert.Equal(created.DraftId, draftReplay.DraftId);
+            Assert.True(draftReplay.Replayed);
+            Assert.Equal(PreinvoiceDraftFailure.Conflict,
+                (await CreateAsync(command with { RequestId = Guid.NewGuid() })).Failure);
+            Assert.Equal(PreinvoiceDraftFailure.Conflict,
+                (await CreateAsync(command with { ServiceIds = [Guid.NewGuid()] })).Failure);
+
+            await using var inspection = CreateContext(database.ConnectionString);
+            var draft = await inspection.Preinvoices.AsNoTracking()
+                .SingleAsync(item => item.PublicId == created.DraftId, cancellationToken);
+            var line = await inspection.PreinvoiceLines.AsNoTracking()
+                .SingleAsync(item => item.PreinvoiceId == draft.Id, cancellationToken);
+            Assert.Equal(PreinvoiceStatus.Draft, draft.Status);
+            Assert.Equal(draft.Total, line.Amount);
+            Assert.Equal(1m, line.ExecutedQuantity);
+            Assert.True(line.UnitPrice > 0);
+            Assert.Equal(approvedServiceName, line.ServiceName);
+            await using (var evidenceScope = provider.CreateAsyncScope())
+            {
+                var evidence = await evidenceScope.ServiceProvider
+                    .GetRequiredService<IFinanceApprovedServicesReadStore>()
+                    .GetAsync(financeAccountId, stationId, date, date, cancellationToken);
+                Assert.Equal(created.DraftId,
+                    Assert.Single(Assert.IsType<FinanceApprovedServicesData>(evidence).Services,
+                        item => item.Id == baggageServiceId).PreinvoiceId);
+            }
+            await using (var readScope = provider.CreateAsyncScope())
+            {
+                var drafts = readScope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>();
+                var detail = await drafts.GetAsync(financeAccountId,
+                    created.DraftId!.Value, cancellationToken);
+                Assert.NotNull(detail);
+                Assert.Equal(draft.Total, detail.Total);
+                Assert.Equal(baggageServiceId, Assert.Single(detail.Lines).OperationServiceId);
+                Assert.Null(await drafts.GetAsync(occAccountId,
+                    created.DraftId.Value, cancellationToken));
+            }
+            Assert.Single(await inspection.AuditEntries.AsNoTracking()
+                .Where(item => item.EntityPublicId == created.DraftId &&
+                    item.Action == "finance.preinvoice.draft.created")
+                .ToArrayAsync(cancellationToken));
         }
 
         if (reviewOutcome == "Approved")
@@ -3786,6 +3893,8 @@ public sealed class SqlServerMigrationTests
                 Assert.Contains(Assert.IsType<AccountChangePage>(page).Changes,
                     item => item.Resource == "finance_approved_services" &&
                         item.ResourceId == operationId);
+                Assert.Contains(Assert.IsType<AccountChangePage>(page).Changes,
+                    item => item.Resource == "finance_preinvoices");
             }
             await using (var revoke = CreateContext(database.ConnectionString))
             {

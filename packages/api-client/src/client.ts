@@ -2,6 +2,8 @@ import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
   getGetFinanceApprovedServicesUrl,
+  getCreatePreinvoiceDraftUrl,
+  getGetPreinvoiceDraftUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -37,6 +39,9 @@ import {
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
   type FinanceApprovedServicesResponse,
+  type CreatePreinvoiceDraftRequest,
+  type CreatePreinvoiceDraftResponse,
+  type PreinvoiceDraftResponse,
   type GetAirlineContractsParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
@@ -113,6 +118,8 @@ export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export interface FinanceApprovedServicesQuery {
   readonly stationId: string;
   readonly from: string;
@@ -201,6 +208,14 @@ export interface ElevantApiClient {
     query: FinanceApprovedServicesQuery,
     options?: GetFinanceApprovedServicesOptions,
   ): Promise<FinanceApprovedServicesResponse>;
+  createPreinvoiceDraft(
+    request: CreatePreinvoiceDraftRequest,
+    options?: CreatePreinvoiceDraftOptions,
+  ): Promise<CreatePreinvoiceDraftResponse>;
+  getPreinvoiceDraft(
+    draftId: string, expectedStationId: string,
+    options?: GetPreinvoiceDraftOptions,
+  ): Promise<PreinvoiceDraftResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1706,13 +1721,14 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
     value.services.length <= 200 &&
     value.services.every((service) => isRecord(service) &&
       hasOnlyKeys(service, ["id", "operationId", "turnaroundId", "approvedSubmissionId",
-        "operationCode", "operationDate", "airlineName", "flightNumber", "contractCode",
+        "operationCode", "operationDate", "airlineId", "airlineName", "flightNumber", "contractCode",
         "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
         "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
-        "ready", "blockingReason", "amount"]) &&
+        "ready", "blockingReason", "amount", "preinvoiceId"]) &&
       isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
       isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
-      isDateOnly(service.operationDate) && isNonEmptyString(service.airlineName) &&
+      isDateOnly(service.operationDate) && isUuid(service.airlineId) &&
+      isNonEmptyString(service.airlineName) &&
       isString(service.flightNumber) && isOptionalNullable(service.contractCode, isNonEmptyString) &&
       isNonEmptyString(service.serviceCode) && isNonEmptyString(service.serviceName) &&
       ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"].includes(
@@ -1723,6 +1739,7 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
       isOptionalNullable(service.frozenUnitPrice, value => isFiniteNumber(value) && value >= 0) &&
       isOptionalNullable(service.frozenCurrency, value =>
         typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
+      isOptionalNullable(service.preinvoiceId, isUuid) &&
       typeof service.ready === "boolean" &&
       (service.ready
         ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
@@ -1733,6 +1750,54 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
           isFiniteNumber(service.amount) && service.amount >= 0
         : isNonEmptyString(service.blockingReason) &&
           (service.amount === null || service.amount === undefined)));
+}
+
+function validatedPreinvoiceDraftRequest(
+  request: CreatePreinvoiceDraftRequest,
+): CreatePreinvoiceDraftRequest {
+  if (!isRecord(request) ||
+      !hasOnlyKeys(request, ["stationId", "from", "to", "requestId", "serviceIds"]) ||
+      !isUuid(request.stationId) || !isUuid(request.requestId) ||
+      !isDateOnly(request.from) || !isDateOnly(request.to) ||
+      request.to < request.from ||
+      (Date.parse(`${request.to}T00:00:00Z`) - Date.parse(`${request.from}T00:00:00Z`)) /
+        86_400_000 > 30 || !Array.isArray(request.serviceIds) ||
+      request.serviceIds.length < 1 || request.serviceIds.length > 100 ||
+      !request.serviceIds.every(isUuid) ||
+      new Set(request.serviceIds).size !== request.serviceIds.length)
+    throw new TypeError("Preinvoice draft selection is invalid.");
+  return request as unknown as CreatePreinvoiceDraftRequest;
+}
+
+function isPreinvoiceDraftCreateResponse(value: unknown): value is CreatePreinvoiceDraftResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "replayed"]) &&
+    isUuid(value.id) && typeof value.replayed === "boolean";
+}
+
+function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
+      "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
+      !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
+      !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
+      !isDateOnly(value.to) || value.to < value.from ||
+      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
+      !isFiniteNumber(value.total) || value.total < 0 ||
+      !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+    return false;
+  return value.lines.every((line, index) => isRecord(line) &&
+    hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
+      "operationCode", "operationDate", "serviceCode", "serviceName",
+      "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
+    isUuid(line.id) && isUuid(line.operationServiceId) && isUuid(line.approvedSubmissionId) &&
+    line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
+    isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
+    String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
+    isNonEmptyString(line.serviceName) && isFiniteNumber(line.executedQuantity) &&
+    line.executedQuantity > 0 && isNonEmptyString(line.billingUnit) &&
+    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
+    line.currencyCode === value.currencyCode &&
+    isFiniteNumber(line.amount) && line.amount >= 0);
 }
 
 function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
@@ -2337,6 +2402,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isFinanceApprovedServicesResponse(result.data) ||
           result.data.stationId !== scope.stationId ||
           result.data.from !== scope.from || result.data.to !== scope.to)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createPreinvoiceDraft(
+      request: CreatePreinvoiceDraftRequest,
+      options?: CreatePreinvoiceDraftOptions,
+    ) {
+      const selection = validatedPreinvoiceDraftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreatePreinvoiceDraftUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(selection) }, true);
+      if (!isPreinvoiceDraftCreateResponse(result.data))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getPreinvoiceDraft(
+      draftId: string, expectedStationId: string,
+      options?: GetPreinvoiceDraftOptions,
+    ) {
+      const draft = validatedUuid(draftId, "draftId");
+      const station = validatedUuid(expectedStationId, "expectedStationId");
+      const result = await execute(getGetPreinvoiceDraftUrl(draft),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDraftResponse(result.data) ||
+          result.data.id !== draft || result.data.stationId !== station)
         throw malformedResponse(result.status);
       return result.data;
     },

@@ -164,8 +164,16 @@ congelados en `OperationService`, nunca la tarifa actual. Una línea bloqueada
 conserva una razón explícita y no tiene importe facturable. La aprobación
 escribe una invalidación `finance_approved_services` dirigida a Finanzas en
 la misma transacción; el feed revalida rol, membresía, estación y estado.
-Esta lectura no crea prefacturas, facturas, pagos ni recibos, y todavía no se
-ha desplegado.
+La rama también añade `POST /api/v1/finance/preinvoices` y
+`GET /api/v1/finance/preinvoices/{draftId}`. Finanzas agrupa de 1 a 100
+servicios aprobados de una sola aerolínea, estación, moneda e intervalo,
+con una clave de solicitud estable. La API vuelve a verificar rol, grant,
+última aprobación OCC, evidencia y tarifa congelada antes de guardar una
+prefactura no fiscal con líneas inmutables. Una clave repetida con el mismo
+contenido devuelve el borrador existente; un servicio solo puede reservarse
+en una prefactura. La lectura de detalle revalida acceso y la escritura emite
+una invalidación durable `finance_preinvoices`. No hay emisión, impuesto,
+conciliación, factura, pago ni recibo todavía. La rama no se ha desplegado.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

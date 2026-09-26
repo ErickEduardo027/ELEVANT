@@ -11,3 +11,25 @@ export async function getApprovedServices(query, { signal } = {}) {
     throw error;
   }
 }
+
+export async function createPreinvoiceDraft(request) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).createPreinvoiceDraft(request);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+export async function getPreinvoiceDraft(draftId, stationId) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getPreinvoiceDraft(draftId, stationId);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

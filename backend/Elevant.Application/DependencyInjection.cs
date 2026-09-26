@@ -33,6 +33,8 @@ public static class DependencyInjection
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
         services.AddScoped<GetAirlineContractsHandler>();
         services.AddScoped<GetFinanceApprovedServicesHandler>();
+        services.AddScoped<CreatePreinvoiceDraftHandler>();
+        services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();

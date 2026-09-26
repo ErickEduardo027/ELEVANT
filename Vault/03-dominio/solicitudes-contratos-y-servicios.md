@@ -120,8 +120,12 @@ existen precio, moneda y unidad congelados válidos. Las inconsistencias se
 muestran como líneas bloqueadas, sin importe facturable, en vez de omitirlas
 silenciosamente. Una aprobación genera una pista durable dirigida a Finanzas
 en la misma transacción; el feed vuelve a comprobar rol, membresía, estación
-y estado de la operación. Esta capacidad aún no crea prefactura, factura,
-pago ni recibo y no acredita un despliegue al VPS.
+y estado de la operación. La misma rama añade una **prefactura interna no
+fiscal**: Finanzas selecciona servicios de una sola aerolínea, estación y
+moneda, y la API reserva cada línea fuente una sola vez con snapshots
+inmutables de cantidad y tarifa. La solicitud tiene clave idempotente; el
+detalle y la auditoría se guardan en SQL. Todavía no hay conciliación,
+factura, pago ni recibo, y esto no acredita un despliegue al VPS.
 
 ## Diferencias con Public Web
 

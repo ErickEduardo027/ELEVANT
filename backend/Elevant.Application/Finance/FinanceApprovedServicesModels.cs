@@ -18,6 +18,7 @@ public sealed record FinanceApprovedServiceData(
     Guid ApprovedSubmissionId,
     string OperationCode,
     DateOnly OperationDate,
+    Guid AirlineId,
     string AirlineName,
     string FlightNumber,
     string? ContractCode,
@@ -31,7 +32,8 @@ public sealed record FinanceApprovedServiceData(
     string? FrozenCurrency,
     bool Ready,
     string? BlockingReason,
-    decimal? Amount);
+    decimal? Amount,
+    Guid? PreinvoiceId);
 
 public sealed record FinanceApprovedServicesData(
     Guid StationId,

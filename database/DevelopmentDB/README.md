@@ -25,6 +25,15 @@ escribir/procesar el outbox y leer/insertar pistas del feed.
 `verify-development.sql` comprueba sus límites efectivos. Esta migración
 no está desplegada hasta completar la certificación y la promoción controlada.
 
+La migración aditiva `PreinvoiceDraft` de la rama de integración crea
+`commercial.preinvoices` y `commercial.preinvoice_lines`. Cada línea guarda
+cantidad, unidad, precio, moneda e importe congelados junto con la entrega
+aprobada por OCC que la justifica. Índices únicos sobre `request_id` y
+`operation_service_id` impiden solicitudes duplicadas y reservar dos veces
+un servicio. Todas las FKs usan `NO ACTION`; la migración no carga datos de
+negocio. Se prueba una base limpia y la actualización de una base con
+operaciones previas. No se ha aplicado al VPS.
+
 Desde cualquier directorio:
 
 ```powershell

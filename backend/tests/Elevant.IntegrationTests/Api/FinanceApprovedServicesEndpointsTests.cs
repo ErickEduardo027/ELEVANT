@@ -46,9 +46,9 @@ public sealed class FinanceApprovedServicesEndpointsTests(ElevantApiFactory fact
             Actor = Actor(),
             Data = new FinanceApprovedServicesData(StationId, Date, Date,
                 [new FinanceApprovedServiceData(serviceId, Guid.NewGuid(), Guid.NewGuid(),
-                    Guid.NewGuid(), "DEV-TAT-0002", Date, "Demo Airlines", "ZZ102",
+                    Guid.NewGuid(), "DEV-TAT-0002", Date, Guid.NewGuid(), "Demo Airlines", "ZZ102",
                     "DEV-CTR", "GPU", "Ground power", "Completed", 1, 2,
-                    "hour", 40, "USD", true, null, 80)], false),
+                    "hour", 40, "USD", true, null, 80, null)], false),
         };
         await using var application = CreateApplication(stub);
         using var client = application.CreateClient();

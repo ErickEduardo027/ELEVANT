@@ -134,6 +134,19 @@ export interface CreateManualTurnaroundRequest {
   departureScheduledAt: string;
 }
 
+export interface CreatePreinvoiceDraftRequest {
+  stationId: string;
+  from: string;
+  to: string;
+  requestId: string;
+  serviceIds: string[];
+}
+
+export interface CreatePreinvoiceDraftResponse {
+  id: string;
+  replayed: boolean;
+}
+
 export interface CreateSessionRequest {
   /**
      * @minLength 1
@@ -238,6 +251,7 @@ export interface FinanceApprovedServiceResponse {
   approvedSubmissionId: string;
   operationCode: string;
   operationDate: string;
+  airlineId: string;
   airlineName: string;
   flightNumber: string;
   /** @nullable */
@@ -257,6 +271,8 @@ export interface FinanceApprovedServiceResponse {
   blockingReason?: string | null;
   /** @nullable */
   amount?: number | null;
+  /** @nullable */
+  preinvoiceId?: string | null;
 }
 
 export interface FinanceApprovedServicesResponse {
@@ -682,6 +698,35 @@ export interface OperationalNotificationResponse {
 export interface OperationalNotificationListResponse {
   notifications: OperationalNotificationResponse[];
   hasMore: boolean;
+}
+
+export interface PreinvoiceDraftLineResponse {
+  id: string;
+  operationServiceId: string;
+  approvedSubmissionId: string;
+  lineNumber: number;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  currencyCode: string;
+  amount: number;
+}
+
+export interface PreinvoiceDraftResponse {
+  id: string;
+  airlineId: string;
+  airlineName: string;
+  stationId: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  lines: PreinvoiceDraftLineResponse[];
 }
 
 export interface ProblemDetails {
@@ -1895,6 +1940,68 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreatePreinvoiceDraftUrl = () => {
+
+
+
+
+  return `/api/v1/finance/preinvoices`
+}
+
+export const createPreinvoiceDraft = async (createPreinvoiceDraftRequest?: CreatePreinvoiceDraftRequest, options?: RequestInit): Promise<CreatePreinvoiceDraftResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreatePreinvoiceDraftUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createPreinvoiceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetPreinvoiceDraftUrl = (draftId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${draftId}`
+}
+
+export const getPreinvoiceDraft = async (draftId: string, options?: RequestInit): Promise<PreinvoiceDraftResponse> => {
+
+  const res = await fetch(getGetPreinvoiceDraftUrl(draftId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDraftResponse = body ? JSON.parse(body) : {}
   return data
 }
 

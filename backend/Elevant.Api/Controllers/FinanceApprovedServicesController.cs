@@ -60,11 +60,11 @@ public sealed class FinanceApprovedServicesController(
             page.Services.Select(service => new FinanceApprovedServiceResponse(
                 service.Id, service.OperationId, service.TurnaroundId,
                 service.ApprovedSubmissionId, service.OperationCode, service.OperationDate,
-                service.AirlineName, service.FlightNumber, service.ContractCode,
+                service.AirlineId, service.AirlineName, service.FlightNumber, service.ContractCode,
                 service.ServiceCode, service.ServiceName, service.ExecutionStatus,
                 service.ContractedQuantity, service.ExecutedQuantity, service.BillingUnit,
                 service.FrozenUnitPrice, service.FrozenCurrency, service.Ready,
-                service.BlockingReason, service.Amount)).ToArray(), page.HasMore));
+                service.BlockingReason, service.Amount, service.PreinvoiceId)).ToArray(), page.HasMore));
     }
 
     private ActionResult<T> ProblemResult<T>(int status, string title) =>

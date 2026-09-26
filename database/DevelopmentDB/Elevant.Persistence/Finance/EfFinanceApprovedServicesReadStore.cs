@@ -80,7 +80,14 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 submission.EvidenceJson,
                 turnaround.OperationCode,
                 turnaround.OperationDate,
+                AirlineId = airline.PublicId,
                 AirlineName = airline.Name,
+                PreinvoiceId = (
+                    from line in context.PreinvoiceLines.AsNoTracking()
+                    join draft in context.Preinvoices.AsNoTracking()
+                        on line.PreinvoiceId equals draft.Id
+                    where line.OperationServiceId == service.Id
+                    select (Guid?)draft.PublicId).FirstOrDefault(),
                 FlightNumber = context.FlightLegs.AsNoTracking()
                     .Where(leg => leg.TurnaroundId == turnaround.Id &&
                         leg.Direction == FlightDirection.Arrival)
@@ -130,13 +137,14 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 : new FinanceServiceValuation(false, "approved_evidence_mismatch", null);
             return new FinanceApprovedServiceData(
                 row.ServiceId, row.OperationId, row.TurnaroundId, row.SubmissionId,
-                row.OperationCode, row.OperationDate, row.AirlineName,
+                row.OperationCode, row.OperationDate, row.AirlineId, row.AirlineName,
                 row.FlightNumber ?? string.Empty, row.ContractCode,
                 evidence?.Code ?? row.Code, evidence?.Name ?? row.Name,
                 row.CurrentStatus.ToString(), row.ContractedQuantity,
                 row.ExecutedQuantity, row.BillingUnitSnapshot,
                 row.UnitPriceSnapshot, row.CurrencyCodeSnapshot,
-                valuation.Ready, valuation.BlockingReason, valuation.Amount);
+                valuation.Ready, valuation.BlockingReason, valuation.Amount,
+                row.PreinvoiceId);
         }).ToArray();
         return new FinanceApprovedServicesData(stationId, startDate, endDate,
             services, rows.Length > PageLimit);

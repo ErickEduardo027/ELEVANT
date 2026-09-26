@@ -8,6 +8,7 @@ public sealed record FinanceServiceValuation(bool Ready, string? BlockingReason,
 public static class FinanceApprovedServicePolicy
 {
     public static bool IsValidWindow(DateOnly from, DateOnly to) =>
+        from != default && to != default &&
         to >= from && to.DayNumber - from.DayNumber <= 30;
 
     public static FinanceServiceValuation Evaluate(
@@ -29,7 +30,15 @@ public static class FinanceApprovedServicePolicy
         if (string.IsNullOrWhiteSpace(frozenBillingUnit))
             return Blocked("invalid_billing_unit");
 
-        return new FinanceServiceValuation(true, null, executedQuantity * frozenUnitPrice.Value);
+        try
+        {
+            return new FinanceServiceValuation(true, null,
+                executedQuantity * frozenUnitPrice.Value);
+        }
+        catch (OverflowException)
+        {
+            return Blocked("invalid_amount");
+        }
     }
 
     private static FinanceServiceValuation Blocked(string reason) =>

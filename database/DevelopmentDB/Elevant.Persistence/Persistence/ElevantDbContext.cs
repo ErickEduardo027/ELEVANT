@@ -73,6 +73,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
 
+    public DbSet<Preinvoice> Preinvoices => Set<Preinvoice>();
+
+    public DbSet<PreinvoiceLine> PreinvoiceLines => Set<PreinvoiceLine>();
+
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
     public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();
@@ -114,6 +118,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
         builder.ConfigureWorkforceAndCommercial();
+        builder.ConfigurePreinvoices();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);

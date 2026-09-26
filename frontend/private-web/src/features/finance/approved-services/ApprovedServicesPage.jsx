@@ -7,12 +7,13 @@ const BLOCKING_LABELS = {
   missing_frozen_rate: 'Sin tarifa congelada',
   invalid_currency: 'Moneda inválida',
   invalid_billing_unit: 'Unidad de cobro inválida',
+  invalid_amount: 'Importe fuera de rango',
 };
 
 function money(value, currency) {
   if (value === null || value === undefined || !currency) return '—';
   return new Intl.NumberFormat('es-DO', {
-    style: 'currency', currency, maximumFractionDigits: currency === 'DOP' ? 0 : 2,
+    style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 4,
   }).format(value);
 }
 
@@ -27,13 +28,65 @@ export default function ApprovedServicesPage() {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-5">
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
-        <h1 className="mt-1 text-2xl font-bold">Servicios aprobados</h1>
-        <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          Evidencia de servicios de operaciones aprobadas por OCC. Los importes usan la tarifa congelada en la operación.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
+          <h1 className="mt-1 text-2xl font-bold">Servicios aprobados</h1>
+          <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+            Evidencia de servicios de operaciones aprobadas por OCC. Los importes usan la tarifa congelada en la operación.
+          </p>
+        </div>
+        <button type="button" onClick={data.createDraft}
+          disabled={!data.selectedCount || data.draftStatus === 'creating' || data.status !== 'success'}
+          className="rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+          {data.draftStatus === 'creating' ? 'Guardando prefactura…' : 'Crear prefactura de prueba'}
+        </button>
       </header>
+
+      {data.selectedCount > 0 && <p role="status" className="text-sm text-text-secondary-light">
+        {data.selectedCount} servicio{data.selectedCount === 1 ? '' : 's'} seleccionado{data.selectedCount === 1 ? '' : 's'}.
+        Solo pueden agruparse líneas de la misma aerolínea y moneda.
+      </p>}
+      {data.draftStatus === 'conflict' && <p role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
+        Uno de estos servicios ya pertenece a una prefactura, o la clave del intento cambió. Actualizamos la lista para que puedas revisar el borrador existente.
+      </p>}
+      {data.draftStatus === 'error' && <p role="alert" className="rounded-xl bg-status-danger/10 p-4 text-sm">
+        No se pudo confirmar la creación. Puedes reintentar con la misma selección; se conservará la clave de este intento.
+      </p>}
+      {data.draftStatus === 'detail-error' && <div role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
+        La prefactura quedó guardada, pero no se pudo cargar el detalle.
+        <button type="button" onClick={() => data.openDraft(data.draftId)} className="ml-2 font-semibold underline">Reintentar detalle</button>
+      </div>}
+      {data.draftStatus === 'loading-detail' && <p role="status">Cargando prefactura guardada…</p>}
+      {data.draftDetail && <section aria-label="Prefactura guardada"
+        className="rounded-2xl border border-accent-600/20 bg-accent-600/5 p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-600">Prefactura guardada</p>
+        <h2 className="mt-1 text-lg font-bold">{data.draftDetail.airlineName}</h2>
+        <p className="mt-1 text-sm">{data.draftDetail.lines.length} línea{data.draftDetail.lines.length === 1 ? '' : 's'} · {money(data.draftDetail.total, data.draftDetail.currencyCode)} · {data.draftDetail.status}</p>
+        <p className="mt-2 text-xs text-text-secondary-light">Borrador interno de prueba. Aún no es factura ni recibo fiscal.</p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <caption className="sr-only">Líneas guardadas con la evidencia y tarifa congeladas</caption>
+            <thead className="border-b border-accent-600/20 text-xs uppercase text-text-secondary-light">
+              <tr><th className="py-2 pr-3">Operación</th><th className="px-3 py-2">Servicio</th>
+                <th className="px-3 py-2 text-right">Ejecutado</th><th className="px-3 py-2 text-right">Tarifa</th>
+                <th className="py-2 pl-3 text-right">Importe</th></tr>
+            </thead>
+            <tbody className="divide-y divide-accent-600/10">
+              {data.draftDetail.lines.map(line => <tr key={line.id}>
+                <td className="py-2 pr-3"><span className="block font-mono text-xs">{line.operationCode}</span>
+                  <span className="block text-xs text-text-secondary-light">{date(line.operationDate)}</span></td>
+                <td className="px-3 py-2"><span className="block font-semibold">{line.serviceName}</span>
+                  <span className="block font-mono text-xs text-text-secondary-light">{line.serviceCode}</span></td>
+                <td className="px-3 py-2 text-right">{line.executedQuantity} {line.billingUnit}</td>
+                <td className="px-3 py-2 text-right">{money(line.unitPrice, line.currencyCode)}</td>
+                <td className="py-2 pl-3 text-right font-semibold">{money(line.amount, line.currencyCode)}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-text-secondary-light">Importes de prueba sin impuestos; se muestran hasta cuatro decimales del snapshot guardado.</p>
+      </section>}
 
       <section className="rounded-2xl border border-black/5 bg-white/70 p-4 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -89,6 +142,7 @@ export default function ApprovedServicesPage() {
             : data.services.length
               ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
                 <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]"><tr>
+                  <th className="px-3 py-3">Elegir</th>
                   <th className="px-5 py-3">Servicio</th><th className="px-5 py-3">Aerolínea / vuelo</th>
                   <th className="px-5 py-3">Contrato</th><th className="px-5 py-3">Fecha</th>
                   <th className="px-5 py-3">Ejecutado</th><th className="px-5 py-3 text-right">Importe</th>
@@ -96,6 +150,9 @@ export default function ApprovedServicesPage() {
                 </tr></thead>
                 <tbody className="divide-y divide-black/5 dark:divide-white/5">
                   {data.services.map(item => <tr key={item.id}>
+                    <td className="px-3 py-4"><input type="checkbox" aria-label={`Seleccionar ${item.serviceName}`}
+                      checked={data.selectedIds.includes(item.id)} disabled={!data.canSelect(item)}
+                      onChange={() => data.toggleSelection(item.id)} /></td>
                     <td className="px-5 py-4"><span className="block font-semibold">{item.serviceName}</span>
                       <span className="font-mono text-[11px] text-text-secondary-light">{item.serviceCode} · {item.id}</span></td>
                     <td className="px-5 py-4">{item.airlineName}<span className="block text-xs text-text-secondary-light">{item.flightNumber || item.operationCode}</span></td>
@@ -103,7 +160,10 @@ export default function ApprovedServicesPage() {
                     <td className="px-5 py-4">{date(item.operationDate)}</td>
                     <td className="px-5 py-4">{item.executedQuantity} {item.billingUnit}</td>
                     <td className="px-5 py-4 text-right font-semibold">{money(item.amount, item.frozenCurrency)}</td>
-                    <td className="px-5 py-4">{item.ready
+                    <td className="px-5 py-4">{item.preinvoiceId
+                      ? <button type="button" onClick={() => data.openDraft(item.preinvoiceId)}
+                        className="text-xs font-semibold text-accent-600 underline">Ver prefactura guardada</button>
+                      : item.ready
                       ? <span className="rounded-full bg-status-success/10 px-2.5 py-1 text-xs font-semibold text-status-success">Lista para prefactura</span>
                       : <span className="rounded-full bg-status-warning/10 px-2.5 py-1 text-xs font-semibold text-amber-700">{BLOCKING_LABELS[item.blockingReason] || 'Requiere revisión'}</span>}</td>
                   </tr>)}

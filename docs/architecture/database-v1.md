@@ -84,7 +84,10 @@ El seed de Development es un ejecutable separado, transaccional, determinista, i
 
 ## Diferido explícitamente
 
-- facturas, prefacturas y ledger de conciliación;
+- emisión de facturas, recibos y ledger de conciliación; la rama de
+  integración ya modela una prefactura interna no fiscal con líneas de
+  servicios aprobados, snapshots de precio/moneda y reserva única de la
+  línea fuente, pero no la ha promovido al VPS;
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas.

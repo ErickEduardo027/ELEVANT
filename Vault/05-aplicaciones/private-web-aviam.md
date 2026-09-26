@@ -108,8 +108,11 @@ En la rama de integración posterior al commit histórico de esta nota,
 estación y período. Presenta importes de snapshots operativos y razones de
 bloqueo, no cifras de fixtures; la antigua acción local «Marcar revisado» ya
 no aparece. Revalida por feed durable, foco y polling acotado. El resto de
-Finanzas y la emisión de factura/recibo siguen pendientes; no se ha promovido
-esta rama al VPS.
+Finanzas puede crear y volver a consultar una prefactura interna no fiscal
+desde los servicios elegibles. La selección se reconcilia cuando llega una
+reserva de otro usuario y un reintento conserva su clave idempotente.
+Conciliación, emisión de factura y recibo siguen pendientes; no se ha
+promovido esta rama al VPS.
 
 ## Desarrollo local
 

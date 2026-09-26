@@ -42,4 +42,14 @@ public sealed class FinanceApprovedServicePolicyTests
             new DateOnly(fromYear, fromMonth, fromDay),
             new DateOnly(toYear, toMonth, toDay)));
     }
+
+    [Fact]
+    public void ExcessiveFrozenValuesAreBlockedInsteadOfThrowing()
+    {
+        var result = FinanceApprovedServicePolicy.Evaluate(
+            ServiceExecutionStatus.Completed, 100_000_000_000_000m,
+            1_000_000_000_000_000m, "USD", "operation");
+        Assert.False(result.Ready);
+        Assert.Equal("invalid_amount", result.BlockingReason);
+    }
 }

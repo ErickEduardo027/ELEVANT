@@ -105,8 +105,13 @@ concreta a esa descripción histórica: consulta la API versionada con estación
 y período explícitos, muestra evidencia aprobada y razones de bloqueo reales,
 escucha el feed durable y reconsulta al recuperar foco o como máximo cada 25
 segundos. La antigua acción local «Marcar revisado» se retiró porque no
-persistía ni auditaba. El resto de Finanzas aún no constituye prefacturación,
-conciliación, factura o cobro canónico. No se ha promovido al VPS.
+persistía ni auditaba. Desde esta misma vista, Finanzas puede elegir hasta
+100 servicios facturables de una sola aerolínea y moneda y crear una
+prefactura de prueba persistente y auditada. La selección se reconcilia con
+las reservas de otros usuarios; un intento incierto conserva su clave para
+reintentar sin duplicar. El detalle se lee de nuevo de la API, no del estado
+del navegador. La prefactura no es una factura ni un recibo: conciliación,
+emisión y cobro siguen pendientes. No se ha promovido al VPS.
 
 ## Imagen de Development
 

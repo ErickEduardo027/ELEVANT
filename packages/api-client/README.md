@@ -14,6 +14,13 @@ para la única aerolínea derivada en la API de la sesión. El cliente valida
 estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
 un ID de tenant ni habilita acciones comerciales.
 
+`getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
+aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía
+una clave UUID estable con 1–100 servicios y valida el ID guardado;
+`getPreinvoiceDraft(id, expectedStationId)` reconsulta y valida el detalle
+persistente y su estación. Solo Finanzas interna autorizada puede usar estos
+contratos. El borrador aún no es factura, pago ni recibo.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores

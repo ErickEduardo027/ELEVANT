@@ -11,6 +11,12 @@ internal static class FinanceApprovedServiceChangeWriter
     public static async Task AddAsync(
         ElevantDbContext context, long stationId, Guid operationId,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
+        => await AddAsync(context, stationId, operationId, occurredAt,
+            "finance_approved_services", cancellationToken);
+
+    public static async Task AddAsync(
+        ElevantDbContext context, long stationId, Guid resourceId,
+        DateTimeOffset occurredAt, string resource, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
         var recipients = await context.Users.AsNoTracking()
@@ -36,6 +42,6 @@ internal static class FinanceApprovedServiceChangeWriter
 
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, stationId,
-                "finance_approved_services", operationId, occurredAt);
+                resource, resourceId, occurredAt);
     }
 }

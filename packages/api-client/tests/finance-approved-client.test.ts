@@ -18,6 +18,7 @@ const page: FinanceApprovedServicesResponse = {
     approvedSubmissionId: "70000000-0000-7000-8000-000000000019",
     operationCode: "DEV-TAT-0002",
     operationDate: query.from,
+    airlineId: "50000000-0000-7000-8000-000000000006",
     airlineName: "Demo Airlines",
     flightNumber: "ZZ102",
     contractCode: "DEV-CONTRACT-0001",
@@ -32,6 +33,7 @@ const page: FinanceApprovedServicesResponse = {
     ready: true,
     blockingReason: null,
     amount: 80,
+    preinvoiceId: null,
   }],
   hasMore: false,
 };

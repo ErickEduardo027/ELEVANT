@@ -1033,13 +1033,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "d4de02ef850d7038e7fb8e6900fc5d34ca67065624559b9092c29ed314fbfbd0",
+        "sha256": "3079fd851094da6727088d598b378efc8b91cb2f239debeb2e25814cb80244e1",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "30edf1c422c18c9236dc35f759a200d27e38bed90a5730acccfd440b90b9d4b4",
+        "sha256": "8c0b72f64e402d29cd0835b56a5b5344c70740375c64edf47009266994532f81",
         "title": null,
         "version": null
       }
@@ -1110,6 +1110,12 @@
         "name": "AccountChangeFeed",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926062846_AccountChangeFeed.cs",
         "sha256": "b828d98296c8f50b6046ffb56ed2b484dee72358a735548e242500ac7b3ecfb5"
+      },
+      {
+        "id": "20260926175205",
+        "name": "PreinvoiceDraft",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926175205_PreinvoiceDraft.cs",
+        "sha256": "e26813521dab244cc6c91aa73b2e638c461579983e34e5d49f344f1de702c3e5"
       }
     ],
     "manifestContracts": [
