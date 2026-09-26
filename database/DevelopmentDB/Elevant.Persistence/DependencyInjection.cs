@@ -64,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IAffiliationStore, EfAffiliationStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();

@@ -20,6 +20,24 @@ export interface AccountChangeListResponse {
   hasMore: boolean;
 }
 
+export interface AffiliationStationOptionResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface AffiliationServiceOptionResponse {
+  id: string;
+  code: string;
+  name: string;
+  defaultBillingUnit: string;
+}
+
+export interface AffiliationOptionsResponse {
+  stations: AffiliationStationOptionResponse[];
+  services: AffiliationServiceOptionResponse[];
+}
+
 export interface AirlineContractStationResponse {
   id: string;
   code: string;
@@ -1141,6 +1159,34 @@ export const getAccountChanges = async (params?: GetAccountChangesParams, option
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AccountChangeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAffiliationOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/commercial/affiliation-options`
+}
+
+export const getAffiliationOptions = async ( options?: RequestInit): Promise<AffiliationOptionsResponse> => {
+
+  const res = await fetch(getGetAffiliationOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

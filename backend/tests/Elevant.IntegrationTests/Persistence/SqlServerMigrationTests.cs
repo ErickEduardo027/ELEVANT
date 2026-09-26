@@ -134,6 +134,111 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task AffiliationOptionsExcludeInactiveStationsAndServices()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using (var change = CreateContext(database.ConnectionString))
+        {
+            var station = await change.Stations.SingleAsync(item => item.Code == "PUJ", cancellationToken);
+            var service = await change.ServiceDefinitions.SingleAsync(
+                item => item.Code == "BAGGAGE", cancellationToken);
+            station.IsActive = false;
+            service.IsActive = false;
+            await change.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var options = await scope.ServiceProvider.GetRequiredService<IAffiliationStore>()
+            .GetOptionsAsync(cancellationToken);
+
+        Assert.DoesNotContain(options.Stations, item => item.Code == "PUJ");
+        Assert.DoesNotContain(options.Services, item => item.Code == "BAGGAGE");
+        Assert.Contains(options.Services, item => item.Code == "PASSENGER-BRIDGE");
+    }
+
+    [Fact]
+    public async Task AffiliationOptionsStayBoundedWhenTheCatalogGrows()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using (var change = CreateContext(database.ConnectionString))
+        {
+            var airports = Enumerable.Range(0, 60).Select(index => new Airport
+            {
+                IataCode = $"T{index:D2}",
+                IcaoCode = $"KT{index:D2}",
+                Name = $"Test airport {index:D2}",
+                City = "Synthetic city",
+                CountryCode = "DO",
+            }).ToArray();
+            change.Airports.AddRange(airports);
+            await change.SaveChangesAsync(cancellationToken);
+            change.Stations.AddRange(airports.Select(airport => new Station
+            {
+                AirportId = airport.Id,
+                Code = airport.IataCode,
+                Name = airport.Name,
+                IanaTimeZone = "America/Santo_Domingo",
+                IsActive = true,
+            }));
+            change.ServiceDefinitions.AddRange(Enumerable.Range(0, 110).Select(index => new ServiceDefinition
+            {
+                Code = $"EXTRA-{index:D3}",
+                Name = $"Test service {index:D3}",
+                DefaultBillingUnit = "operation",
+                IsActive = true,
+            }));
+            await change.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var options = await scope.ServiceProvider.GetRequiredService<IAffiliationStore>()
+            .GetOptionsAsync(cancellationToken);
+
+        Assert.Equal(50, options.Stations.Count);
+        Assert.Equal(100, options.Services.Count);
+        Assert.Equal("PUJ", options.Stations[0].Code);
+        Assert.Equal("BAGGAGE", options.Services[0].Code);
+    }
+
+    [Fact]
     public async Task AirlinePortalReadStoreReturnsOnlyActiveContractStations()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

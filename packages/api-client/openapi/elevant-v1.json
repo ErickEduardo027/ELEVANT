@@ -79,6 +79,26 @@
         ]
       }
     },
+    "/api/v1/commercial/affiliation-options": {
+      "get": {
+        "tags": [
+          "Affiliations"
+        ],
+        "operationId": "GetAffiliationOptions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AffiliationOptionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/airline/portal/contracts": {
       "get": {
         "tags": [
@@ -3743,6 +3763,74 @@
           "occurredAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AffiliationOptionsResponse": {
+        "required": [
+          "services",
+          "stations"
+        ],
+        "type": "object",
+        "properties": {
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AffiliationStationOptionResponse"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AffiliationServiceOptionResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AffiliationServiceOptionResponse": {
+        "required": [
+          "code",
+          "defaultBillingUnit",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "defaultBillingUnit": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AffiliationStationOptionResponse": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -7457,6 +7545,9 @@
   "tags": [
     {
       "name": "AccountChanges"
+    },
+    {
+      "name": "Affiliations"
     },
     {
       "name": "AirlinePortal"

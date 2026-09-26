@@ -1,5 +1,11 @@
 # Cliente API compartido
 
+El snapshot OpenAPI de la rama de integración incluye
+`GetAffiliationOptions`: una lectura anónima y acotada de estaciones y
+servicios activos, sin precios. Public Web todavía no envía una afiliación a
+la API; la operación de escritura se añadirá junto con su persistencia y
+validación de cuenta pendiente.
+
 `getAccountChanges({ after?, limit? })` consulta el feed recuperable por
 cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan
 sin decodificarlo y vuelven a leerlo tras reconectar SignalR o al reanudar
