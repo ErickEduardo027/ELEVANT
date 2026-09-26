@@ -2,12 +2,14 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Abstractions.Realtime;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Integration;
 using Elevant.Persistence.Operations;
+using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -73,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();
         services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
+        services.AddScoped<IAccountChangeDispatcherStore, EfAccountChangeDispatcherStore>();
 
         services
             .AddHealthChecks()

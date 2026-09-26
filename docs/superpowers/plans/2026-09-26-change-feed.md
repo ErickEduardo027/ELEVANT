@@ -76,10 +76,10 @@
 **Interfaces:**
 - Produces: `DispatchPendingAsync(int limit, CancellationToken)` returning `(eventId, accountPublicId, cursor, resource, resourceId)` notices after one SQL transaction; worker calls `IHubContext<OperationsHub>.Clients.User(accountPublicId).SendAsync("ChangedV1", notice)` after commit.
 
-- [ ] Write failing SQL and worker tests for one projection, replay, reverse source commit order and a push exception that leaves the feed intact.
-- [ ] Run focused tests; expect missing dispatcher types.
-- [ ] Implement serial batch dispatch with bounded retries/dead-letter visibility, atomic feed+processed update, unique replay protection and post-commit SignalR attempt. A push failure must not roll back the feed.
-- [ ] Run focused tests, full backend suite and pending-model check; expect passing.
+- [x] Write failing SQL and worker tests for one projection, replay, reverse source commit order and a push exception that leaves the feed intact.
+- [x] Run focused tests; expect missing dispatcher types.
+- [x] Implement serial batch dispatch with bounded retries/dead-letter visibility, atomic feed+processed update, unique replay protection and post-commit SignalR attempt. A push failure must not roll back the feed.
+- [x] Run focused tests, full backend suite and pending-model check; expect passing.
 - [ ] Commit as `feat(realtime): dispatch durable account changes`.
 
 ### Task 4: Read feed by opaque cursor

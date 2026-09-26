@@ -53,6 +53,9 @@ public static class ServiceCollectionExtensions
         AddAuthentication(services, configuration);
         services.AddSignalR();
         services.AddSingleton<IUserIdProvider, AccountHubUserIdProvider>();
+        services.AddSingleton<IAccountChangePush, SignalRAccountChangePush>();
+        if (configuration.GetValue<bool>("Realtime:AccountChangeDispatcherEnabled"))
+            services.AddHostedService<AccountChangeDispatchWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {

@@ -2,12 +2,14 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Abstractions.Realtime;
 using Elevant.Application.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
 using Elevant.Application.Integration;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
@@ -17,6 +19,7 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence;
+using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -3591,7 +3594,6 @@ public sealed class SqlServerMigrationTests
         await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
         await using (var seeder = CreateContext(connection))
             await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
-
         var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
         var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
         var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
@@ -3717,6 +3719,120 @@ public sealed class SqlServerMigrationTests
                 THEN 1 ELSE 0 END;
             """;
         Assert.Equal(1, (int)(await command.ExecuteScalarAsync(cancellationToken) ?? -1));
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var lockCommand = connection.CreateCommand();
+        lockCommand.Transaction = (SqlTransaction)transaction;
+        lockCommand.CommandText = """
+            DECLARE @result int;
+            EXEC @result = sys.sp_getapplock
+                @Resource = N'ElevantAccountChangeDispatch',
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = 0;
+            SELECT @result;
+            """;
+        Assert.True((int)(await lockCommand.ExecuteScalarAsync(cancellationToken) ?? -1) >= 0);
+        await transaction.RollbackAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task AccountChangeDispatchOrdersCommittedFeedAndDoesNotReplayOutbox()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+        await database.ConfigureAccountChangeAppPermissionsAsync(cancellationToken);
+
+        Guid firstOutboxId;
+        Guid secondOutboxId;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var accountId = await setup.Users.Where(account => account.NormalizedEmail ==
+                    "ADMIN.OCC@DEV.ELEVANT.TEST")
+                .Select(account => account.Id).SingleAsync(cancellationToken);
+            var stationId = await setup.Stations.Where(station => station.Code == "PUJ")
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            AccountChangeOutboxWriter.Add(setup, accountId, stationId,
+                "notifications", Guid.NewGuid(), DateTimeOffset.UtcNow);
+            AccountChangeOutboxWriter.Add(setup, accountId, stationId,
+                "operation_messages", Guid.NewGuid(), DateTimeOffset.UtcNow);
+            var pending = setup.ChangeTracker.Entries<OutboxMessage>()
+                .Select(entry => entry.Entity).ToArray();
+            firstOutboxId = pending[0].PublicId;
+            secondOutboxId = pending[1].PublicId;
+            pending[0].ProcessedAt = DateTimeOffset.UtcNow;
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        async Task<IReadOnlyList<AccountChangeDispatchNotice>> DispatchAsync()
+        {
+            await using var connection = await database.OpenAsDevelopmentAppAsync(cancellationToken);
+            await using var appContext = CreateContext(connection);
+            return await new EfAccountChangeDispatcherStore(appContext, TimeProvider.System)
+                .DispatchPendingAsync(10, cancellationToken);
+        }
+
+        var second = Assert.Single(await DispatchAsync());
+        Assert.Equal(secondOutboxId, second.OutboxPublicId);
+        Assert.Empty(await DispatchAsync());
+
+        var malformedId = Guid.NewGuid();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            setup.OutboxMessages.Add(new OutboxMessage
+            {
+                PublicId = malformedId,
+                EventType = "account.changed.v1",
+                PayloadJson = "{invalid-json",
+                OccurredAt = DateTimeOffset.UtcNow,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        Assert.Empty(await DispatchAsync());
+        Assert.Empty(await DispatchAsync());
+        Assert.Empty(await DispatchAsync());
+        Assert.Empty(await DispatchAsync());
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var earlier = await setup.OutboxMessages.SingleAsync(
+                message => message.PublicId == firstOutboxId, cancellationToken);
+            earlier.ProcessedAt = null;
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        var first = Assert.Single(await DispatchAsync());
+        Assert.Equal(firstOutboxId, first.OutboxPublicId);
+        Assert.True(first.Sequence > second.Sequence);
+        Assert.Empty(await DispatchAsync());
+
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var replayedSource = await setup.OutboxMessages.SingleAsync(
+                message => message.PublicId == secondOutboxId, cancellationToken);
+            replayedSource.ProcessedAt = null;
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        Assert.Empty(await DispatchAsync());
+
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(2, await verify.AccountChanges.CountAsync(cancellationToken));
+        Assert.Equal(2, await verify.OutboxMessages
+            .CountAsync(message => message.EventType == "account.changed.v1" &&
+                message.ProcessedAt != null && message.LastError == null, cancellationToken));
+        var malformed = await verify.OutboxMessages.AsNoTracking().SingleAsync(
+            message => message.PublicId == malformedId, cancellationToken);
+        Assert.Equal(3, malformed.AttemptCount);
+        Assert.NotNull(malformed.ProcessedAt);
+        Assert.Equal("Invalid account change payload", malformed.LastError);
     }
 
     [Fact]
@@ -4336,6 +4452,18 @@ public sealed class SqlServerMigrationTests
                 REVOKE UPDATE, DELETE, EXECUTE ON SCHEMA::[iam] FROM [elevant_seeder_role];
                 GRANT SELECT ON OBJECT::[infra].[database_instances] TO [elevant_test_seeder];
                 GRANT EXECUTE ON SCHEMA::[iam] TO [elevant_app_role];
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        public async Task ConfigureAccountChangeAppPermissionsAsync(CancellationToken cancellationToken)
+        {
+            await using var connection = new SqlConnection(ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                GRANT SELECT ON SCHEMA::[iam] TO [elevant_app_role];
+                GRANT SELECT ON SCHEMA::[ref] TO [elevant_app_role];
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
