@@ -13,7 +13,8 @@ public static class HubOriginGuard
     {
         if (!isWebSocketRequest ||
             (!path.StartsWithSegments("/hubs/operations") &&
-             !path.StartsWithSegments("/hubs/notifications")))
+             !path.StartsWithSegments("/hubs/notifications") &&
+             !path.StartsWithSegments("/hubs/public-catalog")))
         {
             return true;
         }

@@ -14,7 +14,7 @@ export const es = {
     title: "Cada rotación deja una historia verificable.",
     lead:
       "ELEVANT conecta la planificación, la ejecución en rampa, la validación y los documentos autorizados en un solo recorrido.",
-    primaryAction: "Solicitar demostración",
+    primaryAction: "Solicitar acceso",
     secondaryAction: "Explorar el recorrido",
     telemetry: [
       { label: "Estación inicial", value: "PUJ" },
@@ -154,7 +154,7 @@ export const es = {
     eyebrow: "Próxima rotación",
     title: "Haga visible cada servicio de su próxima rotación.",
     lead:
-      "Comparta el contexto de su operación y prepare una solicitud de demostración. El canal de envío aún no está habilitado, por lo que ningún dato saldrá de este dispositivo.",
+      "Seleccione los servicios de rampa que necesita y envíe su solicitud al equipo de Contratos de AVIAM.",
   },
   login: {
     eyebrow: "Acceso de aerolíneas",

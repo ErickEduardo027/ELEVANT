@@ -15,6 +15,37 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class DatabaseModelTests
 {
     [Fact]
+    public void PublicAirlineProfilesDoNotCreateTenantsBeforeApproval()
+    {
+        using var context = CreateContext();
+        var profile = context.Model.FindEntityType(typeof(CommercialAirlineProfile));
+
+        Assert.NotNull(profile);
+        Assert.Equal("commercial", profile.GetSchema());
+        Assert.Equal("airline_profiles", profile.GetTableName());
+        Assert.Null(profile.FindProperty("OrganizationId"));
+        Assert.Contains(profile.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(CommercialAirlineProfile.SourceName)]));
+    }
+
+    [Fact]
+    public void PublicApplicationSnapshotsTheSelectedProfileAndRepresentative()
+    {
+        using var context = CreateContext();
+        var request = context.Model.FindEntityType(typeof(ServiceRequest));
+
+        Assert.NotNull(request);
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.AirlineProfileId)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.ContactTitle)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.AirlineLegalNameSnapshot)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.SubmissionHash)));
+        Assert.Contains(request.GetForeignKeys(), foreignKey =>
+            foreignKey.PrincipalEntityType.ClrType == typeof(CommercialAirlineProfile) &&
+            foreignKey.DeleteBehavior == DeleteBehavior.NoAction);
+    }
+
+    [Fact]
     public void AccountChangeFeedHasStableRecipientAndOutboxIdentity()
     {
         using var context = CreateContext();

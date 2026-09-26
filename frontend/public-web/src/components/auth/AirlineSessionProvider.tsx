@@ -14,6 +14,14 @@ export interface AirlineSessionData {
   expiresAt: string;
 }
 
+export interface AirlineDraftData {
+  id: string; contractId: string; contractCode: string; airline: string; status: string;
+  validFrom: string; validTo: string | null; currencyCode: string; terms: string | null;
+  stations: string[];
+  rates: { id: string; serviceName: string; billingUnit: string; unitPrice: number; minimumQuantity: number }[];
+  comments: { id: string; author: string; body: string; at: string; isAirline: boolean }[];
+}
+
 export type AirlineSessionStatus = "loading" | "anonymous" | "ready" | "unavailable";
 export type AirlineSignInResult =
   | { ok: true }
@@ -28,6 +36,9 @@ interface AirlineSessionContextValue {
   signOut(): void;
   retry(): Promise<void>;
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
+  getDrafts(): Promise<AirlineDraftData[]>;
+  commentDraft(versionId: string, body: string): Promise<void>;
+  draftRevision: number;
 }
 
 const AirlineSessionContext = createContext<AirlineSessionContextValue | null>(null);
@@ -87,6 +98,7 @@ function failureReason(error: unknown): Exclude<AirlineSignInResult, { ok: true 
 export function AirlineSessionProvider({ children, baseUrl }: { children: ReactNode; baseUrl?: string }) {
   const [status, setStatus] = useState<AirlineSessionStatus>("loading");
   const [session, setSession] = useState<AirlineSessionData | null>(null);
+  const [draftRevision, setDraftRevision] = useState(0);
   const accountId = session?.actor.accountId;
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
@@ -185,6 +197,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       getAccessToken: () => stored.current?.accessToken ?? "",
       onChanges: resources => {
         if (resources.includes("airline_operations")) void refreshLive();
+        if (resources.includes("airline_contracts")) setDraftRevision(current => current + 1);
       } });
     void observer.start();
     return () => { void observer.stop(); };
@@ -250,7 +263,39 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts }}>
+  const draftRequest = useCallback(async (path: string, options: RequestInit = {}) => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const origin = (baseUrl ?? process.env.NEXT_PUBLIC_ELEVANT_API_URL)?.replace(/\/$/, "");
+    if (!origin) throw new Error("API no configurada");
+    const response = await fetch(`${origin}/api/v1${path}`, {
+      ...options,
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${record.accessToken}` },
+    });
+    if (response.status === 401) { clear(); throw new AirlineAccessDenied(); }
+    if (!response.ok) throw new Error("No se pudo completar la consulta del borrador.");
+    return response.json();
+  }, [baseUrl, clear]);
+
+  const getDrafts = useCallback(async (): Promise<AirlineDraftData[]> => {
+    const result: unknown = await draftRequest("/airline/contract-drafts");
+    if (!Array.isArray(result) || !result.every(item =>
+      item && typeof item === "object" && typeof item.id === "string" &&
+      typeof item.contractCode === "string" && Array.isArray(item.rates) &&
+      Array.isArray(item.comments) && Array.isArray(item.stations)))
+      throw new Error("La respuesta de borradores no es válida.");
+    return result as AirlineDraftData[];
+  }, [draftRequest]);
+
+  const commentDraft = useCallback(async (versionId: string, body: string): Promise<void> => {
+    await draftRequest(`/airline/contract-drafts/${encodeURIComponent(versionId)}/comments`, {
+      method: "POST", body: JSON.stringify({ body }),
+    });
+    setDraftRevision(current => current + 1);
+  }, [draftRequest]);
+
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

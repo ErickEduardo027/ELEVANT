@@ -444,6 +444,7 @@ jobs:
           ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD: "CI-Only_HumanResourcesAccount!2026"
           ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD: "CI-Only_ContractsAccount!2026"
           ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD: "CI-Only_FinanceAccount!2026"
+          ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD: "CI-Only_SuperAdminAccount!2026"
         run: |
           docker compose -f ../database/DevelopmentDB/compose.development.database.yml config --quiet
           docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet
@@ -453,7 +454,8 @@ jobs:
             ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD \
             ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD \
             ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD \
-            ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD; do
+            ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD \
+            ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD; do
             if env -u "$required_secret" \
               docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet \
               >/dev/null 2>&1; then

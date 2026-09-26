@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Commercial;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integration;
@@ -37,6 +38,200 @@ namespace Elevant.IntegrationTests.Persistence;
 
 public sealed class SqlServerMigrationTests
 {
+    [Fact]
+    public async Task PublicCommercialIntakePersistsAStableSnapshotAndReplaysSafely()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
+            .GetPublicAsync(cancellationToken);
+        Assert.Equal(7, catalog.Services.Count);
+        Assert.Equal(51, catalog.Airlines.Count);
+        var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
+            catalog.Airlines[0].Id, [catalog.Services[0].Id],
+            "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true);
+        var handler = new SubmitCommercialRequestHandler(
+            scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
+        var submitted = await handler.HandleAsync(command, cancellationToken);
+        Assert.True(submitted.IsSuccess);
+        Assert.False(submitted.Replayed);
+        Assert.True((await handler.HandleAsync(command, cancellationToken)).Replayed);
+        Assert.Equal(CommercialSubmissionFailure.Conflict,
+            (await handler.HandleAsync(command with { RepresentativeTitle = "Director" }, cancellationToken)).Failure);
+
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var request = await context.ServiceRequests.AsNoTracking()
+            .SingleAsync(item => item.PublicId == command.RequestId, cancellationToken);
+        Assert.Equal(catalog.Airlines[0].Name, request.RequestedAirlineName);
+        Assert.True(request.AuthorityDeclared);
+        Assert.Equal(1, await context.Set<ServiceRequestItem>().CountAsync(
+            item => item.ServiceRequestId == request.Id, cancellationToken));
+    }
+
+    [Fact]
+    public async Task ContractsApprovalRequiresVerifiedAirlineAndCreatesDraftWithProvisioningHint()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
+            .GetPublicAsync(cancellationToken);
+        var intake = new SubmitCommercialRequestHandler(
+            scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
+        var requestId = Guid.NewGuid();
+        Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(requestId,
+            catalog.Airlines[0].Id, [catalog.Services[0].Id], "María Pérez",
+            "Representante legal", "maria@example.test", "+1 809 555 0100", true),
+            cancellationToken)).IsSuccess);
+        var contractsAccountId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var workflow = scope.ServiceProvider.GetRequiredService<ICommercialWorkflowStore>();
+        var station = (await workflow.ListStationsAsync(contractsAccountId, cancellationToken))!.Single();
+        var approval = new ReviewCommercialInput(true, null, [station.Id]);
+        Assert.Equal(CommercialWorkflowFailure.AirlineUnverified,
+            (await workflow.DecideAsync(contractsAccountId, requestId, approval, cancellationToken)).Failure);
+        Assert.True((await workflow.VerifyAirlineAsync(contractsAccountId,
+            catalog.Airlines[0].Id, new VerifyAirlineInput("Test Carrier LLC", "DO",
+                "ZX", "ZZX", "https://example.test/airline-record", null),
+            cancellationToken)).IsSuccess);
+        var decided = await workflow.DecideAsync(contractsAccountId, requestId, approval,
+            cancellationToken);
+        Assert.True(decided.IsSuccess, decided.Failure?.ToString());
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var contract = await context.Contracts.AsNoTracking()
+            .SingleAsync(item => item.PublicId == decided.ResourceId, cancellationToken);
+        Assert.Equal(ContractStatus.Draft, contract.Status);
+        var version = await context.ContractVersions.AsNoTracking()
+            .SingleAsync(item => item.ContractId == contract.Id, cancellationToken);
+        Assert.Equal(ContractVersionStatus.Draft, version.Status);
+        Assert.Equal(1, await context.ContractServiceRates.CountAsync(item =>
+            item.ContractVersionId == version.Id, cancellationToken));
+        Assert.Contains(await context.OutboxMessages.AsNoTracking()
+            .Select(item => item.PayloadJson).ToArrayAsync(cancellationToken),
+            payload => payload.Contains("account_provisioning", StringComparison.Ordinal));
+
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var provisioning = scope.ServiceProvider.GetRequiredService<ICommercialProvisioningStore>();
+        Assert.Single((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
+        var provisioned = await provisioning.ProvisionAsync(superAdminId, requestId,
+            new ProvisionAirlineInput("representative@example.test", "Synthetic-AirlineNew!234"),
+            cancellationToken);
+        Assert.True(provisioned.IsSuccess, provisioned.Failure?.ToString());
+        Assert.Empty((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
+        Assert.True((await context.Users.AsNoTracking().SingleAsync(item =>
+            item.PublicId == provisioned.AccountId, cancellationToken)).MustChangePassword);
+        Assert.Equal(ProvisioningFailure.Conflict,
+            (await provisioning.ProvisionAsync(superAdminId, requestId,
+                new ProvisionAirlineInput("other@example.test", "Synthetic-AirlineNew!234"),
+                cancellationToken)).Failure);
+
+        var drafts = scope.ServiceProvider.GetRequiredService<IContractDraftStore>();
+        var airlineDraft = Assert.Single((await drafts.ListForAirlineAsync(
+            provisioned.AccountId!.Value, cancellationToken))!);
+        Assert.Equal(version.PublicId, airlineDraft.Id);
+        Assert.True((await drafts.AddAirlineCommentAsync(provisioned.AccountId.Value,
+            airlineDraft.Id, "Confirmar el horario de asistencia.", cancellationToken)).IsSuccess);
+        var managedDraft = Assert.Single((await drafts.ListForContractsAsync(
+            contractsAccountId, cancellationToken))!);
+        Assert.Single(managedDraft.Comments);
+        Assert.Equal(ContractDraftFailure.Conflict,
+            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+                cancellationToken)).Failure);
+        Assert.True((await drafts.UpdateAsync(contractsAccountId, airlineDraft.Id,
+            new UpdateContractDraftInput(airlineDraft.ValidFrom, null, "USD",
+                "Condiciones revisadas por Contratos.",
+                airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
+                    rate.Id, rate.BillingUnit, 100, 0)).ToArray()),
+            cancellationToken)).IsSuccess);
+        Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+            cancellationToken)).IsSuccess);
+        Assert.Empty((await drafts.ListForAirlineAsync(provisioned.AccountId.Value,
+            cancellationToken))!);
+        Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
+            .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
+
+        var governance = scope.ServiceProvider.GetRequiredService<IGovernanceStore>();
+        var snapshot = (await governance.GetAsync(superAdminId, cancellationToken))!;
+        Assert.Contains(snapshot.Roles, role => role.Code == "SUPERADMIN");
+        var createdRole = await governance.CreateRoleAsync(superAdminId,
+            new SaveGovernanceRoleInput("Revisor comercial", "Lectura de solicitudes",
+                ["commercial.requests.read"], true), cancellationToken);
+        Assert.True(createdRole.IsSuccess, createdRole.Failure?.ToString());
+        var createdUser = await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Elena", "Rivera", "elena@example.test",
+                createdRole.Id!.Value, "Synthetic-Reviewer!234"), cancellationToken);
+        Assert.True(createdUser.IsSuccess, createdUser.Failure?.ToString());
+        Assert.Equal(["commercial.requests.read"],
+            await governance.GetMyPermissionsAsync(createdUser.Id!.Value, cancellationToken));
+        Assert.NotNull(await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+            .ReadAsync(createdUser.Id.Value, 0, 20, cancellationToken));
+        Assert.Null(await governance.GetAsync(createdUser.Id.Value, cancellationToken));
+        Assert.Equal(GovernanceFailure.Conflict,
+            (await governance.DeleteRoleAsync(superAdminId, createdRole.Id.Value,
+                cancellationToken)).Failure);
+        Assert.Equal(GovernanceFailure.Protected,
+            (await governance.DeleteUserAsync(superAdminId, superAdminId,
+                cancellationToken)).Failure);
+        Assert.True((await governance.UpdateRoleAsync(superAdminId, createdRole.Id.Value,
+            new SaveGovernanceRoleInput("Revisor comercial", "Lectura y edición",
+                ["commercial.requests.read", "commercial.requests.write"], true),
+            cancellationToken)).IsSuccess);
+        Assert.Equal(["commercial.requests.read", "commercial.requests.write"],
+            await governance.GetMyPermissionsAsync(createdUser.Id.Value, cancellationToken));
+        Assert.True((await governance.UpdateUserAsync(superAdminId, createdUser.Id!.Value,
+            new UpdateGovernanceUserInput("Elena", "Rivera", "elena2@example.test",
+                createdRole.Id.Value, true), cancellationToken)).IsSuccess);
+        Assert.True((await governance.DeleteUserAsync(superAdminId, createdUser.Id.Value,
+            cancellationToken)).IsSuccess);
+        Assert.Null(await governance.GetMyPermissionsAsync(createdUser.Id.Value, cancellationToken));
+        Assert.True((await governance.DeleteRoleAsync(superAdminId, createdRole.Id.Value,
+            cancellationToken)).IsSuccess);
+        Assert.Equal(GovernanceFailure.Protected,
+            (await governance.DeleteRoleAsync(superAdminId,
+                snapshot.Roles.Single(role => role.Code == "SUPERADMIN").Id,
+                cancellationToken)).Failure);
+    }
+
     private const string MasterConnectionEnvironmentVariable = "ELEVANT_TEST_SQLSERVER_MASTER";
     private static readonly DevelopmentAccountPasswords InitialPasswords = new(
         "Synthetic-Admin!234",
@@ -465,11 +660,8 @@ public sealed class SqlServerMigrationTests
         if (masterConnection is null) return;
         await using var database = await TemporaryDatabase.CreateAsync(
             masterConnection, "Development", cancellationToken);
-        await using (var prior = CreateContext(database.ConnectionString))
-        {
-            await prior.GetService<IMigrator>().MigrateAsync(
-                "20260926062846_AccountChangeFeed", cancellationToken);
-        }
+        await using (var preparation = CreateContext(database.ConnectionString))
+            await preparation.Database.MigrateAsync(cancellationToken);
         await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
         await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
         await using (var seeder = CreateContext(seederConnection))
@@ -479,6 +671,8 @@ public sealed class SqlServerMigrationTests
         var operationIds = await context.GroundOperations.AsNoTracking()
             .Select(item => item.PublicId).OrderBy(item => item).ToArrayAsync(cancellationToken);
         Assert.NotEmpty(operationIds);
+        await context.GetService<IMigrator>().MigrateAsync(
+            "20260926062846_AccountChangeFeed", cancellationToken);
         await context.GetService<IMigrator>().MigrateAsync(cancellationToken: cancellationToken);
         Assert.Equal(operationIds, await context.GroundOperations.AsNoTracking()
             .Select(item => item.PublicId).OrderBy(item => item).ToArrayAsync(cancellationToken));

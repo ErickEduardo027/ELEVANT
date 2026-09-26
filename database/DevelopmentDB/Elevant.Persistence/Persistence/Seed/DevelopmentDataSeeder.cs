@@ -221,6 +221,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             }, DeterministicGuid("service-definition:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
 
+        await SeedPublicCommercialCatalogAsync(cancellationToken);
+
         var gpuType = await GetOrAddAsync(
             context.EquipmentTypes,
             equipment => equipment.Code == "GPU",
@@ -313,6 +315,11 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             "finanzas@dev.elevant.test",
             "DEV-FINANCE-001",
             cancellationToken);
+        Person? superAdminPerson = null;
+        if (accountPasswords.SuperAdministrator is not null)
+            superAdminPerson = await SeedPersonAsync(
+                "30000000-0000-7000-8000-000000000007", "Ariana", "Gobernanza",
+                "super.admin@dev.elevant.test", "DEV-SUPERADMIN-001", cancellationToken);
 
         var adminRole = await SeedRoleAsync("Admin OCC", "ADMIN_OCC", PortalKind.BackOffice, "admin_occ", cancellationToken);
         var agentRole = await SeedRoleAsync("Ramp Agent", "RAMP_AGENT", PortalKind.RampMobileApp, "ramp_agent", cancellationToken);
@@ -320,6 +327,30 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         var humanResourcesRole = await SeedRoleAsync("Gestión Humana", "GESTION_HUMANA", PortalKind.BackOffice, "human_resources", cancellationToken);
         var contractsRole = await SeedRoleAsync("Contratos", "CONTRATOS", PortalKind.BackOffice, "contracts", cancellationToken);
         var financeRole = await SeedRoleAsync("Finanzas", "FINANZAS", PortalKind.BackOffice, "finance", cancellationToken);
+        var superAdminRole = await SeedRoleAsync("Superadministrador", "SUPERADMIN", PortalKind.BackOffice, "superadmin", cancellationToken);
+
+        var permissionCodes = new[]
+        {
+            "commercial.catalog.read", "commercial.catalog.write",
+            "commercial.requests.read", "commercial.requests.write",
+            "iam.users.read", "iam.users.write", "iam.roles.read", "iam.roles.write",
+            "iam.settings.read", "iam.settings.write",
+        };
+        foreach (var code in permissionCodes)
+        {
+            var permission = await GetOrAddAsync(context.Permissions,
+                item => item.Code == code,
+                () => new PermissionDefinition
+                {
+                    PublicId = DeterministicGuid($"permission:{code}"),
+                    Code = code,
+                    Name = code,
+                    Description = "Acceso del módulo de gobernanza comercial.",
+                }, cancellationToken);
+            await EnsureRolePermissionAsync(superAdminRole.Id, permission.Id, cancellationToken);
+            if (code.StartsWith("commercial.", StringComparison.Ordinal))
+                await EnsureRolePermissionAsync(contractsRole.Id, permission.Id, cancellationToken);
+        }
 
         var adminAccount = await SeedAccountAsync(adminPerson, accountPasswords.AdminOcc, "40000000-0000-7000-8000-000000000001", cancellationToken);
         var agentAccount = await SeedAccountAsync(agentPerson, accountPasswords.RampAgent, "40000000-0000-7000-8000-000000000002", cancellationToken);
@@ -327,6 +358,11 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         var humanResourcesAccount = await SeedAccountAsync(humanResourcesPerson, accountPasswords.HumanResources, "40000000-0000-7000-8000-000000000004", cancellationToken);
         var contractsAccount = await SeedAccountAsync(contractsPerson, accountPasswords.Contracts, "40000000-0000-7000-8000-000000000005", cancellationToken, mustChangePasswordInitially: true);
         var financeAccount = await SeedAccountAsync(financePerson, accountPasswords.Finance, "40000000-0000-7000-8000-000000000006", cancellationToken, mustChangePasswordInitially: true);
+        ApplicationUser? superAdminAccount = null;
+        if (superAdminPerson is not null)
+            superAdminAccount = await SeedAccountAsync(superAdminPerson,
+                accountPasswords.SuperAdministrator!, "40000000-0000-7000-8000-000000000007",
+                cancellationToken, mustChangePasswordInitially: true);
 
         await EnsureUserRoleAsync(adminAccount.Id, adminRole.Id, cancellationToken);
         await EnsureUserRoleAsync(agentAccount.Id, agentRole.Id, cancellationToken);
@@ -334,12 +370,17 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         await EnsureUserRoleAsync(humanResourcesAccount.Id, humanResourcesRole.Id, cancellationToken);
         await EnsureUserRoleAsync(contractsAccount.Id, contractsRole.Id, cancellationToken);
         await EnsureUserRoleAsync(financeAccount.Id, financeRole.Id, cancellationToken);
+        if (superAdminAccount is not null)
+            await EnsureUserRoleAsync(superAdminAccount.Id, superAdminRole.Id, cancellationToken);
         await EnsureMembershipAsync(adminAccount.Id, aviam.Id, MembershipKind.InternalStaff, "OCC administrator", cancellationToken);
         await EnsureMembershipAsync(agentAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Ramp agent", cancellationToken);
         await EnsureMembershipAsync(clientAccount.Id, airlineOrganization.Id, MembershipKind.AirlineClient, "Operations contact", cancellationToken);
         await EnsureMembershipAsync(humanResourcesAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Gestión Humana", cancellationToken);
         await EnsureMembershipAsync(contractsAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Contracts", cancellationToken);
         await EnsureMembershipAsync(financeAccount.Id, aviam.Id, MembershipKind.InternalStaff, "Finance", cancellationToken);
+        if (superAdminAccount is not null)
+            await EnsureMembershipAsync(superAdminAccount.Id, aviam.Id,
+                MembershipKind.InternalStaff, "Gobernanza", cancellationToken);
         await EnsureAccountStationScopeAsync(adminAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(agentAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(humanResourcesAccount.Id, station.Id, cancellationToken);
@@ -427,6 +468,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 SubmittedAt = FixtureInstant.AddDays(-30),
                 ReviewedAt = FixtureInstant.AddDays(-29),
                 ReviewedByAccountId = adminAccount.Id,
+                ProvisionedAccountId = clientAccount.Id,
             }, "60000000-0000-7000-8000-000000000001"),
             cancellationToken);
 
@@ -845,6 +887,61 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         }
     }
 
+    private async Task SeedPublicCommercialCatalogAsync(CancellationToken cancellationToken)
+    {
+        var services = new (string Code, string Name, string Description, string Image)[]
+        {
+            ("RAMP-CARGO", "Carga y descarga", "Traslado y manipulación de equipaje y carga entre aeronave y plataforma.", "hero-ramp.webp"),
+            ("RAMP-TOW", "Remolque de aeronaves", "Movimiento de aeronaves en plataforma con equipos y personal de rampa.", "turnaround-top.webp"),
+            ("RAMP-AC", "Aire acondicionado", "Suministro de aire acondicionado en tierra durante la escala.", "occ-control.webp"),
+            ("RAMP-GPU", "Unidad generadora de energía", "Energía eléctrica en tierra para la aeronave durante la operación.", "agent-rain.webp"),
+            ("RAMP-ASU", "Unidad generadora a reacción", "Suministro de aire de arranque mediante unidad de apoyo en tierra.", "actor-airline.webp"),
+            ("RAMP-PARKING", "Asistencia de parqueo de aeronaves", "Guiado y asistencia durante el ingreso y posicionamiento en plataforma.", "closing-sunset.webp"),
+            ("RAMP-STAIRS", "Escaleras móviles", "Posicionamiento de escaleras para embarque y desembarque remoto.", "hero-ramp.webp"),
+        };
+        for (var index = 0; index < services.Length; index++)
+        {
+            var service = services[index];
+            await GetOrAddAsync(context.ServiceDefinitions,
+                item => item.Code == service.Code,
+                () => Stamp(new ServiceDefinition
+                {
+                    Code = service.Code,
+                    Name = service.Name,
+                    Description = service.Description,
+                    DefaultBillingUnit = "operación",
+                    IsActive = true,
+                    IsPublic = true,
+                    DisplayOrder = index + 1,
+                    ImageUrl = $"/assets/generated/{service.Image}",
+                }, DeterministicGuid($"public-service:{service.Code}").ToString("D")),
+                cancellationToken);
+        }
+
+        var airlines = new (string Region, string Names)[]
+        {
+            ("Europa", "AIR BERLIN|AIR CARAIBES|AIR EUROPA|AIR FRANCE|ARKEFLY|AZUR AIR|BRITISH AIRWAYS|CONDOR|EDELWEISS AIR|EUROWINGS|EVELOP AIRLINES|I-FLY AIRLINES|IKAR AIRLINES|LEVEL-IBERIA|NORWIND AIRLINES|ORBES PORTUGAL|ORENAIR|ROSSIYA AIRLINES|THOMAS COOK|THOMAS COOK SCANDINAVIA|THOMSON AIRWAYS|TRAVEL SERVICE POLSKA|TUIFLY BELGIUM|TUIFLY NETHERLANDS|VIM AIRLINES|XL AIRWAYS FRANCE|WAMOS AIR"),
+            ("América del Norte", "AMERICAN AIRLINES|AIR CANADA|AIR CANADA ROUGE|AIR TRANSAT|ALLEGIANT AIR|DELTA AIRLINES|FRONTIER AIRLINES|JETBLUE|NORWEGIAN AIR|SOUTHWEST AIRLINES|SUNCOUNTRY|SUNWING AIRLINES|SWIFT AIR|UNITED AIRLINES|XTRA AIRWAYS|WEST JET AIRLINES"),
+            ("América del Sur", "AEROLINEAS ARGENTINAS|AVIANCA|COPA AIRLINES|GOL|LATIN AMERICAN WINGS|TAM AIRLINES|LANPERU|WINGO"),
+        };
+        foreach (var group in airlines)
+        foreach (var name in group.Names.Split('|'))
+        {
+            await GetOrAddAsync(context.CommercialAirlineProfiles,
+                item => item.SourceName == name,
+                () => Stamp(new CommercialAirlineProfile
+                {
+                    SourceName = name,
+                    DisplayName = name,
+                    Region = group.Region,
+                    SourceUrl = "https://www.aviamltd.com/nosotros/",
+                    IsPublished = true,
+                    VerifiedAt = null,
+                }, DeterministicGuid($"aviam-client:{name}").ToString("D")),
+                cancellationToken);
+        }
+    }
+
     private async Task<Person> SeedPersonAsync(
         string publicId,
         string firstName,
@@ -960,6 +1057,18 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         if (!await set.AnyAsync(link => link.UserId == accountId && link.RoleId == roleId, cancellationToken))
         {
             set.Add(new IdentityUserRole<long> { UserId = accountId, RoleId = roleId });
+            await context.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task EnsureRolePermissionAsync(long roleId, long permissionId,
+        CancellationToken cancellationToken)
+    {
+        var set = context.Set<RolePermissionGrant>();
+        if (!await set.AnyAsync(link => link.RoleId == roleId &&
+            link.PermissionId == permissionId, cancellationToken))
+        {
+            set.Add(new RolePermissionGrant { RoleId = roleId, PermissionId = permissionId });
             await context.SaveChangesAsync(cancellationToken);
         }
     }

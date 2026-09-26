@@ -18,6 +18,14 @@ tests/scripts/                    pruebas del tooling y fixture de certificació
 
 ## Migraciones
 
+Las migraciones aditivas `PublicCommercialIntake`, `CommercialGovernance`,
+`CommercialProvisioning` y `ContractDraftConversation` agregan catálogo público,
+perfiles de aerolínea, solicitudes, roles personalizados, vinculación de cuenta
+y observaciones de borrador. No incluyen datos de negocio. El seed de Development
+requiere además `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD` para crear la cuenta
+sintética de superadministrador; el valor no se guarda aquí. El flujo y sus
+límites están en [solicitud comercial y gobernanza](../../docs/workflows/commercial-intake-and-governance.md).
+
 La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
 y concede a `elevant_app_role` permisos de objeto limitados para
 escribir/procesar el outbox y leer/insertar pistas del feed.

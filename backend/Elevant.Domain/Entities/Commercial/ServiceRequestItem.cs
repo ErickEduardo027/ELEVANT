@@ -4,6 +4,8 @@ public sealed class ServiceRequestItem : AuditableEntity
 {
     public long ServiceRequestId { get; set; }
 
+    public ServiceRequest ServiceRequest { get; set; } = null!;
+
     public long? ServiceDefinitionId { get; set; }
 
     public string RequestedServiceName { get; set; } = string.Empty;

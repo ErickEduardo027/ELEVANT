@@ -2,6 +2,8 @@
 
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
+El botón naranja **Solicitar acceso** abre `/solicitar-acceso`: servicios en carrusel, aerolínea predefinida con ficha de solo lectura y datos del representante. El catálogo y la solicitud usan la API real; Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones, además de consultar el historial aprobado. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).
+
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
 autorizadas; inicio, vuelos, detalle y perfil separan esa respuesta de las
@@ -50,12 +52,13 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 
 ## Rutas observadas
 
-- `/`: landing, propuesta comercial y solicitud demo.
+- `/`: landing y acceso al flujo comercial real.
+- `/solicitar-acceso`: solicitud comercial en tres pasos; no crea usuario ni acepta contraseña.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal; la afiliación sigue siendo una vista prototípica.
 - `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
 - `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
-- `/portal/contratos`: consulta real, paginada y de solo lectura de contratos y versiones aprobadas; sin edición ni aceptación.
+- `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 

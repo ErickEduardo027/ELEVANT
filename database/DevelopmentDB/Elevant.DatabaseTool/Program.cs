@@ -9,6 +9,7 @@ const string airlinePasswordVariable = "ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD";
 const string humanResourcesPasswordVariable = "ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD";
 const string contractsPasswordVariable = "ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD";
 const string financePasswordVariable = "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD";
+const string superAdminPasswordVariable = "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD";
 
 if (args.Length != 1 || args[0] is not ("verify-target" or "seed-development" or "rotate-development-human-resources"))
 {
@@ -51,7 +52,8 @@ try
         ReadSecret(airlinePasswordVariable),
         ReadSecret(humanResourcesPasswordVariable),
         ReadSecret(contractsPasswordVariable),
-        ReadSecret(financePasswordVariable));
+        ReadSecret(financePasswordVariable),
+        args[0] == "seed-development" ? ReadSecret(superAdminPasswordVariable) : null);
 
     if (args[0] == "rotate-development-human-resources")
     {

@@ -2,7 +2,9 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Realtime;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Domain.Entities.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace Elevant.Persistence.Realtime;
 
@@ -43,6 +45,27 @@ internal sealed class EfAccountChangeReadStore(
             actor.Memberships.Any(membership =>
                 membership.Kind == MembershipKind.InternalStaff &&
                 membership.OrganizationType == OrganizationType.AviamOperator);
+        var hasInternalMembership = actor.Memberships.Any(membership =>
+            membership.Kind == MembershipKind.InternalStaff &&
+            membership.OrganizationType == OrganizationType.AviamOperator);
+        var isSuperAdmin = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "SUPERADMIN" && role.Portal == PortalKind.BackOffice);
+        var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
+            .Select(role => role.RoleId).ToArray();
+        var commercialGrants = hasInternalMembership ? await (
+            from role in context.Roles.AsNoTracking()
+            join grant in context.Set<RolePermissionGrant>().AsNoTracking()
+                on role.Id equals grant.RoleId
+            join permission in context.Permissions.AsNoTracking()
+                on grant.PermissionId equals permission.Id
+            where internalRoleIds.Contains(role.PublicId) && role.IsActive &&
+                (permission.Code == "commercial.catalog.read" ||
+                 permission.Code == "commercial.requests.read")
+            select permission.Code).Distinct().ToArrayAsync(cancellationToken) : [];
+        var hasCatalogAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.catalog.read");
+        var hasRequestsAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.requests.read");
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -71,7 +94,34 @@ internal sealed class EfAccountChangeReadStore(
                                 airline.Id == turnaround.AirlineId &&
                                 context.Organizations.Any(organization =>
                                     organization.Id == airline.OrganizationId &&
-                                    airlineOrganizationIds.Contains(organization.PublicId))))))))
+                                    airlineOrganizationIds.Contains(organization.PublicId))))))) &&
+                (change.Resource != "commercial_catalog" ||
+                    (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
+                        service.PublicId == change.ResourceId))) &&
+                (change.Resource != "commercial_requests" ||
+                    (hasRequestsAccess && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "account_provisioning" ||
+                    (isSuperAdmin && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "contract_draft_comments" ||
+                    (hasRequestsAccess && context.ContractVersions.Any(version =>
+                        version.PublicId == change.ResourceId))) &&
+                (change.Resource != "airline_contracts" ||
+                    (hasAirlinePortalRole &&
+                     (context.Contracts.Any(contract =>
+                        contract.PublicId == change.ResourceId &&
+                        context.Airlines.Any(airline => airline.Id == contract.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId)))) ||
+                      context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId &&
+                        request.ProvisionedAccountId == accountInternalId &&
+                        context.Airlines.Any(airline => airline.Id == request.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId))))))))
             .OrderBy(change => change.Id)
             .Take(limit + 1)
             .Select(change => new AccountChangeData(

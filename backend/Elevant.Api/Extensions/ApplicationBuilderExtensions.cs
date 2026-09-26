@@ -132,6 +132,7 @@ public static class ApplicationBuilderExtensions
 
         app.MapHub<OperationsHub>("/hubs/operations");
         app.MapHub<NotificationsHub>("/hubs/notifications");
+        app.MapHub<PublicCatalogHub>("/hubs/public-catalog").AllowAnonymous();
 
         return app;
     }

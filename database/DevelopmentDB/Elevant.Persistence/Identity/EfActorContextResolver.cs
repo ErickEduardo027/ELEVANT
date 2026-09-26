@@ -76,6 +76,7 @@ internal sealed class EfActorContextResolver(
                 from assignment in context.Set<IdentityUserRole<long>>().AsNoTracking()
                 join role in context.Roles.AsNoTracking() on assignment.RoleId equals role.Id
                 where assignment.UserId == account.Id &&
+                      role.IsActive &&
                       role.PublicId != Guid.Empty &&
                       role.NormalizedName != null &&
                       role.Name != null

@@ -67,9 +67,12 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
 
+    public DbSet<CommercialAirlineProfile> CommercialAirlineProfiles => Set<CommercialAirlineProfile>();
+
     public DbSet<Contract> Contracts => Set<Contract>();
 
     public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
+    public DbSet<ContractDraftComment> ContractDraftComments => Set<ContractDraftComment>();
 
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
 

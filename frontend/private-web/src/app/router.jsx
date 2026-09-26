@@ -30,6 +30,8 @@ import NotificationsRoute from '../features/notifications/CanonicalNotifications
 import ChatRoute from '../features/chat/CanonicalChatRoute';
 import ContractsShell from '../features/contracts/shell/ContractsShell';
 import FinanceShell from '../features/finance/shell/FinanceShell';
+import GovernanceShell from '../features/governance/GovernanceShell';
+import CustomWorkspace from '../features/governance/CustomWorkspace';
 import { AlertTriangleIcon } from '../features/shell/components/icons';
 
 function LoginRoute() {
@@ -63,7 +65,7 @@ function LoginRoute() {
 function ProtectedRole({ role, children }) {
   const { session, logout } = useAuth();
   if (!session) return <Navigate to={ROUTE_PATHS.LOGIN} replace />;
-  if (session.role !== role) return <Navigate to={getRoleHomePath(session.role)} replace />;
+  if (role === ROLE_KEYS.CUSTOM ? !session.role.startsWith('CUSTOM_') : session.role !== role) return <Navigate to={getRoleHomePath(session.role)} replace />;
   return cloneElement(children, { user: { name: session.name, role: session.roleLabel }, onLogout: logout });
 }
 
@@ -126,6 +128,8 @@ const router = createBrowserRouter([
   },
   { path: ROUTE_PATHS.CONTRATOS, element: <ProtectedRole role={ROLE_KEYS.CONTRATOS}><ContractsShell /></ProtectedRole> },
   { path: ROUTE_PATHS.FINANZAS, element: <ProtectedRole role={ROLE_KEYS.FINANZAS}><FinanceShell /></ProtectedRole> },
+  { path: ROUTE_PATHS.SUPERADMIN, element: <ProtectedRole role={ROLE_KEYS.SUPERADMIN}><GovernanceShell /></ProtectedRole> },
+  { path: ROUTE_PATHS.CUSTOM, element: <ProtectedRole role={ROLE_KEYS.CUSTOM}><CustomWorkspace /></ProtectedRole> },
   { path: '*', element: <ModulePlaceholder icon={AlertTriangleIcon} label="Página no encontrada" description="La ruta que buscas no existe." /> },
 ]);
 

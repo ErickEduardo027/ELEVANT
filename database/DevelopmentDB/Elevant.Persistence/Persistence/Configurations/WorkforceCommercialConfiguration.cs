@@ -194,14 +194,38 @@ internal static class WorkforceCommercialConfiguration
 
     private static void ConfigureCommercial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<CommercialAirlineProfile>(builder =>
+        {
+            builder.ToTable("airline_profiles", "commercial");
+            builder.Property(profile => profile.SourceName).HasMaxLength(160).IsRequired();
+            builder.Property(profile => profile.DisplayName).HasMaxLength(160).IsRequired();
+            builder.Property(profile => profile.LegalName).HasMaxLength(200);
+            builder.Property(profile => profile.Region).HasMaxLength(64).IsRequired();
+            builder.Property(profile => profile.CountryCode).HasMaxLength(2);
+            builder.Property(profile => profile.IataCode).HasMaxLength(2);
+            builder.Property(profile => profile.IcaoCode).HasMaxLength(3);
+            builder.Property(profile => profile.LogoObjectKey).HasMaxLength(512);
+            builder.Property(profile => profile.SourceUrl).HasMaxLength(512).IsRequired();
+            builder.Property(profile => profile.VerifiedAt).HasPrecision(3);
+            builder.Property(profile => profile.VerificationSourceUrl).HasMaxLength(512);
+            builder.HasIndex(profile => profile.SourceName).IsUnique();
+            AddNoActionReference<Airline, CommercialAirlineProfile>(builder,
+                profile => profile.CanonicalAirlineId);
+            AddNoActionReference<ApplicationUser, CommercialAirlineProfile>(builder,
+                profile => profile.VerifiedByAccountId);
+        });
+
         modelBuilder.Entity<ServiceRequest>(builder =>
         {
             builder.ToTable("service_requests", "commercial");
             builder.Property(request => request.RequestCode).HasMaxLength(32).IsRequired();
             builder.Property(request => request.RequestedAirlineName).HasMaxLength(160).IsRequired();
+            builder.Property(request => request.AirlineLegalNameSnapshot).HasMaxLength(200);
+            builder.Property(request => request.SubmissionHash).HasMaxLength(64);
             builder.Property(request => request.Type).HasConversion<string>().HasMaxLength(32);
             builder.Property(request => request.Status).HasConversion<string>().HasMaxLength(16);
             builder.Property(request => request.ContactName).HasMaxLength(160).IsRequired();
+            builder.Property(request => request.ContactTitle).HasMaxLength(120);
             builder.Property(request => request.ContactEmail).HasMaxLength(256).IsRequired();
             builder.Property(request => request.ContactPhone).HasMaxLength(32);
             builder.Property(request => request.SubmittedAt).HasPrecision(3);
@@ -211,7 +235,10 @@ internal static class WorkforceCommercialConfiguration
             builder.HasIndex(request => request.RequestCode).IsUnique();
             builder.HasIndex(request => new { request.AirlineId, request.Status, request.SubmittedAt });
             AddNoActionReference<Airline, ServiceRequest>(builder, request => request.AirlineId);
+            AddNoActionReference<CommercialAirlineProfile, ServiceRequest>(builder,
+                request => request.AirlineProfileId);
             AddNoActionReference<ApplicationUser, ServiceRequest>(builder, request => request.ReviewedByAccountId);
+            AddNoActionReference<ApplicationUser, ServiceRequest>(builder, request => request.ProvisionedAccountId);
         });
 
         modelBuilder.Entity<ServiceRequestStation>(builder =>
@@ -235,7 +262,10 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(item => item.RequestedFrom).HasColumnType("date");
             builder.Property(item => item.RequestedTo).HasColumnType("date");
             builder.Property(item => item.Notes).HasMaxLength(1000);
-            AddNoActionReference<ServiceRequest, ServiceRequestItem>(builder, item => item.ServiceRequestId);
+            builder.HasOne(item => item.ServiceRequest)
+                .WithMany()
+                .HasForeignKey(item => item.ServiceRequestId)
+                .OnDelete(DeleteBehavior.NoAction);
             AddNoActionReference<ServiceDefinition, ServiceRequestItem>(builder, item => item.ServiceDefinitionId);
         });
 
@@ -292,6 +322,17 @@ internal static class WorkforceCommercialConfiguration
             builder.HasKey(station => new { station.ContractVersionId, station.StationId });
             AddNoActionReference<ContractVersion, ContractVersionStation>(builder, station => station.ContractVersionId);
             AddNoActionReference<Station, ContractVersionStation>(builder, station => station.StationId);
+        });
+
+        modelBuilder.Entity<ContractDraftComment>(builder =>
+        {
+            builder.ToTable("contract_draft_comments", "commercial");
+            builder.Property(comment => comment.Body).HasMaxLength(2000).IsRequired();
+            builder.HasIndex(comment => new { comment.ContractVersionId, comment.CreatedAt });
+            AddNoActionReference<ContractVersion, ContractDraftComment>(builder,
+                comment => comment.ContractVersionId);
+            AddNoActionReference<ApplicationUser, ContractDraftComment>(builder,
+                comment => comment.AuthorAccountId);
         });
 
         modelBuilder.Entity<ContractServiceRate>(builder =>

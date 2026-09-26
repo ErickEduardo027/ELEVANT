@@ -8,13 +8,23 @@ public sealed class ServiceRequest : AuditableEntity
 
     public long? AirlineId { get; set; }
 
+    public long? AirlineProfileId { get; set; }
+
     public string RequestedAirlineName { get; set; } = string.Empty;
+
+    public string? AirlineLegalNameSnapshot { get; set; }
+
+    public string? SubmissionHash { get; set; }
 
     public CommercialRequestType Type { get; set; }
 
     public CommercialRequestStatus Status { get; set; }
 
     public string ContactName { get; set; } = string.Empty;
+
+    public string? ContactTitle { get; set; }
+
+    public bool AuthorityDeclared { get; set; }
 
     public string ContactEmail { get; set; } = string.Empty;
 
@@ -25,6 +35,8 @@ public sealed class ServiceRequest : AuditableEntity
     public DateTimeOffset? ReviewedAt { get; set; }
 
     public long? ReviewedByAccountId { get; set; }
+
+    public long? ProvisionedAccountId { get; set; }
 
     public string? DecisionReason { get; set; }
 

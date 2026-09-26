@@ -66,5 +66,15 @@
 .contractRateList span { color: #435c76; }
 .loadMore { justify-self: center; padding: .7rem 1rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
 .loadMore:disabled { cursor: wait; opacity: .65; }
+.draftBadge { border-radius: 1rem; background: #fff0e6; color: #b94c16; padding: .45rem .7rem; font: 700 .68rem var(--font-data); letter-spacing: .06em; }
+.draftComments { list-style: none; padding: 0; margin: .8rem 0; display: grid; gap: .55rem; }
+.draftComments li { border: 1px solid #dce6f0; border-radius: .5rem; padding: .8rem; background: #f7faff; font-size: .8rem; }
+.draftComments p { color: #244666; margin: .3rem 0; }
+.draftComments small { color: #6e8196; }
+.draftCommentForm { display: grid; gap: .55rem; margin-top: 1rem; }
+.draftCommentForm label { font-size: .8rem; font-weight: 700; }
+.draftCommentForm textarea { width: 100%; resize: vertical; border: 1px solid #b8c9db; border-radius: .45rem; padding: .7rem; font: inherit; }
+.draftCommentForm button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
+.draftCommentForm button:disabled { opacity: .5; cursor: wait; }
 @media (max-width: 38rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } }
 @media (max-width: 38rem) { .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } }

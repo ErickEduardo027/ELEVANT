@@ -52,6 +52,8 @@ internal static class IdentityReferenceConfiguration
             builder.Property(role => role.Portal).HasConversion<string>().HasMaxLength(32);
             builder.Property(role => role.UserType).HasMaxLength(64).IsRequired();
             builder.Property(role => role.Description).HasMaxLength(500);
+            builder.Property(role => role.IsActive).HasDefaultValue(true);
+            builder.Property(role => role.IsCustom).HasDefaultValue(false);
             builder.HasIndex(role => role.PublicId).IsUnique();
             builder.HasIndex(role => role.NormalizedName)
                 .HasDatabaseName("ux_roles_normalized_name")
@@ -263,6 +265,8 @@ internal static class IdentityReferenceConfiguration
         ConfigureCodeCatalog<ServiceDefinition>(modelBuilder, "service_definitions", builder =>
         {
             builder.Property(service => service.Description).HasMaxLength(500);
+            builder.Property(service => service.ImageUrl).HasMaxLength(512);
+            builder.Property(service => service.VideoUrl).HasMaxLength(512);
             builder.Property(service => service.DefaultBillingUnit).HasMaxLength(32).IsRequired();
         });
 

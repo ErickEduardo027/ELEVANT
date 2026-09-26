@@ -416,6 +416,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/05-aplicaciones/flujo-comercial-y-gobernanza.md",
+        "id": "flujo-comercial-y-gobernanza",
+        "title": "Solicitud comercial y gobernanza",
+        "type": "capability",
+        "area": "applications",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/mobile-agent.md",
         "id": "aplicaciones-mobile-agent",
         "title": "Mobile Agent",
@@ -1011,7 +1021,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "6b467f69ccd3b730b2acd4f0eccd4b79b2a69588cb5d164c0de01c56cb29fa70"
+        "sha256": "d1be1bb649a06b4e01cc5fa6dbd8a6124449258bc111658574bcd14269c2c423"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1033,13 +1043,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "3079fd851094da6727088d598b378efc8b91cb2f239debeb2e25814cb80244e1",
+        "sha256": "3a26f69f461e3383da4ff1ac15ed3cd4a87ab3ba825cca38bd554f5a8e9e2407",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "8c0b72f64e402d29cd0835b56a5b5344c70740375c64edf47009266994532f81",
+        "sha256": "299cf40541cfe5583abbc0b6caed08f4fc2c89e35f5d1f1b589180791ad34c9f",
         "title": null,
         "version": null
       }
@@ -1116,6 +1126,30 @@
         "name": "PreinvoiceDraft",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926175205_PreinvoiceDraft.cs",
         "sha256": "e26813521dab244cc6c91aa73b2e638c461579983e34e5d49f344f1de702c3e5"
+      },
+      {
+        "id": "20260926211142",
+        "name": "PublicCommercialIntake",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926211142_PublicCommercialIntake.cs",
+        "sha256": "8fff8eb9f769b86d681c898f41d3c8bef84ba91ba379d5e107441a17b77c5969"
+      },
+      {
+        "id": "20260926212152",
+        "name": "CommercialGovernance",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926212152_CommercialGovernance.cs",
+        "sha256": "7bb5ae16a454197527649c94493c6a6b2c6e3f485adc1cee02f11d27da64c892"
+      },
+      {
+        "id": "20260926212759",
+        "name": "CommercialProvisioning",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926212759_CommercialProvisioning.cs",
+        "sha256": "cc1261b7ae8c99058d001b9a150e64c1cdfca38db92941ac7d37732afdf1af23"
+      },
+      {
+        "id": "20260926213514",
+        "name": "ContractDraftConversation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926213514_ContractDraftConversation.cs",
+        "sha256": "74ff5f78765cd6399878bcc2e12ba44a2f816f6dc4b752efc00fdef9d85b99b0"
       }
     ],
     "manifestContracts": [
