@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-25"
-verified_commit: "0656ad50d8806b5bca6f09b8ba34410161e12bec"
+verified_commit: "d3ac8ee4ba814367d25764df4c8d55162fbebac7"
 sources:
   - AGENTS.md
   - frontend/AGENTS.md
@@ -20,6 +20,8 @@ sources:
   - frontend/public-web/src/components/portal/PortalGuard.tsx
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
+  - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
+  - frontend/public-web/src/components/portal/PortalViews.tsx
   - frontend/public-web/src/components/portal/PortalWorkspace.tsx
   - frontend/public-web/src/lib/elevant-api.ts
   - frontend/public-web/tests/e2e/auth.spec.ts
@@ -45,7 +47,7 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Identidad | `POST /api/v1/auth/session` emite la sesión; `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
 | Contraseña temporal | El código permitido `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
-| Inicio, vuelos y perfil | Muestran nombre, estaciones, identidad y operaciones de la ventana actual contenidas en el bootstrap. El detalle solo abre una operación presente en esa respuesta. No hay consulta histórica general. |
+| Inicio, vuelos y perfil | Muestran nombre, estaciones, identidad y operaciones de la ventana actual contenidas en el bootstrap. Inicio y vuelos separan además una muestra visual sintética del prototipo, con indicadores y rotaciones EV etiquetados y sin enlaces de detalle. El detalle solo abre una operación real presente en la respuesta de la API. No hay consulta histórica general. |
 | Solicitudes, contratos, documentos, finanzas y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y respuestas financieras permanecen deshabilitadas. |
 | Afiliación | La experiencia de solicitud en `/login` conserva un adaptador prototípico; no emite una cuenta ni demuestra persistencia contractual en la API canónica. |
 
@@ -61,7 +63,7 @@ flowchart LR
     B --> P[Módulos visuales de demostración]
 ```
 
-La landing, la solicitud comercial y los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de `/portal` no montan ese repositorio mock. El contenido sintético del portal actual es una vista previa estática y deshabilitada, no un contrato de datos ni una autorización local. Las futuras consultas de contratos, documentos, finanzas, solicitudes e historial requieren endpoints OpenAPI, persistencia y pruebas de aislamiento antes de habilitar acciones.
+La landing, la solicitud comercial y los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de `/portal` no montan ese repositorio mock. La muestra de Inicio y Vuelos usa fixtures descartables calculados en el navegador, separados del bootstrap por un aviso persistente. Sus filtros funcionan, pero ninguna rotación sintética abre un detalle; las operaciones reales conservan sus enlaces propios. El contenido sintético de los demás módulos es una vista previa estática y deshabilitada, no un contrato de datos ni una autorización local. Las futuras consultas de contratos, documentos, finanzas, solicitudes e historial requieren endpoints OpenAPI, persistencia y pruebas de aislamiento antes de habilitar acciones.
 
 ## Desarrollo y evidencia
 
