@@ -671,6 +671,19 @@ secreto fuera del repositorio, logs y capturas. La cuenta sintética es
 posteriores. Después valida API, AVIAM Web y Public Web contra sus bundles
 compatibles, en ese orden.
 
+En el checkpoint observado para esta entrega, **Guardar** el Raw y el
+Environment en Dokploy conservó el contenido del editor, pero no actualizó
+`code/docker-compose.yml` ni `code/.env` antes de **Deploy**. Database CD lee esos
+archivos vivos durante su preflight. Con los schedules deshabilitados y el
+controlador pausado, el operador reabre el Raw guardado y comprueba su SHA-256
+contra `database/DevelopmentDB/compose.development.release.yml`; crea una copia
+de seguridad `root:root 0700` del Compose y el Environment vivos; sincroniza
+ambos archivos con el Raw revisado y el mismo secreto guardado en Dokploy,
+introducido por terminal privada sin eco; y comprueba el hash del Compose, la
+presencia de la clave sin imprimirla y `root:root 0600` para `.env`. La fuente
+guardada en Dokploy y los archivos vivos deben concordar antes de publicar el
+commit. Ninguno de estos pasos ejecuta **Deploy** o el seed.
+
 La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
 Además de autenticación y contexto de actor, el primer slice OCC publica dos
 lecturas bajo `/api/v1/occ/planning`. Estas aplican rol, membresía y scope de
