@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 import {
   AuthExperience,
-  type AuthMode,
 } from "@/components/auth/AuthExperience";
 import { resolveSafeReturnTo } from "@/lib/mock-auth";
 
@@ -28,9 +28,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const requestedMode = Array.isArray(parameters.mode)
     ? parameters.mode[0]
     : parameters.mode;
-  const initialMode: AuthMode =
-    requestedMode === "register" ? "register" : "login";
+  if (requestedMode === "register") redirect("/solicitar-acceso");
   const returnTo = resolveSafeReturnTo(parameters.returnTo);
 
-  return <AuthExperience initialMode={initialMode} returnTo={returnTo} />;
+  return <AuthExperience returnTo={returnTo} />;
 }

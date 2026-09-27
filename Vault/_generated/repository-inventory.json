@@ -421,7 +421,7 @@
         "title": "Solicitud comercial y gobernanza",
         "type": "capability",
         "area": "applications",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },

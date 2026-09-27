@@ -1,6 +1,8 @@
 # Solicitud comercial, contrato y gobernanza
 
-Este recorrido está implementado en una rama de funcionalidad basada en Development. No demuestra una publicación en el VPS. La API y la base compartida siguen siendo la autoridad para los tres clientes.
+Este recorrido está integrado en `Development` por el merge #114. La integración en el repositorio no demuestra una publicación ni una aceptación operativa en el VPS. La API y la base compartida siguen siendo la autoridad para los tres clientes.
+
+El acceso heredado a `/login?mode=register` redirige al formulario canónico `/solicitar-acceso`; no debe abrir una segunda alta con contraseña. Si una edición del catálogo o una verificación de aerolínea se confirmó en la API pero falla el aviso SignalR, la respuesta conserva el resultado persistido. El Public Web relee el catálogo por HTTP al reconectar y cada 25 segundos como respaldo; el aviso en vivo no es la fuente de verdad.
 
 ## Recorrido
 

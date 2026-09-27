@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type FormEvent,
-  type KeyboardEvent,
   useEffect,
-  useRef,
   useState,
 } from "react";
 
@@ -16,29 +14,17 @@ import {
   type MockSignInInput,
   validateSignIn,
 } from "@/lib/mock-auth";
-import {
-  type MockAffiliationInput,
-  type MockAffiliationRequest,
-  validateAffiliation,
-} from "@/lib/mock-affiliation";
-
 import { useAirlineSession, type AirlineSignInResult } from "./AirlineSessionProvider";
-import { useMockSession } from "./MockSessionProvider";
 
 import styles from "./AuthExperience.module.css";
 
-export type AuthMode = "login" | "register";
-
 type AuthExperienceProps = {
-  initialMode?: AuthMode;
   returnTo?: string;
 };
 
 type SignInInputField = keyof MockSignInInput;
 type SignInField = MockSignInField;
-type RegistrationField = keyof MockAffiliationInput;
 type SignInErrors = Partial<Record<SignInField, string>>;
-type RegistrationErrors = Partial<Record<RegistrationField, string>>;
 type SignInFeedback = {
   message: string;
   kind: "info" | "error";
@@ -50,91 +36,21 @@ const SIGN_IN_IDS: Record<SignInInputField, string> = {
   remember: "auth-remember",
 };
 
-const REGISTRATION_IDS: Record<RegistrationField, string> = {
-  legalName: "register-legal-name",
-  displayName: "register-display-name",
-  iataCode: "register-iata-code",
-  icaoCode: "register-icao-code",
-  country: "register-country",
-  primaryStation: "register-primary-station",
-  additionalStations: "register-additional-stations",
-  fullName: "register-full-name",
-  title: "register-title",
-  email: "register-email",
-  phone: "register-phone",
-  servicesOfInterest: "register-services",
-  prototypeAcknowledged: "register-prototype-acknowledged",
-};
-
-const STEP_ONE_FIELDS: readonly RegistrationField[] = [
-  "legalName",
-  "displayName",
-  "iataCode",
-  "icaoCode",
-  "country",
-  "primaryStation",
-  "additionalStations",
-];
-
 const INITIAL_SIGN_IN: MockSignInInput = {
   email: "",
   password: "",
   remember: false,
 };
 
-const INITIAL_REGISTRATION: MockAffiliationInput = {
-  legalName: "",
-  displayName: "",
-  iataCode: "",
-  icaoCode: "",
-  country: "",
-  primaryStation: "",
-  additionalStations: "",
-  fullName: "",
-  title: "",
-  email: "",
-  phone: "",
-  servicesOfInterest: "",
-  prototypeAcknowledged: false,
-};
-
 export function AuthExperience({
-  initialMode = "login",
   returnTo = "/portal",
 }: AuthExperienceProps) {
   const router = useRouter();
   const { status } = useAirlineSession();
-  const [mode, setMode] = useState<AuthMode>(initialMode);
-  const loginTabRef = useRef<HTMLButtonElement>(null);
-  const registerTabRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (status === "ready") router.replace(returnTo);
   }, [returnTo, router, status]);
-
-  const selectMode = (nextMode: AuthMode, focusTab = false) => {
-    setMode(nextMode);
-    const parameters = new URLSearchParams({ mode: nextMode });
-    if (returnTo !== "/portal") parameters.set("returnTo", returnTo);
-    router.replace(`/login?${parameters.toString()}`, { scroll: false });
-
-    if (focusTab) {
-      requestAnimationFrame(() => {
-        (nextMode === "login" ? loginTabRef : registerTabRef).current?.focus();
-      });
-    }
-  };
-
-  const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-      return;
-    }
-
-    event.preventDefault();
-    const nextMode =
-      event.key === "ArrowLeft" || event.key === "Home" ? "login" : "register";
-    selectMode(nextMode, true);
-  };
 
   return (
     <div className={styles.page}>
@@ -159,43 +75,11 @@ export function AuthExperience({
               <LoadingState />
             ) : (
               <>
-                <div
-                  className={styles.tabs}
-                  role="tablist"
-                  aria-label="Elegir tipo de acceso"
-                  onKeyDown={handleTabKeyDown}
-                >
-                  <button
-                    ref={loginTabRef}
-                    id="login-tab"
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === "login"}
-                    aria-controls="login-panel"
-                    tabIndex={mode === "login" ? 0 : -1}
-                    onClick={() => selectMode("login")}
-                  >
-                    Iniciar sesión
-                  </button>
-                  <button
-                    ref={registerTabRef}
-                    id="register-tab"
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === "register"}
-                    aria-controls="register-panel"
-                    tabIndex={mode === "register" ? 0 : -1}
-                    onClick={() => selectMode("register")}
-                  >
-                    Solicitar afiliación
-                  </button>
-                </div>
-
-                {mode === "login" ? (
-                  <SignInPanel returnTo={returnTo} />
-                ) : (
-                  <AffiliationPanel />
-                )}
+                <nav className={styles.tabs} aria-label="Acceso de aerolíneas">
+                  <span id="login-label" aria-current="page">Iniciar sesión</span>
+                  <Link href="/solicitar-acceso">Solicitar acceso</Link>
+                </nav>
+                <SignInPanel returnTo={returnTo} />
               </>
             )}
           </div>
@@ -358,8 +242,8 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     <div
       className={styles.tabPanel}
       id="login-panel"
-      role="tabpanel"
-      aria-labelledby="login-tab"
+      role="region"
+      aria-labelledby="login-label"
       tabIndex={0}
     >
       <header className={styles.formHeader}>
@@ -449,425 +333,6 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
   );
 }
 
-function AffiliationPanel() {
-  const { requestAffiliation } = useMockSession();
-  const [input, setInput] = useState<MockAffiliationInput>(INITIAL_REGISTRATION);
-  const [errors, setErrors] = useState<RegistrationErrors>({});
-  const [step, setStep] = useState<1 | 2>(1);
-  const [pending, setPending] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<MockAffiliationRequest | null>(null);
-
-  const update = <Field extends RegistrationField>(
-    field: Field,
-    value: MockAffiliationInput[Field],
-  ) => {
-    setInput((current) => ({ ...current, [field]: value }));
-    setErrors((current) => withoutKey(current, field));
-    setFeedback(null);
-  };
-
-  const validateField = (field: RegistrationField) => {
-    const result = validateAffiliation(input);
-    if (result.ok || !result.fieldErrors[field]) {
-      setErrors((current) => withoutKey(current, field));
-      return;
-    }
-    setErrors((current) => ({ ...current, [field]: result.fieldErrors[field] }));
-  };
-
-  const continueToContact = () => {
-    const validation = validateAffiliation(input);
-    if (!validation.ok) {
-      const stepErrors = pickErrors(validation.fieldErrors, STEP_ONE_FIELDS);
-      const firstInvalid = STEP_ONE_FIELDS.find((field) => stepErrors[field]);
-      if (firstInvalid) {
-        setErrors((current) => ({ ...current, ...stepErrors }));
-        focusField(REGISTRATION_IDS, firstInvalid);
-        return;
-      }
-    }
-
-    setStep(2);
-    requestAnimationFrame(() =>
-      document.getElementById(REGISTRATION_IDS.fullName)?.focus(),
-    );
-  };
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setFeedback(null);
-    const validation = validateAffiliation(input);
-
-    if (!validation.ok) {
-      setErrors(validation.fieldErrors);
-      setFeedback("Revisa los campos indicados para enviar la solicitud.");
-      const firstField = validation.firstInvalidField;
-      if (STEP_ONE_FIELDS.includes(firstField)) setStep(1);
-      requestAnimationFrame(() => focusField(REGISTRATION_IDS, firstField));
-      return;
-    }
-
-    setPending(true);
-    const result = await requestAffiliation(validation.value);
-    setPending(false);
-
-    if (result.ok) {
-      setSubmitted(result.request);
-    } else {
-      setFeedback(result.message);
-      if (result.fieldErrors) setErrors(result.fieldErrors);
-      if (result.firstInvalidField) {
-        const firstInvalidField = result.firstInvalidField;
-        if (STEP_ONE_FIELDS.includes(firstInvalidField)) setStep(1);
-        requestAnimationFrame(() =>
-          focusField(REGISTRATION_IDS, firstInvalidField),
-        );
-      }
-    }
-  };
-
-  if (submitted) {
-    return (
-      <div
-        className={`${styles.tabPanel} ${styles.session}`}
-        id="register-panel"
-        role="tabpanel"
-        aria-labelledby="register-tab"
-        tabIndex={0}
-      >
-        <div className={styles.sessionStatus} role="status" aria-live="polite">
-          <span aria-hidden="true" />
-          Solicitud recibida
-        </div>
-        <p className={styles.formKicker}>Afiliación en evaluación</p>
-        <h2>Tu solicitud quedó registrada.</h2>
-        <p className={styles.sessionLead}>
-          Conserva la referencia <strong>{submitted.reference}</strong>. En esta
-          demo el seguimiento permanece únicamente en este navegador.
-        </p>
-        <dl className={styles.sessionCard}>
-          <div className={styles.sessionIdentity}>
-            <dt>Aerolínea</dt>
-            <dd>{submitted.airline.displayName}</dd>
-            <span>
-              {submitted.airline.iataCode ?? submitted.airline.icaoCode ?? "—"}
-            </span>
-          </div>
-          <div>
-            <dt>Estado</dt>
-            <dd>Recibida</dd>
-            <span>{submitted.stations.primary} · estación principal</span>
-          </div>
-        </dl>
-        <div className={styles.sessionNotice}>
-          <InfoIcon />
-          <p>
-            La solicitud no crea una cuenta ni habilita acceso al portal. AVIAM
-            deberá validar la afiliación y emitir credenciales por un canal seguro.
-          </p>
-        </div>
-        <div className={styles.sessionActions}>
-          <button
-            className={styles.primaryButton}
-            type="button"
-            onClick={() => {
-              setSubmitted(null);
-              setInput(INITIAL_REGISTRATION);
-              setErrors({});
-              setStep(1);
-            }}
-          >
-            Nueva solicitud
-          </button>
-          <Link className={styles.secondaryLink} href="/login?mode=login">
-            Ir al inicio de sesión
-            <ArrowRightIcon />
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={styles.tabPanel}
-      id="register-panel"
-      role="tabpanel"
-      aria-labelledby="register-tab"
-      tabIndex={0}
-    >
-      <header className={styles.formHeader}>
-        <p className={styles.formKicker}>Solicitud para evaluación</p>
-        <h2>Solicita la afiliación de tu aerolínea.</h2>
-        <p>
-          Registra la operación que deseas consultar. La solicitud no crea una
-          cuenta ni concede acceso automático.
-        </p>
-      </header>
-
-      <div className={styles.stepper} aria-label={`Paso ${step} de 2`}>
-        <div data-active={step === 1} data-complete={step === 2}>
-          <span>{step === 2 ? <CheckIcon /> : "01"}</span>
-          <p>
-            <strong>Aerolínea</strong>
-            <small>Identidad y estaciones</small>
-          </p>
-        </div>
-        <i aria-hidden="true" />
-        <div data-active={step === 2}>
-          <span>02</span>
-          <p>
-            <strong>Representante</strong>
-            <small>Contacto y necesidades</small>
-          </p>
-        </div>
-      </div>
-
-      <form className={styles.form} onSubmit={submit} noValidate>
-        {step === 1 ? (
-          <fieldset className={styles.fieldset}>
-            <legend className={styles.srOnly}>Información de la aerolínea</legend>
-            <div className={styles.fieldGrid}>
-              <Field
-                id={REGISTRATION_IDS.legalName}
-                name="legalName"
-                label="Razón social"
-                value={input.legalName}
-                error={errors.legalName}
-                autoComplete="organization"
-                onChange={(value) => update("legalName", value)}
-                onBlur={() => validateField("legalName")}
-                required
-                wide
-              />
-              <Field
-                id={REGISTRATION_IDS.displayName}
-                name="displayName"
-                label="Nombre comercial"
-                value={input.displayName}
-                error={errors.displayName}
-                autoComplete="organization"
-                onChange={(value) => update("displayName", value)}
-                onBlur={() => validateField("displayName")}
-                hint="Opcional"
-                wide
-              />
-              <Field
-                id={REGISTRATION_IDS.iataCode}
-                name="iataCode"
-                label="Código IATA"
-                value={input.iataCode}
-                error={errors.iataCode}
-                autoComplete="off"
-                onChange={(value) => update("iataCode", value.toUpperCase())}
-                onBlur={() => validateField("iataCode")}
-                hint="IATA o ICAO requerido"
-                maxLength={2}
-                code
-              />
-              <Field
-                id={REGISTRATION_IDS.icaoCode}
-                name="icaoCode"
-                label="Código ICAO"
-                value={input.icaoCode}
-                error={errors.icaoCode}
-                autoComplete="off"
-                onChange={(value) => update("icaoCode", value.toUpperCase())}
-                onBlur={() => validateField("icaoCode")}
-                hint="IATA o ICAO requerido"
-                maxLength={3}
-                code
-              />
-              <Field
-                id={REGISTRATION_IDS.country}
-                name="country"
-                label="País"
-                value={input.country}
-                error={errors.country}
-                autoComplete="country-name"
-                onChange={(value) => update("country", value)}
-                onBlur={() => validateField("country")}
-                required
-              />
-              <Field
-                id={REGISTRATION_IDS.primaryStation}
-                name="primaryStation"
-                label="Estación principal"
-                value={input.primaryStation}
-                error={errors.primaryStation}
-                autoComplete="off"
-                onChange={(value) => update("primaryStation", value.toUpperCase())}
-                onBlur={() => validateField("primaryStation")}
-                hint="Ej.: PUJ"
-                maxLength={4}
-                required
-                code
-              />
-              <Field
-                id={REGISTRATION_IDS.additionalStations}
-                name="additionalStations"
-                label="Estaciones adicionales"
-                value={input.additionalStations}
-                error={errors.additionalStations}
-                autoComplete="off"
-                onChange={(value) => update("additionalStations", value.toUpperCase())}
-                onBlur={() => validateField("additionalStations")}
-                hint="Opcional · separadas por coma, ej.: SDQ, STI"
-                wide
-              />
-            </div>
-
-            <button
-              className={styles.primaryButton}
-              type="button"
-              onClick={continueToContact}
-            >
-              Continuar con el representante
-              <ArrowRightIcon />
-            </button>
-          </fieldset>
-        ) : (
-          <fieldset className={styles.fieldset}>
-            <legend className={styles.srOnly}>Representante y servicios</legend>
-            <div className={styles.fieldGrid}>
-              <Field
-                id={REGISTRATION_IDS.fullName}
-                name="fullName"
-                label="Nombre completo"
-                value={input.fullName}
-                error={errors.fullName}
-                autoComplete="name"
-                onChange={(value) => update("fullName", value)}
-                onBlur={() => validateField("fullName")}
-                required
-              />
-              <Field
-                id={REGISTRATION_IDS.title}
-                name="title"
-                label="Cargo"
-                value={input.title}
-                error={errors.title}
-                autoComplete="organization-title"
-                onChange={(value) => update("title", value)}
-                onBlur={() => validateField("title")}
-                required
-              />
-              <Field
-                id={REGISTRATION_IDS.email}
-                name="email"
-                label="Correo corporativo"
-                type="email"
-                value={input.email}
-                error={errors.email}
-                autoComplete="email"
-                onChange={(value) => update("email", value)}
-                onBlur={() => validateField("email")}
-                required
-              />
-              <Field
-                id={REGISTRATION_IDS.phone}
-                name="phone"
-                label="Teléfono"
-                type="tel"
-                value={input.phone}
-                error={errors.phone}
-                autoComplete="tel"
-                onChange={(value) => update("phone", value)}
-                onBlur={() => validateField("phone")}
-                required
-              />
-              <TextAreaField
-                id={REGISTRATION_IDS.servicesOfInterest}
-                name="servicesOfInterest"
-                label="Servicios de interés"
-                value={input.servicesOfInterest}
-                error={errors.servicesOfInterest}
-                onChange={(value) => update("servicesOfInterest", value)}
-                onBlur={() => validateField("servicesOfInterest")}
-              />
-            </div>
-
-            <div className={styles.acknowledgement}>
-              <label
-                className={styles.checkbox}
-                htmlFor={REGISTRATION_IDS.prototypeAcknowledged}
-              >
-                <input
-                  id={REGISTRATION_IDS.prototypeAcknowledged}
-                  name="prototypeAcknowledged"
-                  type="checkbox"
-                  checked={input.prototypeAcknowledged}
-                  onChange={(event) =>
-                    update("prototypeAcknowledged", event.currentTarget.checked)
-                  }
-                  onBlur={() => validateField("prototypeAcknowledged")}
-                  aria-invalid={Boolean(errors.prototypeAcknowledged)}
-                  aria-describedby={
-                    errors.prototypeAcknowledged
-                      ? `${REGISTRATION_IDS.prototypeAcknowledged}-error`
-                      : undefined
-                  }
-                />
-                <span aria-hidden="true">
-                  <CheckIcon />
-                </span>
-                Entiendo que esta solicitud será enviada al Departamento de
-                Contratos y no crea credenciales de acceso automáticamente.
-              </label>
-              {errors.prototypeAcknowledged && (
-                <p
-                  className={styles.error}
-                  id={`${REGISTRATION_IDS.prototypeAcknowledged}-error`}
-                  aria-live="polite"
-                >
-                  {errors.prototypeAcknowledged}
-                </p>
-              )}
-            </div>
-
-            {feedback && (
-              <div className={styles.feedback} data-kind="error" role="alert">
-                <InfoIcon />
-                <p>{feedback}</p>
-              </div>
-            )}
-
-            <div className={styles.stepActions}>
-              <button
-                className={styles.secondaryButton}
-                type="button"
-                onClick={() => setStep(1)}
-                disabled={pending}
-              >
-                <ArrowLeftIcon />
-                Volver a la aerolínea
-              </button>
-              <button
-                className={styles.primaryButton}
-                type="submit"
-                disabled={pending}
-              >
-                {pending ? (
-                  <>
-                    <span className={styles.spinner} aria-hidden="true" />
-                    Guardando solicitud…
-                  </>
-                ) : (
-                  <>
-                    Enviar solicitud de afiliación
-                    <ArrowRightIcon />
-                  </>
-                )}
-              </button>
-            </div>
-          </fieldset>
-        )}
-      </form>
-    </div>
-  );
-}
-
 type FieldProps = {
   id: string;
   name: string;
@@ -922,54 +387,6 @@ function Field({
         required={required}
         aria-invalid={Boolean(error)}
         aria-describedby={descriptionId}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onBlur={onBlur}
-      />
-      {error && (
-        <p className={styles.error} id={`${id}-error`} aria-live="polite">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-type TextAreaFieldProps = {
-  id: string;
-  name: string;
-  label: string;
-  value: string;
-  error?: string;
-  onChange: (value: string) => void;
-  onBlur: () => void;
-};
-
-function TextAreaField({
-  id,
-  name,
-  label,
-  value,
-  error,
-  onChange,
-  onBlur,
-}: TextAreaFieldProps) {
-  return (
-    <div className={styles.field} data-wide="true">
-      <div className={styles.labelRow}>
-        <label htmlFor={id}>
-          {label} <span aria-hidden="true">*</span>
-        </label>
-        {!error && <span id={`${id}-hint`}>Máximo 800 caracteres</span>}
-      </div>
-      <textarea
-        id={id}
-        name={name}
-        value={value}
-        maxLength={800}
-        rows={4}
-        required
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : `${id}-hint`}
         onChange={(event) => onChange(event.currentTarget.value)}
         onBlur={onBlur}
       />
@@ -1064,16 +481,6 @@ function withoutKey<Key extends PropertyKey, Value>(
   return next;
 }
 
-function pickErrors<Key extends PropertyKey>(
-  errors: Partial<Record<Key, string>>,
-  fields: readonly Key[],
-) {
-  return fields.reduce<Partial<Record<Key, string>>>((selected, field) => {
-    if (errors[field]) selected[field] = errors[field];
-    return selected;
-  }, {});
-}
-
 function focusField<Key extends PropertyKey>(
   ids: Record<Key, string>,
   field: Key,
@@ -1093,14 +500,6 @@ function ArrowRightIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="M4 10h11m-4-5 5 5-5 5" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m4.5 10.5 3.3 3.3 7.7-8" />
     </svg>
   );
 }

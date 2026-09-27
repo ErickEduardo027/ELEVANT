@@ -1,12 +1,12 @@
 "use client";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
+import { ElevantApiError, type PublicCommercialCatalog } from "@elevant/api-client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPublicWebApiClient } from "@/lib/elevant-api";
 
-type Service = { id: string; name: string; description: string; imageUrl: string | null; videoUrl: string | null; displayOrder: number };
-type Airline = { id: string; name: string; region: string; legalName: string | null; countryCode: string | null; iataCode: string | null; icaoCode: string | null; logoUrl: string | null; isVerified: boolean };
-type Catalog = { services: Service[]; airlines: Airline[] };
+type Catalog = PublicCommercialCatalog;
 type Representative = { name: string; title: string; email: string; phone: string; authorityDeclared: boolean };
 const emptyRepresentative: Representative = { name: "", title: "", email: "", phone: "", authorityDeclared: false };
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
@@ -28,14 +28,23 @@ export function AccessRequestWizard() {
   const reload = useCallback(async () => {
     if (!apiOrigin) { setError("El catálogo comercial aún no está configurado."); setLoading(false); return; }
     try {
-      const response = await fetch(`${apiOrigin}/api/v1/public/commercial-catalog`, { cache: "no-store" });
-      if (!response.ok) throw new Error("No se pudo cargar el catálogo.");
-      const data = await response.json() as Catalog;
+      const data = await createPublicWebApiClient().getPublicCommercialCatalog({ cache: "no-store" });
       setCatalog(data);
-      setSelected((current) => current.filter((id) => data.services.some((service) => service.id === id)));
-      setAirlineId((current) => data.airlines.some((item) => item.id === current) ? current : "");
+      setSelected((current) => {
+        const retained = current.filter((id) => data.services.some((service) => service.id === id));
+        if (retained.length !== current.length) requestId.current = null;
+        return retained;
+      });
+      setAirlineId((current) => {
+        if (!current || data.airlines.some((item) => item.id === current)) return current;
+        requestId.current = null;
+        return "";
+      });
       setError("");
-    } catch { setError("No se pudo cargar el catálogo. Intente nuevamente."); }
+    } catch {
+      setCatalog(null);
+      setError("No se pudo cargar el catálogo. Intente nuevamente.");
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -77,21 +86,21 @@ export function AccessRequestWizard() {
     setBusy(true); setError("");
     requestId.current ??= crypto.randomUUID();
     try {
-      const response = await fetch(`${apiOrigin}/api/v1/public/commercial-requests`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestId: requestId.current, airlineProfileId: airlineId,
-          serviceIds: selected, representativeName: representative.name.trim(),
-          representativeTitle: representative.title.trim(), representativeEmail: representative.email.trim(),
-          representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared }),
+      const result = await createPublicWebApiClient().submitCommercialRequest({
+        requestId: requestId.current, airlineProfileId: airlineId,
+        serviceIds: selected, representativeName: representative.name.trim(),
+        representativeTitle: representative.title.trim(), representativeEmail: representative.email.trim(),
+        representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared,
       });
-      if (!response.ok) {
-        setError(response.status === 409 ? "El catálogo cambió o la solicitud fue modificada. Revise los datos y vuelva a enviarla." :
-          "No se pudo enviar la solicitud. Revise los datos o vuelva a intentarlo.");
-        return;
-      }
-      const result = await response.json() as { reference: string };
       setReference(result.reference);
-    } catch { setError("No hay conexión con el servidor. Vuelva a intentarlo."); }
+    } catch (failure) {
+      if (failure instanceof ElevantApiError && [404, 409].includes(failure.status))
+        setError("El catálogo cambió o la solicitud fue modificada. Revise los datos y vuelva a enviarla.");
+      else if (failure instanceof ElevantApiError && failure.status === 429)
+        setError("Demasiados intentos. Espere un momento antes de reintentar.");
+      else
+        setError("No se pudo confirmar la recepción. Revise la conexión y reintente sin modificar los datos.");
+    }
     finally { setBusy(false); }
   };
 
@@ -147,11 +156,11 @@ export function AccessRequestWizard() {
           <div className="access-airline__logo">{airline.logoUrl ? <img src={airline.logoUrl} alt={`Logo de ${airline.name}`} /> : <span aria-label="Logo pendiente de verificación">{airline.name.slice(0, 2)}</span>}<small>{airline.logoUrl ? "LOGO" : "LOGO POR VERIFICAR"}</small></div>
           <div className="access-airline__fields">
             <ReadOnlyField label="Aerolínea" value={airline.name} />
-            <ReadOnlyField label="Razón social" value={airline.legalName} />
+            <ReadOnlyField label="Razón social" value={airline.legalName ?? null} />
             <ReadOnlyField label="Región" value={airline.region} />
-            <ReadOnlyField label="País" value={airline.countryCode} />
-            <ReadOnlyField label="Código IATA" value={airline.iataCode} />
-            <ReadOnlyField label="Código ICAO" value={airline.icaoCode} />
+            <ReadOnlyField label="País" value={airline.countryCode ?? null} />
+            <ReadOnlyField label="Código IATA" value={airline.iataCode ?? null} />
+            <ReadOnlyField label="Código ICAO" value={airline.icaoCode ?? null} />
           </div>
           <p className="access-airline__verification">{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "La identidad legal y el logo están pendientes de verificación por Contratos."}</p>
         </div>}
