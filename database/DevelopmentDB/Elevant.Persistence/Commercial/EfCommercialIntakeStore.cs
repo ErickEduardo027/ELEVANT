@@ -35,7 +35,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.AirlineUnavailable);
 
         var services = await context.ServiceDefinitions.AsNoTracking()
-            .Where(service => command.ServiceIds.Contains(service.PublicId) && service.IsActive)
+            .Where(PublicCommercialServiceVisibility.PublishedActive)
+            .Where(service => command.ServiceIds.Contains(service.PublicId))
             .ToArrayAsync(cancellationToken);
         if (services.Length != command.ServiceIds.Count)
             return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.ServiceUnavailable);

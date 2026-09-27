@@ -22,6 +22,9 @@ sources:
   - frontend/public-web/src/components/commercial/AccessRequestWizard.tsx
   - frontend/private-web/src/features/governance/GovernanceShell.jsx
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialCatalogStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialIntakeStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/PublicCommercialServiceVisibility.cs
   - database/DevelopmentDB/compose.development.release.yml
 tags:
   - solicitud-comercial
@@ -47,6 +50,8 @@ flowchart LR
 ```
 
 El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas ofrece nombres históricos; los campos legales y logos quedan explícitamente pendientes de verificación. El representante no elige contraseña. Contratos verifica y decide; la aprobación crea un contrato en borrador. El superadministrador crea la cuenta con contraseña temporal y entrega manual. La aerolínea puede comentar el borrador y Contratos lo activa cuando cumple las condiciones de vigencia, servicios y estaciones.
+
+El POST público vuelve a validar que los servicios elegidos sigan activos y publicados. La lista visible y la admisión usan el mismo predicado del servidor; un UUID conocido de un servicio interno no amplía el catálogo público.
 
 El API conserva la autoridad sobre permisos de roles personalizados, identidad de la aerolínea y estado contractual. Los avisos internos se guardan en el outbox y se recuperan por cuenta; SignalR indica que se debe releer. No hay correos automáticos. La promoción requiere que el operador prepare el secreto sintético y reconcilie el Compose Raw de Database Release según el [checkpoint de Dokploy](../../docs/deployment/dokploy-configuration.md), antes de publicar en Development.
 

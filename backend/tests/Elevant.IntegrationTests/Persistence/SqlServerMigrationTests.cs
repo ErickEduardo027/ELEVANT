@@ -86,6 +86,18 @@ public sealed class SqlServerMigrationTests
         Assert.True(request.AuthorityDeclared);
         Assert.Equal(1, await context.Set<ServiceRequestItem>().CountAsync(
             item => item.ServiceRequestId == request.Id, cancellationToken));
+
+        var hiddenService = await context.ServiceDefinitions.SingleAsync(
+            item => item.PublicId == catalog.Services[0].Id, cancellationToken);
+        hiddenService.IsPublic = false;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.DoesNotContain((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
+            .GetPublicAsync(cancellationToken)).Services, item => item.Id == hiddenService.PublicId);
+        var hiddenRequest = command with { RequestId = Guid.NewGuid() };
+        Assert.Equal(CommercialSubmissionFailure.ServiceUnavailable,
+            (await handler.HandleAsync(hiddenRequest, cancellationToken)).Failure);
+        Assert.False(await context.ServiceRequests.AnyAsync(
+            item => item.PublicId == hiddenRequest.RequestId, cancellationToken));
     }
 
     [Fact]
