@@ -1743,7 +1743,10 @@ function validatedCommercialRequest(
 ): SubmitCommercialRequestRequest {
   if (!isRecord(request) || !hasOnlyKeys(request, ["requestId", "airlineProfileId",
     "serviceIds", "representativeName", "representativeTitle",
-    "representativeEmail", "representativePhone", "authorityDeclared"]) ||
+    "representativeEmail", "representativePhone", "authorityDeclared",
+    "representativeNationalityCode", "representativeAddress", "representativeCountry",
+    "representativeProvince", "representativeMunicipality",
+    "representativeDocumentType", "representativeDocumentNumber"]) ||
     !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
     !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
     request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
@@ -1753,6 +1756,24 @@ function validatedCommercialRequest(
     !isNonEmptyString(request.representativeEmail) || request.representativeEmail.length > 256 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.representativeEmail) ||
     !isNonEmptyString(request.representativePhone) || request.representativePhone.length > 32 ||
+    !/^\+[0-9 ()-]{7,31}$/.test(request.representativePhone) ||
+    request.representativePhone.replace(/\D/g, "").length < 8 ||
+    request.representativePhone.replace(/\D/g, "").length > 15 ||
+    !isOptionalNullable(request.representativeNationalityCode,
+      value => typeof value === "string" && /^[A-Z]{2}$/.test(value)) ||
+    !isOptionalNullable(request.representativeAddress,
+      value => typeof value === "string" && value.trim().length <= 250) ||
+    !isOptionalNullable(request.representativeCountry,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeProvince,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeMunicipality,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeDocumentType,
+      value => value === "NationalId" || value === "Passport" || value === "Other") ||
+    !isOptionalNullable(request.representativeDocumentNumber,
+      value => typeof value === "string" && /^[A-Za-z0-9 /-]{3,40}$/.test(value)) ||
+    Boolean(request.representativeDocumentType) !== Boolean(request.representativeDocumentNumber) ||
     request.authorityDeclared !== true)
     throw new TypeError("Commercial application is invalid.");
   return request as unknown as SubmitCommercialRequestRequest;

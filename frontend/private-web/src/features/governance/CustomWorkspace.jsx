@@ -32,6 +32,8 @@ export default function CustomWorkspace({ user, onLogout }) {
   }, []);
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
   const modules = workspaceModules.filter(item => permissions?.includes(item.permission));
+  const allowed = (module, action) => permissions?.includes(`${module}.write`) ||
+    permissions?.includes(`${module}.full`) || permissions?.includes(`${module}.${action}`);
   const selected = modules.find(item => item.id === moduleId) ?? modules[0];
   const station = { code: 'AVIAM', localAbbr: 'AST',
     localTime: new Date().toISOString(), utcTime: new Date().toISOString() };
@@ -47,9 +49,17 @@ export default function CustomWorkspace({ user, onLogout }) {
         {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-4 text-sm">{error}</p>}
         {!permissions && !error && <p className="p-4 text-sm">Cargando permisos…</p>}
         {permissions && !selected && <p className="p-4 text-sm">Este rol no tiene módulos comerciales asignados.</p>}
-        {selected?.id === 'catalog' && <CommercialCatalogPage canWrite={permissions.includes('commercial.catalog.write')} />}
-        {selected?.id === 'requests' && <CommercialIntakePage canWrite={permissions.includes('commercial.requests.write')} />}
-        {selected?.id === 'drafts' && <ManagedDraftsPage canWrite={permissions.includes('commercial.requests.write')} />}
+        {selected?.id === 'catalog' && <CommercialCatalogPage
+          canCreate={allowed('commercial.catalog', 'create')}
+          canEdit={allowed('commercial.catalog', 'edit')}
+          canRetire={allowed('commercial.catalog', 'full')} />}
+        {selected?.id === 'requests' && <CommercialIntakePage
+          canVerify={allowed('commercial.requests', 'full')}
+          canApprove={allowed('commercial.requests', 'full')}
+          canReject={allowed('commercial.requests', 'edit')} />}
+        {selected?.id === 'drafts' && <ManagedDraftsPage
+          canEdit={allowed('commercial.requests', 'edit')}
+          canActivate={allowed('commercial.requests', 'full')} />}
       </main>
     </div>
   </div>;

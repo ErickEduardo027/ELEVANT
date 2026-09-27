@@ -68,10 +68,15 @@ public sealed class SqlServerMigrationTests
         var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
             .GetPublicAsync(cancellationToken);
         Assert.Equal(7, catalog.Services.Count);
-        Assert.Equal(51, catalog.Airlines.Count);
+        Assert.Equal(47, catalog.Airlines.Count);
+        Assert.DoesNotContain(catalog.Airlines, item => item.Name is "AIR BERLIN" or "THOMAS COOK" or "TAM AIRLINES" or "LANPERU");
+        Assert.Contains(catalog.Airlines, item => item.Name == "AIR FRANCE" &&
+            item.IataCode == "AF" && item.IcaoCode == "AFR");
         var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
             catalog.Airlines[0].Id, [catalog.Services[0].Id],
-            "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true);
+            "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,
+            "DO", "Avenida Principal 10", "República Dominicana", "Santo Domingo",
+            "Boca Chica", "Passport", "AB123456");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
         var submitted = await handler.HandleAsync(command, cancellationToken);
@@ -86,6 +91,8 @@ public sealed class SqlServerMigrationTests
             .SingleAsync(item => item.PublicId == command.RequestId, cancellationToken);
         Assert.Equal(catalog.Airlines[0].Name, request.RequestedAirlineName);
         Assert.True(request.AuthorityDeclared);
+        Assert.Equal("DO", request.ContactNationalityCode);
+        Assert.Equal("AB123456", request.ContactDocumentNumber);
         Assert.Equal(1, await context.Set<ServiceRequestItem>().CountAsync(
             item => item.ServiceRequestId == request.Id, cancellationToken));
 
@@ -296,7 +303,16 @@ public sealed class SqlServerMigrationTests
             new UpdateContractDraftInput(airlineDraft.ValidFrom, null, "USD",
                 "Condiciones revisadas por Contratos.",
                 airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
-                    rate.Id, rate.BillingUnit, 100, 0)).ToArray()),
+                    rate.Id, rate.BillingUnit, 100, 0, false)).ToArray()),
+            cancellationToken)).IsSuccess);
+        Assert.Equal(ContractDraftFailure.Conflict,
+            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+                cancellationToken)).Failure);
+        Assert.True((await drafts.UpdateAsync(contractsAccountId, airlineDraft.Id,
+            new UpdateContractDraftInput(airlineDraft.ValidFrom, null, "USD",
+                "Condiciones revisadas por Contratos.",
+                airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
+                    rate.Id, rate.BillingUnit, 0, 0, true)).ToArray()),
             cancellationToken)).IsSuccess);
         Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
             cancellationToken)).IsSuccess);
@@ -310,6 +326,87 @@ public sealed class SqlServerMigrationTests
         var governance = scope.ServiceProvider.GetRequiredService<IGovernanceStore>();
         var snapshot = (await governance.GetAsync(superAdminId, cancellationToken))!;
         Assert.Contains(snapshot.Roles, role => role.Code == "SUPERADMIN");
+        var historicalAirline = await context.CommercialAirlineProfiles.SingleAsync(item =>
+            item.SourceName == "AIR FRANCE", cancellationToken);
+        historicalAirline.CountryCode = null;
+        historicalAirline.LegalName = null;
+        historicalAirline.IataCode = null;
+        historicalAirline.IcaoCode = null;
+        historicalAirline.VerificationSourceUrl = null;
+        historicalAirline.VerifiedAt = null;
+        historicalAirline.UpdatedAt = new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
+        var manuallyEditedAirline = await context.CommercialAirlineProfiles.SingleAsync(item =>
+            item.SourceName == "AIR CANADA", cancellationToken);
+        Assert.Equal("/assets/airlines/air-canada.png", manuallyEditedAirline.LogoObjectKey);
+        manuallyEditedAirline.CountryCode = "XX";
+        manuallyEditedAirline.UpdatedAt = DateTimeOffset.UtcNow;
+        var historicalLogo = await context.CommercialAirlineProfiles.SingleAsync(item =>
+            item.SourceName == "BRITISH AIRWAYS", cancellationToken);
+        historicalLogo.LogoObjectKey = null;
+        historicalLogo.UpdatedAt = new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
+        await context.SaveChangesAsync(cancellationToken);
+        var airlineManager = scope.ServiceProvider.GetRequiredService<ICommercialAirlineManagementStore>();
+        Assert.Equal(CatalogMutationFailure.Forbidden,
+            (await airlineManager.EnrichHistoricalCatalogAsync(contractsAccountId, cancellationToken)).Failure);
+        Assert.True((await airlineManager.EnrichHistoricalCatalogAsync(superAdminId, cancellationToken)).Changed > 0);
+        Assert.Equal("AF", historicalAirline.IataCode);
+        Assert.Equal("FR", historicalAirline.CountryCode);
+        Assert.Equal("/assets/airlines/british-airways.png", historicalLogo.LogoObjectKey);
+        Assert.Equal("XX", manuallyEditedAirline.CountryCode);
+        var rampRole = Assert.Single(snapshot.Roles, role => role.Code == "RAMP_AGENT");
+        Assert.DoesNotContain(snapshot.RampProfiles, profile => profile.AccountId is null);
+        var humanResourcesAccountId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var rampProfiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var profileInput = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-RA-2",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.Id]);
+        Assert.Null(await rampProfiles.ListAsync(contractsAccountId, cancellationToken));
+        var savedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId, null,
+            profileInput, cancellationToken);
+        Assert.Null(savedProfile.Failure);
+        var newRampProfileId = savedProfile.Profile!.Id;
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId, cancellationToken))!.Profiles,
+            profile => profile.Id == newRampProfileId && profile.Stations.Single().Id == station.Id);
+        Assert.Equal(GovernanceFailure.Invalid,
+            (await governance.CreateUserAsync(superAdminId,
+                new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
+                    rampRole.Id, "Synthetic-Ramp!5678"), cancellationToken)).Failure);
+        var rampAccount = await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
+                rampRole.Id, "Synthetic-Ramp!5678", newRampProfileId), cancellationToken);
+        Assert.True(rampAccount.IsSuccess, rampAccount.Failure?.ToString());
+        Assert.Contains((await governance.GetAsync(superAdminId, cancellationToken))!.RampProfiles,
+            profile => profile.Id == newRampProfileId && profile.AccountId == rampAccount.Id);
+        var rampActor = await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
+            .ResolveAsync(rampAccount.Id!.Value, cancellationToken);
+        Assert.NotNull(rampActor);
+        Assert.True(RampOperationsAccess.IsAuthorized(rampActor));
+        Assert.Null((await rampProfiles.SaveAsync(contractsAccountId, newRampProfileId,
+            profileInput with { IsActive = false }, cancellationToken)).Profile);
+        Assert.NotNull((await rampProfiles.SaveAsync(humanResourcesAccountId, newRampProfileId,
+            profileInput with { IsActive = false }, cancellationToken)).Profile);
+        Assert.Null(await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
+            .ResolveAsync(rampAccount.Id.Value, cancellationToken));
+        var catalogCreatorRole = await governance.CreateRoleAsync(superAdminId,
+            new SaveGovernanceRoleInput("Creador de servicios", null,
+                ["commercial.catalog.read", "commercial.catalog.create"], true), cancellationToken);
+        Assert.True(catalogCreatorRole.IsSuccess);
+        var catalogCreator = await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Luis", "Santos", "luis@example.test",
+                catalogCreatorRole.Id!.Value, "Synthetic-Catalog!234"), cancellationToken);
+        Assert.True(catalogCreator.IsSuccess);
+        var managedCatalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var createdService = await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
+            new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética",
+                "operación", null, null, 999, false, true, null), cancellationToken);
+        Assert.Null(createdService.Failure);
+        Assert.Equal(CatalogMutationFailure.Forbidden,
+            (await managedCatalog.SaveAsync(catalogCreator.Id.Value, createdService.Service!.Id,
+                new ManagedServiceInput("TEST-RAMP", "Edición", "Descripción sintética",
+                    "operación", null, null, 999, false, true, createdService.Service.Version),
+                cancellationToken)).Failure);
+        Assert.Equal(CatalogMutationFailure.Forbidden,
+            (await managedCatalog.DeleteAsync(catalogCreator.Id.Value,
+                createdService.Service.Id, createdService.Service.Version, cancellationToken)).Failure);
         var createdRole = await governance.CreateRoleAsync(superAdminId,
             new SaveGovernanceRoleInput("Revisor comercial", "Lectura de solicitudes",
                 ["commercial.requests.read"], true), cancellationToken);
@@ -335,6 +432,17 @@ public sealed class SqlServerMigrationTests
             cancellationToken)).IsSuccess);
         Assert.Equal(["commercial.requests.read", "commercial.requests.write"],
             await governance.GetMyPermissionsAsync(createdUser.Id.Value, cancellationToken));
+        var auditPage = (await governance.GetAuditAsync(superAdminId, 1, 10, cancellationToken))!;
+        Assert.Equal(10, auditPage.Entries.Count);
+        Assert.Contains(auditPage.Entries, entry => entry.Action == "governance.role.updated" &&
+            entry.Actor == "Ariana Gobernanza" &&
+            entry.Changes.Any(change => change.Field == "role.permissions" &&
+                change.Before == "commercial.requests.read" &&
+                change.After!.Contains("commercial.requests.write", StringComparison.Ordinal)));
+        Assert.DoesNotContain(auditPage.Entries.SelectMany(entry => entry.Changes),
+            change => change.Field.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                change.Field.Contains("email", StringComparison.OrdinalIgnoreCase));
+        Assert.Null(await governance.GetAuditAsync(createdUser.Id.Value, 1, 10, cancellationToken));
         Assert.True((await governance.UpdateUserAsync(superAdminId, createdUser.Id!.Value,
             new UpdateGovernanceUserInput("Elena", "Rivera", "elena2@example.test",
                 createdRole.Id.Value, true), cancellationToken)).IsSuccess);

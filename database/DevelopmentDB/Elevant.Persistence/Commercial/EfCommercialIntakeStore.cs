@@ -66,6 +66,13 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         ContactTitle = command.RepresentativeTitle.Trim(),
                         ContactEmail = command.RepresentativeEmail.Trim(),
                         ContactPhone = command.RepresentativePhone.Trim(),
+                        ContactNationalityCode = Optional(command.RepresentativeNationalityCode),
+                        ContactAddress = Optional(command.RepresentativeAddress),
+                        ContactCountry = Optional(command.RepresentativeCountry),
+                        ContactProvince = Optional(command.RepresentativeProvince),
+                        ContactMunicipality = Optional(command.RepresentativeMunicipality),
+                        ContactDocumentType = Optional(command.RepresentativeDocumentType),
+                        ContactDocumentNumber = Optional(command.RepresentativeDocumentNumber),
                         AuthorityDeclared = command.AuthorityDeclared,
                         SubmittedAt = DateTimeOffset.UtcNow,
                     };
@@ -119,7 +126,17 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             string.Join(',', command.ServiceIds.OrderBy(id => id).Select(id => id.ToString("N"))),
             command.RepresentativeName.Trim(), command.RepresentativeTitle.Trim(),
             command.RepresentativeEmail.Trim().ToLowerInvariant(),
-            command.RepresentativePhone.Trim(), command.AuthorityDeclared.ToString());
+            command.RepresentativePhone.Trim(), command.AuthorityDeclared.ToString(),
+            Optional(command.RepresentativeNationalityCode) ?? string.Empty,
+            Optional(command.RepresentativeAddress) ?? string.Empty,
+            Optional(command.RepresentativeCountry) ?? string.Empty,
+            Optional(command.RepresentativeProvince) ?? string.Empty,
+            Optional(command.RepresentativeMunicipality) ?? string.Empty,
+            Optional(command.RepresentativeDocumentType) ?? string.Empty,
+            Optional(command.RepresentativeDocumentNumber) ?? string.Empty);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
+
+    private static string? Optional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

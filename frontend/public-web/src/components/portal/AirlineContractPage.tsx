@@ -91,7 +91,7 @@ export function AirlineContractPage() {
           <div className={styles.contractRateList}>
             {version.rates.length > 0 ? version.rates.map(rate => <div key={rate.id}>
               <strong>{rate.serviceName}</strong><span>{rate.serviceCode} · {rate.billingUnit}</span>
-              <span>{money(rate.unitPrice, version.currencyCode)} · mínimo {rate.minimumQuantity}</span>
+              <span>Precio por {rate.billingUnit}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
         </section>)}
@@ -119,7 +119,7 @@ function AirlineDraftCard({ draft, onComment }: {
     <div className={styles.sectionHeading}><div><span className={styles.kicker}>En revisión · {draft.contractCode}</span><h2>Propuesta de contrato</h2></div><strong className={styles.draftBadge}>BORRADOR</strong></div>
     <p className={styles.note}>Este documento todavía no habilita servicios operativos.</p>
     <div className={styles.contractVersion}><h3>Condiciones propuestas</h3><p>Vigencia prevista: {draft.validFrom} — {draft.validTo ?? "sin fecha de fin"}</p><p>Estaciones: {draft.stations.join(", ") || "Por definir"}</p><p>{draft.terms || "Contratos está preparando los términos de esta versión."}</p></div>
-    <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>{rate.billingUnit}</span><span>{money(rate.unitPrice, draft.currencyCode)} · mínimo {rate.minimumQuantity}</span></div>)}</div>
+    <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>Precio por {rate.billingUnit}: {rate.isConfirmed ? money(rate.unitPrice, draft.currencyCode) : "por definir"}</span><span>Cantidad mínima: {rate.minimumQuantity}</span></div>)}</div>
     <div className={styles.contractVersion}><h3>Observaciones</h3>{draft.comments.length ? <ul className={styles.draftComments}>{draft.comments.map(comment => <li key={comment.id}><strong>{comment.author}</strong><p>{comment.body}</p><small>{new Date(comment.at).toLocaleString("es-DO")}</small></li>)}</ul> : <p>Aún no hay observaciones.</p>}
       <form onSubmit={submit} className={styles.draftCommentForm}><label htmlFor={`draft-comment-${draft.id}`}>Enviar una observación a Contratos</label><textarea id={`draft-comment-${draft.id}`} required maxLength={2000} rows={3} value={body} onChange={event => setBody(event.target.value)} /><button disabled={busy || !body.trim()} type="submit">{busy ? "Enviando…" : "Enviar observación"}</button>{message && <p role="status">{message}</p>}</form>
     </div>

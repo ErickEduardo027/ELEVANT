@@ -30,6 +30,20 @@ public sealed class ServiceRequest : AuditableEntity
 
     public string? ContactPhone { get; set; }
 
+    public string? ContactNationalityCode { get; set; }
+
+    public string? ContactAddress { get; set; }
+
+    public string? ContactCountry { get; set; }
+
+    public string? ContactProvince { get; set; }
+
+    public string? ContactMunicipality { get; set; }
+
+    public string? ContactDocumentType { get; set; }
+
+    public string? ContactDocumentNumber { get; set; }
+
     public DateTimeOffset SubmittedAt { get; set; }
 
     public DateTimeOffset? ReviewedAt { get; set; }

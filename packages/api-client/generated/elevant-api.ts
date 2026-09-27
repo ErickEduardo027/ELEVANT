@@ -82,6 +82,21 @@ export interface AirlineContractPageResponse {
   contracts: AirlineContractResponse[];
 }
 
+export type CatalogMutationFailure = typeof CatalogMutationFailure[keyof typeof CatalogMutationFailure];
+
+
+export const CatalogMutationFailure = {
+  NUMBER_0: 0,
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface AirlineEnrichmentResult {
+  changed: number;
+  failure?: CatalogMutationFailure | null;
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -118,6 +133,14 @@ export interface AirlinePortalBootstrapResponse {
 
 export interface AssignOccOperationRequest {
   agentId: string;
+}
+
+export interface AuditFieldChangeData {
+  field: string;
+  /** @nullable */
+  before?: string | null;
+  /** @nullable */
+  after?: string | null;
 }
 
 export interface ChangePasswordRequest {
@@ -174,6 +197,20 @@ export interface CommercialRequestData {
   representativeTitle: string;
   representativeEmail: string;
   representativePhone: string;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
   authorityDeclared: boolean;
   status: string;
   submittedAt: string;
@@ -208,6 +245,7 @@ export interface ContractDraftRateData {
   billingUnit: string;
   unitPrice: number;
   minimumQuantity: number;
+  isConfirmed: boolean;
 }
 
 export interface ContractDraftData {
@@ -244,6 +282,8 @@ export interface CreateGovernanceUserInput {
   email: string;
   roleId: string;
   temporaryPassword: string;
+  /** @nullable */
+  rampAgentId?: string | null;
 }
 
 export interface CreateManualTurnaroundRequest {
@@ -476,6 +516,24 @@ export interface GovernanceAuditData {
   entityId?: string | null;
   /** @nullable */
   reason?: string | null;
+  actor: string;
+  changes: AuditFieldChangeData[];
+}
+
+export interface GovernanceAuditPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  entries: GovernanceAuditData[];
+}
+
+export interface GovernanceRampProfileData {
+  id: string;
+  name: string;
+  employeeNumber: string;
+  stations: string[];
+  /** @nullable */
+  accountId?: string | null;
 }
 
 export interface GovernanceRoleData {
@@ -501,6 +559,8 @@ export interface GovernanceUserData {
   portal: string;
   organization: string;
   mustChangePassword: boolean;
+  /** @nullable */
+  rampAgentId?: string | null;
 }
 
 export interface GovernanceSnapshot {
@@ -508,6 +568,53 @@ export interface GovernanceSnapshot {
   users: GovernanceUserData[];
   permissionCodes: string[];
   recentAudit: GovernanceAuditData[];
+  rampProfiles: GovernanceRampProfileData[];
+}
+
+export interface ManagedAirlineData {
+  id: string;
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  version: string;
+}
+
+export interface ManagedAirlineInput {
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface ManagedServiceData {
@@ -1209,6 +1316,29 @@ export interface RampOperationSubmissionResponse {
   agentNote?: string | null;
 }
 
+export interface RampProfileStation {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RampProfileData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employeeNumber: string;
+  category: string;
+  hireDate: string;
+  isActive: boolean;
+  stations: RampProfileStation[];
+  hasAccount: boolean;
+}
+
+export interface RampProfileCatalog {
+  profiles: RampProfileData[];
+  availableStations: RampProfileStation[];
+}
+
 export interface RegisterMobileDeviceRequest {
   installationId: string;
   /**
@@ -1285,6 +1415,16 @@ export interface SaveGovernanceRoleInput {
   isActive: boolean;
 }
 
+export interface SaveRampProfileInput {
+  firstName: string;
+  lastName: string;
+  employeeNumber: string;
+  category: string;
+  hireDate: string;
+  isActive: boolean;
+  stationIds: string[];
+}
+
 export interface SendOperationMessageRequest {
   content: string;
 }
@@ -1309,6 +1449,20 @@ export interface SubmitCommercialRequestRequest {
   representativeEmail: string;
   representativePhone: string;
   authorityDeclared: boolean;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -1361,6 +1515,7 @@ export interface UpdateDraftRateInput {
   billingUnit: string;
   unitPrice: number;
   minimumQuantity: number;
+  isConfirmed: boolean;
 }
 
 export interface UpdateContractDraftInput {
@@ -1378,6 +1533,8 @@ export interface UpdateGovernanceUserInput {
   email: string;
   roleId: string;
   isActive: boolean;
+  /** @nullable */
+  rampAgentId?: string | null;
 }
 
 export interface VerifyAirlineInput {
@@ -1400,6 +1557,10 @@ page?: number;
 limit?: number;
 };
 
+export type ArchiveManagedAirlineParams = {
+version?: string;
+};
+
 export type DeleteCommercialServiceParams = {
 version?: string;
 };
@@ -1408,6 +1569,11 @@ export type GetFinanceApprovedServicesParams = {
 stationId?: string;
 from?: string;
 to?: string;
+};
+
+export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
 };
 
 export type GetOccPlanningSnapshotParams = {
@@ -1658,6 +1824,168 @@ const res = await fetch(getChangePasswordUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getListManagedAirlinesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines`
+}
+
+export const listManagedAirlines = async ( options?: RequestInit): Promise<ManagedAirlineData[]> => {
+
+  const res = await fetch(getListManagedAirlinesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateManagedAirlineUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines`
+}
+
+export const createManagedAirline = async (managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateManagedAirlineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getEnrichManagedAirlinesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines/enrichment`
+}
+
+export const enrichManagedAirlines = async ( options?: RequestInit): Promise<AirlineEnrichmentResult> => {
+
+  const res = await fetch(getEnrichManagedAirlinesUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineEnrichmentResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateManagedAirlineUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/airlines/${id}`
+}
+
+export const updateManagedAirline = async (id: string,
+    managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateManagedAirlineUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getArchiveManagedAirlineUrl = (id: string,
+    params?: ArchiveManagedAirlineParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/airlines/${id}?${stringifiedParams}` : `/api/v1/governance/airlines/${id}`
+}
+
+export const archiveManagedAirline = async (id: string,
+    params?: ArchiveManagedAirlineParams, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+  const res = await fetch(getArchiveManagedAirlineUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -2254,6 +2582,41 @@ export const getGovernanceSnapshot = async ( options?: RequestInit): Promise<Gov
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: GovernanceSnapshot = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetGovernanceAuditUrl = (params?: GetGovernanceAuditParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/audit?${stringifiedParams}` : `/api/v1/governance/audit`
+}
+
+export const getGovernanceAudit = async (params?: GetGovernanceAuditParams, options?: RequestInit): Promise<GovernanceAuditPage> => {
+
+  const res = await fetch(getGetGovernanceAuditUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GovernanceAuditPage = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -3509,6 +3872,103 @@ const res = await fetch(getSubmitRampOperationUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampOperationSubmissionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListRampProfilesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles`
+}
+
+export const listRampProfiles = async ( options?: RequestInit): Promise<RampProfileCatalog> => {
+
+  const res = await fetch(getListRampProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileCatalog = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateRampProfileUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles`
+}
+
+export const createRampProfile = async (saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateRampProfileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveRampProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateRampProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/${id}`
+}
+
+export const updateRampProfile = async (id: string,
+    saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateRampProfileUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveRampProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileData = body ? JSON.parse(body) : {}
   return data
 }
 

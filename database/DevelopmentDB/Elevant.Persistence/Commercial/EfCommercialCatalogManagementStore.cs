@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -26,7 +27,8 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> SaveAsync(Guid actorId, Guid? serviceId,
         ManagedServiceInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.catalog.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId, serviceId is null ? "commercial.catalog.create" :
+            "commercial.catalog.edit", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         if (!Valid(input) || (serviceId is not null &&
             !TryVersion(input.Version, out _)))
@@ -49,6 +51,9 @@ internal sealed class EfCommercialCatalogManagementStore(
             if (!string.Equals(service.Code, input.Code.Trim(), StringComparison.OrdinalIgnoreCase))
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
         }
+        var beforeName = service.Name;
+        var beforePublic = service.IsPublic;
+        var beforeActive = service.IsActive;
         service.Code = input.Code.Trim().ToUpperInvariant();
         service.Name = input.Name.Trim();
         service.Description = input.Description.Trim();
@@ -65,7 +70,10 @@ internal sealed class EfCommercialCatalogManagementStore(
                 .Select(user => user.Id).SingleAsync(cancellationToken);
             CommercialAuditWriter.Add(context, actorDatabaseId,
                 serviceId is null ? "commercial.catalog.created" : "commercial.catalog.updated",
-                "ref.service_definitions", service.PublicId);
+                "ref.service_definitions", service.PublicId, null,
+                new AuditFieldChangeData("service.name", serviceId is null ? null : beforeName, service.Name),
+                new AuditFieldChangeData("service.public", serviceId is null ? null : beforePublic.ToString(), service.IsPublic.ToString()),
+                new AuditFieldChangeData("service.active", serviceId is null ? null : beforeActive.ToString(), service.IsActive.ToString()));
             await NotifyInternalAsync(service.PublicId, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return CatalogMutationResult.Success(Map(service));
@@ -83,7 +91,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> DeleteAsync(Guid actorId, Guid serviceId,
         string version, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.catalog.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "commercial.catalog.full", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         var service = await context.ServiceDefinitions.SingleOrDefaultAsync(
             item => item.PublicId == serviceId, cancellationToken);
@@ -98,7 +106,9 @@ internal sealed class EfCommercialCatalogManagementStore(
             var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
             CommercialAuditWriter.Add(context, actorDatabaseId,
-                "commercial.catalog.retired", "ref.service_definitions", service.PublicId);
+                "commercial.catalog.retired", "ref.service_definitions", service.PublicId,
+                null, new AuditFieldChangeData("service.active", true.ToString(), false.ToString()),
+                new AuditFieldChangeData("service.public", true.ToString(), false.ToString()));
             await NotifyInternalAsync(service.PublicId, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return CatalogMutationResult.Success(Map(service));

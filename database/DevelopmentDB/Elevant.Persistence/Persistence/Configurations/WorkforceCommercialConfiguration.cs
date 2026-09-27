@@ -228,6 +228,13 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(request => request.ContactTitle).HasMaxLength(120);
             builder.Property(request => request.ContactEmail).HasMaxLength(256).IsRequired();
             builder.Property(request => request.ContactPhone).HasMaxLength(32);
+            builder.Property(request => request.ContactNationalityCode).HasMaxLength(2);
+            builder.Property(request => request.ContactAddress).HasMaxLength(250);
+            builder.Property(request => request.ContactCountry).HasMaxLength(80);
+            builder.Property(request => request.ContactProvince).HasMaxLength(80);
+            builder.Property(request => request.ContactMunicipality).HasMaxLength(80);
+            builder.Property(request => request.ContactDocumentType).HasMaxLength(24);
+            builder.Property(request => request.ContactDocumentNumber).HasMaxLength(40);
             builder.Property(request => request.SubmittedAt).HasPrecision(3);
             builder.Property(request => request.ReviewedAt).HasPrecision(3);
             builder.Property(request => request.DecisionReason).HasMaxLength(1000);

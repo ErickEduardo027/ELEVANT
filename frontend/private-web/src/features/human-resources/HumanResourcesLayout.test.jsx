@@ -27,7 +27,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
   it('exposes only Dashboard and disables notification and placeholder profile actions', () => {
     render(<HumanResourcesLayout dashboardReadOnlyDemo />);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard']);
+    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'users']);
     expect(shellProps.notificationsPath).toBeUndefined();
     expect(shellProps.notificationsEnabled).toBe(false);
     expect(shellProps.profileActionsEnabled).toBe(false);

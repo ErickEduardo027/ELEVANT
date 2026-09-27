@@ -332,7 +332,9 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         var permissionCodes = new[]
         {
             "commercial.catalog.read", "commercial.catalog.write",
+            "commercial.catalog.create", "commercial.catalog.edit", "commercial.catalog.full",
             "commercial.requests.read", "commercial.requests.write",
+            "commercial.requests.edit", "commercial.requests.full",
             "iam.users.read", "iam.users.write", "iam.roles.read", "iam.roles.write",
             "iam.settings.read", "iam.settings.write",
         };
@@ -924,9 +926,15 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             ("América del Norte", "AMERICAN AIRLINES|AIR CANADA|AIR CANADA ROUGE|AIR TRANSAT|ALLEGIANT AIR|DELTA AIRLINES|FRONTIER AIRLINES|JETBLUE|NORWEGIAN AIR|SOUTHWEST AIRLINES|SUNCOUNTRY|SUNWING AIRLINES|SWIFT AIR|UNITED AIRLINES|XTRA AIRWAYS|WEST JET AIRLINES"),
             ("América del Sur", "AEROLINEAS ARGENTINAS|AVIANCA|COPA AIRLINES|GOL|LATIN AMERICAN WINGS|TAM AIRLINES|LANPERU|WINGO"),
         };
+        const string aviamClients = AviamAirlineReference.AviamClients;
+        var research = AviamAirlineReference.Research;
+        var verified = AviamAirlineReference.Verified;
+        var archived = AviamAirlineReference.Archived;
         foreach (var group in airlines)
         foreach (var name in group.Names.Split('|'))
         {
+            var details = research[name];
+            var hasVerifiedIdentity = verified.TryGetValue(name, out var identity);
             await GetOrAddAsync(context.CommercialAirlineProfiles,
                 item => item.SourceName == name,
                 () => Stamp(new CommercialAirlineProfile
@@ -934,9 +942,15 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                     SourceName = name,
                     DisplayName = name,
                     Region = group.Region,
-                    SourceUrl = "https://www.aviamltd.com/nosotros/",
-                    IsPublished = true,
-                    VerifiedAt = null,
+                    CountryCode = details.Country,
+                    SourceUrl = details.Site ?? aviamClients,
+                    LogoObjectKey = AviamAirlineReference.LogoPaths.GetValueOrDefault(name),
+                    IsPublished = !archived.Contains(name),
+                    LegalName = hasVerifiedIdentity ? identity.Legal : null,
+                    IataCode = hasVerifiedIdentity ? identity.Iata : null,
+                    IcaoCode = hasVerifiedIdentity ? identity.Icao : null,
+                    VerificationSourceUrl = hasVerifiedIdentity ? identity.Source : null,
+                    VerifiedAt = hasVerifiedIdentity ? FixtureInstant : null,
                 }, DeterministicGuid($"aviam-client:{name}").ToString("D")),
                 cancellationToken);
         }

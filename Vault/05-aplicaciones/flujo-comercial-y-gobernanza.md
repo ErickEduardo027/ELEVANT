@@ -18,6 +18,8 @@ sources:
   - backend/Elevant.Api/Hubs/PublicCatalogInvalidation.cs
   - backend/Elevant.Api/Controllers/CommercialProvisioningController.cs
   - backend/Elevant.Api/Controllers/GovernanceController.cs
+  - backend/Elevant.Api/Controllers/CommercialAirlineManagementController.cs
+  - backend/Elevant.Api/Controllers/RampProfilesController.cs
   - backend/Elevant.Api/Controllers/ContractDraftsController.cs
   - frontend/public-web/src/components/commercial/AccessRequestWizard.tsx
   - packages/api-client/src/client.ts
@@ -29,6 +31,9 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialCatalogStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialIntakeStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfContractDraftStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfGovernanceStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/AviamAirlineReference.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/PublicCommercialServiceVisibility.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialWorkflowStore.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs
@@ -49,14 +54,17 @@ flowchart LR
     L[Landing: Solicitar acceso] --> S[Servicios]
     S --> A[Aerolínea predefinida]
     A --> R[Representante]
-    R --> C[Contratos revisa]
+    R --> V[Resumen y confirmación]
+    V --> C[Contratos revisa]
     C -->|aprueba| U[Superadministrador crea acceso]
     C -->|declina| X[Solicitud rechazada]
     U --> B[Aerolínea revisa borrador]
     B --> T[Contratos ajusta y activa]
 ```
 
-El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas ofrece nombres históricos; los campos legales y logos quedan explícitamente pendientes de verificación. El representante no elige contraseña. Contratos verifica y decide; la aprobación crea un contrato en borrador. El superadministrador crea la cuenta con contraseña temporal y entrega manual. La aerolínea puede comentar el borrador y Contratos lo activa cuando cumple las condiciones de vigencia, servicios y estaciones.
+El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Cinco iconos de sitios oficiales se sirven localmente en ambas webs; los demás usan monogramas. Los campos no corroborados permanecen como «Sin dato confirmado». Superadministración administra las fichas y puede completar las filas de fixture aún intactas; el seed no actualiza datos existentes. El representante puede añadir datos opcionales y revisa un cuarto paso antes del envío. No elige contraseña. Contratos verifica y decide; la aprobación crea un contrato en borrador. El superadministrador crea la cuenta con contraseña temporal y entrega manual. La aerolínea puede comentar el borrador; cada tarifa pendiente aparece «por definir» hasta que Contratos la confirme. La activación exige todas las tarifas confirmadas, además de vigencia, servicios y estaciones.
+
+El módulo Usuarios muestra los roles personalizados con acciones Ver/Crear/Editar/Acceso completo y ofrece `RAMP_AGENT` sólo al vincular un perfil operativo de Gestión Humana con estación vigente. La [guía de rampa](../../docs/workflows/ramp-agent-readiness.md) distingue el perfil de la elegibilidad de OCC para una tarea concreta. Configuración lee auditoría paginada con actor y cambios de campos permitidos; contraseñas y correos no se incluyen en el detalle.
 
 El POST público vuelve a validar que los servicios elegidos sigan activos y publicados. La lista visible y la admisión usan el mismo predicado del servidor; un UUID conocido de un servicio interno no amplía el catálogo público. La admisión mantiene una transacción serializable entre esa lectura y su escritura: una retirada concurrente no se intercala entre ambas. Una relectura fallida en el formulario conserva la última selección y permite reintentar; el servidor sigue siendo la autoridad al enviar.
 El cliente compartido no introduce un máximo de 1 000 entradas que el endpoint de catálogo no promete; un catálogo mayor sigue sujeto a validación de forma e identificadores. Una futura paginación requiere un cambio coordinado de API y clientes.

@@ -15,7 +15,8 @@ export default function HumanResourcesLayout({
   const navigation = useMemo(
     () =>
       HUMAN_RESOURCES_NAVIGATION
-        .filter(item => !dashboardReadOnlyDemo || item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD)
+        .filter(item => !dashboardReadOnlyDemo ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD || item.id === HUMAN_RESOURCES_MODULE_IDS.USERS)
         .map(item =>
         item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
           ? {

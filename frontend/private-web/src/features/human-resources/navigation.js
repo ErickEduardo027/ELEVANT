@@ -44,10 +44,10 @@ export const HUMAN_RESOURCES_NAVIGATION = [
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.USERS,
-    label: 'Gestión de usuarios y cuentas',
+    label: 'Agentes de rampa',
     path: `${HUMAN_RESOURCES_BASE_PATH}/users`,
     icon: UsersIcon,
-    description: 'Creación, edición, activación y desactivación de cuentas y permisos.',
+    description: 'Perfiles operativos y estaciones; las cuentas se vinculan en Superadministración.',
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS,

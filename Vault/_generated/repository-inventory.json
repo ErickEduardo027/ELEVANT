@@ -1043,13 +1043,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "3b5e26ae3bd9df4b89129726bda0b348ee7202d71034ffe5050a0f3ce81d8ff9",
+        "sha256": "9e489a1a7274146a04da0f00cdf0be82dc189edfe2c51ecd7813adf777bec252",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "5e7545fd36e4f6981f2972c5f7ece30fc2fc9832e65994d34a6cc1e31142af66",
+        "sha256": "43f69ccf0ea9ba1a49ed3e8672e1e2df59e10516c4857c830d7f6c72ad51ed9a",
         "title": null,
         "version": null
       }
@@ -1150,6 +1150,18 @@
         "name": "ContractDraftConversation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926213514_ContractDraftConversation.cs",
         "sha256": "74ff5f78765cd6399878bcc2e12ba44a2f816f6dc4b752efc00fdef9d85b99b0"
+      },
+      {
+        "id": "20260927160653",
+        "name": "CommercialRepresentativeDetails",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927160653_CommercialRepresentativeDetails.cs",
+        "sha256": "28fe40402562efeafcfb57215714db4cc93bff2ef628e96624b3747ed02a1949"
+      },
+      {
+        "id": "20260927161819",
+        "name": "ContractRateConfirmation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927161819_ContractRateConfirmation.cs",
+        "sha256": "f53ec7cfac3181e46657f25e9bdab09f523b04b485bf88048e573e677f3fa606"
       }
     ],
     "manifestContracts": [

@@ -44,7 +44,36 @@ async function fillApplication() {
   fireEvent.change(screen.getByRole("textbox", { name: "Teléfono" }),
     { target: { value: "+1 809 555 0100" } });
   fireEvent.click(screen.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
 }
+
+it("shows a full confirmation step before sending the application", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  let posts = 0;
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("commercial-catalog"))
+      return new Response(JSON.stringify(catalog),
+        { headers: { "content-type": "application/json" } });
+    if (String(url).endsWith("commercial-requests") && init?.method === "POST") {
+      posts += 1;
+      return new Response(JSON.stringify({ reference: "REQ-1", replayed: false }),
+        { status: 201, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+
+  render(<AccessRequestWizard />);
+  await fillApplication();
+  expect(screen.getByText(/PASO 04 \/ 04/i)).toBeInTheDocument();
+  expect(screen.getByText("Baggage handling")).toBeInTheDocument();
+  expect(screen.getByText("Synthetic Airways")).toBeInTheDocument();
+  expect(screen.getByText(/alex@synthetic\.example\.test/)).toBeInTheDocument();
+  expect(posts).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
+  await screen.findByText("REQ-1");
+  expect(posts).toBe(1);
+});
 
 it("rejects a catalog with an unexpected private field", async () => {
   vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
