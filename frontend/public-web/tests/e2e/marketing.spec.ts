@@ -1,9 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-import {
-  DEMO_REQUEST_INVALID_MESSAGE,
-  DEMO_REQUEST_NO_TRANSMISSION_MESSAGE,
-} from "../../src/lib/demo-request";
+const serviceId = "20000000-0000-7000-8000-000000000006";
+const airlineId = "20000000-0000-7000-8000-000000000003";
+
+async function stubCommercialCatalog(page: import("@playwright/test").Page) {
+  await page.route("**/api/v1/public/commercial-catalog", route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      services: [{ id: serviceId, name: "Baggage handling", description: "Servicio de rampa",
+        imageUrl: null, videoUrl: null, displayOrder: 1 }],
+      airlines: [{ id: airlineId, name: "Synthetic Airways", region: "Caribbean",
+        legalName: null, countryCode: null, iataCode: null, icaoCode: null,
+        logoUrl: null, isVerified: false }],
+    }),
+  }));
+}
 
 test.describe("landing pública", () => {
   test.beforeEach(async ({ page }) => {
@@ -46,78 +56,50 @@ test.describe("landing pública", () => {
     });
     if (await closeMenu.isVisible()) await closeMenu.click();
 
-    const primaryCta = page
-      .locator(".hero")
-      .getByRole("link", { name: /Solicitar demostraci/i });
-    await expect(primaryCta).toHaveAttribute("href", "#demo");
+    await stubCommercialCatalog(page);
+    const primaryCta = page.locator(".hero")
+      .getByRole("link", { name: "Solicitar acceso" });
+    await expect(primaryCta).toHaveAttribute("href", "/solicitar-acceso");
     await primaryCta.click();
 
-    await expect(page).toHaveURL(/#demo$/);
+    await expect(page).toHaveURL(/\/solicitar-acceso$/);
     await expect(
       page.getByRole("heading", {
-        level: 2,
-        name: /Haga visible cada servicio/i,
+        level: 1,
+        name: /Su próxima escala empieza aquí/i,
       }),
     ).toBeVisible();
   });
 
-  test("valida localmente y comunica que ningún dato fue transmitido", async ({
+  test("envía la solicitud comercial canónica y confirma solo la referencia recibida", async ({
     page,
   }) => {
-    await page.goto("/#demo");
-    await page.waitForLoadState("networkidle");
-
-    const writeRequests: Array<{ method: string; url: string }> = [];
-    page.on("request", (request) => {
-      if (!["GET", "HEAD"].includes(request.method())) {
-        writeRequests.push({ method: request.method(), url: request.url() });
-      }
+    await stubCommercialCatalog(page);
+    const submissions: Array<Record<string, unknown>> = [];
+    await page.route("**/api/v1/public/commercial-requests", async route => {
+      submissions.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({ status: 201, contentType: "application/json",
+        body: JSON.stringify({ reference: "REQ-SYNTHETIC-001", replayed: false }) });
     });
-
-    const submit = page.getByRole("button", { name: /Preparar solicitud/i });
-    await submit.click();
-
-    await expect(
-      page.getByRole("alert").filter({ hasText: DEMO_REQUEST_INVALID_MESSAGE }),
-    ).toBeVisible();
-    const nameInput = page.getByRole("textbox", {
-      name: "Nombre",
-      exact: true,
-    });
-    await expect(nameInput).toBeFocused();
-    await expect(nameInput).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-
-    await nameInput.fill("Ana Pérez");
-    await page
-      .getByRole("textbox", { name: /^Aerol/i })
-      .fill("Aerolínea Ejemplo");
-    await page
-      .getByRole("textbox", { name: "Cargo", exact: true })
-      .fill("Gerente de operaciones");
-    await page
-      .getByRole("textbox", { name: "Correo corporativo", exact: true })
-      .fill("ana@aerolinea.example");
-    await page
-      .getByRole("textbox", { name: /^Estaci/i })
-      .fill("PUJ · República Dominicana");
-    await page
-      .getByRole("textbox", { name: "Necesidad operativa", exact: true })
-      .fill("Trazabilidad de servicios en rampa.");
-    await submit.click();
-
-    await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: DEMO_REQUEST_NO_TRANSMISSION_MESSAGE }),
-    ).toBeVisible();
-    await expect(page).toHaveURL(/\/#demo$/);
-    expect(writeRequests).toEqual([]);
+    await page.goto("/solicitar-acceso");
+    await page.getByRole("button", { name: "Añadir servicio +" }).click();
+    await page.getByRole("button", { name: /Continuar/i }).click();
+    await page.getByRole("combobox", { name: "Seleccione una aerolínea" }).selectOption(airlineId);
+    await page.getByRole("button", { name: /Continuar/i }).click();
+    await page.getByRole("textbox", { name: "Nombre completo" }).fill("Ana Synthetic");
+    await page.getByRole("textbox", { name: "Cargo" }).fill("Gerente de operaciones");
+    await page.getByRole("textbox", { name: "Correo corporativo" }).fill("ana@synthetic.example.test");
+    await page.getByRole("textbox", { name: "Teléfono" }).fill("+1 809 555 0100");
+    await page.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }).check();
+    await page.getByRole("button", { name: /Enviar solicitud/i }).click();
+    await expect(page.getByRole("status")).toContainText("REQ-SYNTHETIC-001");
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]).toMatchObject({ airlineProfileId: airlineId, serviceIds: [serviceId],
+      representativeEmail: "ana@synthetic.example.test", authorityDeclared: true });
+    expect(submissions[0]).not.toHaveProperty("password");
   });
 
-  test("navega al acceso mock para aerolíneas", async ({ page }) => {
+  test("navega al login real y ofrece la solicitud como enlace", async ({ page }) => {
     await page.goto("/");
 
     const menuToggle = page.getByRole("button", {
@@ -138,8 +120,10 @@ test.describe("landing pública", () => {
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole("tab", { name: "Iniciar sesión", exact: true }),
-    ).toHaveAttribute("aria-selected", "true");
+      page.getByRole("region", { name: "Iniciar sesión", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Solicitar acceso" }))
+      .toHaveAttribute("href", "/solicitar-acceso");
     await expect(
       page.getByRole("textbox", { name: "Correo corporativo", exact: true }),
     ).toBeVisible();

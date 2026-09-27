@@ -10,6 +10,9 @@ public sealed record ContractDraftData(Guid Id, Guid ContractId,
     string? Terms, IReadOnlyList<string> Stations,
     IReadOnlyList<ContractDraftRateData> Rates,
     IReadOnlyList<ContractDraftCommentData> Comments);
+public sealed record ContractDraftOverviewItemData(Guid Id, string ContractCode, string Airline);
+public sealed record ContractDraftOverviewData(int Count,
+    IReadOnlyList<ContractDraftOverviewItemData> Recent);
 public sealed record UpdateDraftRateInput(Guid Id, string BillingUnit,
     decimal UnitPrice, decimal MinimumQuantity);
 public sealed record UpdateContractDraftInput(DateOnly ValidFrom,
@@ -24,6 +27,8 @@ public sealed record ContractDraftResult(Guid? Id, ContractDraftFailure? Failure
 }
 public interface IContractDraftStore
 {
+    Task<ContractDraftOverviewData?> GetOverviewForContractsAsync(Guid actorId,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ContractDraftData>?> ListForAirlineAsync(Guid actorId,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ContractDraftData>?> ListForContractsAsync(Guid actorId,

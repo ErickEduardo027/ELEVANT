@@ -227,6 +227,17 @@ export interface ContractDraftData {
   comments: ContractDraftCommentData[];
 }
 
+export interface ContractDraftOverviewItemData {
+  id: string;
+  contractCode: string;
+  airline: string;
+}
+
+export interface ContractDraftOverviewData {
+  count: number;
+  recent: ContractDraftOverviewItemData[];
+}
+
 export interface CreateGovernanceUserInput {
   firstName: string;
   lastName: string;
@@ -2061,6 +2072,34 @@ export const getManagedContractDrafts = async ( options?: RequestInit): Promise<
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ContractDraftData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftOverviewUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/drafts/overview`
+}
+
+export const getManagedContractDraftOverview = async ( options?: RequestInit): Promise<ContractDraftOverviewData> => {
+
+  const res = await fetch(getGetManagedContractDraftOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftOverviewData = body ? JSON.parse(body) : {}
   return data
 }
 

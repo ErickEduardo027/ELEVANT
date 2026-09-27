@@ -14,6 +14,26 @@ internal sealed class EfContractDraftStore(
     IActorContextResolver actors,
     CommercialPermissionGuard permissions) : IContractDraftStore
 {
+    public async Task<ContractDraftOverviewData?> GetOverviewForContractsAsync(Guid actorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+            return null;
+        var drafts = await (from version in context.ContractVersions.AsNoTracking()
+            join contract in context.Contracts.AsNoTracking()
+                on version.ContractId equals contract.Id
+            join airline in context.Airlines.AsNoTracking()
+                on contract.AirlineId equals airline.Id
+            where version.Status == ContractVersionStatus.Draft &&
+                contract.Status == ContractStatus.Draft
+            orderby version.Id descending
+            select new { version.PublicId, contract.ContractCode, Airline = airline.Name })
+            .Take(100).ToArrayAsync(cancellationToken);
+        return new ContractDraftOverviewData(drafts.Length, drafts.Take(5)
+            .Select(item => new ContractDraftOverviewItemData(item.PublicId,
+                item.ContractCode, item.Airline)).ToArray());
+    }
+
     public async Task<IReadOnlyList<ContractDraftData>?> ListForAirlineAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {

@@ -82,7 +82,7 @@
 }
 
 .backLink:focus-visible,
-.tabs button:focus-visible,
+.tabs a:focus-visible,
 .primaryButton:focus-visible,
 .secondaryButton:focus-visible,
 .secondaryLink:focus-visible,
@@ -359,30 +359,32 @@
   background: #e8edf4;
 }
 
-.tabs button {
+.tabs :is(span, a) {
+  display: grid;
+  place-items: center;
   min-height: 2.85rem;
   padding: 0.65rem 0.45rem;
   border: 0;
   border-radius: 0.42rem;
   background: transparent;
   color: #4e6076;
-  cursor: pointer;
   font-size: 0.74rem;
   font-weight: 680;
   line-height: 1.2;
+  text-decoration: none;
   transition:
     background-color 180ms ease,
     box-shadow 180ms ease,
     color 180ms ease;
 }
 
-.tabs button[aria-selected="true"] {
+.tabs span[aria-current="page"] {
   background: var(--auth-white);
   box-shadow: 0 0.2rem 0.75rem rgb(14 37 66 / 9%);
   color: var(--auth-ink);
 }
 
-.tabs button:hover:not([aria-selected="true"]) {
+.tabs a:hover {
   color: var(--auth-blue);
 }
 
@@ -1214,54 +1216,54 @@
     padding-bottom: 1.25rem;
   }
 
-  .tabs button {
+  .tabs :is(span, a) {
     min-height: 2.55rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] {
+  .tabPanel[aria-labelledby="login-label"] {
     padding-top: 1.5rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .formHeader h2 {
+  .tabPanel[aria-labelledby="login-label"] .formHeader h2 {
     max-width: 16ch;
     margin-top: 0.55rem;
     font-size: clamp(2.35rem, 4vw, 3rem);
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .formHeader > p:last-child {
+  .tabPanel[aria-labelledby="login-label"] .formHeader > p:last-child {
     margin-top: 0.6rem;
     font-size: 0.82rem;
     line-height: 1.45;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .form {
+  .tabPanel[aria-labelledby="login-label"] .form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
     margin-top: 1.1rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .form > .field,
-  .tabPanel[aria-labelledby="login-tab"] .form > .formOptions,
-  .tabPanel[aria-labelledby="login-tab"] .form > .feedback {
+  .tabPanel[aria-labelledby="login-label"] .form > .field,
+  .tabPanel[aria-labelledby="login-label"] .form > .formOptions,
+  .tabPanel[aria-labelledby="login-label"] .form > .feedback {
     grid-column: 1 / -1;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .field {
+  .tabPanel[aria-labelledby="login-label"] .field {
     gap: 0.3rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .labelRow {
+  .tabPanel[aria-labelledby="login-label"] .labelRow {
     min-height: 1.1rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .field input,
-  .tabPanel[aria-labelledby="login-tab"] .passwordControl input,
-  .tabPanel[aria-labelledby="login-tab"] .primaryButton,
-  .tabPanel[aria-labelledby="login-tab"] .secondaryButton {
+  .tabPanel[aria-labelledby="login-label"] .field input,
+  .tabPanel[aria-labelledby="login-label"] .passwordControl input,
+  .tabPanel[aria-labelledby="login-label"] .primaryButton,
+  .tabPanel[aria-labelledby="login-label"] .secondaryButton {
     min-height: 2.75rem;
   }
 
-  .tabPanel[aria-labelledby="login-tab"] .formDisclaimer {
+  .tabPanel[aria-labelledby="login-label"] .formDisclaimer {
     margin-top: 0.8rem;
     padding-top: 0.7rem;
     font-size: 0.62rem;
@@ -1304,7 +1306,7 @@
 
   .skipLink,
   .backLink,
-  .tabs button,
+  .tabs a,
   .field input,
   .field textarea,
   .passwordControl input,

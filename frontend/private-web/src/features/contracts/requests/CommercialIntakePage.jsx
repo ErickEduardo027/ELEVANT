@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { decideCommercialRequest, getCommercialRequests, getCommercialStations, verifyCommercialAirline } from '../../../services/commercialGovernanceApi';
 
 const labels = { Pending: 'Pendiente', InReview: 'En revisión', Approved: 'Aprobada', Rejected: 'Rechazada', Cancelled: 'Cancelada' };
@@ -19,6 +20,7 @@ export default function CommercialIntakePage({ canWrite = true }) {
     } catch (failure) { setStatus('error'); setError(failure.message); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  useCommercialRevalidation(reload);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('commercial_requests')) void reload();

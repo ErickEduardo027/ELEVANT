@@ -6,7 +6,8 @@ import { MockSessionProvider } from "@/components/auth/MockSessionProvider";
 import { AuthExperience } from "@/components/auth/AuthExperience";
 
 const replace = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push }) }));
 vi.mock("@/lib/airline-change-observer", () => ({
   createPublicAirlineChangeObserver: () => ({
     start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
@@ -30,7 +31,18 @@ const bootstrap: AirlinePortalBootstrapResponse = {
 };
 
 afterEach(() => {
-  cleanup(); replace.mockReset(); sessionStorage.clear(); localStorage.clear(); vi.unstubAllGlobals();
+  cleanup(); replace.mockReset(); push.mockReset(); sessionStorage.clear(); localStorage.clear(); vi.unstubAllGlobals();
+});
+
+it("sends registration from the airline login to the canonical commercial request", async () => {
+  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider></MockSessionProvider>);
+
+  expect(await screen.findByRole("link", { name: "Solicitar acceso" }))
+    .toHaveAttribute("href", "/solicitar-acceso");
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "Razón social" })).not.toBeInTheDocument();
 });
 
 it("uses Public Web login for the real API and never offers demo credentials", async () => {

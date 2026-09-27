@@ -421,7 +421,7 @@
         "title": "Solicitud comercial y gobernanza",
         "type": "capability",
         "area": "applications",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -1043,13 +1043,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "5a8b1233842d165dc37dd3ebdb0852024cdfcb20a1411df22fd351f7c2be9292",
+        "sha256": "3b5e26ae3bd9df4b89129726bda0b348ee7202d71034ffe5050a0f3ce81d8ff9",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "1c963e48b986416bfd8d1718d303e2a1c4278f98bc947ee1f052e6b78adb8cc2",
+        "sha256": "5e7545fd36e4f6981f2972c5f7ece30fc2fc9832e65994d34a6cc1e31142af66",
         "title": null,
         "version": null
       }

@@ -1,6 +1,8 @@
 import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
+  getGetPublicCommercialCatalogUrl,
+  getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
@@ -38,6 +40,9 @@ import {
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
+  type PublicCommercialCatalog,
+  type SubmitCommercialRequestRequest,
+  type SubmitCommercialRequestResponse,
   type FinanceApprovedServicesResponse,
   type CreatePreinvoiceDraftRequest,
   type CreatePreinvoiceDraftResponse,
@@ -117,6 +122,8 @@ export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -204,6 +211,13 @@ export interface ElevantApiClient {
     parameters?: GetAirlineContractsParams,
     options?: GetAirlineContractsOptions,
   ): Promise<AirlineContractPageResponse>;
+  getPublicCommercialCatalog(
+    options?: GetPublicCommercialCatalogOptions,
+  ): Promise<PublicCommercialCatalog>;
+  submitCommercialRequest(
+    request: SubmitCommercialRequestRequest,
+    options?: SubmitCommercialRequestOptions,
+  ): Promise<SubmitCommercialRequestResponse>;
   getFinanceApprovedServices(
     query: FinanceApprovedServicesQuery,
     options?: GetFinanceApprovedServicesOptions,
@@ -1702,6 +1716,54 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
           isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
 }
 
+function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
+      !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
+  const services = value.services.every((item: unknown) => isRecord(item) &&
+    hasOnlyKeys(item, ["id", "name", "description", "imageUrl", "videoUrl", "displayOrder"]) &&
+    isUuid(item.id) && isNonEmptyString(item.name) && isString(item.description) &&
+    isOptionalNullable(item.imageUrl, isString) &&
+    isOptionalNullable(item.videoUrl, isString) && isInt32(item.displayOrder));
+  const airlines = value.airlines.every((item: unknown) => isRecord(item) &&
+    hasOnlyKeys(item, ["id", "name", "region", "legalName", "countryCode",
+      "iataCode", "icaoCode", "logoUrl", "isVerified"]) &&
+    isUuid(item.id) && isNonEmptyString(item.name) && isNonEmptyString(item.region) &&
+    isOptionalNullable(item.legalName, isString) &&
+    isOptionalNullable(item.countryCode, isString) &&
+    isOptionalNullable(item.iataCode, isString) &&
+    isOptionalNullable(item.icaoCode, isString) &&
+    isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean");
+  return services && airlines &&
+    new Set(value.services.map(item => item.id.toLowerCase())).size === value.services.length &&
+    new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length;
+}
+
+function validatedCommercialRequest(
+  request: SubmitCommercialRequestRequest,
+): SubmitCommercialRequestRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["requestId", "airlineProfileId",
+    "serviceIds", "representativeName", "representativeTitle",
+    "representativeEmail", "representativePhone", "authorityDeclared"]) ||
+    !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
+    !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
+    request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
+    new Set(request.serviceIds.map(id => id.toLowerCase())).size !== request.serviceIds.length ||
+    !isNonEmptyString(request.representativeName) || request.representativeName.length > 160 ||
+    !isNonEmptyString(request.representativeTitle) || request.representativeTitle.length > 120 ||
+    !isNonEmptyString(request.representativeEmail) || request.representativeEmail.length > 256 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.representativeEmail) ||
+    !isNonEmptyString(request.representativePhone) || request.representativePhone.length > 32 ||
+    request.authorityDeclared !== true)
+    throw new TypeError("Commercial application is invalid.");
+  return request as unknown as SubmitCommercialRequestRequest;
+}
+
+function isCommercialRequestReceipt(value: unknown): value is SubmitCommercialRequestResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["reference", "replayed"]) &&
+    isNonEmptyString(value.reference) && value.reference.length <= 128 &&
+    typeof value.replayed === "boolean";
+}
+
 function validatedFinanceApprovedServicesQuery(
   query: FinanceApprovedServicesQuery,
 ): FinanceApprovedServicesQuery {
@@ -2389,6 +2451,26 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAirlineContractPageResponse(result.data) ||
         result.data.page !== (paging.page ?? 1) ||
         result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getPublicCommercialCatalog(options?: GetPublicCommercialCatalogOptions) {
+      const result = await execute(getGetPublicCommercialCatalogUrl(),
+        { ...options, method: "GET" });
+      if (!isPublicCommercialCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async submitCommercialRequest(
+      request: SubmitCommercialRequestRequest,
+      options?: SubmitCommercialRequestOptions,
+    ) {
+      const body = validatedCommercialRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSubmitCommercialRequestUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) });
+      if (!isCommercialRequestReceipt(result.data) ||
+        result.status !== (result.data.replayed ? 200 : 201))
         throw malformedResponse(result.status);
       return result.data;
     },

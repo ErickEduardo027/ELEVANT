@@ -17,7 +17,8 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/contracts/catalog/services")]
 public sealed class CommercialCatalogManagementController(
     ICommercialCatalogManagementStore store,
-    IHubContext<PublicCatalogHub> hub) : ControllerBase
+    IHubContext<PublicCatalogHub> hub,
+    ILogger<CommercialCatalogManagementController> logger) : ControllerBase
 {
     [HttpGet(Name = "ListManagedCommercialServices")]
     [ProducesResponseType<ManagedServiceData[]>(StatusCodes.Status200OK, "application/json")]
@@ -37,7 +38,8 @@ public sealed class CommercialCatalogManagementController(
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.SaveAsync(actorId, null, input, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value);
-        await hub.Clients.All.SendAsync("CatalogChangedV1", cancellationToken);
+        await PublicCatalogInvalidation.TrySendAsync(
+            token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return StatusCode(201, result.Service);
     }
 
@@ -50,7 +52,8 @@ public sealed class CommercialCatalogManagementController(
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.SaveAsync(actorId, id, input, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value);
-        await hub.Clients.All.SendAsync("CatalogChangedV1", cancellationToken);
+        await PublicCatalogInvalidation.TrySendAsync(
+            token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return Ok(result.Service);
     }
 
@@ -62,7 +65,8 @@ public sealed class CommercialCatalogManagementController(
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.DeleteAsync(actorId, id, version, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value);
-        await hub.Clients.All.SendAsync("CatalogChangedV1", cancellationToken);
+        await PublicCatalogInvalidation.TrySendAsync(
+            token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return Ok(result.Service);
     }
 

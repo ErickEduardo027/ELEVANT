@@ -10,7 +10,7 @@ internal sealed class EfCommercialCatalogStore(ElevantDbContext context) : IComm
         CancellationToken cancellationToken = default)
     {
         var services = await context.ServiceDefinitions.AsNoTracking()
-            .Where(service => service.IsActive && service.IsPublic)
+            .Where(PublicCommercialServiceVisibility.PublishedActive)
             .OrderBy(service => service.DisplayOrder).ThenBy(service => service.Name)
             .Select(service => new PublicServiceData(service.PublicId, service.Name,
                 service.Description ?? string.Empty, service.ImageUrl, service.VideoUrl,

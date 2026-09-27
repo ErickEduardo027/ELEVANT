@@ -17,7 +17,8 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/contracts/commercial-requests")]
 public sealed class CommercialRequestsManagementController(
     ICommercialWorkflowStore store,
-    IHubContext<PublicCatalogHub> publicCatalogHub) : ControllerBase
+    IHubContext<PublicCatalogHub> publicCatalogHub,
+    ILogger<CommercialRequestsManagementController> logger) : ControllerBase
 {
     [HttpGet(Name = "ListCommercialRequests")]
     [ProducesResponseType<CommercialRequestData[]>(StatusCodes.Status200OK, "application/json")]
@@ -46,7 +47,8 @@ public sealed class CommercialRequestsManagementController(
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.VerifyAirlineAsync(actorId, profileId, input, cancellationToken);
         if (result.IsSuccess)
-            await publicCatalogHub.Clients.All.SendAsync("CatalogChangedV1", cancellationToken);
+            await PublicCatalogInvalidation.TrySendAsync(
+                token => publicCatalogHub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return result.Failure is null ? Ok(new CommercialIdResponse(result.ResourceId!.Value)) : Failure(result.Failure.Value);
     }
 

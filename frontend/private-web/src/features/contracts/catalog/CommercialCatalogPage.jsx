@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { deleteManagedService, getManagedServices, saveManagedService } from '../../../services/commercialGovernanceApi';
 
 const empty = { code: '', name: '', description: '', billingUnit: 'operación', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
@@ -16,6 +17,7 @@ export default function CommercialCatalogPage({ canWrite = true }) {
     catch (failure) { setStatus('error'); setError(failure.message); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  useCommercialRevalidation(reload);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('commercial_catalog')) void reload();

@@ -109,6 +109,14 @@ internal sealed class EfCommercialWorkflowStore(
         profile.UpdatedAt = DateTimeOffset.UtcNow;
         CommercialAuditWriter.Add(context, accountId, "commercial.airline.verified",
             "commercial.airline_profiles", profile.PublicId);
+        // The resource invalidates the list, so one existing request is sufficient per reader.
+        var affectedRequestId = await context.ServiceRequests.AsNoTracking()
+            .Where(request => request.AirlineProfileId == profile.Id &&
+                (request.Status == CommercialRequestStatus.Pending ||
+                 request.Status == CommercialRequestStatus.InReview))
+            .Select(request => request.PublicId).FirstOrDefaultAsync(cancellationToken);
+        if (affectedRequestId != Guid.Empty)
+            await NotifyRequestReadersAsync(affectedRequestId, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return CommercialWorkflowResult.Success(profile.PublicId);
     }
@@ -149,6 +157,7 @@ internal sealed class EfCommercialWorkflowStore(
                 CommercialAuditWriter.Add(context, actorDatabaseId,
                     "commercial.request.rejected", "commercial.service_requests",
                     request.PublicId, request.DecisionReason);
+                await NotifyRequestReadersAsync(request.PublicId, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return CommercialWorkflowResult.Success(request.PublicId);
@@ -248,6 +257,7 @@ internal sealed class EfCommercialWorkflowStore(
             AddStatusEvent(request.Id, oldStatus, request.Status, actorDatabaseId, now, null);
             CommercialAuditWriter.Add(context, actorDatabaseId,
                 "commercial.request.approved", "commercial.service_requests", request.PublicId);
+            await NotifyRequestReadersAsync(request.PublicId, cancellationToken);
             var superAdminIds = await (from assignment in context.Set<IdentityUserRole<long>>()
                 join role in context.Roles on assignment.RoleId equals role.Id
                 join user in context.Users on assignment.UserId equals user.Id
@@ -270,6 +280,17 @@ internal sealed class EfCommercialWorkflowStore(
             ServiceRequestId = requestId, FromStatus = from, ToStatus = to,
             ActorAccountId = actorId, OccurredAt = now, Reason = reason,
         });
+
+    private async Task NotifyRequestReadersAsync(Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
+            "commercial.requests.read", cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var recipient in recipients)
+            AccountChangeOutboxWriter.Add(context, recipient, null,
+                "commercial_requests", requestId, now);
+    }
 
     private static bool ValidText(string? value, int max) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;

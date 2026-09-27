@@ -68,6 +68,7 @@ export const deleteManagedService = (id, version) => commercialApi(`/contracts/c
   method: 'DELETE',
 });
 export const getManagedDrafts = () => commercialApi('/contracts/drafts');
+export const getManagedDraftOverview = () => commercialApi('/contracts/drafts/overview');
 export const updateManagedDraft = (id, values) => commercialApi(`/contracts/drafts/${id}`, {
   method: 'PUT', body: JSON.stringify(values),
 });

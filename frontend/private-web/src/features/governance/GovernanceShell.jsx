@@ -5,6 +5,7 @@ import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon } from '../shell/componen
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../hooks/useCommercialRevalidation';
 import {
   getGovernance, getProvisioning, provisionAirline,
   createRole, updateRole, deactivateRole, createUser, updateUser,
@@ -42,6 +43,7 @@ export default function GovernanceShell({ user, onLogout }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useCommercialRevalidation(refresh);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.some(resource => ['account_provisioning', 'commercial_requests', 'airline_contracts'].includes(resource))) void refresh();

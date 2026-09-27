@@ -2,7 +2,7 @@
 
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
-El botón naranja **Solicitar acceso** abre `/solicitar-acceso`: servicios en carrusel, aerolínea predefinida con ficha de solo lectura y datos del representante. El catálogo y la solicitud usan la API real; Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones, además de consultar el historial aprobado. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).
+El botón naranja **Solicitar acceso** abre `/solicitar-acceso`: servicios en carrusel, aerolínea predefinida con ficha de solo lectura y datos del representante. El catálogo y la solicitud usan la API real; una caída temporal al releer el catálogo conserva el formulario y muestra un reintento, mientras la API valida otra vez la visibilidad al enviarlo. Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones, además de consultar el historial aprobado. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
@@ -54,7 +54,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 
 - `/`: landing y acceso al flujo comercial real.
 - `/solicitar-acceso`: solicitud comercial en tres pasos; no crea usuario ni acepta contraseña.
-- `/login`: sesión real de aerolínea y cambio de contraseña temporal; la afiliación sigue siendo una vista prototípica.
+- `/login`: sesión real de aerolínea y cambio de contraseña temporal. El acceso heredado a `/login?mode=register` redirige a `/solicitar-acceso`; no existe un alta paralela con contraseña elegida por el solicitante.
 - `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
 - `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
@@ -70,7 +70,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-Las tarjetas de ejemplo están etiquetadas como datos de demostración y no pertenecen al tenant autenticado. El formulario comercial permanece en modo preview y no transmite solicitudes mientras no exista su contrato de backend. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme».
+Las tarjetas de ejemplo están etiquetadas como datos de demostración y no pertenecen al tenant autenticado. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme».
 
 ## Criterio de promoción en Development
 

@@ -2,8 +2,10 @@
 
 ## Resultado esperado
 
-Una aerolínea solicita afiliación en Public Web, Contratos aprueba su acceso y
-un contrato versionado, OCC registra una escala manual, programa los servicios
+Un representante solicita acceso desde el catálogo de Public Web; Contratos
+verifica la aerolínea y aprueba la solicitud, Superadministrador provisiona la
+cuenta, y Contratos negocia y activa un contrato versionado. Luego OCC registra
+una escala manual y programa los servicios
 contratados y asigna personal habilitado, Mobile Agent ejecuta y entrega, OCC
 revisa, Finanzas concilia y emite una factura de prueba, y finalmente registra
 un pago completo de prueba para que la aerolínea descargue su recibo. Public
@@ -15,10 +17,12 @@ datos locales no son contratos ni estado de negocio.
 
 - Development únicamente. `database/ProductionDB` sigue reservado; ninguna
   migración, seed ni promoción de este programa se ejecuta en Production.
-- La aerolínea elige clave durante la solicitud. La cuenta queda pendiente y
-  sin acceso a datos de aerolínea hasta aprobación de Contratos. Como no hay
-  verificación de correo, esta alta se habilita solo en Development, con
-  protección de abuso y sin recuperación por correo simulada.
+- La solicitud pública de #114 no recibe contraseña ni crea cuenta. Usa una
+  aerolínea predefinida como referencia, no como identidad legal acreditada.
+  Contratos verifica la identidad y aprueba; Superadministrador provisiona una
+  cuenta con clave temporal y cambio obligatorio. No hay verificación de
+  correo ni entrega automática de credenciales: se usa un canal manual
+  autorizado en Development. No se habilita acceso antes de la provisión.
 - OCC registra vuelos manuales con procedencia auditable. FlightAware no está
   implementado. El catálogo contractual, no una solicitud repetida por vuelo,
   determina los servicios base; los adicionales conservan aprobación propia.
@@ -50,6 +54,11 @@ respaldo; ignoran avisos duplicados o fuera de orden. Se revalida el acceso
 actual antes de leer eventos o documentos. Un WebSocket no es la fuente de
 verdad y no promete visualización instantánea sin red.
 
+El catálogo público de #114 emite `CatalogChangedV1` sin datos privados y
+relee HTTP; su polling es respaldo. No se añade una segunda alta pública ni
+otra migración de solicitantes. La cuenta de aerolínea nace solo durante la
+provisión autorizada por Superadministrador.
+
 Con red disponible en la carga de aceptación: p95 de cambio visible menor de
 3 segundos y convergencia por fallback antes de 30 segundos. Mobile Agent
 sincroniza al volver al primer plano y reproduce comandos pendientes con
@@ -59,8 +68,10 @@ que exista backplane y afinidad probados.
 
 ## Interfaces y estado
 
-OpenAPI define la superficie de afiliación, catálogo, solicitudes, contrato,
-turnos, habilitaciones, vuelos/operaciones, prefactura, disputa, conciliación,
+OpenAPI define la superficie comercial canónica de #114: catálogo público,
+solicitud pública, revisión de Contratos, provisión de Superadministrador y
+borrador/activación de contrato. La integración extiende turnos,
+habilitaciones, vuelos/operaciones, prefactura, disputa, conciliación,
 factura, pago, recibo, documentos, reportes y feed de cambios. Las escrituras
 usan UUID públicos, control de concurrencia, idempotencia donde un reintento
 puede duplicar efectos y `ProblemDetails`; el servidor deriva tenant, estación
@@ -75,6 +86,12 @@ coherente, operaciones actuales y futuras, importes reconciliables y casos
 abiertos; no reemplaza filas existentes. El nombre visible del tenant legado
 se cambia mediante una acción administrativa auditada, conservando identidad
 y relaciones. Credenciales permanecen fuera del repositorio y artefactos CI.
+
+La base de implementación es el merge #114 en `Development`. La rama previa
+de afiliación pendiente queda preservada solo como referencia: sus endpoints
+de alta y cola, su migración de solicitantes y su formulario con contraseña
+no se fusionan con #114. Se portan solo hallazgos y pruebas compatibles con
+el flujo solicitud pública → Contratos → Superadministrador.
 
 Cada módulo tiene pruebas RED→GREEN de reglas y SQL real. Un Playwright live,
 sin stubs de `/api/v1/**`, prueba Public Web y AVIAM Web contra el mismo API/DB;
