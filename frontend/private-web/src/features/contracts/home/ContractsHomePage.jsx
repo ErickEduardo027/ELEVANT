@@ -1,5 +1,5 @@
 import KpiCard from '../../../components/KpiCard';
-import { ContractIcon, RequestIcon, ServiceIcon, ArrowIcon } from '../components/icons';
+import { ContractIcon, RequestIcon, ArrowIcon } from '../components/icons';
 
 const statusLabels = {
   Pending: 'Pendiente', InReview: 'En revisión', Approved: 'Aprobada',
@@ -31,7 +31,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
       <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
-      <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Solicitudes comerciales, borradores y servicios publicados en Development.</p>
+      <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Solicitudes comerciales y borradores contractuales en Development.</p>
       <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">La API devuelve hasta 200 solicitudes recientes y 100 borradores; los indicadores reflejan ese alcance.</p>
       {status === 'refreshing' && <p role="status" className="mt-2 text-xs font-semibold text-accent-600">Actualizando datos…</p>}
     </div>
@@ -39,7 +39,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
       <KpiCard label="Solicitudes pendientes" value={kpis?.pendingRequests ?? 0} icon={RequestIcon} loading={isLoading} />
       <KpiCard label="Solicitudes aprobadas" value={kpis?.approvedRequests ?? 0} icon={RequestIcon} loading={isLoading} />
       <KpiCard label="Borradores por activar" value={kpis?.pendingDrafts ?? 0} icon={ContractIcon} loading={isLoading} />
-      <KpiCard label="Servicios públicos activos" value={kpis?.publishedServices ?? 0} icon={ServiceIcon} loading={isLoading} />
+      <KpiCard label="Solicitudes rechazadas" value={kpis?.rejectedRequests ?? 0} icon={RequestIcon} loading={isLoading} />
     </div>
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
       <SectionCard title="Solicitudes recientes" actionLabel="Ver solicitudes" onAction={() => onNavigate('contracts-requests')}>

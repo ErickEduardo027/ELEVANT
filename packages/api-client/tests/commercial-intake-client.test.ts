@@ -41,6 +41,22 @@ describe("canonical public commercial intake client", () => {
     await expect(unsafe.getPublicCommercialCatalog()).rejects.toMatchObject({ kind: "malformed-response" });
   });
 
+  it("accepts the full server catalog without an undocumented client-only size cap", async () => {
+    const largeCatalog = {
+      ...catalog,
+      services: Array.from({ length: 1001 }, (_, index) => ({
+        ...catalog.services[0], id: `20000000-0000-7000-8000-${String(index).padStart(12, "0")}`,
+      })),
+      airlines: Array.from({ length: 1001 }, (_, index) => ({
+        ...catalog.airlines[0], id: `30000000-0000-7000-8000-${String(index).padStart(12, "0")}`,
+      })),
+    };
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify(largeCatalog),
+        { headers: { "content-type": "application/json" } }) });
+    await expect(client.getPublicCommercialCatalog()).resolves.toEqual(largeCatalog);
+  });
+
   it("posts a stable request id without credentials and accepts a new or replayed receipt", async () => {
     const calls: Array<{ body: unknown; auth: string | null }> = [];
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",

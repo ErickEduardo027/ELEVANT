@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Sidebar from '../../shell/components/Sidebar';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import Topbar from '../../dashboard/components/Topbar';
@@ -15,6 +15,7 @@ import ContractReportsPage from '../reports/ContractReportsPage';
 import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
 
@@ -28,6 +29,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   const [retryToken, setRetryToken] = useState(0);
   const home = useContractsHomeData(retryToken);
   const pendingReal = home.data?.kpis?.pendingRequests ?? 0;
+  const revalidateHome = useCallback(() => setRetryToken(token => token + 1), []);
+  useCommercialRevalidation(revalidateHome);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
@@ -38,14 +41,14 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   useEffect(() => {
     if (import.meta.env.MODE === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['commercial_requests', 'commercial_catalog',
+      if (resources.some(resource => ['commercial_requests',
         'contract_draft_comments', 'airline_contracts'].includes(resource))) {
-        setRetryToken(token => token + 1);
+        revalidateHome();
       }
     });
     void observer.start();
     return () => { void observer.stop(); };
-  }, []);
+  }, [revalidateHome]);
 
   const activeModule = CONTRACT_MODULES.find(module => module.id === activeModuleId) ?? CONTRACT_MODULES[0];
 
@@ -75,7 +78,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
-            <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} />
+            <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
             <ContractsPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (

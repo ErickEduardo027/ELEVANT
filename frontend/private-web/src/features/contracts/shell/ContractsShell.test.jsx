@@ -5,7 +5,7 @@ import ContractsShell from './ContractsShell';
 
 vi.mock('../../../services/contractsHomeService', () => ({
   getContractsHomeSnapshot: vi.fn().mockResolvedValue({
-    kpis: { pendingRequests: 1, approvedRequests: 0, pendingDrafts: 1, publishedServices: 2 },
+    kpis: { pendingRequests: 1, approvedRequests: 0, pendingDrafts: 1, rejectedRequests: 0 },
     recentRequests: [{ id: 'one', reference: 'SOL-1', airline: 'Sky High', status: 'Pending', submittedAt: '2026-09-27T10:00:00Z' }],
     pendingDrafts: [{ id: 'two', contractCode: 'DRAFT-2', airline: 'Arajet', comments: [] }],
   }),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { activateManagedDraft, getManagedDrafts, updateManagedDraft } from '../../../services/commercialGovernanceApi';
 
 export default function ManagedDraftsPage({ canWrite = true }) {
@@ -14,6 +15,7 @@ export default function ManagedDraftsPage({ canWrite = true }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  useCommercialRevalidation(reload);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('contract_draft_comments')) void reload();

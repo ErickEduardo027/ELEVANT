@@ -1718,8 +1718,7 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
 
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
   if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
-      !Array.isArray(value.services) || value.services.length > 1000 ||
-      !Array.isArray(value.airlines) || value.airlines.length > 1000) return false;
+      !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
   const services = value.services.every((item: unknown) => isRecord(item) &&
     hasOnlyKeys(item, ["id", "name", "description", "imageUrl", "videoUrl", "displayOrder"]) &&
     isUuid(item.id) && isNonEmptyString(item.name) && isString(item.description) &&

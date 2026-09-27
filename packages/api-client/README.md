@@ -6,6 +6,9 @@ público actual usa `GetPublicCommercialCatalog` y `SubmitCommercialRequest`
 para solicitar servicios sin elegir contraseña. Contratos aprueba o rechaza y
 el superadministrador crea las credenciales manualmente. Los endpoints de
 gobernanza, catálogo administrado y borradores también están en el snapshot.
+El cliente valida la forma y los identificadores únicos del catálogo, pero no
+impone un máximo de filas ausente del contrato HTTP; la paginación del catálogo
+deberá añadirse de forma coordinada si el volumen lo requiere.
 
 `getAccountChanges({ after?, limit? })` consulta el feed recuperable por
 cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan
