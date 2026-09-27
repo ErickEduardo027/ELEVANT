@@ -24,11 +24,13 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,6 +100,60 @@ public sealed class SqlServerMigrationTests
             (await handler.HandleAsync(hiddenRequest, cancellationToken)).Failure);
         Assert.False(await context.ServiceRequests.AnyAsync(
             item => item.PublicId == hiddenRequest.RequestId, cancellationToken));
+    }
+
+    [Fact]
+    public async Task PublicIntakeHoldsServiceVisibilityUntilSubmissionCommits()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(InitialPasswords, cancellationToken);
+
+        var blocker = new SavingChangesGate();
+        var options = new DbContextOptionsBuilder<ElevantDbContext>()
+            .UseSqlServer(database.ConnectionString, ElevantSqlServerOptions.Configure)
+            .AddInterceptors(blocker).Options;
+        await using var intakeContext = new ElevantDbContext(options);
+        await using var catalogContext = CreateContext(database.ConnectionString);
+        var catalog = await new EfCommercialCatalogStore(catalogContext)
+            .GetPublicAsync(cancellationToken);
+        var serviceId = catalog.Services[0].Id;
+        var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
+            catalog.Airlines[0].Id, [serviceId], "María Pérez", "Representante legal",
+            "maria@example.test", "+1 809 555 0100", true);
+        var submission = new EfCommercialIntakeStore(intakeContext)
+            .SubmitAsync(command, cancellationToken);
+        await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+
+        await using var retirementConnection = new SqlConnection(database.ConnectionString);
+        await retirementConnection.OpenAsync(cancellationToken);
+        await using var retirement = retirementConnection.CreateCommand();
+        retirement.CommandText = """
+            SET LOCK_TIMEOUT 1000;
+            UPDATE [ref].[service_definitions] SET [is_public] = 0
+            WHERE [public_id] = @serviceId;
+            """;
+        retirement.Parameters.AddWithValue("@serviceId", serviceId);
+        Exception? retirementFailure;
+        try
+        {
+            retirementFailure = await Record.ExceptionAsync(async () =>
+                await retirement.ExecuteNonQueryAsync(cancellationToken));
+        }
+        finally
+        {
+            blocker.Release();
+        }
+        Assert.True((await submission).IsSuccess);
+        Assert.Equal(1222, Assert.IsType<SqlException>(retirementFailure).Number);
     }
 
     [Fact]
@@ -198,11 +254,38 @@ public sealed class SqlServerMigrationTests
                 cancellationToken)).Failure);
 
         var drafts = scope.ServiceProvider.GetRequiredService<IContractDraftStore>();
+        var overview = (await drafts.GetOverviewForContractsAsync(
+            contractsAccountId, cancellationToken))!;
+        Assert.Equal(1, overview.Count);
+        Assert.Equal(version.PublicId, Assert.Single(overview.Recent).Id);
+        Assert.Null(await drafts.GetOverviewForContractsAsync(
+            provisioned.AccountId!.Value, cancellationToken));
         var airlineDraft = Assert.Single((await drafts.ListForAirlineAsync(
             provisioned.AccountId!.Value, cancellationToken))!);
         Assert.Equal(version.PublicId, airlineDraft.Id);
         Assert.True((await drafts.AddAirlineCommentAsync(provisioned.AccountId.Value,
             airlineDraft.Id, "Confirmar el horario de asistencia.", cancellationToken)).IsSuccess);
+        await using (var commentsConnection = new SqlConnection(database.ConnectionString))
+        {
+            await commentsConnection.OpenAsync(cancellationToken);
+            await using var commentsTransaction = await commentsConnection.BeginTransactionAsync(
+                cancellationToken);
+            await using var lockCommand = commentsConnection.CreateCommand();
+            lockCommand.Transaction = (SqlTransaction)commentsTransaction;
+            lockCommand.CommandText = "SELECT COUNT(*) FROM [commercial].[contract_draft_comments] WITH (TABLOCKX, HOLDLOCK);";
+            await lockCommand.ExecuteScalarAsync(cancellationToken);
+            context.Database.SetCommandTimeout(2);
+            try
+            {
+                Assert.Equal(1, (await drafts.GetOverviewForContractsAsync(
+                    contractsAccountId, cancellationToken))!.Count);
+            }
+            finally
+            {
+                context.Database.SetCommandTimeout(null);
+                await commentsTransaction.RollbackAsync(cancellationToken);
+            }
+        }
         var managedDraft = Assert.Single((await drafts.ListForContractsAsync(
             contractsAccountId, cancellationToken))!);
         Assert.Single(managedDraft.Comments);
@@ -219,6 +302,8 @@ public sealed class SqlServerMigrationTests
             cancellationToken)).IsSuccess);
         Assert.Empty((await drafts.ListForAirlineAsync(provisioned.AccountId.Value,
             cancellationToken))!);
+        Assert.Equal(0, (await drafts.GetOverviewForContractsAsync(
+            contractsAccountId, cancellationToken))!.Count);
         Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
 
@@ -5402,6 +5487,26 @@ public sealed class SqlServerMigrationTests
             .UseSqlServer(connectionString, ElevantSqlServerOptions.Configure)
             .Options;
         return new ElevantDbContext(options);
+    }
+
+    private sealed class SavingChangesGate : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource<bool> _entered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _released = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+        public void Release() => _released.TrySetResult(true);
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            _entered.TrySetResult(true);
+            await _released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            return result;
+        }
     }
 
     private static RampAgent NewTestAgent(

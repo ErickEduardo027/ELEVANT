@@ -20,13 +20,14 @@ export function AccessRequestWizard() {
   const [representative, setRepresentative] = useState(emptyRepresentative);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [catalogError, setCatalogError] = useState("");
   const [reference, setReference] = useState("");
   const requestId = useRef<string | null>(null);
   const carousel = useRef<HTMLDivElement>(null);
   const airline = catalog?.airlines.find((item) => item.id === airlineId);
 
   const reload = useCallback(async () => {
-    if (!apiOrigin) { setError("El catálogo comercial aún no está configurado."); setLoading(false); return; }
+    if (!apiOrigin) { setCatalogError("El catálogo comercial aún no está configurado."); setLoading(false); return; }
     try {
       const data = await createPublicWebApiClient().getPublicCommercialCatalog({ cache: "no-store" });
       setCatalog(data);
@@ -40,10 +41,9 @@ export function AccessRequestWizard() {
         requestId.current = null;
         return "";
       });
-      setError("");
+      setCatalogError("");
     } catch {
-      setCatalog(null);
-      setError("No se pudo cargar el catálogo. Intente nuevamente.");
+      setCatalogError("No se pudo consultar el catálogo. Revise su conexión y reintente.");
     }
     finally { setLoading(false); }
   }, []);
@@ -175,6 +175,8 @@ export function AccessRequestWizard() {
           <p className="access-representative__note">Servicios solicitados: {catalog?.services.filter((service) => selected.includes(service.id)).map((service) => service.name).join(" · ")}</p>
         </form>
       </>}
+      {catalogError && <><p className="access-error" role="alert">{catalogError}</p>
+        <button type="button" className="access-back" onClick={() => { void reload(); }}>Reintentar catálogo</button></>}
       {error && <p className="access-error" role="alert">{error}</p>}
       <div className="access-panel__footer">
         {step > 1 ? <button type="button" className="access-back" onClick={() => { setStep(step - 1); setError(""); }}>← Volver</button> : <span>AVIAM × ELEVANT</span>}

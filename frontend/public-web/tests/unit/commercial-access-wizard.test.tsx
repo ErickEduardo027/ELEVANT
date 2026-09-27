@@ -1,12 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+const hubEvents = vi.hoisted(() => ({ catalogChanged: null as (() => void) | null }));
 
 vi.mock("@microsoft/signalr", () => ({
   HubConnectionState: { Disconnected: "Disconnected" },
   HubConnectionBuilder: class {
     withUrl() { return this; }
     withAutomaticReconnect() { return this; }
-    build() { return { state: "Disconnected", on: () => {}, onreconnected: () => {},
+    build() { return { state: "Disconnected", on: (name: string, handler: () => void) => {
+      if (name === "CatalogChangedV1") hubEvents.catalogChanged = handler;
+    }, onreconnected: () => {},
       start: async () => {}, stop: async () => {} }; }
   },
 }));
@@ -22,7 +26,7 @@ const catalog = {
 };
 
 afterEach(() => {
-  cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs();
+  cleanup(); hubEvents.catalogChanged = null; vi.unstubAllGlobals(); vi.unstubAllEnvs();
 });
 
 async function fillApplication() {
@@ -80,6 +84,7 @@ it("retries with one request id but never treats a malformed receipt as approval
   fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
   await waitFor(() => expect(posts).toHaveLength(1));
   await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: /Reintentar catálogo/i })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(screen.queryByText("REQ-SYNTHETIC-001")).not.toBeInTheDocument();
@@ -89,4 +94,36 @@ it("retries with one request id but never treats a malformed receipt as approval
   expect(new Set(posts.map(item => item.requestId)).size).toBe(1);
   expect(posts[0].serviceIds).toEqual([serviceId]);
   expect(posts[0].airlineProfileId).toBe(airlineId);
+});
+
+it("keeps a completed application usable after a transient catalog refresh failure", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  let catalogReads = 0;
+  let posts = 0;
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("commercial-catalog")) {
+      catalogReads += 1;
+      if (catalogReads > 1) throw new TypeError("synthetic transient outage");
+      return new Response(JSON.stringify(catalog),
+        { headers: { "content-type": "application/json" } });
+    }
+    if (String(url).endsWith("commercial-requests") && init?.method === "POST") {
+      posts += 1;
+      return new Response(JSON.stringify({ reference: "REQ-SYNTHETIC-002", replayed: false }),
+        { status: 201, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+
+  render(<AccessRequestWizard />);
+  await fillApplication();
+  expect(hubEvents.catalogChanged).toBeTypeOf("function");
+  await act(async () => { hubEvents.catalogChanged?.(); });
+  expect(catalogReads).toBe(2);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/catálogo/i);
+  expect(screen.getByRole("button", { name: /Reintentar catálogo/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
+  await screen.findByText("REQ-SYNTHETIC-002");
+  expect(posts).toBe(1);
 });

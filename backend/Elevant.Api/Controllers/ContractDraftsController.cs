@@ -45,6 +45,15 @@ public sealed class ContractDraftsController(IContractDraftStore store) : Contro
         return drafts is null ? Forbid() : Ok(drafts);
     }
 
+    [HttpGet("contracts/drafts/overview", Name = "GetManagedContractDraftOverview")]
+    [ProducesResponseType<ContractDraftOverviewData>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> ManagedDraftOverview(CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var overview = await store.GetOverviewForContractsAsync(actorId, cancellationToken);
+        return overview is null ? Forbid() : Ok(overview);
+    }
+
     [HttpPut("contracts/drafts/{versionId:guid}", Name = "UpdateManagedContractDraft")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(32768)]

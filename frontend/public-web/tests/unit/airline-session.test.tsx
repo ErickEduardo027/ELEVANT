@@ -142,6 +142,7 @@ it("refreshes the authorized airline snapshot when the connection returns", asyn
   vi.stubGlobal("fetch", fetcher);
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("Demo Airlines");
+  await waitFor(() => expect(observe).toHaveBeenCalledTimes(1));
   currentName = "Airline Updated";
   window.dispatchEvent(new Event("online"));
   await screen.findByText("Airline Updated");

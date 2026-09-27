@@ -1100,6 +1100,31 @@
         ]
       }
     },
+    "/api/v1/contracts/drafts/overview": {
+      "get": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "operationId": "GetManagedContractDraftOverview",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractDraftOverviewData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/drafts/{versionId}": {
       "put": {
         "tags": [
@@ -5680,6 +5705,47 @@
             "items": {
               "$ref": "#/components/schemas/ContractDraftCommentData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftOverviewData": {
+        "required": [
+          "count",
+          "recent"
+        ],
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftOverviewItemData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftOverviewItemData": {
+        "required": [
+          "airline",
+          "contractCode",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractCode": {
+            "type": "string"
+          },
+          "airline": {
+            "type": "string"
           }
         },
         "additionalProperties": false
