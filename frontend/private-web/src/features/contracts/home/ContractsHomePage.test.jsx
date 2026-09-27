@@ -4,26 +4,27 @@ import userEvent from '@testing-library/user-event';
 import ContractsHomePage from './ContractsHomePage';
 
 const DATA = {
-  kpis: { activeContracts: 18, expiringSoon: 3, pendingRequests: 5, agreedServices: 42 },
-  recentContracts: [{ id: 'CTR-1', airline: 'Arajet', validUntil: '2027-02-28', status: 'active', servicesCount: 6 }],
-  pendingRequests: [{ id: 'SOL-1', airline: 'Sky High', kind: 'Servicio adicional', receivedAt: '2026-08-09T09:35:00-04:00' }],
+  kpis: { pendingRequests: 1, approvedRequests: 1, pendingDrafts: 1, publishedServices: 2 },
+  recentRequests: [{ id: 'one', reference: 'SOL-1', airline: 'Sky High', status: 'Pending', submittedAt: '2026-09-27T10:00:00Z' }],
+  pendingDrafts: [{ id: 'two', contractCode: 'DRAFT-2', airline: 'Arajet', comments: [] }],
 };
 
 describe('ContractsHomePage', () => {
   it('shows the contractual KPIs and summaries', () => {
     render(<ContractsHomePage status="success" data={DATA} onRetry={() => {}} onNavigate={() => {}} />);
     expect(screen.getByRole('heading', { name: 'Resumen contractual' })).toBeInTheDocument();
-    expect(screen.getByText('Contratos activos')).toBeInTheDocument();
+    expect(screen.getByText('Solicitudes pendientes')).toBeInTheDocument();
     expect(screen.getByText('Arajet')).toBeInTheDocument();
     expect(screen.getByText('Sky High')).toBeInTheDocument();
+    expect(screen.queryByText(/Datos sintéticos/)).not.toBeInTheDocument();
   });
 
-  it('navigates to the contracts and requests modules', async () => {
+  it('navigates to the real requests and draft modules', async () => {
     const onNavigate = vi.fn();
     render(<ContractsHomePage status="success" data={DATA} onRetry={() => {}} onNavigate={onNavigate} />);
-    await userEvent.click(screen.getByRole('button', { name: /ver contratos/i }));
+    await userEvent.click(screen.getByRole('button', { name: /ver borradores/i }));
     await userEvent.click(screen.getByRole('button', { name: /ver solicitudes/i }));
-    expect(onNavigate).toHaveBeenNthCalledWith(1, 'contracts-list');
+    expect(onNavigate).toHaveBeenNthCalledWith(1, 'contracts-drafts');
     expect(onNavigate).toHaveBeenNthCalledWith(2, 'contracts-requests');
   });
 
