@@ -19,6 +19,8 @@ public sealed record ManagedAirlineInput(
         Code(IataCode, 2) && Code(IcaoCode, 3, lettersOnly: true) &&
         Url(SourceUrl, required: true) && Url(VerificationSourceUrl) &&
         (string.IsNullOrWhiteSpace(LogoUrl) ||
+            LogoUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal) &&
+            Guid.TryParse(LogoUrl["/api/v1/media/".Length..], out _) ||
             LogoUrl.Length <= 512 && LogoUrl.StartsWith("/assets/airlines/", StringComparison.Ordinal) &&
             LogoUrl["/assets/airlines/".Length..] is var file &&
             file.Length is > 4 and <= 100 &&

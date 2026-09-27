@@ -69,6 +69,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<CommercialAirlineProfile> CommercialAirlineProfiles => Set<CommercialAirlineProfile>();
 
+    public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
+
     public DbSet<Contract> Contracts => Set<Contract>();
 
     public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();

@@ -1,4 +1,5 @@
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 // Modal centrado genérico, generalizado del patrón de confirmación de
 // `feat/adminocc` (ApprovalConfirmation / ReturnCorrectionModal).
@@ -7,6 +8,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 // ningún uso existente.
 export default function Modal({ open, onClose, title, children, footer, tone = 'default', widthClassName = 'max-w-md' }) {
   useEscapeToClose(open, onClose);
+  const dialogRef = useDialogFocus(open);
 
   if (!open) return null;
 
@@ -14,6 +16,7 @@ export default function Modal({ open, onClose, title, children, footer, tone = '
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div onClick={onClose} className="absolute inset-0 bg-ink-900/40 backdrop-blur-sm" />
       <div
+        ref={dialogRef}
         role={tone === 'danger' ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-label={title}

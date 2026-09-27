@@ -13,4 +13,6 @@ public sealed class Person : AuditableEntity
     public string IdentificationType { get; set; } = string.Empty;
 
     public string IdentificationNumber { get; set; } = string.Empty;
+
+    public string? AvatarMediaUrl { get; set; }
 }

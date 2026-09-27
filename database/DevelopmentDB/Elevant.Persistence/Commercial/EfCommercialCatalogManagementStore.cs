@@ -33,12 +33,10 @@ internal sealed class EfCommercialCatalogManagementStore(
         if (!Valid(input) || (serviceId is not null &&
             !TryVersion(input.Version, out _)))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
-
         ServiceDefinition service;
         if (serviceId is null)
         {
             service = new ServiceDefinition { PublicId = Guid.CreateVersion7() };
-            context.ServiceDefinitions.Add(service);
         }
         else
         {
@@ -51,6 +49,10 @@ internal sealed class EfCommercialCatalogManagementStore(
             if (!string.Equals(service.Code, input.Code.Trim(), StringComparison.OrdinalIgnoreCase))
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
         }
+        if (!await ValidAssetAsync(input.ImageUrl, "service-image", service.ImageUrl, cancellationToken) ||
+            !await ValidAssetAsync(input.VideoUrl, "service-video", service.VideoUrl, cancellationToken))
+            return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
+        if (serviceId is null) context.ServiceDefinitions.Add(service);
         var beforeName = service.Name;
         var beforePublic = service.IsPublic;
         var beforeActive = service.IsActive;
@@ -121,7 +123,7 @@ internal sealed class EfCommercialCatalogManagementStore(
 
     private static ManagedServiceData Map(ServiceDefinition item) => new(
         item.PublicId, item.Code, item.Name, item.Description ?? string.Empty,
-        item.DefaultBillingUnit, item.ImageUrl, item.VideoUrl, item.DisplayOrder,
+        item.DefaultBillingUnit, CommercialServiceMediaDefaults.Resolve(item.Code, item.ImageUrl), item.VideoUrl, item.DisplayOrder,
         item.IsPublic, item.IsActive, Convert.ToBase64String(item.RowVersion));
 
     private async Task NotifyInternalAsync(Guid serviceId, CancellationToken cancellationToken)
@@ -150,9 +152,23 @@ internal sealed class EfCommercialCatalogManagementStore(
     private static bool ValidMediaUrl(string? value) =>
         string.IsNullOrWhiteSpace(value) ||
         (value.Length <= 512 &&
-            (value.StartsWith("/assets/", StringComparison.Ordinal) ||
+            (value.StartsWith("/api/v1/media/", StringComparison.Ordinal) &&
+                Guid.TryParse(value["/api/v1/media/".Length..], out _) ||
+             value.StartsWith("/assets/", StringComparison.Ordinal) ||
              Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
              uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0));
+
+    private Task<bool> ValidAssetAsync(string? value, string purpose, string? currentUrl,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(value) || !value.StartsWith("/api/v1/media/", StringComparison.Ordinal))
+            return Task.FromResult(true);
+        var id = Guid.Parse(value["/api/v1/media/".Length..]);
+        var cutoff = CommercialMediaLinkPolicy.LinkCutoff(DateTimeOffset.UtcNow);
+        return context.MediaAssets.AnyAsync(asset => asset.PublicId == id &&
+            asset.Purpose == purpose &&
+            (asset.CreatedAt >= cutoff || value == currentUrl), cancellationToken);
+    }
 
     private static bool TryVersion(string? version, out byte[] bytes)
     {

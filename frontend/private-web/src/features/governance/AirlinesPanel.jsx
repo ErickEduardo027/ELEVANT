@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import FileDropField from '../../components/FileDropField';
+import PrivateMediaImage from '../../components/PrivateMediaImage';
+import { uploadCommercialMedia } from '../../services/commercialGovernanceApi';
 
 const blank = {
   sourceName: '', displayName: '', legalName: '', region: '', countryCode: '',
@@ -12,6 +16,9 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const [logo, setLogo] = useState(null);
+  const [uploadError, setUploadError] = useState('');
+  const [pendingArchive, setPendingArchive] = useState(null);
   const visible = useMemo(() => airlines.filter((airline) =>
     (showArchived || airline.isPublished) &&
     `${airline.displayName} ${airline.sourceName} ${airline.iataCode ?? ''} ${airline.icaoCode ?? ''}`
@@ -19,27 +26,30 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
   [airlines, query, showArchived]);
 
   function edit(airline) {
+    setLogo(null);
     setEditingId(airline.id);
     setForm({ ...airline, legalName: airline.legalName ?? '',
       countryCode: airline.countryCode ?? '', iataCode: airline.iataCode ?? '',
       icaoCode: airline.icaoCode ?? '', logoUrl: airline.logoUrl ?? '',
       verificationSourceUrl: airline.verificationSourceUrl ?? '' });
   }
-  function clear() { setEditingId(null); setForm(blank); }
+  function clear() { setEditingId(null); setForm(blank); setLogo(null); }
   async function save(event) {
-    event.preventDefault(); setBusy(true);
+    event.preventDefault(); setBusy(true); setUploadError('');
     try {
+      const uploadedLogo = logo ? await uploadCommercialMedia('airline-logo', logo) : null;
       const saved = await onSave(editingId, {
         ...form, sourceName: form.sourceName.trim(), displayName: form.displayName.trim(),
         legalName: form.legalName.trim() || null, region: form.region.trim(),
         countryCode: form.countryCode.trim().toUpperCase() || null,
         iataCode: form.iataCode.trim().toUpperCase() || null,
         icaoCode: form.icaoCode.trim().toUpperCase() || null,
-        logoUrl: form.logoUrl.trim() || null, sourceUrl: form.sourceUrl.trim(),
+        logoUrl: uploadedLogo?.url ?? (form.logoUrl.trim() || null), sourceUrl: form.sourceUrl.trim(),
         verificationSourceUrl: form.verificationSourceUrl.trim() || null,
       });
       if (saved) clear();
-    } finally { setBusy(false); }
+    } catch (error) { setUploadError(error.message); }
+    finally { setBusy(false); }
   }
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -55,22 +65,25 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
       </div>
       <div className="mt-5 space-y-3">{visible.map((airline) => <article key={airline.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
         <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <img src={airline.logoUrl} alt={`Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
+          <div className="grid h-12 w-12 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
           <div><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada' : 'Sin verificar'}</p></div>
         </div>
-        <div className="flex gap-3"><button type="button" aria-label={`Editar ${airline.displayName}`} onClick={() => edit(airline)} className="text-xs font-semibold text-accent-600">Editar</button>{airline.isPublished && <button type="button" onClick={() => { if (window.confirm(`¿Archivar ${airline.displayName}?`)) void onArchive(airline.id, airline.version); }} className="text-xs font-semibold text-status-danger">Archivar</button>}</div>
+        <div className="flex gap-3"><button type="button" aria-label={`Editar ${airline.displayName}`} onClick={() => edit(airline)} className="text-xs font-semibold text-accent-600">Editar</button>{airline.isPublished && <button type="button" onClick={() => setPendingArchive(airline)} className="text-xs font-semibold text-status-danger">Archivar</button>}</div>
       </article>)}{visible.length === 0 && <p className="rounded-xl bg-black/[.03] p-5 text-sm dark:bg-white/[.04]">No hay aerolíneas que coincidan con el filtro.</p>}</div>
     </section>
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
       <h2 className="text-lg font-bold">{editingId ? 'Editar aerolínea' : 'Nueva aerolínea'}</h2>
       <p className="mt-1 text-xs text-text-secondary-light">Registre únicamente datos sustentados por la fuente indicada.</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {[['sourceName', 'Nombre de origen', 160], ['displayName', 'Nombre visible', 160], ['legalName', 'Razón social', 200], ['region', 'Región', 64], ['countryCode', 'País ISO (2 letras)', 2], ['iataCode', 'Código IATA', 2], ['icaoCode', 'Código ICAO', 3], ['logoUrl', 'Ruta de logo', 512], ['sourceUrl', 'Sitio o fuente oficial', 512], ['verificationSourceUrl', 'Fuente de verificación', 512]].map(([key, label, max]) =>
+        {[['sourceName', 'Nombre de origen', 160], ['displayName', 'Nombre visible', 160], ['legalName', 'Razón social', 200], ['region', 'Región', 64], ['countryCode', 'País ISO (2 letras)', 2], ['iataCode', 'Código IATA', 2], ['icaoCode', 'Código ICAO', 3], ['sourceUrl', 'Sitio o fuente oficial', 512], ['verificationSourceUrl', 'Fuente de verificación', 512]].map(([key, label, max]) =>
           <label key={key} className="text-xs font-semibold">{label}<input required={['sourceName', 'displayName', 'region', 'sourceUrl'].includes(key)} readOnly={key === 'sourceName' && !!editingId} maxLength={max} value={form[key]} onChange={(event) => change(key, event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" /></label>)}
       </div>
+      <FileDropField label="Logo de la aerolínea" accept="image/png,image/jpeg,image/webp" file={logo} onFile={setLogo} currentUrl={form.logoUrl} hint="PNG, JPG o WebP. Máximo 8 MB. El logo seleccionado se carga al guardar." />
+      {uploadError && <p role="alert" className="mt-2 text-sm text-status-danger">{uploadError}</p>}
       <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isVerified} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
       <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isPublished} onChange={(event) => change('isPublished', event.target.checked)} /> Disponible para nuevas solicitudes</label>
       <div className="mt-5 flex gap-2"><button disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Guardando…' : 'Guardar aerolínea'}</button>{editingId && <button type="button" onClick={clear} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>
     </form>
+    <ConfirmDialog open={Boolean(pendingArchive)} title="Archivar aerolínea" description={`¿Archivar ${pendingArchive?.displayName ?? ''}? Dejará de aparecer en nuevas solicitudes.`} confirmLabel="Archivar" onClose={() => setPendingArchive(null)} onConfirm={async () => { const target = pendingArchive; setPendingArchive(null); await onArchive(target.id, target.version); }} />
   </div>;
 }

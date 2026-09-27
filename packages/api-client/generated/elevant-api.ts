@@ -284,6 +284,8 @@ export interface CreateGovernanceUserInput {
   temporaryPassword: string;
   /** @nullable */
   rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface CreateManualTurnaroundRequest {
@@ -534,6 +536,8 @@ export interface GovernanceRampProfileData {
   stations: string[];
   /** @nullable */
   accountId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface GovernanceRoleData {
@@ -561,6 +565,8 @@ export interface GovernanceUserData {
   mustChangePassword: boolean;
   /** @nullable */
   rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface GovernanceSnapshot {
@@ -694,6 +700,14 @@ export interface ManualTurnaroundResponse {
   turnaroundId: string;
   operationCode: string;
   replayed: boolean;
+}
+
+export interface MediaAssetData {
+  id: string;
+  url: string;
+  purpose: string;
+  contentType: string;
+  length: number;
 }
 
 export interface OccAgentOptionResponse {
@@ -1332,6 +1346,8 @@ export interface RampProfileData {
   isActive: boolean;
   stations: RampProfileStation[];
   hasAccount: boolean;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface RampProfileCatalog {
@@ -1423,6 +1439,8 @@ export interface SaveRampProfileInput {
   hireDate: string;
   isActive: boolean;
   stationIds: string[];
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface SendOperationMessageRequest {
@@ -1535,6 +1553,8 @@ export interface UpdateGovernanceUserInput {
   isActive: boolean;
   /** @nullable */
   rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
 }
 
 export interface VerifyAirlineInput {
@@ -1563,6 +1583,11 @@ version?: string;
 
 export type DeleteCommercialServiceParams = {
 version?: string;
+};
+
+export type UploadCommercialMediaBody = {
+  purpose?: string;
+  file?: Blob;
 };
 
 export type GetFinanceApprovedServicesParams = {
@@ -2120,6 +2145,69 @@ export const deleteCommercialService = async (id: string,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUploadCommercialMediaUrl = () => {
+
+
+
+
+  return `/api/v1/media`
+}
+
+export const uploadCommercialMedia = async (uploadCommercialMediaBody?: UploadCommercialMediaBody, options?: RequestInit): Promise<MediaAssetData> => {
+    const formData = new FormData();
+if(uploadCommercialMediaBody?.purpose !== undefined) {
+ formData.append(`purpose`, uploadCommercialMediaBody.purpose);
+ }
+if(uploadCommercialMediaBody?.file !== undefined) {
+ formData.append(`file`, uploadCommercialMediaBody.file);
+ }
+
+  const res = await fetch(getUploadCommercialMediaUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MediaAssetData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetPublishedCommercialMediaUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/media/${id}`
+}
+
+export const getPublishedCommercialMedia = async (id: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getGetPublishedCommercialMediaUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 

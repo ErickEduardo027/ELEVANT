@@ -1,5 +1,15 @@
 # ELEVANT AVIAM Web
 
+## Medios del flujo comercial
+
+Contratos edita cada servicio en un panel lateral con foto y video subidos por
+archivo o arrastre. Superadministración sube los logos de aerolíneas y fotos
+de usuarios; Gestión Humana puede subir fotos de perfiles de rampa. Los
+archivos viajan al endpoint autorizado de la API y las imágenes predefinidas
+de servicios se incluyen como recursos estáticos. Las confirmaciones de
+retirada, archivo y descarte se presentan dentro de la aplicación. La carga
+remota exige preparar el [almacén privado](../../ops/dokploy/media-storage/README.md).
+
 Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente actual usa Vite 6, React 18, React Router y Tailwind.
 
 ## Ejecutar y validar

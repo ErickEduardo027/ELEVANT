@@ -37,6 +37,7 @@ internal sealed class EfCommercialAirlineManagementStore(
             var beforeLogo = profile.LogoObjectKey;
             var beforePublished = profile.IsPublished;
             var beforeVerified = profile.VerifiedAt is not null;
+            var beforeVerifier = profile.VerifiedByAccountId;
             profile.CountryCode ??= lead.Country;
             profile.LogoObjectKey ??= AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName);
             if (profile.SourceUrl == AviamAirlineReference.AviamClients && lead.Site is not null)
@@ -51,11 +52,17 @@ internal sealed class EfCommercialAirlineManagementStore(
                 profile.VerifiedAt = DateTimeOffset.UtcNow;
                 profile.VerifiedByAccountId = actorDatabaseId;
             }
+            else if (AviamAirlineReference.Verified.TryGetValue(profile.SourceName, out identity) &&
+                profile.VerifiedAt is not null && profile.VerifiedByAccountId is null &&
+                profile.LegalName == identity.Legal && profile.IataCode == identity.Iata &&
+                profile.IcaoCode == identity.Icao && profile.VerificationSourceUrl == identity.Source)
+                profile.VerifiedByAccountId = actorDatabaseId;
             if (AviamAirlineReference.Archived.Contains(profile.SourceName))
                 profile.IsPublished = false;
             if (beforeCountry == profile.CountryCode && beforeLogo == profile.LogoObjectKey && beforeIata == profile.IataCode &&
                 beforeIcao == profile.IcaoCode && beforePublished == profile.IsPublished &&
                 beforeVerified == (profile.VerifiedAt is not null) &&
+                beforeVerifier == profile.VerifiedByAccountId &&
                 beforeSource == profile.SourceUrl)
                 continue;
             profile.UpdatedAt = DateTimeOffset.UtcNow;
@@ -94,7 +101,6 @@ internal sealed class EfCommercialAirlineManagementStore(
         if (input is null || !input.IsValid() ||
             profileId is not null && !ValidVersion(input.Version))
             return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
-
         CommercialAirlineProfile profile;
         if (profileId is null)
         {
@@ -104,7 +110,6 @@ internal sealed class EfCommercialAirlineManagementStore(
                 SourceName = input.SourceName.Trim().ToUpperInvariant(),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
-            context.CommercialAirlineProfiles.Add(profile);
         }
         else
         {
@@ -119,6 +124,17 @@ internal sealed class EfCommercialAirlineManagementStore(
                     StringComparison.OrdinalIgnoreCase))
                 return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
         }
+        if (input.LogoUrl is not null && input.LogoUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal))
+        {
+            if (!Guid.TryParse(input.LogoUrl["/api/v1/media/".Length..], out var logoId))
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
+            var cutoff = CommercialMediaLinkPolicy.LinkCutoff(DateTimeOffset.UtcNow);
+            if (!await context.MediaAssets.AnyAsync(asset => asset.PublicId == logoId &&
+                asset.Purpose == "airline-logo" &&
+                (asset.CreatedAt >= cutoff || input.LogoUrl == profile.LogoObjectKey), cancellationToken))
+                return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid);
+        }
+        if (profileId is null) context.CommercialAirlineProfiles.Add(profile);
 
         var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
@@ -212,8 +228,8 @@ internal sealed class EfCommercialAirlineManagementStore(
     private static ManagedAirlineData Map(CommercialAirlineProfile profile) => new(
         profile.PublicId, profile.SourceName, profile.DisplayName, profile.LegalName,
         profile.Region, profile.CountryCode, profile.IataCode, profile.IcaoCode,
-        profile.LogoObjectKey, profile.SourceUrl, profile.VerificationSourceUrl,
-        profile.VerifiedAt is not null, profile.IsPublished,
+        profile.LogoObjectKey ?? AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName), profile.SourceUrl, profile.VerificationSourceUrl,
+        profile.VerifiedAt is not null && profile.VerifiedByAccountId is not null, profile.IsPublished,
         Convert.ToBase64String(profile.RowVersion));
 
     private static bool ValidVersion(string? version)

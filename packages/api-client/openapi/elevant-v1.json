@@ -907,6 +907,81 @@
         ]
       }
     },
+    "/api/v1/media": {
+      "post": {
+        "tags": [
+          "CommercialMedia"
+        ],
+        "operationId": "UploadCommercialMedia",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              },
+              "encoding": {
+                "purpose": {
+                  "style": "form"
+                },
+                "file": {
+                  "style": "form"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaAssetData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/media/{id}": {
+      "get": {
+        "tags": [
+          "CommercialMedia"
+        ],
+        "operationId": "GetPublishedCommercialMedia",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/governance/provisioning": {
       "get": {
         "tags": [
@@ -6300,6 +6375,10 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "avatarMediaUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -6794,6 +6873,10 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "avatarMediaUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -6936,6 +7019,10 @@
           "rampAgentId": {
             "type": "string",
             "format": "uuid",
+            "nullable": true
+          },
+          "avatarMediaUrl": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -7257,6 +7344,36 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MediaAssetData": {
+        "required": [
+          "contentType",
+          "id",
+          "length",
+          "purpose",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "length": {
+            "type": "integer",
+            "format": "int64"
           }
         },
         "additionalProperties": false
@@ -9805,6 +9922,10 @@
           },
           "hasAccount": {
             "type": "boolean"
+          },
+          "avatarMediaUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -10198,6 +10319,10 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "avatarMediaUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -10678,6 +10803,10 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "avatarMediaUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -10742,6 +10871,9 @@
     },
     {
       "name": "CommercialCatalogManagement"
+    },
+    {
+      "name": "CommercialMedia"
     },
     {
       "name": "CommercialProvisioning"

@@ -366,6 +366,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/04-arquitectura/medios-comerciales-privados.md",
+        "id": "arquitectura-medios-comerciales-privados",
+        "title": "Medios comerciales privados",
+        "type": "architecture",
+        "area": "architecture",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/04-arquitectura/openapi-http-y-signalr.md",
         "id": "arquitectura-openapi-http-signalr",
         "title": "OpenAPI, HTTP y SignalR",
@@ -1021,7 +1031,7 @@
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "d1be1bb649a06b4e01cc5fa6dbd8a6124449258bc111658574bcd14269c2c423"
+        "sha256": "6a6b94d452099d1cca9f7f878038253346378ed17062d588a393abb3827c7b78"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
@@ -1043,13 +1053,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "9e489a1a7274146a04da0f00cdf0be82dc189edfe2c51ecd7813adf777bec252",
+        "sha256": "a5a00bde85d50692f5d0f5d25d27544ba79f24948cf81137ba1867967478f3ba",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "43f69ccf0ea9ba1a49ed3e8672e1e2df59e10516c4857c830d7f6c72ad51ed9a",
+        "sha256": "31e49830b34708593c69b1124cfb8984dd042c098658d42433c4c9d1184aa9b3",
         "title": null,
         "version": null
       }
@@ -1162,6 +1172,18 @@
         "name": "ContractRateConfirmation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927161819_ContractRateConfirmation.cs",
         "sha256": "f53ec7cfac3181e46657f25e9bdab09f523b04b485bf88048e573e677f3fa606"
+      },
+      {
+        "id": "20260927195557",
+        "name": "CommercialMediaAssets",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927195557_CommercialMediaAssets.cs",
+        "sha256": "77ea39c609a765c96780963d342b2b409d8ac0238fe00b749843d12bf403cd78"
+      },
+      {
+        "id": "20260927204956",
+        "name": "PersonAvatarMedia",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927204956_PersonAvatarMedia.cs",
+        "sha256": "c492d9d59c9b1704b94cd3b01f715b24a67ac76c97329f53b8cf0a38b3f1c6e6"
       }
     ],
     "manifestContracts": [

@@ -5,6 +5,7 @@ using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +56,8 @@ internal sealed class EfCommercialWorkflowStore(
             item.request.RequestedAirlineName, item.profile.PublicId,
             item.request.AirlineLegalNameSnapshot ?? item.profile.LegalName,
             item.profile.CountryCode, item.profile.IataCode, item.profile.IcaoCode,
-            item.profile.LogoObjectKey, item.profile.VerifiedAt is not null,
+            item.profile.LogoObjectKey ?? AviamAirlineReference.LogoPaths.GetValueOrDefault(item.profile.SourceName),
+            item.profile.VerifiedAt is not null && item.profile.VerifiedByAccountId is not null,
             item.profile.VerificationSourceUrl,
             item.request.ContactName, item.request.ContactTitle ?? string.Empty,
             item.request.ContactEmail, item.request.ContactPhone ?? string.Empty,
@@ -84,7 +86,7 @@ internal sealed class EfCommercialWorkflowStore(
             !ValidCode(input.IcaoCode, 3) ||
             !Uri.TryCreate(input.VerificationSourceUrl, UriKind.Absolute, out var source) ||
             source.Scheme != Uri.UriSchemeHttps || source.UserInfo.Length != 0 ||
-            input.VerificationSourceUrl.Length > 512 || !ValidLogo(input.LogoUrl))
+            input.VerificationSourceUrl.Length > 512 || !ValidLegacyLogo(input.LogoUrl))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid);
         var profile = await context.CommercialAirlineProfiles.SingleOrDefaultAsync(
             item => item.PublicId == profileId && item.IsPublished, cancellationToken);
@@ -106,7 +108,10 @@ internal sealed class EfCommercialWorkflowStore(
         profile.CountryCode = input.CountryCode.ToUpperInvariant();
         profile.IataCode = iata;
         profile.IcaoCode = icao;
-        profile.LogoObjectKey = string.IsNullOrWhiteSpace(input.LogoUrl) ? null : input.LogoUrl.Trim();
+        // Older independently deployed clients still send this optional v1 field.
+        // An empty field must not erase a logo uploaded in Superadministración.
+        if (!string.IsNullOrWhiteSpace(input.LogoUrl))
+            profile.LogoObjectKey = input.LogoUrl.Trim();
         profile.VerificationSourceUrl = input.VerificationSourceUrl.Trim();
         profile.VerifiedByAccountId = accountId;
         profile.VerifiedAt = DateTimeOffset.UtcNow;
@@ -301,8 +306,9 @@ internal sealed class EfCommercialWorkflowStore(
     private static bool ValidText(string? value, int max) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
     private static bool ValidCode(string? value, int length) =>
-        value is not null && value.Length == length && value.All(char.IsAsciiLetterUpper);
-    private static bool ValidLogo(string? value) =>
+        value is not null && value.Length == length && value.All(character =>
+            char.IsAsciiLetterUpper(character) || length == 2 && char.IsAsciiDigit(character));
+    private static bool ValidLegacyLogo(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Length <= 512 &&
         (value.StartsWith("/assets/", StringComparison.Ordinal) ||
          Uri.TryCreate(value, UriKind.Absolute, out var uri) &&

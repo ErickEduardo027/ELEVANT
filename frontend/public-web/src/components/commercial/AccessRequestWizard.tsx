@@ -27,6 +27,7 @@ const nationalityCodes = Array.from({ length: 26 * 26 }, (_, index) =>
   .sort((left, right) => (nationalityNames.of(left) ?? left).localeCompare(
     nationalityNames.of(right) ?? right, "es"));
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
+const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
 
 export function AccessRequestWizard() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -97,7 +98,14 @@ export function AccessRequestWizard() {
     if (step === 2 && !airlineId) { setError("Seleccione la aerolínea que representa."); return; }
     if (step === 3) {
       const form = document.getElementById("access-representative") as HTMLFormElement | null;
-      if (!form?.reportValidity()) return;
+      const invalid = Array.from(form?.elements ?? []).find((element) =>
+        element instanceof HTMLInputElement && !element.checkValidity());
+      if (invalid instanceof HTMLInputElement) {
+        invalid.focus();
+        setError(invalid.validity.valueMissing ? "Complete los campos obligatorios y confirme su autorización." :
+          "Revise el formato del campo señalado antes de continuar.");
+        return;
+      }
       if (Boolean(representative.documentType) !== Boolean(representative.documentNumber.trim())) {
         setError("Si indica un documento, complete su tipo y número."); return;
       }
@@ -169,8 +177,8 @@ export function AccessRequestWizard() {
         <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
           {catalog?.services.map((service, index) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">
-              {service.videoUrl ? <video controls playsInline poster={service.imageUrl ?? undefined} src={service.videoUrl} aria-label={`Video de ${service.name}`} /> :
-                service.imageUrl ? <div className="access-service__image" style={{ backgroundImage: `url(${service.imageUrl})` }} role="img" aria-label={service.name} /> : <div className="access-service__placeholder" />}
+              {service.videoUrl ? <video controls playsInline poster={mediaUrl(service.imageUrl)} src={mediaUrl(service.videoUrl)} aria-label={`Video de ${service.name}`} /> :
+                service.imageUrl ? <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl)})` }} role="img" aria-label={service.name} /> : <div className="access-service__placeholder" />}
               <span>0{index + 1} / AVIAM</span>
             </div>
             <div className="access-service__body"><h3>{service.name}</h3><p>{service.description}</p>
@@ -187,7 +195,7 @@ export function AccessRequestWizard() {
           {[...new Set(catalog?.airlines.map((item) => item.region))].map((region) => <optgroup key={region} label={region}>{catalog?.airlines.filter((item) => item.region === region).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</optgroup>)}
         </select>
         {airline && <div className="access-airline">
-          <div className="access-airline__logo">{airline.logoUrl ? <Image src={airline.logoUrl} alt={`Logo de ${airline.name}`} width={92} height={92} /> : <span aria-label="Monograma de aerolínea">{airline.name.slice(0, 2)}</span>}<small>{airline.logoUrl ? "LOGO" : "MONOGRAMA"}</small></div>
+          <div className="access-airline__logo">{airline.logoUrl ? <Image src={mediaUrl(airline.logoUrl)!} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.name}` : `Logo de ${airline.name}`} width={92} height={92} unoptimized /> : <span aria-label="Monograma de aerolínea">{airline.name.slice(0, 2)}</span>}<small>{airline.logoUrl?.includes('/reference-') ? "REFERENCIA AVIAM" : airline.logoUrl ? "LOGO" : "MONOGRAMA"}</small></div>
           <div className="access-airline__fields">
             <ReadOnlyField label="Aerolínea" value={airline.name} />
             <ReadOnlyField label="Razón social" value={airline.legalName ?? null} />
@@ -200,7 +208,7 @@ export function AccessRequestWizard() {
         </div>}
       </> : step === 3 ? <>
         <div className="access-panel__heading"><p>03 / REPRESENTANTE</p><h2>¿Quién presenta la solicitud?</h2><span>Ingrese los datos de la persona autorizada para representar a la aerolínea.</span></div>
-        <form id="access-representative" className="access-representative" onSubmit={(event) => { event.preventDefault(); next(); }}>
+        <form id="access-representative" className="access-representative" noValidate onSubmit={(event) => { event.preventDefault(); next(); }}>
           <label>Nombre completo<input required maxLength={160} autoComplete="name" value={representative.name} onChange={(event) => changeRepresentative("name", event.target.value)} /></label>
           <label>Cargo<input required maxLength={120} autoComplete="organization-title" value={representative.title} onChange={(event) => changeRepresentative("title", event.target.value)} /></label>
           <label>Correo corporativo<input required type="email" maxLength={256} autoComplete="email" value={representative.email} onChange={(event) => changeRepresentative("email", event.target.value)} /></label>

@@ -41,6 +41,86 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task MediaLinksExpireBeforeCleanupButExistingPrivateLinksRemainReadable()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var actor = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var accountId = await context.Users.Where(user => user.PublicId == actor)
+            .Select(user => user.Id).SingleAsync(cancellationToken);
+        var assetId = Guid.CreateVersion7();
+        var url = $"/api/v1/media/{assetId}";
+        var asset = new MediaAsset
+        {
+            PublicId = assetId, Purpose = "service-image", ObjectKey = $"service-image/{assetId:N}",
+            ContentType = "image/png", Length = 8, Sha256 = new string('a', 64),
+            UploadedByAccountId = accountId, CreatedAt = DateTimeOffset.UtcNow.AddDays(-8),
+        };
+        context.MediaAssets.Add(asset);
+        await context.SaveChangesAsync(cancellationToken);
+        var manager = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var input = new ManagedServiceInput("MEDIA-LINK-TEST", "Servicio con foto",
+            "Foto de prueba", "operación", url, null, 999, false, true, null);
+        Assert.Equal(CatalogMutationFailure.Invalid,
+            (await manager.SaveAsync(actor, null, input, cancellationToken)).Failure);
+
+        asset.CreatedAt = DateTimeOffset.UtcNow.AddDays(-5);
+        await context.SaveChangesAsync(cancellationToken);
+        var saved = await manager.SaveAsync(actor, null, input, cancellationToken);
+        Assert.Null(saved.Failure);
+        var media = scope.ServiceProvider.GetRequiredService<ICommercialMediaStore>();
+        Assert.Null(await media.GetReadableAsync(assetId, null, cancellationToken));
+        Assert.NotNull(await media.GetReadableAsync(assetId, actor, cancellationToken));
+
+        asset.CreatedAt = DateTimeOffset.UtcNow.AddDays(-8);
+        await context.SaveChangesAsync(cancellationToken);
+        var updated = await manager.SaveAsync(actor, saved.Service!.Id,
+            input with { IsPublic = true, Version = saved.Service.Version }, cancellationToken);
+        Assert.Null(updated.Failure);
+        Assert.NotNull(await media.GetReadableAsync(assetId, null, cancellationToken));
+        Assert.Equal(CatalogMutationFailure.Invalid,
+            (await manager.SaveAsync(actor, null,
+                input with { Code = "MEDIA-LINK-NEW", Version = null }, cancellationToken)).Failure);
+
+        context.MediaAssets.AddRange(Enumerable.Range(0, 100).Select(_ =>
+        {
+            var id = Guid.CreateVersion7();
+            return new MediaAsset
+            {
+                PublicId = id, Purpose = "service-image", ObjectKey = $"service-image/{id:N}",
+                ContentType = "image/png", Length = 8, Sha256 = new string('b', 64),
+                UploadedByAccountId = accountId, CreatedAt = DateTimeOffset.UtcNow,
+            };
+        }));
+        await context.SaveChangesAsync(cancellationToken);
+        using var content = new MemoryStream([137, 80, 78, 71, 13, 10, 26, 10]);
+        Assert.Null(await media.UploadAsync(actor, "service-image", "image/png", content,
+            content.Length, cancellationToken));
+    }
+
+    [Fact]
     public async Task PublicCommercialIntakePersistsAStableSnapshotAndReplaysSafely()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

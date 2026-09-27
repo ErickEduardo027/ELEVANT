@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PasswordField from '../../components/PasswordField';
 import './LoginPage.css';
 
 export default function PasswordChangePage({ email, onSubmit, onCancel }) {
@@ -38,18 +39,9 @@ export default function PasswordChangePage({ email, onSubmit, onCancel }) {
             <h1 id="activation-title" className="elv-welcome-title">Activa tu cuenta</h1>
             <p className="elv-welcome-sub">Cambia la contraseña temporal de {email} antes de iniciar sesión. No recibirás una sesión hasta completar este paso.</p>
             <form className="elv-form" onSubmit={submit}>
-              <label className="elv-field" htmlFor="current-password">
-                <span className="elv-label">Contraseña temporal</span>
-                <input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required className="elv-input" />
-              </label>
-              <label className="elv-field" htmlFor="new-password">
-                <span className="elv-label">Nueva contraseña</span>
-                <input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={14} maxLength={256} required className="elv-input" />
-              </label>
-              <label className="elv-field" htmlFor="confirm-password">
-                <span className="elv-label">Confirmar nueva contraseña</span>
-                <input id="confirm-password" name="confirmation" type="password" autoComplete="new-password" minLength={14} maxLength={256} required className="elv-input" />
-              </label>
+              <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Contraseña temporal" id="current-password" name="currentPassword" autoComplete="current-password" required />
+              <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Nueva contraseña" id="new-password" name="newPassword" autoComplete="new-password" minLength={14} maxLength={256} required />
+              <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Confirmar nueva contraseña" id="confirm-password" name="confirmation" autoComplete="new-password" minLength={14} maxLength={256} required />
               {error && <p role="alert" className="elv-error">{error}</p>}
               <button type="submit" disabled={busy} className="elv-submit">{busy ? 'Cambiando…' : 'Cambiar contraseña'}</button>
               <button type="button" onClick={onCancel} disabled={busy} className="elv-link">Volver al inicio de sesión</button>

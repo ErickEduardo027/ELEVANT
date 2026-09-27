@@ -16,6 +16,15 @@ La persistencia está físicamente separada en `database/DevelopmentDB`: allí v
 
 La solicitud pública, el catálogo administrado por Contratos, la provisión manual por Superadministrador y el borrador contractual se describen en [el flujo comercial](../docs/workflows/commercial-intake-and-governance.md). Los avisos internos usan el outbox y feed existente; el hub público solo invalida el catálogo. Ningún endpoint de esta rama envía correo.
 
+Las cargas de fotos, videos y avatares usan `POST /api/v1/media` con Bearer,
+multipart y permisos por propósito. SQL conserva metadatos y claves; los bytes
+se guardan en un bucket S3 privado. `GET /api/v1/media/{id}` sirve únicamente
+medios vinculados a un servicio o aerolínea publicada, o un avatar para
+personal interno autorizado. El Compose de API exige cinco variables
+`ELEVANT_MEDIA_*`; el almacén y su backup se preparan según el
+[runbook de medios](../ops/dokploy/media-storage/README.md) antes de promover
+esta versión. El código versionado no demuestra todavía instalación en el VPS.
+
 ## Validación
 
 Desde la raíz del repositorio:

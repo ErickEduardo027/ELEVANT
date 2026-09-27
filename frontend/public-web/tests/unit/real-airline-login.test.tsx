@@ -39,10 +39,30 @@ it("sends registration from the airline login to the canonical commercial reques
     <AuthExperience returnTo="/portal" />
   </AirlineSessionProvider></MockSessionProvider>);
 
-  expect(await screen.findByRole("link", { name: "Solicitar acceso" }))
+  expect(await screen.findByRole("link", { name: "Solicita acceso aquí" }))
     .toHaveAttribute("href", "/solicitar-acceso");
+  expect(screen.getByText("¿No tienes credenciales?")).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Acceso de aerolíneas" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Razón social" })).not.toBeInTheDocument();
+});
+
+it("reveals only the chosen password during mandatory credential replacement", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+    status: 409, code: "password_change_required", title: "Password change required",
+  }), { status: 409, headers: { "content-type": "application/problem+json" } })));
+  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider></MockSessionProvider>);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }),
+    { target: { value: actor.email } });
+  fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Temporary!2026" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+  const newPassword = await screen.findByLabelText("Nueva contraseña");
+  const confirmation = screen.getByLabelText("Confirmar nueva contraseña");
+  fireEvent.click(screen.getByRole("button", { name: "Mostrar nueva contraseña" }));
+  expect(newPassword).toHaveAttribute("type", "text");
+  expect(confirmation).toHaveAttribute("type", "password");
 });
 
 it("uses Public Web login for the real API and never offers demo credentials", async () => {

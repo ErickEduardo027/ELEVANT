@@ -1,5 +1,11 @@
 # ELEVANT Public Web
 
+El login ofrece el enlace «¿No tienes credenciales? Solicita acceso aquí»;
+la solicitud permanece en `/solicitar-acceso`. Las fotos de servicios y los
+logos del catálogo se sirven como recursos locales o por la API cuando fueron
+subidos por el equipo autorizado. Las fichas históricas sin logo oficial
+verificable usan una placa rotulada como referencia, nunca una marca simulada.
+
 Aplicación pública y portal de clientes/aerolíneas de AVIAM. Usa Next.js 16 y React 19. La landing es pública; el portal autenticado debe aislar todas las consultas y escrituras por organización y estaciones autorizadas desde la API.
 
 El botón naranja **Solicitar acceso** abre `/solicitar-acceso` en cuatro pasos: servicios en carrusel, aerolínea predefinida con ficha de solo lectura, datos del representante y confirmación final con resumen editable. Nacionalidad, dirección, país/provincia/municipio y documento son opcionales; el par tipo/número de documento debe completarse junto cuando se usa. El catálogo y la solicitud usan la API real; una caída temporal al releer el catálogo conserva el formulario y muestra un reintento, mientras la API valida otra vez la visibilidad al enviarlo. Contratos revisa antes de que el superadministrador cree credenciales. El portal de contratos muestra propuestas en borrador y permite enviar observaciones; una tarifa no confirmada aparece **por definir**, aunque su valor inicial sea cero. Consulte [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md).

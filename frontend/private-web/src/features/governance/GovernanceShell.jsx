@@ -7,13 +7,17 @@ import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../hooks/useCommercialRevalidation';
+import PasswordField from '../../components/PasswordField';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import FileDropField from '../../components/FileDropField';
+import PrivateMediaImage from '../../components/PrivateMediaImage';
 import {
   getGovernance, getProvisioning, provisionAirline,
   getGovernanceAudit,
   createRole, updateRole, deactivateRole, createUser, updateUser,
   deactivateUser, resetUserPassword,
   getManagedAirlines, saveManagedAirline, archiveManagedAirline,
-  enrichManagedAirlines,
+  enrichManagedAirlines, uploadCommercialMedia,
 } from '../../services/commercialGovernanceApi';
 
 const modules = [
@@ -134,7 +138,7 @@ function ProvisioningCard({ task, run }) {
     <div className="flex items-center justify-between gap-3"><strong>{task.airline}</strong><span className="text-xs font-mono text-text-secondary-light">{task.reference.slice(0, 12)}</span></div>
     <p className="mt-1 text-sm text-text-secondary-light">Representante: {task.representativeName}</p>
     <label className="mt-4 block text-xs font-semibold">Correo de acceso<input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" /></label>
-    <label className="mt-3 block text-xs font-semibold">Contraseña temporal<input type="password" required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" /></label>
+    <PasswordField fieldClassName="mt-3 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id={`provision-password-${task.requestId}`} required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" />
     <button disabled={busy} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Creando…' : 'Crear credenciales'}</button>
   </form>;
 }
@@ -153,9 +157,12 @@ function GovernanceUsers({ snapshot, run }) {
 
 function UsersPanel({ snapshot, run }) {
   const [editing, setEditing] = useState(null);
+  const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [resetting, setResetting] = useState(null);
   const [password, setPassword] = useState('');
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', roleId: '', rampAgentId: '', temporaryPassword: '', isActive: true });
+  const emptyUser = () => ({ firstName: '', lastName: '', email: '', roleId: '', rampAgentId: '', temporaryPassword: '', isActive: true, avatarMediaUrl: null });
+  const [form, setForm] = useState(emptyUser);
+  const [avatar, setAvatar] = useState(null);
   const roles = snapshot.roles.filter(role => role.isActive &&
     (editing ? role.portal === snapshot.users.find(user => user.id === editing)?.portal :
       role.portal === 'BackOffice' || role.code === 'RAMP_AGENT'));
@@ -164,23 +171,27 @@ function UsersPanel({ snapshot, run }) {
   function edit(user) {
     const words = user.name.split(' ');
     setEditing(user.id);
+    setAvatar(null);
     setForm({ firstName: words[0] ?? '', lastName: words.slice(1).join(' '), email: user.email,
-      roleId: user.roleId, rampAgentId: user.rampAgentId ?? '', temporaryPassword: '', isActive: user.status === 'Active' });
+      roleId: user.roleId, rampAgentId: user.rampAgentId ?? '', temporaryPassword: '', isActive: user.status === 'Active', avatarMediaUrl: user.avatarMediaUrl ?? null });
   }
   async function save(event) {
     event.preventDefault();
-    const values = { ...form, rampAgentId: form.rampAgentId || null };
-    const succeeded = await run(() => editing ? updateUser(editing, values) : createUser(values),
+    const succeeded = await run(async () => {
+      const avatarMediaUrl = avatar ? (await uploadCommercialMedia('avatar', avatar)).url : form.avatarMediaUrl;
+      const values = { ...form, rampAgentId: form.rampAgentId || null, avatarMediaUrl };
+      return editing ? updateUser(editing, values) : createUser(values);
+    },
       editing ? 'Usuario actualizado.' : 'Usuario creado. Entregue la contraseña temporal manualmente.');
-    if (succeeded) { setEditing(null); setForm({ firstName: '', lastName: '', email: '', roleId: '', rampAgentId: '', temporaryPassword: '', isActive: true }); }
+    if (succeeded) { setEditing(null); setForm(emptyUser()); setAvatar(null); }
   }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
     <section className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:bg-surface-dark-card">
       <table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-4">Usuario</th><th>Rol</th><th>Organización</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>{snapshot.users.map(user => <tr key={user.id} className="border-t border-black/5 dark:border-white/5">
-          <td className="p-4"><strong>{user.name}</strong><span className="block text-xs text-text-secondary-light">{user.email}</span></td>
+          <td className="p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-accent-600/10 text-xs font-bold text-accent-600">{user.avatarMediaUrl ? <PrivateMediaImage url={user.avatarMediaUrl} alt={`Foto de ${user.name}`} className="h-10 w-10 object-cover" /> : user.name.slice(0, 1)}</div><div><strong>{user.name}</strong><span className="block text-xs text-text-secondary-light">{user.email}</span></div></div></td>
           <td>{user.roleName}</td><td>{user.organization}</td><td>{user.status === 'Active' ? 'Activo' : 'Inactivo'}{user.mustChangePassword && <span className="block text-xs text-signal-500">Cambio de clave pendiente</span>}</td>
-          <td><div className="flex flex-wrap gap-2"><button type="button" onClick={() => edit(user)} className="text-xs font-semibold text-accent-600">Editar</button><button type="button" onClick={() => { setResetting(user); setPassword(''); }} className="text-xs font-semibold text-accent-600">Restablecer clave</button><button type="button" onClick={() => { if (window.confirm(`¿Desactivar a ${user.name}?`)) void run(() => deactivateUser(user.id), 'Usuario desactivado.'); }} className="text-xs font-semibold text-status-danger">Desactivar</button></div></td>
+          <td><div className="flex flex-wrap gap-2"><button type="button" onClick={() => edit(user)} className="text-xs font-semibold text-accent-600">Editar</button><button type="button" onClick={() => { setResetting(user); setPassword(''); }} className="text-xs font-semibold text-accent-600">Restablecer clave</button><button type="button" onClick={() => setPendingDeactivate(user)} className="text-xs font-semibold text-status-danger">Desactivar</button></div></td>
         </tr>)}</tbody></table>
     </section>
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
@@ -195,16 +206,20 @@ function UsersPanel({ snapshot, run }) {
         setForm(current => ({ ...current, rampAgentId: event.target.value,
           firstName: firstName || current.firstName, lastName: lastName.join(' ') || current.lastName }));
       }} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark"><option value="">Seleccione un perfil con estación activa</option>{rampProfiles.filter(profile => profile.stations.length && (!profile.accountId || profile.accountId === editing)).map(profile => <option key={profile.id} value={profile.id}>{profile.name} · {profile.employeeNumber} · {profile.stations.join(', ')}</option>)}</select></label>}
-      {!editing && <label className="mt-4 block text-xs font-semibold">Contraseña temporal<input required minLength={14} type="password" autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" /></label>}
+      {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt="Foto actual del usuario" className="mt-4 h-16 w-16 rounded-full object-cover" />}
+      <FileDropField label="Foto de perfil" accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint="Arrastre o busque una imagen PNG, JPG o WebP de hasta 8 MB." />
+      {!editing && <PasswordField fieldClassName="mt-4 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id="governance-create-password" required minLength={14} autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} />}
       {editing && <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={event => setForm(current => ({ ...current, isActive: event.target.checked }))} /> Cuenta activa</label>}
-      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar usuario</button>{editing && <button type="button" onClick={() => setEditing(null)} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>
+      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar usuario</button>{editing && <button type="button" onClick={() => { setEditing(null); setForm(emptyUser()); setAvatar(null); }} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>
     </form>
-    {resetting && <div role="dialog" aria-modal="true" aria-label="Restablecer contraseña" className="fixed inset-0 z-[100] grid place-items-center bg-black/55 p-4"><form onSubmit={async event => { event.preventDefault(); const saved = await run(() => resetUserPassword(resetting.id, password), 'Contraseña restablecida. Entregue la nueva clave manualmente.'); if (saved) setResetting(null); }} className="w-full max-w-md rounded-xl bg-white p-6 dark:bg-surface-dark-card"><h2 className="font-bold">Restablecer clave de {resetting.name}</h2><input required minLength={14} type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" className="mt-4 w-full rounded-lg border p-2 dark:bg-surface-dark" /><div className="mt-4 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-white">Restablecer</button><button type="button" onClick={() => setResetting(null)}>Cancelar</button></div></form></div>}
+    {resetting && <div role="dialog" aria-modal="true" aria-label="Restablecer contraseña" className="fixed inset-0 z-[100] grid place-items-center bg-black/55 p-4"><form onSubmit={async event => { event.preventDefault(); const saved = await run(() => resetUserPassword(resetting.id, password), 'Contraseña restablecida. Entregue la nueva clave manualmente.'); if (saved) setResetting(null); }} className="w-full max-w-md rounded-xl bg-white p-6 dark:bg-surface-dark-card"><h2 className="font-bold">Restablecer clave de {resetting.name}</h2><PasswordField fieldClassName="mt-4 text-sm font-semibold" inputClassName="mt-1 w-full rounded-lg border p-2 dark:bg-surface-dark" label="Nueva contraseña temporal" id="governance-reset-password" required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" /><div className="mt-4 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-white">Restablecer</button><button type="button" onClick={() => setResetting(null)}>Cancelar</button></div></form></div>}
+    <ConfirmDialog open={Boolean(pendingDeactivate)} title="Desactivar usuario" description={`¿Desactivar a ${pendingDeactivate?.name ?? ''}? Su acceso quedará revocado.`} confirmLabel="Desactivar" onClose={() => setPendingDeactivate(null)} onConfirm={async () => { const user = pendingDeactivate; setPendingDeactivate(null); await run(() => deactivateUser(user.id), 'Usuario desactivado.'); }} />
   </div>;
 }
 
 function RolesPanel({ snapshot, run }) {
   const [editing, setEditing] = useState(null);
+  const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [levels, setLevels] = useState({});
@@ -234,7 +249,7 @@ function RolesPanel({ snapshot, run }) {
   }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Roles del sistema</h2><div className="mt-4 space-y-2">{snapshot.roles.map(role =>
-      <div key={role.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"><div><strong>{role.name}</strong><p className="text-xs text-text-secondary-light">{role.code} · {role.activeUsers} usuarios activos · {role.isCustom ? 'Personalizado' : 'Protegido'}</p><p className="mt-1 text-xs text-text-secondary-light">{role.permissions.join(' · ') || 'Sin permisos de gobernanza asignados'}</p></div>{role.isCustom && <div className="flex gap-2"><button type="button" onClick={() => edit(role)} className="text-xs font-semibold text-accent-600">Editar</button><button type="button" onClick={() => { if (window.confirm(`¿Desactivar el rol ${role.name}?`)) void run(() => deactivateRole(role.id), 'Rol desactivado.'); }} className="text-xs font-semibold text-status-danger">Desactivar</button></div>}</div>)}</div></section>
+      <div key={role.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10"><div><strong>{role.name}</strong><p className="text-xs text-text-secondary-light">{role.code} · {role.activeUsers} usuarios activos · {role.isCustom ? 'Personalizado' : 'Protegido'}</p><p className="mt-1 text-xs text-text-secondary-light">{role.permissions.join(' · ') || 'Sin permisos de gobernanza asignados'}</p></div>{role.isCustom && <div className="flex gap-2"><button type="button" onClick={() => edit(role)} className="text-xs font-semibold text-accent-600">Editar</button><button type="button" onClick={() => setPendingDeactivate(role)} className="text-xs font-semibold text-status-danger">Desactivar</button></div>}</div>)}</div></section>
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">{editing ? 'Editar rol' : 'Nuevo rol personalizado'}</h2>
       <label className="mt-4 block text-xs font-semibold">Nombre<input required minLength={3} maxLength={120} value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
       <label className="mt-4 block text-xs font-semibold">Descripción<input maxLength={500} value={description} onChange={event => setDescription(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
@@ -242,6 +257,7 @@ function RolesPanel({ snapshot, run }) {
         <label key={module} className="flex items-center justify-between gap-2 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><span>{module === 'commercial.catalog' ? 'Servicios' : 'Solicitudes y borradores'}</span><select value={levels[module] ?? 'none'} onChange={event => setLevels(current => ({ ...current, [module]: event.target.value }))} className="rounded border bg-white p-1 dark:bg-surface-dark"><option value="none">Sin acceso</option><option value="read">Ver</option>{snapshot.permissionCodes.includes(`${module}.create`) && <option value="create">Ver y crear</option>}<option value="edit">Ver y editar</option><option value="full">Acceso completo</option></select></label>)}</div>
       <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar rol</button>{editing && <button type="button" onClick={() => { setEditing(null); setName(''); setDescription(''); setLevels({}); }}>Cancelar</button>}</div>
     </form>
+    <ConfirmDialog open={Boolean(pendingDeactivate)} title="Desactivar rol" description={`¿Desactivar el rol ${pendingDeactivate?.name ?? ''}?`} confirmLabel="Desactivar" onClose={() => setPendingDeactivate(null)} onConfirm={async () => { const role = pendingDeactivate; setPendingDeactivate(null); await run(() => deactivateRole(role.id), 'Rol desactivado.'); }} />
   </div>;
 }
 

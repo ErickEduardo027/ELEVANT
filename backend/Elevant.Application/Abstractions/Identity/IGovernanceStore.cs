@@ -5,9 +5,11 @@ public sealed record GovernanceRoleData(Guid Id, string Code, string Name,
     IReadOnlyList<string> Permissions, int ActiveUsers);
 public sealed record GovernanceUserData(Guid Id, string Name, string Email,
     string Status, Guid RoleId, string RoleName, string Portal,
-    string Organization, bool MustChangePassword, Guid? RampAgentId = null);
+    string Organization, bool MustChangePassword, Guid? RampAgentId = null,
+    string? AvatarMediaUrl = null);
 public sealed record GovernanceRampProfileData(Guid Id, string Name,
-    string EmployeeNumber, IReadOnlyList<string> Stations, Guid? AccountId);
+    string EmployeeNumber, IReadOnlyList<string> Stations, Guid? AccountId,
+    string? AvatarMediaUrl = null);
 public sealed record AuditFieldChangeData(string Field, string? Before, string? After);
 public sealed record GovernanceAuditData(DateTimeOffset At, string Action,
     string EntityType, Guid? EntityId, string? Reason,
@@ -23,9 +25,11 @@ public sealed record GovernanceSnapshot(
 public sealed record SaveGovernanceRoleInput(string Name, string? Description,
     IReadOnlyList<string> PermissionCodes, bool IsActive);
 public sealed record CreateGovernanceUserInput(string FirstName, string LastName,
-    string Email, Guid RoleId, string TemporaryPassword, Guid? RampAgentId = null);
+    string Email, Guid RoleId, string TemporaryPassword, Guid? RampAgentId = null,
+    string? AvatarMediaUrl = null);
 public sealed record UpdateGovernanceUserInput(string FirstName, string LastName,
-    string Email, Guid RoleId, bool IsActive, Guid? RampAgentId = null);
+    string Email, Guid RoleId, bool IsActive, Guid? RampAgentId = null,
+    string? AvatarMediaUrl = null);
 public enum GovernanceFailure { Forbidden, NotFound, Invalid, Conflict, Protected }
 public sealed record GovernanceResult(Guid? Id, GovernanceFailure? Failure)
 {
