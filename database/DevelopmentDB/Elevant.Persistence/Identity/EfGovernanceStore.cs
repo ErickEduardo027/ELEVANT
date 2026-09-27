@@ -3,9 +3,11 @@ using System.Data;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Audit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -56,6 +58,18 @@ internal sealed class EfGovernanceStore(
             where membership.Status == MembershipStatus.Active
             select new { membership.AccountId, organization.DisplayName })
             .ToArrayAsync(cancellationToken);
+        var rampAgents = await (from agent in context.RampAgents.AsNoTracking()
+            join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+            where agent.IsActive
+            orderby person.FirstName, person.LastName
+            select new { agent.Id, agent.PublicId, agent.EmployeeNumber,
+                agent.PersonId, person.FirstName, person.LastName }).ToArrayAsync(cancellationToken);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var agentScopes = await (from scope in context.Set<RampAgentStationScope>().AsNoTracking()
+            join station in context.Stations.AsNoTracking() on scope.StationId equals station.Id
+            where scope.ValidFrom <= today && (scope.ValidTo == null || scope.ValidTo >= today)
+                && station.IsActive
+            select new { scope.RampAgentId, station.Code }).ToArrayAsync(cancellationToken);
         var roleData = roles.Select(role => new GovernanceRoleData(
             role.PublicId, role.NormalizedName ?? "", role.Name ?? "",
             role.Description, role.Portal.ToString(), role.IsCustom, role.IsActive,
@@ -74,19 +88,47 @@ internal sealed class EfGovernanceStore(
                 role?.PublicId ?? Guid.Empty, role?.Name ?? "Sin rol",
                 role?.Portal.ToString() ?? "", memberships.FirstOrDefault(membership =>
                     membership.AccountId == item.account.Id)?.DisplayName ?? "",
-                item.account.MustChangePassword);
+                item.account.MustChangePassword,
+                rampAgents.FirstOrDefault(agent => agent.PersonId == item.account.PersonId)?.PublicId);
         }).ToArray();
         var permissionCodes = await context.Permissions.AsNoTracking()
             .OrderBy(permission => permission.Code).Select(permission => permission.Code)
             .ToArrayAsync(cancellationToken);
-        var audit = await context.AuditEntries.AsNoTracking()
+        var audit = (await GetAuditAsync(actorId, 1, 50, cancellationToken))!.Entries;
+        var rampProfiles = rampAgents.Select(agent => new GovernanceRampProfileData(
+            agent.PublicId, $"{agent.FirstName} {agent.LastName}".Trim(), agent.EmployeeNumber,
+            agentScopes.Where(scope => scope.RampAgentId == agent.Id)
+                .Select(scope => scope.Code).Distinct().OrderBy(code => code).ToArray(),
+            users.FirstOrDefault(item => item.account.PersonId == agent.PersonId)?.account.PublicId))
+            .ToArray();
+        return new GovernanceSnapshot(roleData, userData, permissionCodes, audit, rampProfiles);
+    }
+
+    public async Task<GovernanceAuditPage?> GetAuditAsync(Guid actorId, int page, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await IsSuperAdminAsync(actorId, cancellationToken)) return null;
+        page = Math.Clamp(page, 1, 10000);
+        limit = Math.Clamp(limit, 1, 100);
+        var rows = await context.AuditEntries.AsNoTracking()
             .Where(entry => entry.Action.StartsWith("governance.") ||
-                entry.Action.StartsWith("commercial."))
-            .OrderByDescending(entry => entry.OccurredAt).Take(50)
-            .Select(entry => new GovernanceAuditData(entry.OccurredAt,
-                entry.Action, entry.EntityType, entry.EntityPublicId, entry.Reason))
-            .ToArrayAsync(cancellationToken);
-        return new GovernanceSnapshot(roleData, userData, permissionCodes, audit);
+                entry.Action.StartsWith("commercial.") || entry.Action.StartsWith("hr."))
+            .OrderByDescending(entry => entry.OccurredAt).ThenByDescending(entry => entry.Id)
+            .Skip((page - 1) * limit).Take(limit + 1).ToArrayAsync(cancellationToken);
+        var actorIds = rows.Where(row => row.ActorAccountId.HasValue)
+            .Select(row => row.ActorAccountId!.Value).Distinct().ToArray();
+        var names = await (from user in context.Users.AsNoTracking()
+            join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+            where actorIds.Contains(user.Id)
+            select new { user.Id, person.FirstName, person.LastName })
+            .ToDictionaryAsync(item => item.Id,
+                item => $"{item.FirstName} {item.LastName}".Trim(), cancellationToken);
+        return new GovernanceAuditPage(page, limit, rows.Length > limit,
+            rows.Take(limit).Select(row => new GovernanceAuditData(row.OccurredAt,
+                row.Action, row.EntityType, row.EntityPublicId, row.Reason,
+                row.ActorAccountId is long id && names.TryGetValue(id, out var name)
+                    ? name : row.ActorDisplay ?? "Sistema",
+                SafeAuditChanges.Parse(row.MetadataJson))).ToArray());
     }
 
     public async Task<GovernanceResult> CreateRoleAsync(Guid actorId,
@@ -117,7 +159,10 @@ internal sealed class EfGovernanceStore(
                 context.Set<RolePermissionGrant>().Add(new RolePermissionGrant
                 { RoleId = role.Id, PermissionId = permission.Id });
             await AuditAsync(actorId, "governance.role.created", "iam.roles",
-                role.PublicId, null, cancellationToken);
+                role.PublicId, null, cancellationToken,
+                new("role.name", null, role.Name),
+                new("role.active", null, role.IsActive.ToString()),
+                new("role.permissions", null, string.Join(", ", permissions.Select(item => item.Code).Order())));
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return GovernanceResult.Success(role.PublicId);
@@ -140,6 +185,12 @@ internal sealed class EfGovernanceStore(
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
         if (!input.IsActive && await ActiveRoleUserCountAsync(role.Id, cancellationToken) > 0)
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
+        var previousName = role.Name;
+        var previousActive = role.IsActive;
+        var previousPermissions = await (from grant in context.Set<RolePermissionGrant>()
+            join permission in context.Permissions on grant.PermissionId equals permission.Id
+            where grant.RoleId == role.Id select permission.Code)
+            .OrderBy(code => code).ToArrayAsync(cancellationToken);
         role.Name = input.Name.Trim();
         role.Description = input.Description?.Trim();
         role.IsActive = input.IsActive;
@@ -151,7 +202,11 @@ internal sealed class EfGovernanceStore(
             context.Set<RolePermissionGrant>().Add(new RolePermissionGrant
             { RoleId = role.Id, PermissionId = permission.Id });
         await AuditAsync(actorId, "governance.role.updated", "iam.roles",
-            role.PublicId, null, cancellationToken);
+            role.PublicId, null, cancellationToken,
+            new("role.name", previousName, role.Name),
+            new("role.active", previousActive.ToString(), role.IsActive.ToString()),
+            new("role.permissions", string.Join(", ", previousPermissions),
+                string.Join(", ", permissions.Select(item => item.Code).Order())));
         await context.SaveChangesAsync(cancellationToken);
         await RevokeRoleSessionsAsync(role.Id, cancellationToken);
         return GovernanceResult.Success(role.PublicId);
@@ -171,7 +226,8 @@ internal sealed class EfGovernanceStore(
         role.IsActive = false;
         role.ConcurrencyStamp = Guid.NewGuid().ToString("D");
         await AuditAsync(actorId, "governance.role.deactivated", "iam.roles",
-            role.PublicId, null, cancellationToken);
+            role.PublicId, null, cancellationToken,
+            new AuditFieldChangeData("role.active", true.ToString(), false.ToString()));
         await context.SaveChangesAsync(cancellationToken);
         return GovernanceResult.Success(role.PublicId);
     }
@@ -202,13 +258,25 @@ internal sealed class EfGovernanceStore(
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
         var role = await context.Roles.SingleOrDefaultAsync(item =>
             item.PublicId == input.RoleId && item.IsActive &&
-            item.Portal == PortalKind.BackOffice, cancellationToken);
+            (item.Portal == PortalKind.BackOffice ||
+                item.Portal == PortalKind.RampMobileApp && item.NormalizedName == "RAMP_AGENT"), cancellationToken);
         if (role is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        var isRamp = role.Portal == PortalKind.RampMobileApp;
+        if (isRamp != input.RampAgentId.HasValue)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        var rampProfile = isRamp ? await context.RampAgents.SingleOrDefaultAsync(agent =>
+            agent.PublicId == input.RampAgentId && agent.IsActive, cancellationToken) : null;
+        if (isRamp && (rampProfile is null ||
+            await context.Users.AnyAsync(user => user.PersonId == rampProfile.PersonId, cancellationToken) ||
+            !await context.Set<RampAgentStationScope>().AnyAsync(scope =>
+                scope.RampAgentId == rampProfile.Id && scope.ValidFrom <= DateOnly.FromDateTime(DateTime.UtcNow) &&
+                (scope.ValidTo == null || scope.ValidTo >= DateOnly.FromDateTime(DateTime.UtcNow)), cancellationToken)))
+            return GovernanceResult.Failed(GovernanceFailure.Conflict);
         var email = input.Email.Trim();
         var normalizedEmail = email.ToUpperInvariant();
         if (await context.Users.AnyAsync(item => item.NormalizedEmail == normalizedEmail,
             cancellationToken) || await context.Persons.AnyAsync(item =>
-            item.PrimaryEmail == email, cancellationToken))
+            item.PrimaryEmail == email && (!isRamp || item.Id != rampProfile!.PersonId), cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
         var organization = await context.Organizations.SingleAsync(item =>
             item.Code == "AVIAM" && item.Status == OrganizationStatus.Active,
@@ -218,14 +286,19 @@ internal sealed class EfGovernanceStore(
         {
             await using var transaction = await context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
-            var person = new Person
-            {
-                PublicId = Guid.CreateVersion7(), FirstName = input.FirstName.Trim(),
-                LastName = input.LastName.Trim(), PrimaryEmail = email,
-                IdentificationType = "GOVERNANCE_ACCOUNT",
-                IdentificationNumber = Guid.CreateVersion7().ToString("N"),
-            };
-            context.Persons.Add(person);
+            var person = isRamp
+                ? await context.Persons.SingleAsync(item => item.Id == rampProfile!.PersonId, cancellationToken)
+                : new Person
+                {
+                    PublicId = Guid.CreateVersion7(), FirstName = input.FirstName.Trim(),
+                    LastName = input.LastName.Trim(), PrimaryEmail = email,
+                    IdentificationType = "GOVERNANCE_ACCOUNT",
+                    IdentificationNumber = Guid.CreateVersion7().ToString("N"),
+                };
+            if (!isRamp) context.Persons.Add(person);
+            else if (!string.Equals(person.FirstName, input.FirstName.Trim(), StringComparison.Ordinal) ||
+                !string.Equals(person.LastName, input.LastName.Trim(), StringComparison.Ordinal))
+                return GovernanceResult.Failed(GovernanceFailure.Invalid);
             await context.SaveChangesAsync(cancellationToken);
             var user = new ApplicationUser
             {
@@ -245,8 +318,21 @@ internal sealed class EfGovernanceStore(
                 OrganizationId = organization.Id, Kind = MembershipKind.InternalStaff,
                 Status = MembershipStatus.Active,
             });
+            if (isRamp)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var stationIds = await context.Set<RampAgentStationScope>()
+                    .Where(scope => scope.RampAgentId == rampProfile!.Id && scope.ValidFrom <= today &&
+                        (scope.ValidTo == null || scope.ValidTo >= today))
+                    .Select(scope => scope.StationId).Distinct().ToArrayAsync(cancellationToken);
+                foreach (var stationId in stationIds)
+                    context.AccountStationScopes.Add(new AccountStationScope
+                    { AccountId = user.Id, StationId = stationId, GrantedAt = DateTimeOffset.UtcNow });
+            }
             await AuditAsync(actorId, "governance.user.created", "iam.accounts",
-                user.PublicId, null, cancellationToken);
+                user.PublicId, null, cancellationToken,
+                new("user.role", null, role.NormalizedName),
+                new("user.status", null, user.Status.ToString()));
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return GovernanceResult.Success(user.PublicId);
@@ -269,15 +355,28 @@ internal sealed class EfGovernanceStore(
         var role = await context.Roles.SingleOrDefaultAsync(item =>
             item.PublicId == input.RoleId && item.IsActive, cancellationToken);
         if (role is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        var rampProfile = await context.RampAgents.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.PersonId == user.PersonId, cancellationToken);
+        if (role.Portal == PortalKind.RampMobileApp &&
+                (role.NormalizedName != "RAMP_AGENT" || rampProfile is null ||
+                    !rampProfile.IsActive || input.RampAgentId != rampProfile.PublicId) ||
+            role.Portal == PortalKind.BackOffice && input.RampAgentId.HasValue ||
+            role.Portal == PortalKind.AirlinePortal)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid);
         var membership = await context.OrganizationMemberships.SingleOrDefaultAsync(item =>
             item.AccountId == user.Id && item.Status == MembershipStatus.Active,
             cancellationToken);
         if (membership is null ||
-            membership.Kind == MembershipKind.InternalStaff && role.Portal != PortalKind.BackOffice ||
+            membership.Kind == MembershipKind.InternalStaff && role.Portal != PortalKind.BackOffice &&
+                role.Portal != PortalKind.RampMobileApp ||
             membership.Kind == MembershipKind.AirlineClient && role.Portal != PortalKind.AirlinePortal)
             return GovernanceResult.Failed(GovernanceFailure.Protected);
         var assignments = await context.Set<IdentityUserRole<long>>()
             .Where(item => item.UserId == user.Id).ToArrayAsync(cancellationToken);
+        var previousRole = await context.Roles.AsNoTracking()
+            .Where(item => assignments.Select(link => link.RoleId).Contains(item.Id))
+            .Select(item => item.NormalizedName).FirstOrDefaultAsync(cancellationToken);
+        var previousStatus = user.Status.ToString();
         var currentSuperAdmin = await context.Roles.AnyAsync(item =>
             assignments.Select(link => link.RoleId).Contains(item.Id) &&
             item.NormalizedName == "SUPERADMIN", cancellationToken);
@@ -316,7 +415,9 @@ internal sealed class EfGovernanceStore(
             { UserId = user.Id, RoleId = role.Id });
             await userManager.UpdateSecurityStampAsync(user);
             await AuditAsync(actorId, "governance.user.updated", "iam.accounts",
-                user.PublicId, null, cancellationToken);
+                user.PublicId, null, cancellationToken,
+                new("user.role", previousRole, role.NormalizedName),
+                new("user.status", previousStatus, user.Status.ToString()));
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return GovernanceResult.Success(user.PublicId);
@@ -340,11 +441,13 @@ internal sealed class EfGovernanceStore(
             cancellationToken) &&
             await ActiveRoleUserCountAsync(superAdminRoleId, cancellationToken) <= 1)
             return GovernanceResult.Failed(GovernanceFailure.Protected);
+        var previousStatus = user.Status.ToString();
         user.Status = AccountLifecycleStatus.Disabled;
         user.UpdatedAt = DateTimeOffset.UtcNow;
         await userManager.UpdateSecurityStampAsync(user);
         await AuditAsync(actorId, "governance.user.deactivated", "iam.accounts",
-            user.PublicId, null, cancellationToken);
+            user.PublicId, null, cancellationToken,
+            new AuditFieldChangeData("user.status", previousStatus, user.Status.ToString()));
         await context.SaveChangesAsync(cancellationToken);
         return GovernanceResult.Success(user.PublicId);
     }
@@ -386,8 +489,13 @@ internal sealed class EfGovernanceStore(
             input.Description?.Length > 500 ||
             input.PermissionCodes is null or { Count: < 1 or > 30 } ||
             input.PermissionCodes.Distinct(StringComparer.Ordinal).Count() != input.PermissionCodes.Count ||
-            input.PermissionCodes.Any(code => code.EndsWith(".write", StringComparison.Ordinal) &&
-                !input.PermissionCodes.Contains(code[..^6] + ".read", StringComparer.Ordinal)) ||
+            input.PermissionCodes.Any(code =>
+                (code.EndsWith(".write", StringComparison.Ordinal) ||
+                 code.EndsWith(".create", StringComparison.Ordinal) ||
+                 code.EndsWith(".edit", StringComparison.Ordinal) ||
+                 code.EndsWith(".full", StringComparison.Ordinal)) &&
+                !input.PermissionCodes.Contains(code[..code.LastIndexOf('.')] + ".read",
+                    StringComparer.Ordinal)) ||
             input.PermissionCodes.Any(code => !code.StartsWith("commercial.", StringComparison.Ordinal)))
             return null;
         var selected = await context.Permissions.Where(permission =>
@@ -412,7 +520,8 @@ internal sealed class EfGovernanceStore(
     }
 
     private async Task AuditAsync(Guid actorId, string action, string entityType,
-        Guid entityId, string? reason, CancellationToken cancellationToken)
+        Guid entityId, string? reason, CancellationToken cancellationToken,
+        params AuditFieldChangeData[] changes)
     {
         var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
@@ -423,6 +532,7 @@ internal sealed class EfGovernanceStore(
             Action = action, EntityType = entityType, EntityPublicId = entityId,
             Source = AuditSource.Api, CorrelationId = Guid.CreateVersion7(),
             Reason = reason,
+            MetadataJson = SafeAuditChanges.Serialize(changes),
         });
     }
 

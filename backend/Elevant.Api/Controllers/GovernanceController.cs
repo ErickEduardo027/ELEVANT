@@ -33,6 +33,16 @@ public sealed class GovernanceController(IGovernanceStore store) : ControllerBas
         return snapshot is null ? Forbid() : Ok(snapshot);
     }
 
+    [HttpGet("audit", Name = "GetGovernanceAudit")]
+    [ProducesResponseType<GovernanceAuditPage>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> Audit([FromQuery] int page = 1,
+        [FromQuery] int limit = 25, CancellationToken cancellationToken = default)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var audit = await store.GetAuditAsync(actorId, page, limit, cancellationToken);
+        return audit is null ? Forbid() : Ok(audit);
+    }
+
     [HttpPost("roles", Name = "CreateGovernanceRole")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(32768)]

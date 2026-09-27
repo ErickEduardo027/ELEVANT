@@ -8,6 +8,10 @@ public sealed record CommercialRequestData(
     string? LogoUrl, bool AirlineVerified, string? VerificationSourceUrl,
     string RepresentativeName, string RepresentativeTitle,
     string RepresentativeEmail, string RepresentativePhone,
+    string? RepresentativeNationalityCode, string? RepresentativeAddress,
+    string? RepresentativeCountry, string? RepresentativeProvince,
+    string? RepresentativeMunicipality, string? RepresentativeDocumentType,
+    string? RepresentativeDocumentNumber,
     bool AuthorityDeclared, string Status, DateTimeOffset SubmittedAt,
     string? DecisionReason, Guid? ContractId,
     IReadOnlyList<CommercialRequestItemData> Services);

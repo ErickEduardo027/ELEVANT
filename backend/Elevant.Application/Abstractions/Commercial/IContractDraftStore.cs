@@ -1,7 +1,8 @@
 namespace Elevant.Application.Abstractions.Commercial;
 
 public sealed record ContractDraftRateData(Guid Id, string ServiceName,
-    string BillingUnit, decimal UnitPrice, decimal MinimumQuantity);
+    string BillingUnit, decimal UnitPrice, decimal MinimumQuantity,
+    bool IsConfirmed);
 public sealed record ContractDraftCommentData(Guid Id, string Author,
     string Body, DateTimeOffset At, bool IsAirline);
 public sealed record ContractDraftData(Guid Id, Guid ContractId,
@@ -14,7 +15,7 @@ public sealed record ContractDraftOverviewItemData(Guid Id, string ContractCode,
 public sealed record ContractDraftOverviewData(int Count,
     IReadOnlyList<ContractDraftOverviewItemData> Recent);
 public sealed record UpdateDraftRateInput(Guid Id, string BillingUnit,
-    decimal UnitPrice, decimal MinimumQuantity);
+    decimal UnitPrice, decimal MinimumQuantity, bool IsConfirmed = false);
 public sealed record UpdateContractDraftInput(DateOnly ValidFrom,
     DateOnly? ValidTo, string CurrencyCode, string Terms,
     IReadOnlyList<UpdateDraftRateInput> Rates);

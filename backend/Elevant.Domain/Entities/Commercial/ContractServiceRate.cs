@@ -11,4 +11,7 @@ public sealed class ContractServiceRate : AuditableEntity
     public decimal UnitPrice { get; set; }
 
     public decimal MinimumQuantity { get; set; }
+
+    /// <summary>Null represents a legacy rate; draft rates require explicit confirmation.</summary>
+    public bool? IsConfirmed { get; set; }
 }

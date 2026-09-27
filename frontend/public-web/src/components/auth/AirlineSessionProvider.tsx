@@ -18,7 +18,7 @@ export interface AirlineDraftData {
   id: string; contractId: string; contractCode: string; airline: string; status: string;
   validFrom: string; validTo: string | null; currencyCode: string; terms: string | null;
   stations: string[];
-  rates: { id: string; serviceName: string; billingUnit: string; unitPrice: number; minimumQuantity: number }[];
+  rates: { id: string; serviceName: string; billingUnit: string; unitPrice: number; minimumQuantity: number; isConfirmed: boolean }[];
   comments: { id: string; author: string; body: string; at: string; isAirline: boolean }[];
 }
 

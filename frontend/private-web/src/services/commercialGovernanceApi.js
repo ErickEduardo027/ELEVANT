@@ -30,6 +30,19 @@ export async function commercialApi(path, options = {}) {
 }
 
 export const getGovernance = () => commercialApi('/governance');
+export const getGovernanceAudit = (page = 1) => commercialApi(`/governance/audit?page=${page}&limit=25`);
+export const getRampProfiles = () => commercialApi('/human-resources/ramp-profiles');
+export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
+  method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+});
+export const getManagedAirlines = () => commercialApi('/governance/airlines');
+export const enrichManagedAirlines = () => commercialApi('/governance/airlines/enrichment', { method: 'POST' });
+export const saveManagedAirline = (id, values) => commercialApi(id ? `/governance/airlines/${id}` : '/governance/airlines', {
+  method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+});
+export const archiveManagedAirline = (id, version) => commercialApi(`/governance/airlines/${id}?version=${encodeURIComponent(version)}`, {
+  method: 'DELETE',
+});
 export const getMyPermissions = () => commercialApi('/governance/me/permissions');
 export const getProvisioning = () => commercialApi('/governance/provisioning');
 export const provisionAirline = (requestId, email, temporaryPassword) => commercialApi(`/governance/provisioning/${requestId}`, {

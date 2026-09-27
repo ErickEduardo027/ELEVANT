@@ -502,6 +502,221 @@
         }
       }
     },
+    "/api/v1/governance/airlines": {
+      "get": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "operationId": "ListManagedAirlines",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedAirlineData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "operationId": "CreateManagedAirline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAirlineData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/airlines/enrichment": {
+      "post": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "operationId": "EnrichManagedAirlines",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineEnrichmentResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/airlines/{id}": {
+      "put": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "operationId": "UpdateManagedAirline",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ManagedAirlineInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAirlineData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "operationId": "ArchiveManagedAirline",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedAirlineData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/catalog/services": {
       "get": {
         "tags": [
@@ -1370,6 +1585,51 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GovernanceSnapshot"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/audit": {
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "GetGovernanceAudit",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceAuditPage"
                 }
               }
             }
@@ -4932,6 +5192,152 @@
         ]
       }
     },
+    "/api/v1/human-resources/ramp-profiles": {
+      "get": {
+        "tags": [
+          "RampProfiles"
+        ],
+        "operationId": "ListRampProfiles",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampProfileCatalog"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "RampProfiles"
+        ],
+        "operationId": "CreateRampProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampProfileData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/ramp-profiles/{id}": {
+      "put": {
+        "tags": [
+          "RampProfiles"
+        ],
+        "operationId": "UpdateRampProfile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveRampProfileInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampProfileData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/system/ping": {
       "get": {
         "tags": [
@@ -5267,6 +5673,27 @@
         },
         "additionalProperties": false
       },
+      "AirlineEnrichmentResult": {
+        "required": [
+          "changed"
+        ],
+        "type": "object",
+        "properties": {
+          "changed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failure": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CatalogMutationFailure"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlinePortalBootstrapResponse": {
         "required": [
           "airlineId",
@@ -5402,6 +5829,36 @@
         },
         "additionalProperties": false
       },
+      "AuditFieldChangeData": {
+        "required": [
+          "field"
+        ],
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string",
+            "nullable": true
+          },
+          "after": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CatalogMutationFailure": {
+        "enum": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
       "ChangePasswordRequest": {
         "required": [
           "currentPassword",
@@ -5527,6 +5984,34 @@
           },
           "representativePhone": {
             "type": "string"
+          },
+          "representativeNationalityCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeProvince": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeMunicipality": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentNumber": {
+            "type": "string",
+            "nullable": true
           },
           "authorityDeclared": {
             "type": "boolean"
@@ -5754,6 +6239,7 @@
         "required": [
           "billingUnit",
           "id",
+          "isConfirmed",
           "minimumQuantity",
           "serviceName",
           "unitPrice"
@@ -5777,6 +6263,9 @@
           "minimumQuantity": {
             "type": "number",
             "format": "double"
+          },
+          "isConfirmed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -5806,6 +6295,11 @@
           },
           "temporaryPassword": {
             "type": "string"
+          },
+          "rampAgentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -6204,7 +6698,9 @@
       "GovernanceAuditData": {
         "required": [
           "action",
+          "actor",
           "at",
+          "changes",
           "entityType"
         ],
         "type": "object",
@@ -6226,6 +6722,77 @@
           },
           "reason": {
             "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditFieldChangeData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "GovernanceAuditPage": {
+        "required": [
+          "entries",
+          "hasMore",
+          "limit",
+          "page"
+        ],
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceAuditData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "GovernanceRampProfileData": {
+        "required": [
+          "employeeNumber",
+          "id",
+          "name",
+          "stations"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid",
             "nullable": true
           }
         },
@@ -6283,6 +6850,7 @@
       "GovernanceSnapshot": {
         "required": [
           "permissionCodes",
+          "rampProfiles",
           "recentAudit",
           "roles",
           "users"
@@ -6311,6 +6879,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/GovernanceAuditData"
+            }
+          },
+          "rampProfiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceRampProfileData"
             }
           }
         },
@@ -6358,6 +6932,136 @@
           },
           "mustChangePassword": {
             "type": "boolean"
+          },
+          "rampAgentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedAirlineData": {
+        "required": [
+          "displayName",
+          "id",
+          "isPublished",
+          "isVerified",
+          "region",
+          "sourceName",
+          "sourceUrl",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "region": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "isVerified": {
+            "type": "boolean"
+          },
+          "isPublished": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedAirlineInput": {
+        "required": [
+          "displayName",
+          "isPublished",
+          "isVerified",
+          "region",
+          "sourceName",
+          "sourceUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "region": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "isVerified": {
+            "type": "boolean"
+          },
+          "isPublished": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9034,6 +9738,98 @@
         },
         "additionalProperties": false
       },
+      "RampProfileCatalog": {
+        "required": [
+          "availableStations",
+          "profiles"
+        ],
+        "type": "object",
+        "properties": {
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileData"
+            }
+          },
+          "availableStations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileStation"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileData": {
+        "required": [
+          "category",
+          "employeeNumber",
+          "firstName",
+          "hasAccount",
+          "hireDate",
+          "id",
+          "isActive",
+          "lastName",
+          "stations"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "hireDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileStation"
+            }
+          },
+          "hasAccount": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileStation": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RampReviewFeedbackResponse": {
         "required": [
           "revisionNumber",
@@ -9365,6 +10161,47 @@
         },
         "additionalProperties": false
       },
+      "SaveRampProfileInput": {
+        "required": [
+          "category",
+          "employeeNumber",
+          "firstName",
+          "hireDate",
+          "isActive",
+          "lastName",
+          "stationIds"
+        ],
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "hireDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "stationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "SendOperationMessageRequest": {
         "required": [
           "content"
@@ -9616,6 +10453,34 @@
           },
           "authorityDeclared": {
             "type": "boolean"
+          },
+          "representativeNationalityCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeProvince": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeMunicipality": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentNumber": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9756,6 +10621,7 @@
         "required": [
           "billingUnit",
           "id",
+          "isConfirmed",
           "minimumQuantity",
           "unitPrice"
         ],
@@ -9775,6 +10641,9 @@
           "minimumQuantity": {
             "type": "number",
             "format": "double"
+          },
+          "isConfirmed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -9804,6 +10673,11 @@
           },
           "isActive": {
             "type": "boolean"
+          },
+          "rampAgentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9864,6 +10738,9 @@
       "name": "Authentication"
     },
     {
+      "name": "CommercialAirlineManagement"
+    },
+    {
       "name": "CommercialCatalogManagement"
     },
     {
@@ -9922,6 +10799,9 @@
     },
     {
       "name": "RampOperationSubmissions"
+    },
+    {
+      "name": "RampProfiles"
     },
     {
       "name": "System"

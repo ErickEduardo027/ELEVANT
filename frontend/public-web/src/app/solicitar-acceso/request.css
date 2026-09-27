@@ -59,9 +59,24 @@
 .access-airline__verification { grid-column: 1 / -1; padding: 14px 18px; background: #fff1e9; color: #81401f; font-size: .78rem; line-height: 1.5; margin: 0; }
 .access-representative { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .access-representative input:not([type="checkbox"]) { display: block; margin-top: 9px; }
+.access-representative__wide { grid-column: 1 / -1; }
+.access-representative select { display: block; margin-top: 9px; }
 .access-representative .access-authority { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 12px; font-weight: 400; font-size: .84rem; line-height: 1.5; margin-top: 12px; }
 .access-authority input { width: 20px; height: 20px; margin: 0; accent-color: #e85a1d; flex: none; }
 .access-representative__note { grid-column: 1 / -1; padding: 14px 18px; border-left: 3px solid #ff641f; background: #e9eef3; color: #425e79; font-size: .82rem; line-height: 1.5; }
+.access-summary { display: grid; gap: 16px; }
+.access-summary section { background: #fff; border: 1px solid #d6dfe7; padding: 19px 22px; }
+.access-summary__header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.access-summary h3 { margin: 0 0 12px; font: 400 1.35rem var(--font-display); color: #112c46; }
+.access-summary button { border: 0; background: none; color: #c34d19; font: 700 .78rem var(--font-data); cursor: pointer; }
+.access-summary button:focus-visible { outline: 3px solid #ff641f; outline-offset: 3px; }
+.access-summary ul { margin: 0; padding-left: 20px; color: #35516c; }
+.access-summary p { margin: 0 0 5px; font-weight: 650; }
+.access-summary small { color: #63768b; }
+.access-summary dl { margin: 0; display: grid; gap: 9px; }
+.access-summary dl div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+.access-summary dt { color: #63768b; font-size: .78rem; }
+.access-summary dd { margin: 0; overflow-wrap: anywhere; }
 .access-error { color: #9c2f13; background: #ffe9e0; padding: 13px 16px; font-size: .85rem; }
 .access-loading { color: #425d78; }
 .access-panel__footer { margin-top: auto; padding-top: 38px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
@@ -76,5 +91,5 @@
 .access-complete strong { display: block; font: .95rem var(--font-data); background: #dfe8ef; padding: 22px; overflow-wrap: anywhere; margin: 34px 0; }
 .access-complete a { color: #da4f16; font-weight: 700; }
 @media (max-width: 1050px) { .access-shell { grid-template-columns: 270px minmax(0,1fr); } .access-intro { padding: 35px 26px; } .access-intro h1 { font-size: 2.8rem; } .access-airline { grid-template-columns: 1fr; } .access-airline__logo { min-height: 130px; } }
-@media (max-width: 750px) { .access-header__context { display: none; } .access-header { height: 65px; } .access-shell { display: block; } .access-intro { min-height: auto; padding: 34px 24px 26px; } .access-intro__serial, .access-intro__rule, .access-intro__foot, .access-intro > p:not(.access-kicker) { display: none; } .access-intro h1 { font-size: 2.8rem; margin-bottom: 25px; } .access-steps { display: flex; gap: 6px; } .access-steps li { display: block; flex: 1; border-bottom: 3px solid #ffffff26; padding: 0 0 8px; font-size: .72rem; } .access-steps li[data-active="true"] { border-color: #ff641f; } .access-steps li span:first-child { display: block; margin-bottom: 4px; } .access-steps li span:last-child { display: none; } .access-panel { padding: 24px; min-height: 620px; } .access-panel__heading { margin-top: 35px; } .access-service { flex-basis: 82%; } .access-representative, .access-airline__fields { grid-template-columns: 1fr; } }
+@media (max-width: 750px) { .access-header__context { display: none; } .access-header { height: 65px; } .access-shell { display: block; } .access-intro { min-height: auto; padding: 34px 24px 26px; } .access-intro__serial, .access-intro__rule, .access-intro__foot, .access-intro > p:not(.access-kicker) { display: none; } .access-intro h1 { font-size: 2.8rem; margin-bottom: 25px; } .access-steps { display: flex; gap: 6px; } .access-steps li { display: block; flex: 1; border-bottom: 3px solid #ffffff26; padding: 0 0 8px; font-size: .72rem; } .access-steps li[data-active="true"] { border-color: #ff641f; } .access-steps li span:first-child { display: block; margin-bottom: 4px; } .access-steps li span:last-child { display: none; } .access-panel { padding: 24px; min-height: 620px; } .access-panel__heading { margin-top: 35px; } .access-service { flex-basis: 82%; } .access-representative, .access-airline__fields { grid-template-columns: 1fr; } .access-summary dl div { grid-template-columns: 1fr; gap: 2px; } }
 @media (prefers-reduced-motion: reduce) { .access-service, .access-service__image { transition: none; } .access-carousel { scroll-behavior: auto; } }

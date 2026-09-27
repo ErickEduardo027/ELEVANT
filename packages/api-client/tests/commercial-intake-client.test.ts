@@ -79,6 +79,26 @@ describe("canonical public commercial intake client", () => {
     expect(calls).toEqual([{ body: request, auth: null }, { body: request, auth: null }]);
   });
 
+  it("accepts optional representative identity and address without sending credentials", async () => {
+    let sent: unknown;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ reference: "REQ-2", replayed: false }),
+          { status: 201, headers: { "content-type": "application/json" } });
+      },
+    });
+    const application = { ...request, representativeNationalityCode: "DO",
+      representativeAddress: "Avenida Principal 10", representativeCountry: "República Dominicana",
+      representativeProvince: "Santo Domingo", representativeMunicipality: "Boca Chica",
+      representativeDocumentType: "Passport", representativeDocumentNumber: "AB123456" };
+
+    await expect(client.submitCommercialRequest(application)).resolves.toEqual({
+      reference: "REQ-2", replayed: false,
+    });
+    expect(sent).toEqual(application);
+  });
+
   it("rejects stale ids, missing authority and a misleading success response", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => new Response(JSON.stringify({ reference: "REQ-SYNTHETIC-001",

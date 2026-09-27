@@ -1,5 +1,7 @@
+using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -97,7 +99,7 @@ internal sealed class EfContractDraftStore(
             rates.Where(rate => rate.rate.ContractVersionId == item.version.Id)
                 .Select(rate => new ContractDraftRateData(rate.rate.PublicId,
                     rate.Name, rate.rate.BillingUnit, rate.rate.UnitPrice,
-                    rate.rate.MinimumQuantity)).ToArray(),
+                    rate.rate.MinimumQuantity, rate.rate.IsConfirmed == true)).ToArray(),
             comments.Where(comment => comment.comment.ContractVersionId == item.version.Id)
                 .Select(comment => new ContractDraftCommentData(comment.comment.PublicId,
                     $"{comment.FirstName} {comment.LastName}".Trim(),
@@ -143,7 +145,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftResult> UpdateAsync(Guid actorId, Guid versionId,
         UpdateContractDraftInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "commercial.requests.edit", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         if (input is null || string.IsNullOrWhiteSpace(input.Terms) ||
             input.Terms.Trim().Length > 10000 || input.CurrencyCode?.Length != 3 ||
@@ -167,6 +169,10 @@ internal sealed class EfContractDraftStore(
         if (rates.Length != input.Rates.Count || rates.Any(rate =>
             !input.Rates.Any(item => item.Id == rate.PublicId)))
             return ContractDraftResult.Failed(ContractDraftFailure.Invalid);
+        var beforePrices = string.Join(", ", rates.OrderBy(rate => rate.PublicId)
+            .Select(rate => $"{rate.PublicId}:{rate.UnitPrice.ToString(CultureInfo.InvariantCulture)}"));
+        var beforeConfirmation = string.Join(", ", rates.OrderBy(rate => rate.PublicId)
+            .Select(rate => $"{rate.PublicId}:{(rate.IsConfirmed == true ? "confirmed" : "pending")}"));
         row.Version.Terms = input.Terms.Trim();
         row.Version.CurrencyCode = input.CurrencyCode;
         row.Version.ValidFrom = input.ValidFrom;
@@ -178,6 +184,7 @@ internal sealed class EfContractDraftStore(
             rate.BillingUnit = inputRate.BillingUnit.Trim();
             rate.UnitPrice = inputRate.UnitPrice;
             rate.MinimumQuantity = inputRate.MinimumQuantity;
+            rate.IsConfirmed = inputRate.IsConfirmed;
             rate.UpdatedAt = DateTimeOffset.UtcNow;
         }
         var recipientIds = await context.ServiceRequests.AsNoTracking()
@@ -191,7 +198,13 @@ internal sealed class EfContractDraftStore(
         var editorId = await context.Users.Where(item => item.PublicId == actorId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
         CommercialAuditWriter.Add(context, editorId, "commercial.draft.updated",
-            "commercial.contract_versions", row.Version.PublicId);
+            "commercial.contract_versions", row.Version.PublicId, null,
+            new AuditFieldChangeData("rate.price", beforePrices,
+                string.Join(", ", rates.OrderBy(rate => rate.PublicId)
+                    .Select(rate => $"{rate.PublicId}:{rate.UnitPrice.ToString(CultureInfo.InvariantCulture)}"))),
+            new AuditFieldChangeData("rate.confirmed", beforeConfirmation,
+                string.Join(", ", rates.OrderBy(rate => rate.PublicId)
+                    .Select(rate => $"{rate.PublicId}:{(rate.IsConfirmed == true ? "confirmed" : "pending")}"))));
         await context.SaveChangesAsync(cancellationToken);
         return ContractDraftResult.Success(versionId);
     }
@@ -199,7 +212,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftResult> ActivateAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "commercial.requests.full", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         var row = await (from version in context.ContractVersions
             join contract in context.Contracts on version.ContractId equals contract.Id
@@ -210,10 +223,11 @@ internal sealed class EfContractDraftStore(
             select new { Version = version, Contract = contract, Request = request })
             .SingleOrDefaultAsync(cancellationToken);
         if (row is null) return ContractDraftResult.Failed(ContractDraftFailure.NotFound);
+        var rates = await context.ContractServiceRates.Where(rate =>
+            rate.ContractVersionId == row.Version.Id).ToArrayAsync(cancellationToken);
         if (row.Request.ProvisionedAccountId is null ||
             string.IsNullOrWhiteSpace(row.Version.Terms) ||
-            !await context.ContractServiceRates.AnyAsync(rate =>
-                rate.ContractVersionId == row.Version.Id, cancellationToken) ||
+            !ContractRateConfirmationPolicy.CanActivate(rates) ||
             !await context.Set<ContractVersionStation>().AnyAsync(station =>
                 station.ContractVersionId == row.Version.Id, cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Conflict);

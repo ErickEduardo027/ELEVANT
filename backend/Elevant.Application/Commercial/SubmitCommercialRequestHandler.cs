@@ -6,7 +6,14 @@ namespace Elevant.Application.Commercial;
 public sealed record SubmitCommercialRequestCommand(
     Guid RequestId, Guid AirlineProfileId, IReadOnlyList<Guid> ServiceIds,
     string RepresentativeName, string RepresentativeTitle,
-    string RepresentativeEmail, string RepresentativePhone, bool AuthorityDeclared);
+    string RepresentativeEmail, string RepresentativePhone, bool AuthorityDeclared,
+    string? RepresentativeNationalityCode = null,
+    string? RepresentativeAddress = null,
+    string? RepresentativeCountry = null,
+    string? RepresentativeProvince = null,
+    string? RepresentativeMunicipality = null,
+    string? RepresentativeDocumentType = null,
+    string? RepresentativeDocumentNumber = null);
 
 public enum CommercialSubmissionFailure
 {
@@ -43,7 +50,15 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
             !ValidText(command.RepresentativeTitle, 120) ||
             !ValidText(command.RepresentativePhone, 32) ||
             !ValidText(command.RepresentativeEmail, 256) ||
-            !ValidEmail(command.RepresentativeEmail))
+            !ValidEmail(command.RepresentativeEmail) ||
+            !ValidPhone(command.RepresentativePhone) ||
+            !ValidNationality(command.RepresentativeNationalityCode) ||
+            !OptionalText(command.RepresentativeAddress, 250) ||
+            !OptionalText(command.RepresentativeCountry, 80) ||
+            !OptionalText(command.RepresentativeProvince, 80) ||
+            !OptionalText(command.RepresentativeMunicipality, 80) ||
+            !ValidDocument(command.RepresentativeDocumentType,
+                command.RepresentativeDocumentNumber))
             return Task.FromResult(CommercialSubmissionResult.Failed(
                 CommercialSubmissionFailure.InvalidRequest));
 
@@ -52,6 +67,36 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
 
     private static bool ValidText(string? value, int maxLength) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= maxLength;
+
+    private static bool OptionalText(string? value, int maxLength) =>
+        string.IsNullOrWhiteSpace(value) || value.Trim().Length <= maxLength;
+
+    private static bool ValidNationality(string? value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        value.Length == 2 && value.All(char.IsAsciiLetterUpper);
+
+    private static bool ValidPhone(string value)
+    {
+        var phone = value.Trim();
+        if (!phone.StartsWith('+') ||
+            phone.Skip(1).Any(character => !char.IsAsciiDigit(character) &&
+                character is not (' ' or '-' or '(' or ')')))
+            return false;
+        var digits = phone.Count(char.IsAsciiDigit);
+        return digits is >= 8 and <= 15 && phone.Length <= 32;
+    }
+
+    private static bool ValidDocument(string? type, string? number)
+    {
+        if (string.IsNullOrWhiteSpace(type) && string.IsNullOrWhiteSpace(number))
+            return true;
+        if (type is not ("NationalId" or "Passport" or "Other") ||
+            string.IsNullOrWhiteSpace(number)) return false;
+        var value = number.Trim();
+        return value.Length is >= 3 and <= 40 &&
+            value.All(character => char.IsAsciiLetterOrDigit(character) ||
+                character is ' ' or '-' or '/');
+    }
 
     private static bool ValidEmail(string email) =>
         MailAddress.TryCreate(email.Trim(), out var address) &&

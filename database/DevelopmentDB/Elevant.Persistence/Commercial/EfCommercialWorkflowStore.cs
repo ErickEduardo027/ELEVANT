@@ -59,6 +59,10 @@ internal sealed class EfCommercialWorkflowStore(
             item.profile.VerificationSourceUrl,
             item.request.ContactName, item.request.ContactTitle ?? string.Empty,
             item.request.ContactEmail, item.request.ContactPhone ?? string.Empty,
+            item.request.ContactNationalityCode, item.request.ContactAddress,
+            item.request.ContactCountry, item.request.ContactProvince,
+            item.request.ContactMunicipality, item.request.ContactDocumentType,
+            item.request.ContactDocumentNumber,
             item.request.AuthorityDeclared, item.request.Status.ToString(),
             item.request.SubmittedAt, item.request.DecisionReason,
             contracts.FirstOrDefault(contract => contract.OriginatingServiceRequestId == item.request.Id)?.PublicId,
@@ -73,7 +77,7 @@ internal sealed class EfCommercialWorkflowStore(
     public async Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId,
         Guid profileId, VerifyAirlineInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "commercial.requests.full", cancellationToken))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
         if (input is null || !ValidText(input.LegalName, 200) ||
             !ValidCode(input.CountryCode, 2) || !ValidCode(input.IataCode, 2) ||
@@ -124,7 +128,9 @@ internal sealed class EfCommercialWorkflowStore(
     public async Task<CommercialWorkflowResult> DecideAsync(Guid actorId,
         Guid requestId, ReviewCommercialInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.write", cancellationToken))
+        if (!await permissions.HasAsync(actorId,
+            input?.Approve == true ? "commercial.requests.full" : "commercial.requests.edit",
+            cancellationToken))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
         if (input is null || input.StationIds is null ||
             (input.Approve && (input.StationIds.Count is < 1 or > 30 ||
@@ -251,7 +257,7 @@ internal sealed class EfCommercialWorkflowStore(
                     PublicId = Guid.CreateVersion7(), ContractVersionId = version.Id,
                     ServiceDefinitionId = definitionId,
                     BillingUnit = service.RequestedUnit ?? "operación",
-                    UnitPrice = 0, MinimumQuantity = 0,
+                    UnitPrice = 0, MinimumQuantity = 0, IsConfirmed = false,
                 });
             }
             AddStatusEvent(request.Id, oldStatus, request.Status, actorDatabaseId, now, null);

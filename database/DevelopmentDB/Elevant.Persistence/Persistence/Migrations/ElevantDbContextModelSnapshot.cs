@@ -449,6 +449,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<bool?>("IsConfirmed")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_confirmed");
+
                     b.Property<decimal>("MinimumQuantity")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)")
@@ -927,11 +931,36 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("cancelled_at");
 
+                    b.Property<string>("ContactAddress")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)")
+                        .HasColumnName("contact_address");
+
+                    b.Property<string>("ContactCountry")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_country");
+
+                    b.Property<string>("ContactDocumentNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("contact_document_number");
+
+                    b.Property<string>("ContactDocumentType")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("contact_document_type");
+
                     b.Property<string>("ContactEmail")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasColumnName("contact_email");
+
+                    b.Property<string>("ContactMunicipality")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_municipality");
 
                     b.Property<string>("ContactName")
                         .IsRequired()
@@ -939,10 +968,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(160)")
                         .HasColumnName("contact_name");
 
+                    b.Property<string>("ContactNationalityCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("contact_nationality_code");
+
                     b.Property<string>("ContactPhone")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("contact_phone");
+
+                    b.Property<string>("ContactProvince")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_province");
 
                     b.Property<string>("ContactTitle")
                         .HasMaxLength(120)

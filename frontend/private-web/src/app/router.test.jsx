@@ -4,10 +4,10 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { createHumanResourcesChildren } from './router';
 import { HUMAN_RESOURCES_NAVIGATION } from '../features/human-resources/navigation';
 
-describe('dashboard-only HR routes', () => {
-  it('redirects every deep HR route to the synthetic dashboard', async () => {
+describe('HR routes with operational ramp profiles', () => {
+  it('keeps the live ramp profile list and redirects unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],

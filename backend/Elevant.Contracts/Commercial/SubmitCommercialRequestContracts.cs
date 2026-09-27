@@ -8,6 +8,13 @@ public sealed record SubmitCommercialRequestRequest(
     string RepresentativeTitle,
     string RepresentativeEmail,
     string RepresentativePhone,
-    bool AuthorityDeclared);
+    bool AuthorityDeclared,
+    string? RepresentativeNationalityCode = null,
+    string? RepresentativeAddress = null,
+    string? RepresentativeCountry = null,
+    string? RepresentativeProvince = null,
+    string? RepresentativeMunicipality = null,
+    string? RepresentativeDocumentType = null,
+    string? RepresentativeDocumentNumber = null);
 
 public sealed record SubmitCommercialRequestResponse(string Reference, bool Replayed);

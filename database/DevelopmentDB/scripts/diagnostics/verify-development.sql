@@ -63,7 +63,9 @@ VALUES
     (N'20260926211142_PublicCommercialIntake'),
     (N'20260926212152_CommercialGovernance'),
     (N'20260926212759_CommercialProvisioning'),
-    (N'20260926213514_ContractDraftConversation');
+    (N'20260926213514_ContractDraftConversation'),
+    (N'20260927160653_CommercialRepresentativeDetails'),
+    (N'20260927161819_ContractRateConfirmation');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

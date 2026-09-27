@@ -45,7 +45,7 @@ const contracts: AirlineContractPageResponse = {
   }],
 };
 
-function mount(page: AirlineContractPageResponse) {
+function mount(page: AirlineContractPageResponse, drafts: unknown = []) {
   sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
     accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z",
   }));
@@ -55,7 +55,8 @@ function mount(page: AirlineContractPageResponse) {
     paths.push(path);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
     const body = path.endsWith("/bootstrap") ? bootstrap
-      : path.endsWith("/contracts") ? page : { actor };
+      : path.endsWith("/contracts") ? page
+        : path.endsWith("/contract-drafts") ? drafts : { actor };
     return new Response(JSON.stringify(body), { status: 200,
       headers: { "content-type": "application/json" } });
   }));
@@ -67,6 +68,19 @@ function mount(page: AirlineContractPageResponse) {
 
 afterEach(() => {
   cleanup(); sessionStorage.clear(); vi.unstubAllGlobals();
+});
+
+it("labels unconfirmed draft pricing as pending, including a zero placeholder", async () => {
+  mount({ page: 1, limit: 20, hasMore: false, contracts: [] }, [{
+    id: "draft-1", contractId: "contract-1", contractCode: "DEV-CONTRACT-0002",
+    airline: "Demo Airlines", status: "Draft", validFrom: "2026-10-01", validTo: null,
+    currencyCode: "USD", terms: null, stations: [], comments: [],
+    rates: [{ id: "rate-1", serviceName: "Rampa", billingUnit: "operación",
+      unitPrice: 0, minimumQuantity: 1, isConfirmed: false }],
+  }]);
+  expect(await screen.findByText("Rampa")).toBeInTheDocument();
+  expect(screen.getByText(/Precio por operación: por definir/i)).toBeInTheDocument();
+  expect(screen.queryByText(/US\$0/)).not.toBeInTheDocument();
 });
 
 it("shows the airline's real approved contract history and rates", async () => {

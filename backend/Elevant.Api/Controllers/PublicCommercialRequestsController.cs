@@ -34,7 +34,11 @@ public sealed class PublicCommercialRequestsController(
             request.RequestId, request.AirlineProfileId, request.ServiceIds,
             request.RepresentativeName, request.RepresentativeTitle,
             request.RepresentativeEmail, request.RepresentativePhone,
-            request.AuthorityDeclared), cancellationToken);
+            request.AuthorityDeclared, request.RepresentativeNationalityCode,
+            request.RepresentativeAddress, request.RepresentativeCountry,
+            request.RepresentativeProvince, request.RepresentativeMunicipality,
+            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber),
+            cancellationToken);
         if (!result.IsSuccess)
         {
             var (status, title) = result.Failure!.Value switch
