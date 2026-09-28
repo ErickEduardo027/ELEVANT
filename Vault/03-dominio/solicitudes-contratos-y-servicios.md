@@ -153,7 +153,17 @@ a derivar la única organización vigente del actor, comprueba la pertenencia
 de la prefactura en SQL y guarda transición `Accepted`, auditoría y avisos
 durables en una transacción serializable. Un reintento del mismo actor y clave
 es inocuo; otra intención recibe conflicto. Aceptar no equivale a conciliar,
-facturar ni cobrar; la disputa y su resolución siguen pendientes.
+facturar ni cobrar; la disputa puede registrarse, pero su resolución sigue
+pendiente.
+
+En la rama local, Finanzas puede emitir una factura **no fiscal** desde una
+prefactura `Accepted` con `POST /api/v1/finance/invoices`. SQL crea un número
+único y snapshots independientes de sus líneas, cambia la prefactura a
+`Invoiced` y guarda auditoría y avisos en la misma transacción serializable.
+La misma clave y actor devuelven la emisión anterior; una segunda intención
+no duplica la factura. Finanzas la relee por estación autorizada y la aerolínea
+por su tenant, sin exigir un contrato todavía vigente para conservar historial.
+No es una factura tributaria, pago ni recibo y no está promovida al VPS.
 
 Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La
 API deriva la organización de la membresía y filtra por `AirlineId` en SQL;
@@ -161,7 +171,7 @@ solo expone estados publicados (`Submitted`, `Disputed`, `Accepted`, `Invoiced`)
 `Draft` y `Voided` no son visibles sin historial de publicación que distinga
 una anulación interna de una posterior al envío. La lectura conserva importes
 y fechas congelados tras vencer un contrato, pero no habilita por sí sola
-facturación, pago ni descargas.
+emisión, pago ni descargas.
 
 ## Diferencias con Public Web
 

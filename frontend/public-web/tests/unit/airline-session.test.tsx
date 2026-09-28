@@ -47,7 +47,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function Harness() {
   const { status, session: current, signIn, signOut, retry, getPreinvoice,
-    acceptPreinvoice, disputePreinvoice, financeRevision } = useAirlineSession();
+    getPreinvoiceInvoice, acceptPreinvoice, disputePreinvoice, financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
@@ -57,6 +57,8 @@ function Harness() {
     <button onClick={() => void retry()}>Reintentar</button>
     <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
+    <button onClick={() => void getPreinvoiceInvoice("74000000-0000-7000-8000-000000000001")
+      .then(result => setDetailStatus(result.number)).catch(() => setDetailStatus("missing"))}>Consultar factura</button>
     <button onClick={() => void acceptPreinvoice("74000000-0000-7000-8000-000000000001")}>Aceptar prefactura</button>
     <button onClick={() => void disputePreinvoice(
       "74000000-0000-7000-8000-000000000001", {
@@ -285,4 +287,34 @@ it("disputes through the same scoped API session and refreshes Finance", async (
     body: { requestId: "74000000-0000-7000-8000-000000000004",
       subject: "Cantidad incorrecta", description: "Diferencia de cantidad.",
       lineIds: ["74000000-0000-7000-8000-000000000002"] } }]);
+});
+
+it("reads a non-fiscal invoice with the same tenant bearer without changing the session", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  const requests: Array<{ path: string; authorization: string | null }> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith('/invoice')) {
+      requests.push({ path, authorization: new Headers(init?.headers).get('authorization') });
+      return json({ id: '74000000-0000-7000-8000-000000000009',
+        preinvoiceId: '74000000-0000-7000-8000-000000000001',
+        airlineId: bootstrap.airlineId, stationId: bootstrap.stations[0].id,
+        number: 'NF-74000000000070008000000000000009', kind: 'NonFiscal',
+        currencyCode: 'USD', total: 125.5, issuedAt: '2026-09-28T16:00:00Z',
+        lines: [{ id: '74000000-0000-7000-8000-000000000010', lineNumber: 1,
+          operationCode: 'DEV-TAT-0021', operationDate: '2026-08-18',
+          serviceCode: 'GPU', serviceName: 'Ground power', executedQuantity: 1,
+          billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] });
+    }
+    return path === '/api/v1/auth/session' ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText('Demo Airlines');
+  fireEvent.click(screen.getByRole('button', { name: 'Consultar factura' }));
+  await screen.findByText('NF-74000000000070008000000000000009');
+  expect(requests).toEqual([{ path:
+    '/api/v1/airline/portal/preinvoices/74000000-0000-7000-8000-000000000001/invoice',
+    authorization: 'Bearer synthetic-short-lived-token' }]);
 });

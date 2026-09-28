@@ -86,6 +86,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<PreinvoiceDisputeLine> PreinvoiceDisputeLines => Set<PreinvoiceDisputeLine>();
 
+    public DbSet<NonFiscalInvoice> NonFiscalInvoices => Set<NonFiscalInvoice>();
+
+    public DbSet<NonFiscalInvoiceLine> NonFiscalInvoiceLines => Set<NonFiscalInvoiceLine>();
+
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
     public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();
@@ -128,6 +132,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigureIdentityAndReference();
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigurePreinvoices();
+        builder.ConfigureNonFiscalInvoices();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);

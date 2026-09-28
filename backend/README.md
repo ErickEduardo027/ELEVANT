@@ -194,7 +194,7 @@ del mismo actor y clave devuelve el resultado anterior; otra clave recibe
 conflicto. Auditoría e invalidaciones `finance_preinvoices` y
 `airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
 membresía, tenant y estado publicado antes de entregar la pista. No hay
-emisión, impuesto, conciliación, factura, pago ni recibo todavía. La rama no
+impuesto, conciliación, pago ni recibo todavía. La rama no
 se ha desplegado.
 El portal de aerolínea puede releer una prefactura publicada y sus líneas
 inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
@@ -216,7 +216,20 @@ Las consultas nuevas `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disp
 y `GET /api/v1/finance/preinvoices/{draftId}/disputes` muestran la objeción
 solo a su tenant o estación autorizada, sin añadir campos a las respuestas de
 detalle v1 que ya consumen clientes desplegados. Un reintento idéntico no duplica
-el historial. Resolverla, emitir factura y registrar pago aún no está implementado.
+el historial. Resolverla y registrar pago aún no está implementado.
+
+Una prefactura `Accepted` puede convertirse una sola vez en factura **no fiscal**
+mediante `POST /api/v1/finance/invoices`. Finanzas confirma explícitamente y
+envía un `requestId` estable; la API revalida rol, membresía y estación, congela
+número, moneda, total y líneas en `commercial.non_fiscal_invoices` y
+`commercial.non_fiscal_invoice_lines`, cambia el estado a `Invoiced` y registra
+auditoría e invalidaciones durables para Finanzas y la aerolínea en una
+transacción serializable. El mismo actor y clave obtienen el resultado anterior;
+otra intención para la misma prefactura entra en conflicto. Finanzas consulta
+`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}` y el portal consulta
+`GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`, con alcance de
+estación o tenant derivado de la sesión. No hay documento fiscal, impuesto,
+pago, conciliación ni recibo; este tramo sigue local y sin promoción.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

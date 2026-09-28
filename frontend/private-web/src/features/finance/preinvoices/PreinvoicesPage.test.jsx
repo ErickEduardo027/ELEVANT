@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
-import { getFinancePreinvoices, submitFinancePreinvoice } from '../../../services/financePreinvoiceService';
+import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
+  getFinanceInvoiceByPreinvoice } from '../../../services/financePreinvoiceService';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 
 vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
@@ -13,6 +14,7 @@ vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
 }) }));
 vi.mock('../../../services/financePreinvoiceService', () => ({
   getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
+  issueFinanceInvoice: vi.fn(), getFinanceInvoiceByPreinvoice: vi.fn(),
 }));
 vi.mock('../../../services/approvedServicesService', () => ({
   getPreinvoiceDraft: vi.fn(), getFinancePreinvoiceDisputes: vi.fn(),
@@ -149,4 +151,86 @@ it('offers a safe retry after an uncertain network response without exposing ser
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar el envío');
   expect(screen.queryByText(/internal connection details/)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Reintentar envío' })).toBeInTheDocument();
+});
+
+it('confirms invoice issuance once for an accepted preinvoice and refreshes the list', async () => {
+  const accepted = { ...item, status: 'Accepted' };
+  getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [accepted] }).mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [{ ...accepted, status: 'Invoiced' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...accepted, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  issueFinanceInvoice.mockResolvedValue({ id: 'invoice-one', preinvoiceId: item.id,
+    number: 'NF-123', kind: 'NonFiscal', replayed: false });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Ground power/);
+  await userEvent.click(screen.getByRole('button', { name: 'Emitir factura no fiscal' }));
+  expect(issueFinanceInvoice).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar emisión' }));
+  await waitFor(() => expect(issueFinanceInvoice).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ preinvoiceId: item.id, requestId: expect.any(String) })));
+  expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
+  expect(await screen.findByText('Facturada')).toBeInTheDocument();
+});
+
+it('reads the frozen invoice for an already invoiced preinvoice without issuing again', async () => {
+  const invoiced = { ...item, status: 'Invoiced' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [invoiced] });
+  getPreinvoiceDraft.mockResolvedValue({ ...invoiced, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  getFinanceInvoiceByPreinvoice.mockResolvedValue({ number: 'NF-123', kind: 'NonFiscal',
+    currencyCode: 'USD', total: 42.0001, lines: [{ id: 'invoice-line', lineNumber: 1,
+      operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
+  expect(getFinanceInvoiceByPreinvoice).toHaveBeenCalledWith(item.id);
+  expect(issueFinanceInvoice).not.toHaveBeenCalled();
+});
+
+it('retries an uncertain invoice response with the same idempotency key', async () => {
+  const accepted = { ...item, status: 'Accepted' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [accepted] });
+  getPreinvoiceDraft.mockResolvedValue({ ...accepted, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  issueFinanceInvoice.mockRejectedValueOnce(new Error('network details'))
+    .mockResolvedValueOnce({ id: 'invoice-one', preinvoiceId: item.id,
+      number: 'NF-123', kind: 'NonFiscal', replayed: true });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Ground power/);
+  await userEvent.click(screen.getByRole('button', { name: 'Emitir factura no fiscal' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar emisión' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Reintente con la misma clave');
+  expect(screen.queryByText(/network details/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Reintentar emisión' }));
+  await waitFor(() => expect(issueFinanceInvoice).toHaveBeenCalledTimes(2));
+  expect(issueFinanceInvoice.mock.calls[0][0]).toEqual(issueFinanceInvoice.mock.calls[1][0]);
+});
+
+it('keeps the confirmed invoice result when a durable refresh arrives before HTTP completion', async () => {
+  const accepted = { ...item, status: 'Accepted' };
+  getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [accepted] }).mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [{ ...accepted, status: 'Invoiced' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...accepted, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  let finishIssue;
+  issueFinanceInvoice.mockReturnValue(new Promise(resolve => { finishIssue = resolve; }));
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Ground power/);
+  await userEvent.click(screen.getByRole('button', { name: 'Emitir factura no fiscal' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar emisión' }));
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  await screen.findByText('Facturada');
+  await act(async () => finishIssue({ number: 'NF-123' }));
+  expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
 });

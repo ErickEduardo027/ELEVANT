@@ -144,7 +144,14 @@ El detalle de Pre-facturación también lee las disputas de la aerolínea con
 asunto, descripción y líneas cuestionadas desde
 `GET /api/v1/finance/preinvoices/{draftId}/disputes`, separado del detalle
 v1 existente para conservar compatibilidad durante una promoción API-primero;
-no inventa casos ni saldos. La resolución y la factura aún no están habilitadas.
+no inventa casos ni saldos. La resolución sigue pendiente. Desde una prefactura
+`Accepted`, Finanzas puede confirmar una emisión **no fiscal** mediante
+`POST /api/v1/finance/invoices`. El reintento conserva el mismo UUID de intención;
+la tabla se relee al recibir el aviso durable o al recuperar foco/conectividad.
+Una prefactura `Invoiced` consulta el snapshot emitido por
+`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. No existe todavía
+documento PDF, impuesto, pago ni recibo. El flujo sigue en la rama local,
+sin promoción al VPS.
 
 ## Imagen de Development
 

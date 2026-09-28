@@ -22,3 +22,25 @@ export async function submitFinancePreinvoice(id) {
     throw error;
   }
 }
+
+export async function issueFinanceInvoice(request) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).issueFinanceInvoice(request);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+export async function getFinanceInvoiceByPreinvoice(preinvoiceId) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getFinanceInvoiceByPreinvoice(preinvoiceId, { cache: 'no-store' });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

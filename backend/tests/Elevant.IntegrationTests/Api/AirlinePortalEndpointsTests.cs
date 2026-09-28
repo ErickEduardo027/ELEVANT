@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
+using Elevant.Application.Finance;
 using Elevant.Application.Identity;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Authentication;
@@ -164,6 +166,37 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/disputes",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, absentDisputes.StatusCode);
+    }
+
+    [Fact]
+    public async Task AirlineReadsOnlyItsOwnNonFiscalInvoiceThroughThePortal()
+    {
+        var preinvoiceId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            DetailPreinvoice = new AirlinePreinvoiceDetailData(preinvoiceId,
+                StationId, "PUJ", new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18),
+                "USD", 10m, "Invoiced", DateTimeOffset.UtcNow, []),
+        };
+        await using var application = CreateApplication(state);
+        using var anonymous = application.CreateClient();
+        using var denied = await anonymous.GetAsync(
+            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/invoice",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        using var client = CreateAuthenticatedClient(application);
+        using var own = await client.GetAsync(
+            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/invoice",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, own.StatusCode);
+        using var invoice = JsonDocument.Parse(await own.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(preinvoiceId, invoice.RootElement.GetProperty("preinvoiceId").GetGuid());
+        Assert.Equal("NonFiscal", invoice.RootElement.GetProperty("kind").GetString());
+        using var other = await client.GetAsync(
+            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/invoice",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
     }
 
     [Fact]
@@ -444,10 +477,12 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             services.RemoveAll<IAirlinePortalReadStore>();
             services.RemoveAll<IAirlinePreinvoiceAcceptanceStore>();
             services.RemoveAll<IAirlinePreinvoiceDisputeStore>();
+            services.RemoveAll<INonFiscalInvoiceReadStore>();
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IAirlinePortalReadStore>(_ => state);
             services.AddScoped<IAirlinePreinvoiceAcceptanceStore>(_ => state);
             services.AddScoped<IAirlinePreinvoiceDisputeStore>(_ => state);
+            services.AddScoped<INonFiscalInvoiceReadStore>(_ => state);
         }));
 
     private static HttpClient CreateAuthenticatedClient(WebApplicationFactory<Program> application)
@@ -487,11 +522,24 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
     private sealed class StubState(ActorContext actor) : IActorContextResolver,
         IAirlinePortalReadStore, IAirlinePreinvoiceAcceptanceStore,
-        IAirlinePreinvoiceDisputeStore
+        IAirlinePreinvoiceDisputeStore, INonFiscalInvoiceReadStore
     {
         public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Accepted { get; private set; }
 
         public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Disputed { get; private set; }
+
+        public Task<NonFiscalInvoiceData?> GetForFinanceAsync(Guid accountId, Guid preinvoiceId,
+            CancellationToken cancellationToken = default) => Task.FromResult<NonFiscalInvoiceData?>(null);
+
+        public Task<NonFiscalInvoiceData?> GetForAirlineAsync(Guid organizationId, Guid preinvoiceId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<NonFiscalInvoiceData?>(organizationId == OrganizationId &&
+                DetailPreinvoice?.Id == preinvoiceId
+                ? new NonFiscalInvoiceData(Guid.NewGuid(), preinvoiceId, AirlineId,
+                    StationId, "NF-TEST", "USD", 10m, DateTimeOffset.UtcNow,
+                    [new NonFiscalInvoiceLineData(Guid.NewGuid(), 1, "DEV-TAT",
+                        new DateOnly(2026, 8, 18), "GPU", "GPU", 1m, "hour", 10m, 10m)])
+                : null);
 
         public Task<DisputeAirlinePreinvoiceResult> DisputeAsync(
             DisputeAirlinePreinvoiceCommand command,

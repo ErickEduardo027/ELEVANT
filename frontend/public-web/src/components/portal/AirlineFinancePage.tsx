@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
   type PreinvoiceDisputeResponse,
+  type NonFiscalInvoiceResponse,
   type AirlinePreinvoicePageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
@@ -21,8 +22,19 @@ function amount(currency: string, total: number) {
   }).format(total)}`;
 }
 
+function InvoiceSummary({ invoice }: { invoice: NonFiscalInvoiceResponse }) {
+  return <section className={styles.disputeRecord} aria-label="Factura no fiscal">
+    <strong>Factura no fiscal {invoice.number}</strong>
+    <p>Emitida el {invoice.issuedAt.slice(0, 10)}.</p>
+    {invoice.lines.map(line => <p key={line.id}>
+      {line.operationCode} · {line.serviceName} · {amount(invoice.currencyCode, line.amount)}
+    </p>)}
+    <strong>Total: {amount(invoice.currencyCode, invoice.total)}</strong>
+  </section>;
+}
+
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, acceptPreinvoice,
+  const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, acceptPreinvoice,
     disputePreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +44,8 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const detailGeneration = useRef(0);
   const selectedPreinvoice = useRef<string | null>(null);
   const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
-    value: (AirlinePreinvoiceDetailResponse & { disputes: PreinvoiceDisputeResponse[] }) | null } | null>(null);
+    value: (AirlinePreinvoiceDetailResponse & { disputes: PreinvoiceDisputeResponse[];
+      invoice: NonFiscalInvoiceResponse | null }) | null } | null>(null);
   const [acceptance, setAcceptance] = useState<{ id: string | null;
     status: "idle" | "confirm" | "pending" | "success" | "conflict" | "error" }>(
       { id: null, status: "idle" });
@@ -71,7 +84,9 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     try {
       const [preinvoice, disputeList] = await Promise.all([
         getPreinvoice(id), getPreinvoiceDisputes(id)]);
-      const value = { ...preinvoice, disputes: disputeList.disputes };
+      const invoice = preinvoice.status === "Invoiced"
+        ? await getPreinvoiceInvoice(id) : null;
+      const value = { ...preinvoice, disputes: disputeList.disputes, invoice };
       if (request === detailGeneration.current)
         setDetail({ id, status: "ready", value });
     } catch (error) {
@@ -79,7 +94,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         setDetail({ id, status: error instanceof ElevantApiError && error.status === 404
           ? "missing" : "error", value: null });
     }
-  }, [getPreinvoice, getPreinvoiceDisputes]);
+  }, [getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice]);
 
   const confirmAcceptance = useCallback(async (id: string) => {
     if (detail?.id !== id || detail.status !== "ready" ||
@@ -206,6 +221,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
               return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
             }).join(", ")}</p>
           </section>)}
+          {detail.value.invoice && <InvoiceSummary invoice={detail.value.invoice} />}
           {detail.value.status === "Submitted" && acceptance.status === "idle" &&
             dispute.status === "idle" &&
             <button className={styles.loadMore} type="button"

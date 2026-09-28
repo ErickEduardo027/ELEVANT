@@ -57,6 +57,15 @@ después de `PersonAvatarMedia`. Guarda una objeción y sus líneas sin sobrescr
 el snapshot monetario de la prefactura. `request_id` es único, las FKs son
 `NO ACTION` y no hay datos de negocio en la migración. No se ha promocionado.
 
+La migración aditiva `NonFiscalInvoices` crea
+`commercial.non_fiscal_invoices` y `commercial.non_fiscal_invoice_lines`.
+Conserva un snapshot independiente de las líneas aceptadas y un número único
+`NF-` derivado del UUID de factura; índices únicos impiden una segunda factura
+para la misma prefactura, reutilizar la clave de solicitud o duplicar una línea
+de origen. Las FKs son `NO ACTION` y la migración no contiene datos de negocio.
+Es una factura de prueba **no fiscal**, sin PDF, impuesto, cobro ni recibo.
+Esta migración sigue en la rama local, sin promoción al VPS.
+
 Desde cualquier directorio:
 
 ```powershell

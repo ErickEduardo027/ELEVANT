@@ -88,15 +88,26 @@ La migración aditiva `PreinvoiceDisputes`, posterior a `PersonAvatarMedia`,
 conserva el motivo y las líneas cuestionadas de cada respuesta de aerolínea.
 Una transacción serializable cambia `Submitted` a `Disputed` y guarda la
 objeción, auditoría y pistas de cambio sin alterar los importes congelados.
-La resolución, conciliación, factura y recibo continúan pendientes; esta rama
+La resolución, conciliación, pago y recibo continúan pendientes; esta rama
 no está desplegada.
+
+## Factura no fiscal en la rama de integración
+
+`NonFiscalInvoices` agrega `commercial.non_fiscal_invoices` y
+`commercial.non_fiscal_invoice_lines` sin alterar el contrato v1 de prefactura.
+Solo una prefactura `Accepted` se puede emitir: la transacción serializable
+revalida el alcance de Finanzas, conserva moneda, total y cada línea aceptada
+como snapshot, cambia el estado a `Invoiced` y escribe auditoría e invalidaciones
+durables. Los índices únicos de prefactura, clave y línea fuente impiden duplicar
+la emisión. La aerolínea relee su propia factura mediante una ruta tenant-scoped;
+no se infiere un documento tributario ni un pago. La migración es aditiva,
+sin DML de negocio y aún no está desplegada.
 
 ## Diferido explícitamente
 
-- emisión de facturas, recibos y ledger de conciliación; la rama de
-  integración ya modela una prefactura interna no fiscal con líneas de
-  servicios aprobados, snapshots de precio/moneda y reserva única de la
-  línea fuente, pero no la ha promovido al VPS;
+- emisión fiscal, documentos PDF, pagos, recibos y ledger de conciliación;
+  la rama local ya modela prefactura y factura no fiscal con snapshots
+  independientes, pero no las ha promovido al VPS;
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas.

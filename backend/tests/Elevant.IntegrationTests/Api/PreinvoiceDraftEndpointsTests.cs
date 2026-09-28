@@ -122,15 +122,53 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
     }
 
+    [Fact]
+    public async Task FinanceIssuesOnlyThroughTheVersionedInvoiceRoute()
+    {
+        var stub = new Stub();
+        await using var application = CreateApplication(stub);
+        using var client = application.CreateClient();
+        using var anonymous = await client.PostAsJsonAsync("/api/v1/finance/invoices",
+            new { preinvoiceId = DraftId, requestId = Guid.NewGuid() },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        var requestId = Guid.NewGuid();
+        using var issued = await client.PostAsJsonAsync("/api/v1/finance/invoices",
+            new { preinvoiceId = DraftId, requestId }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, issued.StatusCode);
+        Assert.Equal(new IssueFinanceInvoiceCommand(AccountId, DraftId, requestId),
+            stub.IssueRequest);
+        using var body = JsonDocument.Parse(await issued.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("NonFiscal", body.RootElement.GetProperty("kind").GetString());
+        Assert.Equal("NF-TEST", body.RootElement.GetProperty("number").GetString());
+        using var read = await client.GetAsync(
+            $"/api/v1/finance/invoices/by-preinvoice/{DraftId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        using var detail = JsonDocument.Parse(await read.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("NonFiscal", detail.RootElement.GetProperty("kind").GetString());
+        Assert.Single(detail.RootElement.GetProperty("lines").EnumerateArray());
+        using var invalid = await client.PostAsJsonAsync("/api/v1/finance/invoices",
+            new { preinvoiceId = Guid.Empty, requestId }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
     private WebApplicationFactory<Program> CreateApplication(Stub stub) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IPreinvoiceDraftStore>();
             services.RemoveAll<IPreinvoiceSubmissionStore>();
+            services.RemoveAll<IFinanceInvoiceIssueStore>();
+            services.RemoveAll<INonFiscalInvoiceReadStore>();
             services.AddSingleton<IActorContextResolver>(stub);
             services.AddSingleton<IPreinvoiceDraftStore>(stub);
             services.AddSingleton<IPreinvoiceSubmissionStore>(stub);
+            services.AddSingleton<IFinanceInvoiceIssueStore>(stub);
+            services.AddSingleton<INonFiscalInvoiceReadStore>(stub);
         }));
 
     private static string Token()
@@ -161,11 +199,31 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
     }
 
     private sealed class Stub : IActorContextResolver, IPreinvoiceDraftStore,
-        IPreinvoiceSubmissionStore
+        IPreinvoiceSubmissionStore, IFinanceInvoiceIssueStore, INonFiscalInvoiceReadStore
     {
         public CreatePreinvoiceDraftCommand? CreateRequest { get; private set; }
 
         public (Guid AccountId, Guid DraftId, Guid RequestId)? SubmitRequest { get; private set; }
+
+        public IssueFinanceInvoiceCommand? IssueRequest { get; private set; }
+
+        public Task<IssueFinanceInvoiceResult> IssueAsync(IssueFinanceInvoiceCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            IssueRequest = command;
+            return Task.FromResult(IssueFinanceInvoiceResult.Success(Guid.NewGuid(), "NF-TEST", false));
+        }
+
+        public Task<NonFiscalInvoiceData?> GetForFinanceAsync(Guid accountId, Guid preinvoiceId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<NonFiscalInvoiceData?>(preinvoiceId == DraftId
+                ? new NonFiscalInvoiceData(Guid.NewGuid(), DraftId, Guid.NewGuid(), StationId,
+                    "NF-TEST", "USD", 10m, DateTimeOffset.UtcNow,
+                    [new NonFiscalInvoiceLineData(Guid.NewGuid(), 1, "DEV-TAT", Date,
+                        "GPU", "GPU", 1m, "hour", 10m, 10m)]) : null);
+
+        public Task<NonFiscalInvoiceData?> GetForAirlineAsync(Guid organizationId, Guid preinvoiceId,
+            CancellationToken cancellationToken = default) => Task.FromResult<NonFiscalInvoiceData?>(null);
 
         public Task<SubmitPreinvoiceResult> SubmitAsync(SubmitPreinvoiceCommand command,
             CancellationToken cancellationToken = default)

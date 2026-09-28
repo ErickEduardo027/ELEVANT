@@ -698,6 +698,19 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface IssueFinanceInvoiceRequest {
+  preinvoiceId: string;
+  requestId: string;
+}
+
+export interface IssueFinanceInvoiceResponse {
+  id: string;
+  preinvoiceId: string;
+  number: string;
+  kind: string;
+  replayed: boolean;
+}
+
 export interface ManagedAirlineData {
   id: string;
   sourceName: string;
@@ -878,6 +891,32 @@ export interface MediaAssetData {
   purpose: string;
   contentType: string;
   length: number;
+}
+
+export interface NonFiscalInvoiceLineResponse {
+  id: string;
+  lineNumber: number;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface NonFiscalInvoiceResponse {
+  id: string;
+  preinvoiceId: string;
+  airlineId: string;
+  stationId: string;
+  number: string;
+  kind: string;
+  currencyCode: string;
+  total: number;
+  issuedAt: string;
+  lines: NonFiscalInvoiceLineResponse[];
 }
 
 export interface OccAgentOptionResponse {
@@ -1900,6 +1939,34 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceByPreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/invoice`
+}
+
+export const getAirlineInvoiceByPreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<NonFiscalInvoiceResponse> => {
+
+  const res = await fetch(getGetAirlineInvoiceByPreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -3092,6 +3159,68 @@ export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServ
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceApprovedServicesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceByPreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/by-preinvoice/${preinvoiceId}`
+}
+
+export const getFinanceInvoiceByPreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<NonFiscalInvoiceResponse> => {
+
+  const res = await fetch(getGetFinanceInvoiceByPreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getIssueFinanceInvoiceUrl = () => {
+
+
+
+
+  return `/api/v1/finance/invoices`
+}
+
+export const issueFinanceInvoice = async (issueFinanceInvoiceRequest?: IssueFinanceInvoiceRequest, options?: RequestInit): Promise<IssueFinanceInvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getIssueFinanceInvoiceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(issueFinanceInvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: IssueFinanceInvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 

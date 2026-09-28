@@ -17,6 +17,9 @@ import {
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
   getGetFinancePreinvoiceDisputesUrl,
+  getIssueFinanceInvoiceUrl,
+  getGetFinanceInvoiceByPreinvoiceUrl,
+  getGetAirlineInvoiceByPreinvoiceUrl,
   getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
@@ -61,6 +64,9 @@ import {
   type DisputeAirlinePreinvoiceRequest,
   type DisputeAirlinePreinvoiceResponse,
   type PreinvoiceDisputeListResponse,
+  type IssueFinanceInvoiceRequest,
+  type IssueFinanceInvoiceResponse,
+  type NonFiscalInvoiceResponse,
   type AirlinePreinvoicePageResponse,
   type ManagedContractPageData,
   type ListManagedContractsParams,
@@ -157,6 +163,8 @@ export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "met
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -316,6 +324,18 @@ export interface ElevantApiClient {
     draftId: string,
     options?: GetPreinvoiceDisputesOptions,
   ): Promise<PreinvoiceDisputeListResponse>;
+  issueFinanceInvoice(
+    request: IssueFinanceInvoiceRequest,
+    options?: IssueFinanceInvoiceOptions,
+  ): Promise<IssueFinanceInvoiceResponse>;
+  getFinanceInvoiceByPreinvoice(
+    preinvoiceId: string,
+    options?: GetNonFiscalInvoiceOptions,
+  ): Promise<NonFiscalInvoiceResponse>;
+  getAirlineInvoiceByPreinvoice(
+    preinvoiceId: string,
+    options?: GetNonFiscalInvoiceOptions,
+  ): Promise<NonFiscalInvoiceResponse>;
   submitPreinvoice(
     draftId: string, request: SubmitPreinvoiceRequest,
     options?: SubmitPreinvoiceOptions,
@@ -1978,6 +1998,48 @@ function isPreinvoiceDisputeListResponse(value: unknown, preinvoiceId: string):
     value.preinvoiceId === preinvoiceId && isPreinvoiceDisputes(value.disputes);
 }
 
+function isIssueFinanceInvoiceResponse(value: unknown,
+  request: IssueFinanceInvoiceRequest): value is IssueFinanceInvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "preinvoiceId", "number", "kind", "replayed"]) &&
+    isUuid(value.id) && value.preinvoiceId === request.preinvoiceId &&
+    value.number === `NF-${value.id.replaceAll("-", "")}` &&
+    value.kind === "NonFiscal" && typeof value.replayed === "boolean";
+}
+
+function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
+  value is NonFiscalInvoiceResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+      ["id", "preinvoiceId", "airlineId", "stationId", "number", "kind",
+        "currencyCode", "total", "issuedAt", "lines"]) ||
+      !isUuid(value.id) || value.preinvoiceId !== preinvoiceId ||
+      !isUuid(value.airlineId) || !isUuid(value.stationId) ||
+      value.number !== `NF-${value.id.replaceAll("-", "")}` ||
+      value.kind !== "NonFiscal" ||
+      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
+      !isFiniteNumber(value.total) || value.total < 0 ||
+      !isDateTimeOffset(value.issuedAt) || !Array.isArray(value.lines) ||
+      value.lines.length < 1 || value.lines.length > 100) return false;
+  const ids = new Set<string>();
+  for (let index = 0; index < value.lines.length; index++) {
+    const line = value.lines[index];
+    if (!isRecord(line) || !hasOnlyKeys(line,
+        ["id", "lineNumber", "operationCode", "operationDate", "serviceCode",
+          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount"]) ||
+        !isUuid(line.id) || ids.has(line.id) || line.lineNumber !== index + 1 ||
+        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
+        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
+        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
+        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
+        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0)
+      return false;
+    ids.add(line.id);
+  }
+  // SQL validates decimal(19,4) snapshots at issuance. Re-adding parsed JSON
+  // numbers here can reject a valid large invoice due to IEEE-754 rounding.
+  return true;
+}
+
 function isAcceptAirlinePreinvoiceResponse(value: unknown): value is AcceptAirlinePreinvoiceResponse {
   return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
     isUuid(value.id) && value.status === "Accepted" &&
@@ -3046,6 +3108,40 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetFinancePreinvoiceDisputesUrl(id),
         { ...options, method: "GET" }, true);
       if (!isPreinvoiceDisputeListResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async issueFinanceInvoice(
+      request: IssueFinanceInvoiceRequest, options?: IssueFinanceInvoiceOptions,
+    ) {
+      if (!isRecord(request) || !hasOnlyKeys(request, ["preinvoiceId", "requestId"]) ||
+          !isUuid(request.preinvoiceId) || !isUuid(request.requestId))
+        throw new TypeError("Invoice issuance request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getIssueFinanceInvoiceUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isIssueFinanceInvoiceResponse(result.data, request))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceInvoiceByPreinvoice(
+      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetFinanceInvoiceByPreinvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalInvoiceResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineInvoiceByPreinvoice(
+      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetAirlineInvoiceByPreinvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalInvoiceResponse(result.data, id))
         throw malformedResponse(result.status);
       return result.data;
     },

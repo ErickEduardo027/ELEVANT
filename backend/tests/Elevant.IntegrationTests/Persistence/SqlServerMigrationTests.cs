@@ -4888,6 +4888,63 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(4, financeAcceptanceHints.Length); // draft + submission + dispute + acceptance
             Assert.All(financeAcceptanceHints, hint =>
                 Assert.Equal(financeAccountInternalId, hint.RecipientAccountId));
+
+            var invoiceCommand = new IssueFinanceInvoiceCommand(
+                financeAccountId, created.DraftId.Value, Guid.NewGuid());
+            async Task<IssueFinanceInvoiceResult> IssueAsync(IssueFinanceInvoiceCommand request)
+            {
+                await using var issueScope = provider.CreateAsyncScope();
+                return await issueScope.ServiceProvider
+                    .GetRequiredService<IFinanceInvoiceIssueStore>()
+                    .IssueAsync(request, cancellationToken);
+            }
+            Assert.Equal(IssueFinanceInvoiceFailure.Forbidden,
+                (await IssueAsync(invoiceCommand with { AccountId = occAccountId })).Failure);
+            Assert.Equal(IssueFinanceInvoiceFailure.NotFound,
+                (await IssueAsync(invoiceCommand with { PreinvoiceId = Guid.NewGuid() })).Failure);
+            var issuances = await Task.WhenAll(IssueAsync(invoiceCommand), IssueAsync(invoiceCommand));
+            Assert.All(issuances, result => Assert.True(result.IsSuccess));
+            Assert.Single(issuances, result => !result.Replayed);
+            Assert.Single(issuances, result => result.Replayed);
+            Assert.Equal(issuances[0].InvoiceId, issuances[1].InvoiceId);
+            Assert.Equal(IssueFinanceInvoiceFailure.Conflict,
+                (await IssueAsync(invoiceCommand with { RequestId = Guid.NewGuid() })).Failure);
+            var invoice = Assert.Single(await inspection.NonFiscalInvoices.AsNoTracking()
+                .Where(item => item.PreinvoiceId == draft.Id).ToArrayAsync(cancellationToken));
+            Assert.Equal($"NF-{invoice.PublicId:N}", invoice.Number);
+            Assert.Equal(draft.Total, invoice.Total);
+            Assert.Equal(draft.CurrencyCode, invoice.CurrencyCode);
+            var invoiceLine = Assert.Single(await inspection.NonFiscalInvoiceLines.AsNoTracking()
+                .Where(item => item.InvoiceId == invoice.Id).ToArrayAsync(cancellationToken));
+            Assert.Equal(line.Id, invoiceLine.PreinvoiceLineId);
+            Assert.Equal(line.Amount, invoiceLine.Amount);
+            Assert.Equal(line.OperationCode, invoiceLine.OperationCode);
+            Assert.Equal(PreinvoiceStatus.Invoiced, await inspection.Preinvoices.AsNoTracking()
+                .Where(item => item.Id == draft.Id).Select(item => item.Status)
+                .SingleAsync(cancellationToken));
+            Assert.Equal(invoiceCommand.RequestId,
+                Assert.Single(await inspection.AuditEntries.AsNoTracking()
+                    .Where(item => item.EntityPublicId == invoice.PublicId &&
+                        item.Action == "finance.invoice.non_fiscal.issued")
+                    .ToArrayAsync(cancellationToken)).CorrelationId);
+            await using (var invoiceReadScope = provider.CreateAsyncScope())
+            {
+                var reader = invoiceReadScope.ServiceProvider
+                    .GetRequiredService<INonFiscalInvoiceReadStore>();
+                var financeInvoice = await reader.GetForFinanceAsync(
+                    financeAccountId, created.DraftId.Value, cancellationToken);
+                Assert.NotNull(financeInvoice);
+                Assert.Equal(invoice.Number, financeInvoice.Number);
+                Assert.Equal(line.Amount, Assert.Single(financeInvoice.Lines).Amount);
+                var airlineInvoice = await reader.GetForAirlineAsync(
+                    airlineOrganizationId, created.DraftId.Value, cancellationToken);
+                Assert.NotNull(airlineInvoice);
+                Assert.Equal(financeInvoice.Id, airlineInvoice.Id);
+                Assert.Null(await reader.GetForAirlineAsync(
+                    Guid.NewGuid(), created.DraftId.Value, cancellationToken));
+                Assert.Null(await reader.GetForFinanceAsync(
+                    occAccountId, created.DraftId.Value, cancellationToken));
+            }
         }
 
         if (reviewOutcome == "Approved")
@@ -4922,7 +4979,7 @@ public sealed class SqlServerMigrationTests
             {
                 await voidInvoice.Preinvoices
                     .Where(item => item.StationId == financeStationInternalId &&
-                        item.Status == PreinvoiceStatus.Accepted)
+                        item.Status == PreinvoiceStatus.Invoiced)
                     .ExecuteUpdateAsync(setters => setters
                         .SetProperty(item => item.Status, PreinvoiceStatus.Voided),
                         cancellationToken);

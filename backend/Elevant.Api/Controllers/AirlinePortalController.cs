@@ -3,6 +3,8 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Commercial;
 using Elevant.Contracts.Commercial;
+using Elevant.Contracts.Finance;
+using Elevant.Application.Finance;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -23,8 +25,33 @@ public sealed class AirlinePortalController(
     GetAirlineOperationalRequestsHandler requestsHandler,
     GetAirlinePreinvoicesHandler preinvoicesHandler,
     AcceptAirlinePreinvoiceHandler acceptanceHandler,
-    DisputeAirlinePreinvoiceHandler disputeHandler) : ControllerBase
+    DisputeAirlinePreinvoiceHandler disputeHandler,
+    GetNonFiscalInvoiceHandler invoiceReader) : ControllerBase
 {
+    [HttpGet("preinvoices/{preinvoiceId:guid}/invoice", Name = "GetAirlineInvoiceByPreinvoice")]
+    [ProducesResponseType<NonFiscalInvoiceResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<NonFiscalInvoiceResponse>> GetInvoice(
+        Guid preinvoiceId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<NonFiscalInvoiceResponse>(401, "Authentication failed.");
+        }
+        var result = await invoiceReader.GetForAirlineAsync(
+            accountId, preinvoiceId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == 401) Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<NonFiscalInvoiceResponse>(statusCode, title);
+        }
+        return Ok(NonFiscalInvoiceResponseMapper.Map(result.Invoice!));
+    }
+
     [HttpGet("preinvoices/{preinvoiceId:guid}/disputes", Name = "GetAirlinePreinvoiceDisputes")]
     [ProducesResponseType<PreinvoiceDisputeListResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]

@@ -113,7 +113,7 @@ no aparece. Revalida por feed durable, foco y polling acotado. El resto de
 Finanzas puede crear y volver a consultar una prefactura interna no fiscal
 desde los servicios elegibles. La selección se reconcilia cuando llega una
 reserva de otro usuario y un reintento conserva su clave idempotente.
-Conciliación, emisión de factura y recibo siguen pendientes; no se ha
+Conciliación, pago y recibo siguen pendientes; no se ha
 promovido esta rama al VPS.
 
 **Finanzas → Pre-facturación** ahora lista por estación las prefacturas
@@ -128,6 +128,12 @@ la UI relee la lista autorizada sin exponer mensajes internos. Los badges
 del shell no repiten cifras sintéticas. El inicio y los módulos de
 conciliación, tarifas y reportes siguen siendo prototipos, y no se ha
 promovido esta rama.
+
+En la rama local, una prefactura `Accepted` presenta confirmación de emisión
+no fiscal. La API congela la factura y Finanzas relee número, líneas y total
+por una ruta de estación autorizada; la clave de intención se conserva para
+un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
+representa un PDF, impuesto, pago ni recibo y aún no está promovido al VPS.
 
 ## Desarrollo local
 

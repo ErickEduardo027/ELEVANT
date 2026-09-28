@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
-import { getFinancePreinvoices, submitFinancePreinvoice } from '../../../services/financePreinvoiceService';
+import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
+  getFinanceInvoiceByPreinvoice } from '../../../services/financePreinvoiceService';
 
 const STATUS = {
   Draft: 'Borrador', Submitted: 'Enviada', Disputed: 'En disputa',
@@ -23,9 +24,12 @@ export default function PreinvoicesPage() {
   const [state, setState] = useState({ status: 'loading', result: null });
   const [detail, setDetail] = useState({ status: 'idle', value: null });
   const [submission, setSubmission] = useState({ status: 'idle', id: null });
+  const [invoiceIssue, setInvoiceIssue] = useState({ status: 'idle', id: null,
+    requestId: null, number: null });
   const detailGeneration = useRef(0);
+  const selectionGeneration = useRef(0);
 
-  useEffect(() => () => { detailGeneration.current += 1; }, []);
+  useEffect(() => () => { detailGeneration.current += 1; selectionGeneration.current += 1; }, []);
 
   useEffect(() => {
     if (!session?.accountId) return undefined;
@@ -50,8 +54,10 @@ export default function PreinvoicesPage() {
   useEffect(() => {
     if (!stationId) {
       detailGeneration.current += 1;
+      selectionGeneration.current += 1;
       setDetail({ status: 'idle', value: null });
       setSubmission({ status: 'idle', id: null });
+      setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
       setState({ status: 'forbidden', result: null });
       return undefined;
     }
@@ -72,12 +78,16 @@ export default function PreinvoicesPage() {
 
   async function openDetail(id) {
     const generation = ++detailGeneration.current;
+    selectionGeneration.current += 1;
     setSubmission({ status: 'idle', id: null });
+    setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
     setDetail({ status: 'loading', value: null });
     try {
       const [preinvoice, disputeList] = await Promise.all([
         getPreinvoiceDraft(id, stationId), getFinancePreinvoiceDisputes(id)]);
-      const value = { ...preinvoice, disputes: disputeList.disputes };
+      const invoice = preinvoice.status === 'Invoiced'
+        ? await getFinanceInvoiceByPreinvoice(id) : null;
+      const value = { ...preinvoice, disputes: disputeList.disputes, invoice };
       if (generation === detailGeneration.current)
         setDetail({ status: 'success', value });
     } catch (error) {
@@ -88,8 +98,10 @@ export default function PreinvoicesPage() {
 
   function changePage(delta) {
     detailGeneration.current += 1;
+    selectionGeneration.current += 1;
     setDetail({ status: 'idle', value: null });
     setSubmission({ status: 'idle', id: null });
+    setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
     setPage(value => value + delta);
   }
 
@@ -119,6 +131,35 @@ export default function PreinvoicesPage() {
     }
   }
 
+  async function confirmInvoiceIssue() {
+    const { id, requestId, status } = invoiceIssue;
+    if (!id || !requestId || !['confirm', 'error'].includes(status) ||
+        (status === 'confirm' && (detail.value?.id !== id ||
+          detail.value.status !== 'Accepted'))) return;
+    const generation = selectionGeneration.current;
+    setInvoiceIssue(current => ({ ...current, status: 'pending' }));
+    try {
+      const result = await issueFinanceInvoice({ preinvoiceId: id, requestId });
+      if (generation !== selectionGeneration.current) return;
+      setDetail({ status: 'idle', value: null });
+      setInvoiceIssue(current => ({ ...current, status: 'success', number: result.number }));
+      setRevision(value => value + 1);
+    } catch (error) {
+      if (generation !== selectionGeneration.current) return;
+      if (error?.status === 401 || error?.status === 403) {
+        detailGeneration.current += 1;
+        selectionGeneration.current += 1;
+        setDetail({ status: 'idle', value: null });
+        setState({ status: error.status === 401 ? 'unauthorized' : 'forbidden', result: null });
+        setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+        return;
+      }
+      setInvoiceIssue(current => ({ ...current,
+        status: error?.status === 409 ? 'conflict' : 'error' }));
+      if (error?.status === 409) setRevision(value => value + 1);
+    }
+  }
+
   const rows = state.result?.preinvoices ?? [];
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -134,8 +175,10 @@ export default function PreinvoicesPage() {
     <label className="block max-w-xs text-xs font-semibold">Estación
       <select aria-label="Estación de prefacturas" value={stationId} onChange={event => {
         detailGeneration.current += 1;
+        selectionGeneration.current += 1;
         setStationId(event.target.value); setPage(1); setDetail({ status: 'idle', value: null });
         setSubmission({ status: 'idle', id: null });
+        setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
       }} className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark">
         {scopes.map(scope => <option key={scope.stationId} value={scope.stationId}>{scope.stationCode}</option>)}
       </select>
@@ -174,6 +217,17 @@ export default function PreinvoicesPage() {
       <p role="status" className="rounded-xl border border-emerald-500/30 p-4">Prefactura enviada a revisión de la aerolínea.</p>}
     {state.status === 'success' && submission.status === 'conflict' &&
       <p role="alert" className="rounded-xl border p-4">La prefactura cambió antes del envío. Revise su estado actualizado.</p>}
+    {state.status === 'success' && invoiceIssue.status === 'success' &&
+      <p role="status" className="rounded-xl border border-emerald-500/30 p-4">Factura no fiscal {invoiceIssue.number} emitida y registrada.</p>}
+    {state.status === 'success' && invoiceIssue.status === 'conflict' &&
+      <p role="alert" className="rounded-xl border p-4">La prefactura cambió antes de emitir la factura. Revise el estado actualizado.</p>}
+    {state.status === 'success' && invoiceIssue.status === 'error' && <div role="alert"
+      className="rounded-xl border p-4">
+      <p>No se pudo confirmar la emisión. Reintente con la misma clave de solicitud.</p>
+      <button type="button" onClick={confirmInvoiceIssue} className="mt-2 rounded-lg border px-4 py-2 text-sm font-semibold">
+        Reintentar emisión
+      </button>
+    </div>}
     {state.status === 'success' && detail.value && <section aria-label="Detalle de prefactura" className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-5">
       <h2 className="font-semibold">{detail.value.airlineName} · {detail.value.id}</h2>
       <p className="mt-1 text-sm">{STATUS[detail.value.status] ?? detail.value.status} · {money(detail.value.total, detail.value.currencyCode)}</p>
@@ -192,6 +246,31 @@ export default function PreinvoicesPage() {
           }).join(', ')}</p>
         </article>)}
       </section>}
+      {detail.value.invoice && <section className="mt-4 rounded-lg border p-4" aria-label="Factura no fiscal">
+        <h3 className="font-semibold">Factura no fiscal {detail.value.invoice.number}</h3>
+        <p className="mt-1 text-sm">Total emitido: {money(detail.value.invoice.total, detail.value.invoice.currencyCode)}</p>
+        <ul className="mt-2 space-y-1 text-sm">{detail.value.invoice.lines.map(line => <li key={line.id}>
+          {line.operationCode} · {line.serviceName} · {money(line.amount, detail.value.invoice.currencyCode)}
+        </li>)}</ul>
+      </section>}
+      {detail.value.status === 'Accepted' && invoiceIssue.status === 'idle' &&
+        <button type="button" onClick={() => setInvoiceIssue({ status: 'confirm', id: detail.value.id,
+          requestId: crypto.randomUUID(), number: null })}
+          className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">
+          Emitir factura no fiscal
+        </button>}
+      {detail.value.status === 'Accepted' && invoiceIssue.id === detail.value.id &&
+        invoiceIssue.status === 'confirm' && <div className="mt-4 rounded-lg border p-4">
+          <p className="text-sm">Se congelarán las líneas aceptadas y el total en una factura no fiscal.</p>
+          <div className="mt-3 flex gap-3">
+            <button type="button" onClick={confirmInvoiceIssue}
+              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Confirmar emisión</button>
+            <button type="button" onClick={() => setInvoiceIssue({ status: 'idle', id: null,
+              requestId: null, number: null })} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+          </div>
+        </div>}
+      {invoiceIssue.id === detail.value.id && invoiceIssue.status === 'pending' &&
+        <p role="status" className="mt-4 text-sm">Emitiendo factura no fiscal…</p>}
       {detail.value.status === 'Draft' && submission.status === 'idle' &&
         <button type="button" onClick={() => setSubmission({ status: 'confirm', id: detail.value.id })}
           className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">
