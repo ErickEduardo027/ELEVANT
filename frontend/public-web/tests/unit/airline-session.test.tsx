@@ -47,7 +47,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function Harness() {
   const { status, session: current, signIn, signOut, retry, getPreinvoice,
-    financeRevision } = useAirlineSession();
+    acceptPreinvoice, financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
@@ -57,6 +57,7 @@ function Harness() {
     <button onClick={() => void retry()}>Reintentar</button>
     <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
+    <button onClick={() => void acceptPreinvoice("74000000-0000-7000-8000-000000000001")}>Aceptar prefactura</button>
     <span data-testid="detail-status">{detailStatus}</span>
     <span data-testid="finance-revision">{financeRevision}</span>
   </>;
@@ -221,4 +222,33 @@ it("invalidates the airline Finance read model on a published preinvoice hint", 
   expect(screen.getByTestId("finance-revision")).toHaveTextContent("0");
   act(() => observe.mock.calls[0][0].onChanges(["airline_preinvoices"]));
   expect(screen.getByTestId("finance-revision")).toHaveTextContent("1");
+});
+
+it("accepts with a stable key and refreshes Finance without storing business state", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  const requests: Array<{ path: string; method: string; authorization: string | null;
+    body: unknown }> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/accept")) {
+      requests.push({ path, method: init?.method ?? "GET",
+        authorization: new Headers(init?.headers).get("authorization"),
+        body: JSON.parse(String(init?.body)) });
+      return json({ id: "74000000-0000-7000-8000-000000000001",
+        status: "Accepted", replayed: false });
+    }
+    return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  await waitFor(() => expect(screen.getByTestId("finance-revision")).toHaveTextContent("1"));
+  expect(requests).toEqual([{ path:
+    "/api/v1/airline/portal/preinvoices/74000000-0000-7000-8000-000000000001/accept",
+    method: "POST", authorization: "Bearer synthetic-short-lived-token",
+    body: { requestId: "74000000-0000-7000-8000-000000000001" } }]);
+  expect(JSON.parse(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY) ?? "null"))
+    .toEqual({ accessToken: session.accessToken, expiresAt: session.expiresAt });
 });

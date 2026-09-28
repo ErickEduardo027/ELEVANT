@@ -76,7 +76,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/finanzas`: consulta real, paginada y de solo lectura de prefacturas publicadas, con líneas autorizadas por la API. Disputas, facturas y pagos siguen pendientes.
+- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. Disputas, facturas y pagos siguen pendientes.
 - `/portal/documentos` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 

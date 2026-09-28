@@ -21,17 +21,24 @@ function amount(currency: string, total: number) {
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, getPreinvoice, financeRevision } = useAirlineSession();
+  const { getPreinvoices, getPreinvoice, acceptPreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const generation = useRef(0);
   const detailGeneration = useRef(0);
+  const selectedPreinvoice = useRef<string | null>(null);
   const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
     value: AirlinePreinvoiceDetailResponse | null } | null>(null);
+  const [acceptance, setAcceptance] = useState<{ id: string | null;
+    status: "idle" | "confirm" | "pending" | "success" | "conflict" | "error" }>(
+      { id: null, status: "idle" });
 
-  useEffect(() => () => { detailGeneration.current += 1; }, []);
+  useEffect(() => () => {
+    detailGeneration.current += 1;
+    selectedPreinvoice.current = null;
+  }, []);
 
   useEffect(() => {
     const request = ++generation.current;
@@ -50,6 +57,8 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
 
   const openDetail = useCallback(async (id: string) => {
     const request = ++detailGeneration.current;
+    selectedPreinvoice.current = id;
+    setAcceptance({ id: null, status: "idle" });
     setDetail({ id, status: "loading", value: null });
     try {
       const value = await getPreinvoice(id);
@@ -61,6 +70,24 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
           ? "missing" : "error", value: null });
     }
   }, [getPreinvoice]);
+
+  const confirmAcceptance = useCallback(async (id: string) => {
+    if (detail?.id !== id || detail.status !== "ready" ||
+        detail.value?.status !== "Submitted" || acceptance.id !== id ||
+        acceptance.status === "pending") return;
+    setAcceptance({ id, status: "pending" });
+    try {
+      await acceptPreinvoice(id);
+      if (selectedPreinvoice.current === id)
+        setAcceptance({ id, status: "success" });
+    } catch (error) {
+      if (selectedPreinvoice.current !== id) return;
+      setAcceptance({ id, status: error instanceof ElevantApiError &&
+        error.status === 409 ? "conflict" : "error" });
+      if (error instanceof ElevantApiError && (error.status === 409 || error.status === 404))
+        setRetryKey(current => current + 1);
+    }
+  }, [acceptPreinvoice, acceptance, detail]);
 
   const loadMore = useCallback(async () => {
     if (loading || !pages.at(-1)?.hasMore) return;
@@ -81,8 +108,14 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Cuenta financiera · {airlineName}</span>
       <h1>Finanzas</h1>
-      <p>Consulta las prefacturas publicadas para tu aerolínea. Esta vista es de solo lectura.</p>
+      <p>Consulta las prefacturas publicadas para tu aerolínea y responde a las pendientes.</p>
     </header>
+    {acceptance.status === "success" &&
+      <p role="status">Aceptación registrada para la prefactura {acceptance.id}. El estado se actualiza desde la API.</p>}
+    {acceptance.status === "conflict" &&
+      <p role="alert">La prefactura cambió antes de aceptarla. Revisa el estado actualizado.</p>}
+    {acceptance.status === "error" && detail?.id !== acceptance.id &&
+      <p role="alert">No se pudo confirmar la aceptación. Abre de nuevo la prefactura para revisar o reintentar.</p>}
     <div className={styles.metrics} aria-label="Estado de las prefacturas cargadas">
       <div><span>Prefacturas cargadas</span><strong>{preinvoices.length}</strong></div>
       <div><span>Pendientes de respuesta</span><strong>{preinvoices.filter(item => item.status === "Submitted").length}</strong></div>
@@ -120,6 +153,26 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
             <span>{line.executedQuantity} {line.billingUnit} × {amount(item.currencyCode, line.unitPrice)}</span>
             <strong>{amount(item.currencyCode, line.amount)}</strong>
           </div>)}
+          {detail.value.status === "Submitted" && acceptance.status === "idle" &&
+            <button className={styles.loadMore} type="button"
+              onClick={() => setAcceptance({ id: item.id, status: "confirm" })}>
+              Aceptar prefactura
+            </button>}
+          {detail.value.status === "Submitted" && acceptance.id === item.id &&
+            acceptance.status === "confirm" && <div>
+              <p>Confirma que aceptas las líneas y el total publicados.</p>
+              <button className={styles.loadMore} type="button"
+                onClick={() => void confirmAcceptance(item.id)}>Confirmar aceptación</button>
+              <button className={styles.loadMore} type="button"
+                onClick={() => setAcceptance({ id: null, status: "idle" })}>Cancelar</button>
+            </div>}
+          {acceptance.id === item.id && acceptance.status === "pending" &&
+            <p role="status">Registrando aceptación…</p>}
+          {acceptance.id === item.id && acceptance.status === "error" && <div role="alert">
+            <p>No se pudo confirmar la aceptación. Puedes reintentar con la misma clave.</p>
+            <button className={styles.loadMore} type="button"
+              onClick={() => void confirmAcceptance(item.id)}>Reintentar aceptación</button>
+          </div>}
         </div>}
     </section>)}
     {!loading && !error && preinvoices.length === 0 &&

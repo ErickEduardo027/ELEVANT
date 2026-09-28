@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ElevantApiError, type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type SessionActorResponse } from "@elevant/api-client";
@@ -58,16 +58,17 @@ const getPreinvoice = vi.fn(async (id: string) => ({
     serviceCode: "GPU", serviceName: "Ground power",
     executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
 }));
+const acceptPreinvoice = vi.fn<(_id: string) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, acceptPreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
   requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear();
-  getPreinvoices.mockClear(); financeRevision = 0; });
+  getPreinvoices.mockClear(); acceptPreinvoice.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -167,6 +168,56 @@ it("opens immutable service lines from the authorized preinvoice detail", async 
   expect(await screen.findByText("Ground power")).toBeInTheDocument();
   expect(screen.getByText(/DEV-TAT-0021/)).toBeInTheDocument();
   expect(getPreinvoice).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000001");
+});
+
+it("requires explicit confirmation before accepting a published preinvoice", async () => {
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  expect(acceptPreinvoice).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
+  await screen.findByText(/Aceptación registrada/);
+  expect(acceptPreinvoice).toHaveBeenCalledExactlyOnceWith(
+    "74000000-0000-7000-8000-000000000001");
+});
+
+it("does not claim acceptance when the server reports a competing decision", async () => {
+  acceptPreinvoice.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 409 }));
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/cambió antes de aceptarla/i);
+  expect(screen.queryByText(/Aceptación registrada/)).not.toBeInTheDocument();
+});
+
+it("does not show a stale acceptance banner after opening another preinvoice", async () => {
+  getPreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [
+      { id: "74000000-0000-7000-8000-000000000001",
+        stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+        from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
+        status: "Submitted", createdAt: "2026-08-20T12:00:00Z" },
+      { id: "74000000-0000-7000-8000-000000000003",
+        stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+        from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 95,
+        status: "Submitted", createdAt: "2026-08-21T12:00:00Z" },
+    ] });
+  let finish!: () => void;
+  acceptPreinvoice.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", {
+    name: "Ver líneas de prefactura 74000000-0000-7000-8000-000000000001" }));
+  await screen.findByLabelText("Líneas de prefactura 74000000-0000-7000-8000-000000000001");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
+  fireEvent.click(screen.getByRole("button", {
+    name: "Ver líneas de prefactura 74000000-0000-7000-8000-000000000003" }));
+  await screen.findByLabelText("Líneas de prefactura 74000000-0000-7000-8000-000000000003");
+  await act(async () => { finish(); });
+  expect(screen.queryByText(/Aceptación registrada/)).not.toBeInTheDocument();
 });
 
 it("shows verified account and station scope in profile", () => {

@@ -21,8 +21,49 @@ public sealed class AirlinePortalController(
     GetAirlineOperationsHandler operationsHandler,
     GetAirlineOperationHandler operationHandler,
     GetAirlineOperationalRequestsHandler requestsHandler,
-    GetAirlinePreinvoicesHandler preinvoicesHandler) : ControllerBase
+    GetAirlinePreinvoicesHandler preinvoicesHandler,
+    AcceptAirlinePreinvoiceHandler acceptanceHandler) : ControllerBase
 {
+    [HttpPost("preinvoices/{preinvoiceId:guid}/accept", Name = "AcceptAirlinePreinvoice")]
+    [RequestSizeLimit(1024)]
+    [Consumes("application/json")]
+    [ProducesResponseType<AcceptAirlinePreinvoiceResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<ActionResult<AcceptAirlinePreinvoiceResponse>> AcceptPreinvoice(
+        Guid preinvoiceId, [FromBody] AcceptAirlinePreinvoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AcceptAirlinePreinvoiceResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+        var result = await acceptanceHandler.HandleAsync(
+            accountId, preinvoiceId, request.RequestId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = result.Failure!.Value switch
+            {
+                AcceptAirlinePreinvoiceFailure.Unauthorized => (401, "Authentication failed."),
+                AcceptAirlinePreinvoiceFailure.Forbidden => (403, "Airline access is forbidden."),
+                AcceptAirlinePreinvoiceFailure.InvalidRequest => (400, "Invalid acceptance request."),
+                AcceptAirlinePreinvoiceFailure.NotFound => (404, "Preinvoice was not found."),
+                AcceptAirlinePreinvoiceFailure.Conflict => (409, "Preinvoice state conflicts with acceptance."),
+                _ => throw new InvalidOperationException("Unsupported acceptance failure."),
+            };
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AcceptAirlinePreinvoiceResponse>(statusCode, title);
+        }
+        return Ok(new AcceptAirlinePreinvoiceResponse(
+            result.PreinvoiceId!.Value, "Accepted", result.Replayed));
+    }
+
     [HttpGet("preinvoices/{preinvoiceId:guid}", Name = "GetAirlinePreinvoice")]
     [ProducesResponseType<AirlinePreinvoiceDetailResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]

@@ -194,11 +194,17 @@ del mismo actor y clave devuelve el resultado anterior; otra clave recibe
 conflicto. Auditoría e invalidaciones `finance_preinvoices` y
 `airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
 membresía, tenant y estado publicado antes de entregar la pista. No hay
-emisión, impuesto,
-conciliación, factura, pago ni recibo todavía. La rama no se ha desplegado.
+emisión, impuesto, conciliación, factura, pago ni recibo todavía. La rama no
+se ha desplegado.
 El portal de aerolínea puede releer una prefactura publicada y sus líneas
 inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
 deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.
+`POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/accept` acepta solo una
+prefactura `Submitted` del tenant autorizado. La transacción serializable
+revalida membresía, registra actor y clave estable en auditoría, y guarda
+avisos durables para aerolínea y Finanzas. Un reintento del mismo actor/clave
+no duplica la transición; una segunda intención recibe conflicto. La
+aceptación no emite factura ni registra pago.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

@@ -45,6 +45,7 @@ interface AirlineSessionContextValue {
   getRequests(page?: number): Promise<AirlineOperationalRequestPageResponse>;
   getPreinvoices(page?: number): Promise<AirlinePreinvoicePageResponse>;
   getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
+  acceptPreinvoice(preinvoiceId: string): Promise<void>;
   operationRevision: number;
   financeRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
@@ -366,6 +367,23 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const acceptPreinvoice = useCallback(async (preinvoiceId: string): Promise<void> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).acceptAirlinePreinvoice(
+          preinvoiceId, { requestId: preinvoiceId });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      setFinanceRevision(current => current + 1);
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const draftRequest = useCallback(async (path: string, options: RequestInit = {}) => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
@@ -398,7 +416,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, acceptPreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

@@ -5,6 +5,16 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
+export interface AcceptAirlinePreinvoiceRequest {
+  requestId: string;
+}
+
+export interface AcceptAirlinePreinvoiceResponse {
+  id: string;
+  status: string;
+  replayed: boolean;
+}
+
 export interface AccountChangeResponse {
   eventId: string;
   cursor: string;
@@ -1863,6 +1873,41 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAcceptAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/accept`
+}
+
+export const acceptAirlinePreinvoice = async (preinvoiceId: string,
+    acceptAirlinePreinvoiceRequest?: AcceptAirlinePreinvoiceRequest, options?: RequestInit): Promise<AcceptAirlinePreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAcceptAirlinePreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(acceptAirlinePreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AcceptAirlinePreinvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 

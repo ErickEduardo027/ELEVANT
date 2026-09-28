@@ -147,6 +147,14 @@ La misma clave devuelve una repetición; otra intención para la prefactura ya
 enviada recibe conflicto. No es aprobación, factura ni cobro. El
 antiguo adaptador `/api/finance/preinvoices` de la pantalla activa se retiró.
 
+La aerolínea puede aceptar una prefactura `Submitted` propia mediante
+`POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/accept`. La API vuelve
+a derivar la única organización vigente del actor, comprueba la pertenencia
+de la prefactura en SQL y guarda transición `Accepted`, auditoría y avisos
+durables en una transacción serializable. Un reintento del mismo actor y clave
+es inocuo; otra intención recibe conflicto. Aceptar no equivale a conciliar,
+facturar ni cobrar; la disputa y su resolución siguen pendientes.
+
 Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La
 API deriva la organización de la membresía y filtra por `AirlineId` en SQL;
 solo expone estados publicados (`Submitted`, `Disputed`, `Accepted`, `Invoiced`).
