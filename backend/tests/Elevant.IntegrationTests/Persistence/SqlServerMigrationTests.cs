@@ -43,6 +43,57 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task FinanceTariffsExposeOnlyPublishedRatesForALiveStationGrant()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var financeId = Guid.Parse("40000000-0000-7000-8000-000000000006");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IFinanceTariffReadStore>();
+        var page = await store.ListAsync(financeId, stationId, 1, 20, cancellationToken);
+        Assert.NotNull(page);
+        Assert.Equal(stationId, page.StationId);
+        Assert.Contains(page.Tariffs, row => row.ContractCode == "DEV-CONTRACT-0001" &&
+            row.UnitPrice == 125.50m && row.VersionStatus == "Approved");
+        Assert.All(page.Tariffs, row => Assert.Equal("DEV-CONTRACT-0001", row.ContractCode));
+        Assert.Null(await store.ListAsync(occId, stationId, 1, 20, cancellationToken));
+        Assert.Null(await store.ListAsync(financeId, Guid.NewGuid(), 1, 20, cancellationToken));
+
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var accountKey = await context.Users.AsNoTracking().Where(user => user.PublicId == financeId)
+            .Select(user => user.Id).SingleAsync(cancellationToken);
+        var stationKey = await context.Stations.AsNoTracking().Where(station => station.PublicId == stationId)
+            .Select(station => station.Id).SingleAsync(cancellationToken);
+        await context.AccountStationScopes.Where(grant => grant.AccountId == accountKey &&
+            grant.StationId == stationKey && grant.RevokedAt == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                DateTimeOffset.UtcNow), cancellationToken);
+        Assert.Null(await store.ListAsync(financeId, stationId, 1, 20, cancellationToken));
+    }
+
+    [Fact]
     public async Task MediaLinksExpireBeforeCleanupButExistingPrivateLinksRemainReadable()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -401,6 +452,28 @@ public sealed class SqlServerMigrationTests
             cancellationToken))!.Contracts, item => item.Code == contract.ContractCode);
         Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
             cancellationToken)).IsSuccess);
+        var financeAccountKey = await context.Users.AsNoTracking().Where(account =>
+            account.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000006"))
+            .Select(account => account.Id).SingleAsync(cancellationToken);
+        var stationInternalId = await context.Stations.AsNoTracking().Where(item =>
+            item.PublicId == station.Id).Select(item => item.Id)
+            .SingleAsync(cancellationToken);
+        var tariffHint = Assert.Single((await context.OutboxMessages.AsNoTracking()
+            .Where(message => message.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode),
+            change => change.Resource == "finance_tariffs" &&
+                change.ResourceId == airlineDraft.Id);
+        Assert.Equal(financeAccountKey, tariffHint.RecipientAccountId);
+        Assert.Equal(stationInternalId, tariffHint.StationId);
+        await scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>()
+            .DispatchPendingAsync(100, cancellationToken);
+        var financeChanges = await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+            .ReadAsync(Guid.Parse("40000000-0000-7000-8000-000000000006"), 0, 100,
+                cancellationToken);
+        Assert.Contains(Assert.IsType<AccountChangePage>(financeChanges).Changes,
+            change => change.Resource == "finance_tariffs" &&
+                change.ResourceId == airlineDraft.Id);
         Assert.Empty((await drafts.ListForAirlineAsync(provisioned.AccountId.Value,
             cancellationToken))!);
         Assert.Equal(0, (await drafts.GetOverviewForContractsAsync(

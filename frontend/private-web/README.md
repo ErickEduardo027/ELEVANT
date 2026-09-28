@@ -108,6 +108,16 @@ Los roles, tenants y scopes de estación se validan en el servidor. Filtros, men
 
 Los mocks describen flujos de producto, no contratos persistentes ni una frontera de autorización.
 
+En esta rama, **Finanzas → Tarifas** usa `GET /api/v1/finance/tariffs` con
+estación autorizada y páginas de 20 tarifas publicadas. Distingue versiones
+aprobadas e históricas, moneda y cuatro decimales, sin recalcular precios de
+operaciones o facturas ya congeladas. La activación contractual escribe una
+invalidación durable `finance_tariffs`; el cliente también reconsulta al
+recuperar foco/conectividad y cada 25 segundos mientras está visible. Se
+retiró «Programar cambio» porque solo modificaba memoria local. Crear una
+nueva versión contractual con precios futuros todavía requiere un comando
+canónico; esta vista es de solo lectura. Aún no hay prueba remota del corte.
+
 El resumen de Contratos permanece sintético y se señala en la interfaz. En
 esta rama local, **Finanzas → Inicio** consulta servicios aprobados de los
 últimos 30 días y la primera página de prefacturas de la estación autorizada
@@ -142,9 +152,8 @@ polling de 25 segundos. Retira el servicio simulado `/api/finance/preinvoices`
 y sus botones ficticios. Un borrador puede enviarse a la aerolínea tras
 confirmación explícita con `POST /api/v1/finance/preinvoices/{draftId}/submit`;
 un reintento de red usa la misma clave y el estado se relee desde la API. La
-creación real permanece en
-Servicios aprobados. El inicio, conciliación, tarifas y reportes financieros
-todavía necesitan migración; sus datos sintéticos no se presentan como saldos.
+creación real permanece en Servicios aprobados. Conciliación financiera todavía
+necesita migración; Tarifas y Reportes ya tienen lecturas acotadas de la API.
 
 El detalle de Pre-facturación también lee las disputas de la aerolínea con
 asunto, descripción y líneas cuestionadas desde

@@ -572,6 +572,33 @@ export interface FinancePreinvoicePageData {
   preinvoices: FinancePreinvoiceListItem[];
 }
 
+export interface FinanceTariffData {
+  id: string;
+  contractId: string;
+  contractCode: string;
+  airlineId: string;
+  airlineName: string;
+  versionNumber: number;
+  versionStatus: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface FinanceTariffPageData {
+  stationId: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  tariffs: FinanceTariffData[];
+}
+
 export interface RampIncidentResponse {
   id: string;
   incidentType: string;
@@ -1903,6 +1930,12 @@ to?: string;
 };
 
 export type ListFinancePreinvoicesParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
+export type ListFinanceTariffsParams = {
 stationId: string;
 page?: number;
 limit?: number;
@@ -3604,6 +3637,41 @@ const res = await fetch(getCreatePreinvoiceDraftUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceTariffsUrl = (params: ListFinanceTariffsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/tariffs?${stringifiedParams}` : `/api/v1/finance/tariffs`
+}
+
+export const listFinanceTariffs = async (params: ListFinanceTariffsParams, options?: RequestInit): Promise<FinanceTariffPageData> => {
+
+  const res = await fetch(getListFinanceTariffsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTariffPageData = body ? JSON.parse(body) : {}
   return data
 }
 

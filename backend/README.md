@@ -196,6 +196,16 @@ conflicto. Auditoría e invalidaciones `finance_preinvoices` y
 membresía, tenant y estado publicado antes de entregar la pista. No hay
 impuesto, conciliación, pago ni recibo todavía. La rama no
 se ha desplegado.
+
+`GET /api/v1/finance/tariffs` ofrece una lectura paginada de tarifas de
+versiones contractuales aprobadas o reemplazadas por estación autorizada. El
+store revalida rol Finanzas, membresía interna, estación activa y grant vigente
+antes y durante la consulta. La activación contractual guarda una pista durable
+`finance_tariffs` dirigida a Finanzas de cada estación cubierta dentro del
+mismo `SaveChanges`; el feed vuelve a comprobar alcance y estado publicado al
+entregarla. No existe comando de modificación de tarifas desde Finanzas: los
+precios de servicios e importes ya ejecutados permanecen congelados. Este
+contrato está verificado localmente, no promovido al VPS.
 El portal de aerolínea puede releer una prefactura publicada y sus líneas
 inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
 deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.

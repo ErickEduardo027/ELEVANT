@@ -3,6 +3,7 @@ using Elevant.Application.Abstractions.Realtime;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Commercial;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
@@ -85,6 +86,15 @@ internal sealed class EfAccountChangeReadStore(
                      context.Preinvoices.Any(draft =>
                          draft.PublicId == change.ResourceId &&
                          draft.StationId == change.StationId))) &&
+                (change.Resource != "finance_tariffs" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.ContractVersions.Any(version =>
+                         version.PublicId == change.ResourceId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         context.Set<ContractVersionStation>().Any(coverage =>
+                             coverage.ContractVersionId == version.Id &&
+                             coverage.StationId == change.StationId)))) &&
                 (change.Resource != "airline_operations" ||
                     (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
                         operation.PublicId == change.ResourceId &&

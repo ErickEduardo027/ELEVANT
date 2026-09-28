@@ -14,6 +14,7 @@ import {
   getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
+  getListFinanceTariffsUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
   getGetFinancePreinvoiceDisputesUrl,
@@ -89,6 +90,8 @@ import {
   type FinanceApprovedServicesResponse,
   type FinancePreinvoicePageData,
   type ListFinancePreinvoicesParams,
+  type FinanceTariffPageData,
+  type ListFinanceTariffsParams,
   type CreatePreinvoiceDraftRequest,
   type CreatePreinvoiceDraftResponse,
   type PreinvoiceDraftResponse,
@@ -191,6 +194,7 @@ export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" 
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitPreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -329,6 +333,10 @@ export interface ElevantApiClient {
     query: ListFinancePreinvoicesParams,
     options?: GetFinancePreinvoicesOptions,
   ): Promise<FinancePreinvoicePageData>;
+  getFinanceTariffs(
+    query: ListFinanceTariffsParams,
+    options?: GetFinanceTariffsOptions,
+  ): Promise<FinanceTariffPageData>;
   createPreinvoiceDraft(
     request: CreatePreinvoiceDraftRequest,
     options?: CreatePreinvoiceDraftOptions,
@@ -2236,6 +2244,49 @@ function validatedFinancePreinvoiceQuery(
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
+function validatedFinanceTariffQuery(
+  query: ListFinanceTariffsParams,
+): ListFinanceTariffsParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
+      !isUuid(query.stationId) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
+    throw new TypeError("Finance tariff station or paging is invalid.");
+  return { stationId: query.stationId,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["stationId", "page", "limit", "hasMore", "tariffs"]) ||
+      !isUuid(value.stationId) || !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.tariffs) ||
+      value.tariffs.length > value.limit ||
+      (value.hasMore && value.tariffs.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.tariffs.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "contractId", "contractCode", "airlineId", "airlineName",
+        "versionNumber", "versionStatus", "validFrom", "validTo", "currencyCode",
+        "serviceCode", "serviceName", "billingUnit", "unitPrice", "minimumQuantity"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.contractId) ||
+        !isNonEmptyString(item.contractCode) || !isUuid(item.airlineId) ||
+        !isNonEmptyString(item.airlineName) || !isInt32(item.versionNumber) ||
+        item.versionNumber < 1 || !["Approved", "Superseded"].includes(String(item.versionStatus)) ||
+        !isDateOnly(item.validFrom) || !isOptionalNullable(item.validTo, isDateOnly) ||
+        (item.validTo != null && item.validTo < item.validFrom) ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isNonEmptyString(item.serviceCode) || !isNonEmptyString(item.serviceName) ||
+        !isNonEmptyString(item.billingUnit) || !isFiniteNumber(item.unitPrice) ||
+        item.unitPrice < 0 || !isFiniteNumber(item.minimumQuantity) ||
+        item.minimumQuantity < 0) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
 function isFinancePreinvoicePageData(value: unknown): value is FinancePreinvoicePageData {
   if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
       !isInt32(value.page) || value.page < 1 ||
@@ -3192,6 +3243,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 20) ||
           result.data.preinvoices.some(item => item.stationId !== scope.stationId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceTariffs(
+      query: ListFinanceTariffsParams,
+      options?: GetFinanceTariffsOptions,
+    ) {
+      const scope = validatedFinanceTariffQuery(query);
+      const result = await execute(getListFinanceTariffsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceTariffPageData(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 20))
         throw malformedResponse(result.status);
       return result.data;
     },

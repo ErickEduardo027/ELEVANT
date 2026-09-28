@@ -6,6 +6,7 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Realtime;
+using Elevant.Persistence.Finance;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -249,6 +250,12 @@ internal sealed class EfContractDraftStore(
         });
         AccountChangeOutboxWriter.Add(context, row.Request.ProvisionedAccountId.Value,
             null, "airline_contracts", row.Contract.PublicId, now);
+        var coveredStations = await context.Set<ContractVersionStation>().AsNoTracking()
+            .Where(station => station.ContractVersionId == row.Version.Id)
+            .Select(station => station.StationId).ToArrayAsync(cancellationToken);
+        foreach (var coveredStation in coveredStations)
+            await FinanceApprovedServiceChangeWriter.AddAsync(context, coveredStation,
+                row.Version.PublicId, now, "finance_tariffs", cancellationToken);
         CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.contract.activated",
             "commercial.contracts", row.Contract.PublicId);
         await context.SaveChangesAsync(cancellationToken);
