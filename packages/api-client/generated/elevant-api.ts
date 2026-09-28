@@ -2007,6 +2007,60 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
 
 
 
+export const getGetAirlineInvoiceDocumentUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/invoice/document`
+}
+
+export const getAirlineInvoiceDocument = async (preinvoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineInvoiceDocumentUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlinePaymentReceiptUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/receipt`
+}
+
+export const getAirlinePaymentReceipt = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlinePaymentReceiptUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getGetAirlinePaymentByInvoiceUrl = (invoiceId: string,) => {
 
 
@@ -3303,6 +3357,60 @@ const res = await fetch(getResolveFinancePreinvoiceDisputeUrl(preinvoiceId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ResolvePreinvoiceDisputeResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceDocumentUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/by-preinvoice/${preinvoiceId}/document`
+}
+
+export const getFinanceInvoiceDocument = async (preinvoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinanceInvoiceDocumentUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetFinancePaymentReceiptUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payments/by-invoice/${invoiceId}/receipt`
+}
+
+export const getFinancePaymentReceipt = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinancePaymentReceiptUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

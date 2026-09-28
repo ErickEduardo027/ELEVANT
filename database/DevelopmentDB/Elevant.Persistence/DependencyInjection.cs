@@ -91,6 +91,13 @@ public static class DependencyInjection
         services.AddScoped<INonFiscalInvoiceReadStore, EfNonFiscalInvoiceReadStore>();
         services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();
         services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
+        services.AddScoped<IPrivateFinancialObjectStore>(
+            _ => new S3PrivateFinancialObjectStore(configuration));
+        services.AddScoped<IFinancialDocumentStore>(provider => new EfFinancialDocumentStore(
+            provider.GetRequiredService<ElevantDbContext>(),
+            provider.GetRequiredService<IPrivateFinancialObjectStore>(),
+            provider.GetRequiredService<IFinancialDocumentPdfRenderer>(),
+            provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();

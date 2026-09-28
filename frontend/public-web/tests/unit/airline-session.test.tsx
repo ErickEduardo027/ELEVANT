@@ -47,7 +47,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function Harness() {
   const { status, session: current, signIn, signOut, retry, getPreinvoice,
-    getPreinvoiceInvoice, acceptPreinvoice, disputePreinvoice, financeRevision } = useAirlineSession();
+    getPreinvoiceInvoice, getInvoiceDocument, acceptPreinvoice, disputePreinvoice,
+    financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
@@ -59,6 +60,8 @@ function Harness() {
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
     <button onClick={() => void getPreinvoiceInvoice("74000000-0000-7000-8000-000000000001")
       .then(result => setDetailStatus(result.number)).catch(() => setDetailStatus("missing"))}>Consultar factura</button>
+    <button onClick={() => void getInvoiceDocument("74000000-0000-7000-8000-000000000001")
+      .then(() => setDetailStatus("documento")).catch(() => setDetailStatus("missing"))}>Descargar factura</button>
     <button onClick={() => void acceptPreinvoice("74000000-0000-7000-8000-000000000001")}>Aceptar prefactura</button>
     <button onClick={() => void disputePreinvoice(
       "74000000-0000-7000-8000-000000000001", {
@@ -162,6 +165,23 @@ it("keeps the airline session when a preinvoice is not visible", async () => {
   await waitFor(() => expect(screen.getByTestId("detail-status")).toHaveTextContent("missing"));
   expect(screen.getByTestId("session-status")).toHaveTextContent("ready");
   expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).not.toBeNull();
+});
+
+it("clears the airline session when financial document access is revoked", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/preinvoices/74000000-0000-7000-8000-000000000001/invoice/document"))
+      return json({ status: 403 }, 403);
+    return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  fireEvent.click(screen.getByRole("button", { name: "Descargar factura" }));
+  await waitFor(() => expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous"));
+  expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).toBeNull();
 });
 
 it("refreshes the authorized airline snapshot when the connection returns", async () => {

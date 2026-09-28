@@ -63,7 +63,7 @@ Conserva un snapshot independiente de las líneas aceptadas y un número único
 `NF-` derivado del UUID de factura; índices únicos impiden una segunda factura
 para la misma prefactura, reutilizar la clave de solicitud o duplicar una línea
 de origen. Las FKs son `NO ACTION` y la migración no contiene datos de negocio.
-Es una factura de prueba **no fiscal**, sin PDF, impuesto, cobro ni recibo.
+Es una factura de prueba **no fiscal**, sin impuesto ni cobro externo.
 Esta migración sigue en la rama local, sin promoción al VPS.
 
 La migración aditiva `NonFiscalPayments` agrega
@@ -87,6 +87,17 @@ no se debe forzar la reversión ni borrar las líneas liberadas. `released_at`
 usa `datetimeoffset(3)`. El `Down` rechaza explícitamente la reversión si ya
 existe una resolución o línea liberada, antes de eliminar tablas o columnas;
 la recuperación de datos requiere el procedimiento de backup verificado. Sigue local.
+
+La migración aditiva `FinancialDocuments` crea
+`commercial.financial_documents`: metadatos inmutables de un PDF de factura
+o recibo, ligados a factura y, para recibos, al pago registrado. Índices
+únicos por `(invoice_id, kind)`, `payment_id` y `object_key` impiden duplicados.
+SQL conserva longitud y SHA-256; los bytes van a un prefijo `finance/` del
+almacén S3 privado, nunca a medios comerciales públicos. La API verifica
+hash y tamaño antes de entregarlos y falla cerrado si faltan o difieren.
+El `Down` rechaza la eliminación de metadatos existentes. No contiene DML,
+impuestos, NCF ni comprobación bancaria. La prueba local de migración cubre
+concurrencia y bytes alterados; este cambio aún no está promocionado al VPS.
 
 Desde cualquier directorio:
 

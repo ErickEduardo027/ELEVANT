@@ -159,8 +159,12 @@ un registro manual de pago completo sobre la factura no fiscal. La pantalla
 exige referencia y confirmación; envía una clave de intención estable, relee
 el pago por la API y no lo presenta como conciliación bancaria verificada.
 El aviso durable `finance_preinvoices` provoca revalidación. Todavía no hay
-PDF, impuesto, conciliación ni recibo. El flujo sigue en la rama local,
-sin promoción al VPS.
+PDF fiscal, impuesto ni conciliación. En este tramo local, el detalle permite
+descargar la factura no fiscal y, si existe un pago registrado, su recibo PDF
+privado. Ambos se obtienen por la API con la sesión de Finanzas y alcance de
+estación vigente; no se generan en el navegador. Una transferencia bancaria
+no queda verificada por registrar su referencia. El flujo sigue en la rama
+local, sin promoción al VPS.
 
 ## Imagen de Development
 

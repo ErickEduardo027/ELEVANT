@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
 using Elevant.Application.Abstractions.Finance;
@@ -25,6 +26,7 @@ using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -6269,6 +6271,146 @@ public sealed class SqlServerMigrationTests
                 RampOperationsReadFailure.AgentProfileUnavailable,
                 ambiguousProfile.Failure);
         }
+    }
+
+    [Fact]
+    public async Task FinancialPdfMetadataSurvivesConcurrentReadersAndRejectsCorruptedPrivateBytes()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var now = new DateTimeOffset(2026, 9, 28, 17, 0, 0, TimeSpan.Zero);
+        var preinvoiceId = Guid.NewGuid();
+        var invoiceId = Guid.NewGuid();
+        var paymentId = Guid.NewGuid();
+        long invoiceKey;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var airline = await setup.Airlines.FirstAsync(cancellationToken);
+            var station = await setup.Stations.FirstAsync(item => item.Code == "PUJ", cancellationToken);
+            var account = await setup.Users.FirstAsync(item =>
+                item.NormalizedEmail == "FINANZAS@DEV.ELEVANT.TEST", cancellationToken);
+            var preinvoice = new Preinvoice
+            {
+                PublicId = preinvoiceId, AirlineId = airline.Id, StationId = station.Id,
+                CreatedByAccountId = account.Id, RequestId = Guid.NewGuid(),
+                PayloadHash = new string('a', 64), From = new DateOnly(2026, 9, 28),
+                To = new DateOnly(2026, 9, 28), CurrencyCode = "USD", Total = 125.50m,
+                Status = PreinvoiceStatus.Invoiced, CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Preinvoices.Add(preinvoice);
+            await setup.SaveChangesAsync(cancellationToken);
+            var invoice = new NonFiscalInvoice
+            {
+                PublicId = invoiceId, PreinvoiceId = preinvoice.Id,
+                AirlineId = airline.Id, StationId = station.Id,
+                IssuedByAccountId = account.Id, RequestId = Guid.NewGuid(),
+                Number = $"NF-{invoiceId:N}", CurrencyCode = "USD", Total = 125.50m,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.NonFiscalInvoices.Add(invoice);
+            await setup.SaveChangesAsync(cancellationToken);
+            invoiceKey = invoice.Id;
+            setup.NonFiscalPayments.Add(new NonFiscalPayment
+            {
+                PublicId = paymentId, InvoiceId = invoice.Id,
+                RecordedByAccountId = account.Id, RequestId = Guid.NewGuid(),
+                Reference = "SYNTHETIC-PAY-001", CurrencyCode = "USD", Amount = 125.50m,
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        var invoiceData = new NonFiscalInvoiceData(invoiceId, preinvoiceId,
+            Guid.NewGuid(), Guid.NewGuid(), $"NF-{invoiceId:N}", "USD", 125.50m, now, []);
+        var paymentData = new NonFiscalPaymentData(paymentId, invoiceId,
+            "SYNTHETIC-PAY-001", "USD", 125.50m, now);
+        var objects = new InMemoryFinancialObjects(holdFirstTwoPuts: true);
+        var renderer = new SyntheticFinancialPdfRenderer();
+        await using var firstContext = CreateContext(database.ConnectionString);
+        await using var secondContext = CreateContext(database.ConnectionString);
+        var first = new EfFinancialDocumentStore(firstContext, objects, renderer, TimeProvider.System);
+        var second = new EfFinancialDocumentStore(secondContext, objects, renderer, TimeProvider.System);
+        var concurrent = await Task.WhenAll(
+            first.OpenInvoiceAsync(invoiceData, cancellationToken),
+            second.OpenInvoiceAsync(invoiceData, cancellationToken));
+        Assert.Equal(concurrent[0].Id, concurrent[1].Id);
+        Assert.Single(objects.Keys);
+
+        await using var inspection = CreateContext(database.ConnectionString);
+        var invoiceRow = Assert.Single(await inspection.FinancialDocuments.AsNoTracking()
+            .Where(item => item.InvoiceId == invoiceKey && item.Kind == "Invoice")
+            .ToArrayAsync(cancellationToken));
+        Assert.Equal(concurrent[0].Sha256, invoiceRow.Sha256);
+        var receipt = await first.OpenReceiptAsync(paymentData, invoiceData.Number,
+            cancellationToken);
+        Assert.Equal("Receipt", receipt.Kind);
+        Assert.Equal(2, await inspection.FinancialDocuments.CountAsync(cancellationToken));
+
+        await using var restartedContext = CreateContext(database.ConnectionString);
+        var restarted = new EfFinancialDocumentStore(restartedContext, objects,
+            renderer, TimeProvider.System);
+        Assert.Equal(concurrent[0].Content,
+            (await restarted.OpenInvoiceAsync(invoiceData, cancellationToken)).Content);
+        objects.Corrupt(invoiceRow.ObjectKey);
+        await Assert.ThrowsAsync<FinancialDocumentUnavailableException>(() =>
+            restarted.OpenInvoiceAsync(invoiceData, cancellationToken));
+        Assert.Equal(2, await inspection.FinancialDocuments.CountAsync(cancellationToken));
+    }
+
+    private sealed class InMemoryFinancialObjects(bool holdFirstTwoPuts = false)
+        : IPrivateFinancialObjectStore
+    {
+        private readonly ConcurrentDictionary<string, byte[]> _objects = new();
+        private readonly TaskCompletionSource bothPutsStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private int putCount;
+
+        public string[] Keys => _objects.Keys.ToArray();
+
+        public async Task PutAsync(string key, byte[] content,
+            CancellationToken cancellationToken = default)
+        {
+            _objects[key] = content;
+            var count = Interlocked.Increment(ref putCount);
+            if (holdFirstTwoPuts && count <= 2)
+            {
+                if (count == 2) bothPutsStarted.TrySetResult();
+                await bothPutsStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+        }
+
+        public Task<byte[]?> GetAsync(string key,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_objects.TryGetValue(key, out var bytes) ? bytes : null);
+
+        public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
+        {
+            _objects.TryRemove(key, out _);
+            return Task.CompletedTask;
+        }
+
+        public void Corrupt(string key) => _objects[key] = "%PDF-corrupted"u8.ToArray();
+    }
+
+    private sealed class SyntheticFinancialPdfRenderer : IFinancialDocumentPdfRenderer
+    {
+        public byte[] RenderInvoice(NonFiscalInvoiceData invoice) =>
+            System.Text.Encoding.UTF8.GetBytes($"%PDF-1.7\nInvoice {invoice.Number}\n%%EOF");
+
+        public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber) =>
+            System.Text.Encoding.UTF8.GetBytes(
+                $"%PDF-1.7\nReceipt {payment.Reference} {invoiceNumber}\n%%EOF");
     }
 
     private static ServiceProvider CreateAuthenticationProvider(

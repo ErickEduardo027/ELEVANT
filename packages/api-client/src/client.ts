@@ -22,6 +22,10 @@ import {
   getGetFinanceInvoiceByPreinvoiceUrl,
   getGetAirlineInvoiceByPreinvoiceUrl,
   getGetAirlinePaymentByInvoiceUrl,
+  getGetAirlineInvoiceDocumentUrl,
+  getGetAirlinePaymentReceiptUrl,
+  getGetFinanceInvoiceDocumentUrl,
+  getGetFinancePaymentReceiptUrl,
   getGetFinancePaymentByInvoiceUrl,
   getRecordNonFiscalPaymentUrl,
   getSubmitPreinvoiceUrl,
@@ -177,6 +181,7 @@ export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -364,6 +369,18 @@ export interface ElevantApiClient {
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
   ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlineInvoiceDocument(
+    preinvoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getAirlinePaymentReceipt(
+    invoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getFinanceInvoiceDocument(
+    preinvoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getFinancePaymentReceipt(
+    invoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
   submitPreinvoice(
     draftId: string, request: SubmitPreinvoiceRequest,
     options?: SubmitPreinvoiceOptions,
@@ -2814,11 +2831,11 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   }
   const getAccessToken = options.getAccessToken;
 
-  const execute = async (
+  const send = async (
     path: string,
     init: ElevantRequestInit = {},
     includeAccessToken = false,
-  ): Promise<ApiResult> => {
+  ): Promise<Response> => {
     const url = validatedRequestUrl(baseUrl, path);
     const headers = mergeHeaders(defaultHeaders, init.headers);
     if (init.body === undefined || init.body === null) headers.delete("content-type");
@@ -2851,11 +2868,40 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       });
     }
 
+    return response;
+  };
+
+  const execute = async (
+    path: string, init: ElevantRequestInit = {}, includeAccessToken = false,
+  ): Promise<ApiResult> => {
+    const response = await send(path, init, includeAccessToken);
+
     return {
       status: response.status,
       data: await readSuccessBody(response),
       etag: response.headers.get("etag"),
     };
+  };
+
+  const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
+    const response = await send(path, { ...init, method: "GET" }, true);
+    if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
+        "application/pdf") throw malformedResponse(response.status);
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength && Number(declaredLength) > 8_388_608)
+      throw malformedResponse(response.status);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw malformedResponse(response.status);
+    }
+    const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
+    if (bytes.byteLength < 8 || bytes.byteLength > 8_388_608 ||
+        ![37, 80, 68, 70, 45].every((value, index) => header[index] === value))
+      throw malformedResponse(response.status);
+    return new Blob([bytes], { type: "application/pdf" });
   };
 
   const executeOccAssignment = async (
@@ -3273,6 +3319,22 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isNonFiscalPaymentLookupResponse(result.data, id))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    getAirlineInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      return executePdf(getGetAirlineInvoiceDocumentUrl(id), options);
+    },
+    getAirlinePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      return executePdf(getGetAirlinePaymentReceiptUrl(id), options);
+    },
+    getFinanceInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      return executePdf(getGetFinanceInvoiceDocumentUrl(id), options);
+    },
+    getFinancePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      return executePdf(getGetFinancePaymentReceiptUrl(id), options);
     },
     async submitPreinvoice(
       draftId: string, request: SubmitPreinvoiceRequest,

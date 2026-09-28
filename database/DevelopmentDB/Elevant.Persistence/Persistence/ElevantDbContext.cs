@@ -94,6 +94,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<NonFiscalPayment> NonFiscalPayments => Set<NonFiscalPayment>();
 
+    public DbSet<FinancialDocument> FinancialDocuments => Set<FinancialDocument>();
+
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
     public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();

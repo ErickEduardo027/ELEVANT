@@ -182,6 +182,14 @@ importes listos sin precio/moneda congelados o filas con propiedades ajenas al
 contrato. La API revalida el rol financiero y la estación; esta lectura no
 emite facturas ni modifica revisiones.
 
+Las cuatro descargas financieras (`getAirlineInvoiceDocument`,
+`getAirlinePaymentReceipt`, `getFinanceInvoiceDocument` y
+`getFinancePaymentReceipt`) usan rutas generadas desde OpenAPI y el Bearer
+vigente. El transporte binario conserva errores HTTP tipados y rechaza HTML,
+respuestas vacías, firmas ajenas a `%PDF-` y cuerpos mayores de 8 MiB. Devuelve
+un `Blob` privado; la UI decide el nombre de descarga. No almacena el token ni
+interpreta el PDF como comprobante fiscal.
+
 ## Contrato y generación
 
 - `openapi/elevant-v1.json`: snapshot canónico certificado.

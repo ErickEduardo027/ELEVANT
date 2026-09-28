@@ -21,6 +21,7 @@ export {
   type GetNonFiscalInvoiceOptions,
   type RecordNonFiscalPaymentOptions,
   type GetNonFiscalPaymentOptions,
+  type GetFinancialDocumentOptions,
   type AcceptAirlinePreinvoiceOptions,
   type DisputeAirlinePreinvoiceOptions,
   type GetManagedContractsOptions,

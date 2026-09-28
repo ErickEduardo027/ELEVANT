@@ -4,6 +4,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
+  getFinanceInvoiceDocument, getFinancePaymentReceipt,
   recordNonFiscalPayment, resolveFinancePreinvoiceDispute } from '../../../services/financePreinvoiceService';
 
 const STATUS = {
@@ -33,6 +34,7 @@ export default function PreinvoicesPage() {
     requestId: null, number: null });
   const [paymentAttempt, setPaymentAttempt] = useState(EMPTY_PAYMENT_ATTEMPT);
   const [resolutionAttempt, setResolutionAttempt] = useState(EMPTY_RESOLUTION_ATTEMPT);
+  const [pdfAttempt, setPdfAttempt] = useState({ status: 'idle', kind: null });
   const detailGeneration = useRef(0);
   const selectionGeneration = useRef(0);
   const selectedPreinvoiceId = useRef(null);
@@ -76,6 +78,7 @@ export default function PreinvoicesPage() {
       setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
       setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
       setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
+      setPdfAttempt({ status: 'idle', kind: null });
       setState({ status: 'forbidden', result: null });
       return undefined;
     }
@@ -106,6 +109,7 @@ export default function PreinvoicesPage() {
       setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
       setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
       setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
+      setPdfAttempt({ status: 'idle', kind: null });
     }
     setDetail({ status: 'loading', value: null });
     try {
@@ -133,6 +137,7 @@ export default function PreinvoicesPage() {
     setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
     setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
     setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
+    setPdfAttempt({ status: 'idle', kind: null });
     setPage(value => value + delta);
   }
 
@@ -257,6 +262,33 @@ export default function PreinvoicesPage() {
       }
       setResolutionAttempt(current => ({ ...current,
         status: error?.status === 409 ? 'conflict' : 'error' }));
+    }
+  }
+
+  async function downloadFinancialPdf(kind) {
+    const current = detail.value;
+    if (!current?.invoice || (kind === 'receipt' && !current.payment) ||
+        pdfAttempt.status === 'pending') return;
+    const generation = detailGeneration.current;
+    setPdfAttempt({ status: 'pending', kind });
+    try {
+      const blob = kind === 'invoice'
+        ? await getFinanceInvoiceDocument(current.id)
+        : await getFinancePaymentReceipt(current.invoice.id);
+      if (generation !== detailGeneration.current) return;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = kind === 'invoice' ? `factura-${current.invoice.number}.pdf`
+        : `recibo-${current.payment.id}.pdf`;
+      anchor.hidden = true;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setPdfAttempt({ status: 'idle', kind: null });
+    } catch {
+      if (generation === detailGeneration.current) setPdfAttempt({ status: 'error', kind });
     }
   }
 
@@ -418,10 +450,20 @@ export default function PreinvoicesPage() {
         <ul className="mt-2 space-y-1 text-sm">{detail.value.invoice.lines.map(line => <li key={line.id}>
           {line.operationCode} · {line.serviceName} · {money(line.amount, detail.value.invoice.currencyCode)}
         </li>)}</ul>
+        <button type="button" disabled={pdfAttempt.status === 'pending'}
+          onClick={() => void downloadFinancialPdf('invoice')}
+          className="mt-3 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40">
+          Descargar factura PDF</button>
         {detail.value.payment ? <p className="mt-3 text-sm" role="status">
           Pago manual registrado: {detail.value.payment.reference} · {money(detail.value.payment.amount,
             detail.value.payment.currencyCode)}
         </p> : <p className="mt-3 text-sm">Sin pago registrado.</p>}
+        {detail.value.payment && <button type="button" disabled={pdfAttempt.status === 'pending'}
+          onClick={() => void downloadFinancialPdf('receipt')}
+          className="mt-3 rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-40">
+          Descargar recibo PDF</button>}
+        {pdfAttempt.status === 'error' && <p role="alert" className="mt-2 text-sm">
+          No se pudo descargar el PDF. Reintente desde esta factura.</p>}
         {!detail.value.payment && paymentAttempt.status === 'idle' &&
           <button type="button" onClick={() => setPaymentAttempt({ status: 'edit',
             id: detail.value.id, invoiceId: detail.value.invoice.id,

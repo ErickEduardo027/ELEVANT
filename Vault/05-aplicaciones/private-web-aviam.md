@@ -114,7 +114,7 @@ no aparece. Revalida por feed durable, foco y polling acotado. El resto de
 Finanzas puede crear y volver a consultar una prefactura interna no fiscal
 desde los servicios elegibles. La selección se reconcilia cuando llega una
 reserva de otro usuario y un reintento conserva su clave idempotente.
-Conciliación y recibo siguen pendientes; el registro manual de pago se describe
+Conciliación externa sigue pendiente; el registro manual de pago se describe
 abajo y no verifica una transferencia bancaria. No se ha
 promovido esta rama al VPS.
 
@@ -135,7 +135,7 @@ En la rama local, una prefactura `Accepted` presenta confirmación de emisión
 no fiscal. La API congela la factura y Finanzas relee número, líneas y total
 por una ruta de estación autorizada; la clave de intención se conserva para
 un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
-representa un PDF, impuesto ni recibo y aún no está promovido al VPS.
+representa un impuesto ni comprobante fiscal y aún no está promovido al VPS.
 
 En el worktree de integración, Finanzas puede responder a una disputa con
 motivo auditable: `Maintain` devuelve la prefactura a `Submitted` para una
@@ -156,6 +156,15 @@ relee `GET /api/v1/finance/payments/by-invoice/{invoiceId}` y distingue
 no concilia fondos ni emite un comprobante fiscal. Fuentes:
 [controlador](../../backend/Elevant.Api/Controllers/FinancePaymentsController.cs),
 [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfNonFiscalPaymentStore.cs)
+y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
+
+En el tramo local posterior, esa vista descarga PDF privado de la factura no
+fiscal y, cuando el pago manual existe, su recibo. La API comprueba el rol y
+la estación al abrirlos y de nuevo después de leer bytes; no delega la
+autorización al navegador ni sirve objetos S3 directamente. No acredita un
+cobro bancario. Las pruebas locales de la UI y SQL no demuestran promoción
+remota. Fuentes: [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceFinancialDocumentsController.cs),
+[persistencia documental](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinancialDocumentStore.cs)
 y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
 
 ## Desarrollo local

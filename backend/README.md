@@ -250,8 +250,14 @@ relee el total inmutable de la factura y evita duplicación con índices únicos
 y transacción serializable. Finanzas y la aerolínea consultan el pago por
 factura mediante rutas separadas y autorizadas. Es una anotación manual de
 Development, **no** verificación bancaria, cobro externo ni comprobante fiscal.
-Todavía no hay PDF, impuesto, conciliación ni recibo. Este tramo sigue local
-y sin promoción.
+En el siguiente tramo local, `GET` de documento de factura o recibo materializa
+un PDF no fiscal desde el snapshot inmutable, guarda los bytes en S3 privado
+y su SHA-256/longitud en `commercial.financial_documents`. Finanzas usa rutas
+de estación y la aerolínea rutas por tenant; ambas revalidan autorización
+después de leer el objeto. Un objeto ausente o alterado produce `503`, nunca
+una descarga vacía o un archivo de otro cliente. Los PDFs indican que son
+documentos de prueba sin NCF ni validez fiscal. No hay impuesto, conciliación
+ni verificación bancaria. Este tramo sigue local y sin promoción.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

@@ -9,24 +9,18 @@ import { ElevantApiError, type AirlineOperationPageResponse,
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { AirlineFinancePage } from "./AirlineFinancePage";
+import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
   | "documents" | "finance" | "reports" | "profile";
 
-const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests" | "finance">,
+const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests" | "finance" | "documents">,
   { title: string; description: string }> = {
-  documents: { title: "Documentos", description: "Los documentos todavía no están disponibles mediante la API del portal." },
   reports: { title: "Reportes", description: "Los reportes todavía no están disponibles mediante la API del portal." },
 };
 
 const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows: [string, string, string][] }> = {
-  documents: {
-    metrics: [["Documentos de ejemplo", "3"], ["Disponibles", "2"], ["En procesamiento", "1"], ["Descargas", "0"]],
-    rows: [["DEMO-DOC-001", "Reporte operativo de ejemplo", "PDF · no descargable"],
-      ["DEMO-DOC-002", "Orden de servicio de ejemplo", "PDF · no descargable"],
-      ["DEMO-DOC-003", "Evidencia en procesamiento", "Vista de ejemplo"]],
-  },
   reports: {
     metrics: [["Vuelos de ejemplo", "4"], ["Puntualidad", "50%"], ["Servicio", "67%"], ["Facturación", "US$413" ]],
     rows: [["Operaciones completadas", "50%", "Indicador ilustrativo"],
@@ -295,6 +289,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
   if (view === "finance") return <AirlineFinancePage
     key={actor.accountId} airlineName={bootstrap.name} />;
 
+  if (view === "documents") return <AirlineDocumentsPage key={actor.accountId} />;
+
   const previewModule = MODULES[view];
   const preview = PREVIEW[view];
   return <div className={styles.page}>
@@ -306,12 +302,11 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     </section>
     <div className={styles.metrics}>{preview.metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
     <section className={styles.panel} aria-label={`Vista previa de ${previewModule.title.toLowerCase()}`}>
-      <div className={styles.sectionHeading}><h2>{view === "documents" ? "Archivos de ejemplo" : view === "reports" ? "Indicadores de ejemplo" : `Registros de ejemplo`}</h2>
+      <div className={styles.sectionHeading}><h2>Indicadores de ejemplo</h2>
         <span className={styles.previewPill}>Sin conexión a datos reales</span></div>
       <ul className={styles.previewRows}>{preview.rows.map(([code, title, description]) => <li key={code}>
         <span className={styles.kicker}>{code}</span><strong>{title}</strong><p>{description}</p>
         {view === "reports" && <div className={styles.previewBar}><span style={{ width: title === "50%" ? "50%" : "67%" }} /></div>}
-        {view === "documents" && <button type="button" disabled>Descargar documento</button>}
       </li>)}</ul>
     </section>
   </div>;

@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<GetNonFiscalInvoiceHandler>();
         services.AddScoped<RecordNonFiscalPaymentHandler>();
         services.AddScoped<GetNonFiscalPaymentHandler>();
+        services.AddScoped<GetFinancialDocumentHandler>();
         services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();

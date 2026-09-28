@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
+  getFinanceInvoiceDocument, getFinancePaymentReceipt,
   recordNonFiscalPayment, resolveFinancePreinvoiceDispute } from '../../../services/financePreinvoiceService';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 
@@ -17,6 +18,7 @@ vi.mock('../../../services/financePreinvoiceService', () => ({
   getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
   issueFinanceInvoice: vi.fn(), getFinanceInvoiceByPreinvoice: vi.fn(),
   getFinancePaymentByInvoice: vi.fn(), recordNonFiscalPayment: vi.fn(),
+  getFinanceInvoiceDocument: vi.fn(), getFinancePaymentReceipt: vi.fn(),
   resolveFinancePreinvoiceDispute: vi.fn(),
 }));
 vi.mock('../../../services/approvedServicesService', () => ({
@@ -297,6 +299,39 @@ it('reads the frozen invoice for an already invoiced preinvoice without issuing 
   expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
   expect(getFinanceInvoiceByPreinvoice).toHaveBeenCalledWith(item.id);
   expect(issueFinanceInvoice).not.toHaveBeenCalled();
+});
+
+it('lets Finance download the frozen invoice and registered receipt', async () => {
+  const invoiced = { ...item, status: 'Invoiced' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [invoiced] });
+  getPreinvoiceDraft.mockResolvedValue({ ...invoiced, lines: [] });
+  getFinanceInvoiceByPreinvoice.mockResolvedValue({ id: 'invoice-one',
+    number: 'NF-123', currencyCode: 'USD', total: 42.0001, lines: [] });
+  getFinancePaymentByInvoice.mockResolvedValue({ invoiceId: 'invoice-one',
+    payment: { id: 'payment-one', reference: 'BANK-TEST-123', amount: 42.0001,
+      currencyCode: 'USD' } });
+  getFinanceInvoiceDocument.mockResolvedValue(new Blob(['%PDF-1.7']));
+  getFinancePaymentReceipt.mockResolvedValue(new Blob(['%PDF-1.7']));
+  const createObjectURL = vi.fn(() => 'blob:finance-test');
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  try {
+    render(<PreinvoicesPage />);
+    await screen.findByText('Synthetic Air');
+    await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    await screen.findByText(/NF-123/);
+    await userEvent.click(screen.getByRole('button', { name: 'Descargar factura PDF' }));
+    await waitFor(() => expect(getFinanceInvoiceDocument).toHaveBeenCalledWith(item.id));
+    await userEvent.click(screen.getByRole('button', { name: 'Descargar recibo PDF' }));
+    await waitFor(() => expect(getFinancePaymentReceipt).toHaveBeenCalledWith('invoice-one'));
+    expect(click).toHaveBeenCalledTimes(2);
+  } finally {
+    click.mockRestore();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+  }
 });
 
 it('records a manual non-fiscal payment only after confirmation and rereads it', async () => {

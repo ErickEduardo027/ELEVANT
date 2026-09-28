@@ -45,11 +45,12 @@ const initialRequestPage: AirlineOperationalRequestPageResponse = {
 let requestPage = initialRequestPage;
 let financeRevision = 0;
 const getRequests = vi.fn(async () => requestPage);
-const getPreinvoices = vi.fn(async () => ({ page: 1, limit: 20, hasMore: false,
+let preinvoicePage = { page: 1, limit: 20, hasMore: false,
   preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
     stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
     from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-    status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] }));
+    status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] };
+const getPreinvoices = vi.fn(async () => preinvoicePage);
 const getPreinvoice = vi.fn(async (id: string) => ({
   id, stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
   from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
@@ -75,18 +76,21 @@ const getInvoicePayment = vi.fn<(invoiceId: string) => Promise<NonFiscalPaymentL
   payment: { id: '74000000-0000-7000-8000-000000000011', invoiceId,
     reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 125.5,
     recordedAt: '2026-09-28T17:00:00Z' } }));
+const getInvoiceDocument = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
+const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
   requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
-  getPreinvoices.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item => ({ ...item, status: "Submitted" })) };
+  getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -153,13 +157,39 @@ it("does not invent details for an operation outside the authorized tenant", asy
   expect(screen.queryByText("DEV-TAT-0002")).not.toBeInTheDocument();
 });
 
-it("keeps modules without real API data read-only and honest", () => {
+it("shows an honest empty documents state from the live finance page", async () => {
   render(<AirlinePortalPage view="documents" />);
   expect(screen.getByRole("heading", { level: 1, name: "Documentos" })).toBeInTheDocument();
-  expect(screen.getByText(/todavía no están disponibles/i)).toBeInTheDocument();
-  expect(screen.getByText(/datos de demostración/i)).toBeInTheDocument();
-  for (const button of screen.getAllByRole("button", { name: /descargar documento/i }))
-    expect(button).toBeDisabled();
+  expect(await screen.findByText(/no hay facturas emitidas/i)).toBeInTheDocument();
+  expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
+  expect(screen.queryByText("DEMO-DOC-001")).not.toBeInTheDocument();
+});
+
+it("opens tenant-scoped invoice and receipt PDFs without a mock document", async () => {
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
+    ({ ...item, status: "Invoiced" })) };
+  const createObjectURL = vi.fn(() => "blob:financial-test");
+  const revokeObjectURL = vi.fn();
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  try {
+    render(<AirlinePortalPage view="documents" />);
+    await screen.findByText("Prefactura facturada");
+    fireEvent.click(screen.getByRole("button", { name: "Ver documentos" }));
+    await screen.findByText(/Factura no fiscal NF-/);
+    fireEvent.click(screen.getByRole("button", { name: "Descargar factura PDF" }));
+    await screen.findByRole("button", { name: "Descargar recibo PDF" });
+    expect(getInvoiceDocument).toHaveBeenCalledWith(preinvoicePage.preinvoices[0].id);
+    expect(click).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Descargar recibo PDF" }));
+    await act(async () => { expect(getPaymentReceipt).toHaveBeenCalledWith(
+      "74000000-0000-7000-8000-000000000009"); });
+  } finally {
+    click.mockRestore();
+    Reflect.deleteProperty(URL, "createObjectURL");
+    Reflect.deleteProperty(URL, "revokeObjectURL");
+  }
 });
 
 it("shows only published preinvoices returned by the authorized finance API", async () => {

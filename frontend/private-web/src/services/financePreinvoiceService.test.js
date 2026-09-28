@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveFinancePreinvoiceDispute: vi.fn(),
   getFinanceInvoiceByPreinvoice: vi.fn(),
   recordNonFiscalPayment: vi.fn(), getFinancePaymentByInvoice: vi.fn(),
+  getFinanceInvoiceDocument: vi.fn(), getFinancePaymentReceipt: vi.fn(),
 }));
 vi.mock('../config/elevantApiClient', () => ({
   createPrivateWebApiClient: mocks.createPrivateWebApiClient,
@@ -18,7 +19,8 @@ vi.mock('../features/auth/authService', () => ({
 
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, recordNonFiscalPayment,
-  getFinancePaymentByInvoice, resolveFinancePreinvoiceDispute } from './financePreinvoiceService';
+  getFinancePaymentByInvoice, getFinanceInvoiceDocument, getFinancePaymentReceipt,
+  resolveFinancePreinvoiceDispute } from './financePreinvoiceService';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -31,6 +33,8 @@ beforeEach(() => {
     getFinanceInvoiceByPreinvoice: mocks.getFinanceInvoiceByPreinvoice,
     recordNonFiscalPayment: mocks.recordNonFiscalPayment,
     getFinancePaymentByInvoice: mocks.getFinancePaymentByInvoice,
+    getFinanceInvoiceDocument: mocks.getFinanceInvoiceDocument,
+    getFinancePaymentReceipt: mocks.getFinancePaymentReceipt,
   });
 });
 
@@ -95,6 +99,20 @@ it('records and reads a payment through the bearer-scoped API client', async () 
   expect(mocks.recordNonFiscalPayment).toHaveBeenCalledWith(request);
   expect(mocks.getFinancePaymentByInvoice).toHaveBeenCalledWith(
     request.invoiceId, { cache: 'no-store' });
+});
+
+it('downloads private PDFs with the current Finance bearer and no browser cache', async () => {
+  const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+  mocks.getFinanceInvoiceDocument.mockResolvedValueOnce(pdf);
+  mocks.getFinancePaymentReceipt.mockResolvedValueOnce(pdf);
+  await expect(getFinanceInvoiceDocument('10000000-0000-7000-8000-000000000001'))
+    .resolves.toBe(pdf);
+  await expect(getFinancePaymentReceipt('10000000-0000-7000-8000-000000000002'))
+    .resolves.toBe(pdf);
+  expect(mocks.getFinanceInvoiceDocument).toHaveBeenCalledWith(
+    '10000000-0000-7000-8000-000000000001', { cache: 'no-store' });
+  expect(mocks.getFinancePaymentReceipt).toHaveBeenCalledWith(
+    '10000000-0000-7000-8000-000000000002', { cache: 'no-store' });
 });
 
 it('sends a Finance dispute decision through the bearer-scoped API client', async () => {

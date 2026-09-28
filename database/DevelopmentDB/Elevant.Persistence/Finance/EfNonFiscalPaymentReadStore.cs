@@ -33,10 +33,10 @@ internal sealed class EfNonFiscalPaymentReadStore(
                       context.AccountStationScopes.AsNoTracking().Any(grant =>
                           grant.AccountId == account.Id && grant.StationId == station.Id &&
                           grant.GrantedAt <= now && grant.RevokedAt == null))
-            select new { invoice.Id, invoice.PublicId })
+            select new { invoice.Id, invoice.PublicId, invoice.Number })
             .SingleOrDefaultAsync(cancellationToken);
         return header is null ? null : await ReadAsync(header.Id,
-            header.PublicId, cancellationToken);
+            header.PublicId, header.Number, cancellationToken);
     }
 
     public async Task<NonFiscalPaymentLookupData?> GetForAirlineAsync(
@@ -53,20 +53,20 @@ internal sealed class EfNonFiscalPaymentReadStore(
                   organization.Type == OrganizationType.AirlineCustomer &&
                   organization.Status == OrganizationStatus.Active && airline.IsActive &&
                   invoice.PublicId == invoiceId
-            select new { invoice.Id, invoice.PublicId })
+            select new { invoice.Id, invoice.PublicId, invoice.Number })
             .SingleOrDefaultAsync(cancellationToken);
         return header is null ? null : await ReadAsync(header.Id,
-            header.PublicId, cancellationToken);
+            header.PublicId, header.Number, cancellationToken);
     }
 
     private async Task<NonFiscalPaymentLookupData> ReadAsync(long internalInvoiceId,
-        Guid invoiceId, CancellationToken cancellationToken)
+        Guid invoiceId, string invoiceNumber, CancellationToken cancellationToken)
     {
         var payment = await context.NonFiscalPayments.AsNoTracking()
             .Where(item => item.InvoiceId == internalInvoiceId)
             .Select(item => new NonFiscalPaymentData(item.PublicId, invoiceId,
                 item.Reference, item.CurrencyCode, item.Amount, item.CreatedAt))
             .SingleOrDefaultAsync(cancellationToken);
-        return new NonFiscalPaymentLookupData(invoiceId, payment);
+        return new NonFiscalPaymentLookupData(invoiceId, payment, invoiceNumber);
     }
 }

@@ -1,4 +1,6 @@
 using Elevant.Infrastructure.Authentication;
+using Elevant.Application.Abstractions.Finance;
+using Elevant.Infrastructure.Finance;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +20,7 @@ public static class DependencyInjection
 
         services.AddFlightAwareShell(configuration);
         services.AddJwtAccessTokens(configuration);
+        services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
 
         return services;
     }

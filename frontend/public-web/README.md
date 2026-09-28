@@ -23,12 +23,15 @@ incluyendo historial vencido, con cobertura y tarifas de la aerolínea
 autenticada. En la rama de integración, Solicitudes consulta registros
 operativos reales, paginados y propios de la aerolínea; crear y cancelar siguen
 deshabilitados. Finanzas consulta prefacturas publicadas de su tenant mediante
-`GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y todavía
-permite abrir el detalle de líneas persistidas por ID propio. Todavía no
-permite disputas, pagos o descargas. Documentos y Reportes conservan una
-vista visual de demostración claramente marcada: sus cifras y registros son
-sintéticos y sus acciones están deshabilitadas. No representan datos de la
-cuenta ni un portal operativo completo de Production.
+`GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y abre
+líneas, disputas, factura no fiscal y estado del pago manual por ID propio.
+En esta rama local, Documentos deja atrás el listado de ejemplo: consulta
+prefacturas `Invoiced` del tenant, relee factura y pago y descarga PDFs
+privados desde la API con la sesión vigente. Un vacío real indica que aún no
+hay facturas emitidas en las páginas cargadas; `404`, error recuperable y
+revocación no se reemplazan con mocks. Reportes todavía conserva una vista
+visual marcada como demostración. Las descargas no son comprobantes fiscales
+ni acreditan una transferencia bancaria. El cambio no está desplegado.
 
 En la rama de integración, la sesión del portal revalida identidad y
 `bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha

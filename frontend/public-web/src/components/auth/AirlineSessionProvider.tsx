@@ -52,6 +52,8 @@ interface AirlineSessionContextValue {
   getPreinvoiceDisputes(preinvoiceId: string): Promise<PreinvoiceDisputeListResponse>;
   getPreinvoiceInvoice(preinvoiceId: string): Promise<NonFiscalInvoiceResponse>;
   getInvoicePayment(invoiceId: string): Promise<NonFiscalPaymentLookupResponse>;
+  getInvoiceDocument(preinvoiceId: string): Promise<Blob>;
+  getPaymentReceipt(invoiceId: string): Promise<Blob>;
   acceptPreinvoice(preinvoiceId: string): Promise<void>;
   disputePreinvoice(preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest): Promise<void>;
   operationRevision: number;
@@ -429,6 +431,40 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const getInvoiceDocument = useCallback(async (preinvoiceId: string): Promise<Blob> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineInvoiceDocument(
+          preinvoiceId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
+  const getPaymentReceipt = useCallback(async (invoiceId: string): Promise<Blob> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlinePaymentReceipt(
+          invoiceId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const acceptPreinvoice = useCallback(async (preinvoiceId: string): Promise<void> => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
@@ -497,7 +533,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }
