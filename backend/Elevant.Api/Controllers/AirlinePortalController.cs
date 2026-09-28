@@ -19,8 +19,48 @@ public sealed class AirlinePortalController(
     GetAirlinePortalBootstrapHandler bootstrapHandler,
     GetAirlineContractsHandler contractsHandler,
     GetAirlineOperationsHandler operationsHandler,
-    GetAirlineOperationHandler operationHandler) : ControllerBase
+    GetAirlineOperationHandler operationHandler,
+    GetAirlineOperationalRequestsHandler requestsHandler) : ControllerBase
 {
+    [HttpGet("requests", Name = "GetAirlineOperationalRequests")]
+    [ProducesResponseType<AirlineOperationalRequestPageResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlineOperationalRequestPageResponse>> GetRequests(
+        [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (page is < 1 or > 10_000 || limit is < 1 or > 50)
+            return ProblemResult<AirlineOperationalRequestPageResponse>(
+                StatusCodes.Status400BadRequest, "Invalid request page.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineOperationalRequestPageResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await requestsHandler.HandleAsync(
+            accountId, page, limit, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineOperationalRequestPageResponse>(statusCode, title);
+        }
+
+        return Ok(new AirlineOperationalRequestPageResponse(page, limit,
+            result.Page!.HasMore, result.Page.Requests.Select(request =>
+                new AirlineOperationalRequestResponse(request.Id, request.StationId,
+                    request.StationCode, request.ServiceName, request.Description,
+                    request.Status, request.RequestedAt, request.NeededAt,
+                    request.OperationId, request.OperationCode, request.ResolvedAt))
+                .ToArray()));
+    }
+
     [HttpGet("operations/{operationId:guid}", Name = "GetAirlineOperation")]
     [ProducesResponseType<AirlinePortalOperationResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]

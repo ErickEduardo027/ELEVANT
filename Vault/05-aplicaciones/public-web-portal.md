@@ -59,7 +59,8 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
 | Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. En esta rama de integración, Vuelos consulta además `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap; servicios y evidencias aún faltan. Este cambio aún no está desplegado. |
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
-| Solicitudes, documentos, finanzas y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y respuestas financieras permanecen deshabilitadas. |
+| Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
+| Documentos, finanzas y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y respuestas financieras permanecen deshabilitadas. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
@@ -73,12 +74,14 @@ flowchart LR
     B --> R[Inicio y perfil reales]
     B --> H[API: historial de vuelos propios]
     H --> R
+    B --> Q[API: solicitudes operativas propias]
+    Q --> R
     B --> C[API: contratos publicados de su tenant]
     C --> R
     B --> P[Módulos visuales de demostración]
 ```
 
-Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de Inicio y Vuelos no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes, Documentos, Finanzas y Reportes siguen como vistas previas estáticas. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Las futuras consultas de documentos, finanzas, solicitudes y evidencia operativa requieren endpoints OpenAPI, persistencia y pruebas de aislamiento antes de habilitar acciones.
+Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de Inicio, Vuelos y Solicitudes no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes carga la entidad operativa propia; un seed determinista de Development la vincula a `DEV-TAT-0002`. Documentos, Finanzas y Reportes siguen como vistas previas estáticas. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Las futuras consultas de documentos, finanzas y evidencia operativa, así como escrituras de solicitudes, requieren contratos, persistencia y pruebas de aislamiento antes de habilitar acciones.
 
 ## Desarrollo y evidencia
 

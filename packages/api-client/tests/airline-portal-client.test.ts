@@ -193,3 +193,51 @@ describe("airline operation history client", () => {
     expect(requests).toHaveLength(1);
   });
 });
+
+describe("airline operational requests client", () => {
+  const page = { page: 1, limit: 20, hasMore: false, requests: [{
+    id: "73000000-0000-7000-8000-000000000001",
+    stationId: "20000000-0000-7000-8000-000000000003",
+    stationCode: "PUJ", serviceName: "Escalera adicional",
+    description: "Solicitud para desembarque posterior.", status: "Submitted",
+    requestedAt: "2026-08-19T12:03:00Z", neededAt: "2026-08-19T12:15:00Z",
+    operationId: "70000000-0000-7000-8000-000000000016",
+    operationCode: "DEV-TAT-0002", resolvedAt: null,
+  }] };
+
+  it("reads only the authenticated airline's paginated operational requests", async () => {
+    const urls: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify(page),
+          { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlineOperationalRequests({ page: 1, limit: 20 }))
+      .resolves.toEqual(page);
+    expect(urls).toEqual([
+      "https://api.example.test/api/v1/airline/portal/requests?page=1&limit=20",
+    ]);
+    await expect(client.getAirlineOperationalRequests({ limit: 51 }))
+      .rejects.toBeInstanceOf(TypeError);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("rejects an injected tenant or incoherent operation link", async () => {
+    const payloads = [
+      { ...page, requests: [{ ...page.requests[0], organizationId: crypto.randomUUID() }] },
+      { ...page, requests: [{ ...page.requests[0], operationId: null }] },
+    ];
+    for (const payload of payloads) {
+      const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+        fetch: async () => new Response(JSON.stringify(payload),
+          { headers: { "content-type": "application/json" } }),
+      });
+      await expect(client.getAirlineOperationalRequests())
+        .rejects.toMatchObject({ kind: "malformed-response" });
+    }
+  });
+});

@@ -3,6 +3,7 @@ import {
   getGetAirlineContractsUrl,
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
+  getGetAirlineOperationalRequestsUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
@@ -44,6 +45,7 @@ import {
   type AirlineContractPageResponse,
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
+  type AirlineOperationalRequestPageResponse,
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
@@ -53,6 +55,7 @@ import {
   type PreinvoiceDraftResponse,
   type GetAirlineContractsParams,
   type GetAirlineOperationsParams,
+  type GetAirlineOperationalRequestsParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
@@ -129,6 +132,7 @@ export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" |
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -226,6 +230,10 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetAirlineOperationOptions,
   ): Promise<AirlinePortalOperationResponse>;
+  getAirlineOperationalRequests(
+    parameters?: GetAirlineOperationalRequestsParams,
+    options?: GetAirlineOperationalRequestsOptions,
+  ): Promise<AirlineOperationalRequestPageResponse>;
   getPublicCommercialCatalog(
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
@@ -1759,6 +1767,35 @@ function isAirlineOperationPageResponse(value: unknown): value is AirlineOperati
   });
 }
 
+function isAirlineOperationalRequestPageResponse(
+  value: unknown,
+): value is AirlineOperationalRequestPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "requests"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.requests) || value.requests.length > value.limit ||
+      (value.hasMore && value.requests.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.requests.every(request => {
+    if (!isRecord(request) || !hasOnlyKeys(request,
+      ["id", "stationId", "stationCode", "serviceName", "description", "status",
+        "requestedAt", "neededAt", "operationId", "operationCode", "resolvedAt"]) ||
+        !isUuid(request.id) || ids.has(request.id) ||
+        !isUuid(request.stationId) || !isNonEmptyString(request.stationCode) ||
+        !isNonEmptyString(request.serviceName) || typeof request.description !== "string" ||
+        !["Submitted", "InReview", "Accepted", "Rejected", "Completed", "Cancelled"]
+          .includes(String(request.status)) ||
+        !isDateTimeOffset(request.requestedAt) ||
+        !isOptionalNullable(request.neededAt, isDateTimeOffset) ||
+        !isOptionalNullable(request.operationId, isUuid) ||
+        !isOptionalNullable(request.operationCode, isNonEmptyString) ||
+        !isOptionalNullable(request.resolvedAt, isDateTimeOffset) ||
+        Boolean(request.operationId) !== Boolean(request.operationCode)) return false;
+    ids.add(request.id);
+    return true;
+  });
+}
+
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
   if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
       !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
@@ -1942,6 +1979,19 @@ function validatedAirlineOperationParams(parameters: GetAirlineOperationsParams)
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
     (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
     throw new TypeError("Airline operation paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlineRequestParams(
+  parameters: GetAirlineOperationalRequestsParams,
+): GetAirlineOperationalRequestsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline request paging is invalid.");
   return {
     ...(parameters.page === undefined ? {} : { page: parameters.page }),
     ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
@@ -2548,6 +2598,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         getGetAirlineOperationUrl(operationId), { ...options, method: "GET" }, true,
       );
       if (!isAirlineOperationDetailResponse(result.data) || result.data.id !== operationId)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperationalRequests(
+      parameters: GetAirlineOperationalRequestsParams = {},
+      options?: GetAirlineOperationalRequestsOptions,
+    ) {
+      const paging = validatedAirlineRequestParams(parameters);
+      const result = await execute(getGetAirlineOperationalRequestsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isAirlineOperationalRequestPageResponse(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);
       return result.data;
     },

@@ -887,6 +887,23 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 }, DeterministicGuid("checklist:DEV-TAT-0002:v2").ToString("D")),
                 cancellationToken);
         }
+
+        await GetOrAddAsync(
+            context.Set<OperationalServiceRequest>(),
+            request => request.PublicId == new Guid("73000000-0000-7000-8000-000000000001"),
+            () => Stamp(new OperationalServiceRequest
+            {
+                AirlineId = airline.Id,
+                StationId = station.Id,
+                TurnaroundId = secondTurnaround.Id,
+                RequestedByAccountId = clientAccount.Id,
+                Status = OperationalRequestStatus.Submitted,
+                RequestedServiceName = "Escalera adicional",
+                Description = "Se requiere una escalera adicional para el desembarque.",
+                RequestedAt = secondArrival.AddMinutes(3),
+                NeededAt = secondArrival.AddMinutes(15),
+            }, "73000000-0000-7000-8000-000000000001"),
+            cancellationToken);
     }
 
     private async Task SeedPublicCommercialCatalogAsync(CancellationToken cancellationToken)

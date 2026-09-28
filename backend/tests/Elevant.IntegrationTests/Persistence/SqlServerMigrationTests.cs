@@ -949,6 +949,29 @@ public sealed class SqlServerMigrationTests
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
+            var airlineAccount = await update.Users.SingleAsync(account =>
+                account.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000003"),
+                cancellationToken);
+            var requestedAt = new DateTimeOffset(2026, 8, 19, 12, 3, 0, TimeSpan.Zero);
+            update.Set<OperationalServiceRequest>().AddRange(
+                new OperationalServiceRequest
+                {
+                    PublicId = Guid.NewGuid(), AirlineId = foreignAirline.Id,
+                    StationId = pujStation.Id, TurnaroundId = foreignTurnaround.Id,
+                    RequestedByAccountId = airlineAccount.Id,
+                    Status = OperationalRequestStatus.Submitted,
+                    RequestedServiceName = "Foreign request", Description = "Other tenant.",
+                    RequestedAt = requestedAt, CreatedAt = requestedAt, UpdatedAt = requestedAt,
+                },
+                new OperationalServiceRequest
+                {
+                    PublicId = Guid.NewGuid(), AirlineId = contract.AirlineId,
+                    StationId = pujStation.Id, TurnaroundId = foreignTurnaround.Id,
+                    RequestedByAccountId = airlineAccount.Id,
+                    Status = OperationalRequestStatus.Submitted,
+                    RequestedServiceName = "Incoherent request", Description = "Wrong turnaround tenant.",
+                    RequestedAt = requestedAt, CreatedAt = requestedAt, UpdatedAt = requestedAt,
+                });
             await update.SaveChangesAsync(cancellationToken);
         }
 
@@ -986,6 +1009,15 @@ public sealed class SqlServerMigrationTests
         Assert.Null(await store.GetOperationAsync(
             organizationId, foreignOperationId, cancellationToken));
         Assert.Null(await store.GetOperationsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
+
+        var requests = await store.GetRequestsAsync(
+            organizationId, 1, 20, cancellationToken);
+        Assert.NotNull(requests);
+        Assert.False(requests.HasMore);
+        var ownRequest = Assert.Single(requests.Requests);
+        Assert.Equal("Escalera adicional", ownRequest.ServiceName);
+        Assert.Equal("DEV-TAT-0002", ownRequest.OperationCode);
+        Assert.Null(await store.GetRequestsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
     }
 
     [Fact]

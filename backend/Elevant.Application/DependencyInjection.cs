@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<GetAirlineContractsHandler>();
         services.AddScoped<GetAirlineOperationsHandler>();
         services.AddScoped<GetAirlineOperationHandler>();
+        services.AddScoped<GetAirlineOperationalRequestsHandler>();
         services.AddScoped<SubmitCommercialRequestHandler>();
         services.AddScoped<GetFinanceApprovedServicesHandler>();
         services.AddScoped<CreatePreinvoiceDraftHandler>();

@@ -136,6 +136,10 @@ public sealed class AirlinePortalBootstrapHandlerTests
         public Task<AirlinePortalOperationData?> GetOperationAsync(
             Guid organizationId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlinePortalOperationData?>(null);
+
+        public Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
+            Guid organizationId, int page, int limit, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AirlineOperationalRequestPageData?>(null);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlineOperationPageResponse,
-  type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse } from "@elevant/api-client";
+  type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
+  type AirlinePortalOperationResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractPage } from "./AirlineContractPage";
@@ -12,19 +13,14 @@ import styles from "./AirlinePortalPage.module.css";
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
   | "documents" | "finance" | "reports" | "profile";
 
-const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts">,
+const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests">,
   { title: string; description: string }> = {
-  requests: { title: "Solicitudes", description: "El historial y las acciones de solicitudes todavía no están disponibles mediante la API del portal." },
   documents: { title: "Documentos", description: "Los documentos todavía no están disponibles mediante la API del portal." },
   finance: { title: "Finanzas", description: "La información financiera todavía no está disponible mediante la API del portal." },
   reports: { title: "Reportes", description: "Los reportes todavía no están disponibles mediante la API del portal." },
 };
 
 const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows: [string, string, string][] }> = {
-  requests: {
-    metrics: [["Total de ejemplo", "1"], ["En seguimiento", "1"], ["Aprobadas", "0"], ["Cancelables", "0"]],
-    rows: [["DEMO-SOL-001", "Escalera adicional", "Ejemplo de solicitud recibida · sin registro real"]],
-  },
   documents: {
     metrics: [["Documentos de ejemplo", "3"], ["Disponibles", "2"], ["En procesamiento", "1"], ["Descargas", "0"]],
     rows: [["DEMO-DOC-001", "Reporte operativo de ejemplo", "PDF · no descargable"],
@@ -40,6 +36,11 @@ const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows:
     rows: [["Operaciones completadas", "50%", "Indicador ilustrativo"],
       ["Ejecución de servicios", "67%", "Indicador ilustrativo"]],
   },
+};
+
+const REQUEST_STATUS_LABELS: Record<string, string> = {
+  Submitted: "Recibida", InReview: "En revisión", Accepted: "Aceptada",
+  Rejected: "Rechazada", Completed: "Completada", Cancelled: "Cancelada",
 };
 
 function Operation({ operation }: { operation: AirlinePortalBootstrapResponse["currentOperations"][number] }) {
@@ -164,6 +165,79 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
   </div>;
 }
 
+function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
+  const { getRequests, operationRevision } = useAirlineSession();
+  const [pages, setPages] = useState<AirlineOperationalRequestPageResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const generation = useRef(0);
+
+  useEffect(() => {
+    const request = ++generation.current;
+    void getRequests(1).then(page => {
+      if (request === generation.current) { setPages([page]); setError(false); }
+    }).catch(() => { if (request === generation.current) setError(true); })
+      .finally(() => { if (request === generation.current) setLoading(false); });
+    return () => { generation.current += 1; };
+  }, [getRequests, operationRevision, retryKey]);
+
+  const loadMore = useCallback(async () => {
+    if (loading || !pages.at(-1)?.hasMore) return;
+    const request = generation.current;
+    setLoading(true);
+    try {
+      const next = await getRequests(pages.length + 1);
+      if (request === generation.current) {
+        setPages(previous => [...previous, next]);
+        setError(false);
+      }
+    } catch { if (request === generation.current) setError(true); }
+    finally { if (request === generation.current) setLoading(false); }
+  }, [getRequests, loading, pages]);
+
+  const requests = pages.flatMap(page => page.requests);
+  const count = (...statuses: string[]) => requests.filter(request =>
+    statuses.includes(request.status ?? "")).length;
+
+  return <div className={styles.page}>
+    <header className={styles.requestHeading}>
+      <div><span className={styles.kicker}>Canal de servicio · {airlineName}</span>
+        <h1>Solicitudes con estado visible.</h1>
+        <p>Consulta las solicitudes operativas registradas para tu aerolínea. La creación y cancelación todavía no están habilitadas.</p></div>
+      <button type="button" disabled title="La creación de solicitudes aún no está disponible">Nueva solicitud</button>
+    </header>
+    <div className={styles.metrics} aria-label="Estado de las solicitudes cargadas">
+      <div><span>Solicitudes cargadas</span><strong>{requests.length}</strong></div>
+      <div><span>En seguimiento</span><strong>{count("Submitted", "InReview")}</strong></div>
+      <div><span>Aceptadas</span><strong>{count("Accepted")}</strong></div>
+      <div><span>Completadas</span><strong>{count("Completed")}</strong></div>
+    </div>
+    {loading && pages.length === 0 && <p role="status">Cargando solicitudes autorizadas…</p>}
+    {error && <div role="alert"><p>No se pudo actualizar el historial de solicitudes.</p>
+      {pages.length === 0 && <button type="button" onClick={() => {
+        setLoading(true); setError(false); setRetryKey(current => current + 1);
+      }}>Reintentar</button>}</div>}
+    {requests.map(request => <section key={request.id} className={styles.panel}
+      aria-label={`Solicitud ${request.serviceName}`}>
+      <span className={styles.kicker}>{request.stationCode} · {request.requestedAt.slice(0, 10)}</span>
+      <div className={styles.requestCardHeading}><h2>{request.serviceName}</h2><span>{REQUEST_STATUS_LABELS[request.status ?? ""] ?? request.status}</span></div>
+      <p className={styles.note}>{request.description}</p>
+      <dl className={styles.details}>
+        {request.operationCode && <div><dt>Operación asociada</dt><dd>{request.operationId
+          ? <Link href={`/portal/vuelos/${encodeURIComponent(request.operationId)}`}>{request.operationCode}</Link>
+          : request.operationCode}</dd></div>}
+        <div><dt>Estación</dt><dd>{request.stationCode}</dd></div>
+        <div><dt>Estado</dt><dd>{REQUEST_STATUS_LABELS[request.status ?? ""] ?? request.status}</dd></div>
+      </dl>
+      <button className={styles.disabledAction} type="button" disabled>Cancelar solicitud</button>
+    </section>)}
+    {!loading && !error && requests.length === 0 && <p className={styles.empty}>No hay solicitudes operativas registradas para esta aerolínea.</p>}
+    {pages.at(-1)?.hasMore && <button className={styles.loadMore} type="button" disabled={loading}
+      onClick={() => void loadMore()}>{loading ? "Cargando…" : "Cargar más solicitudes"}</button>}
+  </div>;
+}
+
 export function AirlinePortalPage({ view, operationId }: { view: View; operationId?: string }) {
   const { session } = useAirlineSession();
   if (!session) return null;
@@ -219,28 +293,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     </section>
   </div>;
 
-  if (view === "requests") return <div className={styles.page}>
-    <header className={styles.requestHeading}>
-      <div><span className={styles.kicker}>Canal de servicio · vista previa</span>
-        <h1>Solicitudes con estado visible.</h1>
-        <p>Consulta cómo se presentarán las solicitudes autorizadas. El historial real y las acciones todavía no están disponibles mediante la API.</p></div>
-      <button type="button" disabled title="La creación de solicitudes aún no está disponible">Nueva solicitud</button>
-    </header>
-    <section className={styles.demoBanner} role="status"><strong>Datos sintéticos · solo vista previa</strong>
-      <p>La solicitud y los indicadores siguientes no pertenecen a {bootstrap.name}. No se puede crear, cancelar ni modificar nada desde esta pantalla.</p></section>
-    <div className={styles.metrics}>
-      <div><span>Total de ejemplo</span><strong>1</strong></div><div><span>En seguimiento</span><strong>1</strong></div>
-      <div><span>Aprobadas</span><strong>0</strong></div><div><span>Cancelables</span><strong>0</strong></div>
-    </div>
-    <section className={styles.panel} aria-label="Solicitud de ejemplo">
-      <span className={styles.kicker}>Servicio adicional · DEMO-SOL-001</span>
-      <div className={styles.requestCardHeading}><h2>Escalera adicional</h2><span>Recibida · ejemplo</span></div>
-      <p className={styles.note}>Escalera adicional para desembarque posterior.</p>
-      <dl className={styles.details}><div><dt>Vuelo asociado</dt><dd>EV 418 · BOG → PUJ</dd></div>
-        <div><dt>Estación</dt><dd>PUJ</dd></div><div><dt>Estado</dt><dd>Recibida</dd></div></dl>
-      <button className={styles.disabledAction} type="button" disabled>Cancelar solicitud</button>
-    </section>
-  </div>;
+  if (view === "requests") return <AirlineRequestsPage
+    key={actor.accountId} airlineName={bootstrap.name} />;
 
   const previewModule = MODULES[view];
   const preview = PREVIEW[view];

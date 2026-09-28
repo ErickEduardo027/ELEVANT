@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { ElevantApiError, type AirlineOperationPageResponse, type AirlinePortalBootstrapResponse,
+import { ElevantApiError, type AirlineOperationPageResponse,
+  type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type SessionActorResponse } from "@elevant/api-client";
 
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
@@ -31,14 +32,26 @@ const getOperation = vi.fn(async (id: string) => {
   if (detailOperation?.id === id) return detailOperation;
   throw new ElevantApiError({ kind: "http", status: 404 });
 });
+const initialRequestPage: AirlineOperationalRequestPageResponse = {
+  page: 1, limit: 20, hasMore: false,
+  requests: [{ id: "73000000-0000-7000-8000-000000000001",
+    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+    serviceName: "Escalera adicional", description: "Solicitud para desembarque posterior.",
+    status: "Submitted", requestedAt: "2026-08-19T12:03:00Z",
+    neededAt: "2026-08-19T12:15:00Z", operationId: bootstrap.currentOperations[0].id,
+    operationCode: "DEV-TAT-0002", resolvedAt: null }],
+};
+let requestPage = initialRequestPage;
+const getRequests = vi.fn(async () => requestPage);
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, operationRevision: 0 }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, operationRevision: 0 }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
-}; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear(); });
+}; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
+  requestPage = initialRequestPage; getRequests.mockClear(); });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -133,9 +146,20 @@ it("shows only API operations on overview and flights, including an honest empty
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
 });
 
-it("shows the request preview as a non-actionable example", () => {
+it("shows tenant-scoped operational requests without demo fixtures", async () => {
   render(<AirlinePortalPage view="requests" />);
   expect(screen.getByRole("heading", { name: /Solicitudes con estado visible/ })).toBeInTheDocument();
-  expect(screen.getByText("Escalera adicional")).toBeInTheDocument();
+  expect(await screen.findByText("Escalera adicional")).toBeInTheDocument();
+  expect(screen.getByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(getRequests).toHaveBeenCalledWith(1);
+  expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Nueva solicitud" })).toBeDisabled();
+});
+
+it("shows an honest empty state when the airline has no operational requests", async () => {
+  requestPage = { page: 1, limit: 20, hasMore: false, requests: [] };
+  render(<AirlinePortalPage view="requests" />);
+  expect(await screen.findByText(/No hay solicitudes operativas registradas/)).toBeInTheDocument();
+  expect(screen.queryByText("Escalera adicional")).not.toBeInTheDocument();
+  expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
 });

@@ -121,6 +121,31 @@ export interface AirlineOperationPageResponse {
   operations: AirlinePortalOperationResponse[];
 }
 
+export interface AirlineOperationalRequestResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  serviceName: string;
+  description: string;
+  status: string;
+  requestedAt: string;
+  /** @nullable */
+  neededAt?: string | null;
+  /** @nullable */
+  operationId?: string | null;
+  /** @nullable */
+  operationCode?: string | null;
+  /** @nullable */
+  resolvedAt?: string | null;
+}
+
+export interface AirlineOperationalRequestPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  requests: AirlineOperationalRequestResponse[];
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -1579,6 +1604,11 @@ after?: string;
 limit?: number;
 };
 
+export type GetAirlineOperationalRequestsParams = {
+page?: number;
+limit?: number;
+};
+
 export type GetAirlineOperationsParams = {
 page?: number;
 limit?: number;
@@ -1693,6 +1723,41 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationalRequestsUrl = (params?: GetAirlineOperationalRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/requests?${stringifiedParams}` : `/api/v1/airline/portal/requests`
+}
+
+export const getAirlineOperationalRequests = async (params?: GetAirlineOperationalRequestsParams, options?: RequestInit): Promise<AirlineOperationalRequestPageResponse> => {
+
+  const res = await fetch(getGetAirlineOperationalRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineOperationalRequestPageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

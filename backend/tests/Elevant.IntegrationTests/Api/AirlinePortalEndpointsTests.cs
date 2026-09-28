@@ -69,6 +69,24 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task OperationalRequestsRequireAuthenticationAndBoundedPaging()
+    {
+        await using var application = CreateApplication(CreateActor());
+        using var anonymous = application.CreateClient();
+        using var unauthorized = await anonymous.GetAsync(
+            "/api/v1/airline/portal/requests", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        using var client = CreateAuthenticatedClient(application);
+        using var badPage = await client.GetAsync(
+            "/api/v1/airline/portal/requests?page=0", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
+        using var badLimit = await client.GetAsync(
+            "/api/v1/airline/portal/requests?limit=51", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badLimit.StatusCode);
+    }
+
+    [Fact]
     public async Task ContractsUseLiveAirlineTenantAndOnlyApprovedVersions()
     {
         var state = new StubState(CreateActor())
@@ -192,6 +210,32 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task OperationalRequestsUseServerTenantAndReturnOnlyItsPage()
+    {
+        var requestId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            Requests = new AirlineOperationalRequestPageData(
+                [new AirlineOperationalRequestData(requestId, StationId, "PUJ",
+                    "Escalera adicional", "Solicitud para desembarque posterior.",
+                    "Submitted", new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero),
+                    null, null, null, null)], false),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            "/api/v1/airline/portal/requests?page=1&limit=1",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(requestId, JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken)).RootElement
+            .GetProperty("requests")[0].GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task OccRoleCannotQueryAirlineStore()
     {
         var actor = CreateActor() with
@@ -222,6 +266,11 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             $"/api/v1/airline/portal/operations/{Guid.NewGuid():D}",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, detailResponse.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
+
+        using var requestResponse = await client.GetAsync(
+            "/api/v1/airline/portal/requests", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, requestResponse.StatusCode);
         Assert.Null(state.QueriedOrganizationId);
     }
 
@@ -282,6 +331,8 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public AirlinePortalOperationData? DetailOperation { get; init; }
 
+        public AirlineOperationalRequestPageData? Requests { get; init; }
+
         public Guid? QueriedOperationId { get; private set; }
 
         public Guid? QueriedOrganizationId { get; private set; }
@@ -324,6 +375,16 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedOrganizationId = organizationId;
             QueriedOperationId = operationId;
             return Task.FromResult(DetailOperation);
+        }
+
+        public Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
+            Guid organizationId, int page, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedPage = page;
+            QueriedLimit = limit;
+            return Task.FromResult(Requests);
         }
     }
 }

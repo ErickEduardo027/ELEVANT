@@ -26,4 +26,10 @@ public interface IAirlinePortalReadStore
         Guid organizationId,
         Guid operationId,
         CancellationToken cancellationToken = default);
+
+    Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

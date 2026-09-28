@@ -14,7 +14,7 @@ scripts/                          migraciones, SQL, contenedores y manifiesto CD
 tests/scripts/                    pruebas del tooling y fixture de certificación
 ```
 
-`ElevantDevelopmentDb` es la única base desplegada actualmente. Sus migraciones son la historia canónica del esquema. El seed es sintético, determinista e idempotente; nunca se ejecuta fuera de Development.
+`ElevantDevelopmentDb` es la única base desplegada actualmente. Sus migraciones son la historia canónica del esquema. El seed es sintético, determinista e idempotente; nunca se ejecuta fuera de Development. En la rama de integración incorpora una solicitud operativa de prueba vinculada a `DEV-TAT-0002`, distinta de la solicitud comercial de acceso. Esa fila no se ha promocionado al VPS.
 
 Las migraciones `CommercialRepresentativeDetails` y `ContractRateConfirmation` agregan campos opcionales a solicitudes comerciales y una marca nullable de confirmación de tarifa. `NULL` conserva el significado de legado; los borradores nuevos empiezan sin confirmación y no pueden activarse hasta confirmar cada tarifa. Ninguna migración actualiza datos de negocio. El seed inserta las fichas iniciales de la lista histórica AVIAM con procedencia y verificaciones IATA disponibles; en bases existentes, el superadministrador usa la acción autorizada **Completar fichas AVIAM** para enriquecer sólo fixtures intactos. El diagnóstico `verify-development.sql` mantiene la lista exacta de IDs EF; una prueba compara esa lista con los archivos de migración antes de la certificación de contenedores.
 
