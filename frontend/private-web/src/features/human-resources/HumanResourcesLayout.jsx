@@ -16,9 +16,13 @@ export default function HumanResourcesLayout({
     () =>
       HUMAN_RESOURCES_NAVIGATION
         .filter(item => !dashboardReadOnlyDemo ||
-          item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD || item.id === HUMAN_RESOURCES_MODULE_IDS.USERS)
+          item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS)
         .map(item =>
-        item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
+        dashboardReadOnlyDemo && item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS
+          ? { ...item, badge: null }
+          : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
           ? {
               ...item,
               badge: unreadNotificationsCount > 0 ? { count: unreadNotificationsCount, tone: 'default' } : null,

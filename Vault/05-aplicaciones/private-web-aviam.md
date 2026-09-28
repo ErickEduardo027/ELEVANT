@@ -99,10 +99,11 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 En el worktree local posterior a esta fotografía, el dashboard consulta los
 perfiles de rampa autorizados de la API para contar agentes activos y perfiles
 sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
-para turnos, habilitaciones o cobertura. El modo restringido mantiene ocultas
-las rutas profundas aún no integradas; recibir una señal de cambio, recuperar
+para turnos, habilitaciones o cobertura. El modo restringido solo expone
+dashboard, perfiles y habilitaciones de lectura; mantiene ocultas las rutas
+profundas aún no integradas. Recibir una señal de cambio, recuperar
 foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
-gestión de habilitaciones ni un despliegue al VPS. Fuentes:
+escritura de habilitaciones ni un despliegue al VPS. Fuentes:
 [servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
 [vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
 y [perfiles autorizados](../../backend/Elevant.Api/Controllers/RampProfilesController.cs).
@@ -117,8 +118,11 @@ profundos de Gestión Humana. Fuente: [panel de perfiles](../../frontend/private
 
 La API de esta rama agrega una lectura paginada de los ciclos actuales de
 habilitación de rampa para Gestión Humana y Superadministración internas. La
-vista prototípica de habilitaciones todavía no la consume ni está expuesta en
-el modo restringido; permisos, turnos y renovaciones siguen pendientes.
+ruta restringida de habilitaciones consulta esa API en páginas de 20, calcula
+la vigencia por fechas y muestra un vacío o error sin reutilizar datos viejos;
+no ofrece acciones prototípicas de alta o renovación. La vista heredada sigue
+separada fuera del modo restringido. Permisos, turnos y escrituras de
+habilitaciones siguen pendientes. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [lectura](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js) y [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs).
 
 ### Contratos y Finanzas
 

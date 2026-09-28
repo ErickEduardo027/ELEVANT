@@ -3,17 +3,21 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { createHumanResourcesChildren } from './router';
 import { HUMAN_RESOURCES_NAVIGATION } from '../features/human-resources/navigation';
+import { getHumanResourcesQualifications } from '../services/humanResourcesQualificationsReadService';
 
 vi.mock('../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({
     start: () => Promise.resolve(), stop: () => Promise.resolve(),
   }),
 }));
+vi.mock('../services/humanResourcesQualificationsReadService', () => ({
+  getHumanResourcesQualifications: vi.fn(),
+}));
 
 describe('HR routes with operational ramp profiles', () => {
-  it('keeps the live ramp profile list and redirects unavailable deep routes', async () => {
+  it('keeps live ramp profiles and current qualifications while redirecting unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],
@@ -35,5 +39,22 @@ describe('HR routes with operational ramp profiles', () => {
       HUMAN_RESOURCES_NAVIGATION.map(item => item.path.split('/').at(-1)),
     );
     expect(children.some(route => route.path === '*')).toBe(false);
+  });
+
+  it('mounts the real read-only qualifications page in the restricted release', async () => {
+    getHumanResourcesQualifications.mockResolvedValue({ page: 1, limit: 20,
+      hasMore: false, qualifications: [] });
+    const router = createMemoryRouter(
+      [{ path: '/gestion-humana', element: <Outlet />,
+        children: createHumanResourcesChildren(true) }],
+      { initialEntries: ['/gestion-humana/certifications'] },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText(/No hay habilitaciones registradas/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Registrar|Renovar/ })).not.toBeInTheDocument();
+    expect(getHumanResourcesQualifications).toHaveBeenCalledWith(
+      { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });

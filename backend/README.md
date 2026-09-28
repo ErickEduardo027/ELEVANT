@@ -104,7 +104,9 @@ a 60 minutos y usa 15 por defecto.
   reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
   vigente. Devuelve fechas documentadas, no inventa estado de cobertura ni
   permite renovar; una habilitación marcada como ciclo actual puede estar
-  vencida por fecha. La pantalla prototípica aún no consume esta lectura.
+  vencida por fecha. En el modo restringido de Private Web se usa una pantalla
+  paginada de solo lectura; la pantalla heredada con acciones prototípicas no
+  consume este contrato.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el
