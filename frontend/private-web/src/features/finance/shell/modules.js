@@ -24,6 +24,6 @@ export const FINANCE_MODULES = [
   { id: FINANCE_MODULE_IDS.PREINVOICES, label: 'Pre-facturación', icon: PreInvoiceIcon, description: 'Consulta de prefacturas guardadas por estación.' },
   { id: FINANCE_MODULE_IDS.RECONCILIATION, label: 'Conciliación', icon: ReconciliationIcon, description: 'Conciliación de servicios registrados, facturados y cobros.' },
   { id: FINANCE_MODULE_IDS.TARIFFS, label: 'Tarifas', icon: TariffIcon, description: 'Consulta y modificación autorizada de tarifas contractuales.' },
-  { id: FINANCE_MODULE_IDS.REPORTS, label: 'Reportes', icon: ReportIcon, description: 'Reporte financiero y conciliación consolidada.' },
+  { id: FINANCE_MODULE_IDS.REPORTS, label: 'Reportes', icon: ReportIcon, description: 'Estados de prefacturas por aerolínea y moneda.' },
   { id: FINANCE_MODULE_IDS.CHAT, label: 'Comunicaciones', icon: MessageCircleIcon, description: 'Coordinación persistente con los demás departamentos.' },
 ];
