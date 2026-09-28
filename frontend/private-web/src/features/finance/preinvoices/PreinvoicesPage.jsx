@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { getPreinvoiceDraft } from '../../../services/approvedServicesService';
+import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 import { getFinancePreinvoices, submitFinancePreinvoice } from '../../../services/financePreinvoiceService';
 
 const STATUS = {
@@ -75,7 +75,9 @@ export default function PreinvoicesPage() {
     setSubmission({ status: 'idle', id: null });
     setDetail({ status: 'loading', value: null });
     try {
-      const value = await getPreinvoiceDraft(id, stationId);
+      const [preinvoice, disputeList] = await Promise.all([
+        getPreinvoiceDraft(id, stationId), getFinancePreinvoiceDisputes(id)]);
+      const value = { ...preinvoice, disputes: disputeList.disputes };
       if (generation === detailGeneration.current)
         setDetail({ status: 'success', value });
     } catch (error) {
@@ -178,6 +180,18 @@ export default function PreinvoicesPage() {
       <ul className="mt-3 space-y-2 text-sm">{detail.value.lines.map(line => <li key={line.id}>
         {line.operationCode} · {line.serviceName} · {money(line.amount, detail.value.currencyCode)}
       </li>)}</ul>
+      {detail.value.disputes?.length > 0 && <section className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
+        aria-label="Disputas de la aerolínea">
+        <h3 className="text-sm font-semibold">Disputas registradas</h3>
+        {detail.value.disputes.map(dispute => <article key={dispute.id} className="mt-3 text-sm">
+          <strong>{dispute.subject}</strong>
+          <p className="mt-1">{dispute.description}</p>
+          <p className="mt-1">Líneas cuestionadas: {dispute.lineIds.map(lineId => {
+            const line = detail.value.lines.find(candidate => candidate.id === lineId);
+            return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
+          }).join(', ')}</p>
+        </article>)}
+      </section>}
       {detail.value.status === 'Draft' && submission.status === 'idle' &&
         <button type="button" onClick={() => setSubmission({ status: 'confirm', id: detail.value.id })}
           className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">

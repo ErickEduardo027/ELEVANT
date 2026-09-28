@@ -4783,11 +4783,69 @@ public sealed class SqlServerMigrationTests
                 Assert.Null(await portal.GetPreinvoiceAsync(Guid.NewGuid(),
                     created.DraftId.Value, cancellationToken));
             }
-            await inspection.Preinvoices.Where(item => item.Id == draft.Id)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(
-                    item => item.Status, PreinvoiceStatus.Disputed), cancellationToken);
+            var disputeCommand = new DisputeAirlinePreinvoiceCommand(
+                acceptCommand.AccountId, airlineOrganizationId, created.DraftId.Value,
+                Guid.NewGuid(), "Cantidad incorrecta",
+                "La cantidad de GPU no coincide con el servicio aprobado.",
+                [line.PublicId], new string('A', 64));
+            async Task<DisputeAirlinePreinvoiceResult> DisputeAsync(
+                DisputeAirlinePreinvoiceCommand request)
+            {
+                await using var disputeScope = provider.CreateAsyncScope();
+                return await disputeScope.ServiceProvider
+                    .GetRequiredService<IAirlinePreinvoiceDisputeStore>()
+                    .DisputeAsync(request, cancellationToken);
+            }
+            Assert.Equal(DisputeAirlinePreinvoiceFailure.InvalidRequest,
+                (await DisputeAsync(disputeCommand with { LineIds = [Guid.NewGuid()] })).Failure);
+            Assert.Equal(DisputeAirlinePreinvoiceFailure.Forbidden,
+                (await DisputeAsync(disputeCommand with { OrganizationId = Guid.NewGuid() })).Failure);
+            var disputes = await Task.WhenAll(
+                DisputeAsync(disputeCommand), DisputeAsync(disputeCommand));
+            Assert.All(disputes, result => Assert.True(result.IsSuccess));
+            Assert.Single(disputes, result => !result.Replayed);
+            Assert.Single(disputes, result => result.Replayed);
+            Assert.Equal(disputes[0].DisputeId, disputes[1].DisputeId);
+            Assert.Equal(DisputeAirlinePreinvoiceFailure.Conflict,
+                (await DisputeAsync(disputeCommand with { RequestId = Guid.NewGuid() })).Failure);
+            Assert.Equal(DisputeAirlinePreinvoiceFailure.Conflict,
+                (await DisputeAsync(disputeCommand with { PayloadHash = new string('B', 64) })).Failure);
+            var storedDispute = Assert.Single(await inspection.PreinvoiceDisputes.AsNoTracking()
+                .Where(item => item.PreinvoiceId == draft.Id).ToArrayAsync(cancellationToken));
+            Assert.Equal(airlineAccountInternalId, storedDispute.SubmittedByAccountId);
+            Assert.Equal(disputeCommand.Subject, storedDispute.Subject);
+            Assert.Equal(line.Id, Assert.Single(await inspection.PreinvoiceDisputeLines.AsNoTracking()
+                .Where(item => item.DisputeId == storedDispute.Id)
+                .ToArrayAsync(cancellationToken)).PreinvoiceLineId);
+            Assert.Equal(disputeCommand.RequestId,
+                Assert.Single(await inspection.AuditEntries.AsNoTracking()
+                    .Where(item => item.EntityPublicId == created.DraftId &&
+                        item.Action == "airline.preinvoice.disputed")
+                    .ToArrayAsync(cancellationToken)).CorrelationId);
+            await using (var disputedReadScope = provider.CreateAsyncScope())
+            {
+                var financeDetail = await disputedReadScope.ServiceProvider
+                    .GetRequiredService<IPreinvoiceDraftStore>()
+                    .GetDisputesAsync(financeAccountId, created.DraftId.Value, cancellationToken);
+                Assert.NotNull(financeDetail);
+                var financeDispute = Assert.Single(financeDetail);
+                Assert.Equal(disputeCommand.Description, financeDispute.Description);
+                Assert.Equal(line.PublicId, Assert.Single(financeDispute.LineIds));
+                var airlineDetail = await disputedReadScope.ServiceProvider
+                    .GetRequiredService<IAirlinePortalReadStore>()
+                    .GetPreinvoiceDisputesAsync(airlineOrganizationId, created.DraftId.Value,
+                        cancellationToken);
+                Assert.NotNull(airlineDetail);
+                Assert.Equal(financeDispute.Id, Assert.Single(airlineDetail).Id);
+                Assert.Null(await disputedReadScope.ServiceProvider
+                    .GetRequiredService<IAirlinePortalReadStore>()
+                    .GetPreinvoiceDisputesAsync(Guid.NewGuid(), created.DraftId.Value,
+                        cancellationToken));
+            }
             Assert.Equal(AcceptAirlinePreinvoiceFailure.Conflict,
                 (await AcceptAsync(acceptCommand)).Failure);
+            // A later finance resolution will return this record to review; keep the
+            // acceptance branch of this fixture independent until that handler exists.
             await inspection.Preinvoices.Where(item => item.Id == draft.Id)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(
                     item => item.Status, PreinvoiceStatus.Submitted), cancellationToken);
@@ -4818,7 +4876,7 @@ public sealed class SqlServerMigrationTests
                 .Select(AccountChangeOutboxWriter.Decode)
                 .Where(item => item.Resource == "airline_preinvoices" &&
                     item.ResourceId == created.DraftId).ToArray();
-            Assert.Equal(2, acceptedHints.Length);
+            Assert.Equal(3, acceptedHints.Length);
             Assert.All(acceptedHints, hint =>
                 Assert.Equal(airlineAccountInternalId, hint.RecipientAccountId));
             var financeAcceptanceHints = (await inspection.OutboxMessages.AsNoTracking()
@@ -4827,7 +4885,7 @@ public sealed class SqlServerMigrationTests
                 .Select(AccountChangeOutboxWriter.Decode)
                 .Where(item => item.Resource == "finance_preinvoices" &&
                     item.ResourceId == created.DraftId).ToArray();
-            Assert.Equal(3, financeAcceptanceHints.Length); // draft + submission + acceptance
+            Assert.Equal(4, financeAcceptanceHints.Length); // draft + submission + dispute + acceptance
             Assert.All(financeAcceptanceHints, hint =>
                 Assert.Equal(financeAccountInternalId, hint.RecipientAccountId));
         }

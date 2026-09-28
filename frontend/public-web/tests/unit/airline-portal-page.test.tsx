@@ -59,16 +59,19 @@ const getPreinvoice = vi.fn(async (id: string) => ({
     executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
 }));
 const acceptPreinvoice = vi.fn<(_id: string) => Promise<void>>(async () => {});
+const getPreinvoiceDisputes = vi.fn(async (id: string) => ({ preinvoiceId: id, disputes: [] }));
+const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
+  subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, acceptPreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear();
-  getPreinvoices.mockClear(); acceptPreinvoice.mockClear(); financeRevision = 0; });
+  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear();
+  getPreinvoices.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -180,6 +183,28 @@ it("requires explicit confirmation before accepting a published preinvoice", asy
   await screen.findByText(/Aceptación registrada/);
   expect(acceptPreinvoice).toHaveBeenCalledExactlyOnceWith(
     "74000000-0000-7000-8000-000000000001");
+});
+
+it("selects disputed lines and requires confirmation before submitting a real objection", async () => {
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /Ground power/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Asunto de la disputa" }),
+    { target: { value: "Cantidad incorrecta" } });
+  fireEvent.change(screen.getByRole("textbox", { name: /Descripci.*n de la disputa/ }),
+    { target: { value: "La cantidad de GPU no coincide." } });
+  fireEvent.click(screen.getByRole("button", { name: "Revisar disputa" }));
+  expect(disputePreinvoice).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar disputa" }));
+  expect(await screen.findByText(/Disputa registrada/)).toBeInTheDocument();
+  expect(disputePreinvoice).toHaveBeenCalledExactlyOnceWith(
+    "74000000-0000-7000-8000-000000000001",
+    expect.objectContaining({ subject: "Cantidad incorrecta",
+      description: "La cantidad de GPU no coincide.",
+      lineIds: ["74000000-0000-7000-8000-000000000002"],
+      requestId: expect.any(String) }));
 });
 
 it("does not claim acceptance when the server reports a competing decision", async () => {

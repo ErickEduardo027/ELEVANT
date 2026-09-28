@@ -47,7 +47,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 function Harness() {
   const { status, session: current, signIn, signOut, retry, getPreinvoice,
-    acceptPreinvoice, financeRevision } = useAirlineSession();
+    acceptPreinvoice, disputePreinvoice, financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
@@ -58,6 +58,12 @@ function Harness() {
     <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
     <button onClick={() => void acceptPreinvoice("74000000-0000-7000-8000-000000000001")}>Aceptar prefactura</button>
+    <button onClick={() => void disputePreinvoice(
+      "74000000-0000-7000-8000-000000000001", {
+        requestId: "74000000-0000-7000-8000-000000000004",
+        subject: "Cantidad incorrecta", description: "Diferencia de cantidad.",
+        lineIds: ["74000000-0000-7000-8000-000000000002"],
+      })}>Disputar prefactura</button>
     <span data-testid="detail-status">{detailStatus}</span>
     <span data-testid="finance-revision">{financeRevision}</span>
   </>;
@@ -251,4 +257,32 @@ it("accepts with a stable key and refreshes Finance without storing business sta
     body: { requestId: "74000000-0000-7000-8000-000000000001" } }]);
   expect(JSON.parse(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY) ?? "null"))
     .toEqual({ accessToken: session.accessToken, expiresAt: session.expiresAt });
+});
+
+it("disputes through the same scoped API session and refreshes Finance", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  const requests: Array<{ path: string; authorization: string | null; body: unknown }> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/dispute")) {
+      requests.push({ path, authorization: new Headers(init?.headers).get("authorization"),
+        body: JSON.parse(String(init?.body)) });
+      return json({ id: "74000000-0000-7000-8000-000000000001",
+        disputeId: "74000000-0000-7000-8000-000000000005",
+        status: "Disputed", replayed: false });
+    }
+    return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
+  await waitFor(() => expect(screen.getByTestId("finance-revision")).toHaveTextContent("1"));
+  expect(requests).toEqual([{ path:
+    "/api/v1/airline/portal/preinvoices/74000000-0000-7000-8000-000000000001/dispute",
+    authorization: "Bearer synthetic-short-lived-token",
+    body: { requestId: "74000000-0000-7000-8000-000000000004",
+      subject: "Cantidad incorrecta", description: "Diferencia de cantidad.",
+      lineIds: ["74000000-0000-7000-8000-000000000002"] } }]);
 });

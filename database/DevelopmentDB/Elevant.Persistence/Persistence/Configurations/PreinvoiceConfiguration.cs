@@ -62,5 +62,35 @@ internal static class PreinvoiceConfiguration
             builder.HasOne<OperationSubmission>().WithMany().HasForeignKey(item => item.ApprovedSubmissionId)
                 .OnDelete(DeleteBehavior.NoAction);
         });
+
+        modelBuilder.Entity<PreinvoiceDispute>(builder =>
+        {
+            builder.ToTable("preinvoice_disputes", "commercial", table =>
+            {
+                table.HasCheckConstraint("ck_preinvoice_dispute_request_id",
+                    "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+                table.HasCheckConstraint("ck_preinvoice_dispute_subject", "LEN([subject]) BETWEEN 1 AND 160");
+                table.HasCheckConstraint("ck_preinvoice_dispute_description", "LEN([description]) BETWEEN 1 AND 1000");
+            });
+            builder.Property(item => item.PayloadHash).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.Subject).HasMaxLength(160).IsRequired();
+            builder.Property(item => item.Description).HasMaxLength(1000).IsRequired();
+            builder.HasIndex(item => item.RequestId).IsUnique();
+            builder.HasIndex(item => new { item.PreinvoiceId, item.CreatedAt });
+            builder.HasOne<Preinvoice>().WithMany().HasForeignKey(item => item.PreinvoiceId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.SubmittedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<PreinvoiceDisputeLine>(builder =>
+        {
+            builder.ToTable("preinvoice_dispute_lines", "commercial");
+            builder.HasIndex(item => new { item.DisputeId, item.PreinvoiceLineId }).IsUnique();
+            builder.HasOne<PreinvoiceDispute>().WithMany().HasForeignKey(item => item.DisputeId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<PreinvoiceLine>().WithMany().HasForeignKey(item => item.PreinvoiceLineId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
     }
 }

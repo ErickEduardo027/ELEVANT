@@ -6,6 +6,22 @@ namespace Elevant.Application.Commercial;
 public sealed class GetAirlinePreinvoicesHandler(
     IActorContextResolver actors, IAirlinePortalReadStore preinvoices)
 {
+    public async Task<AirlinePreinvoiceDisputesResult> HandleDisputesAsync(
+        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
+    {
+        if (preinvoiceId == Guid.Empty)
+            return AirlinePreinvoiceDisputesResult.Failed(AirlinePortalFailure.NotFound);
+        var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        var (organizationId, failure) = AirlinePortalAccess.Resolve(actor, accountId);
+        if (failure is not null)
+            return AirlinePreinvoiceDisputesResult.Failed(failure.Value);
+        var disputes = await preinvoices.GetPreinvoiceDisputesAsync(
+            organizationId!.Value, preinvoiceId, cancellationToken);
+        return disputes is null
+            ? AirlinePreinvoiceDisputesResult.Failed(AirlinePortalFailure.NotFound)
+            : AirlinePreinvoiceDisputesResult.Success(preinvoiceId, disputes);
+    }
+
     public async Task<AirlinePreinvoiceDetailResult> HandleDetailAsync(
         Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
     {

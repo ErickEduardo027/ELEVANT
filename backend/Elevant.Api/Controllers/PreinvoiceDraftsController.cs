@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
+using Elevant.Contracts.Commercial;
 using Elevant.Application.Finance;
 using Elevant.Contracts.Finance;
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +21,23 @@ public sealed class PreinvoiceDraftsController(
     GetPreinvoiceDraftHandler getHandler,
     SubmitPreinvoiceHandler submitHandler) : ControllerBase
 {
+    [HttpGet("{draftId:guid}/disputes", Name = "GetFinancePreinvoiceDisputes")]
+    [ProducesResponseType<PreinvoiceDisputeListResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<PreinvoiceDisputeListResponse>> GetDisputes(
+        [FromRoute] Guid draftId, CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId))
+            return ProblemResult<PreinvoiceDisputeListResponse>(401, "Authentication failed.");
+        var disputes = await getHandler.HandleDisputesAsync(accountId, draftId, cancellationToken);
+        if (disputes is null)
+            return ProblemResult<PreinvoiceDisputeListResponse>(404, "Preinvoice was not found.");
+        return Ok(new PreinvoiceDisputeListResponse(draftId,
+            disputes.Select(item => new PreinvoiceDisputeResponse(
+                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds)).ToArray()));
+    }
+
     [HttpPost("{draftId:guid}/submit", Name = "SubmitPreinvoice")]
     [RequestSizeLimit(1024)]
     [Consumes("application/json")]

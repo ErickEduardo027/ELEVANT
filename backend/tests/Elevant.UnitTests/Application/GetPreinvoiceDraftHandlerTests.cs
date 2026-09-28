@@ -48,5 +48,9 @@ public sealed class GetPreinvoiceDraftHandlerTests
             Request = (accountId, draftId);
             return Task.FromResult<PreinvoiceDraftDetail?>(detail);
         }
+
+        public Task<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?> GetDisputesAsync(
+            Guid accountId, Guid draftId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?>([]);
     }
 }

@@ -140,6 +140,12 @@ creación real permanece en
 Servicios aprobados. El inicio, conciliación, tarifas y reportes financieros
 todavía necesitan migración; sus datos sintéticos no se presentan como saldos.
 
+El detalle de Pre-facturación también lee las disputas de la aerolínea con
+asunto, descripción y líneas cuestionadas desde
+`GET /api/v1/finance/preinvoices/{draftId}/disputes`, separado del detalle
+v1 existente para conservar compatibilidad durante una promoción API-primero;
+no inventa casos ni saldos. La resolución y la factura aún no están habilitadas.
+
 ## Imagen de Development
 
 La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:

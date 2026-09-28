@@ -82,6 +82,15 @@ Production además exige `ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProduc
 
 El seed de Development es un ejecutable separado, transaccional, determinista, idempotente y limitado por el marcador. Nunca hace reset, delete global o reemplazo de datos existentes. Todo fixture es sintético y usa identidades `.test`.
 
+## Disputas de prefactura en la rama de integración
+
+La migración aditiva `PreinvoiceDisputes`, posterior a `PersonAvatarMedia`,
+conserva el motivo y las líneas cuestionadas de cada respuesta de aerolínea.
+Una transacción serializable cambia `Submitted` a `Disputed` y guarda la
+objeción, auditoría y pistas de cambio sin alterar los importes congelados.
+La resolución, conciliación, factura y recibo continúan pendientes; esta rama
+no está desplegada.
+
 ## Diferido explícitamente
 
 - emisión de facturas, recibos y ledger de conciliación; la rama de

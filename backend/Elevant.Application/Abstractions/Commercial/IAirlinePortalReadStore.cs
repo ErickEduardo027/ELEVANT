@@ -43,4 +43,9 @@ public interface IAirlinePortalReadStore
         Guid organizationId,
         Guid preinvoiceId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
+        Guid organizationId,
+        Guid preinvoiceId,
+        CancellationToken cancellationToken = default);
 }

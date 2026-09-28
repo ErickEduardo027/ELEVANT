@@ -206,6 +206,18 @@ avisos durables para aerolínea y Finanzas. Un reintento del mismo actor/clave
 no duplica la transición; una segunda intención recibe conflicto. La
 aceptación no emite factura ni registra pago.
 
+La rama de integración agrega `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
+Solo una aerolínea con membresía vigente puede disputar una prefactura publicada
+`Submitted` de su tenant. La petición lleva clave idempotente, asunto, descripción
+y una selección de líneas propias. SQL conserva una disputa inmutable y sus
+líneas, cambia la prefactura a `Disputed` dentro de la misma transacción
+serializable y escribe auditoría e invalidaciones para aerolínea y Finanzas.
+Las consultas nuevas `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes`
+y `GET /api/v1/finance/preinvoices/{draftId}/disputes` muestran la objeción
+solo a su tenant o estación autorizada, sin añadir campos a las respuestas de
+detalle v1 que ya consumen clientes desplegados. Un reintento idéntico no duplica
+el historial. Resolverla, emitir factura y registrar pago aún no está implementado.
+
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve
 su digest después de que el controlador de base haya aceptado una versión

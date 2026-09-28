@@ -5,6 +5,8 @@ import { ElevantApiError, type AirlineContractPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlineOperationPageResponse,
   type AirlinePreinvoicePageResponse,
   type AirlinePreinvoiceDetailResponse,
+  type PreinvoiceDisputeListResponse,
+  type DisputeAirlinePreinvoiceRequest,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
   type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
@@ -45,7 +47,9 @@ interface AirlineSessionContextValue {
   getRequests(page?: number): Promise<AirlineOperationalRequestPageResponse>;
   getPreinvoices(page?: number): Promise<AirlinePreinvoicePageResponse>;
   getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
+  getPreinvoiceDisputes(preinvoiceId: string): Promise<PreinvoiceDisputeListResponse>;
   acceptPreinvoice(preinvoiceId: string): Promise<void>;
+  disputePreinvoice(preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest): Promise<void>;
   operationRevision: number;
   financeRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
@@ -367,6 +371,24 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const getPreinvoiceDisputes = useCallback(async (
+    preinvoiceId: string): Promise<PreinvoiceDisputeListResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlinePreinvoiceDisputes(
+          preinvoiceId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const acceptPreinvoice = useCallback(async (preinvoiceId: string): Promise<void> => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
@@ -375,6 +397,25 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       await createPublicWebApiClient({ baseUrl,
         getAccessToken: () => record.accessToken }).acceptAirlinePreinvoice(
           preinvoiceId, { requestId: preinvoiceId });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      setFinanceRevision(current => current + 1);
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
+  const disputePreinvoice = useCallback(async (
+    preinvoiceId: string, requestBody: DisputeAirlinePreinvoiceRequest,
+  ): Promise<void> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).disputeAirlinePreinvoice(
+          preinvoiceId, requestBody);
       if (request !== generation.current) throw new AirlineAccessDenied();
       setFinanceRevision(current => current + 1);
     } catch (error) {
@@ -416,7 +457,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, acceptPreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

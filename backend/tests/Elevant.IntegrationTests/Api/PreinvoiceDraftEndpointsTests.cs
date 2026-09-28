@@ -52,6 +52,15 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
             TestContext.Current.CancellationToken));
         Assert.Equal(10m, detail.RootElement.GetProperty("total").GetDecimal());
         Assert.Single(detail.RootElement.GetProperty("lines").EnumerateArray());
+        Assert.False(detail.RootElement.TryGetProperty("disputes", out _));
+        using var disputeRead = await client.GetAsync(
+            $"/api/v1/finance/preinvoices/{DraftId:D}/disputes",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, disputeRead.StatusCode);
+        using var disputes = JsonDocument.Parse(await disputeRead.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(DraftId, disputes.RootElement.GetProperty("preinvoiceId").GetGuid());
+        Assert.Empty(disputes.RootElement.GetProperty("disputes").EnumerateArray());
     }
 
     [Fact]
@@ -189,5 +198,10 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
                     [new PreinvoiceDraftLineDetail(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
                         1, "DEV-TAT", Date, "GPU", "GPU", 1m, "hour", 10m, "USD", 10m)])
                 : null);
+
+        public Task<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?> GetDisputesAsync(
+            Guid accountId, Guid draftId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?>(
+                draftId == DraftId ? [] : null);
     }
 }

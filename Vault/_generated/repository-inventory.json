@@ -1053,13 +1053,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "7fb314d68a9460021dc195f2dc89ecebd7ef5cdcb98dbfaaf516d8a9b8c41eac",
+        "sha256": "68552014bc18597a944d6d9c995c4b5c2f29dd1571fdfc1a24783831c5c6bed4",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "dcbd7e89419c4634360039c45a209973ef3f39b1fe5effc52fa32bcf95b64f2e",
+        "sha256": "ba3346a75325358003690fad7622d04e2487171d630f4d138bc5c5abc015f1ba",
         "title": null,
         "version": null
       }
@@ -1184,6 +1184,12 @@
         "name": "PersonAvatarMedia",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927204956_PersonAvatarMedia.cs",
         "sha256": "c492d9d59c9b1704b94cd3b01f715b24a67ac76c97329f53b8cf0a38b3f1c6e6"
+      },
+      {
+        "id": "20260928155349",
+        "name": "PreinvoiceDisputes",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928155349_PreinvoiceDisputes.cs",
+        "sha256": "85dd4744cd067c24a6271eda3caa7ed9930e7204a6a6d8a434754da4332bbc17"
       }
     ],
     "manifestContracts": [

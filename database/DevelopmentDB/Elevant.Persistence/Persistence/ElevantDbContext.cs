@@ -82,6 +82,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<PreinvoiceLine> PreinvoiceLines => Set<PreinvoiceLine>();
 
+    public DbSet<PreinvoiceDispute> PreinvoiceDisputes => Set<PreinvoiceDispute>();
+
+    public DbSet<PreinvoiceDisputeLine> PreinvoiceDisputeLines => Set<PreinvoiceDisputeLine>();
+
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
     public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();

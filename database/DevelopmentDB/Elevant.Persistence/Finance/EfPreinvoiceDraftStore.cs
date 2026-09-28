@@ -4,12 +4,14 @@ using System.Text;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
+using Elevant.Application.Commercial;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Operations;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +23,24 @@ namespace Elevant.Persistence.Finance;
 internal sealed class EfPreinvoiceDraftStore(
     ElevantDbContext context, TimeProvider timeProvider) : IPreinvoiceDraftStore
 {
+    public async Task<IReadOnlyList<PreinvoiceDisputeData>?> GetDisputesAsync(
+        Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
+    {
+        if (await GetAsync(accountId, draftId, cancellationToken) is null) return null;
+        var now = timeProvider.GetUtcNow();
+        var internalId = await (
+            from item in context.Preinvoices.AsNoTracking()
+            join station in context.Stations.AsNoTracking() on item.StationId equals station.Id
+            join account in context.Users.AsNoTracking() on accountId equals account.PublicId
+            join grant in context.AccountStationScopes.AsNoTracking()
+                on new { AccountId = account.Id, StationId = station.Id }
+                equals new { grant.AccountId, grant.StationId }
+            where item.PublicId == draftId && grant.GrantedAt <= now && grant.RevokedAt == null
+            select (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        return internalId is null ? null : await PreinvoiceDisputeReader.ReadAsync(
+            context, internalId.Value, cancellationToken);
+    }
+
     public async Task<PreinvoiceDraftDetail?> GetAsync(
         Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
     {

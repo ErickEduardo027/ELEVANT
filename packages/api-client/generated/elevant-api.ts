@@ -498,6 +498,20 @@ export interface DecideOccReviewResponse {
   reason?: string | null;
 }
 
+export interface DisputeAirlinePreinvoiceRequest {
+  requestId: string;
+  subject: string;
+  description: string;
+  lineIds: string[];
+}
+
+export interface DisputeAirlinePreinvoiceResponse {
+  id: string;
+  disputeId: string;
+  status: string;
+  replayed: boolean;
+}
+
 export interface FinanceApprovedServiceResponse {
   id: string;
   operationId: string;
@@ -1175,6 +1189,19 @@ export interface OperationalNotificationResponse {
 export interface OperationalNotificationListResponse {
   notifications: OperationalNotificationResponse[];
   hasMore: boolean;
+}
+
+export interface PreinvoiceDisputeResponse {
+  id: string;
+  subject: string;
+  description: string;
+  createdAt: string;
+  lineIds: string[];
+}
+
+export interface PreinvoiceDisputeListResponse {
+  preinvoiceId: string;
+  disputes: PreinvoiceDisputeResponse[];
 }
 
 export interface PreinvoiceDraftLineResponse {
@@ -1873,6 +1900,69 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoiceDisputesUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes`
+}
+
+export const getAirlinePreinvoiceDisputes = async (preinvoiceId: string, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoiceDisputesUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDisputeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDisputeAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/dispute`
+}
+
+export const disputeAirlinePreinvoice = async (preinvoiceId: string,
+    disputeAirlinePreinvoiceRequest?: DisputeAirlinePreinvoiceRequest, options?: RequestInit): Promise<DisputeAirlinePreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDisputeAirlinePreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(disputeAirlinePreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DisputeAirlinePreinvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -4022,6 +4112,34 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePreinvoiceDisputesUrl = (draftId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${draftId}/disputes`
+}
+
+export const getFinancePreinvoiceDisputes = async (draftId: string, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+
+  const res = await fetch(getGetFinancePreinvoiceDisputesUrl(draftId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDisputeListResponse = body ? JSON.parse(body) : {}
   return data
 }
 

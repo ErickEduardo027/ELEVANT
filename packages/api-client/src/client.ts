@@ -5,7 +5,9 @@ import {
   getGetAirlineOperationUrl,
   getGetAirlineOperationalRequestsUrl,
   getGetAirlinePreinvoiceUrl,
+  getGetAirlinePreinvoiceDisputesUrl,
   getAcceptAirlinePreinvoiceUrl,
+  getDisputeAirlinePreinvoiceUrl,
   getGetAirlinePreinvoicesUrl,
   getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
@@ -14,6 +16,7 @@ import {
   getListFinancePreinvoicesUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
+  getGetFinancePreinvoiceDisputesUrl,
   getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
@@ -55,6 +58,9 @@ import {
   type AirlinePreinvoiceDetailResponse,
   type AcceptAirlinePreinvoiceRequest,
   type AcceptAirlinePreinvoiceResponse,
+  type DisputeAirlinePreinvoiceRequest,
+  type DisputeAirlinePreinvoiceResponse,
+  type PreinvoiceDisputeListResponse,
   type AirlinePreinvoicePageResponse,
   type ManagedContractPageData,
   type ListManagedContractsParams,
@@ -150,7 +156,9 @@ export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetManagedContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -265,10 +273,18 @@ export interface ElevantApiClient {
     preinvoiceId: string,
     options?: GetAirlinePreinvoiceOptions,
   ): Promise<AirlinePreinvoiceDetailResponse>;
+  getAirlinePreinvoiceDisputes(
+    preinvoiceId: string,
+    options?: GetPreinvoiceDisputesOptions,
+  ): Promise<PreinvoiceDisputeListResponse>;
   acceptAirlinePreinvoice(
     preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
     options?: AcceptAirlinePreinvoiceOptions,
   ): Promise<AcceptAirlinePreinvoiceResponse>;
+  disputeAirlinePreinvoice(
+    preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
+    options?: DisputeAirlinePreinvoiceOptions,
+  ): Promise<DisputeAirlinePreinvoiceResponse>;
   getManagedContracts(
     parameters?: ListManagedContractsParams,
     options?: GetManagedContractsOptions,
@@ -296,6 +312,10 @@ export interface ElevantApiClient {
     draftId: string, expectedStationId: string,
     options?: GetPreinvoiceDraftOptions,
   ): Promise<PreinvoiceDraftResponse>;
+  getFinancePreinvoiceDisputes(
+    draftId: string,
+    options?: GetPreinvoiceDisputesOptions,
+  ): Promise<PreinvoiceDisputeListResponse>;
   submitPreinvoice(
     draftId: string, request: SubmitPreinvoiceRequest,
     options?: SubmitPreinvoiceOptions,
@@ -1914,7 +1934,7 @@ function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePrei
   const periodFrom = String(value.from);
   const periodTo = String(value.to);
   const ids = new Set<string>();
-  return lines.every(line => {
+  const validLines = lines.every(line => {
     if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
         "serviceCode", "serviceName", "executedQuantity", "billingUnit",
         "unitPrice", "amount"]) || !isUuid(line.id) || ids.has(line.id) ||
@@ -1927,11 +1947,46 @@ function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePrei
     ids.add(line.id);
     return true;
   });
+  return validLines;
+}
+
+function isPreinvoiceDisputes(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 50) return false;
+  const disputeIds = new Set<string>();
+  return value.every(dispute => {
+    if (!isRecord(dispute) || !hasOnlyKeys(dispute,
+        ["id", "subject", "description", "createdAt", "lineIds"]) ||
+        !isUuid(dispute.id) || disputeIds.has(dispute.id) ||
+        !isNonEmptyString(dispute.subject) || dispute.subject.length > 160 ||
+        !isNonEmptyString(dispute.description) || dispute.description.length > 1000 ||
+        !isDateTimeOffset(dispute.createdAt) ||
+        !Array.isArray(dispute.lineIds) || dispute.lineIds.length < 1 ||
+        dispute.lineIds.length > 50) return false;
+    const selected = new Set<string>();
+    for (const id of dispute.lineIds) {
+      if (!isUuid(id) || selected.has(id)) return false;
+      selected.add(id);
+    }
+    disputeIds.add(dispute.id);
+    return true;
+  });
+}
+
+function isPreinvoiceDisputeListResponse(value: unknown, preinvoiceId: string):
+  value is PreinvoiceDisputeListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["preinvoiceId", "disputes"]) &&
+    value.preinvoiceId === preinvoiceId && isPreinvoiceDisputes(value.disputes);
 }
 
 function isAcceptAirlinePreinvoiceResponse(value: unknown): value is AcceptAirlinePreinvoiceResponse {
   return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
     isUuid(value.id) && value.status === "Accepted" &&
+    typeof value.replayed === "boolean";
+}
+
+function isDisputeAirlinePreinvoiceResponse(value: unknown): value is DisputeAirlinePreinvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "disputeId", "status", "replayed"]) &&
+    isUuid(value.id) && isUuid(value.disputeId) && value.status === "Disputed" &&
     typeof value.replayed === "boolean";
 }
 
@@ -2131,7 +2186,7 @@ function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResp
       !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
       !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
     return false;
-  return value.lines.every((line, index) => isRecord(line) &&
+  const validLines = value.lines.every((line, index) => isRecord(line) &&
     hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
       "operationCode", "operationDate", "serviceCode", "serviceName",
       "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
@@ -2144,6 +2199,7 @@ function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResp
     isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
     line.currencyCode === value.currencyCode &&
     isFiniteNumber(line.amount) && line.amount >= 0);
+  return validLines;
 }
 
 function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
@@ -2846,6 +2902,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.id !== preinvoiceId) throw malformedResponse(result.status);
       return result.data;
     },
+    async getAirlinePreinvoiceDisputes(
+      preinvoiceId: string, options?: GetPreinvoiceDisputesOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetAirlinePreinvoiceDisputesUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDisputeListResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async acceptAirlinePreinvoice(
       preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
       options?: AcceptAirlinePreinvoiceOptions,
@@ -2859,6 +2925,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getAcceptAirlinePreinvoiceUrl(id),
         { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
       if (!isAcceptAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async disputeAirlinePreinvoice(
+      preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
+      options?: DisputeAirlinePreinvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["requestId", "subject", "description", "lineIds"]) ||
+          !isUuid(request.requestId) ||
+          !isNonEmptyString(request.subject) || request.subject.trim() !== request.subject ||
+          request.subject.length > 160 ||
+          !isNonEmptyString(request.description) ||
+          request.description.trim() !== request.description ||
+          request.description.length > 1000 ||
+          !Array.isArray(request.lineIds) || request.lineIds.length < 1 ||
+          request.lineIds.length > 50 ||
+          request.lineIds.some(lineId => !isUuid(lineId)) ||
+          new Set(request.lineIds).size !== request.lineIds.length)
+        throw new TypeError("Preinvoice dispute request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getDisputeAirlinePreinvoiceUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isDisputeAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -2944,6 +3036,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "GET" }, true);
       if (!isPreinvoiceDraftResponse(result.data) ||
           result.data.id !== draft || result.data.stationId !== station)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePreinvoiceDisputes(
+      draftId: string, options?: GetPreinvoiceDisputesOptions,
+    ) {
+      const id = validatedUuid(draftId, "draftId");
+      const result = await execute(getGetFinancePreinvoiceDisputesUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDisputeListResponse(result.data, id))
         throw malformedResponse(result.status);
       return result.data;
     },

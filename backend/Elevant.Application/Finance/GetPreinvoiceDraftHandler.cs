@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Commercial;
 using Elevant.Application.Identity;
 using Elevant.Domain.Enumerations;
 
@@ -19,6 +20,20 @@ public sealed record PreinvoiceDraftDetail(
 public sealed class GetPreinvoiceDraftHandler(
     IActorContextResolver actors, IPreinvoiceDraftStore store)
 {
+    public async Task<IReadOnlyList<PreinvoiceDisputeData>?> HandleDisputesAsync(
+        Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
+    {
+        if (accountId == Guid.Empty || draftId == Guid.Empty) return null;
+        var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        if (!ActorContextValidator.IsValid(actor, accountId) ||
+            !actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff))
+            return null;
+        return await store.GetDisputesAsync(accountId, draftId, cancellationToken);
+    }
+
     public async Task<PreinvoiceDraftDetail?> HandleAsync(
         Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
     {

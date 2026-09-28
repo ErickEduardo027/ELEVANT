@@ -1,9 +1,9 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
 import { getFinancePreinvoices, submitFinancePreinvoice } from '../../../services/financePreinvoiceService';
-import { getPreinvoiceDraft } from '../../../services/approvedServicesService';
+import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 
 vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
   accountId: 'finance-account', stationScopes: [
@@ -14,7 +14,9 @@ vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
 vi.mock('../../../services/financePreinvoiceService', () => ({
   getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
 }));
-vi.mock('../../../services/approvedServicesService', () => ({ getPreinvoiceDraft: vi.fn() }));
+vi.mock('../../../services/approvedServicesService', () => ({
+  getPreinvoiceDraft: vi.fn(), getFinancePreinvoiceDisputes: vi.fn(),
+}));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: async () => {}, stop: async () => {} }),
 }));
@@ -24,6 +26,7 @@ const item = { id: 'preinvoice-one', airlineId: 'airline-one', airlineName: 'Syn
   total: 42.0001, status: 'Draft', lineCount: 1, createdAt: '2026-08-19T12:00:00Z' };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id, disputes: [] }));
 
 it('shows the persisted station-scoped list and read-only detail', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false, preinvoices: [item] });
@@ -37,6 +40,25 @@ it('shows the persisted station-scoped list and read-only detail', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   expect(await screen.findByText(/Ground power/)).toBeInTheDocument();
   expect(getPreinvoiceDraft).toHaveBeenCalledWith('preinvoice-one', 'station-one');
+});
+
+it('shows the airline dispute and its selected priced lines to scoped Finance', async () => {
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [{ ...item, status: 'Disputed' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...item, status: 'Disputed',
+    lines: [{ id: 'line-one', operationCode: 'DEV-TAT-1', operationDate: '2026-08-18',
+      serviceName: 'Ground power', amount: 42.0001 }],
+    });
+  getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id,
+    disputes: [{ id: 'dispute-one', subject: 'Cantidad incorrecta',
+      description: 'La cantidad de GPU no coincide.', lineIds: ['line-one'],
+      createdAt: '2026-08-20T12:00:00Z' }] });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByText('Cantidad incorrecta')).toBeInTheDocument();
+  expect(screen.getByText('La cantidad de GPU no coincide.')).toBeInTheDocument();
+  expect(screen.getAllByText(/Ground power/)).toHaveLength(2);
 });
 
 it('paginates and renders honest empty, forbidden and retry states', async () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
+  type PreinvoiceDisputeResponse,
   type AirlinePreinvoicePageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
@@ -21,7 +22,8 @@ function amount(currency: string, total: number) {
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, getPreinvoice, acceptPreinvoice, financeRevision } = useAirlineSession();
+  const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, acceptPreinvoice,
+    disputePreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -30,10 +32,14 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const detailGeneration = useRef(0);
   const selectedPreinvoice = useRef<string | null>(null);
   const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
-    value: AirlinePreinvoiceDetailResponse | null } | null>(null);
+    value: (AirlinePreinvoiceDetailResponse & { disputes: PreinvoiceDisputeResponse[] }) | null } | null>(null);
   const [acceptance, setAcceptance] = useState<{ id: string | null;
     status: "idle" | "confirm" | "pending" | "success" | "conflict" | "error" }>(
       { id: null, status: "idle" });
+  const [dispute, setDispute] = useState<{ id: string | null; requestId: string;
+    status: "idle" | "edit" | "confirm" | "pending" | "success" | "conflict" | "error";
+    lineIds: string[]; subject: string; description: string }>(
+      { id: null, requestId: "", status: "idle", lineIds: [], subject: "", description: "" });
 
   useEffect(() => () => {
     detailGeneration.current += 1;
@@ -59,9 +65,13 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     const request = ++detailGeneration.current;
     selectedPreinvoice.current = id;
     setAcceptance({ id: null, status: "idle" });
+    setDispute({ id: null, requestId: "", status: "idle",
+      lineIds: [], subject: "", description: "" });
     setDetail({ id, status: "loading", value: null });
     try {
-      const value = await getPreinvoice(id);
+      const [preinvoice, disputeList] = await Promise.all([
+        getPreinvoice(id), getPreinvoiceDisputes(id)]);
+      const value = { ...preinvoice, disputes: disputeList.disputes };
       if (request === detailGeneration.current)
         setDetail({ id, status: "ready", value });
     } catch (error) {
@@ -69,7 +79,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         setDetail({ id, status: error instanceof ElevantApiError && error.status === 404
           ? "missing" : "error", value: null });
     }
-  }, [getPreinvoice]);
+  }, [getPreinvoice, getPreinvoiceDisputes]);
 
   const confirmAcceptance = useCallback(async (id: string) => {
     if (detail?.id !== id || detail.status !== "ready" ||
@@ -88,6 +98,28 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         setRetryKey(current => current + 1);
     }
   }, [acceptPreinvoice, acceptance, detail]);
+
+  const confirmDispute = useCallback(async (id: string) => {
+    if (detail?.id !== id || detail.status !== "ready" ||
+        detail.value?.status !== "Submitted" || dispute.id !== id ||
+        !["confirm", "error"].includes(dispute.status) ||
+        dispute.lineIds.length === 0 || !dispute.subject.trim() ||
+        !dispute.description.trim()) return;
+    setDispute(current => ({ ...current, status: "pending" }));
+    try {
+      await disputePreinvoice(id, { requestId: dispute.requestId,
+        subject: dispute.subject.trim(), description: dispute.description.trim(),
+        lineIds: dispute.lineIds });
+      if (selectedPreinvoice.current === id)
+        setDispute(current => ({ ...current, status: "success" }));
+    } catch (error) {
+      if (selectedPreinvoice.current !== id) return;
+      setDispute(current => ({ ...current, status: error instanceof ElevantApiError &&
+        error.status === 409 ? "conflict" : "error" }));
+      if (error instanceof ElevantApiError && (error.status === 409 || error.status === 404))
+        setRetryKey(current => current + 1);
+    }
+  }, [detail, dispute, disputePreinvoice]);
 
   const loadMore = useCallback(async () => {
     if (loading || !pages.at(-1)?.hasMore) return;
@@ -116,6 +148,10 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
       <p role="alert">La prefactura cambió antes de aceptarla. Revisa el estado actualizado.</p>}
     {acceptance.status === "error" && detail?.id !== acceptance.id &&
       <p role="alert">No se pudo confirmar la aceptación. Abre de nuevo la prefactura para revisar o reintentar.</p>}
+    {dispute.status === "success" &&
+      <p role="status">Disputa registrada para la prefactura {dispute.id}. Finanzas puede revisar las líneas indicadas.</p>}
+    {dispute.status === "conflict" &&
+      <p role="alert">La prefactura cambió antes de registrar la disputa. Revisa el estado actualizado.</p>}
     <div className={styles.metrics} aria-label="Estado de las prefacturas cargadas">
       <div><span>Prefacturas cargadas</span><strong>{preinvoices.length}</strong></div>
       <div><span>Pendientes de respuesta</span><strong>{preinvoices.filter(item => item.status === "Submitted").length}</strong></div>
@@ -152,8 +188,26 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
             <span>{line.operationCode} · {line.operationDate}</span>
             <span>{line.executedQuantity} {line.billingUnit} × {amount(item.currencyCode, line.unitPrice)}</span>
             <strong>{amount(item.currencyCode, line.amount)}</strong>
+            {dispute.id === item.id && dispute.status === "edit" &&
+              <label className={styles.disputeLineChoice}>
+                <input type="checkbox" checked={dispute.lineIds.includes(line.id)}
+                  onChange={event => setDispute(current => ({ ...current,
+                    lineIds: event.target.checked ? [...current.lineIds, line.id] :
+                      current.lineIds.filter(id => id !== line.id) }))} />
+                Disputar {line.serviceName}
+              </label>}
           </div>)}
+          {detail.value.disputes.map(itemDispute => <section key={itemDispute.id}
+            className={styles.disputeRecord} aria-label={`Disputa ${itemDispute.id}`}>
+            <strong>{itemDispute.subject}</strong>
+            <p>{itemDispute.description}</p>
+            <p>Líneas seleccionadas: {itemDispute.lineIds.map(lineId => {
+              const line = detail.value?.lines.find(candidate => candidate.id === lineId);
+              return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
+            }).join(", ")}</p>
+          </section>)}
           {detail.value.status === "Submitted" && acceptance.status === "idle" &&
+            dispute.status === "idle" &&
             <button className={styles.loadMore} type="button"
               onClick={() => setAcceptance({ id: item.id, status: "confirm" })}>
               Aceptar prefactura
@@ -166,6 +220,52 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
               <button className={styles.loadMore} type="button"
                 onClick={() => setAcceptance({ id: null, status: "idle" })}>Cancelar</button>
             </div>}
+          {detail.value.status === "Submitted" && acceptance.status === "idle" &&
+            dispute.status === "idle" &&
+            <button className={styles.loadMore} type="button"
+              onClick={() => setDispute({ id: item.id, requestId: crypto.randomUUID(),
+                status: "edit", lineIds: [], subject: "", description: "" })}>
+              Disputar prefactura
+            </button>}
+          {dispute.id === item.id && dispute.status === "edit" &&
+            <section className={styles.disputeForm} aria-label="Preparar disputa">
+              <p>Selecciona una o más líneas y explica la diferencia a Finanzas.</p>
+              <label>Asunto de la disputa
+                <input type="text" maxLength={160} value={dispute.subject}
+                  onChange={event => setDispute(current => ({ ...current,
+                    subject: event.target.value }))} />
+              </label>
+              <label>Descripción de la disputa
+                <textarea maxLength={1000} value={dispute.description}
+                  onChange={event => setDispute(current => ({ ...current,
+                    description: event.target.value }))} />
+              </label>
+              <button className={styles.loadMore} type="button"
+                disabled={!dispute.lineIds.length || !dispute.subject.trim() ||
+                  !dispute.description.trim()}
+                onClick={() => setDispute(current => ({ ...current, status: "confirm" }))}>
+                Revisar disputa
+              </button>
+              <button className={styles.loadMore} type="button"
+                onClick={() => setDispute({ id: null, requestId: "", status: "idle",
+                  lineIds: [], subject: "", description: "" })}>Cancelar</button>
+            </section>}
+          {dispute.id === item.id && dispute.status === "confirm" &&
+            <section className={styles.disputeForm} aria-label="Confirmar disputa">
+              <p>Confirma la disputa de {dispute.lineIds.length} línea(s): {dispute.subject.trim()}.</p>
+              <button className={styles.loadMore} type="button"
+                onClick={() => void confirmDispute(item.id)}>Confirmar disputa</button>
+              <button className={styles.loadMore} type="button"
+                onClick={() => setDispute(current => ({ ...current, status: "edit" }))}>Editar</button>
+            </section>}
+          {dispute.id === item.id && dispute.status === "pending" &&
+            <p role="status">Registrando disputa…</p>}
+          {dispute.id === item.id && dispute.status === "error" &&
+            <section className={styles.disputeForm} role="alert">
+              <p>No se pudo confirmar la disputa. Puedes reintentar con la misma clave.</p>
+              <button className={styles.loadMore} type="button"
+                onClick={() => void confirmDispute(item.id)}>Reintentar disputa</button>
+            </section>}
           {acceptance.id === item.id && acceptance.status === "pending" &&
             <p role="status">Registrando aceptación…</p>}
           {acceptance.id === item.id && acceptance.status === "error" && <div role="alert">

@@ -11,6 +11,30 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>Applies tenant and contract-station predicates in SQL for portal bootstrap.</summary>
 internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirlinePortalReadStore
 {
+    public async Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
+        Guid organizationId, Guid preinvoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
+        var internalId = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            join item in context.Preinvoices.AsNoTracking()
+                on airline.Id equals item.AirlineId
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive &&
+                  item.PublicId == preinvoiceId &&
+                  (item.Status == PreinvoiceStatus.Submitted ||
+                   item.Status == PreinvoiceStatus.Disputed ||
+                   item.Status == PreinvoiceStatus.Accepted ||
+                   item.Status == PreinvoiceStatus.Invoiced)
+            select (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        return internalId is null ? null : await PreinvoiceDisputeReader.ReadAsync(
+            context, internalId.Value, cancellationToken);
+    }
+
     public async Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
         Guid organizationId, Guid preinvoiceId,
         CancellationToken cancellationToken = default)

@@ -51,12 +51,22 @@ un servicio. Todas las FKs usan `NO ACTION`; la migración no carga datos de
 negocio. Se prueba una base limpia y la actualización de una base con
 operaciones previas. No se ha aplicado al VPS.
 
+La migración aditiva `PreinvoiceDisputes` agrega
+`commercial.preinvoice_disputes` y `commercial.preinvoice_dispute_lines`
+después de `PersonAvatarMedia`. Guarda una objeción y sus líneas sin sobrescribir
+el snapshot monetario de la prefactura. `request_id` es único, las FKs son
+`NO ACTION` y no hay datos de negocio en la migración. No se ha promocionado.
+
 Desde cualquier directorio:
 
 ```powershell
 ./database/DevelopmentDB/scripts/add-migration.ps1 -Name NombreAditivo
 ./database/DevelopmentDB/scripts/update-database.ps1 -Environment Development
 ```
+
+El generador usa `Release` por defecto; `-Configuration Debug` permite
+generar el mismo modelo localmente cuando un proceso de desarrollo bloquea
+los binarios Release. No cambia el destino ni aplica la migración.
 
 Los scripts validan el destino y utilizan la solución `backend/Elevant.sln`. Production requiere un plan y confirmaciones independientes; `database/ProductionDB` permanece vacío.
 

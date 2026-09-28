@@ -22,8 +22,76 @@ public sealed class AirlinePortalController(
     GetAirlineOperationHandler operationHandler,
     GetAirlineOperationalRequestsHandler requestsHandler,
     GetAirlinePreinvoicesHandler preinvoicesHandler,
-    AcceptAirlinePreinvoiceHandler acceptanceHandler) : ControllerBase
+    AcceptAirlinePreinvoiceHandler acceptanceHandler,
+    DisputeAirlinePreinvoiceHandler disputeHandler) : ControllerBase
 {
+    [HttpGet("preinvoices/{preinvoiceId:guid}/disputes", Name = "GetAirlinePreinvoiceDisputes")]
+    [ProducesResponseType<PreinvoiceDisputeListResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<PreinvoiceDisputeListResponse>> GetPreinvoiceDisputes(
+        Guid preinvoiceId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<PreinvoiceDisputeListResponse>(401, "Authentication failed.");
+        }
+        var result = await preinvoicesHandler.HandleDisputesAsync(
+            accountId, preinvoiceId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == 401) Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<PreinvoiceDisputeListResponse>(statusCode, title);
+        }
+        return Ok(new PreinvoiceDisputeListResponse(preinvoiceId,
+            result.Disputes!.Select(item => new PreinvoiceDisputeResponse(
+                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds)).ToArray()));
+    }
+
+    [HttpPost("preinvoices/{preinvoiceId:guid}/dispute", Name = "DisputeAirlinePreinvoice")]
+    [RequestSizeLimit(8192)]
+    [Consumes("application/json")]
+    [ProducesResponseType<DisputeAirlinePreinvoiceResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<ActionResult<DisputeAirlinePreinvoiceResponse>> DisputePreinvoice(
+        Guid preinvoiceId, [FromBody] DisputeAirlinePreinvoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<DisputeAirlinePreinvoiceResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+        var result = await disputeHandler.HandleAsync(accountId, preinvoiceId,
+            request.RequestId, request.Subject, request.Description,
+            request.LineIds, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = result.Failure!.Value switch
+            {
+                DisputeAirlinePreinvoiceFailure.Unauthorized => (401, "Authentication failed."),
+                DisputeAirlinePreinvoiceFailure.Forbidden => (403, "Airline access is forbidden."),
+                DisputeAirlinePreinvoiceFailure.InvalidRequest => (400, "Invalid dispute request."),
+                DisputeAirlinePreinvoiceFailure.NotFound => (404, "Preinvoice was not found."),
+                DisputeAirlinePreinvoiceFailure.Conflict => (409, "Preinvoice state conflicts with dispute."),
+                _ => throw new InvalidOperationException("Unsupported dispute failure."),
+            };
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<DisputeAirlinePreinvoiceResponse>(statusCode, title);
+        }
+        return Ok(new DisputeAirlinePreinvoiceResponse(
+            result.PreinvoiceId!.Value, result.DisputeId!.Value, "Disputed", result.Replayed));
+    }
+
     [HttpPost("preinvoices/{preinvoiceId:guid}/accept", Name = "AcceptAirlinePreinvoice")]
     [RequestSizeLimit(1024)]
     [Consumes("application/json")]
