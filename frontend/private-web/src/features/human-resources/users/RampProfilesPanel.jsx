@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getRampProfiles, saveRampProfile, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
 import FileDropField from '../../../components/FileDropField';
@@ -15,18 +15,45 @@ export default function RampProfilesPanel() {
   const [avatar, setAvatar] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const requestVersion = useRef(0);
   const refresh = useCallback(async () => {
-    try { setCatalog(await getRampProfiles()); setError(''); }
-    catch (failure) { setError(failure.message); }
+    const request = ++requestVersion.current;
+    try {
+      const nextCatalog = await getRampProfiles();
+      if (request !== requestVersion.current) return;
+      setCatalog(nextCatalog);
+      setError('');
+    } catch {
+      if (request !== requestVersion.current) return;
+      setCatalog(null);
+      setError('No fue posible actualizar los perfiles. Comprueba la conexión y vuelve a intentarlo.');
+    }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { requestVersion.current += 1; };
+  }, [refresh]);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('ramp_profiles')) void refresh();
     });
-    void observer.start();
-    return () => observer.stop();
+    void observer.start().catch(() => {});
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    const poll = window.setInterval(() => void refresh(), 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      void observer.stop();
+    };
   }, [refresh]);
+  useEffect(() => {
+    if (!editingId || catalog?.profiles.some(profile => profile.id === editingId)) return;
+    setEditingId(null);
+    setForm(blank());
+    setAvatar(null);
+  }, [catalog, editingId]);
 
   function edit(profile) {
     setAvatar(null);
@@ -49,7 +76,7 @@ export default function RampProfilesPanel() {
       setNotice('Perfil operativo guardado. Superadministración ya puede vincular su cuenta de acceso.');
       setEditingId(null); setForm(blank()); setAvatar(null);
       await refresh();
-    } catch (failure) { setError(failure.message); }
+    } catch { setError('No fue posible guardar el perfil. Comprueba la conexión y vuelve a intentarlo.'); }
     finally { setBusy(false); }
   }
   return <div className="mx-auto max-w-[1440px] space-y-5">
@@ -61,7 +88,7 @@ export default function RampProfilesPanel() {
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
       <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
         <div className="flex items-center justify-between"><h2 className="font-bold">Personal registrado</h2><button type="button" onClick={refresh} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
-        {!catalog ? <p className="mt-4 text-sm">Cargando perfiles…</p> : catalog.profiles.length === 0 ? <p className="mt-4 text-sm">Aún no hay perfiles.</p> :
+        {!catalog ? !error && <p className="mt-4 text-sm">Cargando perfiles…</p> : catalog.profiles.length === 0 ? <p className="mt-4 text-sm">Aún no hay perfiles.</p> :
           <ul className="mt-4 divide-y divide-black/5 dark:divide-white/5">{catalog.profiles.map(profile =>
             <li key={profile.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
               <div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-accent-600/10 text-xs font-bold text-accent-600"><PrivateMediaImage url={profile.avatarMediaUrl} alt={`Foto de ${profile.firstName} ${profile.lastName}`} className="h-12 w-12 object-cover" />{!profile.avatarMediaUrl && profile.firstName.slice(0, 1)}</div><div><strong>{profile.firstName} {profile.lastName}</strong><p className="text-xs text-text-secondary-light">{profile.employeeNumber} · {profile.category} · {profile.stations.map(station => station.code).join(', ') || 'Sin estación activa'}</p><p className="text-xs">{profile.isActive ? 'Activo' : 'Inactivo'} · {profile.hasAccount ? 'Cuenta vinculada' : 'Cuenta pendiente de Superadministración'}</p></div></div>
