@@ -3,10 +3,11 @@ import { render, screen } from '@testing-library/react';
 import FinanceShell from './FinanceShell';
 
 describe('FinanceShell', () => {
-  it('opens an explicitly synthetic home without offering an unimplemented notification feed', async () => {
+  it('does not show invented finance data or an unimplemented notification feed', async () => {
     render(<FinanceShell />);
     expect(await screen.findByRole('heading', { name: 'Resumen financiero' })).toBeInTheDocument();
-    expect(screen.getByText(/Datos sintéticos · solo lectura/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No hay una estación financiera autorizada');
+    expect(screen.queryByText(/Datos sintéticos/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Notificaciones' })).not.toBeInTheDocument();
   });
 });

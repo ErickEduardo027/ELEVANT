@@ -23,11 +23,13 @@ function validRange(from, to) {
   return days >= 0 && days <= 30;
 }
 
-export function useApprovedServicesData() {
+export function useApprovedServicesData(initialStationId) {
   const accountId = useMemo(() => readSession()?.accountId, []);
   const scopes = useMemo(() => (readSession()?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode), []);
-  const [stationId, setStationIdState] = useState(scopes[0]?.stationId ?? '');
+  const [stationId, setStationIdState] = useState(
+    scopes.some(scope => scope.stationId === initialStationId)
+      ? initialStationId : scopes[0]?.stationId ?? '');
   const today = useMemo(() => stationToday(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
   const [from, setFromState] = useState(thirtyDayStart(today));
   const [to, setToState] = useState(today);

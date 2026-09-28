@@ -49,6 +49,14 @@ beforeEach(() => {
 });
 
 describe('ApprovedServicesPage', () => {
+  it('opens the station selected in the Finance summary', async () => {
+    vi.mocked(readSession).mockReturnValue({ accountId: 'finance-account',
+      stationScopes: [{ stationId: STATION_ID, stationCode: 'PUJ' },
+        { stationId: 'station-two', stationCode: 'SDQ' }] });
+    render(<ApprovedServicesPage initialStationId="station-two" />);
+    await waitFor(() => expect(getApprovedServices).toHaveBeenCalledWith(
+      expect.objectContaining({ stationId: 'station-two' }), expect.any(Object)));
+  });
   it('reads canonical finance evidence and filters by airline without a fake review action', async () => {
     render(<ApprovedServicesPage />);
     expect(await screen.findByText('Baggage')).toBeInTheDocument();

@@ -67,6 +67,7 @@ it('uses a polling fallback when no change hint arrives', async () => {
 });
 
 it('shows only authorized personnel facts, without fixture indicators or demo claims', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true }));
   render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
 
   expect(await screen.findByText('Luis Vega')).toBeInTheDocument();

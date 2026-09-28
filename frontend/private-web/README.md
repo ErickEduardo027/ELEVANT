@@ -108,9 +108,15 @@ Los roles, tenants y scopes de estación se validan en el servidor. Filtros, men
 
 Los mocks describen flujos de producto, no contratos persistentes ni una frontera de autorización.
 
-Los resúmenes de Contratos y Finanzas son vistas sintéticas de solo lectura,
-señalizadas en la interfaz. No consultan los antiguos endpoints
-`/api/notifications` ni `/api/finance/summary`, ausentes del OpenAPI canónico.
+El resumen de Contratos permanece sintético y se señala en la interfaz. En
+esta rama local, **Finanzas → Inicio** consulta servicios aprobados de los
+últimos 30 días y la primera página de prefacturas de la estación autorizada
+mediante la API versionada. Los contadores son del conjunto consultado (máximo
+200 servicios y 50 prefacturas), no totales históricos. Expone los límites de
+paginación, estados vacíos o de error, y revalida con cambios durables, foco y
+polling. No consulta `/api/finance/summary` ni inventa saldos o conciliaciones.
+Los dos departamentos mantienen oculto el antiguo buzón `/api/notifications`,
+ausente del OpenAPI canónico.
 El icono de notificaciones de esos dos departamentos permanece oculto hasta
 que exista un feed autorizado para sus roles. Los módulos profundos no
 enumerados como integrados abajo siguen siendo prototipos y no deben
@@ -197,4 +203,4 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC sigue siendo una vista sintética y se marca como tal; no demuestra disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba, pero sus módulos profundos todavía no constituyen circuitos canónicos. Otros adaptadores heredados de Finanzas pueden mostrar errores controlados. La imagen no incluye ni inicia `backend-prototipo`.
+Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC sigue siendo una vista sintética y se marca como tal; no demuestra disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba, pero sus módulos profundos todavía no constituyen circuitos canónicos. Los módulos heredados de Conciliación, Tarifas y Reportes de Finanzas siguen siendo prototipos que necesitan contratos canónicos. La imagen no incluye ni inicia `backend-prototipo`.

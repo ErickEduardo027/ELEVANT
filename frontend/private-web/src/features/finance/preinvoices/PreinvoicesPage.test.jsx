@@ -36,6 +36,15 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 beforeEach(() => getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id, disputes: [] }));
 beforeEach(() => getFinancePaymentByInvoice.mockResolvedValue({ invoiceId: 'invoice-one', payment: null }));
 
+it('opens the station selected in the Finance summary', async () => {
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20,
+    hasMore: false, preinvoices: [] });
+  render(<PreinvoicesPage initialStationId="station-two" />);
+  await waitFor(() => expect(getFinancePreinvoices).toHaveBeenCalledWith(
+    { stationId: 'station-two', page: 1, limit: 20 }, expect.any(Object)));
+  expect(screen.getByLabelText('Estación de prefacturas')).toHaveValue('station-two');
+});
+
 it('shows the persisted station-scoped list and read-only detail', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false, preinvoices: [item] });
   getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',

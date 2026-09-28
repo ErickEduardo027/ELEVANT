@@ -20,11 +20,13 @@ function money(value, currency) {
   return `${currency} ${Number(value).toFixed(4)}`;
 }
 
-export default function PreinvoicesPage() {
+export default function PreinvoicesPage({ initialStationId }) {
   const session = useMemo(() => readSession(), []);
   const scopes = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode), [session]);
-  const [stationId, setStationId] = useState(scopes[0]?.stationId ?? '');
+  const [stationId, setStationId] = useState(
+    scopes.some(scope => scope.stationId === initialStationId)
+      ? initialStationId : scopes[0]?.stationId ?? '');
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', result: null });
