@@ -24,7 +24,8 @@ autenticada. En la rama de integración, Solicitudes consulta registros
 operativos reales, paginados y propios de la aerolínea; crear y cancelar siguen
 deshabilitados. Finanzas consulta prefacturas publicadas de su tenant mediante
 `GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y todavía
-no permite disputas, pagos o descargas. Documentos y Reportes conservan una
+permite abrir el detalle de líneas persistidas por ID propio. Todavía no
+permite disputas, pagos o descargas. Documentos y Reportes conservan una
 vista visual de demostración claramente marcada: sus cifras y registros son
 sintéticos y sus acciones están deshabilitadas. No representan datos de la
 cuenta ni un portal operativo completo de Production.

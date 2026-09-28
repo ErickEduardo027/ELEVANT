@@ -4713,6 +4713,36 @@ public sealed class SqlServerMigrationTests
                 .Where(item => item.EntityPublicId == created.DraftId &&
                     item.Action == "finance.preinvoice.draft.created")
                 .ToArrayAsync(cancellationToken));
+            var airlineOrganizationId = await (
+                from airline in inspection.Airlines.AsNoTracking()
+                join organization in inspection.Organizations.AsNoTracking()
+                    on airline.OrganizationId equals organization.Id
+                where airline.Id == draft.AirlineId
+                select organization.PublicId).SingleAsync(cancellationToken);
+            await using (var portalScope = provider.CreateAsyncScope())
+            {
+                var portal = portalScope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+                Assert.Null(await portal.GetPreinvoiceAsync(airlineOrganizationId,
+                    created.DraftId!.Value, cancellationToken));
+            }
+            await inspection.Preinvoices.Where(item => item.Id == draft.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(
+                    item => item.Status, PreinvoiceStatus.Submitted), cancellationToken);
+            await using (var portalScope = provider.CreateAsyncScope())
+            {
+                var portal = portalScope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+                var published = await portal.GetPreinvoiceAsync(airlineOrganizationId,
+                    created.DraftId!.Value, cancellationToken);
+                Assert.NotNull(published);
+                Assert.Equal("Submitted", published.Status);
+                Assert.Equal(draft.Total, published.Total);
+                var snapshot = Assert.Single(published.Lines);
+                Assert.Equal(line.OperationCode, snapshot.OperationCode);
+                Assert.Equal(approvedServiceName, snapshot.ServiceName);
+                Assert.Equal(line.Amount, snapshot.Amount);
+                Assert.Null(await portal.GetPreinvoiceAsync(Guid.NewGuid(),
+                    created.DraftId.Value, cancellationToken));
+            }
         }
 
         if (reviewOutcome == "Approved")

@@ -25,7 +25,7 @@ promocionar el VPS desde el agente; el operador ejecutará cada checkpoint.
 | Finanzas | servicios aprobados, borrador y listado interno paginado de prefacturas usan `/api/v1/finance` | inicio, conciliación, tarifas y reportes todavía son locales; el reporte heredado llama `/api/finance/reports`, ausente del OpenAPI |
 | Gestión Humana | sesión y perfil base de agente de rampa con estaciones usan API y DB; #116 vinculó el rol `RAMP_AGENT` mediante Superadministración | dashboard con fixture; terminales, turnos, permisos y cualificaciones aún necesitan interfaz canónica; los módulos heredados llaman `/api/hr/*` |
 | Superadministrador | gobierno, provisión, gestión de aerolíneas y medios de logos/avatares usan `/api/v1` | comprobar en vivo estados, auditoría y flujos de cuentas nuevas |
-| Aerolínea | sesión, bootstrap, contratos y comentarios de borrador usan API canónica; esta rama agrega historial paginado, detalle básico, lectura de solicitudes y prefacturas publicadas tenant-scoped | crear/cancelar solicitudes, documentos, factura/recibo y reportes siguen pendientes; el detalle aún no contiene servicios ni evidencia aprobada |
+| Aerolínea | sesión, bootstrap, contratos y comentarios de borrador usan API canónica; esta rama agrega historial paginado, detalle básico, solicitudes y prefacturas publicadas con líneas tenant-scoped | crear/cancelar solicitudes, documentos, factura/recibo y reportes siguen pendientes; el detalle de operación aún no contiene servicios ni evidencia aprobada |
 | Mobile Agent | rutas activas usan `/api/v1/ramp`, chat y notificaciones | sincronización pendiente; adaptadores `/api/mobile/*` heredados no están montados en las rutas activas |
 
 La tabla es auditoría estática de código y OpenAPI, no una prueba de ejecución

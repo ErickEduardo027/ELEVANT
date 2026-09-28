@@ -189,6 +189,9 @@ contenido devuelve el borrador existente; un servicio solo puede reservarse
 en una prefactura. La lectura de detalle revalida acceso y la escritura emite
 una invalidación durable `finance_preinvoices`. No hay emisión, impuesto,
 conciliación, factura, pago ni recibo todavía. La rama no se ha desplegado.
+El portal de aerolínea puede releer una prefactura publicada y sus líneas
+inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
+deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AirlinePreinvoicePageResponse } from "@elevant/api-client";
+import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
+  type AirlinePreinvoicePageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import styles from "./AirlinePortalPage.module.css";
@@ -20,21 +21,46 @@ function amount(currency: string, total: number) {
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, operationRevision } = useAirlineSession();
+  const { getPreinvoices, getPreinvoice, operationRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const generation = useRef(0);
+  const detailGeneration = useRef(0);
+  const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
+    value: AirlinePreinvoiceDetailResponse | null } | null>(null);
+
+  useEffect(() => () => { detailGeneration.current += 1; }, []);
 
   useEffect(() => {
     const request = ++generation.current;
+    detailGeneration.current += 1;
+    queueMicrotask(() => {
+      if (request !== generation.current) return;
+      setDetail(null);
+      setLoading(true);
+    });
     void getPreinvoices(1).then(page => {
       if (request === generation.current) { setPages([page]); setError(false); }
     }).catch(() => { if (request === generation.current) setError(true); })
       .finally(() => { if (request === generation.current) setLoading(false); });
     return () => { generation.current += 1; };
   }, [getPreinvoices, operationRevision, retryKey]);
+
+  const openDetail = useCallback(async (id: string) => {
+    const request = ++detailGeneration.current;
+    setDetail({ id, status: "loading", value: null });
+    try {
+      const value = await getPreinvoice(id);
+      if (request === detailGeneration.current)
+        setDetail({ id, status: "ready", value });
+    } catch (error) {
+      if (request === detailGeneration.current)
+        setDetail({ id, status: error instanceof ElevantApiError && error.status === 404
+          ? "missing" : "error", value: null });
+    }
+  }, [getPreinvoice]);
 
   const loadMore = useCallback(async () => {
     if (loading || !pages.at(-1)?.hasMore) return;
@@ -77,6 +103,24 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
       </div>
       <p className={styles.note}>{item.stationCode} · {item.from} — {item.to}</p>
       <p className={styles.note}>Registrada el {item.createdAt.slice(0, 10)}.</p>
+      <button className={styles.loadMore} type="button"
+        aria-label={`Ver líneas de prefactura ${item.id}`}
+        onClick={() => void openDetail(item.id)}>Ver líneas</button>
+      {detail?.id === item.id && detail.status === "loading" &&
+        <p role="status">Cargando líneas autorizadas…</p>}
+      {detail?.id === item.id && detail.status === "missing" &&
+        <p role="alert">La prefactura ya no está disponible para esta cuenta.</p>}
+      {detail?.id === item.id && detail.status === "error" &&
+        <p role="alert">No se pudo consultar el detalle. Inténtalo de nuevo.</p>}
+      {detail?.id === item.id && detail.status === "ready" && detail.value &&
+        <div aria-label={`Líneas de prefactura ${item.id}`} className={styles.preinvoiceLines}>
+          {detail.value.lines.map(line => <div key={line.id}>
+            <strong>{line.serviceName}</strong>
+            <span>{line.operationCode} · {line.operationDate}</span>
+            <span>{line.executedQuantity} {line.billingUnit} × {amount(item.currencyCode, line.unitPrice)}</span>
+            <strong>{amount(item.currencyCode, line.amount)}</strong>
+          </div>)}
+        </div>}
     </section>)}
     {!loading && !error && preinvoices.length === 0 &&
       <p className={styles.empty}>No hay prefacturas publicadas para esta aerolínea.</p>}

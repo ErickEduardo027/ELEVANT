@@ -23,6 +23,41 @@ public sealed class AirlinePortalController(
     GetAirlineOperationalRequestsHandler requestsHandler,
     GetAirlinePreinvoicesHandler preinvoicesHandler) : ControllerBase
 {
+    [HttpGet("preinvoices/{preinvoiceId:guid}", Name = "GetAirlinePreinvoice")]
+    [ProducesResponseType<AirlinePreinvoiceDetailResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlinePreinvoiceDetailResponse>> GetPreinvoice(
+        Guid preinvoiceId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePreinvoiceDetailResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await preinvoicesHandler.HandleDetailAsync(
+            accountId, preinvoiceId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePreinvoiceDetailResponse>(statusCode, title);
+        }
+
+        var detail = result.Detail!;
+        return Ok(new AirlinePreinvoiceDetailResponse(detail.Id,
+            detail.StationId, detail.StationCode, detail.From, detail.To,
+            detail.CurrencyCode, detail.Total, detail.Status, detail.CreatedAt,
+            detail.Lines.Select(line => new AirlinePreinvoiceLineResponse(
+                line.Id, line.OperationCode, line.OperationDate,
+                line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
+                line.BillingUnit, line.UnitPrice, line.Amount)).ToArray()));
+    }
+
     [HttpGet("preinvoices", Name = "GetAirlinePreinvoices")]
     [ProducesResponseType<AirlinePreinvoicePageResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

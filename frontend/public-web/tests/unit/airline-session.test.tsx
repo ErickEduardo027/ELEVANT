@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import type { AirlinePortalBootstrapResponse, SessionResponse } from "@elevant/api-client";
 import {
   AIRLINE_SESSION_STORAGE_KEY,
@@ -45,13 +46,17 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function Harness() {
-  const { status, session: current, signIn, signOut, retry } = useAirlineSession();
+  const { status, session: current, signIn, signOut, retry, getPreinvoice } = useAirlineSession();
+  const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
     {current && <span>{current.bootstrap.name}</span>}
     <button onClick={() => void signIn({ email: actor.email, password: "Synthetic-Password!2026" })}>Entrar</button>
     <button onClick={signOut}>Salir</button>
     <button onClick={() => void retry()}>Reintentar</button>
+    <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
+      .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
+    <span data-testid="detail-status">{detailStatus}</span>
   </>;
 }
 
@@ -128,6 +133,24 @@ it("clears a stored token when the API revokes the session", async () => {
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("anonymous");
   expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).toBeNull();
+});
+
+it("keeps the airline session when a preinvoice is not visible", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("/preinvoices/74000000-0000-7000-8000-000000000001"))
+      return json({ status: 404 }, 404);
+    return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  fireEvent.click(screen.getByRole("button", { name: "Consultar prefactura" }));
+  await waitFor(() => expect(screen.getByTestId("detail-status")).toHaveTextContent("missing"));
+  expect(screen.getByTestId("session-status")).toHaveTextContent("ready");
+  expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).not.toBeNull();
 });
 
 it("refreshes the authorized airline snapshot when the connection returns", async () => {

@@ -278,4 +278,28 @@ describe("published airline preinvoices client", () => {
     await expect(invalid.getAirlinePreinvoices())
       .rejects.toMatchObject({ kind: "malformed-response" });
   });
+
+  it("reads published line snapshots by public ID without a browser tenant", async () => {
+    const detail = { ...page.preinvoices[0], lines: [{
+      id: "74000000-0000-7000-8000-000000000002",
+      operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+      serviceCode: "GPU", serviceName: "Ground power",
+      executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5,
+    }] };
+    const urls: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async url => {
+        urls.push(String(url));
+        return new Response(JSON.stringify(detail),
+          { headers: { "content-type": "application/json" } });
+      },
+    });
+    await expect(client.getAirlinePreinvoice(detail.id!)).resolves.toEqual(detail);
+    expect(urls).toEqual([
+      `https://api.example.test/api/v1/airline/portal/preinvoices/${detail.id}`,
+    ]);
+    await expect(client.getAirlinePreinvoice("not-a-guid")).rejects.toBeInstanceOf(TypeError);
+    expect(urls).toHaveLength(1);
+  });
 });

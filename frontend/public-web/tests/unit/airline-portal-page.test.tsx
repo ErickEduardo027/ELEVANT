@@ -48,15 +48,24 @@ const getPreinvoices = vi.fn(async () => ({ page: 1, limit: 20, hasMore: false,
     stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
     from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
     status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] }));
+const getPreinvoice = vi.fn(async (id: string) => ({
+  id, stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+  from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
+  status: "Submitted", createdAt: "2026-08-20T12:00:00Z",
+  lines: [{ id: "74000000-0000-7000-8000-000000000002",
+    operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+    serviceCode: "GPU", serviceName: "Ground power",
+    executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
+}));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, operationRevision: 0 }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision: 0 }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); });
+  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -138,6 +147,14 @@ it("shows only published preinvoices returned by the authorized finance API", as
   expect(screen.getByText("PUJ · 2026-08-18 — 2026-08-19")).toBeInTheDocument();
   expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
   expect(screen.queryByText("DEMO-PRE-001")).not.toBeInTheDocument();
+});
+
+it("opens immutable service lines from the authorized preinvoice detail", async () => {
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
+  expect(await screen.findByText("Ground power")).toBeInTheDocument();
+  expect(screen.getByText(/DEV-TAT-0021/)).toBeInTheDocument();
+  expect(getPreinvoice).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000001");
 });
 
 it("shows verified account and station scope in profile", () => {

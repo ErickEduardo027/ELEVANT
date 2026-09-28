@@ -163,6 +163,31 @@ export interface AirlinePortalBootstrapResponse {
   currentOperations: AirlinePortalOperationResponse[];
 }
 
+export interface AirlinePreinvoiceLineResponse {
+  id: string;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface AirlinePreinvoiceDetailResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  lines: AirlinePreinvoiceLineResponse[];
+}
+
 export interface AirlinePreinvoiceResponse {
   id: string;
   stationId: string;
@@ -1828,6 +1853,34 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}`
+}
+
+export const getAirlinePreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<AirlinePreinvoiceDetailResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePreinvoiceDetailResponse = body ? JSON.parse(body) : {}
   return data
 }
 

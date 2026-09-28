@@ -38,4 +38,9 @@ public interface IAirlinePortalReadStore
         int page,
         int limit,
         CancellationToken cancellationToken = default);
+
+    Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
+        Guid organizationId,
+        Guid preinvoiceId,
+        CancellationToken cancellationToken = default);
 }

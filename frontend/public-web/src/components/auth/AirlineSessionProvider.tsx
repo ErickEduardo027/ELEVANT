@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { ElevantApiError, type AirlineContractPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlineOperationPageResponse,
   type AirlinePreinvoicePageResponse,
+  type AirlinePreinvoiceDetailResponse,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
   type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
@@ -43,6 +44,7 @@ interface AirlineSessionContextValue {
   getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
   getRequests(page?: number): Promise<AirlineOperationalRequestPageResponse>;
   getPreinvoices(page?: number): Promise<AirlinePreinvoicePageResponse>;
+  getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
   operationRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
   commentDraft(versionId: string, body: string): Promise<void>;
@@ -343,6 +345,23 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const getPreinvoice = useCallback(async (preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlinePreinvoice(
+          preinvoiceId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const draftRequest = useCallback(async (path: string, options: RequestInit = {}) => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
@@ -375,7 +394,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, operationRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

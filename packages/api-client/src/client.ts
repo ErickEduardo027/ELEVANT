@@ -4,6 +4,7 @@ import {
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
   getGetAirlineOperationalRequestsUrl,
+  getGetAirlinePreinvoiceUrl,
   getGetAirlinePreinvoicesUrl,
   getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
@@ -49,6 +50,7 @@ import {
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
   type AirlineOperationalRequestPageResponse,
+  type AirlinePreinvoiceDetailResponse,
   type AirlinePreinvoicePageResponse,
   type ManagedContractPageData,
   type ListManagedContractsParams,
@@ -141,6 +143,7 @@ export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" |
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetManagedContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -250,6 +253,10 @@ export interface ElevantApiClient {
     parameters?: GetAirlinePreinvoicesParams,
     options?: GetAirlinePreinvoicesOptions,
   ): Promise<AirlinePreinvoicePageResponse>;
+  getAirlinePreinvoice(
+    preinvoiceId: string,
+    options?: GetAirlinePreinvoiceOptions,
+  ): Promise<AirlinePreinvoiceDetailResponse>;
   getManagedContracts(
     parameters?: ListManagedContractsParams,
     options?: GetManagedContractsOptions,
@@ -1880,6 +1887,32 @@ function isAirlinePreinvoicePageResponse(
   });
 }
 
+function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePreinvoiceDetailResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "stationId", "stationCode",
+      "from", "to", "currencyCode", "total", "status", "createdAt", "lines"]) ||
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+    return false;
+  const { lines, ...header } = value;
+  if (!isAirlinePreinvoicePageResponse({ page: 1, limit: 1, hasMore: false,
+    preinvoices: [header] })) return false;
+  const periodFrom = String(value.from);
+  const periodTo = String(value.to);
+  const ids = new Set<string>();
+  return lines.every(line => {
+    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
+        "serviceCode", "serviceName", "executedQuantity", "billingUnit",
+        "unitPrice", "amount"]) || !isUuid(line.id) || ids.has(line.id) ||
+        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
+        line.operationDate < periodFrom || line.operationDate > periodTo ||
+        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
+        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
+        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
+        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0) return false;
+    ids.add(line.id);
+    return true;
+  });
+}
+
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
   if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
       !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
@@ -2773,6 +2806,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePreinvoice(
+      preinvoiceId: string, options?: GetAirlinePreinvoiceOptions,
+    ) {
+      if (!isUuid(preinvoiceId)) throw new TypeError("Preinvoice ID must be a UUID.");
+      const result = await execute(getGetAirlinePreinvoiceUrl(preinvoiceId),
+        { ...options, method: "GET" }, true);
+      if (!isAirlinePreinvoiceDetailResponse(result.data) ||
+          result.data.id !== preinvoiceId) throw malformedResponse(result.status);
       return result.data;
     },
     async getManagedContracts(

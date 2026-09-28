@@ -117,6 +117,41 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task PublishedPreinvoiceDetailIsAvailableThroughTheTenantPortal()
+    {
+        var preinvoiceId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            DetailPreinvoice = new AirlinePreinvoiceDetailData(preinvoiceId,
+                StationId, "PUJ", new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18),
+                "USD", 125.5000m, "Submitted", DateTimeOffset.UtcNow,
+                [new AirlinePreinvoiceLineData(Guid.NewGuid(), "DEV-TAT-0021",
+                    new DateOnly(2026, 8, 18), "GPU", "Ground power",
+                    1.0000m, "hour", 125.5000m, 125.5000m)]),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var response = await client.GetAsync(
+            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(preinvoiceId, json.RootElement.GetProperty("id").GetGuid());
+        Assert.Equal("DEV-TAT-0021", json.RootElement.GetProperty("lines")[0]
+            .GetProperty("operationCode").GetString());
+        Assert.Equal(125.5000m, json.RootElement.GetProperty("lines")[0]
+            .GetProperty("amount").GetDecimal());
+
+        using var absent = await client.GetAsync(
+            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, absent.StatusCode);
+    }
+
+    [Fact]
     public async Task ContractsUseLiveAirlineTenantAndOnlyApprovedVersions()
     {
         var state = new StubState(CreateActor())
@@ -368,6 +403,8 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public AirlineOperationalRequestPageData? Requests { get; init; }
 
+        public AirlinePreinvoiceDetailData? DetailPreinvoice { get; init; }
+
         public Guid? QueriedOperationId { get; private set; }
 
         public Guid? QueriedOrganizationId { get; private set; }
@@ -431,6 +468,15 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedLimit = limit;
             return Task.FromResult<AirlinePreinvoicePageData?>(
                 new AirlinePreinvoicePageData([], false));
+        }
+
+        public Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
+            Guid organizationId, Guid preinvoiceId,
+            CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            return Task.FromResult(DetailPreinvoice?.Id == preinvoiceId
+                ? DetailPreinvoice : null);
         }
     }
 }

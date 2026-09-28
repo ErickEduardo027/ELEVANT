@@ -35,7 +35,9 @@ esta lectura no crea ni modifica contratos.
 `getAirlinePreinvoices({ page?, limit? })` consulta prefacturas publicadas y
 propias del tenant derivado por la API; no expone borradores de Finanzas. El
 cliente rechaza parámetros fuera de rango, estados internos y campos ajenos al
-contrato. Factura, pago y recibo siguen fuera de este contrato de lectura.
+contrato. `getAirlinePreinvoice(id)` relee las líneas y precios congelados de
+una prefactura propia publicada; un ID ajeno o un borrador no revela detalle.
+Factura, pago y recibo siguen fuera de este contrato de lectura.
 
 `getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
 aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía

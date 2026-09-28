@@ -11,6 +11,50 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>Applies tenant and contract-station predicates in SQL for portal bootstrap.</summary>
 internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirlinePortalReadStore
 {
+    public async Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
+        Guid organizationId, Guid preinvoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
+
+        var header = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            join item in context.Preinvoices.AsNoTracking()
+                on airline.Id equals item.AirlineId
+            join station in context.Stations.AsNoTracking()
+                on item.StationId equals station.Id
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive &&
+                  item.PublicId == preinvoiceId &&
+                  (item.Status == PreinvoiceStatus.Submitted ||
+                   item.Status == PreinvoiceStatus.Disputed ||
+                   item.Status == PreinvoiceStatus.Accepted ||
+                   item.Status == PreinvoiceStatus.Invoiced)
+            select new
+            {
+                item.Id, item.PublicId, StationId = station.PublicId,
+                StationCode = station.Code, item.From, item.To,
+                item.CurrencyCode, item.Total, item.Status, item.CreatedAt,
+            }).SingleOrDefaultAsync(cancellationToken);
+        if (header is null) return null;
+
+        var lines = await context.PreinvoiceLines.AsNoTracking()
+            .Where(line => line.PreinvoiceId == header.Id)
+            .OrderBy(line => line.LineNumber)
+            .Select(line => new AirlinePreinvoiceLineData(
+                line.PublicId, line.OperationCode, line.OperationDate,
+                line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
+                line.BillingUnit, line.UnitPrice, line.Amount))
+            .ToArrayAsync(cancellationToken);
+        return new AirlinePreinvoiceDetailData(header.PublicId,
+            header.StationId, header.StationCode, header.From, header.To,
+            header.CurrencyCode, header.Total, header.Status.ToString(),
+            header.CreatedAt, lines);
+    }
+
     public async Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
         Guid organizationId, int page, int limit,
         CancellationToken cancellationToken = default)
