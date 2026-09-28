@@ -674,6 +674,55 @@ export interface ManagedAirlineInput {
   version?: string | null;
 }
 
+export interface ManagedContractStationData {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ManagedContractRateData {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface ManagedContractVersionData {
+  id: string;
+  versionNumber: number;
+  status: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  /** @nullable */
+  terms?: string | null;
+  stations: ManagedContractStationData[];
+  rates: ManagedContractRateData[];
+}
+
+export interface ManagedContractData {
+  id: string;
+  code: string;
+  airline: string;
+  airlineCode: string;
+  status: string;
+  /** @nullable */
+  signedOn?: string | null;
+  /** @nullable */
+  terminatedOn?: string | null;
+  approvedVersions: ManagedContractVersionData[];
+}
+
+export interface ManagedContractPageData {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  contracts: ManagedContractData[];
+}
+
 export interface ManagedServiceData {
   id: string;
   code: string;
@@ -1663,6 +1712,11 @@ to?: string;
 };
 
 export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListManagedContractsParams = {
 page?: number;
 limit?: number;
 };
@@ -3133,6 +3187,41 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListManagedContractsUrl = (params?: ListManagedContractsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/agreements?${stringifiedParams}` : `/api/v1/contracts/agreements`
+}
+
+export const listManagedContracts = async (params?: ListManagedContractsParams, options?: RequestInit): Promise<ManagedContractPageData> => {
+
+  const res = await fetch(getListManagedContractsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedContractPageData = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -27,6 +27,11 @@ para la única aerolínea derivada en la API de la sesión. El cliente valida
 estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
 un ID de tenant ni habilita acciones comerciales.
 
+`getManagedContracts({ page?, limit? })` consulta la lectura interna paginada
+de acuerdos publicados, con aerolínea, estado de versión, estaciones y tarifas. La API exige el
+permiso comercial correspondiente y el wrapper valida la forma recibida;
+esta lectura no crea ni modifica contratos.
+
 `getAirlinePreinvoices({ page?, limit? })` consulta prefacturas publicadas y
 propias del tenant derivado por la API; no expone borradores de Finanzas. El
 cliente rechaza parámetros fuera de rango, estados internos y campos ajenos al

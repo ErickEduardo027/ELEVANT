@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<ICommercialWorkflowStore, EfCommercialWorkflowStore>();
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
+        services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();

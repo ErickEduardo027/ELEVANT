@@ -21,7 +21,7 @@ promocionar el VPS desde el agente; el operador ejecutará cada checkpoint.
 | Sesión | Lecturas/escrituras canónicas | Brecha visible o heredada |
 | --- | --- | --- |
 | OCC | planificación, revisión, chat y notificaciones usan `/api/v1` | dashboard con fixture; monitoreo/mapa mezclan planificación con datos estáticos; reportes no son historial financiero |
-| Contratos | inicio, ingreso, catálogo, borradores, confirmación de tarifas y medios comerciales usan `/api/v1` | Contratos, Servicios y Reportes heredados aún llaman `/api/contracts/*`, ausente del OpenAPI; comunicaciones locales |
+| Contratos | inicio, ingreso, catálogo, borradores, confirmación de tarifas y medios comerciales usan `/api/v1`; esta rama añade lectura protegida de acuerdos aprobados para Contratos, Servicios pactados y Reportes | comunicaciones locales; sin comandos reales de edición de acuerdos publicados |
 | Finanzas | servicios aprobados y borrador de prefactura usan `/api/v1/finance` | inicio, conciliación y tarifas son locales; prefacturación heredada llama `/api/finance/preinvoices` y reportes `/api/finance/reports`, ausentes del OpenAPI |
 | Gestión Humana | sesión y perfil base de agente de rampa con estaciones usan API y DB; #116 vinculó el rol `RAMP_AGENT` mediante Superadministración | dashboard con fixture; terminales, turnos, permisos y cualificaciones aún necesitan interfaz canónica; los módulos heredados llaman `/api/hr/*` |
 | Superadministrador | gobierno, provisión, gestión de aerolíneas y medios de logos/avatares usan `/api/v1` | comprobar en vivo estados, auditoría y flujos de cuentas nuevas |

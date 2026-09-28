@@ -394,6 +394,9 @@ public sealed class SqlServerMigrationTests
                 airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
                     rate.Id, rate.BillingUnit, 0, 0, true)).ToArray()),
             cancellationToken)).IsSuccess);
+        var agreements = scope.ServiceProvider.GetRequiredService<IManagedContractReadStore>();
+        Assert.DoesNotContain((await agreements.ListAsync(contractsAccountId, 1, 20,
+            cancellationToken))!.Contracts, item => item.Code == contract.ContractCode);
         Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
             cancellationToken)).IsSuccess);
         Assert.Empty((await drafts.ListForAirlineAsync(provisioned.AccountId.Value,
@@ -402,6 +405,35 @@ public sealed class SqlServerMigrationTests
             contractsAccountId, cancellationToken))!.Count);
         Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
+        var agreementPage = (await agreements.ListAsync(contractsAccountId, 1, 20,
+            cancellationToken))!;
+        var published = Assert.Single(agreementPage.Contracts,
+            item => item.Code == contract.ContractCode);
+        Assert.Equal((await context.Airlines.AsNoTracking().SingleAsync(item =>
+            item.Id == contract.AirlineId, cancellationToken)).Name, published.Airline);
+        Assert.Equal("Approved", Assert.Single(published.ApprovedVersions).Status);
+        Assert.Single(Assert.Single(published.ApprovedVersions).Rates);
+        var historicalVersion = await context.ContractVersions.SingleAsync(item =>
+            item.Id == version.Id, cancellationToken);
+        var historicalRate = await context.ContractServiceRates.SingleAsync(item =>
+            item.ContractVersionId == version.Id, cancellationToken);
+        var originalPrice = historicalRate.UnitPrice;
+        historicalVersion.Status = ContractVersionStatus.Superseded;
+        historicalRate.UnitPrice = 0.0001m;
+        await context.SaveChangesAsync(cancellationToken);
+        var historicalPage = (await agreements.ListAsync(contractsAccountId, 1, 20,
+            cancellationToken))!;
+        var historical = Assert.Single(historicalPage.Contracts,
+            item => item.Code == contract.ContractCode);
+        Assert.Equal("Superseded", Assert.Single(historical.ApprovedVersions).Status);
+        Assert.Equal(0.0001m, Assert.Single(Assert.Single(historical.ApprovedVersions).Rates).UnitPrice);
+        Assert.Contains(Assert.Single(historical.ApprovedVersions).Stations,
+            item => item.Code == station.Code);
+        historicalVersion.Status = ContractVersionStatus.Approved;
+        historicalRate.UnitPrice = originalPrice;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Null(await agreements.ListAsync(provisioned.AccountId.Value, 1, 20,
+            cancellationToken));
 
         var governance = scope.ServiceProvider.GetRequiredService<IGovernanceStore>();
         var snapshot = (await governance.GetAsync(superAdminId, cancellationToken))!;

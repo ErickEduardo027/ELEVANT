@@ -2419,6 +2419,51 @@
         ]
       }
     },
+    "/api/v1/contracts/agreements": {
+      "get": {
+        "tags": [
+          "ManagedContracts"
+        ],
+        "operationId": "ListManagedContracts",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedContractPageData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/mobile/device": {
       "put": {
         "tags": [
@@ -7669,6 +7714,191 @@
         },
         "additionalProperties": false
       },
+      "ManagedContractData": {
+        "required": [
+          "airline",
+          "airlineCode",
+          "approvedVersions",
+          "code",
+          "id",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "airlineCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "signedOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "terminatedOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "approvedVersions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedContractVersionData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedContractPageData": {
+        "required": [
+          "contracts",
+          "hasMore",
+          "limit",
+          "page"
+        ],
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "contracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedContractData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedContractRateData": {
+        "required": [
+          "billingUnit",
+          "id",
+          "minimumQuantity",
+          "serviceCode",
+          "serviceName",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedContractStationData": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ManagedContractVersionData": {
+        "required": [
+          "currencyCode",
+          "id",
+          "rates",
+          "stations",
+          "status",
+          "validFrom",
+          "versionNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "terms": {
+            "type": "string",
+            "nullable": true
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedContractStationData"
+            }
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedContractRateData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "ManagedServiceData": {
         "required": [
           "billingUnit",
@@ -11405,6 +11635,9 @@
     },
     {
       "name": "Governance"
+    },
+    {
+      "name": "ManagedContracts"
     },
     {
       "name": "MobileDevices"

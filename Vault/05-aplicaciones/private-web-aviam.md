@@ -91,7 +91,9 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 
 ### Contratos y Finanzas
 
-`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones. Sus dos resúmenes iniciales están etiquetados como datos sintéticos: Finanzas usa un snapshot local en vez del endpoint heredado inexistente `/api/finance/summary`. El buzón de notificaciones heredado está oculto para ambos roles, evitando solicitudes a `/api/notifications`. Esto no certifica los módulos profundos, que todavía conservan adaptadores de prototipo.
+`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones. Finanzas conserva un resumen sintético; el buzón de notificaciones heredado está oculto para ambos roles, evitando solicitudes a `/api/notifications`. La mera navegación no certifica los módulos profundos.
+
+En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; los indicadores del reporte se limitan expresamente a la página consultada. Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
 
 ## Estado de integración
 

@@ -5,6 +5,7 @@ import {
   getGetAirlineOperationUrl,
   getGetAirlineOperationalRequestsUrl,
   getGetAirlinePreinvoicesUrl,
+  getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
@@ -48,6 +49,8 @@ import {
   type AirlinePortalOperationResponse,
   type AirlineOperationalRequestPageResponse,
   type AirlinePreinvoicePageResponse,
+  type ManagedContractPageData,
+  type ListManagedContractsParams,
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
@@ -137,6 +140,7 @@ export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "met
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetManagedContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -242,6 +246,10 @@ export interface ElevantApiClient {
     parameters?: GetAirlinePreinvoicesParams,
     options?: GetAirlinePreinvoicesOptions,
   ): Promise<AirlinePreinvoicePageResponse>;
+  getManagedContracts(
+    parameters?: ListManagedContractsParams,
+    options?: GetManagedContractsOptions,
+  ): Promise<ManagedContractPageData>;
   getPublicCommercialCatalog(
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
@@ -1747,6 +1755,42 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
           isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
 }
 
+function isManagedContractPageData(value: unknown): value is ManagedContractPageData {
+  return isRecord(value) && hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
+    isInt32(value.page) && value.page >= 1 &&
+    isInt32(value.limit) && value.limit >= 1 && value.limit <= 50 &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.contracts) &&
+    value.contracts.length <= value.limit &&
+    (!value.hasMore || value.contracts.length === value.limit) &&
+    value.contracts.every(contract => isRecord(contract) &&
+      hasOnlyKeys(contract, ["id", "code", "airline", "airlineCode", "status",
+        "signedOn", "terminatedOn", "approvedVersions"]) &&
+      isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      isNonEmptyString(contract.airline) && isString(contract.airlineCode) &&
+      ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
+      isOptionalNullable(contract.signedOn, isDateOnly) &&
+      isOptionalNullable(contract.terminatedOn, isDateOnly) &&
+      Array.isArray(contract.approvedVersions) && contract.approvedVersions.length > 0 &&
+      contract.approvedVersions.every(version => isRecord(version) &&
+        hasOnlyKeys(version, ["id", "versionNumber", "status", "validFrom", "validTo",
+          "currencyCode", "terms", "stations", "rates"]) &&
+        isUuid(version.id) && isInt32(version.versionNumber) && version.versionNumber > 0 &&
+        ["Approved", "Superseded"].includes(String(version.status)) &&
+        isDateOnly(version.validFrom) && isOptionalNullable(version.validTo, isDateOnly) &&
+        typeof version.currencyCode === "string" && /^[A-Z]{3}$/.test(version.currencyCode) &&
+        isOptionalNullable(version.terms, isString) &&
+        Array.isArray(version.stations) && version.stations.every(station =>
+          isRecord(station) && hasOnlyKeys(station, ["id", "code", "name"]) &&
+          isUuid(station.id) && isNonEmptyString(station.code) && isNonEmptyString(station.name)) &&
+        Array.isArray(version.rates) && version.rates.every(rate =>
+          isRecord(rate) && hasOnlyKeys(rate, ["id", "serviceCode", "serviceName",
+            "billingUnit", "unitPrice", "minimumQuantity"]) &&
+          isUuid(rate.id) && isNonEmptyString(rate.serviceCode) &&
+          isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+          isFiniteNumber(rate.unitPrice) && rate.unitPrice >= 0 &&
+          isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
+}
+
 function isAirlineOperationDetailResponse(value: unknown): value is AirlinePortalOperationResponse {
   return isRecord(value) && hasOnlyKeys(value,
     ["id", "code", "stationId", "stationCode", "operationDate", "status",
@@ -2037,6 +2081,19 @@ function validatedAirlinePreinvoiceParams(
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
     (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
     throw new TypeError("Airline preinvoice paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedManagedContractParams(
+  parameters: ListManagedContractsParams,
+): ListManagedContractsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Managed contract paging is invalid.");
   return {
     ...(parameters.page === undefined ? {} : { page: parameters.page }),
     ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
@@ -2667,6 +2724,18 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetAirlinePreinvoicesUrl(paging),
         { ...options, method: "GET" }, true);
       if (!isAirlinePreinvoicePageResponse(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getManagedContracts(
+      parameters: ListManagedContractsParams = {}, options?: GetManagedContractsOptions,
+    ) {
+      const paging = validatedManagedContractParams(parameters);
+      const result = await execute(getListManagedContractsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isManagedContractPageData(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);
