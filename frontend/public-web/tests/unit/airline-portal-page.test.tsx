@@ -45,11 +45,12 @@ const initialRequestPage: AirlineOperationalRequestPageResponse = {
 let requestPage = initialRequestPage;
 let financeRevision = 0;
 const getRequests = vi.fn(async () => requestPage);
-let preinvoicePage = { page: 1, limit: 20, hasMore: false,
+const initialPreinvoicePage = { page: 1, limit: 20, hasMore: false,
   preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
     stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
     from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
     status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] };
+let preinvoicePage = initialPreinvoicePage;
 const getPreinvoices = vi.fn(async () => preinvoicePage);
 const getPreinvoice = vi.fn(async (id: string) => ({
   id, stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
@@ -89,7 +90,7 @@ afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; hi
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
   requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
-  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item => ({ ...item, status: "Submitted" })) };
+  preinvoicePage = initialPreinvoicePage;
   getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
@@ -405,6 +406,51 @@ it("shows tenant-scoped operational requests without demo fixtures", async () =>
   expect(getRequests).toHaveBeenCalledWith(1);
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Nueva solicitud" })).toBeDisabled();
+});
+
+it("reports only tenant-scoped operations and published preinvoices returned by the API", async () => {
+  render(<AirlinePortalPage view="reports" />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(await screen.findByText(/USD 125\.50/)).toBeInTheDocument();
+  expect(getOperations).toHaveBeenCalledWith(1);
+  expect(getPreinvoices).toHaveBeenCalledWith(1);
+  expect(screen.getByText(/Operaciones cargadas/)).toBeInTheDocument();
+  expect(screen.getByText(/Prefacturas cargadas/)).toBeInTheDocument();
+  expect(screen.queryByText(/Vuelos de ejemplo|Indicador ilustrativo|Datos de demostración/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/50%|67%|US\$413/)).not.toBeInTheDocument();
+});
+
+it("reports honest empty and recoverable error states without retaining stale data", async () => {
+  historyPage = { page: 1, limit: 20, hasMore: false, operations: [] };
+  preinvoicePage = { page: 1, limit: 20, hasMore: false, preinvoices: [] };
+  getPreinvoices.mockRejectedValueOnce(new Error("private transport detail"));
+  render(<AirlinePortalPage view="reports" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/No se pudieron actualizar los reportes/);
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Reintentar reportes/ }));
+  expect(await screen.findByText(/No hay operaciones registradas/)).toBeInTheDocument();
+  expect(screen.getByText(/No hay prefacturas publicadas/)).toBeInTheDocument();
+});
+
+it("does not round away the published financial snapshot precision", async () => {
+  preinvoicePage = { ...initialPreinvoicePage, preinvoices: [
+    { ...initialPreinvoicePage.preinvoices[0], total: 125.1234 },
+  ] };
+  render(<AirlinePortalPage view="reports" />);
+  expect(await screen.findByText("USD 125.1234")).toBeInTheDocument();
+});
+
+it("hides an old report while a finance change is being revalidated", async () => {
+  const page = render(<AirlinePortalPage view="reports" />);
+  expect(await screen.findByText(/USD 125\.50/)).toBeInTheDocument();
+  let finish!: (value: typeof preinvoicePage) => void;
+  getPreinvoices.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="reports" />);
+  expect(screen.queryByText(/USD 125\.50/)).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(/Cargando reportes autorizados/);
+  await act(async () => finish({ page: 1, limit: 20, hasMore: false, preinvoices: [] }));
+  expect(await screen.findByText(/No hay prefacturas publicadas/)).toBeInTheDocument();
 });
 
 it("shows an honest empty state when the airline has no operational requests", async () => {

@@ -29,8 +29,11 @@ En esta rama local, Documentos deja atrás el listado de ejemplo: consulta
 prefacturas `Invoiced` del tenant, relee factura y pago y descarga PDFs
 privados desde la API con la sesión vigente. Un vacío real indica que aún no
 hay facturas emitidas en las páginas cargadas; `404`, error recuperable y
-revocación no se reemplazan con mocks. Reportes todavía conserva una vista
-visual marcada como demostración. Las descargas no son comprobantes fiscales
+revocación no se reemplazan con mocks. Reportes consulta la primera página
+autorizada de operaciones y prefacturas publicadas, muestra solo conteos de
+registros cargados y enlaza a los historiales paginados; no presenta porcentajes
+de puntualidad, cumplimiento ni facturación total sin un contrato agregado.
+Las descargas no son comprobantes fiscales
 ni acreditan una transferencia bancaria. El cambio no está desplegado.
 
 En la rama de integración, la sesión del portal revalida identidad y
@@ -79,8 +82,9 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Los recibos siguen pendientes.
-- `/portal/documentos` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Documentos ofrece el recibo no fiscal de prueba cuando existe ese pago.
+- `/portal/documentos`: consulta y descarga autorizada de facturas y recibos no fiscales de prueba; un vacío no se rellena con fixtures.
+- `/portal/reportes`: resumen de solo lectura de la primera página de operaciones y prefacturas propias, con estados vacíos/errores y enlaces a los historiales completos; no exporta ni afirma métricas globales.
 - `/dev-airline`: retirada; responde 404.
 
 En esta rama aún no promocionada, `/portal/finanzas` también permite seleccionar
@@ -111,7 +115,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-Documentos y Reportes aún contienen tarjetas de ejemplo etiquetadas y no pertenecen al tenant autenticado; Inicio, Vuelos, Solicitudes y Finanzas no las muestran. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
+Las rutas activas de Inicio, Vuelos, Solicitudes, Finanzas, Documentos y Reportes no muestran tarjetas de negocio inventadas. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
 
 ## Criterio de promoción en Development
 
@@ -129,7 +133,7 @@ Un tag mutable o un redeploy manual no constituye una identidad de release. El c
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
 
-Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional completo: autenticación, tenant, operaciones actuales y contratos usan el contrato OpenAPI. El historial de vuelos, solicitudes y prefacturas publicadas pertenece todavía a esta rama sin promocionar; Documentos y Reportes aún son presentaciones sintéticas sin acciones. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
+Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional completo: autenticación, tenant, operaciones actuales y contratos usan el contrato OpenAPI. El historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes pertenecen todavía a esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
 
 El Dockerfile se construye desde la raíz del monorepo porque consume `packages/api-client`:
 

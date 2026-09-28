@@ -10,23 +10,11 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
+import { AirlineReportsPage } from "./AirlineReportsPage";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
   | "documents" | "finance" | "reports" | "profile";
-
-const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests" | "finance" | "documents">,
-  { title: string; description: string }> = {
-  reports: { title: "Reportes", description: "Los reportes todavía no están disponibles mediante la API del portal." },
-};
-
-const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows: [string, string, string][] }> = {
-  reports: {
-    metrics: [["Vuelos de ejemplo", "4"], ["Puntualidad", "50%"], ["Servicio", "67%"], ["Facturación", "US$413" ]],
-    rows: [["Operaciones completadas", "50%", "Indicador ilustrativo"],
-      ["Ejecución de servicios", "67%", "Indicador ilustrativo"]],
-  },
-};
 
 const REQUEST_STATUS_LABELS: Record<string, string> = {
   Submitted: "Recibida", InReview: "En revisión", Accepted: "Aceptada",
@@ -291,23 +279,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
 
   if (view === "documents") return <AirlineDocumentsPage key={actor.accountId} />;
 
-  const previewModule = MODULES[view];
-  const preview = PREVIEW[view];
-  return <div className={styles.page}>
-    <header className={styles.pageHeader}><span className={styles.kicker}>Portal de aerolíneas</span><h1>{previewModule.title}</h1>
-      <p>{previewModule.description}</p></header>
-    <section className={styles.demoBanner} role="status">
-      <strong>Datos de demostración · solo vista previa</strong>
-      <p>Los siguientes importes, registros e indicadores son sintéticos. No pertenecen a {bootstrap.name}; las acciones están deshabilitadas.</p>
-    </section>
-    <div className={styles.metrics}>{preview.metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
-    <section className={styles.panel} aria-label={`Vista previa de ${previewModule.title.toLowerCase()}`}>
-      <div className={styles.sectionHeading}><h2>Indicadores de ejemplo</h2>
-        <span className={styles.previewPill}>Sin conexión a datos reales</span></div>
-      <ul className={styles.previewRows}>{preview.rows.map(([code, title, description]) => <li key={code}>
-        <span className={styles.kicker}>{code}</span><strong>{title}</strong><p>{description}</p>
-        {view === "reports" && <div className={styles.previewBar}><span style={{ width: title === "50%" ? "50%" : "67%" }} /></div>}
-      </li>)}</ul>
-    </section>
-  </div>;
+  if (view === "reports") return <AirlineReportsPage key={actor.accountId}
+    airlineName={bootstrap.name} />;
+
+  return null;
 }
