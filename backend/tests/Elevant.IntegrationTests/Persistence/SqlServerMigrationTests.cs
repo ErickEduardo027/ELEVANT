@@ -4693,6 +4693,22 @@ public sealed class SqlServerMigrationTests
                 Assert.Null(await drafts.GetAsync(occAccountId,
                     created.DraftId.Value, cancellationToken));
             }
+            await using (var listScope = provider.CreateAsyncScope())
+            {
+                var list = listScope.ServiceProvider.GetRequiredService<IFinancePreinvoiceListStore>();
+                var page = await list.ListAsync(financeAccountId, stationId, 1, 20,
+                    cancellationToken);
+                Assert.NotNull(page);
+                var item = Assert.Single(page.Preinvoices);
+                Assert.Equal(created.DraftId, item.Id);
+                Assert.Equal("Draft", item.Status);
+                Assert.Equal(1, item.LineCount);
+                Assert.Equal(draft.Total, item.Total);
+                Assert.Null(await list.ListAsync(occAccountId, stationId, 1, 20,
+                    cancellationToken));
+                Assert.Null(await list.ListAsync(financeAccountId, Guid.NewGuid(), 1, 20,
+                    cancellationToken));
+            }
             Assert.Single(await inspection.AuditEntries.AsNoTracking()
                 .Where(item => item.EntityPublicId == created.DraftId &&
                     item.Action == "finance.preinvoice.draft.created")
@@ -4735,6 +4751,10 @@ public sealed class SqlServerMigrationTests
                     .ReadAsync(financePublicId, 0, 100, cancellationToken);
                 Assert.DoesNotContain(Assert.IsType<AccountChangePage>(page).Changes,
                     item => item.Resource == "finance_approved_services");
+                var preinvoices = readScope.ServiceProvider
+                    .GetRequiredService<IFinancePreinvoiceListStore>();
+                Assert.Null(await preinvoices.ListAsync(financePublicId, stationId, 1, 20,
+                    cancellationToken));
             }
         }
 

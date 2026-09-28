@@ -502,6 +502,27 @@ export interface FinanceApprovedServicesResponse {
   hasMore: boolean;
 }
 
+export interface FinancePreinvoiceListItem {
+  id: string;
+  airlineId: string;
+  airlineName: string;
+  stationId: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  lineCount: number;
+  createdAt: string;
+}
+
+export interface FinancePreinvoicePageData {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  preinvoices: FinancePreinvoiceListItem[];
+}
+
 export interface RampIncidentResponse {
   id: string;
   incidentType: string;
@@ -1711,6 +1732,12 @@ from?: string;
 to?: string;
 };
 
+export type ListFinancePreinvoicesParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
 export type GetGovernanceAuditParams = {
 page?: number;
 limit?: number;
@@ -2872,6 +2899,75 @@ export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServ
 
 
 
+export const getListFinancePreinvoicesUrl = (params: ListFinancePreinvoicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/preinvoices?${stringifiedParams}` : `/api/v1/finance/preinvoices`
+}
+
+export const listFinancePreinvoices = async (params: ListFinancePreinvoicesParams, options?: RequestInit): Promise<FinancePreinvoicePageData> => {
+
+  const res = await fetch(getListFinancePreinvoicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePreinvoicePageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreatePreinvoiceDraftUrl = () => {
+
+
+
+
+  return `/api/v1/finance/preinvoices`
+}
+
+export const createPreinvoiceDraft = async (createPreinvoiceDraftRequest?: CreatePreinvoiceDraftRequest, options?: RequestInit): Promise<CreatePreinvoiceDraftResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreatePreinvoiceDraftUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createPreinvoiceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetCurrentGovernancePermissionsUrl = () => {
 
 
@@ -3818,40 +3914,6 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
-  return data
-}
-
-
-
-export const getCreatePreinvoiceDraftUrl = () => {
-
-
-
-
-  return `/api/v1/finance/preinvoices`
-}
-
-export const createPreinvoiceDraft = async (createPreinvoiceDraftRequest?: CreatePreinvoiceDraftRequest, options?: RequestInit): Promise<CreatePreinvoiceDraftResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getCreatePreinvoiceDraftUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createPreinvoiceDraftRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -136,6 +136,11 @@ inmutables de cantidad y tarifa. La solicitud tiene clave idempotente; el
 detalle y la auditoría se guardan en SQL. Todavía no hay conciliación,
 factura, pago ni recibo, y esto no acredita un despliegue al VPS.
 
+La lista interna de prefacturas se consulta por estación con rol Finanzas,
+membresía AVIAM y grant vigente. Devuelve páginas acotadas y detalles de
+snapshots persistidos; no concede aprobación ni envío por sí misma. El
+antiguo adaptador `/api/finance/preinvoices` de la pantalla activa se retiró.
+
 Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La
 API deriva la organización de la membresía y filtra por `AirlineId` en SQL;
 solo expone estados publicados (`Submitted`, `Disputed`, `Accepted`, `Invoiced`).

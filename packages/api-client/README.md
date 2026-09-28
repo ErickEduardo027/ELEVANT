@@ -44,6 +44,11 @@ una clave UUID estable con 1–100 servicios y valida el ID guardado;
 persistente y su estación. Solo Finanzas interna autorizada puede usar estos
 contratos. El borrador aún no es factura, pago ni recibo.
 
+`getFinancePreinvoices({ stationId, page?, limit? })` lista hasta 50 prefacturas
+internas por página para la estación con grant vigente de Finanzas. El wrapper
+valida estado, importes, fechas, conteo de líneas y que cada fila pertenece a
+la estación pedida. La API no acepta un tenant suministrado por el cliente.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores

@@ -22,7 +22,7 @@ promocionar el VPS desde el agente; el operador ejecutará cada checkpoint.
 | --- | --- | --- |
 | OCC | planificación, revisión, chat y notificaciones usan `/api/v1` | dashboard con fixture; monitoreo/mapa mezclan planificación con datos estáticos; reportes no son historial financiero |
 | Contratos | inicio, ingreso, catálogo, borradores, confirmación de tarifas y medios comerciales usan `/api/v1`; esta rama añade lectura protegida de acuerdos aprobados para Contratos, Servicios pactados y Reportes | comunicaciones locales; sin comandos reales de edición de acuerdos publicados |
-| Finanzas | servicios aprobados y borrador de prefactura usan `/api/v1/finance` | inicio, conciliación y tarifas son locales; prefacturación heredada llama `/api/finance/preinvoices` y reportes `/api/finance/reports`, ausentes del OpenAPI |
+| Finanzas | servicios aprobados, borrador y listado interno paginado de prefacturas usan `/api/v1/finance` | inicio, conciliación, tarifas y reportes todavía son locales; el reporte heredado llama `/api/finance/reports`, ausente del OpenAPI |
 | Gestión Humana | sesión y perfil base de agente de rampa con estaciones usan API y DB; #116 vinculó el rol `RAMP_AGENT` mediante Superadministración | dashboard con fixture; terminales, turnos, permisos y cualificaciones aún necesitan interfaz canónica; los módulos heredados llaman `/api/hr/*` |
 | Superadministrador | gobierno, provisión, gestión de aerolíneas y medios de logos/avatares usan `/api/v1` | comprobar en vivo estados, auditoría y flujos de cuentas nuevas |
 | Aerolínea | sesión, bootstrap, contratos y comentarios de borrador usan API canónica; esta rama agrega historial paginado, detalle básico, lectura de solicitudes y prefacturas publicadas tenant-scoped | crear/cancelar solicitudes, documentos, factura/recibo y reportes siguen pendientes; el detalle aún no contiene servicios ni evidencia aprobada |
@@ -84,6 +84,18 @@ monta en la configuración de prueba; el gate en navegador debe capturarla.
    repetición del seed no cambia filas existentes ni duplica registros.
 
 ## Tramo 3: cierre financiero no fiscal
+
+### Corte de prefacturas internas (solo lectura)
+
+Antes de habilitar estados financieros nuevos, publicar `GET /api/v1/finance/preinvoices`
+con `stationId`, `page` y `limit`. La lectura exige rol Finanzas, membresía interna
+y concesión vigente de esa estación; devuelve únicamente prefacturas de esa
+estación en orden estable, con conteo de líneas y snapshot monetario. La vista
+activa de Pre-facturación sustituye `/api/finance/preinvoices` por esta consulta
+y el detalle canónico existente. Crear se mantiene en Servicios aprobados, con
+selección y clave idempotente; aprobar/enviar no se ofrecen hasta implementar
+sus transiciones auditadas. Probar HTTP, SQL, cliente generado, paginación,
+estados vacíos/errores y que la vista no llama la ruta heredada.
 
 1. A partir de los `commercial.preinvoices` con snapshots inmutables, agregar
    revisión, disputa, resolución y conciliación auditadas. Solo líneas con

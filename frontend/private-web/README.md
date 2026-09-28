@@ -112,9 +112,9 @@ Los resúmenes de Contratos y Finanzas son vistas sintéticas de solo lectura,
 señalizadas en la interfaz. No consultan los antiguos endpoints
 `/api/notifications` ni `/api/finance/summary`, ausentes del OpenAPI canónico.
 El icono de notificaciones de esos dos departamentos permanece oculto hasta
-que exista un feed autorizado para sus roles. Los módulos profundos de ambos
-departamentos siguen siendo prototipos y no deben interpretarse como consultas
-persistentes ni como un circuito completo sin endpoints heredados.
+que exista un feed autorizado para sus roles. Los módulos profundos no
+enumerados como integrados abajo siguen siendo prototipos y no deben
+interpretarse como un circuito completo sin endpoints heredados.
 
 En la rama de integración, **Finanzas → Servicios aprobados** es una excepción
 concreta a esa descripción histórica: consulta la API versionada con estación
@@ -128,6 +128,14 @@ las reservas de otros usuarios; un intento incierto conserva su clave para
 reintentar sin duplicar. El detalle se lee de nuevo de la API, no del estado
 del navegador. La prefactura no es una factura ni un recibo: conciliación,
 emisión y cobro siguen pendientes. No se ha promovido al VPS.
+
+**Finanzas → Pre-facturación** consulta `GET /api/v1/finance/preinvoices`
+por estación autorizada y página. Muestra importes, estado y número de líneas
+persistidos, y abre el detalle canónico; revalida por feed durable, foco y
+polling de 25 segundos. Retira el servicio simulado `/api/finance/preinvoices`
+y sus botones ficticios de aprobación/envío. La creación real permanece en
+Servicios aprobados. El inicio, conciliación, tarifas y reportes financieros
+todavía necesitan migración; sus datos sintéticos no se presentan como saldos.
 
 ## Imagen de Development
 

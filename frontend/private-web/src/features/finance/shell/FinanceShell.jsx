@@ -41,7 +41,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
 
   return (
     <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
-      <Sidebar modules={FINANCE_MODULES} activeModuleId={activeModuleId} onSelectModule={handleSelectModule} badgeCounts={{ [FINANCE_MODULE_IDS.PREINVOICES]: home.data?.kpis?.draftPreinvoices ?? 0, [FINANCE_MODULE_IDS.RECONCILIATION]: home.data?.kpis?.reconciliationDifferences ?? 0 }} user={user} onLogout={onLogout} breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded} overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
+      <Sidebar modules={FINANCE_MODULES} activeModuleId={activeModuleId} onSelectModule={handleSelectModule} badgeCounts={{}} user={user} onLogout={onLogout} breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded} overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">

@@ -116,6 +116,15 @@ reserva de otro usuario y un reintento conserva su clave idempotente.
 Conciliación, emisión de factura y recibo siguen pendientes; no se ha
 promovido esta rama al VPS.
 
+**Finanzas → Pre-facturación** ahora lista por estación las prefacturas
+persistidas mediante `GET /api/v1/finance/preinvoices` y abre su detalle
+canónico. La lista exige el rol Finanzas, membresía interna y concesión de
+estación vigente; revalida por feed, foco y polling. Ya no monta
+`/api/finance/preinvoices` ni acciones locales de aprobar/enviar. Los badges
+del shell no repiten cifras sintéticas. El inicio y los módulos de
+conciliación, tarifas y reportes siguen siendo prototipos, y no se ha
+promovido esta rama.
+
 ## Desarrollo local
 
 Desde `frontend/private-web`:
