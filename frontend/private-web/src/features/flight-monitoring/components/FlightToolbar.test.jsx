@@ -35,6 +35,14 @@ describe('FlightToolbar', () => {
     expect(screen.getByLabelText('Destino')).toBeInTheDocument();
   });
 
+  it('labels the station filter with the selected station, never a fixed airport', () => {
+    render(<FlightToolbar stationCode="SDQ" connection="connected" lastUpdatedAt={null}
+      onRefresh={() => {}} filters={FILTERS} onFilterChange={() => {}}
+      options={OPTIONS} onlyStationRelated={false} onToggleStationRelated={() => {}} />);
+    expect(screen.getByText('Solo vuelos relacionados con SDQ')).toBeInTheDocument();
+    expect(screen.queryByText('Solo vuelos relacionados con PUJ')).not.toBeInTheDocument();
+  });
+
   it('does not render a search box (that lives in FlightListPanel)', () => {
     render(
       <FlightToolbar

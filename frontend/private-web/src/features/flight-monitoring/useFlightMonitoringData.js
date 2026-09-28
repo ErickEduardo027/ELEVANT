@@ -5,50 +5,82 @@ function mergeUpdate(flights, update) {
   return flights.map(flight => (flight.id === update.id ? { ...flight, ...update } : flight));
 }
 
-export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0, forceDisconnected = false) {
-  const [state, setState] = useState({ status: 'loading', data: null, error: null });
+export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0,
+  forceDisconnected = false, accountId = null) {
+  const scopeKey = `${accountId ?? ''}|${stationCode ?? ''}`;
+  const [state, setState] = useState({ status: 'loading', data: null, error: null, scopeKey });
   const [connection, setConnection] = useState('syncing');
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading', data: null, error: null });
+    if (!stationCode) {
+      setState({ status: 'error', data: null,
+        error: new Error('No hay una estación OCC autorizada.'), scopeKey });
+      return undefined;
+    }
+    setState({ status: 'loading', data: null, error: null, scopeKey });
     setConnection('syncing');
 
     getFlightMonitoringSnapshot(stationCode)
       .then(data => {
         if (cancelled) return;
-        setState({ status: 'success', data, error: null });
+        if (data.station?.code !== stationCode) {
+          throw new Error('La respuesta no coincide con la estación seleccionada.');
+        }
+        setState({ status: 'success', data, error: null, scopeKey });
         setConnection('connected');
         setLastUpdatedAt(new Date().toISOString());
       })
       .catch(error => {
         if (cancelled) return;
-        setState({ status: 'error', data: null, error });
+        setState({ status: 'error', data: null, error, scopeKey });
         setConnection('disconnected');
       });
 
     return () => {
       cancelled = true;
     };
-  }, [stationCode, refreshToken]);
+  }, [stationCode, refreshToken, scopeKey]);
 
   useEffect(() => {
-    // Matches the design spec: forcing a "disconnected" preview state stops the simulated
-    // update feed until reconnected, instead of merely relabeling the connection banner.
-    if (state.status !== 'success' || forceDisconnected) return undefined;
+    if (!stationCode || forceDisconnected) return undefined;
+    let stopped = false;
 
     const unsubscribe = subscribeToFlightUpdates(update => {
+      if (stopped) return;
       setState(current =>
-        current.data
+        current.scopeKey === scopeKey && current.data
           ? { ...current, data: { ...current.data, flights: mergeUpdate(current.data.flights, update) } }
           : current
       );
       setLastUpdatedAt(new Date().toISOString());
+    }, stationCode, {
+      onSnapshot: snapshot => {
+        if (stopped) return;
+        if (snapshot.station?.code !== stationCode) {
+          setState({ status: 'error', data: null,
+            error: new Error('La respuesta no coincide con la estación seleccionada.'), scopeKey });
+          setConnection('disconnected');
+          return;
+        }
+        setState({ status: 'success', data: snapshot, error: null, scopeKey });
+        setConnection('connected');
+        setLastUpdatedAt(new Date().toISOString());
+      },
+      onError: error => {
+        if (stopped) return;
+        setState({ status: 'error', data: null, error, scopeKey });
+        setConnection('disconnected');
+        setLastUpdatedAt(null);
+      },
     });
 
-    return unsubscribe;
-  }, [state.status, forceDisconnected]);
+    return () => {
+      stopped = true;
+      unsubscribe();
+    };
+  }, [scopeKey, stationCode, forceDisconnected]);
 
   async function changeFlightStatus(flightId, status) {
     const updated = await updateFlightStatus(flightId, status);
@@ -59,5 +91,8 @@ export function useFlightMonitoringData(stationCode = 'PUJ', refreshToken = 0, f
     return updated;
   }
 
-  return { status: state.status, data: state.data, error: state.error, connection, lastUpdatedAt, changeFlightStatus };
+  return state.scopeKey === scopeKey
+    ? { status: state.status, data: state.data, error: state.error, connection, lastUpdatedAt, changeFlightStatus }
+    : { status: 'loading', data: null, error: null, connection: 'syncing',
+      lastUpdatedAt: null, changeFlightStatus };
 }

@@ -22,6 +22,7 @@ function FilterSelect({ label, value, onChange, options, formatOption = option =
 }
 
 export default function FlightToolbar({
+  stationCode = 'PUJ',
   source,
   connection,
   lastUpdatedAt,
@@ -58,7 +59,7 @@ export default function FlightToolbar({
             onChange={event => onToggleStationRelated(event.target.checked)}
             className="h-4 w-4 rounded accent-accent-600"
           />
-          Solo vuelos relacionados con PUJ
+          Solo vuelos relacionados con {stationCode}
         </label>
       </div>
     </div>

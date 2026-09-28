@@ -16,7 +16,7 @@ function matchesFilters(flight, filters) {
   return true;
 }
 
-export function useFlightMonitoringFilters(flights) {
+export function useFlightMonitoringFilters(flights, stationCode = 'PUJ') {
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [activeChip, setActiveChip] = useState('all');
   const [onlyStationRelated, setOnlyStationRelated] = useState(false);
@@ -30,8 +30,8 @@ export function useFlightMonitoringFilters(flights) {
       flights
         .filter(flight => matchesFilters(flight, filters))
         .filter(flight => matchesChip(flight, activeChip))
-        .filter(flight => !onlyStationRelated || isStationRelated(flight)),
-    [flights, filters, activeChip, onlyStationRelated]
+        .filter(flight => !onlyStationRelated || isStationRelated(flight, stationCode)),
+    [flights, filters, activeChip, onlyStationRelated, stationCode]
   );
 
   return { filters, setFilter, activeChip, setActiveChip, onlyStationRelated, setOnlyStationRelated, filteredFlights };
