@@ -97,13 +97,6 @@ export interface AirlineEnrichmentResult {
   failure?: CatalogMutationFailure | null;
 }
 
-export interface AirlinePortalStationResponse {
-  id: string;
-  code: string;
-  name: string;
-  ianaTimeZone: string;
-}
-
 export interface AirlinePortalOperationResponse {
   id: string;
   code: string;
@@ -119,6 +112,20 @@ export interface AirlinePortalOperationResponse {
   plannedStartAt?: string | null;
   /** @nullable */
   plannedEndAt?: string | null;
+}
+
+export interface AirlineOperationPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  operations: AirlinePortalOperationResponse[];
+}
+
+export interface AirlinePortalStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
 }
 
 export interface AirlinePortalBootstrapResponse {
@@ -1572,6 +1579,11 @@ after?: string;
 limit?: number;
 };
 
+export type GetAirlineOperationsParams = {
+page?: number;
+limit?: number;
+};
+
 export type GetAirlineContractsParams = {
 page?: number;
 limit?: number;
@@ -1681,6 +1693,69 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}`
+}
+
+export const getAirlineOperation = async (operationId: string, options?: RequestInit): Promise<AirlinePortalOperationResponse> => {
+
+  const res = await fetch(getGetAirlineOperationUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalOperationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationsUrl = (params?: GetAirlineOperationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/operations?${stringifiedParams}` : `/api/v1/airline/portal/operations`
+}
+
+export const getAirlineOperations = async (params?: GetAirlineOperationsParams, options?: RequestInit): Promise<AirlineOperationPageResponse> => {
+
+  const res = await fetch(getGetAirlineOperationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineOperationPageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

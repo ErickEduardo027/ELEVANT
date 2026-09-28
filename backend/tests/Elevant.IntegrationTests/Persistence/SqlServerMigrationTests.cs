@@ -825,6 +825,7 @@ public sealed class SqlServerMigrationTests
             rate.BillingUnit == "operation");
         Assert.Null(await store.GetContractsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
 
+        Guid foreignOperationId;
         await using (var update = CreateContext(database.ConnectionString))
         {
             var contract = await update.Contracts.SingleAsync(item =>
@@ -905,7 +906,7 @@ public sealed class SqlServerMigrationTests
             };
             update.Contracts.Add(foreignContract);
             await update.SaveChangesAsync(cancellationToken);
-            update.ContractVersions.Add(new ContractVersion
+            var foreignVersion = new ContractVersion
             {
                 PublicId = Guid.NewGuid(),
                 ContractId = foreignContract.Id,
@@ -913,6 +914,38 @@ public sealed class SqlServerMigrationTests
                 Status = ContractVersionStatus.Approved,
                 ValidFrom = new DateOnly(2026, 1, 1),
                 CurrencyCode = "USD",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.ContractVersions.Add(foreignVersion);
+            await update.SaveChangesAsync(cancellationToken);
+            var pujStation = await update.Stations.SingleAsync(
+                station => station.Code == "PUJ", cancellationToken);
+            update.Set<ContractVersionStation>().Add(new ContractVersionStation
+            {
+                ContractVersionId = foreignVersion.Id,
+                StationId = pujStation.Id,
+            });
+            var foreignTurnaround = new Turnaround
+            {
+                PublicId = Guid.NewGuid(),
+                OperationCode = "AAA-TAT-FOREIGN",
+                AirlineId = foreignAirline.Id,
+                StationId = pujStation.Id,
+                OperationDate = new DateOnly(2026, 8, 19),
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            update.Turnarounds.Add(foreignTurnaround);
+            await update.SaveChangesAsync(cancellationToken);
+            foreignOperationId = Guid.NewGuid();
+            update.GroundOperations.Add(new GroundOperation
+            {
+                PublicId = foreignOperationId,
+                TurnaroundId = foreignTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Assigned,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
@@ -929,6 +962,30 @@ public sealed class SqlServerMigrationTests
         Assert.False(secondPage.HasMore);
         Assert.Equal("DEV-CONTRACT-0002", Assert.Single(secondPage.Contracts).Code);
         Assert.Empty((await store.GetContractsAsync(organizationId, 3, 1, cancellationToken))!.Contracts);
+
+        var firstOperationPage = await store.GetOperationsAsync(
+            organizationId, 1, 1, cancellationToken);
+        Assert.NotNull(firstOperationPage);
+        Assert.True(firstOperationPage.HasMore);
+        Assert.Equal("DEV-TAT-0002", Assert.Single(firstOperationPage.Operations).Code);
+
+        var secondOperationPage = await store.GetOperationsAsync(
+            organizationId, 2, 1, cancellationToken);
+        Assert.NotNull(secondOperationPage);
+        Assert.False(secondOperationPage.HasMore);
+        Assert.Equal("DEV-TAT-0001", Assert.Single(secondOperationPage.Operations).Code);
+        var historicalOperationId = Assert.Single(secondOperationPage.Operations).Id;
+        var detail = await store.GetOperationAsync(
+            organizationId, historicalOperationId, cancellationToken);
+        Assert.NotNull(detail);
+        Assert.Equal("DEV-TAT-0001", detail.Code);
+        Assert.Null(await store.GetOperationAsync(
+            organizationId, Guid.NewGuid(), cancellationToken));
+        Assert.Null(await store.GetOperationAsync(
+            Guid.NewGuid(), historicalOperationId, cancellationToken));
+        Assert.Null(await store.GetOperationAsync(
+            organizationId, foreignOperationId, cancellationToken));
+        Assert.Null(await store.GetOperationsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
     }
 
     [Fact]

@@ -135,3 +135,61 @@ describe("airline contract client", () => {
     await expect(client.getAirlineContracts()).rejects.toMatchObject({ kind: "malformed-response" });
   });
 });
+
+describe("airline operation history client", () => {
+  const history = {
+    page: 2, limit: 1, hasMore: false,
+    operations: [{ ...bootstrap.currentOperations[0], operationDate: "2026-08-18" }],
+  };
+
+  it("reads a bounded historical page without letting the browser choose a tenant", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url, init) => {
+        requests.push({ url: String(url), authorization: new Headers(init?.headers).get("authorization") });
+        return new Response(JSON.stringify(history), { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlineOperations({ page: 2, limit: 1 })).resolves.toEqual(history);
+    expect(requests).toEqual([{ url: "https://api.example.test/api/v1/airline/portal/operations?page=2&limit=1",
+      authorization: "Bearer airline-token" }]);
+    await expect(client.getAirlineOperations({ limit: 51 })).rejects.toBeInstanceOf(TypeError);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("rejects an unexpected tenant field in the historical payload", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...history,
+        operations: [{ ...history.operations[0], organizationId: crypto.randomUUID() }],
+      }), { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getAirlineOperations({ page: 2, limit: 1 })).rejects.toMatchObject({
+      kind: "malformed-response",
+    });
+  });
+
+  it("reads a historical operation by its public ID without a browser tenant", async () => {
+    const operation = { ...bootstrap.currentOperations[0], operationDate: "2026-08-18" };
+    const requests: string[] = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(JSON.stringify(operation),
+          { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlineOperation(operation.id!)).resolves.toEqual(operation);
+    expect(requests).toEqual([
+      `https://api.example.test/api/v1/airline/portal/operations/${operation.id}`,
+    ]);
+    await expect(client.getAirlineOperation("not-a-guid")).rejects.toBeInstanceOf(TypeError);
+    expect(requests).toHaveLength(1);
+  });
+});

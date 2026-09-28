@@ -32,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
         services.AddScoped<GetAirlineContractsHandler>();
+        services.AddScoped<GetAirlineOperationsHandler>();
+        services.AddScoped<GetAirlineOperationHandler>();
         services.AddScoped<SubmitCommercialRequestHandler>();
         services.AddScoped<GetFinanceApprovedServicesHandler>();
         services.AddScoped<CreatePreinvoiceDraftHandler>();

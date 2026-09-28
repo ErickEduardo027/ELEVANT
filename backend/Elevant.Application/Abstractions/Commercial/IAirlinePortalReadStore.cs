@@ -15,4 +15,15 @@ public interface IAirlinePortalReadStore
         int page,
         int limit,
         CancellationToken cancellationToken = default);
+
+    Task<AirlineOperationPageData?> GetOperationsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlinePortalOperationData?> GetOperationAsync(
+        Guid organizationId,
+        Guid operationId,
+        CancellationToken cancellationToken = default);
 }

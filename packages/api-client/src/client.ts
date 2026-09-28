@@ -1,6 +1,8 @@
 import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
+  getGetAirlineOperationsUrl,
+  getGetAirlineOperationUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
@@ -40,6 +42,8 @@ import {
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
+  type AirlineOperationPageResponse,
+  type AirlinePortalOperationResponse,
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
@@ -48,6 +52,7 @@ import {
   type CreatePreinvoiceDraftResponse,
   type PreinvoiceDraftResponse,
   type GetAirlineContractsParams,
+  type GetAirlineOperationsParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
@@ -122,6 +127,8 @@ export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -211,6 +218,14 @@ export interface ElevantApiClient {
     parameters?: GetAirlineContractsParams,
     options?: GetAirlineContractsOptions,
   ): Promise<AirlineContractPageResponse>;
+  getAirlineOperations(
+    parameters?: GetAirlineOperationsParams,
+    options?: GetAirlineOperationsOptions,
+  ): Promise<AirlineOperationPageResponse>;
+  getAirlineOperation(
+    operationId: string,
+    options?: GetAirlineOperationOptions,
+  ): Promise<AirlinePortalOperationResponse>;
   getPublicCommercialCatalog(
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
@@ -1716,6 +1731,34 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
           isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
 }
 
+function isAirlineOperationDetailResponse(value: unknown): value is AirlinePortalOperationResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "code", "stationId", "stationCode", "operationDate", "status",
+      "arrivalFlightNumber", "departureFlightNumber", "plannedStartAt", "plannedEndAt"]) &&
+    isUuid(value.id) && isNonEmptyString(value.code) && isUuid(value.stationId) &&
+    isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) &&
+    ["Planned", "Assigned", "InProgress", "PendingReview", "InReview",
+      "Approved", "Returned", "Cancelled"].includes(String(value.status)) &&
+    isOptionalNullable(value.arrivalFlightNumber, isNonEmptyString) &&
+    isOptionalNullable(value.departureFlightNumber, isNonEmptyString) &&
+    isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.plannedEndAt, isDateTimeOffset);
+}
+
+function isAirlineOperationPageResponse(value: unknown): value is AirlineOperationPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "operations"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.operations) || value.operations.length > value.limit ||
+      (value.hasMore && value.operations.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.operations.every((operation) => {
+    if (!isAirlineOperationDetailResponse(operation) || ids.has(operation.id)) return false;
+    ids.add(operation.id);
+    return true;
+  });
+}
+
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
   if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
       !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
@@ -1888,6 +1931,17 @@ function validatedAirlineContractParams(parameters: GetAirlineContractsParams): 
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
     (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
     throw new TypeError("Airline contract paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlineOperationParams(parameters: GetAirlineOperationsParams): GetAirlineOperationsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline operation paging is invalid.");
   return {
     ...(parameters.page === undefined ? {} : { page: parameters.page }),
     ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
@@ -2472,6 +2526,28 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAirlineContractPageResponse(result.data) ||
         result.data.page !== (paging.page ?? 1) ||
         result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperations(
+      parameters: GetAirlineOperationsParams = {}, options?: GetAirlineOperationsOptions,
+    ) {
+      const paging = validatedAirlineOperationParams(parameters);
+      const result = await execute(
+        getGetAirlineOperationsUrl(paging), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineOperationPageResponse(result.data) ||
+        result.data.page !== (paging.page ?? 1) ||
+        result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperation(operationId: string, options?: GetAirlineOperationOptions) {
+      if (!isUuid(operationId)) throw new TypeError("Operation ID must be a UUID.");
+      const result = await execute(
+        getGetAirlineOperationUrl(operationId), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineOperationDetailResponse(result.data) || result.data.id !== operationId)
         throw malformedResponse(result.status);
       return result.data;
     },

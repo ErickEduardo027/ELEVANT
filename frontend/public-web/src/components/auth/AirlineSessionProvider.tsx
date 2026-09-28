@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { ElevantApiError, type AirlineContractPageResponse,
-  type AirlinePortalBootstrapResponse, type SessionActorResponse } from "@elevant/api-client";
+import { ElevantApiError, type AirlineContractPageResponse, type AirlineOperationPageResponse,
+  type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
+  type SessionActorResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
@@ -36,6 +37,9 @@ interface AirlineSessionContextValue {
   signOut(): void;
   retry(): Promise<void>;
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
+  getOperations(page?: number): Promise<AirlineOperationPageResponse>;
+  getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
+  operationRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
   commentDraft(versionId: string, body: string): Promise<void>;
   draftRevision: number;
@@ -99,6 +103,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
   const [status, setStatus] = useState<AirlineSessionStatus>("loading");
   const [session, setSession] = useState<AirlineSessionData | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
+  const [operationRevision, setOperationRevision] = useState(0);
   const accountId = session?.actor.accountId;
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
@@ -165,7 +170,10 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     refreshing.current = true;
     try {
       const live = await load(record);
-      if (request === generation.current) setSession(live);
+      if (request === generation.current) {
+        setSession(live);
+        setOperationRevision(current => current + 1);
+      }
     } catch (error) {
       if (request === generation.current &&
           ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
@@ -263,6 +271,40 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const getOperations = useCallback(async (page = 1): Promise<AirlineOperationPageResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineOperations(
+          { page, limit: 20 }, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current &&
+          ["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
+  const getOperation = useCallback(async (operationId: string): Promise<AirlinePortalOperationResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineOperation(
+          operationId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const draftRequest = useCallback(async (path: string, options: RequestInit = {}) => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
@@ -295,7 +337,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, operationRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

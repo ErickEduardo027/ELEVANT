@@ -17,8 +17,81 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/airline/portal")]
 public sealed class AirlinePortalController(
     GetAirlinePortalBootstrapHandler bootstrapHandler,
-    GetAirlineContractsHandler contractsHandler) : ControllerBase
+    GetAirlineContractsHandler contractsHandler,
+    GetAirlineOperationsHandler operationsHandler,
+    GetAirlineOperationHandler operationHandler) : ControllerBase
 {
+    [HttpGet("operations/{operationId:guid}", Name = "GetAirlineOperation")]
+    [ProducesResponseType<AirlinePortalOperationResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlinePortalOperationResponse>> GetOperation(
+        Guid operationId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePortalOperationResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await operationHandler.HandleAsync(
+            accountId, operationId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePortalOperationResponse>(statusCode, title);
+        }
+
+        var operation = result.Operation!;
+        return Ok(new AirlinePortalOperationResponse(operation.Id, operation.Code,
+            operation.StationId, operation.StationCode, operation.OperationDate,
+            operation.Status, operation.ArrivalFlightNumber,
+            operation.DepartureFlightNumber, operation.PlannedStartAt,
+            operation.PlannedEndAt));
+    }
+
+    [HttpGet("operations", Name = "GetAirlineOperations")]
+    [ProducesResponseType<AirlineOperationPageResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlineOperationPageResponse>> GetOperations(
+        [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1 || page > 10_000 || limit is < 1 or > 50)
+            return ProblemResult<AirlineOperationPageResponse>(
+                StatusCodes.Status400BadRequest, "Invalid operation page.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineOperationPageResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await operationsHandler.HandleAsync(
+            accountId, page, limit, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineOperationPageResponse>(statusCode, title);
+        }
+
+        return Ok(new AirlineOperationPageResponse(page, limit, result.Page!.HasMore,
+            result.Page.Operations.Select(operation => new AirlinePortalOperationResponse(
+                operation.Id, operation.Code, operation.StationId,
+                operation.StationCode, operation.OperationDate, operation.Status,
+                operation.ArrivalFlightNumber, operation.DepartureFlightNumber,
+                operation.PlannedStartAt, operation.PlannedEndAt)).ToArray()));
+    }
+
     [HttpGet("contracts", Name = "GetAirlineContracts")]
     [ProducesResponseType<AirlineContractPageResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

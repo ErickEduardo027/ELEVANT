@@ -56,6 +56,19 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task OperationsRejectInvalidPagingInsteadOfReturningAnUnknownRoute()
+    {
+        await using var application = CreateApplication(CreateActor());
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            "/api/v1/airline/portal/operations?page=0",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ContractsUseLiveAirlineTenantAndOnlyApprovedVersions()
     {
         var state = new StubState(CreateActor())
@@ -121,6 +134,64 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task OperationsUseServerTenantAndReturnTheRequestedPage()
+    {
+        var operationId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            Operations = new AirlineOperationPageData(
+                [new AirlinePortalOperationData(operationId, "DEV-TAT-0002", StationId,
+                    "PUJ", new DateOnly(2026, 8, 19), "Approved", "ZZ102", "ZZ103",
+                    null, null)], false),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            "/api/v1/airline/portal/operations?page=2&limit=1",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(2, state.QueriedPage);
+        Assert.Equal(1, state.QueriedLimit);
+        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(2, json.RootElement.GetProperty("page").GetInt32());
+        Assert.Equal(operationId, json.RootElement.GetProperty("operations")[0].GetProperty("id").GetGuid());
+        Assert.Equal("ZZ102", json.RootElement.GetProperty("operations")[0]
+            .GetProperty("arrivalFlightNumber").GetString());
+    }
+
+    [Fact]
+    public async Task HistoricalOperationDetailUsesServerTenantAndExactOperationId()
+    {
+        var operationId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            DetailOperation = new AirlinePortalOperationData(operationId, "DEV-TAT-0001",
+                StationId, "PUJ", new DateOnly(2026, 8, 18), "Approved", "ZZ100",
+                "ZZ101", null, null),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/airline/portal/operations/{operationId:D}",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(operationId, state.QueriedOperationId);
+        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal("DEV-TAT-0001", json.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task OccRoleCannotQueryAirlineStore()
     {
         var actor = CreateActor() with
@@ -140,6 +211,17 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         using var contractResponse = await client.GetAsync(
             "/api/v1/airline/portal/contracts", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, contractResponse.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
+
+        using var operationsResponse = await client.GetAsync(
+            "/api/v1/airline/portal/operations", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, operationsResponse.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
+
+        using var detailResponse = await client.GetAsync(
+            $"/api/v1/airline/portal/operations/{Guid.NewGuid():D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, detailResponse.StatusCode);
         Assert.Null(state.QueriedOrganizationId);
     }
 
@@ -196,6 +278,12 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public AirlineContractPageData? Contracts { get; init; }
 
+        public AirlineOperationPageData? Operations { get; init; }
+
+        public AirlinePortalOperationData? DetailOperation { get; init; }
+
+        public Guid? QueriedOperationId { get; private set; }
+
         public Guid? QueriedOrganizationId { get; private set; }
 
         public int? QueriedPage { get; private set; }
@@ -219,6 +307,23 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedPage = page;
             QueriedLimit = limit;
             return Task.FromResult(Contracts);
+        }
+
+        public Task<AirlineOperationPageData?> GetOperationsAsync(
+            Guid organizationId, int page, int limit, CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedPage = page;
+            QueriedLimit = limit;
+            return Task.FromResult(Operations);
+        }
+
+        public Task<AirlinePortalOperationData?> GetOperationAsync(
+            Guid organizationId, Guid operationId, CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedOperationId = operationId;
+            return Task.FromResult(DetailOperation);
         }
     }
 }

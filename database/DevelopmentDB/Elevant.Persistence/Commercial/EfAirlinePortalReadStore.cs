@@ -10,6 +10,138 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>Applies tenant and contract-station predicates in SQL for portal bootstrap.</summary>
 internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirlinePortalReadStore
 {
+    public async Task<AirlinePortalOperationData?> GetOperationAsync(
+        Guid organizationId, Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            join turnaround in context.Turnarounds.AsNoTracking()
+                on airline.Id equals turnaround.AirlineId
+            join operation in context.GroundOperations.AsNoTracking()
+                on turnaround.Id equals operation.TurnaroundId
+            join station in context.Stations.AsNoTracking()
+                on turnaround.StationId equals station.Id
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive &&
+                  operation.PublicId == operationId &&
+                  (from contract in context.Contracts.AsNoTracking()
+                   join version in context.ContractVersions.AsNoTracking()
+                       on contract.Id equals version.ContractId
+                   join link in context.Set<ContractVersionStation>().AsNoTracking()
+                       on version.Id equals link.ContractVersionId
+                   where contract.AirlineId == airline.Id &&
+                         link.StationId == turnaround.StationId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         version.ValidFrom <= turnaround.OperationDate &&
+                         (version.ValidTo == null || version.ValidTo >= turnaround.OperationDate)
+                   select contract.Id).Any()
+            select new
+            {
+                TurnaroundId = turnaround.Id,
+                operation.PublicId,
+                turnaround.OperationCode,
+                StationId = station.PublicId,
+                StationCode = station.Code,
+                turnaround.OperationDate,
+                operation.CurrentStatus,
+                operation.PlannedStartAt,
+                operation.PlannedEndAt,
+            }).SingleOrDefaultAsync(cancellationToken);
+        if (row is null) return null;
+
+        var legs = await context.FlightLegs.AsNoTracking()
+            .Where(leg => leg.TurnaroundId == row.TurnaroundId)
+            .Select(leg => new { leg.Direction, leg.FlightNumber })
+            .ToArrayAsync(cancellationToken);
+        return new AirlinePortalOperationData(row.PublicId, row.OperationCode,
+            row.StationId, row.StationCode, row.OperationDate,
+            row.CurrentStatus.ToString(),
+            legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Arrival)?.FlightNumber,
+            legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Departure)?.FlightNumber,
+            row.PlannedStartAt, row.PlannedEndAt);
+    }
+
+    public async Task<AirlineOperationPageData?> GetOperationsAsync(
+        Guid organizationId, int page, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1 || limit is < 1 or > 50)
+            throw new ArgumentOutOfRangeException(nameof(page));
+
+        var airlineId = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive
+            select (long?)airline.Id).SingleOrDefaultAsync(cancellationToken);
+        if (airlineId is null) return null;
+
+        var rows = await (
+            from turnaround in context.Turnarounds.AsNoTracking()
+            join operation in context.GroundOperations.AsNoTracking()
+                on turnaround.Id equals operation.TurnaroundId
+            join station in context.Stations.AsNoTracking()
+                on turnaround.StationId equals station.Id
+            where turnaround.AirlineId == airlineId &&
+                  (from contract in context.Contracts.AsNoTracking()
+                   join version in context.ContractVersions.AsNoTracking()
+                       on contract.Id equals version.ContractId
+                   join link in context.Set<ContractVersionStation>().AsNoTracking()
+                       on version.Id equals link.ContractVersionId
+                   where contract.AirlineId == airlineId &&
+                         link.StationId == turnaround.StationId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         version.ValidFrom <= turnaround.OperationDate &&
+                         (version.ValidTo == null || version.ValidTo >= turnaround.OperationDate)
+                   select contract.Id).Any()
+            orderby turnaround.OperationDate descending,
+                turnaround.OperationCode, turnaround.PublicId
+            select new
+            {
+                TurnaroundId = turnaround.Id,
+                operation.PublicId,
+                turnaround.OperationCode,
+                StationId = station.PublicId,
+                StationCode = station.Code,
+                turnaround.OperationDate,
+                operation.CurrentStatus,
+                operation.PlannedStartAt,
+                operation.PlannedEndAt,
+            })
+            .Skip((page - 1) * limit).Take(limit + 1)
+            .ToArrayAsync(cancellationToken);
+        var selected = rows.Take(limit).ToArray();
+        var turnaroundIds = selected.Select(operation => operation.TurnaroundId).ToArray();
+        var legs = await context.FlightLegs.AsNoTracking()
+            .Where(leg => turnaroundIds.Contains(leg.TurnaroundId))
+            .Select(leg => new { leg.TurnaroundId, leg.Direction, leg.FlightNumber })
+            .ToArrayAsync(cancellationToken);
+
+        return new AirlineOperationPageData(
+            selected.Select(operation => new AirlinePortalOperationData(
+                operation.PublicId,
+                operation.OperationCode,
+                operation.StationId,
+                operation.StationCode,
+                operation.OperationDate,
+                operation.CurrentStatus.ToString(),
+                legs.FirstOrDefault(leg => leg.TurnaroundId == operation.TurnaroundId &&
+                    leg.Direction == FlightDirection.Arrival)?.FlightNumber,
+                legs.FirstOrDefault(leg => leg.TurnaroundId == operation.TurnaroundId &&
+                    leg.Direction == FlightDirection.Departure)?.FlightNumber,
+                operation.PlannedStartAt,
+                operation.PlannedEndAt)).ToArray(),
+            rows.Length > limit);
+    }
+
     public async Task<AirlineContractPageData?> GetContractsAsync(
         Guid organizationId, int page, int limit,
         CancellationToken cancellationToken = default)
