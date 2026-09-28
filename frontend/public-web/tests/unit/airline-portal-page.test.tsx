@@ -43,9 +43,14 @@ const initialRequestPage: AirlineOperationalRequestPageResponse = {
 };
 let requestPage = initialRequestPage;
 const getRequests = vi.fn(async () => requestPage);
+const getPreinvoices = vi.fn(async () => ({ page: 1, limit: 20, hasMore: false,
+  preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
+    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+    from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
+    status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, operationRevision: 0 }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, operationRevision: 0 }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -119,11 +124,20 @@ it("does not invent details for an operation outside the authorized tenant", asy
 });
 
 it("keeps modules without real API data read-only and honest", () => {
-  render(<AirlinePortalPage view="finance" />);
-  expect(screen.getByRole("heading", { level: 1, name: "Finanzas" })).toBeInTheDocument();
-  expect(screen.getByText(/todavía no está disponible/i)).toBeInTheDocument();
+  render(<AirlinePortalPage view="documents" />);
+  expect(screen.getByRole("heading", { level: 1, name: "Documentos" })).toBeInTheDocument();
+  expect(screen.getByText(/todavía no están disponibles/i)).toBeInTheDocument();
   expect(screen.getByText(/datos de demostración/i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /aceptar prefactura/i })).toBeDisabled();
+  for (const button of screen.getAllByRole("button", { name: /descargar documento/i }))
+    expect(button).toBeDisabled();
+});
+
+it("shows only published preinvoices returned by the authorized finance API", async () => {
+  render(<AirlinePortalPage view="finance" />);
+  expect(await screen.findByText("USD 125.50")).toBeInTheDocument();
+  expect(screen.getByText("PUJ · 2026-08-18 — 2026-08-19")).toBeInTheDocument();
+  expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
+  expect(screen.queryByText("DEMO-PRE-001")).not.toBeInTheDocument();
 });
 
 it("shows verified account and station scope in profile", () => {

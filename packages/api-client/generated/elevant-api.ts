@@ -163,6 +163,25 @@ export interface AirlinePortalBootstrapResponse {
   currentOperations: AirlinePortalOperationResponse[];
 }
 
+export interface AirlinePreinvoiceResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface AirlinePreinvoicePageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  preinvoices: AirlinePreinvoiceResponse[];
+}
+
 export interface AssignOccOperationRequest {
   agentId: string;
 }
@@ -1604,6 +1623,11 @@ after?: string;
 limit?: number;
 };
 
+export type GetAirlinePreinvoicesParams = {
+page?: number;
+limit?: number;
+};
+
 export type GetAirlineOperationalRequestsParams = {
 page?: number;
 limit?: number;
@@ -1723,6 +1747,41 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoicesUrl = (params?: GetAirlinePreinvoicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices`
+}
+
+export const getAirlinePreinvoices = async (params?: GetAirlinePreinvoicesParams, options?: RequestInit): Promise<AirlinePreinvoicePageResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePreinvoicePageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

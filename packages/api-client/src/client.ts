@@ -4,6 +4,7 @@ import {
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
   getGetAirlineOperationalRequestsUrl,
+  getGetAirlinePreinvoicesUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
@@ -46,6 +47,7 @@ import {
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
   type AirlineOperationalRequestPageResponse,
+  type AirlinePreinvoicePageResponse,
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
@@ -56,6 +58,7 @@ import {
   type GetAirlineContractsParams,
   type GetAirlineOperationsParams,
   type GetAirlineOperationalRequestsParams,
+  type GetAirlinePreinvoicesParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
@@ -133,6 +136,7 @@ export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -234,6 +238,10 @@ export interface ElevantApiClient {
     parameters?: GetAirlineOperationalRequestsParams,
     options?: GetAirlineOperationalRequestsOptions,
   ): Promise<AirlineOperationalRequestPageResponse>;
+  getAirlinePreinvoices(
+    parameters?: GetAirlinePreinvoicesParams,
+    options?: GetAirlinePreinvoicesOptions,
+  ): Promise<AirlinePreinvoicePageResponse>;
   getPublicCommercialCatalog(
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
@@ -1796,6 +1804,30 @@ function isAirlineOperationalRequestPageResponse(
   });
 }
 
+function isAirlinePreinvoicePageResponse(
+  value: unknown,
+): value is AirlinePreinvoicePageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.preinvoices) || value.preinvoices.length > value.limit ||
+      (value.hasMore && value.preinvoices.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.preinvoices.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "stationId", "stationCode", "from", "to", "currencyCode", "total",
+        "status", "createdAt"]) || !isUuid(item.id) || ids.has(item.id) ||
+        !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
+        !isDateOnly(item.from) || !isDateOnly(item.to) || item.from > item.to ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isFiniteNumber(item.total) || item.total < 0 ||
+        !["Submitted", "Disputed", "Accepted", "Invoiced"].includes(String(item.status)) ||
+        !isDateTimeOffset(item.createdAt)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
   if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
       !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
@@ -1992,6 +2024,19 @@ function validatedAirlineRequestParams(
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
     (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
     throw new TypeError("Airline request paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlinePreinvoiceParams(
+  parameters: GetAirlinePreinvoicesParams,
+): GetAirlinePreinvoicesParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline preinvoice paging is invalid.");
   return {
     ...(parameters.page === undefined ? {} : { page: parameters.page }),
     ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
@@ -2609,6 +2654,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetAirlineOperationalRequestsUrl(paging),
         { ...options, method: "GET" }, true);
       if (!isAirlineOperationalRequestPageResponse(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePreinvoices(
+      parameters: GetAirlinePreinvoicesParams = {},
+      options?: GetAirlinePreinvoicesOptions,
+    ) {
+      const paging = validatedAirlinePreinvoiceParams(parameters);
+      const result = await execute(getGetAirlinePreinvoicesUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isAirlinePreinvoicePageResponse(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);

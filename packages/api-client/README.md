@@ -27,6 +27,11 @@ para la única aerolínea derivada en la API de la sesión. El cliente valida
 estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
 un ID de tenant ni habilita acciones comerciales.
 
+`getAirlinePreinvoices({ page?, limit? })` consulta prefacturas publicadas y
+propias del tenant derivado por la API; no expone borradores de Finanzas. El
+cliente rechaza parámetros fuera de rango, estados internos y campos ajenos al
+contrato. Factura, pago y recibo siguen fuera de este contrato de lectura.
+
 `getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
 aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía
 una clave UUID estable con 1–100 servicios y valida el ID guardado;

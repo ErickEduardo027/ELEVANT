@@ -20,6 +20,7 @@ sources:
   - frontend/public-web/src/components/portal/PortalGuard.tsx
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
+  - frontend/public-web/src/components/portal/AirlineFinancePage.tsx
   - frontend/public-web/src/components/portal/AirlineContractPage.tsx
   - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
   - frontend/public-web/src/components/portal/PortalViews.tsx
@@ -60,7 +61,8 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. En esta rama de integración, Vuelos consulta además `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap; servicios y evidencias aún faltan. Este cambio aún no está desplegado. |
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
-| Documentos, finanzas y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y respuestas financieras permanecen deshabilitadas. |
+| Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted` o `Invoiced`) paginadas y filtradas por aerolínea en SQL. Los borradores internos no se exponen; disputa, factura, pago y recibo aún no están disponibles. |
+| Documentos y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y exportaciones permanecen deshabilitadas. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
@@ -78,10 +80,12 @@ flowchart LR
     Q --> R
     B --> C[API: contratos publicados de su tenant]
     C --> R
-    B --> P[Módulos visuales de demostración]
+    B --> F[API: prefacturas publicadas propias]
+    F --> R
+    B --> P[Documentos y reportes visuales de demostración]
 ```
 
-Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de Inicio, Vuelos y Solicitudes no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes carga la entidad operativa propia; un seed determinista de Development la vincula a `DEV-TAT-0002`. Documentos, Finanzas y Reportes siguen como vistas previas estáticas. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Las futuras consultas de documentos, finanzas y evidencia operativa, así como escrituras de solicitudes, requieren contratos, persistencia y pruebas de aislamiento antes de habilitar acciones.
+Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de Inicio, Vuelos, Solicitudes y Finanzas no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes carga la entidad operativa propia; un seed determinista de Development la vincula a `DEV-TAT-0002`. Finanzas muestra únicamente prefacturas publicadas propias y un vacío real si todavía no existen; la creación de borradores es interna y no los hace visibles a la aerolínea. Documentos y Reportes siguen como vistas previas estáticas. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Las futuras consultas de documentos, facturas, recibos y evidencia operativa, así como escrituras de solicitudes, requieren contratos, persistencia y pruebas de aislamiento antes de habilitar acciones.
 
 ## Desarrollo y evidencia
 

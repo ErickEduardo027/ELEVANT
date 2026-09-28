@@ -8,15 +8,15 @@ import { ElevantApiError, type AirlineOperationPageResponse,
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractPage } from "./AirlineContractPage";
+import { AirlineFinancePage } from "./AirlineFinancePage";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
   | "documents" | "finance" | "reports" | "profile";
 
-const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests">,
+const MODULES: Record<Exclude<View, "overview" | "flights" | "flightDetail" | "profile" | "contracts" | "requests" | "finance">,
   { title: string; description: string }> = {
   documents: { title: "Documentos", description: "Los documentos todavía no están disponibles mediante la API del portal." },
-  finance: { title: "Finanzas", description: "La información financiera todavía no está disponible mediante la API del portal." },
   reports: { title: "Reportes", description: "Los reportes todavía no están disponibles mediante la API del portal." },
 };
 
@@ -26,10 +26,6 @@ const PREVIEW: Record<keyof typeof MODULES, { metrics: [string, string][]; rows:
     rows: [["DEMO-DOC-001", "Reporte operativo de ejemplo", "PDF · no descargable"],
       ["DEMO-DOC-002", "Orden de servicio de ejemplo", "PDF · no descargable"],
       ["DEMO-DOC-003", "Evidencia en procesamiento", "Vista de ejemplo"]],
-  },
-  finance: {
-    metrics: [["Saldo de ejemplo", "US$1,770"], ["Prefacturas", "1"], ["Conciliaciones", "2"], ["Casos", "0"]],
-    rows: [["DEMO-PRE-001", "Prefactura de ejemplo", "Importe y estado sintéticos · sin efecto contable"]],
   },
   reports: {
     metrics: [["Vuelos de ejemplo", "4"], ["Puntualidad", "50%"], ["Servicio", "67%"], ["Facturación", "US$413" ]],
@@ -296,6 +292,9 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
   if (view === "requests") return <AirlineRequestsPage
     key={actor.accountId} airlineName={bootstrap.name} />;
 
+  if (view === "finance") return <AirlineFinancePage
+    key={actor.accountId} airlineName={bootstrap.name} />;
+
   const previewModule = MODULES[view];
   const preview = PREVIEW[view];
   return <div className={styles.page}>
@@ -307,13 +306,12 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     </section>
     <div className={styles.metrics}>{preview.metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
     <section className={styles.panel} aria-label={`Vista previa de ${previewModule.title.toLowerCase()}`}>
-      <div className={styles.sectionHeading}><h2>{view === "documents" ? "Archivos de ejemplo" : view === "finance" ? "Prefacturas de ejemplo" : view === "reports" ? "Indicadores de ejemplo" : `Registros de ejemplo`}</h2>
+      <div className={styles.sectionHeading}><h2>{view === "documents" ? "Archivos de ejemplo" : view === "reports" ? "Indicadores de ejemplo" : `Registros de ejemplo`}</h2>
         <span className={styles.previewPill}>Sin conexión a datos reales</span></div>
       <ul className={styles.previewRows}>{preview.rows.map(([code, title, description]) => <li key={code}>
         <span className={styles.kicker}>{code}</span><strong>{title}</strong><p>{description}</p>
         {view === "reports" && <div className={styles.previewBar}><span style={{ width: title === "50%" ? "50%" : "67%" }} /></div>}
         {view === "documents" && <button type="button" disabled>Descargar documento</button>}
-        {view === "finance" && <div className={styles.actions}><button type="button" disabled>Aceptar prefactura</button><button type="button" disabled>Disputar prefactura</button></div>}
       </li>)}</ul>
     </section>
   </div>;

@@ -1021,6 +1021,97 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task AirlinePreinvoiceReadExcludesDraftsAndOtherTenantsButKeepsPublishedHistory()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var organizationId = Guid.Parse("10000000-0000-7000-8000-000000000002");
+        var publishedId = Guid.NewGuid();
+        var olderId = Guid.NewGuid();
+        var draftId = Guid.NewGuid();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var airline = await setup.Airlines.SingleAsync(item =>
+                item.OrganizationId == setup.Organizations.Single(organization =>
+                    organization.PublicId == organizationId).Id, cancellationToken);
+            var station = await setup.Stations.SingleAsync(item => item.Code == "PUJ", cancellationToken);
+            var account = await setup.Users.SingleAsync(item =>
+                item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000006"), cancellationToken);
+            var otherOrganization = new Organization
+            {
+                PublicId = Guid.NewGuid(), Code = "OTHER-FINANCE-AIR",
+                LegalName = "Other Finance Airline", DisplayName = "Other Finance Airline",
+                Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            setup.Organizations.Add(otherOrganization);
+            await setup.SaveChangesAsync(cancellationToken);
+            var otherAirline = new Airline
+            {
+                PublicId = Guid.NewGuid(), OrganizationId = otherOrganization.Id,
+                IataCode = "XF", IcaoCode = "XFN", Name = "Other Finance Airline",
+                IsActive = true, CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            setup.Airlines.Add(otherAirline);
+            await setup.SaveChangesAsync(cancellationToken);
+
+            Preinvoice Create(Guid id, long airlineId, PreinvoiceStatus status, int day) => new()
+            {
+                PublicId = id, AirlineId = airlineId, StationId = station.Id,
+                CreatedByAccountId = account.Id, RequestId = Guid.NewGuid(),
+                PayloadHash = new string('a', 64), From = new DateOnly(2026, 8, day),
+                To = new DateOnly(2026, 8, day), CurrencyCode = "USD", Total = 125.50m,
+                Status = status,
+                CreatedAt = new DateTimeOffset(2026, 8, day, 12, 0, 0, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2026, 8, day, 12, 0, 0, TimeSpan.Zero),
+            };
+            setup.Preinvoices.AddRange(
+                Create(olderId, airline.Id, PreinvoiceStatus.Submitted, 18),
+                Create(publishedId, airline.Id, PreinvoiceStatus.Accepted, 19),
+                Create(draftId, airline.Id, PreinvoiceStatus.Draft, 20),
+                Create(Guid.NewGuid(), otherAirline.Id, PreinvoiceStatus.Submitted, 21));
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+        var first = await store.GetPreinvoicesAsync(organizationId, 1, 1, cancellationToken);
+        Assert.NotNull(first);
+        Assert.True(first.HasMore);
+        var latest = Assert.Single(first.Preinvoices);
+        Assert.Equal(publishedId, latest.Id);
+        Assert.Equal("Accepted", latest.Status);
+        Assert.Equal("PUJ", latest.StationCode);
+        Assert.Equal(125.50m, latest.Total);
+        var second = await store.GetPreinvoicesAsync(organizationId, 2, 1, cancellationToken);
+        Assert.NotNull(second);
+        Assert.False(second.HasMore);
+        Assert.Equal(olderId, Assert.Single(second.Preinvoices).Id);
+        Assert.Empty((await store.GetPreinvoicesAsync(organizationId, 3, 1,
+            cancellationToken))!.Preinvoices);
+        Assert.Null(await store.GetPreinvoicesAsync(Guid.NewGuid(), 1, 20, cancellationToken));
+    }
+
+    [Fact]
     public async Task ProductionSchemaStartsWithoutBusinessRows()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

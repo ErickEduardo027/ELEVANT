@@ -14,11 +14,14 @@ sources:
   - backend/Elevant.Domain/Entities/Commercial/ServiceRequest.cs
   - backend/Elevant.Domain/Entities/Commercial/Contract.cs
   - backend/Elevant.Domain/Entities/Commercial/ContractVersion.cs
+  - backend/Elevant.Domain/Entities/Commercial/Preinvoice.cs
+  - backend/Elevant.Domain/Enumerations/PreinvoiceStatus.cs
   - backend/Elevant.Domain/Entities/Operations/OperationalServiceRequest.cs
   - backend/Elevant.Domain/Enumerations/WorkforceCommercialEnums.cs
   - backend/Elevant.Domain/Enumerations/OperationsEnums.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/PreinvoiceConfiguration.cs
   - frontend/public-web/src/lib/portal/types.ts
   - backend/Elevant.Api/Controllers/AirlinePortalController.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
@@ -34,8 +37,8 @@ tags:
 ELEVANT modela dos tipos de solicitud con propósitos distintos. La solicitud comercial inicia o amplía una relación de servicio; la solicitud operativa pide resolver una necesidad dentro de una estación y, opcionalmente, una escala concreta.
 
 > El commit verificado del frontmatter describe la base anterior. Esta rama de
-> integración agrega únicamente una consulta tenant-scoped de solicitudes
-> operativas; no está promocionada ni habilita nuevas transiciones.
+> integración agrega consultas tenant-scoped de solicitudes operativas y
+> prefacturas publicadas; no está promocionada ni habilita nuevas transiciones.
 
 ## Dos procesos, dos identidades
 
@@ -130,6 +133,14 @@ moneda, y la API reserva cada línea fuente una sola vez con snapshots
 inmutables de cantidad y tarifa. La solicitud tiene clave idempotente; el
 detalle y la auditoría se guardan en SQL. Todavía no hay conciliación,
 factura, pago ni recibo, y esto no acredita un despliegue al VPS.
+
+Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La
+API deriva la organización de la membresía y filtra por `AirlineId` en SQL;
+solo expone estados publicados (`Submitted`, `Disputed`, `Accepted`, `Invoiced`).
+`Draft` y `Voided` no son visibles sin historial de publicación que distinga
+una anulación interna de una posterior al envío. La lectura conserva importes
+y fechas congelados tras vencer un contrato, pero no habilita por sí sola
+facturación, pago ni descargas.
 
 ## Diferencias con Public Web
 

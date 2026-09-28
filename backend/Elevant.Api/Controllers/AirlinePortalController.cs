@@ -20,8 +20,45 @@ public sealed class AirlinePortalController(
     GetAirlineContractsHandler contractsHandler,
     GetAirlineOperationsHandler operationsHandler,
     GetAirlineOperationHandler operationHandler,
-    GetAirlineOperationalRequestsHandler requestsHandler) : ControllerBase
+    GetAirlineOperationalRequestsHandler requestsHandler,
+    GetAirlinePreinvoicesHandler preinvoicesHandler) : ControllerBase
 {
+    [HttpGet("preinvoices", Name = "GetAirlinePreinvoices")]
+    [ProducesResponseType<AirlinePreinvoicePageResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlinePreinvoicePageResponse>> GetPreinvoices(
+        [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (page is < 1 or > 10_000 || limit is < 1 or > 50)
+            return ProblemResult<AirlinePreinvoicePageResponse>(
+                StatusCodes.Status400BadRequest, "Invalid preinvoice page.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePreinvoicePageResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await preinvoicesHandler.HandleAsync(
+            accountId, page, limit, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlinePreinvoicePageResponse>(statusCode, title);
+        }
+
+        return Ok(new AirlinePreinvoicePageResponse(page, limit, result.Page!.HasMore,
+            result.Page.Preinvoices.Select(item => new AirlinePreinvoiceResponse(
+                item.Id, item.StationId, item.StationCode, item.From, item.To,
+                item.CurrencyCode, item.Total, item.Status, item.CreatedAt)).ToArray()));
+    }
+
     [HttpGet("requests", Name = "GetAirlineOperationalRequests")]
     [ProducesResponseType<AirlineOperationalRequestPageResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

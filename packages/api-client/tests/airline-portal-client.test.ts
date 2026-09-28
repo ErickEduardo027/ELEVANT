@@ -241,3 +241,41 @@ describe("airline operational requests client", () => {
     }
   });
 });
+
+describe("published airline preinvoices client", () => {
+  const page = { page: 1, limit: 20, hasMore: false, preinvoices: [{
+    id: "74000000-0000-7000-8000-000000000001",
+    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+    from: "2026-08-18", to: "2026-08-19", currencyCode: "USD",
+    total: 125.5, status: "Submitted", createdAt: "2026-08-20T12:00:00Z",
+  }] };
+
+  it("reads a bounded tenant-derived page and rejects an internal draft", async () => {
+    const urls: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify(page),
+          { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlinePreinvoices({ page: 1, limit: 20 }))
+      .resolves.toEqual(page);
+    expect(urls).toEqual([
+      "https://api.example.test/api/v1/airline/portal/preinvoices?page=1&limit=20",
+    ]);
+    await expect(client.getAirlinePreinvoices({ limit: 51 }))
+      .rejects.toBeInstanceOf(TypeError);
+    expect(urls).toHaveLength(1);
+
+    const invalid = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...page,
+        preinvoices: [{ ...page.preinvoices[0], status: "Draft" }] }),
+        { headers: { "content-type": "application/json" } }),
+    });
+    await expect(invalid.getAirlinePreinvoices())
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
+});

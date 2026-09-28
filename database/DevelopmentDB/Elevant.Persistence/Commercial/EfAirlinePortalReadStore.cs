@@ -11,6 +11,48 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>Applies tenant and contract-station predicates in SQL for portal bootstrap.</summary>
 internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirlinePortalReadStore
 {
+    public async Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
+        Guid organizationId, int page, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (page is < 1 or > 10_000 || limit is < 1 or > 50)
+            throw new ArgumentOutOfRangeException(nameof(page));
+
+        var airlineId = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive
+            select (long?)airline.Id).SingleOrDefaultAsync(cancellationToken);
+        if (airlineId is null) return null;
+
+        var rows = await (
+            from item in context.Preinvoices.AsNoTracking()
+            join station in context.Stations.AsNoTracking()
+                on item.StationId equals station.Id
+            where item.AirlineId == airlineId &&
+                  (item.Status == PreinvoiceStatus.Submitted ||
+                   item.Status == PreinvoiceStatus.Disputed ||
+                   item.Status == PreinvoiceStatus.Accepted ||
+                   item.Status == PreinvoiceStatus.Invoiced)
+            orderby item.CreatedAt descending, item.Id descending
+            select new
+            {
+                item.PublicId, StationId = station.PublicId,
+                StationCode = station.Code, item.From, item.To,
+                item.CurrencyCode, item.Total, item.Status, item.CreatedAt,
+            }).Skip((page - 1) * limit).Take(limit + 1)
+            .ToArrayAsync(cancellationToken);
+
+        return new AirlinePreinvoicePageData(rows.Take(limit)
+            .Select(item => new AirlinePreinvoiceData(item.PublicId,
+                item.StationId, item.StationCode, item.From, item.To,
+                item.CurrencyCode, item.Total, item.Status.ToString(), item.CreatedAt))
+            .ToArray(), rows.Length > limit);
+    }
+
     public async Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
         Guid organizationId, int page, int limit,
         CancellationToken cancellationToken = default)

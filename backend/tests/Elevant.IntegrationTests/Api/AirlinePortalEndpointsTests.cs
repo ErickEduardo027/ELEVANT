@@ -87,6 +87,36 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task PublishedPreinvoicesUseServerTenantAndNeverReturnAnUnknownRoute()
+    {
+        var state = new StubState(CreateActor());
+        await using var application = CreateApplication(state);
+        using var anonymous = application.CreateClient();
+        using var unauthorized = await anonymous.GetAsync(
+            "/api/v1/airline/portal/preinvoices", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        using var client = CreateAuthenticatedClient(application);
+        using var response = await client.GetAsync(
+            "/api/v1/airline/portal/preinvoices?page=1&limit=20",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(1, state.QueriedPage);
+        Assert.Equal(20, state.QueriedLimit);
+        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1, json.RootElement.GetProperty("page").GetInt32());
+        Assert.Empty(json.RootElement.GetProperty("preinvoices").EnumerateArray());
+
+        using var badPage = await client.GetAsync(
+            "/api/v1/airline/portal/preinvoices?page=0", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
+    }
+
+    [Fact]
     public async Task ContractsUseLiveAirlineTenantAndOnlyApprovedVersions()
     {
         var state = new StubState(CreateActor())
@@ -272,6 +302,11 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             "/api/v1/airline/portal/requests", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, requestResponse.StatusCode);
         Assert.Null(state.QueriedOrganizationId);
+
+        using var financeResponse = await client.GetAsync(
+            "/api/v1/airline/portal/preinvoices", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, financeResponse.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
     }
 
     private WebApplicationFactory<Program> CreateApplication(ActorContext actor) =>
@@ -385,6 +420,17 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedPage = page;
             QueriedLimit = limit;
             return Task.FromResult(Requests);
+        }
+
+        public Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
+            Guid organizationId, int page, int limit,
+            CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedPage = page;
+            QueriedLimit = limit;
+            return Task.FromResult<AirlinePreinvoicePageData?>(
+                new AirlinePreinvoicePageData([], false));
         }
     }
 }
