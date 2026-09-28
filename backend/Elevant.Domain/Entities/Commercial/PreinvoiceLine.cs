@@ -28,4 +28,7 @@ public sealed class PreinvoiceLine : AuditableEntity
     public string CurrencyCode { get; set; } = string.Empty;
 
     public decimal Amount { get; set; }
+
+    /// <summary>Set only when a disputed preinvoice is voided; preserves its historical snapshot.</summary>
+    public DateTimeOffset? ReleasedAt { get; set; }
 }

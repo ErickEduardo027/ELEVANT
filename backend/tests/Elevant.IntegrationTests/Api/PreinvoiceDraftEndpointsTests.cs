@@ -66,6 +66,36 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task ExistingDisputeReadKeepsItsV1ShapeUnlessResolutionIsRequested()
+    {
+        var stub = new Stub
+        {
+            Disputes = [new Elevant.Application.Commercial.PreinvoiceDisputeData(
+                Guid.NewGuid(), "Charge disputed", "Incorrect quantity",
+                DateTimeOffset.UtcNow, [Guid.NewGuid()],
+                new Elevant.Application.Commercial.PreinvoiceDisputeResolutionData(
+                    Guid.NewGuid(), "Maintain", "Evidence checked", DateTimeOffset.UtcNow))],
+        };
+        await using var application = CreateApplication(stub);
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        var url = $"/api/v1/finance/preinvoices/{DraftId:D}/disputes";
+        using var legacy = await client.GetAsync(url, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        using var legacyBody = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.False(legacyBody.RootElement.GetProperty("disputes")[0]
+            .TryGetProperty("resolution", out _));
+        using var optedIn = await client.GetAsync(
+            url + "?includeResolutions=true", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, optedIn.StatusCode);
+        using var optedInBody = JsonDocument.Parse(await optedIn.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("Maintain", optedInBody.RootElement.GetProperty("disputes")[0]
+            .GetProperty("resolution").GetProperty("decision").GetString());
+    }
+
+    [Fact]
     public async Task RejectsUnauthenticatedAndInvalidSelections()
     {
         var stub = new Stub();
@@ -99,6 +129,38 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         Assert.True(json.RootElement.GetProperty("paths")
             .GetProperty("/api/v1/finance/preinvoices/{draftId}/submit")
             .TryGetProperty("post", out _));
+        Assert.True(json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/finance/preinvoices/{preinvoiceId}/resolution")
+            .TryGetProperty("post", out _));
+    }
+
+    [Fact]
+    public async Task FinanceCanResolveADisputeWithAnIdempotentAuditedDecision()
+    {
+        var stub = new Stub();
+        await using var application = CreateApplication(stub);
+        using var client = application.CreateClient();
+        var url = $"/api/v1/finance/preinvoices/{DraftId:D}/resolution";
+        using var anonymous = await client.PostAsJsonAsync(url,
+            new { requestId = Guid.NewGuid(), decision = "Maintain", reason = "Evidence checked" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var invalid = await client.PostAsJsonAsync(url,
+            new { requestId = Guid.NewGuid(), decision = "Accept", reason = "Evidence checked" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Null(stub.ResolveRequest);
+        var requestId = Guid.NewGuid();
+        using var response = await client.PostAsJsonAsync(url,
+            new { requestId, decision = "Maintain", reason = "Evidence checked" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal(requestId, stub.ResolveRequest?.RequestId);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("Submitted", body.RootElement.GetProperty("status").GetString());
     }
 
     [Fact]
@@ -236,6 +298,7 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IPreinvoiceDraftStore>();
             services.RemoveAll<IPreinvoiceSubmissionStore>();
+            services.RemoveAll<IPreinvoiceDisputeResolutionStore>();
             services.RemoveAll<IFinanceInvoiceIssueStore>();
             services.RemoveAll<INonFiscalInvoiceReadStore>();
             services.RemoveAll<INonFiscalPaymentStore>();
@@ -243,6 +306,7 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
             services.AddSingleton<IActorContextResolver>(stub);
             services.AddSingleton<IPreinvoiceDraftStore>(stub);
             services.AddSingleton<IPreinvoiceSubmissionStore>(stub);
+            services.AddSingleton<IPreinvoiceDisputeResolutionStore>(stub);
             services.AddSingleton<IFinanceInvoiceIssueStore>(stub);
             services.AddSingleton<INonFiscalInvoiceReadStore>(stub);
             services.AddSingleton<INonFiscalPaymentStore>(stub.Payment);
@@ -278,14 +342,27 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
     }
 
     private sealed class Stub : IActorContextResolver, IPreinvoiceDraftStore,
-        IPreinvoiceSubmissionStore, IFinanceInvoiceIssueStore, INonFiscalInvoiceReadStore
+        IPreinvoiceSubmissionStore, IPreinvoiceDisputeResolutionStore,
+        IFinanceInvoiceIssueStore, INonFiscalInvoiceReadStore
     {
         public PaymentStub Payment { get; } = new();
+        public IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData> Disputes { get; init; } = [];
         public CreatePreinvoiceDraftCommand? CreateRequest { get; private set; }
 
         public (Guid AccountId, Guid DraftId, Guid RequestId)? SubmitRequest { get; private set; }
 
         public IssueFinanceInvoiceCommand? IssueRequest { get; private set; }
+
+        public ResolvePreinvoiceDisputeCommand? ResolveRequest { get; private set; }
+
+        public Task<ResolvePreinvoiceDisputeResult> ResolveAsync(
+            ResolvePreinvoiceDisputeCommand command, CancellationToken cancellationToken = default)
+        {
+            ResolveRequest = command;
+            return Task.FromResult(ResolvePreinvoiceDisputeResult.Success(
+                Guid.NewGuid(), command.PreinvoiceId,
+                command.Decision == "Void" ? "Voided" : "Submitted", false));
+        }
 
         public Task<IssueFinanceInvoiceResult> IssueAsync(IssueFinanceInvoiceCommand command,
             CancellationToken cancellationToken = default)
@@ -340,7 +417,7 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         public Task<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?> GetDisputesAsync(
             Guid accountId, Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?>(
-                draftId == DraftId ? [] : null);
+                draftId == DraftId ? Disputes : null);
     }
 
     private sealed class PaymentStub : INonFiscalPaymentStore, INonFiscalPaymentReadStore

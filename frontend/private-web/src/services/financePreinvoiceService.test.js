@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   createPrivateWebApiClient: vi.fn(), readSession: vi.fn(),
   handleUnauthorizedResponse: vi.fn(), getFinancePreinvoices: vi.fn(),
   submitPreinvoice: vi.fn(), issueFinanceInvoice: vi.fn(),
+  resolveFinancePreinvoiceDispute: vi.fn(),
   getFinanceInvoiceByPreinvoice: vi.fn(),
   recordNonFiscalPayment: vi.fn(), getFinancePaymentByInvoice: vi.fn(),
 }));
@@ -17,7 +18,7 @@ vi.mock('../features/auth/authService', () => ({
 
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, recordNonFiscalPayment,
-  getFinancePaymentByInvoice } from './financePreinvoiceService';
+  getFinancePaymentByInvoice, resolveFinancePreinvoiceDispute } from './financePreinvoiceService';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -26,6 +27,7 @@ beforeEach(() => {
     getFinancePreinvoices: mocks.getFinancePreinvoices,
     submitPreinvoice: mocks.submitPreinvoice,
     issueFinanceInvoice: mocks.issueFinanceInvoice,
+    resolveFinancePreinvoiceDispute: mocks.resolveFinancePreinvoiceDispute,
     getFinanceInvoiceByPreinvoice: mocks.getFinanceInvoiceByPreinvoice,
     recordNonFiscalPayment: mocks.recordNonFiscalPayment,
     getFinancePaymentByInvoice: mocks.getFinancePaymentByInvoice,
@@ -93,4 +95,14 @@ it('records and reads a payment through the bearer-scoped API client', async () 
   expect(mocks.recordNonFiscalPayment).toHaveBeenCalledWith(request);
   expect(mocks.getFinancePaymentByInvoice).toHaveBeenCalledWith(
     request.invoiceId, { cache: 'no-store' });
+});
+
+it('sends a Finance dispute decision through the bearer-scoped API client', async () => {
+  const id = '10000000-0000-7000-8000-000000000001';
+  const request = { requestId: '10000000-0000-7000-8000-000000000002',
+    decision: 'Maintain', reason: 'Reviewed approved evidence' };
+  mocks.resolveFinancePreinvoiceDispute.mockResolvedValue({ preinvoiceId: id,
+    status: 'Submitted' });
+  await resolveFinancePreinvoiceDispute(id, request);
+  expect(mocks.resolveFinancePreinvoiceDispute).toHaveBeenCalledWith(id, request);
 });

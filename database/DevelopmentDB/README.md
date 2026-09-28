@@ -74,6 +74,20 @@ registros; las FKs son `NO ACTION`, no contiene DML ni simula liquidación
 bancaria. Las pruebas SQL comprueban concurrencia, replay, alcance y lectura
 tenant-scoped. Esta migración permanece en la rama local sin promoción.
 
+La migración `ResolvePreinvoiceDisputes` añade el historial inmutable
+`commercial.preinvoice_dispute_resolutions` y `released_at` a las líneas de
+prefactura. El índice único de `operation_service_id` protege solo reservas
+activas (`released_at IS NULL`); una anulación de disputa puede liberar las
+líneas sin borrar ni alterar sus snapshots y permitir una nueva prefactura del
+servicio. La lectura de elegibilidad y la creación del nuevo borrador excluyen
+líneas liberadas; la emisión de factura rechaza una línea liberada. La migración
+no contiene datos de negocio. Tras re-reservar un servicio, un downgrade al
+índice único anterior requiere resolver primero esos duplicados históricos;
+no se debe forzar la reversión ni borrar las líneas liberadas. `released_at`
+usa `datetimeoffset(3)`. El `Down` rechaza explícitamente la reversión si ya
+existe una resolución o línea liberada, antes de eliminar tablas o columnas;
+la recuperación de datos requiere el procedimiento de backup verificado. Sigue local.
+
 Desde cualquier directorio:
 
 ```powershell

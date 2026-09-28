@@ -86,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
         services.AddScoped<IPreinvoiceSubmissionStore, EfPreinvoiceSubmissionStore>();
+        services.AddScoped<IPreinvoiceDisputeResolutionStore, EfPreinvoiceDisputeResolutionStore>();
         services.AddScoped<IFinanceInvoiceIssueStore, EfFinanceInvoiceIssueStore>();
         services.AddScoped<INonFiscalInvoiceReadStore, EfNonFiscalInvoiceReadStore>();
         services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();

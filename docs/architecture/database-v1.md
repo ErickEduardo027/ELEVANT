@@ -88,8 +88,18 @@ La migración aditiva `PreinvoiceDisputes`, posterior a `PersonAvatarMedia`,
 conserva el motivo y las líneas cuestionadas de cada respuesta de aerolínea.
 Una transacción serializable cambia `Submitted` a `Disputed` y guarda la
 objeción, auditoría y pistas de cambio sin alterar los importes congelados.
-La resolución, conciliación, pago y recibo continúan pendientes; esta rama
-no está desplegada.
+`ResolvePreinvoiceDisputes` añade una decisión única por disputa, con clave
+idempotente, actor, motivo y auditoría. `Maintain` devuelve `Disputed` a
+`Submitted` para respuesta nueva de la aerolínea; `Void` pasa a `Voided` y
+marca las líneas como liberadas sin borrar sus snapshots. El índice único de
+servicio se filtra por reservas no liberadas, permitiendo refacturar después
+solo mediante un borrador nuevo. El portal conserva visibilidad de una anulada
+únicamente si existe la resolución `Void` de una disputa publicada; anulaciones
+internas no publicadas siguen ocultas. No hay ajuste parcial ni repricing.
+El rollback de `ResolvePreinvoiceDisputes` se detiene si hay resoluciones o
+líneas liberadas: esos hechos son historial, no datos descartables. La columna
+`released_at` conserva precisión UTC de milisegundos (`datetimeoffset(3)`).
+Conciliación y recibo continúan pendientes; esta rama no está desplegada.
 
 ## Factura no fiscal en la rama de integración
 
@@ -105,8 +115,9 @@ sin DML de negocio y aún no está desplegada.
 
 ## Diferido explícitamente
 
-- emisión fiscal, documentos PDF, pagos, recibos y ledger de conciliación;
-  la rama local ya modela prefactura y factura no fiscal con snapshots
+- emisión fiscal, documentos PDF, recibos y ledger de conciliación;
+  la rama local ya modela prefactura, factura no fiscal y anotación manual
+  de pago de Development con snapshots
   independientes, pero no las ha promovido al VPS;
 - notificaciones y chat;
 - documentos y evidencia binaria;

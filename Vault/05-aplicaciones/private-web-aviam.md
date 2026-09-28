@@ -21,6 +21,7 @@ sources:
   - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
+  - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/nginx/security-headers.conf
@@ -135,6 +136,16 @@ no fiscal. La API congela la factura y Finanzas relee número, líneas y total
 por una ruta de estación autorizada; la clave de intención se conserva para
 un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
 representa un PDF, impuesto ni recibo y aún no está promovido al VPS.
+
+En el worktree de integración, Finanzas puede responder a una disputa con
+motivo auditable: `Maintain` devuelve la prefactura a `Submitted` para una
+nueva respuesta de la aerolínea; `Void` la anula y libera las reservas de
+servicio sin borrar el snapshot. La UI exige confirmación y conserva el UUID
+de intención al reintentar, incluso si el foco o una señal de cambio recargan
+la lista durante la edición. El cliente solicita `includeResolutions=true`
+para mostrar la respuesta; la forma v1 sin ese parámetro sigue intacta.
+El estado se relee desde la API. Las pruebas
+locales no equivalen a CI verde ni a despliegue remoto.
 
 En esta rama, Finanzas puede registrar **un pago manual completo de prueba**
 contra una factura no fiscal ya emitida. La API revalida la cuenta y el alcance

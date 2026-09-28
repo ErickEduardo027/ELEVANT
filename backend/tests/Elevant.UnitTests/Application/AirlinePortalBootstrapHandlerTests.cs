@@ -142,15 +142,18 @@ public sealed class AirlinePortalBootstrapHandlerTests
             Task.FromResult<AirlineOperationalRequestPageData?>(null);
 
         public Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
-            Guid organizationId, int page, int limit, CancellationToken cancellationToken = default) =>
+            Guid organizationId, int page, int limit, bool includeVoided = false,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlinePreinvoicePageData?>(null);
 
         public Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
-            Guid organizationId, Guid preinvoiceId, CancellationToken cancellationToken = default) =>
+            Guid organizationId, Guid preinvoiceId, bool includeVoided = false,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlinePreinvoiceDetailData?>(null);
 
         public Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
-            Guid organizationId, Guid preinvoiceId, CancellationToken cancellationToken = default) =>
+            Guid organizationId, Guid preinvoiceId, bool includeVoided = false,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<PreinvoiceDisputeData>?>(null);
     }
 

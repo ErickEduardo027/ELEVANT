@@ -84,6 +84,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<PreinvoiceDispute> PreinvoiceDisputes => Set<PreinvoiceDispute>();
 
+    public DbSet<PreinvoiceDisputeResolution> PreinvoiceDisputeResolutions => Set<PreinvoiceDisputeResolution>();
+
     public DbSet<PreinvoiceDisputeLine> PreinvoiceDisputeLines => Set<PreinvoiceDisputeLine>();
 
     public DbSet<NonFiscalInvoice> NonFiscalInvoices => Set<NonFiscalInvoice>();

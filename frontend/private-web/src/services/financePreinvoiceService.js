@@ -23,6 +23,17 @@ export async function submitFinancePreinvoice(id) {
   }
 }
 
+export async function resolveFinancePreinvoiceDispute(preinvoiceId, request) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).resolveFinancePreinvoiceDispute(preinvoiceId, request);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
 export async function issueFinanceInvoice(request) {
   try {
     return await createPrivateWebApiClient({

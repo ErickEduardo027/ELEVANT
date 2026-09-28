@@ -37,15 +37,18 @@ public interface IAirlinePortalReadStore
         Guid organizationId,
         int page,
         int limit,
+        bool includeVoided = false,
         CancellationToken cancellationToken = default);
 
     Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
         Guid organizationId,
         Guid preinvoiceId,
+        bool includeVoided = false,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
         Guid organizationId,
         Guid preinvoiceId,
+        bool includeVoided = false,
         CancellationToken cancellationToken = default);
 }

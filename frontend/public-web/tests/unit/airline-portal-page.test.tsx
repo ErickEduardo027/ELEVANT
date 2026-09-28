@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ElevantApiError, type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
-  type NonFiscalPaymentLookupResponse, type SessionActorResponse } from "@elevant/api-client";
+  type NonFiscalPaymentLookupResponse, type PreinvoiceDisputeListResponse,
+  type SessionActorResponse } from "@elevant/api-client";
 
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
@@ -59,7 +60,8 @@ const getPreinvoice = vi.fn(async (id: string) => ({
     executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
 }));
 const acceptPreinvoice = vi.fn<(_id: string) => Promise<void>>(async () => {});
-const getPreinvoiceDisputes = vi.fn(async (id: string) => ({ preinvoiceId: id, disputes: [] }));
+const getPreinvoiceDisputes = vi.fn<(_id: string) => Promise<PreinvoiceDisputeListResponse>>(
+  async (id: string) => ({ preinvoiceId: id, disputes: [] }));
 const getPreinvoiceInvoice = vi.fn(async (id: string) => ({ preinvoiceId: id,
   id: '74000000-0000-7000-8000-000000000009',
   number: 'NF-74000000000070008000000000000009', kind: 'NonFiscal',
@@ -250,6 +252,61 @@ it("selects disputed lines and requires confirmation before submitting a real ob
       description: "La cantidad de GPU no coincide.",
       lineIds: ["74000000-0000-7000-8000-000000000002"],
       requestId: expect.any(String) }));
+});
+
+it("shows the Finance resolution and reason on a previously published preinvoice", async () => {
+  getPreinvoiceDisputes.mockResolvedValueOnce({
+    preinvoiceId: "74000000-0000-7000-8000-000000000001",
+    disputes: [{ id: "74000000-0000-7000-8000-000000000020",
+      subject: "Cantidad incorrecta", description: "La cantidad de GPU no coincide.",
+      createdAt: "2026-09-28T16:00:00Z",
+      lineIds: ["74000000-0000-7000-8000-000000000002"],
+      resolution: { id: "74000000-0000-7000-8000-000000000021",
+        decision: "Maintain", reason: "Servicio ejecutado según evidencia.",
+        resolvedAt: "2026-09-28T17:00:00Z" } }],
+  });
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  const record = await screen.findByLabelText(
+    "Disputa 74000000-0000-7000-8000-000000000020");
+  expect(within(record).getByText(/Finanzas mantuvo la prefactura/)).toBeInTheDocument();
+  expect(within(record).getByText(/Servicio ejecutado seg.*n evidencia/)).toBeInTheDocument();
+});
+
+it("keeps a voided preinvoice visible as read-only history", async () => {
+  getPreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
+      stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+      from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
+      status: "Voided", createdAt: "2026-08-20T12:00:00Z" }] });
+  getPreinvoice.mockResolvedValueOnce({
+    id: "74000000-0000-7000-8000-000000000001",
+    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
+    from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
+    status: "Voided", createdAt: "2026-08-20T12:00:00Z",
+    lines: [{ id: "74000000-0000-7000-8000-000000000002",
+      operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+      serviceCode: "GPU", serviceName: "Ground power",
+      executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
+  });
+  getPreinvoiceDisputes.mockResolvedValueOnce({
+    preinvoiceId: "74000000-0000-7000-8000-000000000001",
+    disputes: [{ id: "74000000-0000-7000-8000-000000000020",
+      subject: "Servicio ausente", description: "No se prestó el servicio.",
+      createdAt: "2026-09-28T16:00:00Z",
+      lineIds: ["74000000-0000-7000-8000-000000000002"],
+      resolution: { id: "74000000-0000-7000-8000-000000000021",
+        decision: "Void", reason: "Cargo anulado tras revisión.",
+        resolvedAt: "2026-09-28T17:00:00Z" } }],
+  });
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  const record = await screen.findByLabelText(
+    "Disputa 74000000-0000-7000-8000-000000000020");
+  expect(screen.getByText("Anulada")).toBeInTheDocument();
+  expect(within(record).getByText(/Finanzas anuló la prefactura/)).toBeInTheDocument();
+  expect(within(record).getByText(/Cargo anulado tras revisión/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Aceptar prefactura" })).not.toBeInTheDocument();
 });
 
 it("does not claim acceptance when the server reports a competing decision", async () => {

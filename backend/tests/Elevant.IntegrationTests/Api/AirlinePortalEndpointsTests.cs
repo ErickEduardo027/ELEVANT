@@ -658,7 +658,7 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
             Guid organizationId, int page, int limit,
-            CancellationToken cancellationToken = default)
+            bool includeVoided = false, CancellationToken cancellationToken = default)
         {
             QueriedOrganizationId = organizationId;
             QueriedPage = page;
@@ -669,7 +669,7 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
             Guid organizationId, Guid preinvoiceId,
-            CancellationToken cancellationToken = default)
+            bool includeVoided = false, CancellationToken cancellationToken = default)
         {
             QueriedOrganizationId = organizationId;
             return Task.FromResult(DetailPreinvoice?.Id == preinvoiceId
@@ -678,7 +678,7 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
 
         public Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
             Guid organizationId, Guid preinvoiceId,
-            CancellationToken cancellationToken = default)
+            bool includeVoided = false, CancellationToken cancellationToken = default)
         {
             QueriedOrganizationId = organizationId;
             return Task.FromResult<IReadOnlyList<PreinvoiceDisputeData>?>(

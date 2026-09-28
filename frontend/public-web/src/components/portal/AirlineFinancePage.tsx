@@ -15,6 +15,7 @@ const STATUS: Record<string, string> = {
   Disputed: "En disputa",
   Accepted: "Aceptada",
   Invoiced: "Facturada",
+  Voided: "Anulada",
 };
 
 function amount(currency: string, total: number) {
@@ -236,6 +237,11 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
               const line = detail.value?.lines.find(candidate => candidate.id === lineId);
               return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
             }).join(", ")}</p>
+            {itemDispute.resolution && <p role="status">
+              {itemDispute.resolution.decision === "Void"
+                ? "Finanzas anuló la prefactura." : "Finanzas mantuvo la prefactura."}
+              {" "}{itemDispute.resolution.reason}
+            </p>}
           </section>)}
           {detail.value.invoice && <InvoiceSummary invoice={detail.value.invoice}
             payment={detail.value.payment} />}

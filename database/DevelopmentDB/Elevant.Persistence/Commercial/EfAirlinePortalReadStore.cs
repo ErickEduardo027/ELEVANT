@@ -13,7 +13,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
 {
     public async Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
         Guid organizationId, Guid preinvoiceId,
-        CancellationToken cancellationToken = default)
+        bool includeVoided = false, CancellationToken cancellationToken = default)
     {
         if (organizationId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
         var internalId = await (
@@ -29,7 +29,12 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                   (item.Status == PreinvoiceStatus.Submitted ||
                    item.Status == PreinvoiceStatus.Disputed ||
                    item.Status == PreinvoiceStatus.Accepted ||
-                   item.Status == PreinvoiceStatus.Invoiced)
+                   item.Status == PreinvoiceStatus.Invoiced ||
+                   (includeVoided && item.Status == PreinvoiceStatus.Voided &&
+                    context.PreinvoiceDisputes.Any(dispute =>
+                        dispute.PreinvoiceId == item.Id &&
+                        context.PreinvoiceDisputeResolutions.Any(resolution =>
+                            resolution.DisputeId == dispute.Id && resolution.Decision == "Void"))))
             select (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
         return internalId is null ? null : await PreinvoiceDisputeReader.ReadAsync(
             context, internalId.Value, cancellationToken);
@@ -37,7 +42,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
 
     public async Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
         Guid organizationId, Guid preinvoiceId,
-        CancellationToken cancellationToken = default)
+        bool includeVoided = false, CancellationToken cancellationToken = default)
     {
         if (organizationId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
 
@@ -56,7 +61,12 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                   (item.Status == PreinvoiceStatus.Submitted ||
                    item.Status == PreinvoiceStatus.Disputed ||
                    item.Status == PreinvoiceStatus.Accepted ||
-                   item.Status == PreinvoiceStatus.Invoiced)
+                   item.Status == PreinvoiceStatus.Invoiced ||
+                   (includeVoided && item.Status == PreinvoiceStatus.Voided &&
+                    context.PreinvoiceDisputes.Any(dispute =>
+                        dispute.PreinvoiceId == item.Id &&
+                        context.PreinvoiceDisputeResolutions.Any(resolution =>
+                            resolution.DisputeId == dispute.Id && resolution.Decision == "Void"))))
             select new
             {
                 item.Id, item.PublicId, StationId = station.PublicId,
@@ -81,7 +91,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
 
     public async Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
         Guid organizationId, int page, int limit,
-        CancellationToken cancellationToken = default)
+        bool includeVoided = false, CancellationToken cancellationToken = default)
     {
         if (page is < 1 or > 10_000 || limit is < 1 or > 50)
             throw new ArgumentOutOfRangeException(nameof(page));
@@ -104,7 +114,12 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                   (item.Status == PreinvoiceStatus.Submitted ||
                    item.Status == PreinvoiceStatus.Disputed ||
                    item.Status == PreinvoiceStatus.Accepted ||
-                   item.Status == PreinvoiceStatus.Invoiced)
+                   item.Status == PreinvoiceStatus.Invoiced ||
+                   (includeVoided && item.Status == PreinvoiceStatus.Voided &&
+                    context.PreinvoiceDisputes.Any(dispute =>
+                        dispute.PreinvoiceId == item.Id &&
+                        context.PreinvoiceDisputeResolutions.Any(resolution =>
+                            resolution.DisputeId == dispute.Id && resolution.Decision == "Void"))))
             orderby item.CreatedAt descending, item.Id descending
             select new
             {

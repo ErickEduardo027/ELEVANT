@@ -237,7 +237,7 @@ internal sealed class EfPreinvoiceDraftStore(
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.NotFound);
         var serviceInternalIds = rows.Select(row => row.ServiceId).ToArray();
         if (await context.PreinvoiceLines.AsNoTracking().AnyAsync(
-            line => serviceInternalIds.Contains(line.OperationServiceId),
+            line => serviceInternalIds.Contains(line.OperationServiceId) && line.ReleasedAt == null,
             cancellationToken))
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Conflict);
 

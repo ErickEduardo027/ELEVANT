@@ -144,7 +144,12 @@ El detalle de Pre-facturación también lee las disputas de la aerolínea con
 asunto, descripción y líneas cuestionadas desde
 `GET /api/v1/finance/preinvoices/{draftId}/disputes`, separado del detalle
 v1 existente para conservar compatibilidad durante una promoción API-primero;
-no inventa casos ni saldos. La resolución sigue pendiente. Desde una prefactura
+no inventa casos ni saldos. En esta rama local, Finanzas puede resolver la
+disputa más reciente con motivo y confirmación explícita: mantener devuelve
+`Submitted` para otra respuesta de la aerolínea; anular deja `Voided` y libera
+los servicios para una prefactura nueva. El intento conserva su UUID al
+reintentar una respuesta incierta y la vista relee el resultado persistido.
+No se modifica una línea ni su importe histórico. Desde una prefactura
 `Accepted`, Finanzas puede confirmar una emisión **no fiscal** mediante
 `POST /api/v1/finance/invoices`. El reintento conserva el mismo UUID de intención;
 la tabla se relee al recibir el aviso durable o al recuperar foco/conectividad.

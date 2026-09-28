@@ -53,8 +53,10 @@ internal static class PreinvoiceConfiguration
             builder.Property(item => item.UnitPrice).HasPrecision(19, 4);
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Amount).HasPrecision(19, 4);
+            builder.Property(item => item.ReleasedAt).HasPrecision(3);
             builder.HasIndex(item => new { item.PreinvoiceId, item.LineNumber }).IsUnique();
-            builder.HasIndex(item => item.OperationServiceId).IsUnique();
+            builder.HasIndex(item => item.OperationServiceId).IsUnique()
+                .HasFilter("[released_at] IS NULL");
             builder.HasOne<Preinvoice>().WithMany().HasForeignKey(item => item.PreinvoiceId)
                 .OnDelete(DeleteBehavior.NoAction);
             builder.HasOne<OperationService>().WithMany().HasForeignKey(item => item.OperationServiceId)
@@ -91,6 +93,28 @@ internal static class PreinvoiceConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
             builder.HasOne<PreinvoiceLine>().WithMany().HasForeignKey(item => item.PreinvoiceLineId)
                 .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<PreinvoiceDisputeResolution>(builder =>
+        {
+            builder.ToTable("preinvoice_dispute_resolutions", "commercial", table =>
+            {
+                table.HasCheckConstraint("ck_preinvoice_resolution_request_id",
+                    "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+                table.HasCheckConstraint("ck_preinvoice_resolution_decision",
+                    "[decision] IN ('Maintain', 'Void')");
+                table.HasCheckConstraint("ck_preinvoice_resolution_reason",
+                    "LEN([reason]) BETWEEN 1 AND 1000");
+            });
+            builder.Property(item => item.PayloadHash).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.Decision).HasMaxLength(16).IsRequired();
+            builder.Property(item => item.Reason).HasMaxLength(1000).IsRequired();
+            builder.HasIndex(item => item.RequestId).IsUnique();
+            builder.HasIndex(item => item.DisputeId).IsUnique();
+            builder.HasOne<PreinvoiceDispute>().WithMany()
+                .HasForeignKey(item => item.DisputeId).OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(item => item.ResolvedByAccountId).OnDelete(DeleteBehavior.NoAction);
         });
     }
 }

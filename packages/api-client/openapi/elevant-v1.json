@@ -246,6 +246,13 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "includeResolutions",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -510,6 +517,13 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "includeVoided",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -584,6 +598,14 @@
               "type": "integer",
               "format": "int32",
               "default": 20
+            }
+          },
+          {
+            "name": "includeVoided",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],
@@ -2386,6 +2408,115 @@
           },
           "429": {
             "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/preinvoices/{preinvoiceId}/resolution": {
+      "post": {
+        "tags": [
+          "FinanceDisputeResolutions"
+        ],
+        "operationId": "ResolveFinancePreinvoiceDispute",
+        "parameters": [
+          {
+            "name": "preinvoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResolvePreinvoiceDisputeRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvePreinvoiceDisputeResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvePreinvoiceDisputeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5228,6 +5359,13 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "includeResolutions",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -10976,6 +11114,32 @@
         },
         "additionalProperties": false
       },
+      "PreinvoiceDisputeResolutionResponse": {
+        "required": [
+          "decision",
+          "id",
+          "reason",
+          "resolvedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "PreinvoiceDisputeResponse": {
         "required": [
           "createdAt",
@@ -11006,6 +11170,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "resolution": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreinvoiceDisputeResolutionResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -12595,6 +12767,53 @@
         },
         "additionalProperties": false
       },
+      "ResolvePreinvoiceDisputeRequest": {
+        "required": [
+          "decision",
+          "reason",
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResolvePreinvoiceDisputeResponse": {
+        "required": [
+          "id",
+          "preinvoiceId",
+          "replayed",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preinvoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "ReviewCommercialInput": {
         "required": [
           "approve",
@@ -13284,6 +13503,9 @@
     },
     {
       "name": "FinanceApprovedServices"
+    },
+    {
+      "name": "FinanceDisputeResolutions"
     },
     {
       "name": "FinanceInvoices"

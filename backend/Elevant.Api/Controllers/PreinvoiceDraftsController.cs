@@ -26,7 +26,8 @@ public sealed class PreinvoiceDraftsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<PreinvoiceDisputeListResponse>> GetDisputes(
-        [FromRoute] Guid draftId, CancellationToken cancellationToken)
+        [FromRoute] Guid draftId, [FromQuery] bool includeResolutions,
+        CancellationToken cancellationToken)
     {
         if (!TryAccount(out var accountId))
             return ProblemResult<PreinvoiceDisputeListResponse>(401, "Authentication failed.");
@@ -35,7 +36,10 @@ public sealed class PreinvoiceDraftsController(
             return ProblemResult<PreinvoiceDisputeListResponse>(404, "Preinvoice was not found.");
         return Ok(new PreinvoiceDisputeListResponse(draftId,
             disputes.Select(item => new PreinvoiceDisputeResponse(
-                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds)).ToArray()));
+                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds,
+                !includeResolutions || item.Resolution is null ? null : new PreinvoiceDisputeResolutionResponse(
+                    item.Resolution.Id, item.Resolution.Decision,
+                    item.Resolution.Reason, item.Resolution.ResolvedAt))).ToArray()));
     }
 
     [HttpPost("{draftId:guid}/submit", Name = "SubmitPreinvoice")]

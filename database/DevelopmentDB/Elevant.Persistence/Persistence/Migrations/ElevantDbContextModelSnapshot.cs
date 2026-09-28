@@ -1297,6 +1297,95 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("preinvoice_dispute_lines", "commercial");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeResolution", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("decision");
+
+                    b.Property<long>("DisputeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("dispute_id");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<long>("ResolvedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("resolved_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisputeId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("ResolvedByAccountId");
+
+                    b.ToTable("preinvoice_dispute_resolutions", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_preinvoice_resolution_decision", "[decision] IN ('Maintain', 'Void')");
+
+                            t.HasCheckConstraint("ck_preinvoice_resolution_reason", "LEN([reason]) BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("ck_preinvoice_resolution_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceLine", b =>
                 {
                     b.Property<long>("Id")
@@ -1366,6 +1455,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("released_at");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -1402,7 +1496,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("ApprovedSubmissionId");
 
                     b.HasIndex("OperationServiceId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[released_at] IS NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -6385,6 +6480,21 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceLine", null)
                         .WithMany()
                         .HasForeignKey("PreinvoiceLineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeResolution", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceDispute", null)
+                        .WithMany()
+                        .HasForeignKey("DisputeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

@@ -125,7 +125,7 @@ internal sealed class EfFinanceInvoiceIssueStore(
         var lines = await context.PreinvoiceLines.AsNoTracking()
             .Where(line => line.PreinvoiceId == scope.Id)
             .OrderBy(line => line.LineNumber).ToArrayAsync(cancellationToken);
-        if (lines.Length is < 1 or > 100 ||
+        if (lines.Length is < 1 or > 100 || lines.Any(line => line.ReleasedAt is not null) ||
             lines.Select(line => line.LineNumber).Distinct().Count() != lines.Length ||
             lines.Any(line => line.CurrencyCode != scope.CurrencyCode) ||
             lines.Sum(line => line.Amount) != scope.Total)

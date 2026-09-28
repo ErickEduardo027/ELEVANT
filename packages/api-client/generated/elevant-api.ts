@@ -1244,12 +1244,20 @@ export interface OperationalNotificationListResponse {
   hasMore: boolean;
 }
 
+export interface PreinvoiceDisputeResolutionResponse {
+  id: string;
+  decision: string;
+  reason: string;
+  resolvedAt: string;
+}
+
 export interface PreinvoiceDisputeResponse {
   id: string;
   subject: string;
   description: string;
   createdAt: string;
   lineIds: string[];
+  resolution?: PreinvoiceDisputeResolutionResponse | null;
 }
 
 export interface PreinvoiceDisputeListResponse {
@@ -1667,6 +1675,19 @@ export interface ResetGovernancePasswordRequest {
   temporaryPassword: string;
 }
 
+export interface ResolvePreinvoiceDisputeRequest {
+  requestId: string;
+  decision: string;
+  reason: string;
+}
+
+export interface ResolvePreinvoiceDisputeResponse {
+  id: string;
+  preinvoiceId: string;
+  status: string;
+  replayed: boolean;
+}
+
 export interface ReviewCommercialInput {
   approve: boolean;
   /** @nullable */
@@ -1833,9 +1854,18 @@ after?: string;
 limit?: number;
 };
 
+export type GetAirlinePreinvoiceDisputesParams = {
+includeResolutions?: boolean;
+};
+
+export type GetAirlinePreinvoiceParams = {
+includeVoided?: boolean;
+};
+
 export type GetAirlinePreinvoicesParams = {
 page?: number;
 limit?: number;
+includeVoided?: boolean;
 };
 
 export type GetAirlineOperationalRequestsParams = {
@@ -1908,6 +1938,10 @@ stationId: string;
 
 export type GetOperationalConversationsParams = {
 stationId?: string;
+};
+
+export type GetFinancePreinvoiceDisputesParams = {
+includeResolutions?: boolean;
 };
 
 export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
@@ -2029,17 +2063,26 @@ export const getAirlineInvoiceByPreinvoice = async (preinvoiceId: string, option
 
 
 
-export const getGetAirlinePreinvoiceDisputesUrl = (preinvoiceId: string,) => {
+export const getGetAirlinePreinvoiceDisputesUrl = (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceDisputesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes`
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes`
 }
 
-export const getAirlinePreinvoiceDisputes = async (preinvoiceId: string, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+export const getAirlinePreinvoiceDisputes = async (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceDisputesParams, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
 
-  const res = await fetch(getGetAirlinePreinvoiceDisputesUrl(preinvoiceId),
+  const res = await fetch(getGetAirlinePreinvoiceDisputesUrl(preinvoiceId,params),
   {
     ...options,
     method: 'GET'
@@ -2127,17 +2170,26 @@ const res = await fetch(getAcceptAirlinePreinvoiceUrl(preinvoiceId),
 
 
 
-export const getGetAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+export const getGetAirlinePreinvoiceUrl = (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}`
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices/${preinvoiceId}?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices/${preinvoiceId}`
 }
 
-export const getAirlinePreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<AirlinePreinvoiceDetailResponse> => {
+export const getAirlinePreinvoice = async (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceParams, options?: RequestInit): Promise<AirlinePreinvoiceDetailResponse> => {
 
-  const res = await fetch(getGetAirlinePreinvoiceUrl(preinvoiceId),
+  const res = await fetch(getGetAirlinePreinvoiceUrl(preinvoiceId,params),
   {
     ...options,
     method: 'GET'
@@ -3216,6 +3268,41 @@ export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServ
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceApprovedServicesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResolveFinancePreinvoiceDisputeUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${preinvoiceId}/resolution`
+}
+
+export const resolveFinancePreinvoiceDispute = async (preinvoiceId: string,
+    resolvePreinvoiceDisputeRequest?: ResolvePreinvoiceDisputeRequest, options?: RequestInit): Promise<ResolvePreinvoiceDisputeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResolveFinancePreinvoiceDisputeUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resolvePreinvoiceDisputeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ResolvePreinvoiceDisputeResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -4365,17 +4452,26 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
 
 
 
-export const getGetFinancePreinvoiceDisputesUrl = (draftId: string,) => {
+export const getGetFinancePreinvoiceDisputesUrl = (draftId: string,
+    params?: GetFinancePreinvoiceDisputesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/finance/preinvoices/${draftId}/disputes`
+  return stringifiedParams.length > 0 ? `/api/v1/finance/preinvoices/${draftId}/disputes?${stringifiedParams}` : `/api/v1/finance/preinvoices/${draftId}/disputes`
 }
 
-export const getFinancePreinvoiceDisputes = async (draftId: string, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+export const getFinancePreinvoiceDisputes = async (draftId: string,
+    params?: GetFinancePreinvoiceDisputesParams, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
 
-  const res = await fetch(getGetFinancePreinvoiceDisputesUrl(draftId),
+  const res = await fetch(getGetFinancePreinvoiceDisputesUrl(draftId,params),
   {
     ...options,
     method: 'GET'

@@ -4,7 +4,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
-  recordNonFiscalPayment } from '../../../services/financePreinvoiceService';
+  recordNonFiscalPayment, resolveFinancePreinvoiceDispute } from '../../../services/financePreinvoiceService';
 
 const STATUS = {
   Draft: 'Borrador', Submitted: 'Enviada', Disputed: 'En disputa',
@@ -12,6 +12,8 @@ const STATUS = {
 };
 const EMPTY_PAYMENT_ATTEMPT = { status: 'idle', id: null, invoiceId: null,
   requestId: null, reference: '' };
+const EMPTY_RESOLUTION_ATTEMPT = { status: 'idle', id: null, requestId: null,
+  decision: null, reason: '' };
 
 function money(value, currency) {
   return `${currency} ${Number(value).toFixed(4)}`;
@@ -30,6 +32,7 @@ export default function PreinvoicesPage() {
   const [invoiceIssue, setInvoiceIssue] = useState({ status: 'idle', id: null,
     requestId: null, number: null });
   const [paymentAttempt, setPaymentAttempt] = useState(EMPTY_PAYMENT_ATTEMPT);
+  const [resolutionAttempt, setResolutionAttempt] = useState(EMPTY_RESOLUTION_ATTEMPT);
   const detailGeneration = useRef(0);
   const selectionGeneration = useRef(0);
   const selectedPreinvoiceId = useRef(null);
@@ -62,7 +65,8 @@ export default function PreinvoicesPage() {
       listScope.current.page === page;
     listScope.current = { stationId, page };
     const preservePending = sameScope && (submission.status === 'pending' ||
-      invoiceIssue.status === 'pending' || paymentAttempt.status === 'pending');
+      invoiceIssue.status === 'pending' || paymentAttempt.status === 'pending' ||
+      resolutionAttempt.status === 'pending');
     const reopenId = sameScope && !preservePending ? selectedPreinvoiceId.current : null;
     if (!stationId) {
       detailGeneration.current += 1;
@@ -71,6 +75,7 @@ export default function PreinvoicesPage() {
       setSubmission({ status: 'idle', id: null });
       setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
       setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+      setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
       setState({ status: 'forbidden', result: null });
       return undefined;
     }
@@ -88,17 +93,20 @@ export default function PreinvoicesPage() {
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', result: null });
       });
-    if (reopenId) void openDetail(reopenId);
+    if (reopenId) void openDetail(reopenId, { preserveAttempts: true });
     return () => controller.abort();
   }, [stationId, page, revision]);
 
-  async function openDetail(id) {
+  async function openDetail(id, { preserveAttempts = false } = {}) {
     selectedPreinvoiceId.current = id;
     const generation = ++detailGeneration.current;
-    selectionGeneration.current += 1;
-    setSubmission({ status: 'idle', id: null });
-    setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
-    setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+    if (!preserveAttempts) {
+      selectionGeneration.current += 1;
+      setSubmission({ status: 'idle', id: null });
+      setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+      setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+      setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
+    }
     setDetail({ status: 'loading', value: null });
     try {
       const [preinvoice, disputeList] = await Promise.all([
@@ -124,6 +132,7 @@ export default function PreinvoicesPage() {
     setSubmission({ status: 'idle', id: null });
     setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
     setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+    setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
     setPage(value => value + delta);
   }
 
@@ -215,6 +224,42 @@ export default function PreinvoicesPage() {
     }
   }
 
+  async function confirmResolution() {
+    const { id, requestId, decision, reason, status } = resolutionAttempt;
+    if (!id || !requestId || !['confirm', 'error'].includes(status) ||
+        !['Maintain', 'Void'].includes(decision) || reason.trim() !== reason ||
+        !reason || reason.length > 1000 || detail.value?.id !== id ||
+        detail.value.status !== 'Disputed') return;
+    const generation = selectionGeneration.current;
+    setResolutionAttempt(current => ({ ...current, status: 'pending' }));
+    try {
+      await resolveFinancePreinvoiceDispute(id, { requestId, decision, reason });
+      if (generation !== selectionGeneration.current) return;
+      selectedPreinvoiceId.current = null;
+      setDetail({ status: 'idle', value: null });
+      setResolutionAttempt(current => ({ ...current, status: 'success' }));
+      setRevision(value => value + 1);
+    } catch (error) {
+      if (generation !== selectionGeneration.current) return;
+      if (error?.status === 401 || error?.status === 403) {
+        detailGeneration.current += 1;
+        selectionGeneration.current += 1;
+        selectedPreinvoiceId.current = null;
+        setDetail({ status: 'idle', value: null });
+        setState({ status: error.status === 401 ? 'unauthorized' : 'forbidden', result: null });
+        setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
+        return;
+      }
+      if (error?.status === 409) {
+        selectedPreinvoiceId.current = null;
+        setDetail({ status: 'idle', value: null });
+        setRevision(value => value + 1);
+      }
+      setResolutionAttempt(current => ({ ...current,
+        status: error?.status === 409 ? 'conflict' : 'error' }));
+    }
+  }
+
   const rows = state.result?.preinvoices ?? [];
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -236,6 +281,7 @@ export default function PreinvoicesPage() {
         setSubmission({ status: 'idle', id: null });
         setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
         setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+        setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT);
       }} className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark">
         {scopes.map(scope => <option key={scope.stationId} value={scope.stationId}>{scope.stationCode}</option>)}
       </select>
@@ -287,6 +333,14 @@ export default function PreinvoicesPage() {
     </div>}
     {state.status === 'success' && paymentAttempt.status === 'conflict' &&
       <p role="alert" className="rounded-xl border p-4">El pago ya cambió. Consulte el estado actualizado de la factura.</p>}
+    {state.status === 'success' && resolutionAttempt.status === 'success' &&
+      <p role="status" className="rounded-xl border border-emerald-500/30 p-4">
+        {resolutionAttempt.decision === 'Void'
+          ? 'Prefactura anulada. Sus servicios pueden incluirse en una corrección.'
+          : 'Cargos mantenidos. La aerolínea debe revisar de nuevo la prefactura.'}
+      </p>}
+    {state.status === 'success' && resolutionAttempt.status === 'conflict' &&
+      <p role="alert" className="rounded-xl border p-4">La disputa cambió. Consulte su estado actualizado.</p>}
     {state.status === 'success' && detail.value && <section aria-label="Detalle de prefactura" className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-5">
       <h2 className="font-semibold">{detail.value.airlineName} · {detail.value.id}</h2>
       <p className="mt-1 text-sm">{STATUS[detail.value.status] ?? detail.value.status} · {money(detail.value.total, detail.value.currencyCode)}</p>
@@ -303,8 +357,61 @@ export default function PreinvoicesPage() {
             const line = detail.value.lines.find(candidate => candidate.id === lineId);
             return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
           }).join(', ')}</p>
+          {dispute.resolution && <p className="mt-1">
+            Resolución: {dispute.resolution.decision === 'Void' ? 'cargos anulados' : 'cargos mantenidos'}.
+            {' '}{dispute.resolution.reason}
+          </p>}
         </article>)}
       </section>}
+      {detail.value.status === 'Disputed' && detail.value.disputes?.some(dispute => !dispute.resolution) &&
+        resolutionAttempt.status === 'idle' && <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" onClick={() => setResolutionAttempt({ status: 'edit',
+            id: detail.value.id, requestId: crypto.randomUUID(), decision: 'Maintain', reason: '' })}
+            className="rounded-lg border px-4 py-2 text-sm font-semibold">Mantener cargos</button>
+          <button type="button" onClick={() => setResolutionAttempt({ status: 'edit',
+            id: detail.value.id, requestId: crypto.randomUUID(), decision: 'Void', reason: '' })}
+            className="rounded-lg border px-4 py-2 text-sm font-semibold">Anular prefactura</button>
+        </div>}
+      {resolutionAttempt.id === detail.value.id && resolutionAttempt.status === 'edit' &&
+        <div className="mt-4 rounded-lg border p-4">
+          <p className="text-sm">{resolutionAttempt.decision === 'Void'
+            ? 'Anular conserva el historial y libera la reserva de servicios para una nueva prefactura.'
+            : 'Mantener devuelve la misma prefactura a la aerolínea para una nueva aceptación.'}</p>
+          <label className="mt-3 block text-sm">Motivo de resolución
+            <textarea value={resolutionAttempt.reason} maxLength={1000}
+              onChange={event => setResolutionAttempt(current => ({ ...current,
+                reason: event.target.value }))}
+              className="mt-1 block w-full rounded-lg border px-3 py-2" />
+          </label>
+          <div className="mt-3 flex gap-3">
+            <button type="button" disabled={!resolutionAttempt.reason.trim() ||
+              resolutionAttempt.reason.trim() !== resolutionAttempt.reason}
+              onClick={() => setResolutionAttempt(current => ({ ...current, status: 'confirm' }))}
+              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+              Continuar resolución</button>
+            <button type="button" onClick={() => setResolutionAttempt(EMPTY_RESOLUTION_ATTEMPT)}
+              className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+          </div>
+        </div>}
+      {resolutionAttempt.id === detail.value.id && resolutionAttempt.status === 'confirm' &&
+        <div className="mt-4 rounded-lg border p-4">
+          <p className="text-sm">Confirme la decisión: {resolutionAttempt.decision === 'Void'
+            ? 'anular y liberar servicios' : 'mantener cargos y solicitar nueva revisión'}.</p>
+          <p className="mt-1 text-sm">Motivo: {resolutionAttempt.reason}</p>
+          <button type="button" onClick={confirmResolution}
+            className="mt-3 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold">
+            Confirmar resolución</button>
+          <button type="button" onClick={() => setResolutionAttempt(current => ({ ...current, status: 'edit' }))}
+            className="ml-2 rounded-lg border px-4 py-2 text-sm">Volver</button>
+        </div>}
+      {resolutionAttempt.id === detail.value.id && resolutionAttempt.status === 'pending' &&
+        <p role="status" className="mt-4 text-sm">Registrando resolución…</p>}
+      {resolutionAttempt.id === detail.value.id && resolutionAttempt.status === 'error' &&
+        <div role="alert" className="mt-4 rounded-lg border p-4">
+          <p>No se pudo confirmar la resolución. Reintente con la misma clave de solicitud.</p>
+          <button type="button" onClick={confirmResolution} className="mt-2 rounded-lg border px-4 py-2 text-sm font-semibold">
+            Reintentar resolución</button>
+        </div>}
       {detail.value.invoice && <section className="mt-4 rounded-lg border p-4" aria-label="Factura no fiscal">
         <h3 className="font-semibold">Factura no fiscal {detail.value.invoice.number}</h3>
         <p className="mt-1 text-sm">Total emitido: {money(detail.value.invoice.total, detail.value.invoice.currencyCode)}</p>

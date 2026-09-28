@@ -216,7 +216,21 @@ Las consultas nuevas `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disp
 y `GET /api/v1/finance/preinvoices/{draftId}/disputes` muestran la objeción
 solo a su tenant o estación autorizada, sin añadir campos a las respuestas de
 detalle v1 que ya consumen clientes desplegados. Un reintento idéntico no duplica
-el historial. Resolverla y registrar pago aún no está implementado.
+el historial. En esta rama local, Finanzas resuelve la objeción más reciente
+mediante `POST /api/v1/finance/preinvoices/{preinvoiceId}/resolution`, con
+`requestId`, decisión `Maintain` o `Void` y motivo obligatorio. La API revalida
+rol, membresía y estación dentro de una transacción serializable. `Maintain`
+devuelve la prefactura a `Submitted` para una nueva respuesta de la aerolínea;
+`Void` la anula, conserva el historial y libera las reservas de servicios para
+una nueva prefactura. Repetir el mismo intento devuelve la resolución ya
+registrada; una intención distinta sobre la disputa cerrada entra en conflicto.
+Las lecturas autorizadas de disputas muestran decisión y motivo con
+`includeResolutions=true`; sin ese parámetro conservan el JSON v1 anterior.
+Igualmente, el portal solo incluye anulaciones publicadas en historial con
+`includeVoided=true`; sin él mantiene los estados que aceptan los clientes ya
+desplegados. El cliente generado nuevo envía esos parámetros expresamente. No hay
+ajustes parciales ni repricing; si cambia el cargo, Finanzas debe anular y
+crear un nuevo snapshot. Esta capacidad todavía no está promocionada.
 
 Una prefactura `Accepted` puede convertirse una sola vez en factura **no fiscal**
 mediante `POST /api/v1/finance/invoices`. Finanzas confirma explícitamente y

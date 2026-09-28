@@ -7,7 +7,8 @@ public sealed class GetAirlinePreinvoicesHandler(
     IActorContextResolver actors, IAirlinePortalReadStore preinvoices)
 {
     public async Task<AirlinePreinvoiceDisputesResult> HandleDisputesAsync(
-        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
+        Guid accountId, Guid preinvoiceId, bool includeResolutions = false,
+        CancellationToken cancellationToken = default)
     {
         if (preinvoiceId == Guid.Empty)
             return AirlinePreinvoiceDisputesResult.Failed(AirlinePortalFailure.NotFound);
@@ -16,14 +17,15 @@ public sealed class GetAirlinePreinvoicesHandler(
         if (failure is not null)
             return AirlinePreinvoiceDisputesResult.Failed(failure.Value);
         var disputes = await preinvoices.GetPreinvoiceDisputesAsync(
-            organizationId!.Value, preinvoiceId, cancellationToken);
+            organizationId!.Value, preinvoiceId, includeResolutions, cancellationToken);
         return disputes is null
             ? AirlinePreinvoiceDisputesResult.Failed(AirlinePortalFailure.NotFound)
             : AirlinePreinvoiceDisputesResult.Success(preinvoiceId, disputes);
     }
 
     public async Task<AirlinePreinvoiceDetailResult> HandleDetailAsync(
-        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
+        Guid accountId, Guid preinvoiceId, bool includeVoided = false,
+        CancellationToken cancellationToken = default)
     {
         if (preinvoiceId == Guid.Empty)
             return AirlinePreinvoiceDetailResult.Failed(AirlinePortalFailure.NotFound);
@@ -32,14 +34,15 @@ public sealed class GetAirlinePreinvoicesHandler(
         if (failure is not null)
             return AirlinePreinvoiceDetailResult.Failed(failure.Value);
         var detail = await preinvoices.GetPreinvoiceAsync(
-            organizationId!.Value, preinvoiceId, cancellationToken);
+            organizationId!.Value, preinvoiceId, includeVoided, cancellationToken);
         return detail is null
             ? AirlinePreinvoiceDetailResult.Failed(AirlinePortalFailure.NotFound)
             : AirlinePreinvoiceDetailResult.Success(detail);
     }
 
     public async Task<AirlinePreinvoicePageResult> HandleAsync(
-        Guid accountId, int page, int limit, CancellationToken cancellationToken = default)
+        Guid accountId, int page, int limit, bool includeVoided = false,
+        CancellationToken cancellationToken = default)
     {
         if (page is < 1 or > 10_000 || limit is < 1 or > 50)
             throw new ArgumentOutOfRangeException(nameof(page));
@@ -50,7 +53,7 @@ public sealed class GetAirlinePreinvoicesHandler(
             return AirlinePreinvoicePageResult.Failed(failure.Value);
 
         var result = await preinvoices.GetPreinvoicesAsync(
-            organizationId!.Value, page, limit, cancellationToken);
+            organizationId!.Value, page, limit, includeVoided, cancellationToken);
         return result is null
             ? AirlinePreinvoicePageResult.Failed(AirlinePortalFailure.NotFound)
             : AirlinePreinvoicePageResult.Success(result);

@@ -12,9 +12,12 @@ public sealed record AirlinePreinvoiceLineData(
     string ServiceCode, string ServiceName, decimal ExecutedQuantity,
     string BillingUnit, decimal UnitPrice, decimal Amount);
 
+public sealed record PreinvoiceDisputeResolutionData(
+    Guid Id, string Decision, string Reason, DateTimeOffset ResolvedAt);
+
 public sealed record PreinvoiceDisputeData(
     Guid Id, string Subject, string Description, DateTimeOffset CreatedAt,
-    IReadOnlyList<Guid> LineIds);
+    IReadOnlyList<Guid> LineIds, PreinvoiceDisputeResolutionData? Resolution = null);
 
 public sealed record AirlinePreinvoiceDisputesResult(
     Guid PreinvoiceId, IReadOnlyList<PreinvoiceDisputeData>? Disputes,

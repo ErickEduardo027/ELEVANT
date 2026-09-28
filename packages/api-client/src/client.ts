@@ -17,6 +17,7 @@ import {
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
   getGetFinancePreinvoiceDisputesUrl,
+  getResolveFinancePreinvoiceDisputeUrl,
   getIssueFinanceInvoiceUrl,
   getGetFinanceInvoiceByPreinvoiceUrl,
   getGetAirlineInvoiceByPreinvoiceUrl,
@@ -67,6 +68,8 @@ import {
   type DisputeAirlinePreinvoiceRequest,
   type DisputeAirlinePreinvoiceResponse,
   type PreinvoiceDisputeListResponse,
+  type ResolvePreinvoiceDisputeRequest,
+  type ResolvePreinvoiceDisputeResponse,
   type IssueFinanceInvoiceRequest,
   type IssueFinanceInvoiceResponse,
   type NonFiscalInvoiceResponse,
@@ -169,6 +172,7 @@ export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "met
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -332,6 +336,10 @@ export interface ElevantApiClient {
     draftId: string,
     options?: GetPreinvoiceDisputesOptions,
   ): Promise<PreinvoiceDisputeListResponse>;
+  resolveFinancePreinvoiceDispute(
+    preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
+    options?: ResolvePreinvoiceDisputeOptions,
+  ): Promise<ResolvePreinvoiceDisputeResponse>;
   issueFinanceInvoice(
     request: IssueFinanceInvoiceRequest,
     options?: IssueFinanceInvoiceOptions,
@@ -1956,7 +1964,7 @@ function isAirlinePreinvoicePageResponse(
         !isDateOnly(item.from) || !isDateOnly(item.to) || item.from > item.to ||
         typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
         !isFiniteNumber(item.total) || item.total < 0 ||
-        !["Submitted", "Disputed", "Accepted", "Invoiced"].includes(String(item.status)) ||
+        !["Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(item.status)) ||
         !isDateTimeOffset(item.createdAt)) return false;
     ids.add(item.id);
     return true;
@@ -1995,13 +2003,20 @@ function isPreinvoiceDisputes(value: unknown): boolean {
   const disputeIds = new Set<string>();
   return value.every(dispute => {
     if (!isRecord(dispute) || !hasOnlyKeys(dispute,
-        ["id", "subject", "description", "createdAt", "lineIds"]) ||
+        ["id", "subject", "description", "createdAt", "lineIds", "resolution"]) ||
         !isUuid(dispute.id) || disputeIds.has(dispute.id) ||
         !isNonEmptyString(dispute.subject) || dispute.subject.length > 160 ||
         !isNonEmptyString(dispute.description) || dispute.description.length > 1000 ||
         !isDateTimeOffset(dispute.createdAt) ||
         !Array.isArray(dispute.lineIds) || dispute.lineIds.length < 1 ||
-        dispute.lineIds.length > 50) return false;
+        dispute.lineIds.length > 50 ||
+        !isOptionalNullable(dispute.resolution, resolution =>
+          isRecord(resolution) && hasOnlyKeys(resolution,
+            ["id", "decision", "reason", "resolvedAt"]) &&
+          isUuid(resolution.id) &&
+          (resolution.decision === "Maintain" || resolution.decision === "Void") &&
+          isNonEmptyString(resolution.reason) && resolution.reason.length <= 1000 &&
+          isDateTimeOffset(resolution.resolvedAt))) return false;
     const selected = new Set<string>();
     for (const id of dispute.lineIds) {
       if (!isUuid(id) || selected.has(id)) return false;
@@ -2016,6 +2031,15 @@ function isPreinvoiceDisputeListResponse(value: unknown, preinvoiceId: string):
   value is PreinvoiceDisputeListResponse {
   return isRecord(value) && hasOnlyKeys(value, ["preinvoiceId", "disputes"]) &&
     value.preinvoiceId === preinvoiceId && isPreinvoiceDisputes(value.disputes);
+}
+
+function isResolvePreinvoiceDisputeResponse(value: unknown, preinvoiceId: string,
+  decision: string): value is ResolvePreinvoiceDisputeResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "preinvoiceId", "status", "replayed"]) &&
+    isUuid(value.id) && value.preinvoiceId === preinvoiceId &&
+    value.status === (decision === "Void" ? "Voided" : "Submitted") &&
+    typeof value.replayed === "boolean";
 }
 
 function isIssueFinanceInvoiceResponse(value: unknown,
@@ -2996,7 +3020,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       options?: GetAirlinePreinvoicesOptions,
     ) {
       const paging = validatedAirlinePreinvoiceParams(parameters);
-      const result = await execute(getGetAirlinePreinvoicesUrl(paging),
+      const result = await execute(getGetAirlinePreinvoicesUrl({ ...paging, includeVoided: true }),
         { ...options, method: "GET" }, true);
       if (!isAirlinePreinvoicePageResponse(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
@@ -3008,7 +3032,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       preinvoiceId: string, options?: GetAirlinePreinvoiceOptions,
     ) {
       if (!isUuid(preinvoiceId)) throw new TypeError("Preinvoice ID must be a UUID.");
-      const result = await execute(getGetAirlinePreinvoiceUrl(preinvoiceId),
+      const result = await execute(getGetAirlinePreinvoiceUrl(preinvoiceId, { includeVoided: true }),
         { ...options, method: "GET" }, true);
       if (!isAirlinePreinvoiceDetailResponse(result.data) ||
           result.data.id !== preinvoiceId) throw malformedResponse(result.status);
@@ -3018,7 +3042,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       preinvoiceId: string, options?: GetPreinvoiceDisputesOptions,
     ) {
       const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      const result = await execute(getGetAirlinePreinvoiceDisputesUrl(id),
+      const result = await execute(getGetAirlinePreinvoiceDisputesUrl(id, { includeResolutions: true }),
         { ...options, method: "GET" }, true);
       if (!isPreinvoiceDisputeListResponse(result.data, id))
         throw malformedResponse(result.status);
@@ -3155,9 +3179,28 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       draftId: string, options?: GetPreinvoiceDisputesOptions,
     ) {
       const id = validatedUuid(draftId, "draftId");
-      const result = await execute(getGetFinancePreinvoiceDisputesUrl(id),
+      const result = await execute(getGetFinancePreinvoiceDisputesUrl(id, { includeResolutions: true }),
         { ...options, method: "GET" }, true);
       if (!isPreinvoiceDisputeListResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async resolveFinancePreinvoiceDispute(
+      preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
+      options?: ResolvePreinvoiceDisputeOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["requestId", "decision", "reason"]) || !isUuid(request.requestId) ||
+          (request.decision !== "Maintain" && request.decision !== "Void") ||
+          !isNonEmptyString(request.reason) || request.reason.trim() !== request.reason ||
+          request.reason.length > 1000)
+        throw new TypeError("Dispute resolution request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getResolveFinancePreinvoiceDisputeUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isResolvePreinvoiceDisputeResponse(result.data, id, request.decision))
         throw malformedResponse(result.status);
       return result.data;
     },

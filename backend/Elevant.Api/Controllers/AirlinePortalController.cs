@@ -83,7 +83,8 @@ public sealed class AirlinePortalController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<PreinvoiceDisputeListResponse>> GetPreinvoiceDisputes(
-        Guid preinvoiceId, CancellationToken cancellationToken)
+        Guid preinvoiceId, [FromQuery] bool includeResolutions,
+        CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
         {
@@ -91,7 +92,7 @@ public sealed class AirlinePortalController(
             return ProblemResult<PreinvoiceDisputeListResponse>(401, "Authentication failed.");
         }
         var result = await preinvoicesHandler.HandleDisputesAsync(
-            accountId, preinvoiceId, cancellationToken);
+            accountId, preinvoiceId, includeResolutions, cancellationToken);
         if (!result.IsSuccess)
         {
             var (statusCode, title) = MapFailure(result.Failure!.Value);
@@ -100,7 +101,10 @@ public sealed class AirlinePortalController(
         }
         return Ok(new PreinvoiceDisputeListResponse(preinvoiceId,
             result.Disputes!.Select(item => new PreinvoiceDisputeResponse(
-                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds)).ToArray()));
+                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds,
+                !includeResolutions || item.Resolution is null ? null : new PreinvoiceDisputeResolutionResponse(
+                    item.Resolution.Id, item.Resolution.Decision,
+                    item.Resolution.Reason, item.Resolution.ResolvedAt))).ToArray()));
     }
 
     [HttpPost("preinvoices/{preinvoiceId:guid}/dispute", Name = "DisputeAirlinePreinvoice")]
@@ -190,7 +194,8 @@ public sealed class AirlinePortalController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<AirlinePreinvoiceDetailResponse>> GetPreinvoice(
-        Guid preinvoiceId, CancellationToken cancellationToken)
+        Guid preinvoiceId, [FromQuery] bool includeVoided,
+        CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
         {
@@ -200,7 +205,7 @@ public sealed class AirlinePortalController(
         }
 
         var result = await preinvoicesHandler.HandleDetailAsync(
-            accountId, preinvoiceId, cancellationToken);
+            accountId, preinvoiceId, includeVoided, cancellationToken);
         if (!result.IsSuccess)
         {
             var (statusCode, title) = MapFailure(result.Failure!.Value);
@@ -227,6 +232,7 @@ public sealed class AirlinePortalController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<AirlinePreinvoicePageResponse>> GetPreinvoices(
         [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        [FromQuery] bool includeVoided = false,
         CancellationToken cancellationToken = default)
     {
         if (page is < 1 or > 10_000 || limit is < 1 or > 50)
@@ -240,7 +246,7 @@ public sealed class AirlinePortalController(
         }
 
         var result = await preinvoicesHandler.HandleAsync(
-            accountId, page, limit, cancellationToken);
+            accountId, page, limit, includeVoided, cancellationToken);
         if (!result.IsSuccess)
         {
             var (statusCode, title) = MapFailure(result.Failure!.Value);

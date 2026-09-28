@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
-  recordNonFiscalPayment } from '../../../services/financePreinvoiceService';
+  recordNonFiscalPayment, resolveFinancePreinvoiceDispute } from '../../../services/financePreinvoiceService';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 
 vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
@@ -17,6 +17,7 @@ vi.mock('../../../services/financePreinvoiceService', () => ({
   getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
   issueFinanceInvoice: vi.fn(), getFinanceInvoiceByPreinvoice: vi.fn(),
   getFinancePaymentByInvoice: vi.fn(), recordNonFiscalPayment: vi.fn(),
+  resolveFinancePreinvoiceDispute: vi.fn(),
 }));
 vi.mock('../../../services/approvedServicesService', () => ({
   getPreinvoiceDraft: vi.fn(), getFinancePreinvoiceDisputes: vi.fn(),
@@ -64,6 +65,109 @@ it('shows the airline dispute and its selected priced lines to scoped Finance', 
   expect(await screen.findByText('Cantidad incorrecta')).toBeInTheDocument();
   expect(screen.getByText('La cantidad de GPU no coincide.')).toBeInTheDocument();
   expect(screen.getAllByText(/Ground power/)).toHaveLength(2);
+});
+
+it('requires a reason and explicit confirmation to maintain disputed charges', async () => {
+  const disputed = { ...item, status: 'Disputed' };
+  getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [disputed] }).mockResolvedValue({ page: 1, limit: 20,
+    hasMore: false, preinvoices: [{ ...item, status: 'Submitted' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...disputed, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', operationDate: '2026-08-18',
+    serviceName: 'Ground power', amount: 42.0001 }] });
+  getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id,
+    disputes: [{ id: 'dispute-one', subject: 'Cantidad incorrecta',
+      description: 'La cantidad de GPU no coincide.', lineIds: ['line-one'],
+      createdAt: '2026-08-20T12:00:00Z', resolution: null }] });
+  resolveFinancePreinvoiceDispute.mockResolvedValue({ id: 'resolution-one',
+    preinvoiceId: item.id, status: 'Submitted', replayed: false });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText('Cantidad incorrecta');
+  await userEvent.click(screen.getByRole('button', { name: 'Mantener cargos' }));
+  expect(resolveFinancePreinvoiceDispute).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Continuar resolución' })).toBeDisabled();
+  await userEvent.type(screen.getByRole('textbox', { name: 'Motivo de resolución' }),
+    'Se verificó la evidencia aprobada.');
+  await userEvent.click(screen.getByRole('button', { name: 'Continuar resolución' }));
+  expect(resolveFinancePreinvoiceDispute).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar resolución' }));
+  await waitFor(() => expect(resolveFinancePreinvoiceDispute).toHaveBeenCalledExactlyOnceWith(
+    item.id, expect.objectContaining({ decision: 'Maintain',
+      reason: 'Se verificó la evidencia aprobada.', requestId: expect.any(String) })));
+  expect(await screen.findByText('Cargos mantenidos. La aerolínea debe revisar de nuevo la prefactura.'))
+    .toBeInTheDocument();
+  expect(await screen.findByText('Enviada')).toBeInTheDocument();
+});
+
+it('retries an uncertain void decision with the same key and reason', async () => {
+  const disputed = { ...item, status: 'Disputed' };
+  getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [disputed] }).mockResolvedValue({ page: 1, limit: 20,
+    hasMore: false, preinvoices: [{ ...item, status: 'Voided' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...disputed, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', operationDate: '2026-08-18',
+    serviceName: 'Ground power', amount: 42.0001 }] });
+  getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id,
+    disputes: [{ id: 'dispute-one', subject: 'Cantidad incorrecta',
+      description: 'La cantidad de GPU no coincide.', lineIds: ['line-one'],
+      createdAt: '2026-08-20T12:00:00Z', resolution: null }] });
+  resolveFinancePreinvoiceDispute.mockRejectedValueOnce(new Error('private details'))
+    .mockResolvedValueOnce({ id: 'resolution-one', preinvoiceId: item.id,
+      status: 'Voided', replayed: true });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText('Cantidad incorrecta');
+  await userEvent.click(screen.getByRole('button', { name: 'Anular prefactura' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Motivo de resolución' }),
+    'No corresponde al servicio aprobado.');
+  await userEvent.click(screen.getByRole('button', { name: 'Continuar resolución' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar resolución' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('misma clave');
+  expect(screen.queryByText('private details')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Reintentar resolución' }));
+  await waitFor(() => expect(resolveFinancePreinvoiceDispute).toHaveBeenCalledTimes(2));
+  expect(resolveFinancePreinvoiceDispute.mock.calls[0]).toEqual(
+    resolveFinancePreinvoiceDispute.mock.calls[1]);
+  expect(await screen.findByText('Prefactura anulada. Sus servicios pueden incluirse en una corrección.'))
+    .toBeInTheDocument();
+});
+
+it('keeps a dispute resolution reason and retry key across focus refreshes', async () => {
+  const disputed = { ...item, status: 'Disputed' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [disputed] });
+  getPreinvoiceDraft.mockResolvedValue({ ...disputed, lines: [] });
+  getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id,
+    disputes: [{ id: 'dispute-one', subject: 'Cantidad incorrecta',
+      description: 'La cantidad no coincide.', lineIds: [],
+      createdAt: '2026-08-20T12:00:00Z' }] });
+  resolveFinancePreinvoiceDispute.mockRejectedValueOnce(new Error('uncertain response'))
+    .mockResolvedValueOnce({ id: 'resolution-one', preinvoiceId: item.id,
+      status: 'Submitted', replayed: true });
+
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText('Cantidad incorrecta');
+  await userEvent.click(screen.getByRole('button', { name: 'Mantener cargos' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Motivo de resolución' }),
+    'Revisamos el soporte aprobado.');
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(await screen.findByDisplayValue('Revisamos el soporte aprobado.')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Continuar resolución' }));
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(await screen.findByRole('button', { name: 'Confirmar resolución' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar resolución' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('misma clave');
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  await userEvent.click(await screen.findByRole('button', { name: 'Reintentar resolución' }));
+  await waitFor(() => expect(resolveFinancePreinvoiceDispute).toHaveBeenCalledTimes(2));
+  expect(resolveFinancePreinvoiceDispute.mock.calls[1])
+    .toEqual(resolveFinancePreinvoiceDispute.mock.calls[0]);
 });
 
 it('paginates and renders honest empty, forbidden and retry states', async () => {

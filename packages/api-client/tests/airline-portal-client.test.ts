@@ -264,7 +264,7 @@ describe("published airline preinvoices client", () => {
     await expect(client.getAirlinePreinvoices({ page: 1, limit: 20 }))
       .resolves.toEqual(page);
     expect(urls).toEqual([
-      "https://api.example.test/api/v1/airline/portal/preinvoices?page=1&limit=20",
+      "https://api.example.test/api/v1/airline/portal/preinvoices?page=1&limit=20&includeVoided=true",
     ]);
     await expect(client.getAirlinePreinvoices({ limit: 51 }))
       .rejects.toBeInstanceOf(TypeError);
@@ -297,9 +297,28 @@ describe("published airline preinvoices client", () => {
     });
     await expect(client.getAirlinePreinvoice(detail.id!)).resolves.toEqual(detail);
     expect(urls).toEqual([
-      `https://api.example.test/api/v1/airline/portal/preinvoices/${detail.id}`,
+      `https://api.example.test/api/v1/airline/portal/preinvoices/${detail.id}?includeVoided=true`,
     ]);
     await expect(client.getAirlinePreinvoice("not-a-guid")).rejects.toBeInstanceOf(TypeError);
     expect(urls).toHaveLength(1);
+  });
+
+  it("accepts a published void with retained line snapshots as airline history", async () => {
+    const voided = { ...page.preinvoices[0], status: "Voided" };
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async url => new Response(JSON.stringify(String(url).includes("/preinvoices/")
+        ? { ...voided, lines: [{
+          id: "74000000-0000-7000-8000-000000000002",
+          operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+          serviceCode: "GPU", serviceName: "Ground power",
+          executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5,
+        }] }
+        : { ...page, preinvoices: [voided] }),
+      { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getAirlinePreinvoices()).resolves.toEqual({
+      ...page, preinvoices: [voided],
+    });
+    await expect(client.getAirlinePreinvoice(voided.id!)).resolves.toMatchObject(voided);
   });
 });

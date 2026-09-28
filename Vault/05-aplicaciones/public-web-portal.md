@@ -61,7 +61,7 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. En esta rama de integración, Vuelos consulta además `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap; servicios y evidencias aún faltan. Este cambio aún no está desplegado. |
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
-| Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted` o `Invoiced`) paginadas y filtradas por aerolínea en SQL. Puede releer por ID las líneas y montos snapshot de una prefactura propia; borradores y otros tenants no se exponen. Tras confirmación explícita puede aceptar una prefactura `Submitted` propia con un comando auditado e idempotente. Esta rama añade registro y consulta de disputas de líneas, aún sin resolución. Una prefactura `Invoiced` consulta su factura no fiscal congelada y, por otra ruta tenant-scoped, el estado persistido de un pago manual completo de prueba. Un aviso `airline_preinvoices` invalida la consulta; el sondeo de 25 segundos respalda la reconexión. No hay verificación bancaria, documento fiscal ni recibo. |
+| Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted`, `Invoiced` o `Voided`) paginadas y filtradas por aerolínea en SQL. Puede releer por ID las líneas y montos snapshot de una prefactura propia; borradores y otros tenants no se exponen. Tras confirmación explícita puede aceptar una prefactura `Submitted` propia con un comando auditado e idempotente. Esta rama añade registro y consulta de disputas de líneas y de la resolución motivada por Finanzas. Una prefactura anulada queda visible solo como historial. Una prefactura `Invoiced` consulta su factura no fiscal congelada y, por otra ruta tenant-scoped, el estado persistido de un pago manual completo de prueba. Un aviso `airline_preinvoices` invalida la consulta; el sondeo de 25 segundos respalda la reconexión. No hay verificación bancaria, documento fiscal ni recibo. |
 | Documentos y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y exportaciones permanecen deshabilitadas. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 
@@ -94,7 +94,14 @@ historial de objeciones, y Finanzas tiene otro endpoint de lectura por cuenta y
 estación. Los detalles v1 existentes conservan su forma para permitir una
 promoción API-primero con clientes antiguos. Las pruebas locales de API, SQL y
 clientes respaldan este cambio de rama, pero no demuestran CI, merge ni VPS.
-Resolver la disputa y entregar recibo siguen pendientes. Esta rama ya permite
+La rama local incorpora la resolución de Finanzas: mantener devuelve la
+prefactura a `Submitted` y anular conserva un historial consultable sin
+habilitar nuevas acciones sobre ese documento. El cliente nuevo solicita
+`includeVoided=true` para ese historial y `includeResolutions=true` para leer
+decisión y motivo; la respuesta por defecto preserva los estados y campos que
+aceptan los clientes ya desplegados. La aerolínea no escoge el resultado.
+Entregar un recibo sigue pendiente.
+Esta rama ya permite
 consultar un pago manual existente por la factura propia; el endpoint devuelve
 un vacío real cuando no hay registro y no verifica fondos externos. Fuentes:
 [controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs),
