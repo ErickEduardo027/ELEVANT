@@ -15,6 +15,7 @@ import {
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
+  getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
   getGetFinancePreinvoiceDisputesUrl,
@@ -92,6 +93,8 @@ import {
   type ListFinancePreinvoicesParams,
   type FinanceTariffPageData,
   type ListFinanceTariffsParams,
+  type FinanceReconciliationPageData,
+  type ListFinanceReconciliationParams,
   type CreatePreinvoiceDraftRequest,
   type CreatePreinvoiceDraftResponse,
   type PreinvoiceDraftResponse,
@@ -195,6 +198,7 @@ export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceReconciliationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitPreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -337,6 +341,10 @@ export interface ElevantApiClient {
     query: ListFinanceTariffsParams,
     options?: GetFinanceTariffsOptions,
   ): Promise<FinanceTariffPageData>;
+  getFinanceReconciliation(
+    query: ListFinanceReconciliationParams,
+    options?: GetFinanceReconciliationOptions,
+  ): Promise<FinanceReconciliationPageData>;
   createPreinvoiceDraft(
     request: CreatePreinvoiceDraftRequest,
     options?: CreatePreinvoiceDraftOptions,
@@ -2287,6 +2295,57 @@ function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData
   });
 }
 
+function validatedFinanceReconciliationQuery(
+  query: ListFinanceReconciliationParams,
+): ListFinanceReconciliationParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
+      !isUuid(query.stationId) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
+    throw new TypeError("Finance reconciliation station or paging is invalid.");
+  return { stationId: query.stationId,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function isFinanceReconciliationPageData(value: unknown): value is FinanceReconciliationPageData {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["stationId", "page", "limit", "hasMore", "rows"]) ||
+      !isUuid(value.stationId) || !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.rows) ||
+      value.rows.length > value.limit ||
+      (value.hasMore && value.rows.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.rows.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["preinvoiceId", "airlineId", "airlineName", "from", "to", "currencyCode",
+        "preinvoiceTotal", "preinvoiceStatus", "invoiceId", "invoiceNumber",
+        "invoiceTotal", "issuedAt", "paymentId", "paymentReference",
+        "paymentAmount", "paymentRecordedAt"]) ||
+        !isUuid(item.preinvoiceId) || ids.has(item.preinvoiceId) ||
+        !isUuid(item.airlineId) || !isNonEmptyString(item.airlineName) ||
+        !isDateOnly(item.from) || !isDateOnly(item.to) || item.to < item.from ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isFiniteNumber(item.preinvoiceTotal) || item.preinvoiceTotal < 0 ||
+        !["Accepted", "Invoiced"].includes(String(item.preinvoiceStatus))) return false;
+    ids.add(item.preinvoiceId);
+    const invoiceFields = [item.invoiceId, item.invoiceNumber, item.invoiceTotal, item.issuedAt];
+    const paymentFields = [item.paymentId, item.paymentReference,
+      item.paymentAmount, item.paymentRecordedAt];
+    if (item.preinvoiceStatus === "Accepted")
+      return invoiceFields.every(field => field == null) &&
+        paymentFields.every(field => field == null);
+    if (!isUuid(item.invoiceId) || !isNonEmptyString(item.invoiceNumber) ||
+        !isFiniteNumber(item.invoiceTotal) || item.invoiceTotal !== item.preinvoiceTotal ||
+        !isDateTimeOffset(item.issuedAt)) return false;
+    if (paymentFields.every(field => field == null)) return true;
+    return isUuid(item.paymentId) && isNonEmptyString(item.paymentReference) &&
+      isFiniteNumber(item.paymentAmount) && item.paymentAmount === item.invoiceTotal &&
+      isDateTimeOffset(item.paymentRecordedAt);
+  });
+}
+
 function isFinancePreinvoicePageData(value: unknown): value is FinancePreinvoicePageData {
   if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
       !isInt32(value.page) || value.page < 1 ||
@@ -3254,6 +3313,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getListFinanceTariffsUrl(scope),
         { ...options, method: "GET" }, true);
       if (!isFinanceTariffPageData(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceReconciliation(
+      query: ListFinanceReconciliationParams,
+      options?: GetFinanceReconciliationOptions,
+    ) {
+      const scope = validatedFinanceReconciliationQuery(query);
+      const result = await execute(getListFinanceReconciliationUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceReconciliationPageData(result.data) ||
           result.data.stationId !== scope.stationId ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 20))

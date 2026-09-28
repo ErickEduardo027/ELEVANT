@@ -152,8 +152,11 @@ polling de 25 segundos. Retira el servicio simulado `/api/finance/preinvoices`
 y sus botones ficticios. Un borrador puede enviarse a la aerolínea tras
 confirmación explícita con `POST /api/v1/finance/preinvoices/{draftId}/submit`;
 un reintento de red usa la misma clave y el estado se relee desde la API. La
-creación real permanece en Servicios aprobados. Conciliación financiera todavía
-necesita migración; Tarifas y Reportes ya tienen lecturas acotadas de la API.
+creación real permanece en Servicios aprobados. Seguimiento financiero consulta
+`GET /api/v1/finance/reconciliation` por estación autorizada y página, y
+presenta prefacturas aceptadas, facturas no fiscales y pagos manuales
+persistidos sin simular una conciliación bancaria. Tarifas y Reportes también
+tienen lecturas acotadas de la API.
 
 El detalle de Pre-facturación también lee las disputas de la aerolínea con
 asunto, descripción y líneas cuestionadas desde
@@ -212,4 +215,4 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC sigue siendo una vista sintética y se marca como tal; no demuestra disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba, pero sus módulos profundos todavía no constituyen circuitos canónicos. Reportes financieros agrupa estados reales de la primera página de hasta 50 prefacturas de la estación autorizada, separadas por aerolínea y moneda. Ya no solicita `/api/finance/reports` ni ofrece exportaciones simuladas; no es un reporte histórico completo. Conciliación y Tarifas siguen siendo prototipos que necesitan contratos canónicos. La imagen no incluye ni inicia `backend-prototipo`.
+Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC sigue siendo una vista sintética y se marca como tal; no demuestra disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba, pero sus módulos profundos todavía no constituyen circuitos canónicos. Reportes financieros agrupa estados reales de la primera página de hasta 50 prefacturas de la estación autorizada, separadas por aerolínea y moneda. Ya no solicita `/api/finance/reports` ni ofrece exportaciones simuladas; no es un reporte histórico completo. Seguimiento y Tarifas son lecturas reales paginadas por estación, pero aún no constituyen conciliación bancaria ni cambios futuros de tarifa. La imagen no incluye ni inicia `backend-prototipo`.

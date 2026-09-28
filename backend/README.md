@@ -193,9 +193,9 @@ líneas a `Submitted` una sola vez bajo transacción serializable. Una repetici�
 del mismo actor y clave devuelve el resultado anterior; otra clave recibe
 conflicto. Auditoría e invalidaciones `finance_preinvoices` y
 `airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
-membresía, tenant y estado publicado antes de entregar la pista. No hay
-impuesto, conciliación, pago ni recibo todavía. La rama no
-se ha desplegado.
+membresía, tenant y estado publicado antes de entregar la pista. La factura,
+el pago manual y el recibo no fiscal se describen más abajo; no hay impuesto
+ni conciliación bancaria. Esta rama no se ha desplegado.
 
 `GET /api/v1/finance/tariffs` ofrece una lectura paginada de tarifas de
 versiones contractuales aprobadas o reemplazadas por estación autorizada. El
@@ -206,6 +206,15 @@ mismo `SaveChanges`; el feed vuelve a comprobar alcance y estado publicado al
 entregarla. No existe comando de modificación de tarifas desde Finanzas: los
 precios de servicios e importes ya ejecutados permanecen congelados. Este
 contrato está verificado localmente, no promovido al VPS.
+
+`GET /api/v1/finance/reconciliation` es una lectura paginada de prefacturas
+`Accepted` o `Invoiced`, facturas no fiscales y pagos manuales de Development.
+Requiere rol Finanzas, membresía interna, estación activa y grant vigente,
+revalidado antes de devolver filas. El orden es estable y el límite máximo es
+50. No modifica importes ni registra una conciliación bancaria; los cambios
+de factura y pago ya publican la invalidación durable `finance_preinvoices`.
+Esta ruta está probada localmente, no promovida al VPS.
+
 El portal de aerolínea puede releer una prefactura publicada y sus líneas
 inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
 deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.

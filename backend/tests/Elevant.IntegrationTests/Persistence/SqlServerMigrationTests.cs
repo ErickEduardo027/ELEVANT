@@ -5018,6 +5018,23 @@ public sealed class SqlServerMigrationTests
             Assert.All(financeAcceptanceHints, hint =>
                 Assert.Equal(financeAccountInternalId, hint.RecipientAccountId));
 
+            async Task<FinanceReconciliationPageData?> ReadReconciliationAsync(Guid actorId,
+                Guid selectedStationId)
+            {
+                await using var readScope = provider.CreateAsyncScope();
+                return await readScope.ServiceProvider
+                    .GetRequiredService<IFinanceReconciliationReadStore>()
+                    .ListAsync(actorId, selectedStationId, 1, 20, cancellationToken);
+            }
+            var acceptedForReconciliation = Assert.Single((await ReadReconciliationAsync(
+                financeAccountId, stationId))!.Rows,
+                item => item.PreinvoiceId == created.DraftId.Value);
+            Assert.Equal("Accepted", acceptedForReconciliation.PreinvoiceStatus);
+            Assert.Null(acceptedForReconciliation.InvoiceId);
+            Assert.Null(acceptedForReconciliation.PaymentId);
+            Assert.Null(await ReadReconciliationAsync(occAccountId, stationId));
+            Assert.Null(await ReadReconciliationAsync(financeAccountId, Guid.NewGuid()));
+
             var invoiceCommand = new IssueFinanceInvoiceCommand(
                 financeAccountId, created.DraftId.Value, Guid.NewGuid());
             async Task<IssueFinanceInvoiceResult> IssueAsync(IssueFinanceInvoiceCommand request)
@@ -5051,6 +5068,12 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(PreinvoiceStatus.Invoiced, await inspection.Preinvoices.AsNoTracking()
                 .Where(item => item.Id == draft.Id).Select(item => item.Status)
                 .SingleAsync(cancellationToken));
+            var awaitingPayment = Assert.Single((await ReadReconciliationAsync(
+                financeAccountId, stationId))!.Rows,
+                item => item.PreinvoiceId == created.DraftId.Value);
+            Assert.Equal(invoice.PublicId, awaitingPayment.InvoiceId);
+            Assert.Equal(invoice.Total, awaitingPayment.InvoiceTotal);
+            Assert.Null(awaitingPayment.PaymentId);
             Assert.Equal(invoiceCommand.RequestId,
                 Assert.Single(await inspection.AuditEntries.AsNoTracking()
                     .Where(item => item.EntityPublicId == invoice.PublicId &&
@@ -5108,6 +5131,12 @@ public sealed class SqlServerMigrationTests
                 .Where(item => item.InvoiceId == invoice.Id).ToArrayAsync(cancellationToken));
             Assert.Equal(invoice.Total, payment.Amount);
             Assert.Equal(invoice.CurrencyCode, payment.CurrencyCode);
+            var paidForReconciliation = Assert.Single((await ReadReconciliationAsync(
+                financeAccountId, stationId))!.Rows,
+                item => item.PreinvoiceId == created.DraftId.Value);
+            Assert.Equal(payment.PublicId, paidForReconciliation.PaymentId);
+            Assert.Equal(payment.Amount, paidForReconciliation.PaymentAmount);
+            Assert.Equal(payment.Reference, paidForReconciliation.PaymentReference);
             Assert.Equal(paymentCommand.RequestId,
                 Assert.Single(await inspection.AuditEntries.AsNoTracking()
                     .Where(item => item.EntityPublicId == payment.PublicId &&
@@ -5358,6 +5387,9 @@ public sealed class SqlServerMigrationTests
                     .GetRequiredService<IFinancePreinvoiceListStore>();
                 Assert.Null(await preinvoices.ListAsync(financePublicId, stationId, 1, 20,
                     cancellationToken));
+                Assert.Null(await readScope.ServiceProvider
+                    .GetRequiredService<IFinanceReconciliationReadStore>()
+                    .ListAsync(financePublicId, stationId, 1, 20, cancellationToken));
             }
             Guid revokedPreinvoiceId;
             Guid revokedOrganizationId;

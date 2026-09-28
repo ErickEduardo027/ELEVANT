@@ -572,6 +572,41 @@ export interface FinancePreinvoicePageData {
   preinvoices: FinancePreinvoiceListItem[];
 }
 
+export interface FinanceReconciliationData {
+  preinvoiceId: string;
+  airlineId: string;
+  airlineName: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  preinvoiceTotal: number;
+  preinvoiceStatus: string;
+  /** @nullable */
+  invoiceId?: string | null;
+  /** @nullable */
+  invoiceNumber?: string | null;
+  /** @nullable */
+  invoiceTotal?: number | null;
+  /** @nullable */
+  issuedAt?: string | null;
+  /** @nullable */
+  paymentId?: string | null;
+  /** @nullable */
+  paymentReference?: string | null;
+  /** @nullable */
+  paymentAmount?: number | null;
+  /** @nullable */
+  paymentRecordedAt?: string | null;
+}
+
+export interface FinanceReconciliationPageData {
+  stationId: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  rows: FinanceReconciliationData[];
+}
+
 export interface FinanceTariffData {
   id: string;
   contractId: string;
@@ -1930,6 +1965,12 @@ to?: string;
 };
 
 export type ListFinancePreinvoicesParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
+export type ListFinanceReconciliationParams = {
 stationId: string;
 page?: number;
 limit?: number;
@@ -3637,6 +3678,41 @@ const res = await fetch(getCreatePreinvoiceDraftUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceReconciliationUrl = (params: ListFinanceReconciliationParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/reconciliation?${stringifiedParams}` : `/api/v1/finance/reconciliation`
+}
+
+export const listFinanceReconciliation = async (params: ListFinanceReconciliationParams, options?: RequestInit): Promise<FinanceReconciliationPageData> => {
+
+  const res = await fetch(getListFinanceReconciliationUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceReconciliationPageData = body ? JSON.parse(body) : {}
   return data
 }
 

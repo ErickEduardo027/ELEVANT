@@ -57,6 +57,13 @@ Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
 precios negativos y versiones no publicadas. Es una lectura; no cambia tarifas
 ni revaloriza snapshots operativos o financieros históricos.
 
+`getFinanceReconciliation({ stationId, page?, limit? })` lista hasta 50
+prefacturas aceptadas o facturadas por página, con su factura no fiscal y,
+si existe, el pago manual registrado. La API exige rol Finanzas, membresía
+interna y grant de la estación; el wrapper rechaza otra estación, paginación
+incoherente y combinaciones inválidas de estado, factura y pago. Es una
+proyección de seguimiento, no una confirmación de conciliación bancaria.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores
