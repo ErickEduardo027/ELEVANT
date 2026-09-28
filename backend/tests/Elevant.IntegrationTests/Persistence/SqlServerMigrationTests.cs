@@ -43,6 +43,72 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task HumanResourcesQualificationsReadCurrentCyclesOnlyForLiveInternalRole()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesQualificationReadStore>();
+            var page = await store.ListCurrentAsync(hrId, 1, 1, cancellationToken);
+            Assert.NotNull(page);
+            Assert.False(page.HasMore);
+            var qualification = Assert.Single(page.Qualifications);
+            Assert.Equal(Guid.Parse("50000000-0000-7000-8000-000000000002"), qualification.Id);
+            Assert.Equal("DEV-RA-001", qualification.EmployeeNumber);
+            Assert.Equal("GPU", qualification.EquipmentCode);
+            Assert.Equal(new DateOnly(2099, 12, 31), qualification.ExpiresOn);
+            Assert.Empty((await store.ListCurrentAsync(hrId, 2, 1, cancellationToken))!.Qualifications);
+            Assert.Null(await store.ListCurrentAsync(occId, 1, 20, cancellationToken));
+            Assert.Single((await store.ListCurrentAsync(superAdminId, 1, 20,
+                cancellationToken))!.Qualifications);
+        }
+
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+            await context.QualificationCycles.Where(cycle => cycle.IsCurrent)
+                .ExecuteUpdateAsync(update => update.SetProperty(cycle => cycle.IsCurrent, false),
+                    cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesQualificationReadStore>();
+            Assert.Null(await store.ListCurrentAsync(hrId, 1, 20, cancellationToken));
+            Assert.Empty((await store.ListCurrentAsync(superAdminId, 1, 20,
+                cancellationToken))!.Qualifications);
+        }
+    }
+
+    [Fact]
     public async Task FinanceTariffsExposeOnlyPublishedRatesForALiveStationGrant()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

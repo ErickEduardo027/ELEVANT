@@ -760,6 +760,29 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HumanResourcesQualificationData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  equipmentTypeId: string;
+  equipmentCode: string;
+  equipmentName: string;
+  cycleNumber: number;
+  trainingDate: string;
+  obtainedOn: string;
+  expiresOn: string;
+  certifyingEntity: string;
+  instructorName: string;
+}
+
+export interface HumanResourcesQualificationPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  qualifications: HumanResourcesQualificationData[];
+}
+
 export interface IssueFinanceInvoiceRequest {
   preinvoiceId: string;
   requestId: string;
@@ -1983,6 +2006,11 @@ limit?: number;
 };
 
 export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesQualificationsParams = {
 page?: number;
 limit?: number;
 };
@@ -4068,6 +4096,41 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationsUrl = (params?: ListHumanResourcesQualificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/qualifications?${stringifiedParams}` : `/api/v1/human-resources/qualifications`
+}
+
+export const listHumanResourcesQualifications = async (params?: ListHumanResourcesQualificationsParams, options?: RequestInit): Promise<HumanResourcesQualificationPage> => {
+
+  const res = await fetch(getListHumanResourcesQualificationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationPage = body ? JSON.parse(body) : {}
   return data
 }
 

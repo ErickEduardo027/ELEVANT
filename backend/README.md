@@ -99,6 +99,12 @@ a 60 minutos y usa 15 por defecto.
   posición, exige cobertura de la escala y aptitud vigente, y rechaza otro turno
   para ese día. Todos estos endpoints OCC exigen `ADMIN_OCC`, portal BackOffice,
   membresía interna AVIAM vigente y scope de estación.
+- `GET /api/v1/human-resources/qualifications?page=&limit=` lista páginas de
+  hasta 100 ciclos de habilitación marcados como vigentes, con agente y equipo
+  reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
+  vigente. Devuelve fechas documentadas, no inventa estado de cobertura ni
+  permite renovar; una habilitación marcada como ciclo actual puede estar
+  vencida por fecha. La pantalla prototípica aún no consume esta lectura.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

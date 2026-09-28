@@ -64,6 +64,14 @@ interna y grant de la estación; el wrapper rechaza otra estación, paginación
 incoherente y combinaciones inválidas de estado, factura y pago. Es una
 proyección de seguimiento, no una confirmación de conciliación bancaria.
 
+`getHumanResourcesQualifications({ page?, limit? })` lee páginas de hasta
+100 ciclos actuales de habilitación registrados para agentes de rampa. Solo
+una sesión interna de Gestión Humana o Superadministración puede obtenerlos;
+el wrapper comprueba identificadores, fechas y paginación. Una fecha vencida
+no se presenta como vigente por el mero valor `is_current` de SQL. La vista
+profunda de Gestión Humana seguirá oculta hasta sustituir sus adaptadores
+prototípicos de habilitaciones, permisos y turnos.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores
