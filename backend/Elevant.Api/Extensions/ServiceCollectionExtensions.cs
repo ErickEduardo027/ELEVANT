@@ -7,6 +7,7 @@ using Elevant.Api.Configuration;
 using Elevant.Api.ExceptionHandling;
 using Elevant.Api.HealthChecks;
 using Elevant.Api.Hubs;
+using Elevant.Api.Media;
 using Elevant.Api.OpenApi;
 using Elevant.Api.Realtime;
 using Elevant.Application.Abstractions.Identity;
@@ -59,6 +60,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAccountChangePush, SignalRAccountChangePush>();
         if (configuration.GetValue<bool>("Realtime:AccountChangeDispatcherEnabled"))
             services.AddHostedService<AccountChangeDispatchWorker>();
+        if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
+            services.AddHostedService<CommercialMediaCleanupWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {

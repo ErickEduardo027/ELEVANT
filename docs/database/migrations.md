@@ -8,6 +8,13 @@ aditivas para el [flujo comercial](../workflows/commercial-intake-and-governance
 El seed sintético de Development es un paso separado; las migraciones no
 insertan servicios, aerolíneas ni cuentas.
 
+`CommercialMediaAssets` agrega metadatos y claves de objetos en
+`commercial.media_assets` con FK al actor que subió el archivo.
+`PersonAvatarMedia` agrega una referencia nullable en `iam.persons`.
+Ambas son aditivas y no mueven bytes ni actualizan filas existentes. Los bytes
+requieren el [almacén privado](../../ops/dokploy/media-storage/README.md),
+instalado y respaldado antes de promover la API que permita subir archivos.
+
 Development y Production aplican la misma cadena. Se separan por instancia, nombre, marcador, credenciales, volumen, datos y backups. Una migración no contiene DML de negocio; Production queda vacía salvo marcador e historial técnicos.
 
 ## Crear una migración

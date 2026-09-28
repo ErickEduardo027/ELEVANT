@@ -1,5 +1,26 @@
 # Configuración de Dokploy
 
+## Cambio pendiente: medios comerciales privados
+
+La carga de fotos, videos y avatares del flujo comercial requiere un almacén S3
+privado adicional. El contrato revisable, el orden de instalación, el backup del
+par de volúmenes y la prueba de restauración están en
+[`ops/dokploy/media-storage`](../../ops/dokploy/media-storage/README.md).
+Este bloque describe una **preparación pendiente** y no afirma que Garage esté
+instalado o que los nuevos endpoints estén promocionados en el VPS.
+
+Antes de aceptar un bundle API que contenga `MediaStorage`, el operador prepara
+Garage, el bucket y la clave de alcance limitado, guarda las cinco variables
+`ELEVANT_MEDIA_*` en el Environment privado de API y actualiza el Raw API con
+las referencias exactas de `backend/compose.development.api.yml`. Después
+verifica Preview Compose y la igualdad semántica exigida por API CD. No se
+exponen puertos S3 ni credenciales al navegador. Los medios publicados se leen
+mediante `/api/v1/media/{id}` y los avatares requieren autorización.
+
+El orden de promoción continúa siendo Database Release → API → AVIAM Web y
+Public Web. No se habilita el poll API para este cambio hasta que el
+almacenamiento, el backup y una restauración de prueba estén verificados.
+
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
 privado, cómo se desplegaron DB v1, la API y las dos webs, y cómo se habilitaron
 sus carriles CD pull-based. También define los runbooks de reconstrucción y el

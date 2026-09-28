@@ -28,6 +28,11 @@ requiere además `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD` para crear la cuenta
 sintética de superadministrador; el valor no se guarda aquí. El flujo y sus
 límites están en [solicitud comercial y gobernanza](../../docs/workflows/commercial-intake-and-governance.md).
 
+`CommercialMediaAssets` crea la tabla de metadatos de archivos privados;
+`PersonAvatarMedia` agrega el vínculo opcional de avatar en `iam.persons`.
+No contienen datos de negocio ni BLOBs. El [almacén S3 privado](../../ops/dokploy/media-storage/README.md)
+se instala como recurso independiente antes de la API que usa estos campos.
+
 La consulta pública y la recepción de solicitudes comparten el mismo filtro de servicios activos y publicados. Un servicio interno no publicado no puede solicitarse mediante un UUID conocido. La admisión usa una transacción serializable entre la lectura de visibilidad y la escritura, para ordenar correctamente una retirada concurrente del catálogo. Esta regla no requiere una migración adicional.
 
 La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`

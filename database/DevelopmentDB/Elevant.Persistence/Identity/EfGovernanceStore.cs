@@ -8,6 +8,7 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Audit;
+using Elevant.Persistence.Commercial;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -63,7 +64,7 @@ internal sealed class EfGovernanceStore(
             where agent.IsActive
             orderby person.FirstName, person.LastName
             select new { agent.Id, agent.PublicId, agent.EmployeeNumber,
-                agent.PersonId, person.FirstName, person.LastName }).ToArrayAsync(cancellationToken);
+                agent.PersonId, person.FirstName, person.LastName, person.AvatarMediaUrl }).ToArrayAsync(cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var agentScopes = await (from scope in context.Set<RampAgentStationScope>().AsNoTracking()
             join station in context.Stations.AsNoTracking() on scope.StationId equals station.Id
@@ -89,7 +90,8 @@ internal sealed class EfGovernanceStore(
                 role?.Portal.ToString() ?? "", memberships.FirstOrDefault(membership =>
                     membership.AccountId == item.account.Id)?.DisplayName ?? "",
                 item.account.MustChangePassword,
-                rampAgents.FirstOrDefault(agent => agent.PersonId == item.account.PersonId)?.PublicId);
+                rampAgents.FirstOrDefault(agent => agent.PersonId == item.account.PersonId)?.PublicId,
+                item.person.AvatarMediaUrl);
         }).ToArray();
         var permissionCodes = await context.Permissions.AsNoTracking()
             .OrderBy(permission => permission.Code).Select(permission => permission.Code)
@@ -99,7 +101,8 @@ internal sealed class EfGovernanceStore(
             agent.PublicId, $"{agent.FirstName} {agent.LastName}".Trim(), agent.EmployeeNumber,
             agentScopes.Where(scope => scope.RampAgentId == agent.Id)
                 .Select(scope => scope.Code).Distinct().OrderBy(code => code).ToArray(),
-            users.FirstOrDefault(item => item.account.PersonId == agent.PersonId)?.account.PublicId))
+            users.FirstOrDefault(item => item.account.PersonId == agent.PersonId)?.account.PublicId,
+            agent.AvatarMediaUrl))
             .ToArray();
         return new GovernanceSnapshot(roleData, userData, permissionCodes, audit, rampProfiles);
     }
@@ -272,6 +275,11 @@ internal sealed class EfGovernanceStore(
                 scope.RampAgentId == rampProfile.Id && scope.ValidFrom <= DateOnly.FromDateTime(DateTime.UtcNow) &&
                 (scope.ValidTo == null || scope.ValidTo >= DateOnly.FromDateTime(DateTime.UtcNow)), cancellationToken)))
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
+        var currentAvatar = rampProfile is null ? null : await context.Persons.AsNoTracking()
+            .Where(item => item.Id == rampProfile.PersonId)
+            .Select(item => item.AvatarMediaUrl).SingleAsync(cancellationToken);
+        if (!await ValidAvatarAsync(input.AvatarMediaUrl, currentAvatar, cancellationToken))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid);
         var email = input.Email.Trim();
         var normalizedEmail = email.ToUpperInvariant();
         if (await context.Users.AnyAsync(item => item.NormalizedEmail == normalizedEmail,
@@ -292,6 +300,7 @@ internal sealed class EfGovernanceStore(
                 {
                     PublicId = Guid.CreateVersion7(), FirstName = input.FirstName.Trim(),
                     LastName = input.LastName.Trim(), PrimaryEmail = email,
+                    AvatarMediaUrl = input.AvatarMediaUrl,
                     IdentificationType = "GOVERNANCE_ACCOUNT",
                     IdentificationNumber = Guid.CreateVersion7().ToString("N"),
                 };
@@ -299,6 +308,7 @@ internal sealed class EfGovernanceStore(
             else if (!string.Equals(person.FirstName, input.FirstName.Trim(), StringComparison.Ordinal) ||
                 !string.Equals(person.LastName, input.LastName.Trim(), StringComparison.Ordinal))
                 return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            if (input.AvatarMediaUrl is not null) person.AvatarMediaUrl = input.AvatarMediaUrl;
             await context.SaveChangesAsync(cancellationToken);
             var user = new ApplicationUser
             {
@@ -396,6 +406,8 @@ internal sealed class EfGovernanceStore(
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
         var person = await context.Persons.SingleAsync(item => item.Id == user.PersonId,
             cancellationToken);
+        if (!await ValidAvatarAsync(input.AvatarMediaUrl, person.AvatarMediaUrl, cancellationToken))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid);
         var strategy = context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
@@ -404,6 +416,7 @@ internal sealed class EfGovernanceStore(
             person.FirstName = input.FirstName.Trim();
             person.LastName = input.LastName.Trim();
             person.PrimaryEmail = email;
+            if (input.AvatarMediaUrl is not null) person.AvatarMediaUrl = input.AvatarMediaUrl;
             user.Email = email;
             user.UserName = email;
             user.NormalizedEmail = normalizedEmail;
@@ -538,6 +551,17 @@ internal sealed class EfGovernanceStore(
 
     private static bool ValidName(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length is >= 2 and <= 100;
+    private async Task<bool> ValidAvatarAsync(string? url, string? currentUrl,
+        CancellationToken cancellationToken)
+    {
+        if (url is null) return true;
+        if (!url.StartsWith("/api/v1/media/", StringComparison.Ordinal) ||
+            !Guid.TryParse(url["/api/v1/media/".Length..], out var id)) return false;
+        var cutoff = CommercialMediaLinkPolicy.LinkCutoff(DateTimeOffset.UtcNow);
+        return await context.MediaAssets.AnyAsync(asset => asset.PublicId == id &&
+            asset.Purpose == "avatar" &&
+            (asset.CreatedAt >= cutoff || url == currentUrl), cancellationToken);
+    }
     private static bool ValidEmail(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= 256 &&
         MailAddress.TryCreate(value.Trim(), out var address) &&

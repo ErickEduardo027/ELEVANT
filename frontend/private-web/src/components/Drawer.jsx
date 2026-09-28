@@ -1,5 +1,6 @@
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { XIcon } from '../features/shell/components/icons';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 // Drawer lateral genérico, generalizado a partir del patrón repetido en
 // `feat/adminocc` (overlay + <aside role="dialog"> deslizante). Permanece
@@ -7,6 +8,7 @@ import { XIcon } from '../features/shell/components/icons';
 // sus propios datos ausentes cuando `open` es falso.
 export default function Drawer({ open, onClose, title, description, widthClassName = 'lg:w-[480px]', children, footer }) {
   useEscapeToClose(open, onClose);
+  const dialogRef = useDialogFocus(open);
 
   return (
     <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
@@ -17,6 +19,8 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
         }`}
       />
       <aside
+        ref={dialogRef}
+        inert={!open ? '' : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={title}

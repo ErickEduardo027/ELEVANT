@@ -109,6 +109,7 @@ internal static class IdentityReferenceConfiguration
             builder.Property(person => person.LastName).HasMaxLength(100).IsRequired();
             builder.Property(person => person.PrimaryEmail).HasMaxLength(256);
             builder.Property(person => person.PhoneNumber).HasMaxLength(32);
+            builder.Property(person => person.AvatarMediaUrl).HasMaxLength(512);
             builder.Property(person => person.IdentificationType).HasMaxLength(32).IsRequired();
             builder.Property(person => person.IdentificationNumber).HasMaxLength(64).IsRequired();
             builder.HasIndex(person => new { person.IdentificationType, person.IdentificationNumber }).IsUnique();

@@ -75,10 +75,6 @@ export function AuthExperience({
               <LoadingState />
             ) : (
               <>
-                <nav className={styles.tabs} aria-label="Acceso de aerolíneas">
-                  <span id="login-label" aria-current="page">Iniciar sesión</span>
-                  <Link href="/solicitar-acceso">Solicitar acceso</Link>
-                </nav>
                 <SignInPanel returnTo={returnTo} />
               </>
             )}
@@ -166,6 +162,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const update = <Field extends SignInInputField>(
     field: Field,
@@ -243,12 +240,12 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       className={styles.tabPanel}
       id="login-panel"
       role="region"
-      aria-labelledby="login-label"
+      aria-labelledby="login-heading"
       tabIndex={0}
     >
       <header className={styles.formHeader}>
         <p className={styles.formKicker}>Acceso autorizado</p>
-        <h2>Continúa al portal de tu aerolínea.</h2>
+        <h2 id="login-heading">Continúa al portal de tu aerolínea.</h2>
         <p>
           Utiliza la cuenta emitida para tu aerolínea. El acceso y las estaciones
           se comprueban con la API de Development.
@@ -320,11 +317,13 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
           value={newPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
           onChange={setNewPassword} onBlur={() => {}} />
         <PasswordField id="airline-confirm-password" name="confirmPassword" label="Confirmar nueva contraseña"
-          value={confirmPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
+          value={confirmPassword} autoComplete="new-password" visible={showConfirmPassword} onVisibilityChange={() => setShowConfirmPassword((value) => !value)}
           onChange={setConfirmPassword} onBlur={() => {}} />
         {feedback && <div className={styles.feedback} data-kind={feedback.kind} role="alert"><InfoIcon /><p>{feedback.message}</p></div>}
         <button className={styles.primaryButton} type="submit" disabled={pending}>Cambiar contraseña</button>
       </form>}
+
+      <p className={styles.requestLink}>¿No tienes credenciales? <Link href="/solicitar-acceso">Solicita acceso aquí</Link></p>
 
       <p className={styles.formDisclaimer}>
         La sesión se revalida al recargar y termina al cerrar sesión o vencer el token.

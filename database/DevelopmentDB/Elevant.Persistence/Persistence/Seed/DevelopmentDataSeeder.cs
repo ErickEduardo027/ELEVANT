@@ -893,13 +893,13 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
     {
         var services = new (string Code, string Name, string Description, string Image)[]
         {
-            ("RAMP-CARGO", "Carga y descarga", "Traslado y manipulación de equipaje y carga entre aeronave y plataforma.", "hero-ramp.webp"),
-            ("RAMP-TOW", "Remolque de aeronaves", "Movimiento de aeronaves en plataforma con equipos y personal de rampa.", "turnaround-top.webp"),
-            ("RAMP-AC", "Aire acondicionado", "Suministro de aire acondicionado en tierra durante la escala.", "occ-control.webp"),
-            ("RAMP-GPU", "Unidad generadora de energía", "Energía eléctrica en tierra para la aeronave durante la operación.", "agent-rain.webp"),
-            ("RAMP-ASU", "Unidad generadora a reacción", "Suministro de aire de arranque mediante unidad de apoyo en tierra.", "actor-airline.webp"),
-            ("RAMP-PARKING", "Asistencia de parqueo de aeronaves", "Guiado y asistencia durante el ingreso y posicionamiento en plataforma.", "closing-sunset.webp"),
-            ("RAMP-STAIRS", "Escaleras móviles", "Posicionamiento de escaleras para embarque y desembarque remoto.", "hero-ramp.webp"),
+            ("RAMP-CARGO", "Carga y descarga", "Traslado y manipulación de equipaje y carga entre aeronave y plataforma.", "cargo-loading.webp"),
+            ("RAMP-TOW", "Remolque de aeronaves", "Movimiento de aeronaves en plataforma con equipos y personal de rampa.", "aircraft-towing.webp"),
+            ("RAMP-AC", "Aire acondicionado", "Suministro de aire acondicionado en tierra durante la escala.", "ground-air-conditioning.webp"),
+            ("RAMP-GPU", "Unidad generadora de energía", "Energía eléctrica en tierra para la aeronave durante la operación.", "ground-power.webp"),
+            ("RAMP-ASU", "Unidad generadora a reacción", "Suministro de aire de arranque mediante unidad de apoyo en tierra.", "air-start-unit.webp"),
+            ("RAMP-PARKING", "Asistencia de parqueo de aeronaves", "Guiado y asistencia durante el ingreso y posicionamiento en plataforma.", "aircraft-marshalling.webp"),
+            ("RAMP-STAIRS", "Escaleras móviles", "Posicionamiento de escaleras para embarque y desembarque remoto.", "mobile-stairs.webp"),
         };
         for (var index = 0; index < services.Length; index++)
         {
@@ -915,7 +915,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                     IsActive = true,
                     IsPublic = true,
                     DisplayOrder = index + 1,
-                    ImageUrl = $"/assets/generated/{service.Image}",
+                    ImageUrl = $"/assets/services/{service.Image}",
                 }, DeterministicGuid($"public-service:{service.Code}").ToString("D")),
                 cancellationToken);
         }

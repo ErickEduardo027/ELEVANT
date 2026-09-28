@@ -43,6 +43,7 @@ Este índice explica la arquitectura comprobable de ELEVANT en el commit indicad
 | ¿Quién posee el modelo SQL y cómo evolucionan los datos? | [Datos, EF Core, migraciones y persistencia](datos-ef-migraciones-y-persistencia.md) |
 | ¿Qué contratos HTTP y tiempo real existen hoy? | [OpenAPI, HTTP y SignalR](openapi-http-y-signalr.md) |
 | ¿Qué proveedores se consumen realmente y cuáles son solo objetivos? | [Integraciones externas](integraciones-externas.md) |
+| ¿Cómo se guardan las fotos y videos del flujo comercial? | [Medios comerciales privados](medios-comerciales-privados.md) |
 | ¿Qué decisiones gobiernan el diseño y qué riesgos siguen abiertos? | [Decisiones, restricciones y riesgos](decisiones-restricciones-y-riesgos.md) |
 
 ## Fotografía de implementación

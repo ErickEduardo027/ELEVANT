@@ -165,9 +165,6 @@ export default function UserFormDrawer({ open, onClose, mode, record, roles, air
             <FormField label="Número de identificación">
               <input className={inputClassName} value={formState.identity.identificationNumber} onChange={event => updateIdentity({ identificationNumber: event.target.value })} />
             </FormField>
-            <FormField label="URL de foto de perfil (opcional)" hint="Se usará como avatar cuando exista almacenamiento de archivos en el backend.">
-              <input className={inputClassName} value={formState.identity.avatarUrl ?? ''} onChange={event => updateIdentity({ avatarUrl: event.target.value })} />
-            </FormField>
           </div>
         </section>
 

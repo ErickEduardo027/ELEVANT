@@ -74,6 +74,20 @@ export const decideCommercialRequest = (id, values) => commercialApi(`/contracts
   method: 'POST', body: JSON.stringify(values),
 });
 export const getManagedServices = () => commercialApi('/contracts/catalog/services');
+export async function uploadCommercialMedia(purpose, file) {
+  const token = readSession()?.token;
+  if (!token || !origin) throw new Error('La sesión expiró. Vuelva a iniciar sesión.');
+  const body = new FormData();
+  body.append('purpose', purpose);
+  body.append('file', file);
+  const response = await fetch(`${origin}/api/v1/media`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body,
+  });
+  handleUnauthorizedResponse(response);
+  if (!response.ok) throw new Error('No se pudo cargar el archivo. Verifique el formato y tamaño.');
+  return response.json();
+}
+export const commercialMediaUrl = path => path?.startsWith('/api/v1/media/') ? `${origin}${path}` : path;
 export const saveManagedService = (id, values) => commercialApi(id ? `/contracts/catalog/services/${id}` : '/contracts/catalog/services', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
 });

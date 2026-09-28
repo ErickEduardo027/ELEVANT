@@ -69,16 +69,39 @@ internal static class AviamAirlineReference
         ["AEROLINEAS ARGENTINAS"] = ("Aerolineas Argentinas S.A.", "AR", "ARG", "https://www.iata.org/en/about/members/airline-list/aerolineas-argentinas/13/"),
         ["AVIANCA"] = ("Aerovías del Continente Americano, S.A. AVIANCA", "AV", "AVA", "https://www.iata.org/en/about/members/airline-list/avianca/6/"),
     };
-    // Official-site icons are checked into both web clients at the same path.
-    // They identify the brand visually; verification of the legal entity remains separate.
-    public static readonly IReadOnlyDictionary<string, string> LogoPaths = new Dictionary<string, string>(StringComparer.Ordinal)
+    // Official-site icons are checked into both web clients. A named AVIAM reference
+    // tile is used when the historical brand has no retrievable official icon.
+    // Neither kind of image verifies legal identity or current operation.
+    private static readonly IReadOnlyDictionary<string, string> OfficialLogoPaths = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["AIR CARAIBES"] = "/assets/airlines/air-caraibes.png",
+        ["AIR EUROPA"] = "/assets/airlines/air-europa.png",
+        ["ARKEFLY"] = "/assets/airlines/arkefly.png",
         ["BRITISH AIRWAYS"] = "/assets/airlines/british-airways.png",
+        ["I-FLY AIRLINES"] = "/assets/airlines/i-fly-airlines.png",
+        ["LEVEL-IBERIA"] = "/assets/airlines/level-iberia.png",
+        ["ROSSIYA AIRLINES"] = "/assets/airlines/rossiya-airlines.png",
+        ["TUIFLY BELGIUM"] = "/assets/airlines/tuifly-belgium.png",
         ["AMERICAN AIRLINES"] = "/assets/airlines/american-airlines.png",
         ["AIR CANADA"] = "/assets/airlines/air-canada.png",
+        ["AIR TRANSAT"] = "/assets/airlines/air-transat.png",
+        ["DELTA AIRLINES"] = "/assets/airlines/delta-airlines.png",
+        ["FRONTIER AIRLINES"] = "/assets/airlines/frontier-airlines.png",
+        ["JETBLUE"] = "/assets/airlines/jetblue.png",
+        ["NORWEGIAN AIR"] = "/assets/airlines/norwegian-air.png",
+        ["SOUTHWEST AIRLINES"] = "/assets/airlines/southwest-airlines.png",
+        ["SUNCOUNTRY"] = "/assets/airlines/suncountry.png",
+        ["UNITED AIRLINES"] = "/assets/airlines/united-airlines.png",
+        ["WEST JET AIRLINES"] = "/assets/airlines/west-jet-airlines.png",
         ["AEROLINEAS ARGENTINAS"] = "/assets/airlines/aerolineas-argentinas.png",
         ["AVIANCA"] = "/assets/airlines/avianca.png",
+        ["WINGO"] = "/assets/airlines/wingo.png",
     };
+    public static readonly IReadOnlyDictionary<string, string> LogoPaths = Research.Keys.ToDictionary(
+        name => name,
+        name => OfficialLogoPaths.GetValueOrDefault(name) ??
+            $"/assets/airlines/reference-{name.ToLowerInvariant().Replace(' ', '-')}.svg",
+        StringComparer.Ordinal);
     public static readonly IReadOnlySet<string> Archived = new HashSet<string>(StringComparer.Ordinal)
     {
         "AIR BERLIN", "THOMAS COOK", "TAM AIRLINES", "LANPERU",

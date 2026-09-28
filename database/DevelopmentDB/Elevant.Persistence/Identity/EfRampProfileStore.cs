@@ -6,6 +6,7 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -57,6 +58,20 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             item => item.PublicId == profileId, cancellationToken);
         if (profileId is not null && profile is null)
             return RampProfileResult.Failed(RampProfileFailure.NotFound);
+        if (input.AvatarMediaUrl is not null)
+        {
+            if (!input.AvatarMediaUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal) ||
+                !Guid.TryParse(input.AvatarMediaUrl["/api/v1/media/".Length..], out var avatarId))
+                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            var currentAvatar = profile is null ? null : await context.Persons.AsNoTracking()
+                .Where(item => item.Id == profile.PersonId)
+                .Select(item => item.AvatarMediaUrl).SingleAsync(cancellationToken);
+            var cutoff = CommercialMediaLinkPolicy.LinkCutoff(DateTimeOffset.UtcNow);
+            if (!await context.MediaAssets.AnyAsync(asset => asset.PublicId == avatarId &&
+                asset.Purpose == "avatar" &&
+                (asset.CreatedAt >= cutoff || input.AvatarMediaUrl == currentAvatar), cancellationToken))
+                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+        }
         if (await context.RampAgents.AnyAsync(item => item.EmployeeNumber == input.EmployeeNumber.Trim() &&
             (profile == null || item.Id != profile.Id), cancellationToken))
             return RampProfileResult.Failed(RampProfileFailure.Conflict);
@@ -93,6 +108,7 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                     person.LastName = input.LastName.Trim();
                     person.UpdatedAt = now;
                 }
+                if (input.AvatarMediaUrl is not null) person.AvatarMediaUrl = input.AvatarMediaUrl;
                 profile.EmployeeNumber = input.EmployeeNumber.Trim();
                 profile.Category = input.Category.Trim();
                 profile.HireDate = input.HireDate;
@@ -149,7 +165,8 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                     person.FirstName, person.LastName, profile.EmployeeNumber,
                     profile.Category, profile.HireDate, profile.IsActive,
                     input.IsActive ? requestedStations.Select(item => new RampProfileStation(
-                        item.PublicId, item.Code, item.Name)).ToArray() : [], account is not null));
+                        item.PublicId, item.Code, item.Name)).ToArray() : [], account is not null,
+                    person.AvatarMediaUrl));
             });
         }
         catch (DbUpdateException exception) when (
@@ -185,5 +202,6 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             profile.EmployeeNumber, profile.Category, profile.HireDate, profile.IsActive,
             scopes.Where(item => item.RampAgentId == profile.Id && stations.ContainsKey(item.StationId))
                 .Select(item => stations[item.StationId]).Select(item =>
-                    new RampProfileStation(item.PublicId, item.Code, item.Name)).ToArray(), hasAccount);
+                    new RampProfileStation(item.PublicId, item.Code, item.Name)).ToArray(), hasAccount,
+            person.AvatarMediaUrl);
 }
