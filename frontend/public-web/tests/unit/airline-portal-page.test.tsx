@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ElevantApiError, type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
-  type SessionActorResponse } from "@elevant/api-client";
+  type NonFiscalPaymentLookupResponse, type SessionActorResponse } from "@elevant/api-client";
 
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
@@ -61,23 +61,29 @@ const getPreinvoice = vi.fn(async (id: string) => ({
 const acceptPreinvoice = vi.fn<(_id: string) => Promise<void>>(async () => {});
 const getPreinvoiceDisputes = vi.fn(async (id: string) => ({ preinvoiceId: id, disputes: [] }));
 const getPreinvoiceInvoice = vi.fn(async (id: string) => ({ preinvoiceId: id,
+  id: '74000000-0000-7000-8000-000000000009',
   number: 'NF-74000000000070008000000000000009', kind: 'NonFiscal',
   currencyCode: 'USD', total: 125.5, issuedAt: '2026-09-28T16:00:00Z',
   lines: [{ id: '74000000-0000-7000-8000-000000000010', lineNumber: 1,
     operationCode: 'DEV-TAT-0021', operationDate: '2026-08-18',
     serviceCode: 'GPU', serviceName: 'Ground power', executedQuantity: 1,
     billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] }));
+const getInvoicePayment = vi.fn<(invoiceId: string) => Promise<NonFiscalPaymentLookupResponse>>(
+  async (invoiceId: string) => ({ invoiceId,
+  payment: { id: '74000000-0000-7000-8000-000000000011', invoiceId,
+    reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 125.5,
+    recordedAt: '2026-09-28T17:00:00Z' } }));
 const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear();
+  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
   getPreinvoices.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
@@ -181,23 +187,34 @@ it("opens immutable service lines from the authorized preinvoice detail", async 
 });
 
 it("shows the real non-fiscal invoice only for an invoiced airline preinvoice", async () => {
-  getPreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+  const invoicedPage = { page: 1, limit: 20, hasMore: false,
     preinvoices: [{ id: '74000000-0000-7000-8000-000000000001',
       stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ',
       from: '2026-08-18', to: '2026-08-19', currencyCode: 'USD', total: 125.5,
-      status: 'Invoiced', createdAt: '2026-08-20T12:00:00Z' }] });
-  getPreinvoice.mockResolvedValueOnce({ id: '74000000-0000-7000-8000-000000000001',
+      status: 'Invoiced', createdAt: '2026-08-20T12:00:00Z' }] };
+  getPreinvoices.mockResolvedValueOnce(invoicedPage).mockResolvedValueOnce(invoicedPage);
+  const invoicedDetail = { id: '74000000-0000-7000-8000-000000000001',
     stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ',
     from: '2026-08-18', to: '2026-08-19', currencyCode: 'USD', total: 125.5,
     status: 'Invoiced', createdAt: '2026-08-20T12:00:00Z', lines: [{
       id: '74000000-0000-7000-8000-000000000002', operationCode: 'DEV-TAT-0021',
       operationDate: '2026-08-18', serviceCode: 'GPU', serviceName: 'Ground power',
-      executedQuantity: 1, billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] });
-  render(<AirlinePortalPage view="finance" />);
+      executedQuantity: 1, billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] };
+  getPreinvoice.mockResolvedValueOnce(invoicedDetail).mockResolvedValueOnce(invoicedDetail);
+  getInvoicePayment.mockResolvedValueOnce({
+    invoiceId: '74000000-0000-7000-8000-000000000009', payment: null,
+  });
+  const page = render(<AirlinePortalPage view="finance" />);
   fireEvent.click(await screen.findByRole('button', { name: /Ver l.*neas de prefactura/i }));
   expect(await screen.findByText(/NF-74000000000070008000000000000009/)).toBeInTheDocument();
   expect(getPreinvoiceInvoice).toHaveBeenCalledExactlyOnceWith(
     '74000000-0000-7000-8000-000000000001');
+  expect(getInvoicePayment).toHaveBeenCalledWith('74000000-0000-7000-8000-000000000009');
+  expect(screen.getByText('Sin pago registrado.')).toBeInTheDocument();
+  financeRevision = 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+  expect(await screen.findByText(/BANK-TEST-123/)).toBeInTheDocument();
+  expect(getInvoicePayment).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole('button', { name: 'Aceptar prefactura' })).not.toBeInTheDocument();
 });
 

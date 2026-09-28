@@ -113,7 +113,8 @@ no aparece. Revalida por feed durable, foco y polling acotado. El resto de
 Finanzas puede crear y volver a consultar una prefactura interna no fiscal
 desde los servicios elegibles. La selección se reconcilia cuando llega una
 reserva de otro usuario y un reintento conserva su clave idempotente.
-Conciliación, pago y recibo siguen pendientes; no se ha
+Conciliación y recibo siguen pendientes; el registro manual de pago se describe
+abajo y no verifica una transferencia bancaria. No se ha
 promovido esta rama al VPS.
 
 **Finanzas → Pre-facturación** ahora lista por estación las prefacturas
@@ -133,7 +134,18 @@ En la rama local, una prefactura `Accepted` presenta confirmación de emisión
 no fiscal. La API congela la factura y Finanzas relee número, líneas y total
 por una ruta de estación autorizada; la clave de intención se conserva para
 un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
-representa un PDF, impuesto, pago ni recibo y aún no está promovido al VPS.
+representa un PDF, impuesto ni recibo y aún no está promovido al VPS.
+
+En esta rama, Finanzas puede registrar **un pago manual completo de prueba**
+contra una factura no fiscal ya emitida. La API revalida la cuenta y el alcance
+de estación, toma moneda e importe de la factura congelada y conserva UUID de
+intención, referencia y actor para impedir un segundo registro. La vista
+relee `GET /api/v1/finance/payments/by-invoice/{invoiceId}` y distingue
+«Sin pago registrado» de un pago persistido. La operación no consulta al banco,
+no concilia fondos ni emite un comprobante fiscal. Fuentes:
+[controlador](../../backend/Elevant.Api/Controllers/FinancePaymentsController.cs),
+[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfNonFiscalPaymentStore.cs)
+y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
 
 ## Desarrollo local
 

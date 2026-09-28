@@ -919,6 +919,20 @@ export interface NonFiscalInvoiceResponse {
   lines: NonFiscalInvoiceLineResponse[];
 }
 
+export interface NonFiscalPaymentResponse {
+  id: string;
+  invoiceId: string;
+  reference: string;
+  currencyCode: string;
+  amount: number;
+  recordedAt: string;
+}
+
+export interface NonFiscalPaymentLookupResponse {
+  invoiceId: string;
+  payment?: NonFiscalPaymentResponse | null;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -1577,6 +1591,21 @@ export interface RampProfileCatalog {
   availableStations: RampProfileStation[];
 }
 
+export interface RecordNonFiscalPaymentRequest {
+  invoiceId: string;
+  requestId: string;
+  reference: string;
+}
+
+export interface RecordNonFiscalPaymentResponse {
+  id: string;
+  invoiceId: string;
+  reference: string;
+  currencyCode: string;
+  amount: number;
+  replayed: boolean;
+}
+
 export interface RegisterMobileDeviceRequest {
   installationId: string;
   /**
@@ -1939,6 +1968,34 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePaymentByInvoiceUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/payment`
+}
+
+export const getAirlinePaymentByInvoice = async (invoiceId: string, options?: RequestInit): Promise<NonFiscalPaymentLookupResponse> => {
+
+  const res = await fetch(getGetAirlinePaymentByInvoiceUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalPaymentLookupResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -3221,6 +3278,68 @@ const res = await fetch(getIssueFinanceInvoiceUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: IssueFinanceInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordNonFiscalPaymentUrl = () => {
+
+
+
+
+  return `/api/v1/finance/payments`
+}
+
+export const recordNonFiscalPayment = async (recordNonFiscalPaymentRequest?: RecordNonFiscalPaymentRequest, options?: RequestInit): Promise<RecordNonFiscalPaymentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordNonFiscalPaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordNonFiscalPaymentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RecordNonFiscalPaymentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePaymentByInvoiceUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payments/by-invoice/${invoiceId}`
+}
+
+export const getFinancePaymentByInvoice = async (invoiceId: string, options?: RequestInit): Promise<NonFiscalPaymentLookupResponse> => {
+
+  const res = await fetch(getGetFinancePaymentByInvoiceUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalPaymentLookupResponse = body ? JSON.parse(body) : {}
   return data
 }
 

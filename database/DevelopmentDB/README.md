@@ -66,6 +66,14 @@ de origen. Las FKs son `NO ACTION` y la migración no contiene datos de negocio.
 Es una factura de prueba **no fiscal**, sin PDF, impuesto, cobro ni recibo.
 Esta migración sigue en la rama local, sin promoción al VPS.
 
+La migración aditiva `NonFiscalPayments` agrega
+`commercial.non_fiscal_payments` después de `NonFiscalInvoices`. Conserva
+referencia, actor, clave idempotente, moneda e importe total de la factura
+no fiscal. Los índices únicos de factura, clave y referencia evitan dobles
+registros; las FKs son `NO ACTION`, no contiene DML ni simula liquidación
+bancaria. Las pruebas SQL comprueban concurrencia, replay, alcance y lectura
+tenant-scoped. Esta migración permanece en la rama local sin promoción.
+
 Desde cualquier directorio:
 
 ```powershell

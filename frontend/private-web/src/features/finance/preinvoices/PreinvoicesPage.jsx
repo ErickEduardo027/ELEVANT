@@ -3,12 +3,15 @@ import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
-  getFinanceInvoiceByPreinvoice } from '../../../services/financePreinvoiceService';
+  getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
+  recordNonFiscalPayment } from '../../../services/financePreinvoiceService';
 
 const STATUS = {
   Draft: 'Borrador', Submitted: 'Enviada', Disputed: 'En disputa',
   Accepted: 'Aceptada', Invoiced: 'Facturada', Voided: 'Anulada',
 };
+const EMPTY_PAYMENT_ATTEMPT = { status: 'idle', id: null, invoiceId: null,
+  requestId: null, reference: '' };
 
 function money(value, currency) {
   return `${currency} ${Number(value).toFixed(4)}`;
@@ -26,8 +29,11 @@ export default function PreinvoicesPage() {
   const [submission, setSubmission] = useState({ status: 'idle', id: null });
   const [invoiceIssue, setInvoiceIssue] = useState({ status: 'idle', id: null,
     requestId: null, number: null });
+  const [paymentAttempt, setPaymentAttempt] = useState(EMPTY_PAYMENT_ATTEMPT);
   const detailGeneration = useRef(0);
   const selectionGeneration = useRef(0);
+  const selectedPreinvoiceId = useRef(null);
+  const listScope = useRef({ stationId, page });
 
   useEffect(() => () => { detailGeneration.current += 1; selectionGeneration.current += 1; }, []);
 
@@ -52,18 +58,27 @@ export default function PreinvoicesPage() {
   }, [session?.accountId]);
 
   useEffect(() => {
+    const sameScope = listScope.current.stationId === stationId &&
+      listScope.current.page === page;
+    listScope.current = { stationId, page };
+    const preservePending = sameScope && (submission.status === 'pending' ||
+      invoiceIssue.status === 'pending' || paymentAttempt.status === 'pending');
+    const reopenId = sameScope && !preservePending ? selectedPreinvoiceId.current : null;
     if (!stationId) {
       detailGeneration.current += 1;
       selectionGeneration.current += 1;
       setDetail({ status: 'idle', value: null });
       setSubmission({ status: 'idle', id: null });
       setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+      setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
       setState({ status: 'forbidden', result: null });
       return undefined;
     }
     const controller = new AbortController();
-    detailGeneration.current += 1;
-    setDetail({ status: 'idle', value: null });
+    if (!preservePending) {
+      detailGeneration.current += 1;
+      setDetail({ status: 'idle', value: null });
+    }
     setState({ status: 'loading', result: null });
     getFinancePreinvoices({ stationId, page, limit: 20 }, { signal: controller.signal })
       .then(result => {
@@ -73,21 +88,26 @@ export default function PreinvoicesPage() {
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', result: null });
       });
+    if (reopenId) void openDetail(reopenId);
     return () => controller.abort();
   }, [stationId, page, revision]);
 
   async function openDetail(id) {
+    selectedPreinvoiceId.current = id;
     const generation = ++detailGeneration.current;
     selectionGeneration.current += 1;
     setSubmission({ status: 'idle', id: null });
     setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+    setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
     setDetail({ status: 'loading', value: null });
     try {
       const [preinvoice, disputeList] = await Promise.all([
         getPreinvoiceDraft(id, stationId), getFinancePreinvoiceDisputes(id)]);
       const invoice = preinvoice.status === 'Invoiced'
         ? await getFinanceInvoiceByPreinvoice(id) : null;
-      const value = { ...preinvoice, disputes: disputeList.disputes, invoice };
+      const payment = invoice ? await getFinancePaymentByInvoice(invoice.id) : null;
+      const value = { ...preinvoice, disputes: disputeList.disputes, invoice,
+        payment: payment?.payment ?? null };
       if (generation === detailGeneration.current)
         setDetail({ status: 'success', value });
     } catch (error) {
@@ -97,11 +117,13 @@ export default function PreinvoicesPage() {
   }
 
   function changePage(delta) {
+    selectedPreinvoiceId.current = null;
     detailGeneration.current += 1;
     selectionGeneration.current += 1;
     setDetail({ status: 'idle', value: null });
     setSubmission({ status: 'idle', id: null });
     setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+    setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
     setPage(value => value + delta);
   }
 
@@ -114,6 +136,7 @@ export default function PreinvoicesPage() {
     try {
       await submitFinancePreinvoice(id);
       if (generation !== detailGeneration.current) return;
+      selectedPreinvoiceId.current = null;
       setDetail({ status: 'idle', value: null });
       setSubmission({ status: 'success', id });
       setRevision(value => value + 1);
@@ -141,6 +164,7 @@ export default function PreinvoicesPage() {
     try {
       const result = await issueFinanceInvoice({ preinvoiceId: id, requestId });
       if (generation !== selectionGeneration.current) return;
+      selectedPreinvoiceId.current = null;
       setDetail({ status: 'idle', value: null });
       setInvoiceIssue(current => ({ ...current, status: 'success', number: result.number }));
       setRevision(value => value + 1);
@@ -160,6 +184,37 @@ export default function PreinvoicesPage() {
     }
   }
 
+  async function confirmPayment() {
+    const { id, invoiceId, requestId, reference, status } = paymentAttempt;
+    if (!id || !invoiceId || !requestId || !['edit', 'error'].includes(status) ||
+        !/^[A-Za-z0-9-]{8,80}$/.test(reference) ||
+        detail.value?.id !== id || detail.value.invoice?.id !== invoiceId ||
+        detail.value.payment) return;
+    const generation = detailGeneration.current;
+    setPaymentAttempt(current => ({ ...current, status: 'pending' }));
+    try {
+      await recordNonFiscalPayment({ invoiceId, requestId, reference });
+      const lookup = await getFinancePaymentByInvoice(invoiceId);
+      if (generation !== detailGeneration.current) return;
+      if (!lookup.payment) throw new Error('Payment read did not confirm the write.');
+      setDetail(current => ({ ...current, value: { ...current.value,
+        payment: lookup.payment } }));
+      setPaymentAttempt(current => ({ ...current, status: 'success' }));
+    } catch (error) {
+      if (generation !== detailGeneration.current) return;
+      if (error?.status === 401 || error?.status === 403) {
+        detailGeneration.current += 1;
+        setDetail({ status: 'idle', value: null });
+        setState({ status: error.status === 401 ? 'unauthorized' : 'forbidden', result: null });
+        setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
+        return;
+      }
+      setPaymentAttempt(current => ({ ...current,
+        status: error?.status === 409 ? 'conflict' : 'error' }));
+      if (error?.status === 409) setRevision(value => value + 1);
+    }
+  }
+
   const rows = state.result?.preinvoices ?? [];
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -174,11 +229,13 @@ export default function PreinvoicesPage() {
 
     <label className="block max-w-xs text-xs font-semibold">Estación
       <select aria-label="Estación de prefacturas" value={stationId} onChange={event => {
+        selectedPreinvoiceId.current = null;
         detailGeneration.current += 1;
         selectionGeneration.current += 1;
         setStationId(event.target.value); setPage(1); setDetail({ status: 'idle', value: null });
         setSubmission({ status: 'idle', id: null });
         setInvoiceIssue({ status: 'idle', id: null, requestId: null, number: null });
+        setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT);
       }} className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark">
         {scopes.map(scope => <option key={scope.stationId} value={scope.stationId}>{scope.stationCode}</option>)}
       </select>
@@ -228,6 +285,8 @@ export default function PreinvoicesPage() {
         Reintentar emisión
       </button>
     </div>}
+    {state.status === 'success' && paymentAttempt.status === 'conflict' &&
+      <p role="alert" className="rounded-xl border p-4">El pago ya cambió. Consulte el estado actualizado de la factura.</p>}
     {state.status === 'success' && detail.value && <section aria-label="Detalle de prefactura" className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-5">
       <h2 className="font-semibold">{detail.value.airlineName} · {detail.value.id}</h2>
       <p className="mt-1 text-sm">{STATUS[detail.value.status] ?? detail.value.status} · {money(detail.value.total, detail.value.currencyCode)}</p>
@@ -252,6 +311,38 @@ export default function PreinvoicesPage() {
         <ul className="mt-2 space-y-1 text-sm">{detail.value.invoice.lines.map(line => <li key={line.id}>
           {line.operationCode} · {line.serviceName} · {money(line.amount, detail.value.invoice.currencyCode)}
         </li>)}</ul>
+        {detail.value.payment ? <p className="mt-3 text-sm" role="status">
+          Pago manual registrado: {detail.value.payment.reference} · {money(detail.value.payment.amount,
+            detail.value.payment.currencyCode)}
+        </p> : <p className="mt-3 text-sm">Sin pago registrado.</p>}
+        {!detail.value.payment && paymentAttempt.status === 'idle' &&
+          <button type="button" onClick={() => setPaymentAttempt({ status: 'edit',
+            id: detail.value.id, invoiceId: detail.value.invoice.id,
+            requestId: crypto.randomUUID(), reference: '' })}
+            className="mt-3 rounded-lg border px-4 py-2 text-sm font-semibold">
+            Registrar pago manual
+          </button>}
+        {!detail.value.payment && paymentAttempt.id === detail.value.id &&
+          ['edit', 'error'].includes(paymentAttempt.status) && <div className="mt-3 space-y-2">
+            <p className="text-sm">Registro manual no fiscal para Development. Verifique fuera del sistema la referencia y el importe completo antes de confirmar.</p>
+            <label className="block text-sm">Referencia de pago
+              <input type="text" value={paymentAttempt.reference} readOnly={paymentAttempt.status === 'error'}
+                onChange={event => setPaymentAttempt(current => ({ ...current,
+                  reference: event.target.value }))}
+                className="mt-1 block w-full rounded-lg border px-3 py-2" minLength={8} maxLength={80}
+                pattern="[A-Za-z0-9-]{8,80}" />
+            </label>
+            {paymentAttempt.status === 'error' && <p role="alert">No se pudo confirmar el registro. Reintente con la misma referencia y clave de solicitud.</p>}
+            <button type="button" onClick={confirmPayment}
+              disabled={!/^[A-Za-z0-9-]{8,80}$/.test(paymentAttempt.reference)}
+              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+              {paymentAttempt.status === 'error' ? 'Reintentar pago manual' : 'Confirmar pago manual'}
+            </button>
+            {paymentAttempt.status === 'edit' && <button type="button" onClick={() => setPaymentAttempt(EMPTY_PAYMENT_ATTEMPT)}
+              className="ml-2 rounded-lg border px-4 py-2 text-sm">Cancelar</button>}
+          </div>}
+        {paymentAttempt.id === detail.value.id && paymentAttempt.status === 'pending' &&
+          <p role="status" className="mt-3 text-sm">Registrando pago manual…</p>}
       </section>}
       {detail.value.status === 'Accepted' && invoiceIssue.status === 'idle' &&
         <button type="button" onClick={() => setInvoiceIssue({ status: 'confirm', id: detail.value.id,

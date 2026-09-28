@@ -20,6 +20,9 @@ import {
   getIssueFinanceInvoiceUrl,
   getGetFinanceInvoiceByPreinvoiceUrl,
   getGetAirlineInvoiceByPreinvoiceUrl,
+  getGetAirlinePaymentByInvoiceUrl,
+  getGetFinancePaymentByInvoiceUrl,
+  getRecordNonFiscalPaymentUrl,
   getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
@@ -67,6 +70,9 @@ import {
   type IssueFinanceInvoiceRequest,
   type IssueFinanceInvoiceResponse,
   type NonFiscalInvoiceResponse,
+  type NonFiscalPaymentLookupResponse,
+  type RecordNonFiscalPaymentRequest,
+  type RecordNonFiscalPaymentResponse,
   type AirlinePreinvoicePageResponse,
   type ManagedContractPageData,
   type ListManagedContractsParams,
@@ -165,6 +171,8 @@ export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "met
 export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -336,6 +344,18 @@ export interface ElevantApiClient {
     preinvoiceId: string,
     options?: GetNonFiscalInvoiceOptions,
   ): Promise<NonFiscalInvoiceResponse>;
+  recordNonFiscalPayment(
+    request: RecordNonFiscalPaymentRequest,
+    options?: RecordNonFiscalPaymentOptions,
+  ): Promise<RecordNonFiscalPaymentResponse>;
+  getFinancePaymentByInvoice(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlinePaymentByInvoice(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<NonFiscalPaymentLookupResponse>;
   submitPreinvoice(
     draftId: string, request: SubmitPreinvoiceRequest,
     options?: SubmitPreinvoiceOptions,
@@ -2040,6 +2060,36 @@ function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
   return true;
 }
 
+function isPaymentReference(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9-]{8,80}$/.test(value);
+}
+
+function isRecordNonFiscalPaymentResponse(value: unknown,
+  request: RecordNonFiscalPaymentRequest): value is RecordNonFiscalPaymentResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "invoiceId", "reference", "currencyCode", "amount", "replayed"]) &&
+    isUuid(value.id) && value.invoiceId === request.invoiceId &&
+    value.reference === request.reference &&
+    typeof value.currencyCode === "string" && /^[A-Z]{3}$/.test(value.currencyCode) &&
+    isFiniteNumber(value.amount) && value.amount >= 0 &&
+    typeof value.replayed === "boolean";
+}
+
+function isNonFiscalPaymentLookupResponse(value: unknown, invoiceId: string):
+  value is NonFiscalPaymentLookupResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["invoiceId", "payment"]) ||
+      value.invoiceId !== invoiceId) return false;
+  if (value.payment === null || value.payment === undefined) return true;
+  const payment = value.payment;
+  return isRecord(payment) && hasOnlyKeys(payment,
+    ["id", "invoiceId", "reference", "currencyCode", "amount", "recordedAt"]) &&
+    isUuid(payment.id) && payment.invoiceId === invoiceId &&
+    isPaymentReference(payment.reference) &&
+    typeof payment.currencyCode === "string" && /^[A-Z]{3}$/.test(payment.currencyCode) &&
+    isFiniteNumber(payment.amount) && payment.amount >= 0 &&
+    isDateTimeOffset(payment.recordedAt);
+}
+
 function isAcceptAirlinePreinvoiceResponse(value: unknown): value is AcceptAirlinePreinvoiceResponse {
   return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
     isUuid(value.id) && value.status === "Accepted" &&
@@ -3142,6 +3192,42 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetAirlineInvoiceByPreinvoiceUrl(id),
         { ...options, method: "GET" }, true);
       if (!isNonFiscalInvoiceResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordNonFiscalPayment(
+      request: RecordNonFiscalPaymentRequest, options?: RecordNonFiscalPaymentOptions,
+    ) {
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["invoiceId", "requestId", "reference"]) ||
+          !isUuid(request.invoiceId) || !isUuid(request.requestId) ||
+          !isPaymentReference(request.reference))
+        throw new TypeError("Payment request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordNonFiscalPaymentUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isRecordNonFiscalPaymentResponse(result.data, request))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePaymentByInvoice(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetFinancePaymentByInvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalPaymentLookupResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePaymentByInvoice(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetAirlinePaymentByInvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalPaymentLookupResponse(result.data, id))
         throw malformedResponse(result.status);
       return result.data;
     },

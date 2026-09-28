@@ -3,7 +3,8 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
-  getFinanceInvoiceByPreinvoice } from '../../../services/financePreinvoiceService';
+  getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
+  recordNonFiscalPayment } from '../../../services/financePreinvoiceService';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 
 vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
@@ -15,6 +16,7 @@ vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
 vi.mock('../../../services/financePreinvoiceService', () => ({
   getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
   issueFinanceInvoice: vi.fn(), getFinanceInvoiceByPreinvoice: vi.fn(),
+  getFinancePaymentByInvoice: vi.fn(), recordNonFiscalPayment: vi.fn(),
 }));
 vi.mock('../../../services/approvedServicesService', () => ({
   getPreinvoiceDraft: vi.fn(), getFinancePreinvoiceDisputes: vi.fn(),
@@ -29,6 +31,7 @@ const item = { id: 'preinvoice-one', airlineId: 'airline-one', airlineName: 'Syn
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 beforeEach(() => getFinancePreinvoiceDisputes.mockResolvedValue({ preinvoiceId: item.id, disputes: [] }));
+beforeEach(() => getFinancePaymentByInvoice.mockResolvedValue({ invoiceId: 'invoice-one', payment: null }));
 
 it('shows the persisted station-scoped list and read-only detail', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false, preinvoices: [item] });
@@ -190,6 +193,84 @@ it('reads the frozen invoice for an already invoiced preinvoice without issuing 
   expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
   expect(getFinanceInvoiceByPreinvoice).toHaveBeenCalledWith(item.id);
   expect(issueFinanceInvoice).not.toHaveBeenCalled();
+});
+
+it('records a manual non-fiscal payment only after confirmation and rereads it', async () => {
+  const invoiced = { ...item, status: 'Invoiced' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [invoiced] });
+  getPreinvoiceDraft.mockResolvedValue({ ...invoiced, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  getFinanceInvoiceByPreinvoice.mockResolvedValue({ id: 'invoice-one',
+    number: 'NF-123', kind: 'NonFiscal', currencyCode: 'USD', total: 42.0001,
+    lines: [{ id: 'invoice-line', lineNumber: 1, operationCode: 'DEV-TAT-1',
+      serviceName: 'Ground power', amount: 42.0001 }] });
+  getFinancePaymentByInvoice.mockResolvedValueOnce({ invoiceId: 'invoice-one', payment: null })
+    .mockResolvedValueOnce({ invoiceId: 'invoice-one', payment: { id: 'payment-one',
+      reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 42.0001 } });
+  recordNonFiscalPayment.mockResolvedValue({ id: 'payment-one' });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
+  expect(screen.getByText(/Sin pago registrado/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Registrar pago manual' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Referencia de pago' }), 'BANK-TEST-123');
+  expect(recordNonFiscalPayment).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago manual' }));
+  await waitFor(() => expect(recordNonFiscalPayment).toHaveBeenCalledWith(expect.objectContaining({
+    invoiceId: 'invoice-one', reference: 'BANK-TEST-123',
+  })));
+  expect(await screen.findByText(/BANK-TEST-123/)).toBeInTheDocument();
+  expect(getFinancePaymentByInvoice.mock.calls.length).toBeGreaterThanOrEqual(2);
+  expect(getFinancePaymentByInvoice).toHaveBeenLastCalledWith('invoice-one');
+});
+
+it('retries an uncertain manual payment with the same key and reference', async () => {
+  const invoiced = { ...item, status: 'Invoiced' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [invoiced] });
+  getPreinvoiceDraft.mockResolvedValue({ ...invoiced, lines: [] });
+  getFinanceInvoiceByPreinvoice.mockResolvedValue({ id: 'invoice-one',
+    number: 'NF-123', currencyCode: 'USD', total: 42.0001, lines: [] });
+  getFinancePaymentByInvoice.mockResolvedValueOnce({ invoiceId: 'invoice-one', payment: null })
+    .mockResolvedValue({ invoiceId: 'invoice-one', payment: {
+      id: 'payment-one', reference: 'BANK-TEST-123', amount: 42.0001,
+      currencyCode: 'USD' } });
+  recordNonFiscalPayment.mockRejectedValueOnce(new Error('private network detail'))
+    .mockResolvedValueOnce({ id: 'payment-one', replayed: true });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Sin pago registrado/);
+  await userEvent.click(screen.getByRole('button', { name: 'Registrar pago manual' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Referencia de pago' }), 'BANK-TEST-123');
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago manual' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('misma referencia y clave');
+  expect(screen.queryByText(/private network detail/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Reintentar pago manual' }));
+  await waitFor(() => expect(recordNonFiscalPayment).toHaveBeenCalledTimes(2));
+  expect(recordNonFiscalPayment.mock.calls[0][0]).toEqual(recordNonFiscalPayment.mock.calls[1][0]);
+});
+
+it('revalidates an open invoice when the durable finance feed changes', async () => {
+  const invoiced = { ...item, status: 'Invoiced' };
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [invoiced] });
+  getPreinvoiceDraft.mockResolvedValue({ ...invoiced, lines: [] });
+  getFinanceInvoiceByPreinvoice.mockResolvedValue({ id: 'invoice-one',
+    number: 'NF-123', currencyCode: 'USD', total: 42.0001, lines: [] });
+  getFinancePaymentByInvoice.mockResolvedValueOnce({ invoiceId: 'invoice-one', payment: null })
+    .mockResolvedValue({ invoiceId: 'invoice-one', payment: {
+      id: 'payment-one', reference: 'BANK-TEST-123', amount: 42.0001,
+      currencyCode: 'USD' } });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Sin pago registrado/);
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(await screen.findByText(/BANK-TEST-123/)).toBeInTheDocument();
+  expect(getFinancePaymentByInvoice.mock.calls.length).toBeGreaterThanOrEqual(2);
 });
 
 it('retries an uncertain invoice response with the same idempotency key', async () => {

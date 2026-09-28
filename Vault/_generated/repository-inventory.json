@@ -1053,13 +1053,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "2789a47aa124c32e66c024b9a4a4caa8d3c14f41cd0d4e5ccda77b5e3bf4997b",
+        "sha256": "9efe39d170fceaac220f2e407ce246bdd220ced392b4907a1030f5dcce8f8986",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "2c7015c051bb36801a78ed64d9a50538cd73446fa0cab5e8b2f6cb84f6ef9b42",
+        "sha256": "b9c610b70245b7992821295348934d3abcf8f35b196069580da69f56ffa557bc",
         "title": null,
         "version": null
       }
@@ -1196,6 +1196,12 @@
         "name": "NonFiscalInvoices",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928163437_NonFiscalInvoices.cs",
         "sha256": "9d1457bc7278f640d3b23d315f53679f1d58d29b3143c359c26add7ad4be5ee4"
+      },
+      {
+        "id": "20260928170918",
+        "name": "NonFiscalPayments",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928170918_NonFiscalPayments.cs",
+        "sha256": "b89fe21ca34b4d4921f47f048baf86cb46fe84d05a8f69769cf85e67cd3bbdd1"
       }
     ],
     "manifestContracts": [

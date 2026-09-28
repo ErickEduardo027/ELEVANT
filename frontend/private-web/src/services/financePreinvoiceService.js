@@ -44,3 +44,25 @@ export async function getFinanceInvoiceByPreinvoice(preinvoiceId) {
     throw error;
   }
 }
+
+export async function recordNonFiscalPayment(request) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).recordNonFiscalPayment(request);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+export async function getFinancePaymentByInvoice(invoiceId) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getFinancePaymentByInvoice(invoiceId, { cache: 'no-store' });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
   type PreinvoiceDisputeResponse,
   type NonFiscalInvoiceResponse,
+  type NonFiscalPaymentResponse,
   type AirlinePreinvoicePageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
@@ -22,7 +23,8 @@ function amount(currency: string, total: number) {
   }).format(total)}`;
 }
 
-function InvoiceSummary({ invoice }: { invoice: NonFiscalInvoiceResponse }) {
+function InvoiceSummary({ invoice, payment }: { invoice: NonFiscalInvoiceResponse;
+  payment: NonFiscalPaymentResponse | null }) {
   return <section className={styles.disputeRecord} aria-label="Factura no fiscal">
     <strong>Factura no fiscal {invoice.number}</strong>
     <p>Emitida el {invoice.issuedAt.slice(0, 10)}.</p>
@@ -30,11 +32,14 @@ function InvoiceSummary({ invoice }: { invoice: NonFiscalInvoiceResponse }) {
       {line.operationCode} · {line.serviceName} · {amount(invoice.currencyCode, line.amount)}
     </p>)}
     <strong>Total: {amount(invoice.currencyCode, invoice.total)}</strong>
+    {payment ? <p>Pago manual registrado: {payment.reference} Â· {amount(
+      payment.currencyCode, payment.amount)}</p> : <p>Sin pago registrado.</p>}
   </section>;
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, acceptPreinvoice,
+  const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice,
+    getInvoicePayment, acceptPreinvoice,
     disputePreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,9 +48,11 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const generation = useRef(0);
   const detailGeneration = useRef(0);
   const selectedPreinvoice = useRef<string | null>(null);
+  const lastRefresh = useRef({ financeRevision, retryKey });
   const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
     value: (AirlinePreinvoiceDetailResponse & { disputes: PreinvoiceDisputeResponse[];
-      invoice: NonFiscalInvoiceResponse | null }) | null } | null>(null);
+      invoice: NonFiscalInvoiceResponse | null;
+      payment: NonFiscalPaymentResponse | null }) | null } | null>(null);
   const [acceptance, setAcceptance] = useState<{ id: string | null;
     status: "idle" | "confirm" | "pending" | "success" | "conflict" | "error" }>(
       { id: null, status: "idle" });
@@ -61,10 +68,10 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
 
   useEffect(() => {
     const request = ++generation.current;
-    detailGeneration.current += 1;
+    if (!selectedPreinvoice.current) detailGeneration.current += 1;
     queueMicrotask(() => {
       if (request !== generation.current) return;
-      setDetail(null);
+      if (!selectedPreinvoice.current) setDetail(null);
       setLoading(true);
     });
     void getPreinvoices(1).then(page => {
@@ -86,7 +93,9 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         getPreinvoice(id), getPreinvoiceDisputes(id)]);
       const invoice = preinvoice.status === "Invoiced"
         ? await getPreinvoiceInvoice(id) : null;
-      const value = { ...preinvoice, disputes: disputeList.disputes, invoice };
+      const payment = invoice ? await getInvoicePayment(invoice.id) : null;
+      const value = { ...preinvoice, disputes: disputeList.disputes, invoice,
+        payment: payment?.payment ?? null };
       if (request === detailGeneration.current)
         setDetail({ id, status: "ready", value });
     } catch (error) {
@@ -94,7 +103,14 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         setDetail({ id, status: error instanceof ElevantApiError && error.status === 404
           ? "missing" : "error", value: null });
     }
-  }, [getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice]);
+  }, [getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment]);
+
+  useEffect(() => {
+    if (lastRefresh.current.financeRevision === financeRevision &&
+        lastRefresh.current.retryKey === retryKey) return;
+    lastRefresh.current = { financeRevision, retryKey };
+    if (selectedPreinvoice.current) void openDetail(selectedPreinvoice.current);
+  }, [financeRevision, retryKey, openDetail]);
 
   const confirmAcceptance = useCallback(async (id: string) => {
     if (detail?.id !== id || detail.status !== "ready" ||
@@ -221,7 +237,8 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
               return line ? `${line.operationCode} · ${line.operationDate} · ${line.serviceName}` : lineId;
             }).join(", ")}</p>
           </section>)}
-          {detail.value.invoice && <InvoiceSummary invoice={detail.value.invoice} />}
+          {detail.value.invoice && <InvoiceSummary invoice={detail.value.invoice}
+            payment={detail.value.payment} />}
           {detail.value.status === "Submitted" && acceptance.status === "idle" &&
             dispute.status === "idle" &&
             <button className={styles.loadMore} type="button"

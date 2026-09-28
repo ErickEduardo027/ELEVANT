@@ -90,6 +90,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<NonFiscalInvoiceLine> NonFiscalInvoiceLines => Set<NonFiscalInvoiceLine>();
 
+    public DbSet<NonFiscalPayment> NonFiscalPayments => Set<NonFiscalPayment>();
+
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
 
     public DbSet<FlightLeg> FlightLegs => Set<FlightLeg>();
@@ -133,6 +135,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigurePreinvoices();
         builder.ConfigureNonFiscalInvoices();
+        builder.ConfigureNonFiscalPayments();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);

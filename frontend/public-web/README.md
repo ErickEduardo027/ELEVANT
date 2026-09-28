@@ -76,7 +76,7 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas y la consulta tenant-scoped de una factura no fiscal ya emitida; resolver disputas, registrar pagos y emitir recibos siguen pendientes.
+- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Resolver disputas y emitir recibos siguen pendientes.
 - `/portal/documentos` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 
@@ -90,8 +90,11 @@ la respuesta v1 del detalle de prefactura no cambia.
 Finanzas debe resolver cada disputa antes del cierre. Una prefactura `Invoiced`
 permite releer su factura no fiscal por
 `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`; el portal
-muestra número, fecha, líneas y total emitidos sin inventar saldos ni pagos.
-No es un documento tributario descargable y este tramo no está promocionado.
+muestra número, fecha, líneas y total emitidos sin inventar saldos. Si Finanzas
+registró un pago manual completo, el portal relee importe y referencia por
+`GET /api/v1/airline/portal/invoices/{invoiceId}/payment`; si aún no lo hay,
+muestra un estado vacío real. No hay verificación bancaria ni documento
+tributario descargable y este tramo no está promocionado.
 
 ## Contrato de seguridad
 

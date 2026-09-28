@@ -228,8 +228,16 @@ transacción serializable. El mismo actor y clave obtienen el resultado anterior
 otra intención para la misma prefactura entra en conflicto. Finanzas consulta
 `GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}` y el portal consulta
 `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`, con alcance de
-estación o tenant derivado de la sesión. No hay documento fiscal, impuesto,
-pago, conciliación ni recibo; este tramo sigue local y sin promoción.
+estación o tenant derivado de la sesión. En esta rama local, Finanzas puede
+registrar **un pago manual completo de prueba** con UUID de intención y
+referencia en `POST /api/v1/finance/payments`; la API revalida rol y estación,
+solo habilita la escritura cuando el destino de base declarado es Development,
+relee el total inmutable de la factura y evita duplicación con índices únicos
+y transacción serializable. Finanzas y la aerolínea consultan el pago por
+factura mediante rutas separadas y autorizadas. Es una anotación manual de
+Development, **no** verificación bancaria, cobro externo ni comprobante fiscal.
+Todavía no hay PDF, impuesto, conciliación ni recibo. Este tramo sigue local
+y sin promoción.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

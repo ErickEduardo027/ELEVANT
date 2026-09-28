@@ -26,8 +26,33 @@ public sealed class AirlinePortalController(
     GetAirlinePreinvoicesHandler preinvoicesHandler,
     AcceptAirlinePreinvoiceHandler acceptanceHandler,
     DisputeAirlinePreinvoiceHandler disputeHandler,
-    GetNonFiscalInvoiceHandler invoiceReader) : ControllerBase
+    GetNonFiscalInvoiceHandler invoiceReader,
+    GetNonFiscalPaymentHandler paymentReader) : ControllerBase
 {
+    [HttpGet("invoices/{invoiceId:guid}/payment", Name = "GetAirlinePaymentByInvoice")]
+    [ProducesResponseType<NonFiscalPaymentLookupResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<NonFiscalPaymentLookupResponse>> GetPayment(
+        Guid invoiceId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<NonFiscalPaymentLookupResponse>(401, "Authentication failed.");
+        }
+        var result = await paymentReader.GetForAirlineAsync(
+            accountId, invoiceId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == 401) Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<NonFiscalPaymentLookupResponse>(statusCode, title);
+        }
+        return Ok(NonFiscalPaymentResponseMapper.Map(result.Lookup!));
+    }
+
     [HttpGet("preinvoices/{preinvoiceId:guid}/invoice", Name = "GetAirlineInvoiceByPreinvoice")]
     [ProducesResponseType<NonFiscalInvoiceResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]

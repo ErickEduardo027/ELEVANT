@@ -149,8 +149,12 @@ no inventa casos ni saldos. La resolución sigue pendiente. Desde una prefactura
 `POST /api/v1/finance/invoices`. El reintento conserva el mismo UUID de intención;
 la tabla se relee al recibir el aviso durable o al recuperar foco/conectividad.
 Una prefactura `Invoiced` consulta el snapshot emitido por
-`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. No existe todavía
-documento PDF, impuesto, pago ni recibo. El flujo sigue en la rama local,
+`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. Esta rama añade
+un registro manual de pago completo sobre la factura no fiscal. La pantalla
+exige referencia y confirmación; envía una clave de intención estable, relee
+el pago por la API y no lo presenta como conciliación bancaria verificada.
+El aviso durable `finance_preinvoices` provoca revalidación. Todavía no hay
+PDF, impuesto, conciliación ni recibo. El flujo sigue en la rama local,
 sin promoción al VPS.
 
 ## Imagen de Development

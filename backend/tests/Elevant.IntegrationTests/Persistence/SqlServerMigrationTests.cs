@@ -4945,6 +4945,95 @@ public sealed class SqlServerMigrationTests
                 Assert.Null(await reader.GetForFinanceAsync(
                     occAccountId, created.DraftId.Value, cancellationToken));
             }
+
+            var paymentCommand = new RecordNonFiscalPaymentCommand(
+                financeAccountId, invoice.PublicId, Guid.NewGuid(), "DEV-PAY-0002");
+            await using (var unpaidReadScope = provider.CreateAsyncScope())
+            {
+                var reader = unpaidReadScope.ServiceProvider
+                    .GetRequiredService<INonFiscalPaymentReadStore>();
+                var unpaid = await reader.GetForAirlineAsync(airlineOrganizationId,
+                    invoice.PublicId, cancellationToken);
+                Assert.NotNull(unpaid);
+                Assert.Null(unpaid.Payment);
+            }
+            async Task<RecordNonFiscalPaymentResult> PayAsync(RecordNonFiscalPaymentCommand request)
+            {
+                await using var paymentScope = provider.CreateAsyncScope();
+                return await paymentScope.ServiceProvider
+                    .GetRequiredService<INonFiscalPaymentStore>()
+                    .RecordAsync(request, cancellationToken);
+            }
+            Assert.Equal(RecordNonFiscalPaymentFailure.Forbidden,
+                (await PayAsync(paymentCommand with { AccountId = occAccountId })).Failure);
+            Assert.Equal(RecordNonFiscalPaymentFailure.NotFound,
+                (await PayAsync(paymentCommand with { InvoiceId = Guid.NewGuid() })).Failure);
+            var payments = await Task.WhenAll(PayAsync(paymentCommand), PayAsync(paymentCommand));
+            Assert.All(payments, result => Assert.True(result.IsSuccess));
+            Assert.Single(payments, result => !result.Replayed);
+            Assert.Single(payments, result => result.Replayed);
+            Assert.Equal(payments[0].PaymentId, payments[1].PaymentId);
+            Assert.Equal(RecordNonFiscalPaymentFailure.Conflict,
+                (await PayAsync(paymentCommand with { RequestId = Guid.NewGuid() })).Failure);
+            var payment = Assert.Single(await inspection.NonFiscalPayments.AsNoTracking()
+                .Where(item => item.InvoiceId == invoice.Id).ToArrayAsync(cancellationToken));
+            Assert.Equal(invoice.Total, payment.Amount);
+            Assert.Equal(invoice.CurrencyCode, payment.CurrencyCode);
+            Assert.Equal(paymentCommand.RequestId,
+                Assert.Single(await inspection.AuditEntries.AsNoTracking()
+                    .Where(item => item.EntityPublicId == payment.PublicId &&
+                        item.Action == "finance.payment.non_fiscal.recorded")
+                    .ToArrayAsync(cancellationToken)).CorrelationId);
+            await using (var paymentReadScope = provider.CreateAsyncScope())
+            {
+                var reader = paymentReadScope.ServiceProvider
+                    .GetRequiredService<INonFiscalPaymentReadStore>();
+                var financePayment = await reader.GetForFinanceAsync(financeAccountId,
+                    invoice.PublicId, cancellationToken);
+                Assert.NotNull(financePayment?.Payment);
+                Assert.Equal(payment.PublicId, financePayment.Payment.Id);
+                var airlinePayment = await reader.GetForAirlineAsync(airlineOrganizationId,
+                    invoice.PublicId, cancellationToken);
+                Assert.NotNull(airlinePayment?.Payment);
+                Assert.Equal(financePayment.Payment.Id, airlinePayment.Payment.Id);
+                Assert.Null(await reader.GetForAirlineAsync(Guid.NewGuid(),
+                    invoice.PublicId, cancellationToken));
+            }
+
+            var secondPreinvoice = new Preinvoice
+            {
+                PublicId = Guid.CreateVersion7(), AirlineId = draft.AirlineId,
+                StationId = draft.StationId, CreatedByAccountId = draft.CreatedByAccountId,
+                RequestId = Guid.NewGuid(), PayloadHash = draft.PayloadHash,
+                From = draft.From, To = draft.To, CurrencyCode = draft.CurrencyCode,
+                Total = draft.Total, Status = PreinvoiceStatus.Invoiced,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            inspection.Preinvoices.Add(secondPreinvoice);
+            await inspection.SaveChangesAsync(cancellationToken);
+            var secondInvoiceId = Guid.CreateVersion7();
+            var secondInvoice = new NonFiscalInvoice
+            {
+                PublicId = secondInvoiceId, PreinvoiceId = secondPreinvoice.Id,
+                AirlineId = invoice.AirlineId, StationId = invoice.StationId,
+                IssuedByAccountId = invoice.IssuedByAccountId, RequestId = Guid.NewGuid(),
+                Number = $"NF-{secondInvoiceId:N}", CurrencyCode = invoice.CurrencyCode,
+                Total = invoice.Total, CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            inspection.NonFiscalInvoices.Add(secondInvoice);
+            await inspection.SaveChangesAsync(cancellationToken);
+            var competingPayments = await Task.WhenAll(
+                PayAsync(paymentCommand with { InvoiceId = secondInvoiceId,
+                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-A" }),
+                PayAsync(paymentCommand with { InvoiceId = secondInvoiceId,
+                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-B" }));
+            Assert.Single(competingPayments, result => result.IsSuccess && !result.Replayed);
+            Assert.Single(competingPayments, result =>
+                result.Failure == RecordNonFiscalPaymentFailure.Conflict);
+            Assert.Single(await inspection.NonFiscalPayments.AsNoTracking()
+                .Where(item => item.InvoiceId == secondInvoice.Id)
+                .ToArrayAsync(cancellationToken));
         }
 
         if (reviewOutcome == "Approved")

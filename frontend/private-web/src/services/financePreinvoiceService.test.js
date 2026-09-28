@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   handleUnauthorizedResponse: vi.fn(), getFinancePreinvoices: vi.fn(),
   submitPreinvoice: vi.fn(), issueFinanceInvoice: vi.fn(),
   getFinanceInvoiceByPreinvoice: vi.fn(),
+  recordNonFiscalPayment: vi.fn(), getFinancePaymentByInvoice: vi.fn(),
 }));
 vi.mock('../config/elevantApiClient', () => ({
   createPrivateWebApiClient: mocks.createPrivateWebApiClient,
@@ -15,7 +16,8 @@ vi.mock('../features/auth/authService', () => ({
 }));
 
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
-  getFinanceInvoiceByPreinvoice } from './financePreinvoiceService';
+  getFinanceInvoiceByPreinvoice, recordNonFiscalPayment,
+  getFinancePaymentByInvoice } from './financePreinvoiceService';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -25,6 +27,8 @@ beforeEach(() => {
     submitPreinvoice: mocks.submitPreinvoice,
     issueFinanceInvoice: mocks.issueFinanceInvoice,
     getFinanceInvoiceByPreinvoice: mocks.getFinanceInvoiceByPreinvoice,
+    recordNonFiscalPayment: mocks.recordNonFiscalPayment,
+    getFinancePaymentByInvoice: mocks.getFinancePaymentByInvoice,
   });
 });
 
@@ -76,4 +80,17 @@ it('issues and reads invoices through the bearer-scoped API client', async () =>
     request.preinvoiceId, { cache: 'no-store' });
   expect(mocks.createPrivateWebApiClient.mock.calls[0][0].getAccessToken())
     .toBe('finance-token');
+});
+
+it('records and reads a payment through the bearer-scoped API client', async () => {
+  const request = { invoiceId: '10000000-0000-7000-8000-000000000003',
+    requestId: '10000000-0000-7000-8000-000000000004', reference: 'BANK-TEST-123' };
+  mocks.recordNonFiscalPayment.mockResolvedValue({ id: 'payment-one' });
+  mocks.getFinancePaymentByInvoice.mockResolvedValue({ invoiceId: request.invoiceId,
+    payment: null });
+  await recordNonFiscalPayment(request);
+  await getFinancePaymentByInvoice(request.invoiceId);
+  expect(mocks.recordNonFiscalPayment).toHaveBeenCalledWith(request);
+  expect(mocks.getFinancePaymentByInvoice).toHaveBeenCalledWith(
+    request.invoiceId, { cache: 'no-store' });
 });

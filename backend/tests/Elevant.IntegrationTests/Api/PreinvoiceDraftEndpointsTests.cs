@@ -7,6 +7,8 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Finance;
 using Elevant.Application.Identity;
 using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Persistence;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -156,20 +158,97 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
     }
 
-    private WebApplicationFactory<Program> CreateApplication(Stub stub) =>
-        factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+    [Fact]
+    public async Task FinanceRecordsPaymentAndReadsItsServerState()
+    {
+        var stub = new Stub();
+        await using var application = CreateApplication(stub, productionTarget: false);
+        using var client = application.CreateClient();
+        var invoiceId = Guid.NewGuid();
+        var requestId = Guid.NewGuid();
+        using var anonymous = await client.PostAsJsonAsync("/api/v1/finance/payments",
+            new { invoiceId, requestId, reference = "BANK-TEST-123" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var recorded = await client.PostAsJsonAsync("/api/v1/finance/payments",
+            new { invoiceId, requestId, reference = "BANK-TEST-123" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, recorded.StatusCode);
+        Assert.Contains("no-store", recorded.Headers.CacheControl?.ToString());
+        Assert.Equal(new RecordNonFiscalPaymentCommand(AccountId, invoiceId, requestId,
+            "BANK-TEST-123"), stub.Payment.Request);
+        using var body = JsonDocument.Parse(await recorded.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(10m, body.RootElement.GetProperty("amount").GetDecimal());
+        using var read = await client.GetAsync(
+            $"/api/v1/finance/payments/by-invoice/{invoiceId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        using var lookup = JsonDocument.Parse(await read.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("BANK-TEST-123", lookup.RootElement.GetProperty("payment")
+            .GetProperty("reference").GetString());
+        using var replay = await client.PostAsJsonAsync("/api/v1/finance/payments",
+            new { invoiceId, requestId, reference = "BANK-TEST-123" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        using var replayBody = JsonDocument.Parse(await replay.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.True(replayBody.RootElement.GetProperty("replayed").GetBoolean());
+        using var invalid = await client.PostAsJsonAsync("/api/v1/finance/payments",
+            new { invoiceId, requestId = Guid.Empty, reference = "bad" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    [Fact]
+    public async Task ManualPaymentWriteIsUnavailableOutsideDevelopmentDatabaseTarget()
+    {
+        var stub = new Stub();
+        await using var application = CreateApplication(stub, productionTarget: true);
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var response = await client.PostAsJsonAsync("/api/v1/finance/payments",
+            new { invoiceId = Guid.NewGuid(), requestId = Guid.NewGuid(),
+                reference = "BANK-TEST-123" }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Null(stub.Payment.Request);
+    }
+
+    private WebApplicationFactory<Program> CreateApplication(
+        Stub stub, bool? productionTarget = null) =>
+        factory.WithWebHostBuilder(builder =>
         {
+          if (productionTarget.HasValue) builder.ConfigureAppConfiguration((_, configuration) =>
+              configuration.AddInMemoryCollection(new Dictionary<string, string?>
+              {
+                  [DatabaseTargetGuard.EnvironmentVariable] = productionTarget.Value
+                      ? "Production" : "Development",
+                  ["ConnectionStrings:ElevantDatabase"] =
+                      $"Server=127.0.0.1,65535;Database={(productionTarget.Value
+                          ? DatabaseTargetGuard.ProductionDatabaseName
+                          : DatabaseTargetGuard.DevelopmentDatabaseName)};" +
+                      "Integrated Security=true;Encrypt=true;TrustServerCertificate=true;Connect Timeout=1",
+              }));
+          builder.ConfigureTestServices(services =>
+          {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IPreinvoiceDraftStore>();
             services.RemoveAll<IPreinvoiceSubmissionStore>();
             services.RemoveAll<IFinanceInvoiceIssueStore>();
             services.RemoveAll<INonFiscalInvoiceReadStore>();
+            services.RemoveAll<INonFiscalPaymentStore>();
+            services.RemoveAll<INonFiscalPaymentReadStore>();
             services.AddSingleton<IActorContextResolver>(stub);
             services.AddSingleton<IPreinvoiceDraftStore>(stub);
             services.AddSingleton<IPreinvoiceSubmissionStore>(stub);
             services.AddSingleton<IFinanceInvoiceIssueStore>(stub);
             services.AddSingleton<INonFiscalInvoiceReadStore>(stub);
-        }));
+            services.AddSingleton<INonFiscalPaymentStore>(stub.Payment);
+            services.AddSingleton<INonFiscalPaymentReadStore>(stub.Payment);
+          });
+        });
 
     private static string Token()
     {
@@ -201,6 +280,7 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
     private sealed class Stub : IActorContextResolver, IPreinvoiceDraftStore,
         IPreinvoiceSubmissionStore, IFinanceInvoiceIssueStore, INonFiscalInvoiceReadStore
     {
+        public PaymentStub Payment { get; } = new();
         public CreatePreinvoiceDraftCommand? CreateRequest { get; private set; }
 
         public (Guid AccountId, Guid DraftId, Guid RequestId)? SubmitRequest { get; private set; }
@@ -261,5 +341,31 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
             Guid accountId, Guid draftId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?>(
                 draftId == DraftId ? [] : null);
+    }
+
+    private sealed class PaymentStub : INonFiscalPaymentStore, INonFiscalPaymentReadStore
+    {
+        public RecordNonFiscalPaymentCommand? Request { get; private set; }
+        private Guid PaymentId { get; } = Guid.NewGuid();
+
+        public Task<RecordNonFiscalPaymentResult> RecordAsync(
+            RecordNonFiscalPaymentCommand command, CancellationToken cancellationToken = default)
+        {
+            Request = command;
+            return Task.FromResult(RecordNonFiscalPaymentResult.Success(
+                PaymentId, command.Reference, 10m, "USD", ++Calls > 1));
+        }
+
+        private int Calls { get; set; }
+
+        public Task<NonFiscalPaymentLookupData?> GetForFinanceAsync(
+            Guid accountId, Guid invoiceId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NonFiscalPaymentLookupData?>(new NonFiscalPaymentLookupData(
+                invoiceId, new NonFiscalPaymentData(Guid.NewGuid(), invoiceId,
+                    "BANK-TEST-123", "USD", 10m, DateTimeOffset.UtcNow)));
+
+        public Task<NonFiscalPaymentLookupData?> GetForAirlineAsync(
+            Guid organizationId, Guid invoiceId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NonFiscalPaymentLookupData?>(null);
     }
 }

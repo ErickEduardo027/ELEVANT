@@ -467,6 +467,32 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         Assert.Null(state.Disputed);
     }
 
+    [Fact]
+    public async Task AirlineReadsOnlyItsOwnInvoicePayment()
+    {
+        var invoiceId = Guid.NewGuid();
+        var state = new StubState(CreateActor());
+        state.Payment.VisibleInvoiceId = invoiceId;
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/airline/portal/invoices/{invoiceId:D}/payment",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal(OrganizationId, state.Payment.QueriedOrganizationId);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("BANK-TEST-123", body.RootElement.GetProperty("payment")
+            .GetProperty("reference").GetString());
+
+        using var other = await client.GetAsync(
+            $"/api/v1/airline/portal/invoices/{Guid.NewGuid():D}/payment",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+    }
+
     private WebApplicationFactory<Program> CreateApplication(ActorContext actor) =>
         CreateApplication(new StubState(actor));
 
@@ -478,11 +504,13 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             services.RemoveAll<IAirlinePreinvoiceAcceptanceStore>();
             services.RemoveAll<IAirlinePreinvoiceDisputeStore>();
             services.RemoveAll<INonFiscalInvoiceReadStore>();
+            services.RemoveAll<INonFiscalPaymentReadStore>();
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IAirlinePortalReadStore>(_ => state);
             services.AddScoped<IAirlinePreinvoiceAcceptanceStore>(_ => state);
             services.AddScoped<IAirlinePreinvoiceDisputeStore>(_ => state);
             services.AddScoped<INonFiscalInvoiceReadStore>(_ => state);
+            services.AddScoped<INonFiscalPaymentReadStore>(_ => state.Payment);
         }));
 
     private static HttpClient CreateAuthenticatedClient(WebApplicationFactory<Program> application)
@@ -524,6 +552,7 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         IAirlinePortalReadStore, IAirlinePreinvoiceAcceptanceStore,
         IAirlinePreinvoiceDisputeStore, INonFiscalInvoiceReadStore
     {
+        public PaymentStub Payment { get; } = new();
         public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Accepted { get; private set; }
 
         public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Disputed { get; private set; }
@@ -654,6 +683,28 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedOrganizationId = organizationId;
             return Task.FromResult<IReadOnlyList<PreinvoiceDisputeData>?>(
                 DetailPreinvoice?.Id == preinvoiceId ? [] : null);
+        }
+    }
+
+    private sealed class PaymentStub : INonFiscalPaymentReadStore
+    {
+        public Guid VisibleInvoiceId { get; set; }
+        public Guid? QueriedOrganizationId { get; private set; }
+
+        public Task<NonFiscalPaymentLookupData?> GetForFinanceAsync(Guid accountId,
+            Guid invoiceId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NonFiscalPaymentLookupData?>(null);
+
+        public Task<NonFiscalPaymentLookupData?> GetForAirlineAsync(Guid organizationId,
+            Guid invoiceId, CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            return Task.FromResult<NonFiscalPaymentLookupData?>(
+                organizationId == OrganizationId && invoiceId == VisibleInvoiceId
+                    ? new NonFiscalPaymentLookupData(invoiceId,
+                        new NonFiscalPaymentData(Guid.NewGuid(), invoiceId,
+                            "BANK-TEST-123", "USD", 10m, DateTimeOffset.UtcNow))
+                    : null);
         }
     }
 }
