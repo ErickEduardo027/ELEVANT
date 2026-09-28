@@ -137,6 +137,34 @@ export async function getPositionsSnapshot(stationCode = 'PUJ') {
     const stationScope = readSession()?.stationScopes?.find(scope => scope.stationCode === stationCode);
     if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
     const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
+    if (snapshot.station?.id !== stationScope.stationId ||
+        snapshot.station?.code !== stationCode) {
+      throw new Error('La respuesta no coincide con la estación seleccionada.');
+    }
+    if (stationCode !== 'PUJ') {
+      const plannedByStand = new Map();
+      for (const turnaround of snapshot.turnarounds) {
+        if (!turnaround.stand?.code) continue;
+        const code = turnaround.stand.code;
+        const flights = [turnaround.arrival?.flightNumber,
+          turnaround.departure?.flightNumber].filter(Boolean);
+        const existing = plannedByStand.get(code);
+        if (existing) {
+          existing.plannedFlights.push(...flights);
+        } else {
+          plannedByStand.set(code, {
+            id: code, terminal: turnaround.stand.terminal?.code ?? null,
+            status: 'planned', latitude: null, longitude: null,
+            plannedFlights: flights,
+          });
+        }
+      }
+      return {
+        station: { code: stationCode, name: snapshot.station.name },
+        source: 'planning-no-map',
+        positions: [...plannedByStand.values()],
+      };
+    }
     const plannedByStand = new Map(snapshot.turnarounds
       .filter(turnaround => turnaround.stand?.code)
       .map(turnaround => [turnaround.stand.code.toUpperCase(), turnaround]));
@@ -190,10 +218,16 @@ export async function getPositionStatus(id) {
 const ACTIVATION_TICK = 2;
 const UPDATE_INTERVAL_MS = 6000;
 
-export function subscribeToPositionUpdates(onUpdate) {
+export function subscribeToPositionUpdates(onUpdate, stationCode = 'PUJ',
+  { onSnapshot, onError } = {}) {
   if (import.meta.env.MODE !== 'test') {
     const intervalId = setInterval(() => {
-      getPositionsSnapshot().then(snapshot => snapshot.positions.forEach(onUpdate)).catch(() => {});
+      getPositionsSnapshot(stationCode)
+        .then(snapshot => {
+          if (onSnapshot) onSnapshot(snapshot);
+          else snapshot.positions.forEach(onUpdate);
+        })
+        .catch(error => onError?.(error));
     }, 30000);
     return () => clearInterval(intervalId);
   }

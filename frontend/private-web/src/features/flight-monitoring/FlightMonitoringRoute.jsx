@@ -14,10 +14,14 @@ export default function FlightMonitoringRoute() {
   const stationScopes = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode),
   [session?.stationScopes]);
-  const [stationId, setStationId] = useState(stationScopes[0]?.stationId ?? '');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [stationId, setStationId] = useState(() => {
+    const requested = searchParams.get('stationId');
+    return stationScopes.some(scope => scope.stationId === requested)
+      ? requested : stationScopes[0]?.stationId ?? '';
+  });
   const selected = stationScopes.find(scope => scope.stationId === stationId);
   const [retryToken, setRetryToken] = useState(0);
-  const [searchParams] = useSearchParams();
   const { forceState } = useAdminOccPreview();
   // `theme` es de alcance de la app (shell), no de la vista previa de Admin/OCC,
   // por eso se resuelve aquí vía el hook compartido en vez de AdminOccPreviewContext.
@@ -35,7 +39,16 @@ export default function FlightMonitoringRoute() {
       {stationScopes.length > 0 && <label className="block w-fit text-xs font-semibold">
         Estación de monitoreo
         <select aria-label="Estación de monitoreo" value={selected?.stationId ?? ''}
-          onChange={event => setStationId(event.target.value)}
+          onChange={event => {
+            const nextId = event.target.value;
+            setStationId(nextId);
+            setSearchParams(current => {
+              const next = new URLSearchParams(current);
+              next.set('stationId', nextId);
+              next.delete('flightId');
+              return next;
+            });
+          }}
           className="ml-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark-card">
           {stationScopes.map(scope => <option key={scope.stationId} value={scope.stationId}>
             {scope.stationCode}</option>)}
