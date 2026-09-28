@@ -138,7 +138,13 @@ factura, pago ni recibo, y esto no acredita un despliegue al VPS.
 
 La lista interna de prefacturas se consulta por estación con rol Finanzas,
 membresía AVIAM y grant vigente. Devuelve páginas acotadas y detalles de
-snapshots persistidos; no concede aprobación ni envío por sí misma. El
+snapshots persistidos. En esta rama, el comando
+`POST /api/v1/finance/preinvoices/{draftId}/submit` permite a Finanzas
+publicar una prefactura `Draft` con al menos una línea. Revalida la concesión
+de estación en una transacción serializable, cambia el estado una sola vez a
+`Submitted` y guarda auditoría y avisos durables para Finanzas y aerolínea.
+La misma clave devuelve una repetición; otra intención para la prefactura ya
+enviada recibe conflicto. No es aprobación, factura ni cobro. El
 antiguo adaptador `/api/finance/preinvoices` de la pantalla activa se retiró.
 
 Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La

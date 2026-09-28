@@ -120,7 +120,11 @@ promovido esta rama al VPS.
 persistidas mediante `GET /api/v1/finance/preinvoices` y abre su detalle
 canónico. La lista exige el rol Finanzas, membresía interna y concesión de
 estación vigente; revalida por feed, foco y polling. Ya no monta
-`/api/finance/preinvoices` ni acciones locales de aprobar/enviar. Los badges
+`/api/finance/preinvoices` ni acciones locales de aprobar/enviar. En esta rama,
+un borrador abierto ofrece confirmación explícita antes de enviarlo a la
+aerolínea mediante el comando canónico. El identificador del borrador es la
+clave estable de ese único envío, incluso si la respuesta de red es incierta;
+la UI relee la lista autorizada sin exponer mensajes internos. Los badges
 del shell no repiten cifras sintéticas. El inicio y los módulos de
 conciliación, tarifas y reportes siguen siendo prototipos, y no se ha
 promovido esta rama.

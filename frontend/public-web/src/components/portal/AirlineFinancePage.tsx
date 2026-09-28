@@ -21,7 +21,7 @@ function amount(currency: string, total: number) {
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
-  const { getPreinvoices, getPreinvoice, operationRevision } = useAirlineSession();
+  const { getPreinvoices, getPreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -46,7 +46,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     }).catch(() => { if (request === generation.current) setError(true); })
       .finally(() => { if (request === generation.current) setLoading(false); });
     return () => { generation.current += 1; };
-  }, [getPreinvoices, operationRevision, retryKey]);
+  }, [getPreinvoices, financeRevision, retryKey]);
 
   const openDetail = useCallback(async (id: string) => {
     const request = ++detailGeneration.current;

@@ -11,3 +11,14 @@ export async function getFinancePreinvoices(query, { signal } = {}) {
     throw error;
   }
 }
+
+export async function submitFinancePreinvoice(id) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).submitPreinvoice(id, { requestId: id });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

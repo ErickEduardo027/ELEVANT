@@ -133,7 +133,10 @@ emisión y cobro siguen pendientes. No se ha promovido al VPS.
 por estación autorizada y página. Muestra importes, estado y número de líneas
 persistidos, y abre el detalle canónico; revalida por feed durable, foco y
 polling de 25 segundos. Retira el servicio simulado `/api/finance/preinvoices`
-y sus botones ficticios de aprobación/envío. La creación real permanece en
+y sus botones ficticios. Un borrador puede enviarse a la aerolínea tras
+confirmación explícita con `POST /api/v1/finance/preinvoices/{draftId}/submit`;
+un reintento de red usa la misma clave y el estado se relee desde la API. La
+creación real permanece en
 Servicios aprobados. El inicio, conciliación, tarifas y reportes financieros
 todavía necesitan migración; sus datos sintéticos no se presentan como saldos.
 

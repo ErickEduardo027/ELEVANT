@@ -13,6 +13,7 @@ import {
   getListFinancePreinvoicesUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
+  getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -63,6 +64,8 @@ import {
   type CreatePreinvoiceDraftRequest,
   type CreatePreinvoiceDraftResponse,
   type PreinvoiceDraftResponse,
+  type SubmitPreinvoiceRequest,
+  type SubmitPreinvoiceResponse,
   type GetAirlineContractsParams,
   type GetAirlineOperationsParams,
   type GetAirlineOperationalRequestsParams,
@@ -153,6 +156,7 @@ export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" 
 export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type SubmitPreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export interface FinanceApprovedServicesQuery {
   readonly stationId: string;
   readonly from: string;
@@ -284,6 +288,10 @@ export interface ElevantApiClient {
     draftId: string, expectedStationId: string,
     options?: GetPreinvoiceDraftOptions,
   ): Promise<PreinvoiceDraftResponse>;
+  submitPreinvoice(
+    draftId: string, request: SubmitPreinvoiceRequest,
+    options?: SubmitPreinvoiceOptions,
+  ): Promise<SubmitPreinvoiceResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -2092,6 +2100,12 @@ function isPreinvoiceDraftCreateResponse(value: unknown): value is CreatePreinvo
     isUuid(value.id) && typeof value.replayed === "boolean";
 }
 
+function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
+    isUuid(value.id) && value.status === "Submitted" &&
+    typeof value.replayed === "boolean";
+}
+
 function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
       "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
@@ -2900,6 +2914,22 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "GET" }, true);
       if (!isPreinvoiceDraftResponse(result.data) ||
           result.data.id !== draft || result.data.stationId !== station)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async submitPreinvoice(
+      draftId: string, request: SubmitPreinvoiceRequest,
+      options?: SubmitPreinvoiceOptions,
+    ) {
+      const draft = validatedUuid(draftId, "draftId");
+      if (!isRecord(request) || !hasOnlyKeys(request, ["requestId"]) ||
+          !isUuid(request.requestId))
+        throw new TypeError("Preinvoice submission request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSubmitPreinvoiceUrl(draft),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isSubmitPreinvoiceResponse(result.data) || result.data.id !== draft)
         throw malformedResponse(result.status);
       return result.data;
     },

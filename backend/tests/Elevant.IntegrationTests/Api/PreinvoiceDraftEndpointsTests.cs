@@ -85,6 +85,32 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
             .GetProperty("/api/v1/finance/preinvoices").TryGetProperty("post", out _));
         Assert.True(json.RootElement.GetProperty("paths")
             .GetProperty("/api/v1/finance/preinvoices/{draftId}").TryGetProperty("get", out _));
+        Assert.True(json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/finance/preinvoices/{draftId}/submit")
+            .TryGetProperty("post", out _));
+    }
+
+    [Fact]
+    public async Task FinanceCanSubmitAnExistingDraftForAirlineReview()
+    {
+        var stub = new Stub();
+        await using var application = CreateApplication(stub);
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        var requestId = Guid.NewGuid();
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/finance/preinvoices/{DraftId:D}/submit",
+            new { requestId }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal((AccountId, DraftId, requestId), stub.SubmitRequest);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("Submitted", json.RootElement.GetProperty("status").GetString());
+
+        using var invalid = await client.PostAsJsonAsync(
+            $"/api/v1/finance/preinvoices/{DraftId:D}/submit",
+            new { requestId = Guid.Empty }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
     }
 
     private WebApplicationFactory<Program> CreateApplication(Stub stub) =>
@@ -92,8 +118,10 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IPreinvoiceDraftStore>();
+            services.RemoveAll<IPreinvoiceSubmissionStore>();
             services.AddSingleton<IActorContextResolver>(stub);
             services.AddSingleton<IPreinvoiceDraftStore>(stub);
+            services.AddSingleton<IPreinvoiceSubmissionStore>(stub);
         }));
 
     private static string Token()
@@ -123,9 +151,19 @@ public sealed class PreinvoiceDraftEndpointsTests(ElevantApiFactory factory)
         });
     }
 
-    private sealed class Stub : IActorContextResolver, IPreinvoiceDraftStore
+    private sealed class Stub : IActorContextResolver, IPreinvoiceDraftStore,
+        IPreinvoiceSubmissionStore
     {
         public CreatePreinvoiceDraftCommand? CreateRequest { get; private set; }
+
+        public (Guid AccountId, Guid DraftId, Guid RequestId)? SubmitRequest { get; private set; }
+
+        public Task<SubmitPreinvoiceResult> SubmitAsync(SubmitPreinvoiceCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            SubmitRequest = (command.AccountId, command.PreinvoiceId, command.RequestId);
+            return Task.FromResult(SubmitPreinvoiceResult.Success(command.PreinvoiceId, false));
+        }
 
         public Task<ActorContext?> ResolveAsync(Guid accountId,
             CancellationToken cancellationToken = default) =>

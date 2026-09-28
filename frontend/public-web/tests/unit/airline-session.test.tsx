@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { AirlinePortalBootstrapResponse, SessionResponse } from "@elevant/api-client";
 import {
@@ -46,7 +46,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function Harness() {
-  const { status, session: current, signIn, signOut, retry, getPreinvoice } = useAirlineSession();
+  const { status, session: current, signIn, signOut, retry, getPreinvoice,
+    financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
   return <>
     <span data-testid="session-status">{status}</span>
@@ -57,6 +58,7 @@ function Harness() {
     <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
     <span data-testid="detail-status">{detailStatus}</span>
+    <span data-testid="finance-revision">{financeRevision}</span>
   </>;
 }
 
@@ -205,4 +207,18 @@ it("refreshes the server-scoped bootstrap after an authorized airline change hin
   currentName = "Airline Updated";
   observe.mock.calls[0][0].onChanges(["airline_operations"]);
   await screen.findByText("Airline Updated");
+});
+
+it("invalidates the airline Finance read model on a published preinvoice hint", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input =>
+    new URL(String(input)).pathname === "/api/v1/auth/session"
+      ? json({ actor }) : json(bootstrap)));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  expect(screen.getByTestId("finance-revision")).toHaveTextContent("0");
+  act(() => observe.mock.calls[0][0].onChanges(["airline_preinvoices"]));
+  expect(screen.getByTestId("finance-revision")).toHaveTextContent("1");
 });

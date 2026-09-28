@@ -4725,9 +4725,36 @@ public sealed class SqlServerMigrationTests
                 Assert.Null(await portal.GetPreinvoiceAsync(airlineOrganizationId,
                     created.DraftId!.Value, cancellationToken));
             }
-            await inspection.Preinvoices.Where(item => item.Id == draft.Id)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(
-                    item => item.Status, PreinvoiceStatus.Submitted), cancellationToken);
+            var submitCommand = new SubmitPreinvoiceCommand(financeAccountId,
+                created.DraftId!.Value, Guid.NewGuid());
+            async Task<SubmitPreinvoiceResult> SubmitAsync(SubmitPreinvoiceCommand request)
+            {
+                await using var submitScope = provider.CreateAsyncScope();
+                return await submitScope.ServiceProvider
+                    .GetRequiredService<IPreinvoiceSubmissionStore>()
+                    .SubmitAsync(request, cancellationToken);
+            }
+            var submissions = await Task.WhenAll(
+                SubmitAsync(submitCommand), SubmitAsync(submitCommand));
+            Assert.All(submissions, result => Assert.True(result.IsSuccess));
+            Assert.Single(submissions, result => !result.Replayed);
+            Assert.Single(submissions, result => result.Replayed);
+            Assert.Equal(SubmitPreinvoiceFailure.Conflict,
+                (await SubmitAsync(submitCommand with { RequestId = Guid.NewGuid() })).Failure);
+            Assert.Equal(SubmitPreinvoiceFailure.Forbidden,
+                (await SubmitAsync(submitCommand with { AccountId = occAccountId })).Failure);
+            Assert.Single(await inspection.AuditEntries.AsNoTracking()
+                .Where(item => item.EntityPublicId == created.DraftId &&
+                    item.Action == "finance.preinvoice.submitted")
+                .ToArrayAsync(cancellationToken));
+            var publishedHints = (await inspection.OutboxMessages.AsNoTracking()
+                .Where(item => item.EventType == "account.changed.v1")
+                .ToArrayAsync(cancellationToken))
+                .Select(AccountChangeOutboxWriter.Decode)
+                .Where(item => item.Resource == "airline_preinvoices" &&
+                    item.ResourceId == created.DraftId).ToArray();
+            Assert.Single(publishedHints);
+            Assert.Equal(airlineAccountInternalId, publishedHints[0].RecipientAccountId);
             await using (var portalScope = provider.CreateAsyncScope())
             {
                 var portal = portalScope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
@@ -4764,6 +4791,32 @@ public sealed class SqlServerMigrationTests
                         item.ResourceId == operationId);
                 Assert.Contains(Assert.IsType<AccountChangePage>(page).Changes,
                     item => item.Resource == "finance_preinvoices");
+                Assert.DoesNotContain(Assert.IsType<AccountChangePage>(page).Changes,
+                    item => item.Resource == "airline_preinvoices");
+                var airlinePage = await readScope.ServiceProvider
+                    .GetRequiredService<IAccountChangeReadStore>()
+                    .ReadAsync(Guid.Parse("40000000-0000-7000-8000-000000000003"),
+                        0, 100, cancellationToken);
+                Assert.Contains(Assert.IsType<AccountChangePage>(airlinePage).Changes,
+                    item => item.Resource == "airline_preinvoices");
+            }
+            await using (var voidInvoice = CreateContext(database.ConnectionString))
+            {
+                await voidInvoice.Preinvoices
+                    .Where(item => item.StationId == financeStationInternalId &&
+                        item.Status == PreinvoiceStatus.Submitted)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(item => item.Status, PreinvoiceStatus.Voided),
+                        cancellationToken);
+            }
+            await using (var readScope = provider.CreateAsyncScope())
+            {
+                var airlinePage = await readScope.ServiceProvider
+                    .GetRequiredService<IAccountChangeReadStore>()
+                    .ReadAsync(Guid.Parse("40000000-0000-7000-8000-000000000003"),
+                        0, 100, cancellationToken);
+                Assert.DoesNotContain(Assert.IsType<AccountChangePage>(airlinePage).Changes,
+                    item => item.Resource == "airline_preinvoices");
             }
             await using (var revoke = CreateContext(database.ConnectionString))
             {

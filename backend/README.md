@@ -187,7 +187,14 @@ con una clave de solicitud estable. La API vuelve a verificar rol, grant,
 prefactura no fiscal con líneas inmutables. Una clave repetida con el mismo
 contenido devuelve el borrador existente; un servicio solo puede reservarse
 en una prefactura. La lectura de detalle revalida acceso y la escritura emite
-una invalidación durable `finance_preinvoices`. No hay emisión, impuesto,
+una invalidación durable `finance_preinvoices`. En esta rama,
+`POST /api/v1/finance/preinvoices/{draftId}/submit` cambia un borrador con
+líneas a `Submitted` una sola vez bajo transacción serializable. Una repetición
+del mismo actor y clave devuelve el resultado anterior; otra clave recibe
+conflicto. Auditoría e invalidaciones `finance_preinvoices` y
+`airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
+membresía, tenant y estado publicado antes de entregar la pista. No hay
+emisión, impuesto,
 conciliación, factura, pago ni recibo todavía. La rama no se ha desplegado.
 El portal de aerolínea puede releer una prefactura publicada y sus líneas
 inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API

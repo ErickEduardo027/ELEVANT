@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
-import { getFinancePreinvoices } from '../../../services/financePreinvoiceService';
+import { getFinancePreinvoices, submitFinancePreinvoice } from '../../../services/financePreinvoiceService';
 import { getPreinvoiceDraft } from '../../../services/approvedServicesService';
 
 vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
@@ -11,7 +11,9 @@ vi.mock('../../../features/auth/authService', () => ({ readSession: () => ({
     { stationId: 'station-two', stationCode: 'SDQ' },
   ],
 }) }));
-vi.mock('../../../services/financePreinvoiceService', () => ({ getFinancePreinvoices: vi.fn() }));
+vi.mock('../../../services/financePreinvoiceService', () => ({
+  getFinancePreinvoices: vi.fn(), submitFinancePreinvoice: vi.fn(),
+}));
 vi.mock('../../../services/approvedServicesService', () => ({ getPreinvoiceDraft: vi.fn() }));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: async () => {}, stop: async () => {} }),
@@ -88,4 +90,41 @@ it('hides open detail when a fresh authorization check denies access', async () 
   await act(async () => window.dispatchEvent(new Event('focus')));
   expect(await screen.findByRole('alert')).toHaveTextContent('No tiene acceso');
   expect(screen.queryByText(/Ground power/)).not.toBeInTheDocument();
+});
+
+it('requires confirmation before sending a persisted draft and refreshes the authoritative list', async () => {
+  getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [item] }).mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [{ ...item, status: 'Submitted' }] });
+  getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  submitFinancePreinvoice.mockResolvedValue({ id: item.id, status: 'Submitted', replayed: false });
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Ground power/);
+  await userEvent.click(screen.getByRole('button', { name: 'Enviar a aerolínea' }));
+  expect(submitFinancePreinvoice).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar envío' }));
+  await waitFor(() => expect(submitFinancePreinvoice).toHaveBeenCalledExactlyOnceWith(item.id));
+  expect(await screen.findByText('Prefactura enviada a revisión de la aerolínea.')).toBeInTheDocument();
+  expect(await screen.findByText('Enviada')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Enviar a aerolínea' })).not.toBeInTheDocument();
+});
+
+it('offers a safe retry after an uncertain network response without exposing server text', async () => {
+  getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    preinvoices: [item] });
+  getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
+    operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
+  submitFinancePreinvoice.mockRejectedValueOnce(new Error('internal connection details'));
+  render(<PreinvoicesPage />);
+  await screen.findByText('Synthetic Air');
+  await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+  await screen.findByText(/Ground power/);
+  await userEvent.click(screen.getByRole('button', { name: 'Enviar a aerolínea' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar envío' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar el envío');
+  expect(screen.queryByText(/internal connection details/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reintentar envío' })).toBeInTheDocument();
 });

@@ -144,6 +144,10 @@ public sealed class AirlinePortalBootstrapHandlerTests
         public Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
             Guid organizationId, int page, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlinePreinvoicePageData?>(null);
+
+        public Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
+            Guid organizationId, Guid preinvoiceId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AirlinePreinvoiceDetailData?>(null);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

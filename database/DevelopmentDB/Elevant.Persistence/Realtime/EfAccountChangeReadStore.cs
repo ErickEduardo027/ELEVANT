@@ -95,6 +95,15 @@ internal sealed class EfAccountChangeReadStore(
                                 context.Organizations.Any(organization =>
                                     organization.Id == airline.OrganizationId &&
                                     airlineOrganizationIds.Contains(organization.PublicId))))))) &&
+                (change.Resource != "airline_preinvoices" ||
+                    (hasAirlinePortalRole && context.Preinvoices.Any(preinvoice =>
+                        preinvoice.PublicId == change.ResourceId &&
+                        preinvoice.Status != PreinvoiceStatus.Draft &&
+                        preinvoice.Status != PreinvoiceStatus.Voided &&
+                        context.Airlines.Any(airline => airline.Id == preinvoice.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId)))))) &&
                 (change.Resource != "commercial_catalog" ||
                     (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
                         service.PublicId == change.ResourceId))) &&

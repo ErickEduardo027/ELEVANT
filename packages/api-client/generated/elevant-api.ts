@@ -1634,6 +1634,16 @@ export interface SubmitCommercialRequestResponse {
   replayed: boolean;
 }
 
+export interface SubmitPreinvoiceRequest {
+  requestId: string;
+}
+
+export interface SubmitPreinvoiceResponse {
+  id: string;
+  status: string;
+  replayed: boolean;
+}
+
 export interface SubmitRampOperationChecklistRequest {
   checklistId: string;
   /**
@@ -3967,6 +3977,41 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitPreinvoiceUrl = (draftId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${draftId}/submit`
+}
+
+export const submitPreinvoice = async (draftId: string,
+    submitPreinvoiceRequest?: SubmitPreinvoiceRequest, options?: RequestInit): Promise<SubmitPreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitPreinvoiceUrl(draftId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitPreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitPreinvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 

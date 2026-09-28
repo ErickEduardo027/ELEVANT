@@ -46,6 +46,7 @@ interface AirlineSessionContextValue {
   getPreinvoices(page?: number): Promise<AirlinePreinvoicePageResponse>;
   getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
   operationRevision: number;
+  financeRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
   commentDraft(versionId: string, body: string): Promise<void>;
   draftRevision: number;
@@ -110,6 +111,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
   const [session, setSession] = useState<AirlineSessionData | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
   const [operationRevision, setOperationRevision] = useState(0);
+  const [financeRevision, setFinanceRevision] = useState(0);
   const accountId = session?.actor.accountId;
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
@@ -179,6 +181,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       if (request === generation.current) {
         setSession(live);
         setOperationRevision(current => current + 1);
+        setFinanceRevision(current => current + 1);
       }
     } catch (error) {
       if (request === generation.current &&
@@ -212,6 +215,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       onChanges: resources => {
         if (resources.includes("airline_operations")) void refreshLive();
         if (resources.includes("airline_contracts")) setDraftRevision(current => current + 1);
+        if (resources.includes("airline_preinvoices")) setFinanceRevision(current => current + 1);
       } });
     void observer.start();
     return () => { void observer.stop(); };
@@ -394,7 +398,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

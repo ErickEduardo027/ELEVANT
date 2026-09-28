@@ -33,8 +33,9 @@ cuenta ni un portal operativo completo de Production.
 En la rama de integración, la sesión del portal revalida identidad y
 `bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
 `ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
-cuenta y vuelve a consultar el `bootstrap` cuando aparece
-`airline_operations`. El socket nunca entrega datos del tenant; si falla,
+cuenta, vuelve a consultar el `bootstrap` cuando aparece
+`airline_operations` y relee Finanzas al recibir `airline_preinvoices`.
+El socket nunca entrega importes ni líneas del tenant; si falla,
 el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
 un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
 la sesión visible. Falta medir latencia real en navegador y VPS.
@@ -75,7 +76,8 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/portal/finanzas`: consulta real, paginada y de solo lectura de prefacturas publicadas, con líneas autorizadas por la API. Disputas, facturas y pagos siguen pendientes.
+- `/portal/documentos` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
 - `/dev-airline`: retirada; responde 404.
 
 ## Contrato de seguridad
@@ -86,7 +88,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-Las vistas de Documentos, Finanzas y Reportes aún contienen tarjetas de ejemplo etiquetadas y no pertenecen al tenant autenticado; Inicio, Vuelos y Solicitudes no las muestran. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
+Documentos y Reportes aún contienen tarjetas de ejemplo etiquetadas y no pertenecen al tenant autenticado; Inicio, Vuelos, Solicitudes y Finanzas no las muestran. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
 
 ## Criterio de promoción en Development
 

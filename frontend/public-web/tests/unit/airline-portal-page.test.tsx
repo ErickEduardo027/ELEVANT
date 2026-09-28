@@ -42,6 +42,7 @@ const initialRequestPage: AirlineOperationalRequestPageResponse = {
     operationCode: "DEV-TAT-0002", resolvedAt: null }],
 };
 let requestPage = initialRequestPage;
+let financeRevision = 0;
 const getRequests = vi.fn(async () => requestPage);
 const getPreinvoices = vi.fn(async () => ({ page: 1, limit: 20, hasMore: false,
   preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
@@ -59,13 +60,14 @@ const getPreinvoice = vi.fn(async (id: string) => ({
 }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision: 0 }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); });
+  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear();
+  getPreinvoices.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -147,6 +149,16 @@ it("shows only published preinvoices returned by the authorized finance API", as
   expect(screen.getByText("PUJ · 2026-08-18 — 2026-08-19")).toBeInTheDocument();
   expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
   expect(screen.queryByText("DEMO-PRE-001")).not.toBeInTheDocument();
+});
+
+it("refetches published preinvoices when Finance receives a durable change revision", async () => {
+  const page = render(<AirlinePortalPage view="finance" />);
+  await screen.findByText("USD 125.50");
+  expect(getPreinvoices).toHaveBeenCalledTimes(1);
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+  await screen.findByText("USD 125.50");
+  expect(getPreinvoices).toHaveBeenCalledTimes(2);
 });
 
 it("opens immutable service lines from the authorized preinvoice detail", async () => {

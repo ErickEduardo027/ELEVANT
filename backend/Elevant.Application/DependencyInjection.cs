@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<SubmitCommercialRequestHandler>();
         services.AddScoped<GetFinanceApprovedServicesHandler>();
         services.AddScoped<CreatePreinvoiceDraftHandler>();
+        services.AddScoped<SubmitPreinvoiceHandler>();
         services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
