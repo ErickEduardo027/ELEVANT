@@ -1,62 +1,88 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import DashboardPage from './DashboardPage';
+import { getHumanResourcesDashboardSnapshot } from '../../../services/humanResourcesDashboardService';
 
-describe('Human Resources dashboard-only demo', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+const observerFactory = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../services/humanResourcesDashboardService', () => ({
+  getHumanResourcesDashboardSnapshot: vi.fn(),
+}));
+vi.mock('../../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: observerFactory,
+}));
+
+beforeEach(() => {
+  observerFactory.mockReset();
+  observerFactory.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined) });
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockReset();
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockResolvedValue({
+    activeStaffTotal: 2,
+    pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }],
   });
+});
 
-  it('renders a permanent synthetic-data warning without navigation or mutation actions', async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
+it('refreshes linked-account facts after a durable ramp-profile change', async () => {
+  let current = { activeStaffTotal: 2,
+    pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }] };
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockImplementation(async () => current);
+  render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
+  expect(await screen.findByText('Luis Vega')).toBeInTheDocument();
+  await waitFor(() => expect(observerFactory).toHaveBeenCalledOnce());
 
-    render(
-      <MemoryRouter>
-        <DashboardPage dashboardReadOnlyDemo />
-      </MemoryRouter>,
-    );
+  current = { activeStaffTotal: 2,
+    pendingAccounts: [{ id: 'agent-4', name: 'Ana Rivas', role: 'Rampa' }] };
+  await act(async () => observerFactory.mock.calls[0][0](['ramp_profiles']));
+  expect(await screen.findByText('Ana Rivas')).toBeInTheDocument();
+  expect(screen.queryByText('Luis Vega')).not.toBeInTheDocument();
+});
 
-    expect(screen.getByRole('region', { name: /aviso de demostración/i })).toHaveTextContent(
-      'Datos sintéticos · Solo lectura',
-    );
-    expect(screen.getByText(/no permite crear, editar, exportar ni guardar información/i)).toBeInTheDocument();
+it('revalidates the authorized summary when the tab regains focus', async () => {
+  let current = { activeStaffTotal: 1,
+    pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }] };
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockImplementation(async () => current);
+  render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
+  expect(await screen.findByText('Luis Vega')).toBeInTheDocument();
 
-    await waitFor(() => expect(screen.queryAllByTestId('kpi-skeleton')).toHaveLength(0));
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /actualizar resumen/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /revisar cuentas/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /ver habilitaciones/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /revisar vencidos/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /ver todos/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /gestionar cuentas/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^ver$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /ver historial completo/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Accesos rápidos')).not.toBeInTheDocument();
-  });
+  current = { activeStaffTotal: 1, pendingAccounts: [] };
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  expect(await screen.findByText('Todos los perfiles activos tienen cuenta vinculada')).toBeInTheDocument();
+  expect(screen.queryByText('Luis Vega')).not.toBeInTheDocument();
+});
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  it('keeps the synthetic-data warning visible in the error state and offers no retry action', async () => {
-    render(
-      <MemoryRouter>
-        <DashboardPage dashboardReadOnlyDemo forceState="error" />
-      </MemoryRouter>,
-    );
+it('uses a polling fallback when no change hint arrives', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  let current = { activeStaffTotal: 1,
+    pendingAccounts: [{ id: 'agent-2', name: 'Luis Vega', role: 'Rampa' }] };
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockImplementation(async () => current);
+  render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
+  expect(await screen.findByText('Luis Vega')).toBeInTheDocument();
 
-    expect(await screen.findByText('Datos sintéticos · Solo lectura')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No fue posible cargar el resumen.'));
-    expect(screen.queryByRole('button', { name: /reintentar/i })).not.toBeInTheDocument();
-  });
+  current = { activeStaffTotal: 1, pendingAccounts: [] };
+  await act(async () => vi.advanceTimersByTimeAsync(25_000));
+  expect(await screen.findByText('Todos los perfiles activos tienen cuenta vinculada')).toBeInTheDocument();
+});
 
-  it('retains the normal HR surface when the demo flag is absent', async () => {
-    render(
-      <MemoryRouter>
-        <DashboardPage dashboardReadOnlyDemo={false} />
-      </MemoryRouter>,
-    );
+it('shows only authorized personnel facts, without fixture indicators or demo claims', async () => {
+  render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
 
-    expect(screen.queryByText('Datos sintéticos · Solo lectura')).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /revisar cuentas/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /actualizar resumen/i })).toBeInTheDocument();
-  });
+  expect(await screen.findByText('Luis Vega')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText('2').length).toBeGreaterThan(0));
+  expect(screen.getByText('Agentes de rampa activos')).toBeInTheDocument();
+  expect(screen.queryByText('Datos sintéticos · Solo lectura')).not.toBeInTheDocument();
+  expect(screen.queryByText('148')).not.toBeInTheDocument();
+  expect(screen.queryByText('Habilitaciones próximas a vencer')).not.toBeInTheDocument();
+  expect(screen.queryByText('Disponibilidad actual')).not.toBeInTheDocument();
+  expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+});
+
+it('offers a retry when the authorized read fails', async () => {
+  vi.mocked(getHumanResourcesDashboardSnapshot).mockRejectedValueOnce(new Error('No hay conexión'));
+  render(<MemoryRouter><DashboardPage dashboardReadOnlyDemo /></MemoryRouter>);
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('No fue posible cargar el resumen.');
+  expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
 });

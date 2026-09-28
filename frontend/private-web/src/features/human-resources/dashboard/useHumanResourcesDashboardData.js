@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getHumanResourcesDashboardSnapshot } from '../../../services/humanResourcesDashboardService';
+import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 
 // Mismo patrón que useDashboardData en feat/adminocc: estado
 // status/data/error derivado de una promesa, con un token para forzar
@@ -26,6 +27,22 @@ export function useHumanResourcesDashboardData() {
   }, [refreshToken]);
 
   const refresh = useCallback(() => setRefreshToken(token => token + 1), []);
+
+  useEffect(() => {
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('ramp_profiles')) refresh();
+    });
+    void observer.start().catch(() => {});
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    const poll = window.setInterval(refresh, 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      void observer.stop();
+    };
+  }, [refresh]);
 
   return { ...state, refresh };
 }

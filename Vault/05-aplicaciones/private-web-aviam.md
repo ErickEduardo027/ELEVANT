@@ -90,6 +90,17 @@ En la rama de integración de Development, planificación incorpora el alta manu
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
+En el worktree local posterior a esta fotografía, el dashboard consulta los
+perfiles de rampa autorizados de la API para contar agentes activos y perfiles
+sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
+para turnos, habilitaciones o cobertura. El modo restringido mantiene ocultas
+las rutas profundas aún no integradas; recibir una señal de cambio, recuperar
+foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
+gestión de habilitaciones ni un despliegue al VPS. Fuentes:
+[servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
+[vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
+y [perfiles autorizados](../../backend/Elevant.Api/Controllers/RampProfilesController.cs).
+
 ### Contratos y Finanzas
 
 `/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones. Finanzas conserva un resumen sintético; el buzón de notificaciones heredado está oculto para ambos roles, evitando solicitudes a `/api/notifications`. La mera navegación no certifica los módulos profundos.

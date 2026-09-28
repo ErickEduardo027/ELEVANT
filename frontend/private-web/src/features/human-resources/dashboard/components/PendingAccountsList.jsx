@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import DashboardListRow from './DashboardListRow';
 import { UsersIcon } from '../../../shell/components/icons';
-import { formatRelativeDaysAgo } from '../mappers';
 import { TONE_HEX } from '../../../../components/toneColors';
 
 function SkeletonRows() {
@@ -20,14 +19,14 @@ export default function PendingAccountsList({ accounts, loading = false, actions
   return (
     <div className="rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">Cuentas pendientes de activar</h2>
+        <h2 className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">Perfiles sin cuenta vinculada</h2>
         {actionsEnabled && (
           <button
             type="button"
             onClick={() => navigate('/gestion-humana/users')}
             className="text-xs font-medium text-accent-600 hover:underline"
           >
-            Gestionar cuentas
+            Gestionar perfiles
           </button>
         )}
       </div>
@@ -38,7 +37,7 @@ export default function PendingAccountsList({ accounts, loading = false, actions
         <div className="flex flex-col items-center gap-2 py-8 text-center">
           <UsersIcon className="h-6 w-6 text-text-secondary-light dark:text-text-secondary-dark" />
           <p className="text-sm font-medium text-ink-900 dark:text-text-primary-dark">
-            No hay cuentas pendientes de activación
+            Todos los perfiles activos tienen cuenta vinculada
           </p>
         </div>
       ) : (
@@ -49,7 +48,6 @@ export default function PendingAccountsList({ accounts, loading = false, actions
               accentColor={TONE_HEX.info}
               title={account.name}
               subtitle={account.role}
-              meta={formatRelativeDaysAgo(account.registeredAt)}
             />
           ))}
         </div>
