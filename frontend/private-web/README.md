@@ -1,5 +1,7 @@
 # ELEVANT AVIAM Web
 
+En este worktree, **Reportes de personal** está disponible en el modo restringido de Gestión Humana. Combina las primeras 100 habilitaciones, permisos y turnos de la semana local leídos de sus tres endpoints autorizados; muestra una muestra, no totales globales, y permite abrir cada módulo paginado. Oculta los datos anteriores si una fuente falla y se revalida con cambios durables, foco, reconexión y sondeo de 25 segundos. No ofrece exportación ni estadísticas históricas ficticias. El adaptador prototípico de `/api/hr/reports/*` ya no está montado en la ruta. Esto sigue sin promoción ni prueba de navegador contra el VPS.
+
 ## Medios del flujo comercial
 
 Contratos edita cada servicio en un panel lateral con foto y video subidos por

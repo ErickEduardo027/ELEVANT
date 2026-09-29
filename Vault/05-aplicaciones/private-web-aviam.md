@@ -142,6 +142,16 @@ por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
 falla la lectura. Crear turnos y gestionar ausencias desde Gestión Humana aún
 requiere contratos propios. Fuentes: [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs) y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftReadStore.cs).
 
+La ruta restringida de Reportes de personal combina las primeras 100
+habilitaciones y permisos actuales con los primeros 100 turnos de la semana
+local mediante las tres lecturas autorizadas. Es una muestra, no un total
+histórico: permite abrir los módulos paginados, anuncia cuando una fuente tiene
+más páginas, oculta la muestra anterior ante un error y no ofrece exportaciones
+prototípicas. Revalida con señales durables, foco, reconexión y sondeo de 25
+segundos. Es código del worktree local; aún faltan CI, navegador y promoción al
+VPS. Fuentes: [vista de reportes](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
+y [router](../../frontend/private-web/src/app/router.jsx).
+
 ### Contratos y Finanzas
 
 `/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, seguimiento, tarifas, reportes y comunicaciones. En el worktree local, Inicio de Finanzas combina lecturas autorizadas de servicios aprobados y prefacturas por estación: hasta 200 servicios de los últimos 30 días y la primera página de 50 prefacturas, no totales históricos. Reportes agrupa los estados de esa primera página por aerolínea y moneda, sin inventar importes ni exportaciones. Ambas vistas revalidan con cambio durable, foco y polling de 25 segundos. Tarifas consulta versiones contractuales publicadas y paginadas para una estación autorizada mediante `GET /api/v1/finance/tariffs`; conserva cuatro decimales y distingue versiones históricas. La activación de un contrato genera una pista durable `finance_tariffs` para Finanzas, con revalidación del alcance en el feed. Se retiró la acción local de «Programar cambio» que no persistía. Seguimiento consulta prefacturas aceptadas, facturas no fiscales y pagos manuales mediante `GET /api/v1/finance/reconciliation`, con revalidación por `finance_preinvoices`, foco y polling. No acredita conciliación bancaria y retiró la acción local «Conciliar». El buzón heredado está oculto para ambos roles, evitando `/api/notifications`. Nada de esto acredita despliegue al VPS. Fuentes: [servicio de inicio](../../frontend/private-web/src/services/financeHomeService.js), [servicio de reportes](../../frontend/private-web/src/services/financeReportsService.js), [vista de tarifas](../../frontend/private-web/src/features/finance/tariffs/TariffsPage.jsx), [vista de seguimiento](../../frontend/private-web/src/features/finance/reconciliation/ReconciliationPage.jsx), [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceReconciliationController.cs) y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceReconciliationReadStore.cs).

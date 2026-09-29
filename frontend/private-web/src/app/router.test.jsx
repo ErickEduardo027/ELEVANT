@@ -25,7 +25,7 @@ vi.mock('../services/humanResourcesShiftsReadService', () => ({
 describe('HR routes with operational ramp profiles', () => {
   it('keeps live ramp profiles and current qualifications while redirecting unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'reports', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],
@@ -100,5 +100,24 @@ describe('HR routes with operational ramp profiles', () => {
     expect(getHumanResourcesShifts).toHaveBeenCalledWith(
       expect.objectContaining({ page: 1, limit: 20 }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('mounts the real read-only personnel report instead of the prototype', async () => {
+    getHumanResourcesQualifications.mockResolvedValue({ qualifications: [], hasMore: false });
+    getHumanResourcesPermits.mockResolvedValue({ permits: [], hasMore: false });
+    getHumanResourcesShifts.mockResolvedValue({ shifts: [], hasMore: false });
+    const router = createMemoryRouter(
+      [{ path: '/gestion-humana', element: <Outlet />,
+        children: createHumanResourcesChildren(true) }],
+      { initialEntries: ['/gestion-humana/reports'] },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText('Reportes de personal')).toBeInTheDocument();
+    expect(await screen.findByText(/No hay vigencias registradas/)).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/gestion-humana/reports');
+    expect(getHumanResourcesQualifications).toHaveBeenCalledWith(
+      { page: 1, limit: 100 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
