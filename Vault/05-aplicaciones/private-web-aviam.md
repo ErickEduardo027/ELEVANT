@@ -130,6 +130,9 @@ modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/s
 
 La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
 rampa, paginados y reservados a Gestión Humana o Superadministración internas.
+En la rama local, la lectura admite un filtro conjunto de agente y tipo para
+encontrar el ciclo exacto sin recorrer páginas globales. Este filtro prepara
+una renovación segura; todavía no añade una acción de escritura.
 La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
 foco/conexión y cada 25 segundos, y no permite renovaciones o archivos
 simulados. El documento puede estar vencido aunque su ciclo siga marcado como

@@ -58,3 +58,27 @@ it("rejects invalid document types, dates and mismatched pages", async () => {
   await expect(mismatched.getHumanResourcesPermits({ page: 2, limit: 1 }))
     .rejects.toMatchObject({ kind: "malformed-response" });
 });
+
+it("looks up the current document cycle for exactly one agent and type", async () => {
+  const scope = { page: 1, limit: 1, rampProfileId: permit.rampProfileId,
+    documentType: "AirportId" as const };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async url => {
+      expect(String(url)).toBe(`https://api.example.test/api/v1/human-resources/permits?page=1&limit=1&rampProfileId=${scope.rampProfileId}&documentType=AirportId`);
+      return new Response(JSON.stringify({ page: 1, limit: 1, hasMore: false,
+        permits: [permit] }), { headers: { "content-type": "application/json" } });
+    },
+  });
+  await expect(client.getHumanResourcesPermits(scope))
+    .resolves.toMatchObject({ permits: [permit] });
+  await expect(client.getHumanResourcesPermits({ rampProfileId: permit.rampProfileId }))
+    .rejects.toBeInstanceOf(TypeError);
+  const foreign = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ page: 1, limit: 1,
+      hasMore: false, permits: [{ ...permit, rampProfileId:
+        "50000000-0000-7000-8000-000000000099" }] }),
+    { headers: { "content-type": "application/json" } }),
+  });
+  await expect(foreign.getHumanResourcesPermits(scope))
+    .rejects.toMatchObject({ kind: "malformed-response" });
+});

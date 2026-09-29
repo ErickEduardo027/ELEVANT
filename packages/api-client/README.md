@@ -85,11 +85,12 @@ durable tras confirmar; un 409 exige reconsulta antes de intentar otro cambio.
 La interfaz restringida conecta esa captura; ante una respuesta incierta
 reintenta el mismo UUID y ante 409 relee el ciclo antes de permitir otro envío.
 
-`getHumanResourcesPermits({ page?, limit? })` lee ciclos actuales de carnet
+`getHumanResourcesPermits({ page?, limit?, rampProfileId?, documentType? })` lee ciclos actuales de carnet
 aeroportuario y licencia de rampa para Gestión Humana o Superadministración.
 Valida tipos, fechas, identificadores y paginación antes de entregar datos al
-cliente. La ruta restringida de Private Web los muestra en solo lectura; el
-método no crea ni renueva documentos.
+cliente. Los filtros de agente y tipo son inseparables; la respuesta exacta no
+puede contener otro par ni otra página. La ruta restringida de Private Web
+todavía muestra permisos en solo lectura; el método no crea ni renueva documentos.
 
 `getHumanResourcesShifts({ from, to, page?, limit? })` lee turnos registrados
 en una ventana máxima de siete fechas locales, en páginas de hasta 100. El

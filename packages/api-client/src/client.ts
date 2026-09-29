@@ -2364,6 +2364,26 @@ function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPerm
   });
 }
 
+function validatedHumanResourcesPermitQuery(
+  query: ListHumanResourcesPermitsParams | undefined,
+): ListHumanResourcesPermitsParams {
+  if (query === undefined) return {};
+  if (!isRecord(query) || !hasOnlyKeys(query,
+    ["page", "limit", "rampProfileId", "documentType"]) ||
+      (query.rampProfileId === undefined) !== (query.documentType === undefined) ||
+      (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
+      (query.documentType !== undefined &&
+        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+    throw new TypeError("Human Resources permit filter is invalid.");
+  const paging = validatedHumanResourcesPaging({
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }),
+  });
+  return { ...paging,
+    ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
+    ...(query.documentType === undefined ? {} : { documentType: query.documentType }) };
+}
+
 function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): HumanResourcesShiftsQuery {
   if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
       !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
@@ -3578,12 +3598,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       query?: ListHumanResourcesPermitsParams,
       options?: GetHumanResourcesPermitsOptions,
     ) {
-      const paging = validatedHumanResourcesPaging(query);
+      const paging = validatedHumanResourcesPermitQuery(query);
       const result = await execute(getListHumanResourcesPermitsUrl(paging),
         { ...options, method: "GET" }, true);
       if (!isHumanResourcesPermitPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
-          result.data.limit !== (paging.limit ?? 50))
+          result.data.limit !== (paging.limit ?? 50) ||
+          (paging.rampProfileId !== undefined &&
+            (result.data.hasMore || result.data.permits.length > 1 ||
+             result.data.permits.some(item =>
+               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
+               item.documentType !== paging.documentType))))
         throw malformedResponse(result.status);
       return result.data;
     },

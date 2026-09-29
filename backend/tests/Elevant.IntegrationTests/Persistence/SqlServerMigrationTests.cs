@@ -482,6 +482,13 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(Guid.Parse("50000000-0000-7000-8000-000000000003"), airportId.Id);
             Assert.Equal("AirportId", airportId.DocumentType);
             Assert.Equal("DEV-RA-001", airportId.EmployeeNumber);
+            var exact = await store.ListCurrentAsync(hrId, 1, 1,
+                airportId.RampProfileId, PermitDocumentType.AirportId, cancellationToken);
+            Assert.Equal(airportId.Id, Assert.Single(exact!.Permits).Id);
+            Assert.Empty((await store.ListCurrentAsync(hrId, 1, 1,
+                Guid.NewGuid(), PermitDocumentType.AirportId, cancellationToken))!.Permits);
+            Assert.Null(await store.ListCurrentAsync(occId, 1, 1,
+                airportId.RampProfileId, PermitDocumentType.AirportId, cancellationToken));
             var second = await store.ListCurrentAsync(hrId, 2, 1, cancellationToken);
             Assert.NotNull(second);
             Assert.False(second.HasMore);

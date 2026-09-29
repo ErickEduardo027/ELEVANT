@@ -2085,6 +2085,8 @@ limit?: number;
 export type ListHumanResourcesPermitsParams = {
 page?: number;
 limit?: number;
+rampProfileId?: string;
+documentType?: string;
 };
 
 export type ListHumanResourcesQualificationsParams = {

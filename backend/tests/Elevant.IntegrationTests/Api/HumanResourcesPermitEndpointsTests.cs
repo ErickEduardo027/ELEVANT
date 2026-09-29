@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Domain.Enumerations;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +62,10 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
         using var tooLarge = await client.GetAsync("/api/v1/human-resources/permits?limit=101",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooLarge.StatusCode);
+        using var incompleteFilter = await client.GetAsync(
+            $"/api/v1/human-resources/permits?rampProfileId={Guid.NewGuid():D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, incompleteFilter.StatusCode);
         using var response = await client.GetAsync("/api/v1/human-resources/permits?page=2&limit=1",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -71,6 +76,13 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
         Assert.Equal("AirportId", json.RootElement.GetProperty("permits")[0]
             .GetProperty("documentType").GetString());
         Assert.Equal((AccountId, 2, 1), stub.Request);
+        var filteredAgentId = Guid.NewGuid();
+        using var filtered = await client.GetAsync(
+            $"/api/v1/human-resources/permits?page=1&limit=1&rampProfileId={filteredAgentId:D}&documentType=AirportId",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+        Assert.Equal((AccountId, 1, 1, filteredAgentId, PermitDocumentType.AirportId),
+            stub.FilterRequest);
     }
 
     [Fact]
@@ -120,11 +132,21 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
     {
         public HumanResourcesPermitPage? Data { get; init; }
         public (Guid AccountId, int Page, int Limit)? Request { get; private set; }
+        public (Guid AccountId, int Page, int Limit, Guid AgentId, PermitDocumentType DocumentType)?
+            FilterRequest { get; private set; }
 
         public Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page,
             int limit, CancellationToken cancellationToken = default)
         {
             Request = (actorId, page, limit);
+            return Task.FromResult(Data);
+        }
+
+        public Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page,
+            int limit, Guid rampProfileId, PermitDocumentType documentType,
+            CancellationToken cancellationToken = default)
+        {
+            FilterRequest = (actorId, page, limit, rampProfileId, documentType);
             return Task.FromResult(Data);
         }
     }

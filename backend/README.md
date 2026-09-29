@@ -124,7 +124,10 @@ a 60 minutos y usa 15 por defecto.
   actuales de carnet aeroportuario o licencia de rampa, con agente, número y
   fechas persistidos. Exige la misma membresía y rol interno vigentes que la
   lectura de habilitaciones. `is_current` indica el ciclo registrado, no que
-  el documento no haya vencido; no crea ni renueva permisos.
+  el documento no haya vencido. Los filtros opcionales `rampProfileId` y
+  `documentType` (`AirportId` o `RampDriverLicense`) deben enviarse juntos;
+  SQL los aplica antes de paginar para localizar el ciclo actual exacto. Un
+  filtro incompleto devuelve 400. La ruta aún no crea ni renueva permisos.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o

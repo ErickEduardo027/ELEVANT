@@ -4000,6 +4000,21 @@
               "format": "int32",
               "default": 50
             }
+          },
+          {
+            "name": "rampProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "documentType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
