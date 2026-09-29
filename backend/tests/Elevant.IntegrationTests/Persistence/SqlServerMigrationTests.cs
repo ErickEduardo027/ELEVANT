@@ -521,6 +521,145 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task HumanResourcesPermitRenewalPreservesCurrentHistoryAndReplaysOneIntent()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        var previousId = Guid.Parse("50000000-0000-7000-8000-000000000003");
+        var newId = Guid.NewGuid();
+        var firstAgentId = Guid.NewGuid();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var now = DateTimeOffset.UtcNow;
+            var person = new Person
+            {
+                PublicId = Guid.NewGuid(), FirstName = "Permit", LastName = "FirstCycle",
+                IdentificationType = "Synthetic", IdentificationNumber = "DEV-PERMIT-FIRST",
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Persons.Add(person);
+            await setup.SaveChangesAsync(cancellationToken);
+            setup.RampAgents.Add(NewTestAgent(person.Id, "DEV-RA-PERMIT-FIRST",
+                firstAgentId.ToString("D"), now));
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        var input = new RecordHumanResourcesPermitInput(agentId, "AirportId",
+            previousId, "DEV-AIRPORT-ID-RENEWED", new DateOnly(2026, 2, 1),
+            new DateOnly(2099, 12, 31));
+        var firstId = Guid.NewGuid();
+        var firstInput = input with { RampProfileId = firstAgentId,
+            ExpectedCurrentId = null, DocumentNumber = "DEV-PERMIT-FIRST" };
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitWriteStore>();
+            var first = await store.RecordAsync(hrId, firstId, firstInput,
+                cancellationToken);
+            Assert.Null(first.Failure);
+            Assert.Equal(1, first.Permit!.CycleNumber);
+            Assert.Equal(first.Permit, (await store.RecordAsync(hrId, firstId,
+                firstInput, cancellationToken)).Permit);
+            var saved = await store.RecordAsync(hrId, newId, input, cancellationToken);
+            Assert.Null(saved.Failure);
+            Assert.Equal(2, saved.Permit!.CycleNumber);
+            Assert.Equal(saved.Permit, (await store.RecordAsync(hrId, newId, input,
+                cancellationToken)).Permit);
+            Assert.Equal(HumanResourcesPermitWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, newId, input with
+                { DocumentNumber = "DIFFERENT" }, cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesPermitWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                    cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesPermitWriteFailure.Invalid,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                { IssuedOn = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1) },
+                    cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesPermitWriteFailure.Forbidden,
+                (await store.RecordAsync(occId, Guid.NewGuid(), input,
+                    cancellationToken)).Failure);
+        }
+
+        var concurrentId = Guid.NewGuid();
+        var concurrentInput = input with { ExpectedCurrentId = newId,
+            DocumentNumber = "DEV-AIRPORT-ID-CONCURRENT" };
+        async Task<HumanResourcesPermitWriteResult> ConcurrentRecordAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesPermitWriteStore>()
+                .RecordAsync(hrId, concurrentId, concurrentInput, cancellationToken);
+        }
+        var concurrentResults = await Task.WhenAll(ConcurrentRecordAsync(), ConcurrentRecordAsync());
+        Assert.All(concurrentResults, result =>
+        {
+            Assert.Null(result.Failure);
+            Assert.Equal(concurrentId, result.Permit!.Id);
+            Assert.Equal(3, result.Permit.CycleNumber);
+        });
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var firstCycle = await context.AirportPermitCycles.AsNoTracking()
+                .SingleAsync(cycle => cycle.PublicId == firstId, cancellationToken);
+            Assert.True(firstCycle.IsCurrent);
+            Assert.Null(firstCycle.SupersedesPermitId);
+            var cycles = await context.AirportPermitCycles.AsNoTracking()
+                .Where(cycle => cycle.PublicId == previousId || cycle.PublicId == newId ||
+                    cycle.PublicId == concurrentId)
+                .OrderBy(cycle => cycle.CycleNumber).ToArrayAsync(cancellationToken);
+            Assert.Equal(3, cycles.Length);
+            Assert.False(cycles[0].IsCurrent);
+            Assert.False(cycles[1].IsCurrent);
+            Assert.True(cycles[2].IsCurrent);
+            Assert.Equal(cycles[0].Id, cycles[1].SupersedesPermitId);
+            Assert.Equal(cycles[1].Id, cycles[2].SupersedesPermitId);
+            Assert.Equal(1, await context.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.permit.recorded" && entry.EntityPublicId == newId,
+                cancellationToken));
+            Assert.Equal(1, await context.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.permit.recorded" && entry.EntityPublicId == concurrentId,
+                cancellationToken));
+            Assert.NotEmpty(await context.OutboxMessages.AsNoTracking()
+                .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_permits\""))
+                .ToArrayAsync(cancellationToken));
+            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitWriteStore>();
+            Assert.Equal(HumanResourcesPermitWriteFailure.Forbidden,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                    cancellationToken)).Failure);
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesQualificationsReadCurrentCyclesOnlyForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -6695,7 +6834,7 @@ public sealed class SqlServerMigrationTests
                 OccurredAt = now,
                 CreatedAt = now,
             });
-            foreach (var resource in new[] { "hr_qualifications", "hr_shifts" })
+            foreach (var resource in new[] { "hr_qualifications", "hr_shifts", "hr_permits" })
                 setup.AccountChanges.Add(new AccountChange
                 {
                     PublicId = Guid.NewGuid(),
@@ -6735,7 +6874,7 @@ public sealed class SqlServerMigrationTests
         Assert.Single(airline.Changes);
         var humanResources = await ReadAsync(hrPublicId, 0, 10);
         Assert.NotNull(humanResources);
-        Assert.Equal(2, humanResources.Changes.Count);
+        Assert.Equal(3, humanResources.Changes.Count);
 
         await using (var setup = CreateContext(database.ConnectionString))
         {

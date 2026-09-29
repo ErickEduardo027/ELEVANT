@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Enumerations;
@@ -34,6 +35,60 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
             .GetProperty("/api/v1/human-resources/permits").GetProperty("get");
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+    }
+
+    [Fact]
+    public async Task PermitRecordingHasAnAuthenticatedVersionedRoute()
+    {
+        using var client = factory.CreateClient();
+        using var anonymous = await client.PutAsync(
+            $"/api/v1/human-resources/permits/{Guid.NewGuid():D}",
+            new StringContent("{}"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var endpoint = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/human-resources/permits/{id}").GetProperty("put");
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
+    }
+
+    [Fact]
+    public async Task AuthenticatedPermitRecordingPassesExactIntentAndMapsConflict()
+    {
+        var permitId = Guid.NewGuid();
+        var rampProfileId = Guid.NewGuid();
+        var previousId = Guid.NewGuid();
+        var input = new RecordHumanResourcesPermitInput(rampProfileId, "AirportId",
+            previousId, "DEV-AIRPORT-ID-NEW", new DateOnly(2026, 2, 1),
+            new DateOnly(2099, 12, 31));
+        var stub = new WriteStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesPermitWriteStore>();
+                services.AddSingleton<IHumanResourcesPermitWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var first = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/permits/{permitId:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal((AccountId, permitId, input), stub.Request);
+        using var json = JsonDocument.Parse(await first.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(permitId, json.RootElement.GetProperty("id").GetGuid());
+        Assert.Equal(2, json.RootElement.GetProperty("cycleNumber").GetInt32());
+
+        stub.Conflict = true;
+        using var second = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/permits/{permitId:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
     [Fact]
@@ -148,6 +203,22 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
         {
             FilterRequest = (actorId, page, limit, rampProfileId, documentType);
             return Task.FromResult(Data);
+        }
+    }
+
+    private sealed class WriteStub : IHumanResourcesPermitWriteStore
+    {
+        public (Guid ActorId, Guid PermitId, RecordHumanResourcesPermitInput Input)? Request
+        { get; private set; }
+        public bool Conflict { get; set; }
+
+        public Task<HumanResourcesPermitWriteResult> RecordAsync(Guid actorId, Guid permitId,
+            RecordHumanResourcesPermitInput input, CancellationToken cancellationToken = default)
+        {
+            Request = (actorId, permitId, input);
+            return Task.FromResult(Conflict
+                ? HumanResourcesPermitWriteResult.Failed(HumanResourcesPermitWriteFailure.Conflict)
+                : HumanResourcesPermitWriteResult.Success(permitId, 2));
         }
     }
 }

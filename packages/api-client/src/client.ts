@@ -16,6 +16,7 @@ import {
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
   getListHumanResourcesPermitsUrl,
+  getRecordHumanResourcesPermitUrl,
   getListHumanResourcesQualificationsUrl,
   getListHumanResourcesQualificationEquipmentTypesUrl,
   getRecordHumanResourcesQualificationUrl,
@@ -99,7 +100,9 @@ import {
   type FinanceTariffPageData,
   type ListFinanceTariffsParams,
   type HumanResourcesPermitPage,
+  type HumanResourcesPermitRecorded,
   type ListHumanResourcesPermitsParams,
+  type RecordHumanResourcesPermitInput,
   type HumanResourcesQualificationPage,
   type HumanResourcesQualificationEquipmentType,
   type HumanResourcesQualificationRecorded,
@@ -213,6 +216,7 @@ export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" 
 export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesPermitOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -368,6 +372,11 @@ export interface ElevantApiClient {
     query?: ListHumanResourcesPermitsParams,
     options?: GetHumanResourcesPermitsOptions,
   ): Promise<HumanResourcesPermitPage>;
+  recordHumanResourcesPermit(
+    id: string,
+    request: RecordHumanResourcesPermitInput,
+    options?: RecordHumanResourcesPermitOptions,
+  ): Promise<HumanResourcesPermitRecorded>;
   getHumanResourcesQualifications(
     query?: ListHumanResourcesQualificationsParams,
     options?: GetHumanResourcesQualificationsOptions,
@@ -2495,6 +2504,22 @@ function validatedHumanResourcesQualificationInput(
   return request;
 }
 
+function validatedHumanResourcesPermitInput(
+  request: RecordHumanResourcesPermitInput,
+): RecordHumanResourcesPermitInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+    ["rampProfileId", "documentType", "expectedCurrentId", "documentNumber", "issuedOn", "expiresOn"]) ||
+      !isUuid(request.rampProfileId) ||
+      !["AirportId", "RampDriverLicense"].includes(String(request.documentType)) ||
+      (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
+      !isNonEmptyString(request.documentNumber) ||
+      request.documentNumber.trim().length < 2 || request.documentNumber.trim().length > 64 ||
+      !isDateOnly(request.issuedOn) || !isDateOnly(request.expiresOn) ||
+      request.issuedOn > request.expiresOn)
+    throw new TypeError("Human Resources permit input is invalid.");
+  return request;
+}
+
 function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData {
   if (!isRecord(value) || !hasOnlyKeys(value,
     ["stationId", "page", "limit", "hasMore", "tariffs"]) ||
@@ -3611,6 +3636,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
                item.documentType !== paging.documentType))))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async recordHumanResourcesPermit(
+      id: string,
+      request: RecordHumanResourcesPermitInput,
+      options?: RecordHumanResourcesPermitOptions,
+    ) {
+      const permitId = validatedUuid(id, "Permit ID");
+      const body = validatedHumanResourcesPermitInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesPermitUrl(permitId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id", "cycleNumber"]) ||
+          !isUuid(result.data.id) || result.data.id.toLowerCase() !== permitId ||
+          !isInt32(result.data.cycleNumber) || result.data.cycleNumber < 1)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesPermitRecorded;
     },
     async getHumanResourcesShifts(
       query: HumanResourcesShiftsQuery,

@@ -131,15 +131,19 @@ modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/s
 La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
 rampa, paginados y reservados a Gestión Humana o Superadministración internas.
 En la rama local, la lectura admite un filtro conjunto de agente y tipo para
-encontrar el ciclo exacto sin recorrer páginas globales. Este filtro prepara
-una renovación segura; todavía no añade una acción de escritura.
+encontrar el ciclo exacto sin recorrer páginas globales. La API ya ofrece
+`PUT /api/v1/human-resources/permits/{id}` para registrar el primer ciclo o
+renovarlo con UUID de intención estable y `expectedCurrentId`. Conserva el
+historial, audita y emite `hr_permits` de forma durable; el feed vuelve a
+comprobar rol y membresía al leer esa pista.
 La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
-foco/conexión y cada 25 segundos, y no permite renovaciones o archivos
-simulados. El documento puede estar vencido aunque su ciclo siga marcado como
-actual. Las escrituras y el historial de ciclos siguen pendientes. Fuentes:
+foco/conexión y cada 25 segundos, y aún no ofrece el formulario de renovación
+ni archivos. El documento puede estar vencido aunque su ciclo siga marcado como
+actual. La API conserva los ciclos anteriores, pero la vista de historial sigue
+pendiente. Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
-y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitReadStore.cs).
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitWriteStore.cs).
 
 La ruta restringida de horarios lee turnos reales por semana local y páginas
 de 20. Muestra agente, estación, terminal, posición y horas registradas, sin

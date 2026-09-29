@@ -31,6 +31,7 @@ export {
   type GetFinancePreinvoicesOptions,
   type GetFinanceTariffsOptions,
   type GetHumanResourcesPermitsOptions,
+  type RecordHumanResourcesPermitOptions,
   type GetHumanResourcesQualificationsOptions,
   type GetHumanResourcesQualificationEquipmentTypesOptions,
   type RecordHumanResourcesQualificationOptions,

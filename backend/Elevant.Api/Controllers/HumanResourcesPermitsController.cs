@@ -15,7 +15,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/human-resources/permits")]
 public sealed class HumanResourcesPermitsController(
-    IHumanResourcesPermitReadStore store) : ControllerBase
+    IHumanResourcesPermitReadStore store,
+    IHumanResourcesPermitWriteStore writeStore) : ControllerBase
 {
     [HttpGet(Name = "ListHumanResourcesPermits")]
     [ProducesResponseType<HumanResourcesPermitPage>(StatusCodes.Status200OK, "application/json")]
@@ -40,5 +41,35 @@ public sealed class HumanResourcesPermitsController(
                 Enum.Parse<PermitDocumentType>(documentType), cancellationToken)
             : await store.ListCurrentAsync(actorId, page, limit, cancellationToken);
         return result is null ? Forbid() : Ok(result);
+    }
+
+    [HttpPut("{id:guid}", Name = "RecordHumanResourcesPermit")]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<HumanResourcesPermitRecorded>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Record(Guid id,
+        [FromBody] RecordHumanResourcesPermitInput input,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty) return Problem(statusCode: 400, title: "Invalid permit identifier.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.RecordAsync(actorId, id, input, cancellationToken);
+        return result.Failure switch
+        {
+            null => Ok(result.Permit),
+            HumanResourcesPermitWriteFailure.Forbidden => Forbid(),
+            HumanResourcesPermitWriteFailure.Invalid => Problem(statusCode: 400,
+                title: "Invalid permit record."),
+            HumanResourcesPermitWriteFailure.NotFound => Problem(statusCode: 404,
+                title: "Ramp profile not found."),
+            HumanResourcesPermitWriteFailure.Conflict => Problem(statusCode: 409,
+                title: "Permit conflicts with current state."),
+            _ => throw new InvalidOperationException(),
+        };
     }
 }

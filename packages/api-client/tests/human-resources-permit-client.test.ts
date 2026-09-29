@@ -82,3 +82,23 @@ it("looks up the current document cycle for exactly one agent and type", async (
   await expect(foreign.getHumanResourcesPermits(scope))
     .rejects.toMatchObject({ kind: "malformed-response" });
 });
+
+it("records a permit cycle with a stable UUID and expected-current precondition", async () => {
+  const nextId = "50000000-0000-7000-8000-000000000040";
+  const request = { rampProfileId: permit.rampProfileId, documentType: "AirportId",
+    expectedCurrentId: permit.id, documentNumber: "DEV-AIRPORT-ID-RENEWED",
+    issuedOn: "2026-02-01", expiresOn: "2099-12-31" };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async (url, init) => {
+      expect(String(url)).toBe(`https://api.example.test/api/v1/human-resources/permits/${nextId}`);
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual(request);
+      return new Response(JSON.stringify({ id: nextId, cycleNumber: 2 }),
+        { headers: { "content-type": "application/json" } });
+    },
+  });
+  await expect(client.recordHumanResourcesPermit(nextId, request))
+    .resolves.toEqual({ id: nextId, cycleNumber: 2 });
+  await expect(client.recordHumanResourcesPermit(nextId, { ...request,
+    expectedCurrentId: "not-a-uuid" })).rejects.toBeInstanceOf(TypeError);
+});

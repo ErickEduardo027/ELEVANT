@@ -779,6 +779,11 @@ export interface HumanResourcesPermitPage {
   permits: HumanResourcesPermitData[];
 }
 
+export interface HumanResourcesPermitRecorded {
+  id: string;
+  cycleNumber: number;
+}
+
 export interface HumanResourcesQualificationData {
   id: string;
   rampProfileId: string;
@@ -1740,6 +1745,16 @@ export interface RampProfileData {
 export interface RampProfileCatalog {
   profiles: RampProfileData[];
   availableStations: RampProfileStation[];
+}
+
+export interface RecordHumanResourcesPermitInput {
+  rampProfileId: string;
+  documentType: string;
+  /** @nullable */
+  expectedCurrentId?: string | null;
+  documentNumber: string;
+  issuedOn: string;
+  expiresOn: string;
 }
 
 export interface RecordHumanResourcesQualificationInput {
@@ -4219,6 +4234,41 @@ export const listHumanResourcesPermits = async (params?: ListHumanResourcesPermi
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesPermitPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesPermitUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/permits/${id}`
+}
+
+export const recordHumanResourcesPermit = async (id: string,
+    recordHumanResourcesPermitInput?: RecordHumanResourcesPermitInput, options?: RequestInit): Promise<HumanResourcesPermitRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesPermitUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesPermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesPermitRecorded = body ? JSON.parse(body) : {}
   return data
 }
 

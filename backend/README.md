@@ -127,7 +127,13 @@ a 60 minutos y usa 15 por defecto.
   el documento no haya vencido. Los filtros opcionales `rampProfileId` y
   `documentType` (`AirportId` o `RampDriverLicense`) deben enviarse juntos;
   SQL los aplica antes de paginar para localizar el ciclo actual exacto. Un
-  filtro incompleto devuelve 400. La ruta aún no crea ni renueva permisos.
+  filtro incompleto devuelve 400. `PUT /api/v1/human-resources/permits/{id}`
+  registra el primer ciclo o una renovación con UUID de intención estable y
+  `expectedCurrentId` como precondición (`null` para el primero). Conserva el
+  ciclo anterior, audita y emite la pista durable `hr_permits` en una transacción
+  serializable; un reintento idéntico devuelve el mismo ciclo y una versión
+  anterior devuelve 409. No admite fecha de emisión futura ni archivos.
+  El feed comprueba de nuevo rol y membresía interna antes de entregar esa pista.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o

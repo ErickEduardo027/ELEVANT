@@ -89,8 +89,12 @@ reintenta el mismo UUID y ante 409 relee el ciclo antes de permitir otro envío.
 aeroportuario y licencia de rampa para Gestión Humana o Superadministración.
 Valida tipos, fechas, identificadores y paginación antes de entregar datos al
 cliente. Los filtros de agente y tipo son inseparables; la respuesta exacta no
-puede contener otro par ni otra página. La ruta restringida de Private Web
-todavía muestra permisos en solo lectura; el método no crea ni renueva documentos.
+puede contener otro par ni otra página. `recordHumanResourcesPermit(id, request)`
+exige UUID estable, tipo exacto, fechas y `expectedCurrentId` del ciclo observado
+(o `null` para el primero). Valida la respuesta cerrada y permite repetir la
+misma intención si la red no confirmó el resultado. Un 409 exige releer el par
+antes de crear otra intención. La ruta restringida de Private Web todavía
+muestra permisos en solo lectura; su formulario se entregará por separado.
 
 `getHumanResourcesShifts({ from, to, page?, limit? })` lee turnos registrados
 en una ventana máxima de siete fechas locales, en páginas de hasta 100. El
