@@ -10,6 +10,18 @@ internal sealed class EfHumanResourcesQualificationReadStore(
     ElevantDbContext context, IActorContextResolver actors)
     : IHumanResourcesQualificationReadStore
 {
+    public async Task<IReadOnlyList<HumanResourcesQualificationEquipmentType>?> ListEquipmentTypesAsync(
+        Guid actorId, CancellationToken cancellationToken = default)
+    {
+        if (!await AuthorizedAsync(actorId, cancellationToken)) return null;
+        return await context.EquipmentTypes.AsNoTracking()
+            .Where(item => item.IsActive && item.RequiresQualification)
+            .OrderBy(item => item.Code)
+            .Select(item => new HumanResourcesQualificationEquipmentType(
+                item.PublicId, item.Code, item.Name))
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<HumanResourcesQualificationPage?> ListCurrentAsync(
         Guid actorId, int page, int limit, CancellationToken cancellationToken = default)
     {
@@ -17,12 +29,7 @@ internal sealed class EfHumanResourcesQualificationReadStore(
             (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(page));
 
-        var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code is "GESTION_HUMANA" or "SUPERADMIN") != true ||
-            !actor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff)) return null;
+        if (!await AuthorizedAsync(actorId, cancellationToken)) return null;
 
         var rows = await (
             from cycle in context.QualificationCycles.AsNoTracking()
@@ -59,5 +66,16 @@ internal sealed class EfHumanResourcesQualificationReadStore(
                 row.EmployeeNumber, row.EquipmentTypeId, row.EquipmentCode,
                 row.EquipmentName, row.CycleNumber, row.TrainingDate, row.ObtainedOn,
                 row.ExpiresOn, row.CertifyingEntity, row.InstructorName)).ToArray());
+    }
+
+    private async Task<bool> AuthorizedAsync(Guid actorId,
+        CancellationToken cancellationToken)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        return actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
+            role.Code is "GESTION_HUMANA" or "SUPERADMIN") == true &&
+            actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff);
     }
 }

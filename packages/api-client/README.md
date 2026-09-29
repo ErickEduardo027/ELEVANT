@@ -20,7 +20,9 @@ la aplicación. `ChangedV1` solo anuncia un cambio; los datos se consultan
 por REST con los permisos vigentes. El wrapper exige un cuerpo cerrado,
 rechaza cursores/parámetros inválidos y no permite introducir una cuenta,
 estación o tenant en la consulta. Esta capacidad se prepara en la rama de
-integración y no demuestra todavía un despliegue remoto.
+integración y no demuestra todavía un despliegue remoto. El servidor filtra
+las pistas de habilitaciones y turnos cuando la cuenta ya no conserva Gestión
+Humana o Superadministración internas.
 
 `getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
 para la única aerolínea derivada en la API de la sesión. El cliente valida
@@ -71,6 +73,14 @@ el wrapper comprueba identificadores, fechas y paginación. Una fecha vencida
 no se presenta como vigente por el mero valor `is_current` de SQL. La ruta
 restringida de habilitaciones de Private Web ya usa este método para una tabla
 paginada de solo lectura; no habilita crear ni renovar ciclos.
+
+`getHumanResourcesQualificationEquipmentTypes()` lee el catálogo activo que
+requiere habilitación. `recordHumanResourcesQualification(id, request)` usa un
+UUID estable elegido por el cliente y `expectedCurrentId` para el ciclo
+observado (o `null` para el primero). Valida campos, fechas, respuesta y
+autorización fresca. El servidor conserva historial, audita y emite una pista
+durable tras confirmar; un 409 exige reconsulta antes de intentar otro cambio.
+La interfaz de captura todavía no está conectada en este worktree.
 
 `getHumanResourcesPermits({ page?, limit? })` lee ciclos actuales de carnet
 aeroportuario y licencia de rampa para Gestión Humana o Superadministración.

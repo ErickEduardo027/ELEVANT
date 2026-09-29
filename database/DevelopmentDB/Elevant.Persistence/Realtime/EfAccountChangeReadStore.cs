@@ -51,6 +51,9 @@ internal sealed class EfAccountChangeReadStore(
             membership.OrganizationType == OrganizationType.AviamOperator);
         var isSuperAdmin = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "SUPERADMIN" && role.Portal == PortalKind.BackOffice);
+        var hasHumanResourcesAccess = isSuperAdmin ||
+            hasInternalMembership && actor.Roles.Any(role =>
+                role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
         var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
             .Select(role => role.RoleId).ToArray();
         var commercialGrants = hasInternalMembership ? await (
@@ -73,6 +76,8 @@ internal sealed class EfAccountChangeReadStore(
                 (change.StationId == null || context.Stations.Any(station =>
                     station.Id == change.StationId &&
                     allowedStations.Contains(station.PublicId))) &&
+                ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts") ||
+                    hasHumanResourcesAccess) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>

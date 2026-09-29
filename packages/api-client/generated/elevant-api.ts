@@ -795,11 +795,22 @@ export interface HumanResourcesQualificationData {
   instructorName: string;
 }
 
+export interface HumanResourcesQualificationEquipmentType {
+  id: string;
+  code: string;
+  name: string;
+}
+
 export interface HumanResourcesQualificationPage {
   page: number;
   limit: number;
   hasMore: boolean;
   qualifications: HumanResourcesQualificationData[];
+}
+
+export interface HumanResourcesQualificationRecorded {
+  id: string;
+  cycleNumber: number;
 }
 
 export interface HumanResourcesShiftData {
@@ -1729,6 +1740,20 @@ export interface RampProfileData {
 export interface RampProfileCatalog {
   profiles: RampProfileData[];
   availableStations: RampProfileStation[];
+}
+
+export interface RecordHumanResourcesQualificationInput {
+  rampProfileId: string;
+  equipmentTypeId: string;
+  /** @nullable */
+  expectedCurrentId?: string | null;
+  trainingDate: string;
+  obtainedOn: string;
+  expiresOn: string;
+  certifyingEntity: string;
+  instructorName: string;
+  /** @nullable */
+  notes?: string | null;
 }
 
 export interface RecordNonFiscalPaymentRequest {
@@ -4225,6 +4250,69 @@ export const listHumanResourcesQualifications = async (params?: ListHumanResourc
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesQualificationPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationEquipmentTypesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/qualifications/equipment-types`
+}
+
+export const listHumanResourcesQualificationEquipmentTypes = async ( options?: RequestInit): Promise<HumanResourcesQualificationEquipmentType[]> => {
+
+  const res = await fetch(getListHumanResourcesQualificationEquipmentTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationEquipmentType[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesQualificationUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/qualifications/${id}`
+}
+
+export const recordHumanResourcesQualification = async (id: string,
+    recordHumanResourcesQualificationInput?: RecordHumanResourcesQualificationInput, options?: RequestInit): Promise<HumanResourcesQualificationRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesQualificationInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationRecorded = body ? JSON.parse(body) : {}
   return data
 }
 

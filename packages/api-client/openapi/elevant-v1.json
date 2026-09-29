@@ -4126,6 +4126,171 @@
         ]
       }
     },
+    "/api/v1/human-resources/qualifications/equipment-types": {
+      "get": {
+        "tags": [
+          "HumanResourcesQualifications"
+        ],
+        "operationId": "ListHumanResourcesQualificationEquipmentTypes",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HumanResourcesQualificationEquipmentType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/qualifications/{id}": {
+      "put": {
+        "tags": [
+          "HumanResourcesQualifications"
+        ],
+        "operationId": "RecordHumanResourcesQualification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordHumanResourcesQualificationInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordHumanResourcesQualificationInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordHumanResourcesQualificationInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesQualificationRecorded"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/human-resources/shifts": {
       "get": {
         "tags": [
@@ -10087,6 +10252,27 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesQualificationEquipmentType": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesQualificationPage": {
         "required": [
           "hasMore",
@@ -10112,6 +10298,24 @@
             "items": {
               "$ref": "#/components/schemas/HumanResourcesQualificationData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesQualificationRecorded": {
+        "required": [
+          "cycleNumber",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cycleNumber": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -13805,6 +14009,56 @@
                 "$ref": "#/components/schemas/RampFlightLegResponse"
               }
             ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecordHumanResourcesQualificationInput": {
+        "required": [
+          "certifyingEntity",
+          "equipmentTypeId",
+          "expiresOn",
+          "instructorName",
+          "obtainedOn",
+          "rampProfileId",
+          "trainingDate"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "equipmentTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedCurrentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "trainingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "obtainedOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "certifyingEntity": {
+            "type": "string"
+          },
+          "instructorName": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string",
             "nullable": true
           }
         },

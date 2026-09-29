@@ -17,6 +17,8 @@ import {
   getListFinanceTariffsUrl,
   getListHumanResourcesPermitsUrl,
   getListHumanResourcesQualificationsUrl,
+  getListHumanResourcesQualificationEquipmentTypesUrl,
+  getRecordHumanResourcesQualificationUrl,
   getListHumanResourcesShiftsUrl,
   getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
@@ -99,6 +101,9 @@ import {
   type HumanResourcesPermitPage,
   type ListHumanResourcesPermitsParams,
   type HumanResourcesQualificationPage,
+  type HumanResourcesQualificationEquipmentType,
+  type HumanResourcesQualificationRecorded,
+  type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
   type ListHumanResourcesShiftsParams,
@@ -209,6 +214,8 @@ export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "me
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "from" | "to"> & {
   readonly from: string;
@@ -365,6 +372,14 @@ export interface ElevantApiClient {
     query?: ListHumanResourcesQualificationsParams,
     options?: GetHumanResourcesQualificationsOptions,
   ): Promise<HumanResourcesQualificationPage>;
+  getHumanResourcesQualificationEquipmentTypes(
+    options?: GetHumanResourcesQualificationEquipmentTypesOptions,
+  ): Promise<HumanResourcesQualificationEquipmentType[]>;
+  recordHumanResourcesQualification(
+    id: string,
+    request: RecordHumanResourcesQualificationInput,
+    options?: RecordHumanResourcesQualificationOptions,
+  ): Promise<HumanResourcesQualificationRecorded>;
   getHumanResourcesShifts(
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
@@ -2407,6 +2422,40 @@ function isHumanResourcesQualificationPage(value: unknown): value is HumanResour
   });
 }
 
+function isHumanResourcesQualificationEquipmentTypes(
+  value: unknown,
+): value is HumanResourcesQualificationEquipmentType[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  return value.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ["id", "code", "name"]) ||
+        !isUuid(item.id) || ids.has(item.id) ||
+        !isNonEmptyString(item.code) || !isNonEmptyString(item.name)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function validatedHumanResourcesQualificationInput(
+  request: RecordHumanResourcesQualificationInput,
+): RecordHumanResourcesQualificationInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+    ["rampProfileId", "equipmentTypeId", "expectedCurrentId", "trainingDate",
+      "obtainedOn", "expiresOn", "certifyingEntity", "instructorName", "notes"]) ||
+      !isUuid(request.rampProfileId) || !isUuid(request.equipmentTypeId) ||
+      (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
+      !isDateOnly(request.trainingDate) || !isDateOnly(request.obtainedOn) ||
+      !isDateOnly(request.expiresOn) || request.trainingDate > request.obtainedOn ||
+      request.obtainedOn > request.expiresOn ||
+      !isNonEmptyString(request.certifyingEntity) ||
+      request.certifyingEntity.trim().length < 2 || request.certifyingEntity.trim().length > 160 ||
+      !isNonEmptyString(request.instructorName) ||
+      request.instructorName.trim().length < 2 || request.instructorName.trim().length > 160 ||
+      (request.notes != null && (typeof request.notes !== "string" || request.notes.trim().length > 1000)))
+    throw new TypeError("Human Resources qualification input is invalid.");
+  return request;
+}
+
 function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData {
   if (!isRecord(value) || !hasOnlyKeys(value,
     ["stationId", "page", "limit", "hasMore", "tariffs"]) ||
@@ -3473,6 +3522,33 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.limit !== (paging.limit ?? 50))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async getHumanResourcesQualificationEquipmentTypes(
+      options?: GetHumanResourcesQualificationEquipmentTypesOptions,
+    ) {
+      const result = await execute(getListHumanResourcesQualificationEquipmentTypesUrl(),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesQualificationEquipmentTypes(result.data))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesQualification(
+      id: string,
+      request: RecordHumanResourcesQualificationInput,
+      options?: RecordHumanResourcesQualificationOptions,
+    ) {
+      const qualificationId = validatedUuid(id, "Qualification ID");
+      const body = validatedHumanResourcesQualificationInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesQualificationUrl(qualificationId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id", "cycleNumber"]) ||
+          !isUuid(result.data.id) || result.data.id.toLowerCase() !== qualificationId ||
+          !isInt32(result.data.cycleNumber) || result.data.cycleNumber < 1)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesQualificationRecorded;
     },
     async getHumanResourcesPermits(
       query?: ListHumanResourcesPermitsParams,

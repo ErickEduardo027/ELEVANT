@@ -121,8 +121,10 @@ habilitación de rampa para Gestión Humana y Superadministración internas. La
 ruta restringida de habilitaciones consulta esa API en páginas de 20, calcula
 la vigencia por fechas y muestra un vacío o error sin reutilizar datos viejos;
 no ofrece acciones prototípicas de alta o renovación. La vista heredada sigue
-separada fuera del modo restringido. Las escrituras de habilitaciones siguen
-pendientes. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [lectura](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js) y [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs).
+separada fuera del modo restringido. En este worktree el controlador ya expone
+un `PUT` para registrar ciclos con identificador del ciclo actual esperado;
+las garantías de persistencia se documentan en el README del backend. La pantalla sigue en solo lectura mientras
+se conecta la captura; no se ha promocionado al VPS. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [lectura](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js) y [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs).
 
 La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
 rampa, paginados y reservados a Gestión Humana o Superadministración internas.

@@ -49,6 +49,12 @@ se instala como recurso independiente antes de la API que usa estos campos.
 
 La consulta pública y la recepción de solicitudes comparten el mismo filtro de servicios activos y publicados. Un servicio interno no publicado no puede solicitarse mediante un UUID conocido. La admisión usa una transacción serializable entre la lectura de visibilidad y la escritura, para ordenar correctamente una retirada concurrente del catálogo. Esta regla no requiere una migración adicional.
 
+El registro de habilitaciones de Gestión Humana reutiliza `hr.qualification_cycles`
+y sus índices únicos existentes: crea un ciclo nuevo, deja el anterior como
+histórico y exige el UUID del ciclo observado en una transacción serializable.
+La auditoría y la pista `hr_qualifications` se confirman en esa misma transacción.
+No introduce una migración ni modifica los datos existentes al desplegarse.
+
 La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
 y concede a `elevant_app_role` permisos de objeto limitados para
 escribir/procesar el outbox y leer/insertar pistas del feed.

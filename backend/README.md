@@ -102,11 +102,20 @@ a 60 minutos y usa 15 por defecto.
 - `GET /api/v1/human-resources/qualifications?page=&limit=` lista páginas de
   hasta 100 ciclos de habilitación marcados como vigentes, con agente y equipo
   reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
-  vigente. Devuelve fechas documentadas, no inventa estado de cobertura ni
-  permite renovar; una habilitación marcada como ciclo actual puede estar
-  vencida por fecha. En el modo restringido de Private Web se usa una pantalla
-  paginada de solo lectura; la pantalla heredada con acciones prototípicas no
-  consume este contrato.
+  vigente. Devuelve fechas documentadas, no inventa estado de cobertura; una
+  habilitación marcada como ciclo actual puede estar vencida por fecha.
+- `GET /api/v1/human-resources/qualifications/equipment-types` devuelve los
+  equipos activos que requieren habilitación para el mismo rol interno.
+  `PUT /api/v1/human-resources/qualifications/{id}` registra el primer ciclo o
+  una renovación con UUID de intención estable y `expectedCurrentId` como
+  precondición. Una transacción serializable conserva el ciclo anterior,
+  auditoría y pista durable `hr_qualifications`; un reintento idéntico devuelve
+  el mismo ciclo y una versión anterior devuelve 409. No admite fechas de
+  obtención futuras ni archivos adjuntos. La pantalla restringida aún muestra
+  solo lectura hasta conectar el formulario y la consulta puntual del ciclo.
+  El feed vuelve a comprobar el rol y la membresía interna antes de entregar
+  pistas `hr_qualifications` o `hr_shifts`, incluso si la cuenta recibió la
+  pista antes de que se le revocara Gestión Humana.
 - `GET /api/v1/human-resources/permits?page=&limit=` lista hasta 100 ciclos
   actuales de carnet aeroportuario o licencia de rampa, con agente, número y
   fechas persistidos. Exige la misma membresía y rol interno vigentes que la

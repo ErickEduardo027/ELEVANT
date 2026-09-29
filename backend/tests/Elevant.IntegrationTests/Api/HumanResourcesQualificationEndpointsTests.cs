@@ -37,6 +37,47 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
     }
 
     [Fact]
+    public async Task QualificationRecordingHasAnAuthenticatedVersionedRoute()
+    {
+        using var client = factory.CreateClient();
+        using var anonymous = await client.PutAsync(
+            $"/api/v1/human-resources/qualifications/{Guid.NewGuid():D}",
+            new StringContent("{}"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var endpoint = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/human-resources/qualifications/{id}")
+            .GetProperty("put");
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
+    }
+
+    [Fact]
+    public async Task QualificationEquipmentOptionsHaveAnAuthenticatedVersionedRoute()
+    {
+        using var client = factory.CreateClient();
+        using var anonymous = await client.GetAsync(
+            "/api/v1/human-resources/qualifications/equipment-types",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var endpoint = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/human-resources/qualifications/equipment-types")
+            .GetProperty("get");
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+    }
+
+    [Fact]
     public async Task ReturnsBoundedCurrentQualificationsAndRejectsInvalidPaging()
     {
         var qualificationId = Guid.NewGuid();
@@ -131,5 +172,9 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             Request = (actorId, page, limit);
             return Task.FromResult(Data);
         }
+
+        public Task<IReadOnlyList<HumanResourcesQualificationEquipmentType>?>
+            ListEquipmentTypesAsync(Guid actorId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<HumanResourcesQualificationEquipmentType>?>([]);
     }
 }

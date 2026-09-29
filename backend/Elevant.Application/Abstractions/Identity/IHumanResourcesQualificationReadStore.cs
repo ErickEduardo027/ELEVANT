@@ -8,9 +8,15 @@ public sealed record HumanResourcesQualificationData(Guid Id, Guid RampProfileId
 public sealed record HumanResourcesQualificationPage(int Page, int Limit, bool HasMore,
     IReadOnlyList<HumanResourcesQualificationData> Qualifications);
 
+public sealed record HumanResourcesQualificationEquipmentType(Guid Id, string Code, string Name);
+
 public interface IHumanResourcesQualificationReadStore
 {
     /// <summary>Returns null unless the actor has live internal HR or Superadmin access.</summary>
     Task<HumanResourcesQualificationPage?> ListCurrentAsync(Guid actorId, int page, int limit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Returns active qualification-bearing equipment types for an internal HR actor.</summary>
+    Task<IReadOnlyList<HumanResourcesQualificationEquipmentType>?> ListEquipmentTypesAsync(
+        Guid actorId, CancellationToken cancellationToken = default);
 }
