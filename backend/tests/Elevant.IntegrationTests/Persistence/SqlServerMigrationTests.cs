@@ -552,6 +552,14 @@ public sealed class SqlServerMigrationTests
             Assert.Equal("DEV-RA-001", qualification.EmployeeNumber);
             Assert.Equal("GPU", qualification.EquipmentCode);
             Assert.Equal(new DateOnly(2099, 12, 31), qualification.ExpiresOn);
+            var exact = await store.ListCurrentAsync(hrId, 1, 1,
+                qualification.RampProfileId, qualification.EquipmentTypeId, cancellationToken);
+            Assert.Equal(qualification.Id, Assert.Single(exact!.Qualifications).Id);
+            var differentEquipment = await store.ListCurrentAsync(hrId, 1, 1,
+                qualification.RampProfileId, Guid.NewGuid(), cancellationToken);
+            Assert.Empty(differentEquipment!.Qualifications);
+            Assert.Null(await store.ListCurrentAsync(occId, 1, 1,
+                qualification.RampProfileId, qualification.EquipmentTypeId, cancellationToken));
             Assert.Empty((await store.ListCurrentAsync(hrId, 2, 1, cancellationToken))!.Qualifications);
             Assert.Null(await store.ListCurrentAsync(occId, 1, 20, cancellationToken));
             Assert.Single((await store.ListCurrentAsync(superAdminId, 1, 20,

@@ -2320,6 +2320,25 @@ function validatedHumanResourcesPaging(
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
+function validatedHumanResourcesQualificationQuery(
+  query: ListHumanResourcesQualificationsParams | undefined,
+): ListHumanResourcesQualificationsParams {
+  if (query === undefined) return {};
+  if (!isRecord(query) || !hasOnlyKeys(query,
+    ["page", "limit", "rampProfileId", "equipmentTypeId"]) ||
+      (query.rampProfileId === undefined) !== (query.equipmentTypeId === undefined) ||
+      (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
+      (query.equipmentTypeId !== undefined && !isUuid(query.equipmentTypeId)))
+    throw new TypeError("Human Resources qualification filter is invalid.");
+  const paging = validatedHumanResourcesPaging({
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }),
+  });
+  return { ...paging,
+    ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
+    ...(query.equipmentTypeId === undefined ? {} : { equipmentTypeId: query.equipmentTypeId }) };
+}
+
 function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPermitPage {
   if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "permits"]) ||
       !isInt32(value.page) || value.page < 1 ||
@@ -3514,12 +3533,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       query?: ListHumanResourcesQualificationsParams,
       options?: GetHumanResourcesQualificationsOptions,
     ) {
-      const paging = validatedHumanResourcesPaging(query);
+      const paging = validatedHumanResourcesQualificationQuery(query);
       const result = await execute(getListHumanResourcesQualificationsUrl(paging),
         { ...options, method: "GET" }, true);
       if (!isHumanResourcesQualificationPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
-          result.data.limit !== (paging.limit ?? 50))
+          result.data.limit !== (paging.limit ?? 50) ||
+          (paging.rampProfileId !== undefined &&
+            (result.data.hasMore || result.data.qualifications.length > 1 ||
+             result.data.qualifications.some(item =>
+               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
+               item.equipmentTypeId.toLowerCase() !== paging.equipmentTypeId!.toLowerCase()))))
         throw malformedResponse(result.status);
       return result.data;
     },

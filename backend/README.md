@@ -103,7 +103,10 @@ a 60 minutos y usa 15 por defecto.
   hasta 100 ciclos de habilitación marcados como vigentes, con agente y equipo
   reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
   vigente. Devuelve fechas documentadas, no inventa estado de cobertura; una
-  habilitación marcada como ciclo actual puede estar vencida por fecha.
+  habilitación marcada como ciclo actual puede estar vencida por fecha. Los
+  filtros opcionales `rampProfileId` y `equipmentTypeId` se exigen juntos;
+  SQL aplica el par antes de paginar para localizar el único ciclo actual
+  sin recorrer una lista global. Un par incompleto devuelve 400.
 - `GET /api/v1/human-resources/qualifications/equipment-types` devuelve los
   equipos activos que requieren habilitación para el mismo rol interno.
   `PUT /api/v1/human-resources/qualifications/{id}` registra el primer ciclo o
@@ -111,8 +114,9 @@ a 60 minutos y usa 15 por defecto.
   precondición. Una transacción serializable conserva el ciclo anterior,
   auditoría y pista durable `hr_qualifications`; un reintento idéntico devuelve
   el mismo ciclo y una versión anterior devuelve 409. No admite fechas de
-  obtención futuras ni archivos adjuntos. La pantalla restringida aún muestra
-  solo lectura hasta conectar el formulario y la consulta puntual del ciclo.
+  obtención futuras ni archivos adjuntos. La pantalla restringida ofrece
+  captura y renovación de esos ciclos, consulta el par exacto antes de guardar
+  y conserva el mismo UUID de intención cuando la respuesta es incierta.
   El feed vuelve a comprobar el rol y la membresía interna antes de entregar
   pistas `hr_qualifications` o `hr_shifts`, incluso si la cuenta recibió la
   pista antes de que se le revocara Gestión Humana.

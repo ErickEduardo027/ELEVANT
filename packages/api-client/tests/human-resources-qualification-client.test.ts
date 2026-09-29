@@ -56,6 +56,31 @@ it("rejects malformed qualification dates and mismatched pages", async () => {
     .rejects.toMatchObject({ kind: "malformed-response" });
 });
 
+it("looks up one authorized agent/equipment pair without scanning a global page", async () => {
+  const scope = { page: 1, limit: 1, rampProfileId: qualification.rampProfileId,
+    equipmentTypeId: qualification.equipmentTypeId };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async url => {
+      expect(String(url)).toBe(`https://api.example.test/api/v1/human-resources/qualifications?page=1&limit=1&rampProfileId=${scope.rampProfileId}&equipmentTypeId=${scope.equipmentTypeId}`);
+      return new Response(JSON.stringify({ page: 1, limit: 1, hasMore: false,
+        qualifications: [qualification] }), { headers: { "content-type": "application/json" } });
+    },
+  });
+  await expect(client.getHumanResourcesQualifications(scope))
+    .resolves.toMatchObject({ qualifications: [qualification] });
+  await expect(client.getHumanResourcesQualifications({
+    rampProfileId: qualification.rampProfileId,
+  })).rejects.toBeInstanceOf(TypeError);
+  const foreign = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ page: 1, limit: 1,
+      hasMore: false, qualifications: [{ ...qualification, rampProfileId:
+        "50000000-0000-7000-8000-000000000099" }] }),
+    { headers: { "content-type": "application/json" } }),
+  });
+  await expect(foreign.getHumanResourcesQualifications(scope))
+    .rejects.toMatchObject({ kind: "malformed-response" });
+});
+
 it("reads the authorized equipment catalog and rejects malformed options", async () => {
   const catalog = [{ id: qualification.equipmentTypeId, code: "GPU", name: "Ground power unit" }];
   const urls: string[] = [];

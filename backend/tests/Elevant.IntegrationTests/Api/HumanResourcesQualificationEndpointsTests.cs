@@ -101,6 +101,10 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             "/api/v1/human-resources/qualifications?limit=101",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooLarge.StatusCode);
+        using var incompleteFilter = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications?rampProfileId={Guid.NewGuid():D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, incompleteFilter.StatusCode);
         using var response = await client.GetAsync(
             "/api/v1/human-resources/qualifications?page=2&limit=1",
             TestContext.Current.CancellationToken);
@@ -113,6 +117,13 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
         Assert.Equal("GPU", json.RootElement.GetProperty("qualifications")[0]
             .GetProperty("equipmentCode").GetString());
         Assert.Equal((AccountId, 2, 1), stub.Request);
+        var filteredAgentId = Guid.NewGuid();
+        var filteredEquipmentId = Guid.NewGuid();
+        using var filtered = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications?page=1&limit=1&rampProfileId={filteredAgentId:D}&equipmentTypeId={filteredEquipmentId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+        Assert.Equal((AccountId, 1, 1, filteredAgentId, filteredEquipmentId), stub.FilterRequest);
     }
 
     [Fact]
@@ -165,11 +176,22 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
     {
         public HumanResourcesQualificationPage? Data { get; init; }
         public (Guid AccountId, int Page, int Limit)? Request { get; private set; }
+        public (Guid AccountId, int Page, int Limit, Guid AgentId, Guid EquipmentId)?
+            FilterRequest { get; private set; }
 
         public Task<HumanResourcesQualificationPage?> ListCurrentAsync(Guid actorId, int page,
             int limit, CancellationToken cancellationToken = default)
         {
             Request = (actorId, page, limit);
+            return Task.FromResult(Data);
+        }
+
+        public Task<HumanResourcesQualificationPage?> ListCurrentAsync(Guid actorId, int page,
+            int limit, Guid rampProfileId, Guid equipmentTypeId,
+            CancellationToken cancellationToken = default)
+        {
+            Request = (actorId, page, limit);
+            FilterRequest = (actorId, page, limit, rampProfileId, equipmentTypeId);
             return Task.FromResult(Data);
         }
 

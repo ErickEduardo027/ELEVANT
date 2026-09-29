@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getHumanResourcesQualifications } from '../../../services/humanResourcesQualificationsReadService';
+import QualificationRecordForm from './QualificationRecordForm';
 
 const PAGE_LIMIT = 20;
 
@@ -13,17 +14,24 @@ export default function CurrentQualificationsPage() {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
+  const [form, setForm] = useState({ open: false, initialQualification: null });
+  const [notice, setNotice] = useState('');
+  const requestVersion = useRef(0);
   const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     const controller = new AbortController();
+    const version = ++requestVersion.current;
     setState({ status: 'loading', data: null });
     getHumanResourcesQualifications({ page, limit: PAGE_LIMIT }, { signal: controller.signal })
       .then(data => {
-        if (!controller.signal.aborted) setState({ status: 'success', data });
+        if (!controller.signal.aborted && version === requestVersion.current)
+          setState({ status: 'success', data });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || version !== requestVersion.current ||
+            error?.name === 'AbortError') return;
+        setForm({ open: false, initialQualification: null });
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', data: null });
       });
@@ -58,11 +66,34 @@ export default function CurrentQualificationsPage() {
           Ciclos actuales registrados por agente y equipo. La vigencia se calcula con las fechas guardadas.
         </p>
       </div>
-      <button type="button" onClick={() => setRevision(value => value + 1)}
-        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:bg-surface-dark-card">
-        Actualizar habilitaciones
-      </button>
+      <div className="flex flex-wrap gap-2">
+        {state.status === 'success' && <button type="button"
+          onClick={() => { setNotice(''); setForm({ open: true, initialQualification: null }); }}
+          className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
+          Registrar habilitación
+        </button>}
+        <button type="button" onClick={() => setRevision(value => value + 1)}
+          className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:bg-surface-dark-card">
+          Actualizar habilitaciones
+        </button>
+      </div>
     </header>
+
+    {notice && <p role="status" className="rounded-xl bg-status-success/10 p-4 text-sm">{notice}</p>}
+    {form.open && <QualificationRecordForm key={form.initialQualification?.id ?? 'new'}
+      initialQualification={form.initialQualification}
+      onClose={() => setForm({ open: false, initialQualification: null })}
+      onRecorded={receipt => {
+        setForm({ open: false, initialQualification: null });
+        setNotice(`Habilitación guardada como ciclo ${receipt.cycleNumber}.`);
+        setPage(1);
+        setRevision(value => value + 1);
+      }}
+      onDenied={status => {
+        requestVersion.current += 1;
+        setForm({ open: false, initialQualification: null });
+        setState({ status: status === 401 ? 'unauthorized' : 'forbidden', data: null });
+      }} />}
 
     {state.status === 'loading' && <p role="status"
       className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">Cargando habilitaciones…</p>}
@@ -78,13 +109,14 @@ export default function CurrentQualificationsPage() {
     </div>}
 
     {state.status === 'success' && <>
-      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página · solo lectura</p>
+      <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página</p>
       {state.data.qualifications.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <table className="w-full min-w-[780px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
             <tr><th className="px-5 py-3">Agente</th><th className="px-5 py-3">Equipo</th>
               <th className="px-5 py-3">Obtenida</th><th className="px-5 py-3">Vence</th>
-              <th className="px-5 py-3">Estado</th><th className="px-5 py-3">Emisor</th></tr>
+              <th className="px-5 py-3">Estado</th><th className="px-5 py-3">Emisor</th>
+              <th className="px-5 py-3">Acción</th></tr>
           </thead><tbody className="divide-y divide-black/5 dark:divide-white/5">
             {state.data.qualifications.map(item => <tr key={item.id}>
               <td className="px-5 py-4 font-semibold">{item.agentName}<span className="block text-xs font-normal text-text-secondary-light">{item.employeeNumber}</span></td>
@@ -92,6 +124,9 @@ export default function CurrentQualificationsPage() {
               <td className="px-5 py-4">{item.obtainedOn}</td><td className="px-5 py-4">{item.expiresOn}</td>
               <td className="px-5 py-4">{qualificationStatus(item, today)}</td>
               <td className="px-5 py-4">{item.certifyingEntity}</td>
+              <td className="px-5 py-4"><button type="button"
+                onClick={() => { setNotice(''); setForm({ open: true, initialQualification: item }); }}
+                className="text-sm font-semibold text-accent-600">Renovar</button></td>
             </tr>)}
           </tbody>
         </table>

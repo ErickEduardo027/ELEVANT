@@ -2090,6 +2090,8 @@ limit?: number;
 export type ListHumanResourcesQualificationsParams = {
 page?: number;
 limit?: number;
+rampProfileId?: string;
+equipmentTypeId?: string;
 };
 
 export type ListHumanResourcesShiftsParams = {

@@ -22,11 +22,23 @@ internal sealed class EfHumanResourcesQualificationReadStore(
             .ToArrayAsync(cancellationToken);
     }
 
-    public async Task<HumanResourcesQualificationPage?> ListCurrentAsync(
-        Guid actorId, int page, int limit, CancellationToken cancellationToken = default)
+    public Task<HumanResourcesQualificationPage?> ListCurrentAsync(
+        Guid actorId, int page, int limit, CancellationToken cancellationToken = default) =>
+        ListCurrentCoreAsync(actorId, page, limit, null, null, cancellationToken);
+
+    public Task<HumanResourcesQualificationPage?> ListCurrentAsync(
+        Guid actorId, int page, int limit, Guid rampProfileId, Guid equipmentTypeId,
+        CancellationToken cancellationToken = default) =>
+        ListCurrentCoreAsync(actorId, page, limit, rampProfileId, equipmentTypeId,
+            cancellationToken);
+
+    private async Task<HumanResourcesQualificationPage?> ListCurrentCoreAsync(
+        Guid actorId, int page, int limit, Guid? rampProfileId, Guid? equipmentTypeId,
+        CancellationToken cancellationToken)
     {
         if (actorId == Guid.Empty || page < 1 || limit is < 1 or > 100 ||
-            (long)(page - 1) * limit > int.MaxValue)
+            (long)(page - 1) * limit > int.MaxValue ||
+            rampProfileId == Guid.Empty || equipmentTypeId == Guid.Empty)
             throw new ArgumentOutOfRangeException(nameof(page));
 
         if (!await AuthorizedAsync(actorId, cancellationToken)) return null;
@@ -39,7 +51,9 @@ internal sealed class EfHumanResourcesQualificationReadStore(
                 on agent.PersonId equals person.Id
             join equipment in context.EquipmentTypes.AsNoTracking()
                 on cycle.EquipmentTypeId equals equipment.Id
-            where cycle.IsCurrent
+            where cycle.IsCurrent &&
+                (rampProfileId == null || agent.PublicId == rampProfileId) &&
+                (equipmentTypeId == null || equipment.PublicId == equipmentTypeId)
             orderby agent.EmployeeNumber, equipment.Code, cycle.Id
             select new
             {

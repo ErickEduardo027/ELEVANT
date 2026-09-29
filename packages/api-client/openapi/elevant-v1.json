@@ -4075,6 +4075,22 @@
               "format": "int32",
               "default": 50
             }
+          },
+          {
+            "name": "rampProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "equipmentTypeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {

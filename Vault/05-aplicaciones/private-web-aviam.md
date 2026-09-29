@@ -118,13 +118,15 @@ profundos de Gestión Humana. Fuente: [panel de perfiles](../../frontend/private
 
 La API de esta rama agrega una lectura paginada de los ciclos actuales de
 habilitación de rampa para Gestión Humana y Superadministración internas. La
-ruta restringida de habilitaciones consulta esa API en páginas de 20, calcula
-la vigencia por fechas y muestra un vacío o error sin reutilizar datos viejos;
-no ofrece acciones prototípicas de alta o renovación. La vista heredada sigue
-separada fuera del modo restringido. En este worktree el controlador ya expone
-un `PUT` para registrar ciclos con identificador del ciclo actual esperado;
-las garantías de persistencia se documentan en el README del backend. La pantalla sigue en solo lectura mientras
-se conecta la captura; no se ha promocionado al VPS. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [lectura](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js) y [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs).
+ruta restringida consulta esa API en páginas de 20, calcula vigencia por
+fechas y retira datos antiguos ante error o revocación. Puede registrar el
+primer ciclo y renovar: obtiene agentes y equipos activos, consulta el par
+exacto antes de guardar, envía el identificador del ciclo observado como
+precondición y conserva el UUID de intención para un reintento incierto. Un
+conflicto obliga a releer el ciclo. La API conserva historial, auditoría y
+señal durable en la transacción; no hay archivos adjuntos ni promociones al
+VPS demostradas para esta rama. La vista heredada sigue separada fuera del
+modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [servicio](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs) y [README del backend](../../backend/README.md).
 
 La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
 rampa, paginados y reservados a Gestión Humana o Superadministración internas.

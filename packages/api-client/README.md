@@ -66,13 +66,15 @@ interna y grant de la estación; el wrapper rechaza otra estación, paginación
 incoherente y combinaciones inválidas de estado, factura y pago. Es una
 proyección de seguimiento, no una confirmación de conciliación bancaria.
 
-`getHumanResourcesQualifications({ page?, limit? })` lee páginas de hasta
+`getHumanResourcesQualifications({ page?, limit?, rampProfileId?, equipmentTypeId? })` lee páginas de hasta
 100 ciclos actuales de habilitación registrados para agentes de rampa. Solo
 una sesión interna de Gestión Humana o Superadministración puede obtenerlos;
 el wrapper comprueba identificadores, fechas y paginación. Una fecha vencida
 no se presenta como vigente por el mero valor `is_current` de SQL. La ruta
-restringida de habilitaciones de Private Web ya usa este método para una tabla
-paginada de solo lectura; no habilita crear ni renovar ciclos.
+restringida de habilitaciones de Private Web usa este método para la tabla
+paginada y, con ambos IDs, para reconsultar el único ciclo actual antes de
+registrar o renovar. El wrapper rechaza un filtro incompleto, IDs inválidos
+o una respuesta que no pertenezca al par solicitado.
 
 `getHumanResourcesQualificationEquipmentTypes()` lee el catálogo activo que
 requiere habilitación. `recordHumanResourcesQualification(id, request)` usa un
@@ -80,7 +82,8 @@ UUID estable elegido por el cliente y `expectedCurrentId` para el ciclo
 observado (o `null` para el primero). Valida campos, fechas, respuesta y
 autorización fresca. El servidor conserva historial, audita y emite una pista
 durable tras confirmar; un 409 exige reconsulta antes de intentar otro cambio.
-La interfaz de captura todavía no está conectada en este worktree.
+La interfaz restringida conecta esa captura; ante una respuesta incierta
+reintenta el mismo UUID y ante 409 relee el ciclo antes de permitir otro envío.
 
 `getHumanResourcesPermits({ page?, limit? })` lee ciclos actuales de carnet
 aeroportuario y licencia de rampa para Gestión Humana o Superadministración.
