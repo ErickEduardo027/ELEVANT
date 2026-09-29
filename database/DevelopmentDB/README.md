@@ -16,6 +16,20 @@ tests/scripts/                    pruebas del tooling y fixture de certificació
 
 `ElevantDevelopmentDb` es la única base desplegada actualmente. Sus migraciones son la historia canónica del esquema. El seed es sintético, determinista e idempotente; nunca se ejecuta fuera de Development. En la rama de integración incorpora una solicitud operativa de prueba vinculada a `DEV-TAT-0002`, distinta de la solicitud comercial de acceso. Esa fila no se ha promocionado al VPS.
 
+La rama de integración incorpora además el comando **manual y separado**
+`Elevant.DatabaseTool seed-development-scenario`. Requiere la conexión del
+login seeder y el marcador Development habituales, más
+`ELEVANT_DEV_SCENARIO_DATE=YYYY-MM-DD` con la fecha local PUJ elegida por el
+operador. Después del seed base, inserta dos operaciones planificadas para esa
+fecha y la siguiente, con tramos, stand A01, servicios contratados y turno
+compatible del agente sintético. No asigna al agente ni completa la operación:
+OCC y Mobile Agent deben ejecutar ese circuito real. IDs y códigos dependen
+de la fecha; repetirlo no duplica ni reinicia operaciones trabajadas. Un turno
+incompatible, ventana de stand solapada, contrato fuera de vigencia o anclas
+faltantes detienen la
+transacción sin cambios parciales. No corre durante la promoción automática,
+no admite Production y aún no se ha ejecutado en el VPS.
+
 Las migraciones `CommercialRepresentativeDetails` y `ContractRateConfirmation` agregan campos opcionales a solicitudes comerciales y una marca nullable de confirmación de tarifa. `NULL` conserva el significado de legado; los borradores nuevos empiezan sin confirmación y no pueden activarse hasta confirmar cada tarifa. Ninguna migración actualiza datos de negocio. El seed inserta las fichas iniciales de la lista histórica AVIAM con procedencia y verificaciones IATA disponibles; en bases existentes, el superadministrador usa la acción autorizada **Completar fichas AVIAM** para enriquecer sólo fixtures intactos. El diagnóstico `verify-development.sql` mantiene la lista exacta de IDs EF; una prueba compara esa lista con los archivos de migración antes de la certificación de contenedores.
 
 ## Migraciones

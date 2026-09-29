@@ -43,6 +43,336 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task ExplicitDevelopmentScenarioSeedsLocalDatesAndPreservesWorkedOperations()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        var localDate = new DateOnly(2026, 9, 28);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+        {
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+            await new DevelopmentScenarioSeeder(seed).SeedAsync(localDate, cancellationToken);
+        }
+
+        await using (var inspection = CreateContext(database.ConnectionString))
+        {
+            var rows = await inspection.Turnarounds.AsNoTracking()
+                .Where(item => item.OperationCode.StartsWith("DEV-CYCLE-202609"))
+                .OrderBy(item => item.OperationDate).ToArrayAsync(cancellationToken);
+            Assert.Equal(2, rows.Length);
+            Assert.Equal([localDate, localDate.AddDays(1)], rows.Select(item => item.OperationDate));
+            Assert.All(rows, item => Assert.Equal(TurnaroundStatus.Confirmed, item.CurrentStatus));
+            foreach (var row in rows)
+            {
+                var operation = await inspection.GroundOperations.AsNoTracking()
+                    .SingleAsync(item => item.TurnaroundId == row.Id, cancellationToken);
+                Assert.Equal(GroundOperationStatus.Planned, operation.CurrentStatus);
+                var services = await inspection.OperationServices.AsNoTracking()
+                    .Where(item => item.GroundOperationId == operation.Id)
+                    .OrderBy(item => item.LineNumber).ToArrayAsync(cancellationToken);
+                Assert.Equal(2, services.Length);
+                Assert.Equal([125.50m, 95.00m], services.Select(item => item.UnitPriceSnapshot));
+                Assert.All(services, item =>
+                {
+                    Assert.Equal("USD", item.CurrencyCodeSnapshot);
+                    Assert.Equal("operation", item.BillingUnitSnapshot);
+                    Assert.Equal(1m, item.ContractedQuantity);
+                    Assert.Equal(0m, item.ExecutedQuantity);
+                    Assert.Equal(ServiceExecutionStatus.Planned, item.CurrentStatus);
+                });
+                var legs = await inspection.FlightLegs.AsNoTracking()
+                    .Where(item => item.TurnaroundId == row.Id).ToArrayAsync(cancellationToken);
+                Assert.Equal(2, legs.Length);
+                Assert.All(legs, item => Assert.Equal(row.OperationDate,
+                    DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(item.ScheduledAt,
+                        TimeZoneInfo.FindSystemTimeZoneById("America/Santo_Domingo")).DateTime)));
+                Assert.True(await inspection.ShiftAssignments.AsNoTracking()
+                    .AnyAsync(item => item.WorkDate == row.OperationDate &&
+                        item.StartsAtLocal <= new TimeOnly(8, 0) &&
+                        item.EndsAtLocal >= new TimeOnly(10, 0), cancellationToken));
+            }
+        }
+
+        await using (var edit = CreateContext(database.ConnectionString))
+        {
+            var first = await edit.Turnarounds.SingleAsync(
+                item => item.OperationCode == "DEV-CYCLE-20260928", cancellationToken);
+            first.AircraftRegistration = "HI-CHANGED";
+            await edit.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentScenarioSeeder(seed).SeedAsync(localDate, cancellationToken);
+        await using (var final = CreateContext(database.ConnectionString))
+        {
+            Assert.Equal(2, await final.Turnarounds.AsNoTracking()
+                .CountAsync(item => item.OperationCode.StartsWith("DEV-CYCLE-202609"),
+                    cancellationToken));
+            Assert.Equal("HI-CHANGED", (await final.Turnarounds.AsNoTracking()
+                .SingleAsync(item => item.OperationCode == "DEV-CYCLE-20260928",
+                    cancellationToken)).AircraftRegistration);
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitDevelopmentScenarioRollsBackIfAnExistingShiftCannotCoverIt()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var agentId = await setup.RampAgents.Where(item => item.EmployeeNumber == "DEV-RA-001")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var stationId = await setup.Stations.Where(item => item.Code == "PUJ")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var terminalId = await setup.Terminals.Where(item => item.StationId == stationId &&
+                item.Code == "A").Select(item => item.Id).SingleAsync(cancellationToken);
+            var now = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+            setup.ShiftAssignments.Add(new ShiftAssignment
+            {
+                PublicId = Guid.NewGuid(), RampAgentId = agentId, StationId = stationId,
+                TerminalId = terminalId, WorkDate = new DateOnly(2026, 9, 29),
+                StartsAtLocal = new TimeOnly(4, 0), EndsAtLocal = new TimeOnly(7, 0),
+                Block = ShiftBlock.Morning, CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new DevelopmentScenarioSeeder(seed).SeedAsync(new DateOnly(2026, 9, 28),
+                    cancellationToken));
+        await using (var inspection = CreateContext(database.ConnectionString))
+        {
+            Assert.False(await inspection.Turnarounds.AsNoTracking()
+                .AnyAsync(item => item.OperationCode.StartsWith("DEV-CYCLE-"),
+                    cancellationToken));
+            Assert.False(await inspection.ShiftAssignments.AsNoTracking()
+                .AnyAsync(item => item.WorkDate == new DateOnly(2026, 9, 28),
+                    cancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitDevelopmentScenarioRejectsAnOccupiedStandWithoutWritingPartialRows()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var airlineId = await setup.Airlines.Where(item => item.IataCode == "ZZ")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var stationId = await setup.Stations.Where(item => item.Code == "PUJ")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var standId = await setup.Stands.Where(item => item.StationId == stationId &&
+                item.Code == "A01").Select(item => item.Id).SingleAsync(cancellationToken);
+            var now = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+            var other = new Turnaround
+            {
+                PublicId = Guid.NewGuid(), OperationCode = "DEV-OTHER-20260928",
+                AirlineId = airlineId, StationId = stationId,
+                OperationDate = new DateOnly(2026, 9, 27),
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Turnarounds.Add(other);
+            await setup.SaveChangesAsync(cancellationToken);
+            setup.Set<StandAssignment>().Add(new StandAssignment
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = other.Id, StandId = standId,
+                AssignedFrom = now, CreatedAt = now, UpdatedAt = now,
+            });
+            setup.GroundOperations.Add(new GroundOperation
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = other.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                PlannedStartAt = new DateTimeOffset(2026, 9, 28, 11, 30, 0, TimeSpan.Zero),
+                PlannedEndAt = new DateTimeOffset(2026, 9, 28, 13, 0, 0, TimeSpan.Zero),
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new DevelopmentScenarioSeeder(seed).SeedAsync(new DateOnly(2026, 9, 28),
+                    cancellationToken));
+        await using var inspection = CreateContext(database.ConnectionString);
+        Assert.False(await inspection.Turnarounds.AsNoTracking()
+            .AnyAsync(item => item.OperationCode.StartsWith("DEV-CYCLE-"),
+                cancellationToken));
+        Assert.False(await inspection.ShiftAssignments.AsNoTracking()
+            .AnyAsync(item => item.WorkDate == new DateOnly(2026, 9, 28),
+                cancellationToken));
+    }
+
+    [Fact]
+    public async Task ExplicitDevelopmentScenarioAllowsASeparatedEveningStandWindow()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var airlineId = await setup.Airlines.Where(item => item.IataCode == "ZZ")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var stationId = await setup.Stations.Where(item => item.Code == "PUJ")
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var standId = await setup.Stands.Where(item => item.StationId == stationId &&
+                item.Code == "A01").Select(item => item.Id).SingleAsync(cancellationToken);
+            var now = new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero);
+            var other = new Turnaround
+            {
+                PublicId = Guid.NewGuid(), OperationCode = "DEV-EVENING-20260928",
+                AirlineId = airlineId, StationId = stationId,
+                OperationDate = new DateOnly(2026, 9, 28),
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Turnarounds.Add(other);
+            await setup.SaveChangesAsync(cancellationToken);
+            setup.Set<StandAssignment>().Add(new StandAssignment
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = other.Id, StandId = standId,
+                AssignedFrom = new DateTimeOffset(2026, 9, 28, 22, 0, 0, TimeSpan.Zero),
+                CreatedAt = now, UpdatedAt = now,
+            });
+            setup.GroundOperations.Add(new GroundOperation
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = other.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                PlannedStartAt = new DateTimeOffset(2026, 9, 28, 22, 0, 0, TimeSpan.Zero),
+                PlannedEndAt = new DateTimeOffset(2026, 9, 29, 0, 0, 0, TimeSpan.Zero),
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentScenarioSeeder(seed).SeedAsync(new DateOnly(2026, 9, 28),
+                cancellationToken);
+        await using var inspection = CreateContext(database.ConnectionString);
+        Assert.Equal(2, await inspection.Turnarounds.AsNoTracking().CountAsync(item =>
+            item.OperationCode.StartsWith("DEV-CYCLE-"), cancellationToken));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExplicitDevelopmentScenarioRejectsInapplicableContractDates(bool signedTooLate)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var contract = await setup.Contracts.SingleAsync(item =>
+                item.ContractCode == "DEV-CONTRACT-0001", cancellationToken);
+            if (signedTooLate) contract.SignedOn = new DateOnly(2026, 9, 29);
+            else contract.TerminatedOn = new DateOnly(2026, 9, 28);
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new DevelopmentScenarioSeeder(seed).SeedAsync(new DateOnly(2026, 9, 28),
+                    cancellationToken));
+        await using var inspection = CreateContext(database.ConnectionString);
+        Assert.False(await inspection.Turnarounds.AsNoTracking().AnyAsync(item =>
+            item.OperationCode.StartsWith("DEV-CYCLE-"), cancellationToken));
+        Assert.False(await inspection.ShiftAssignments.AsNoTracking().AnyAsync(item =>
+            item.WorkDate == new DateOnly(2026, 9, 28), cancellationToken));
+    }
+
+    [Fact]
+    public async Task ExplicitDevelopmentScenarioRejectsStandOutsideTheAgentTerminal()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var stand = await setup.Stands.SingleAsync(item => item.Code == "A01",
+                cancellationToken);
+            stand.TerminalId = null;
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new DevelopmentScenarioSeeder(seed).SeedAsync(new DateOnly(2026, 9, 28),
+                    cancellationToken));
+        await using var inspection = CreateContext(database.ConnectionString);
+        Assert.False(await inspection.Turnarounds.AsNoTracking().AnyAsync(item =>
+            item.OperationCode.StartsWith("DEV-CYCLE-"), cancellationToken));
+    }
+
+    [Fact]
+    public async Task ExplicitDevelopmentScenarioIsForbiddenOnProductionMarker()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Production", cancellationToken);
+        await using var context = CreateContext(database.ConnectionString);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new DevelopmentScenarioSeeder(context).SeedAsync(new DateOnly(2026, 9, 28),
+                cancellationToken));
+    }
+
+    [Fact]
     public async Task HumanResourcesShiftsReadBoundedWeekForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

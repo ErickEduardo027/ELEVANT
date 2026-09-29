@@ -11,6 +11,9 @@ case "$command_name" in
   seed-development)
     exec dotnet /app/database-tool/Elevant.DatabaseTool.dll seed-development
     ;;
+  seed-development-scenario)
+    exec dotnet /app/database-tool/Elevant.DatabaseTool.dll seed-development-scenario
+    ;;
   rotate-development-human-resources)
     exec dotnet /app/database-tool/Elevant.DatabaseTool.dll rotate-development-human-resources
     ;;
@@ -18,7 +21,7 @@ case "$command_name" in
     exec dotnet /app/database-tool/Elevant.DatabaseTool.dll verify-target
     ;;
   *)
-    echo "Usage: container-entrypoint.sh <migrate|seed-development|rotate-development-human-resources|verify-target>" >&2
+    echo "Usage: container-entrypoint.sh <migrate|seed-development|seed-development-scenario|rotate-development-human-resources|verify-target>" >&2
     exit 2
     ;;
 esac

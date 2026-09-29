@@ -82,6 +82,13 @@ Production además exige `ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProduc
 
 El seed de Development es un ejecutable separado, transaccional, determinista, idempotente y limitado por el marcador. Nunca hace reset, delete global o reemplazo de datos existentes. Todo fixture es sintético y usa identidades `.test`.
 
+En esta rama local, `seed-development-scenario` es un segundo comando explícito
+para preparar una fecha PUJ de prueba después del seed base: crea dos escalas
+planificadas y turnos de cobertura con claves derivadas de la fecha, sin
+asignar agentes ni marcar servicios ejecutados. Valida contrato, estación,
+turno, stand y marcador Development dentro de una transacción serializable;
+no forma parte del CD automático ni se ha ejecutado en el VPS.
+
 ## Disputas de prefactura en la rama de integración
 
 La migración aditiva `PreinvoiceDisputes`, posterior a `PersonAvatarMedia`,
