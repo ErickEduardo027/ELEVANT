@@ -107,6 +107,11 @@ a 60 minutos y usa 15 por defecto.
   vencida por fecha. En el modo restringido de Private Web se usa una pantalla
   paginada de solo lectura; la pantalla heredada con acciones prototípicas no
   consume este contrato.
+- `GET /api/v1/human-resources/permits?page=&limit=` lista hasta 100 ciclos
+  actuales de carnet aeroportuario o licencia de rampa, con agente, número y
+  fechas persistidos. Exige la misma membresía y rol interno vigentes que la
+  lectura de habilitaciones. `is_current` indica el ciclo registrado, no que
+  el documento no haya vencido; no crea ni renueva permisos.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

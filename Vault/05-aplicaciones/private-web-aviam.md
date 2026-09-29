@@ -100,7 +100,7 @@ En el worktree local posterior a esta fotografía, el dashboard consulta los
 perfiles de rampa autorizados de la API para contar agentes activos y perfiles
 sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
 para turnos, habilitaciones o cobertura. El modo restringido solo expone
-dashboard, perfiles y habilitaciones de lectura; mantiene ocultas las rutas
+dashboard, perfiles, habilitaciones y permisos de lectura; mantiene ocultas las rutas
 profundas aún no integradas. Recibir una señal de cambio, recuperar
 foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
 escritura de habilitaciones ni un despliegue al VPS. Fuentes:
@@ -121,8 +121,18 @@ habilitación de rampa para Gestión Humana y Superadministración internas. La
 ruta restringida de habilitaciones consulta esa API en páginas de 20, calcula
 la vigencia por fechas y muestra un vacío o error sin reutilizar datos viejos;
 no ofrece acciones prototípicas de alta o renovación. La vista heredada sigue
-separada fuera del modo restringido. Permisos, turnos y escrituras de
+separada fuera del modo restringido. Turnos y escrituras de
 habilitaciones siguen pendientes. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [lectura](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js) y [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs).
+
+La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
+rampa, paginados y reservados a Gestión Humana o Superadministración internas.
+La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
+foco/conexión y cada 25 segundos, y no permite renovaciones o archivos
+simulados. El documento puede estar vencido aunque su ciclo siga marcado como
+actual. Las escrituras y el historial de ciclos siguen pendientes. Fuentes:
+[vista](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
+[controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitReadStore.cs).
 
 ### Contratos y Finanzas
 

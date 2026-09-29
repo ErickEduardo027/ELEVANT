@@ -43,6 +43,75 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task HumanResourcesPermitsReadCurrentCyclesOnlyForLiveInternalRole()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitReadStore>();
+            var first = await store.ListCurrentAsync(hrId, 1, 1, cancellationToken);
+            Assert.NotNull(first);
+            Assert.True(first.HasMore);
+            var airportId = Assert.Single(first.Permits);
+            Assert.Equal(Guid.Parse("50000000-0000-7000-8000-000000000003"), airportId.Id);
+            Assert.Equal("AirportId", airportId.DocumentType);
+            Assert.Equal("DEV-RA-001", airportId.EmployeeNumber);
+            var second = await store.ListCurrentAsync(hrId, 2, 1, cancellationToken);
+            Assert.NotNull(second);
+            Assert.False(second.HasMore);
+            Assert.Equal("RampDriverLicense", Assert.Single(second.Permits).DocumentType);
+            Assert.Null(await store.ListCurrentAsync(occId, 1, 20, cancellationToken));
+            Assert.Equal(2, (await store.ListCurrentAsync(superAdminId, 1, 20,
+                cancellationToken))!.Permits.Count);
+        }
+
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+            await context.AirportPermitCycles.Where(cycle => cycle.DocumentType ==
+                PermitDocumentType.AirportId).ExecuteUpdateAsync(update => update
+                    .SetProperty(cycle => cycle.IsCurrent, false), cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitReadStore>();
+            Assert.Null(await store.ListCurrentAsync(hrId, 1, 20, cancellationToken));
+            var remaining = (await store.ListCurrentAsync(superAdminId, 1, 20,
+                cancellationToken))!.Permits;
+            Assert.Equal("RampDriverLicense", Assert.Single(remaining).DocumentType);
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesQualificationsReadCurrentCyclesOnlyForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

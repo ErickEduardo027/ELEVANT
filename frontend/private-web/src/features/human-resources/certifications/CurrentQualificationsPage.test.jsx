@@ -22,19 +22,25 @@ const row = {
   trainingDate: '2026-01-02', obtainedOn: '2026-01-03', expiresOn: '2099-12-31',
   certifyingEntity: 'Synthetic Training Center', instructorName: 'Development Instructor',
 };
+const fullPage = [row, ...Array.from({ length: 19 }, (_, index) => ({
+  ...row, id: `50000000-0000-7000-8000-${String(index + 10).padStart(12, '0')}`,
+  rampProfileId: `50000000-0000-7000-8000-${String(index + 100).padStart(12, '0')}`,
+  agentName: `Agent ${index + 1}`,
+  employeeNumber: `DEV-RA-${String(index + 2).padStart(3, '0')}`,
+}))];
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 it('shows authorized current cycles without prototype actions and pages through real rows', async () => {
   getHumanResourcesQualifications
-    .mockResolvedValueOnce({ page: 1, limit: 20, hasMore: true, qualifications: [row] })
+    .mockResolvedValueOnce({ page: 1, limit: 20, hasMore: true, qualifications: fullPage })
     .mockResolvedValueOnce({ page: 2, limit: 20, hasMore: false,
       qualifications: [{ ...row, id: '50000000-0000-7000-8000-000000000003',
         agentName: 'Ana Example', trainingDate: '2019-01-01',
         obtainedOn: '2019-01-02', expiresOn: '2020-01-01' }] });
   render(<CurrentQualificationsPage />);
   expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
-  expect(screen.getByText('Vigente')).toBeInTheDocument();
+  expect(screen.getAllByText('Vigente')).toHaveLength(20);
   expect(screen.getByText(/hasta 20 registros por página/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Registrar|Renovar|Nueva habilitación/ })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));

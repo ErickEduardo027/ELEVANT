@@ -4,6 +4,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { createHumanResourcesChildren } from './router';
 import { HUMAN_RESOURCES_NAVIGATION } from '../features/human-resources/navigation';
 import { getHumanResourcesQualifications } from '../services/humanResourcesQualificationsReadService';
+import { getHumanResourcesPermits } from '../services/humanResourcesPermitsReadService';
 
 vi.mock('../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({
@@ -13,11 +14,14 @@ vi.mock('../services/accountChangeObserver', () => ({
 vi.mock('../services/humanResourcesQualificationsReadService', () => ({
   getHumanResourcesQualifications: vi.fn(),
 }));
+vi.mock('../services/humanResourcesPermitsReadService', () => ({
+  getHumanResourcesPermits: vi.fn(),
+}));
 
 describe('HR routes with operational ramp profiles', () => {
   it('keeps live ramp profiles and current qualifications while redirecting unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],
@@ -55,6 +59,23 @@ describe('HR routes with operational ramp profiles', () => {
     expect(await screen.findByText(/No hay habilitaciones registradas/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Registrar|Renovar/ })).not.toBeInTheDocument();
     expect(getHumanResourcesQualifications).toHaveBeenCalledWith(
+      { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('mounts the real read-only permit page in the restricted release', async () => {
+    getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 20,
+      hasMore: false, permits: [] });
+    const router = createMemoryRouter(
+      [{ path: '/gestion-humana', element: <Outlet />,
+        children: createHumanResourcesChildren(true) }],
+      { initialEntries: ['/gestion-humana/permits'] },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText(/No hay permisos registrados/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Registrar|Renovar/ })).not.toBeInTheDocument();
+    expect(getHumanResourcesPermits).toHaveBeenCalledWith(
       { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });

@@ -760,6 +760,25 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HumanResourcesPermitData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  documentType: string;
+  cycleNumber: number;
+  documentNumber: string;
+  issuedOn: string;
+  expiresOn: string;
+}
+
+export interface HumanResourcesPermitPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  permits: HumanResourcesPermitData[];
+}
+
 export interface HumanResourcesQualificationData {
   id: string;
   rampProfileId: string;
@@ -2006,6 +2025,11 @@ limit?: number;
 };
 
 export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesPermitsParams = {
 page?: number;
 limit?: number;
 };
@@ -4096,6 +4120,41 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesPermitsUrl = (params?: ListHumanResourcesPermitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/permits?${stringifiedParams}` : `/api/v1/human-resources/permits`
+}
+
+export const listHumanResourcesPermits = async (params?: ListHumanResourcesPermitsParams, options?: RequestInit): Promise<HumanResourcesPermitPage> => {
+
+  const res = await fetch(getListHumanResourcesPermitsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesPermitPage = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -15,6 +15,7 @@ import {
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
+  getListHumanResourcesPermitsUrl,
   getListHumanResourcesQualificationsUrl,
   getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
@@ -94,6 +95,8 @@ import {
   type ListFinancePreinvoicesParams,
   type FinanceTariffPageData,
   type ListFinanceTariffsParams,
+  type HumanResourcesPermitPage,
+  type ListHumanResourcesPermitsParams,
   type HumanResourcesQualificationPage,
   type ListHumanResourcesQualificationsParams,
   type FinanceReconciliationPageData,
@@ -201,6 +204,7 @@ export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "
 export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceReconciliationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -345,6 +349,10 @@ export interface ElevantApiClient {
     query: ListFinanceTariffsParams,
     options?: GetFinanceTariffsOptions,
   ): Promise<FinanceTariffPageData>;
+  getHumanResourcesPermits(
+    query?: ListHumanResourcesPermitsParams,
+    options?: GetHumanResourcesPermitsOptions,
+  ): Promise<HumanResourcesPermitPage>;
   getHumanResourcesQualifications(
     query?: ListHumanResourcesQualificationsParams,
     options?: GetHumanResourcesQualificationsOptions,
@@ -2273,16 +2281,41 @@ function validatedFinanceTariffQuery(
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
-function validatedHumanResourcesQualificationQuery(
-  query: ListHumanResourcesQualificationsParams | undefined,
-): ListHumanResourcesQualificationsParams {
+function validatedHumanResourcesPaging(
+  query: { page?: number; limit?: number } | undefined,
+): { page?: number; limit?: number } {
   if (query === undefined) return {};
   if (!isRecord(query) || !hasOnlyKeys(query, ["page", "limit"]) ||
       (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
       (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 100)))
-    throw new TypeError("Human Resources qualification paging is invalid.");
+    throw new TypeError("Human Resources paging is invalid.");
   return { ...(query.page === undefined ? {} : { page: query.page }),
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPermitPage {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "permits"]) ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.permits) ||
+      value.permits.length > value.limit ||
+      (value.hasMore && value.permits.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.permits.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "documentType",
+        "cycleNumber", "documentNumber", "issuedOn", "expiresOn"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        typeof item.documentType !== "string" ||
+        !["AirportId", "RampDriverLicense"].includes(item.documentType) ||
+        !isInt32(item.cycleNumber) || item.cycleNumber < 1 ||
+        !isNonEmptyString(item.documentNumber) ||
+        !isDateOnly(item.issuedOn) || !isDateOnly(item.expiresOn) ||
+        item.issuedOn > item.expiresOn) return false;
+    ids.add(item.id);
+    return true;
+  });
 }
 
 function isHumanResourcesQualificationPage(value: unknown): value is HumanResourcesQualificationPage {
@@ -3371,10 +3404,23 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       query?: ListHumanResourcesQualificationsParams,
       options?: GetHumanResourcesQualificationsOptions,
     ) {
-      const paging = validatedHumanResourcesQualificationQuery(query);
+      const paging = validatedHumanResourcesPaging(query);
       const result = await execute(getListHumanResourcesQualificationsUrl(paging),
         { ...options, method: "GET" }, true);
       if (!isHumanResourcesQualificationPage(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesPermits(
+      query?: ListHumanResourcesPermitsParams,
+      options?: GetHumanResourcesPermitsOptions,
+    ) {
+      const paging = validatedHumanResourcesPaging(query);
+      const result = await execute(getListHumanResourcesPermitsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesPermitPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 50))
         throw malformedResponse(result.status);
