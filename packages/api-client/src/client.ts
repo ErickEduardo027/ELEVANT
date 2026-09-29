@@ -17,6 +17,7 @@ import {
   getListFinanceTariffsUrl,
   getListHumanResourcesPermitsUrl,
   getListHumanResourcesQualificationsUrl,
+  getListHumanResourcesShiftsUrl,
   getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
@@ -99,6 +100,8 @@ import {
   type ListHumanResourcesPermitsParams,
   type HumanResourcesQualificationPage,
   type ListHumanResourcesQualificationsParams,
+  type HumanResourcesShiftPage,
+  type ListHumanResourcesShiftsParams,
   type FinanceReconciliationPageData,
   type ListFinanceReconciliationParams,
   type CreatePreinvoiceDraftRequest,
@@ -206,6 +209,11 @@ export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "me
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "from" | "to"> & {
+  readonly from: string;
+  readonly to: string;
+};
 export type GetFinanceReconciliationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -357,6 +365,10 @@ export interface ElevantApiClient {
     query?: ListHumanResourcesQualificationsParams,
     options?: GetHumanResourcesQualificationsOptions,
   ): Promise<HumanResourcesQualificationPage>;
+  getHumanResourcesShifts(
+    query: HumanResourcesShiftsQuery,
+    options?: GetHumanResourcesShiftsOptions,
+  ): Promise<HumanResourcesShiftPage>;
   getFinanceReconciliation(
     query: ListFinanceReconciliationParams,
     options?: GetFinanceReconciliationOptions,
@@ -2318,6 +2330,55 @@ function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPerm
   });
 }
 
+function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): HumanResourcesShiftsQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
+      !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 6 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources shift range or paging is invalid.");
+  return { from: query.from, to: query.to,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShiftPage {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["from", "to", "page", "limit", "hasMore", "shifts"]) ||
+      !isDateOnly(value.from) || !isDateOnly(value.to) || value.from > value.to ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.shifts) ||
+      value.shifts.length > value.limit ||
+      (value.hasMore && value.shifts.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  const from = value.from;
+  const to = value.to;
+  return value.shifts.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "stationId",
+        "stationCode", "terminalId", "terminalCode", "positionId", "positionCode",
+        "workDate", "startsAtLocal", "endsAtLocal", "block"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
+        !isUuid(item.terminalId) || !isNonEmptyString(item.terminalCode) ||
+        (item.positionId != null && !isUuid(item.positionId)) ||
+        (item.positionCode != null && !isNonEmptyString(item.positionCode)) ||
+        (item.positionId == null) !== (item.positionCode == null) ||
+        !isDateOnly(item.workDate) || item.workDate < from || item.workDate > to ||
+        typeof item.startsAtLocal !== "string" ||
+        typeof item.endsAtLocal !== "string" ||
+        !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(item.startsAtLocal) ||
+        !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(item.endsAtLocal) ||
+        typeof item.block !== "string" ||
+        !["Morning", "Afternoon", "Night"].includes(item.block)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
 function isHumanResourcesQualificationPage(value: unknown): value is HumanResourcesQualificationPage {
   if (!isRecord(value) || !hasOnlyKeys(value,
     ["page", "limit", "hasMore", "qualifications"]) ||
@@ -3423,6 +3484,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isHumanResourcesPermitPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesShifts(
+      query: HumanResourcesShiftsQuery,
+      options?: GetHumanResourcesShiftsOptions,
+    ) {
+      const scope = validatedHumanResourcesShiftsQuery(query);
+      const result = await execute(getListHumanResourcesShiftsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesShiftPage(result.data) ||
+          result.data.from !== scope.from || result.data.to !== scope.to ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 50))
         throw malformedResponse(result.status);
       return result.data;
     },

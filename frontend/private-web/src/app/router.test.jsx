@@ -5,6 +5,7 @@ import { createHumanResourcesChildren } from './router';
 import { HUMAN_RESOURCES_NAVIGATION } from '../features/human-resources/navigation';
 import { getHumanResourcesQualifications } from '../services/humanResourcesQualificationsReadService';
 import { getHumanResourcesPermits } from '../services/humanResourcesPermitsReadService';
+import { getHumanResourcesShifts } from '../services/humanResourcesShiftsReadService';
 
 vi.mock('../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({
@@ -17,11 +18,14 @@ vi.mock('../services/humanResourcesQualificationsReadService', () => ({
 vi.mock('../services/humanResourcesPermitsReadService', () => ({
   getHumanResourcesPermits: vi.fn(),
 }));
+vi.mock('../services/humanResourcesShiftsReadService', () => ({
+  getHumanResourcesShifts: vi.fn(),
+}));
 
 describe('HR routes with operational ramp profiles', () => {
   it('keeps live ramp profiles and current qualifications while redirecting unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],
@@ -77,5 +81,24 @@ describe('HR routes with operational ramp profiles', () => {
     expect(screen.queryByRole('button', { name: /Registrar|Renovar/ })).not.toBeInTheDocument();
     expect(getHumanResourcesPermits).toHaveBeenCalledWith(
       { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('mounts the real read-only shift page in the restricted release', async () => {
+    getHumanResourcesShifts.mockImplementation(async query => ({
+      ...query, hasMore: false, shifts: [],
+    }));
+    const router = createMemoryRouter(
+      [{ path: '/gestion-humana', element: <Outlet />,
+        children: createHumanResourcesChildren(true) }],
+      { initialEntries: ['/gestion-humana/schedules'] },
+    );
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText(/No hay turnos registrados/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Asignar|Eliminar|Aprobar/ })).not.toBeInTheDocument();
+    expect(getHumanResourcesShifts).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, limit: 20 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });

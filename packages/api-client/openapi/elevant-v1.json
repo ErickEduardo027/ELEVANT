@@ -4126,6 +4126,97 @@
         ]
       }
     },
+    "/api/v1/human-resources/shifts": {
+      "get": {
+        "tags": [
+          "HumanResourcesShifts"
+        ],
+        "operationId": "ListHumanResourcesShifts",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesShiftPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/agreements": {
       "get": {
         "tags": [
@@ -10025,6 +10116,117 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesShiftData": {
+        "required": [
+          "agentName",
+          "block",
+          "employeeNumber",
+          "endsAtLocal",
+          "id",
+          "rampProfileId",
+          "startsAtLocal",
+          "stationCode",
+          "stationId",
+          "terminalCode",
+          "terminalId",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "positionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "block": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesShiftPage": {
+        "required": [
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "shifts",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "shifts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesShiftData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "IssueFinanceInvoiceRequest": {
         "required": [
           "preinvoiceId",
@@ -14546,6 +14748,9 @@
     },
     {
       "name": "HumanResourcesQualifications"
+    },
+    {
+      "name": "HumanResourcesShifts"
     },
     {
       "name": "ManagedContracts"

@@ -70,14 +70,19 @@ una sesión interna de Gestión Humana o Superadministración puede obtenerlos;
 el wrapper comprueba identificadores, fechas y paginación. Una fecha vencida
 no se presenta como vigente por el mero valor `is_current` de SQL. La ruta
 restringida de habilitaciones de Private Web ya usa este método para una tabla
-paginada de solo lectura; no habilita crear ni renovar ciclos. La ruta de
-turnos sigue oculta en ese modo hasta sustituir su adaptador prototípico.
+paginada de solo lectura; no habilita crear ni renovar ciclos.
 
 `getHumanResourcesPermits({ page?, limit? })` lee ciclos actuales de carnet
 aeroportuario y licencia de rampa para Gestión Humana o Superadministración.
 Valida tipos, fechas, identificadores y paginación antes de entregar datos al
 cliente. La ruta restringida de Private Web los muestra en solo lectura; el
 método no crea ni renueva documentos.
+
+`getHumanResourcesShifts({ from, to, page?, limit? })` lee turnos registrados
+en una ventana máxima de siete fechas locales, en páginas de hasta 100. El
+wrapper valida fechas, identificadores, horarios, bloque y paginación antes de
+entregar datos. La ruta restringida de Private Web presenta esta lectura por
+semana y no ofrece programación ni disponibilidad calculada ficticia.
 
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se

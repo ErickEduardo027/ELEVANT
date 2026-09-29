@@ -67,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<IRampProfileStore, EfRampProfileStore>();
         services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();
         services.AddScoped<IHumanResourcesPermitReadStore, EfHumanResourcesPermitReadStore>();
+        services.AddScoped<IHumanResourcesShiftReadStore, EfHumanResourcesShiftReadStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
         services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();

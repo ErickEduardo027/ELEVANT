@@ -802,6 +802,34 @@ export interface HumanResourcesQualificationPage {
   qualifications: HumanResourcesQualificationData[];
 }
 
+export interface HumanResourcesShiftData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  stationId: string;
+  stationCode: string;
+  terminalId: string;
+  terminalCode: string;
+  /** @nullable */
+  positionId?: string | null;
+  /** @nullable */
+  positionCode?: string | null;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  block: string;
+}
+
+export interface HumanResourcesShiftPage {
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  shifts: HumanResourcesShiftData[];
+}
+
 export interface IssueFinanceInvoiceRequest {
   preinvoiceId: string;
   requestId: string;
@@ -2035,6 +2063,13 @@ limit?: number;
 };
 
 export type ListHumanResourcesQualificationsParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesShiftsParams = {
+from?: string;
+to?: string;
 page?: number;
 limit?: number;
 };
@@ -4190,6 +4225,41 @@ export const listHumanResourcesQualifications = async (params?: ListHumanResourc
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesQualificationPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesShiftsUrl = (params?: ListHumanResourcesShiftsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/shifts?${stringifiedParams}` : `/api/v1/human-resources/shifts`
+}
+
+export const listHumanResourcesShifts = async (params?: ListHumanResourcesShiftsParams, options?: RequestInit): Promise<HumanResourcesShiftPage> => {
+
+  const res = await fetch(getListHumanResourcesShiftsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftPage = body ? JSON.parse(body) : {}
   return data
 }
 

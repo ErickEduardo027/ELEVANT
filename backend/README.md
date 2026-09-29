@@ -112,6 +112,12 @@ a 60 minutos y usa 15 por defecto.
   fechas persistidos. Exige la misma membresía y rol interno vigentes que la
   lectura de habilitaciones. `is_current` indica el ciclo registrado, no que
   el documento no haya vencido; no crea ni renueva permisos.
+- `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
+  registrados de rampa en una ventana de hasta siete fechas locales, con
+  agente, estación, terminal, posición y horario. Exige Gestión Humana o
+  Superadministración interna vigente; no calcula disponibilidad ni permite
+  programar turnos desde esta ruta. La programación OCC emite `hr_shifts` en
+  el outbox de cambios para esas cuentas dentro de su transacción SQL.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

@@ -19,10 +19,12 @@ export default function HumanResourcesLayout({
           item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
-          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS)
+          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES)
         .map(item =>
         dashboardReadOnlyDemo && (item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
-          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS)
+          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES)
           ? { ...item, badge: null }
           : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
           ? {

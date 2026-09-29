@@ -43,6 +43,78 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task HumanResourcesShiftsReadBoundedWeekForLiveInternalRole()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var monday = new DateOnly(2026, 8, 17);
+        var sunday = monday.AddDays(6);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftReadStore>();
+            var first = await store.ListAsync(hrId, monday, sunday, 1, 1, cancellationToken);
+            Assert.NotNull(first);
+            Assert.True(first.HasMore);
+            var shift = Assert.Single(first.Shifts);
+            Assert.Equal(Guid.Parse("50000000-0000-7000-8000-000000000005"), shift.Id);
+            Assert.Equal("DEV-RA-001", shift.EmployeeNumber);
+            Assert.Equal("PUJ", shift.StationCode);
+            Assert.Equal("Morning", shift.Block);
+            Assert.Equal(new TimeOnly(6, 0), shift.StartsAtLocal);
+            Assert.Equal(new TimeOnly(14, 0), shift.EndsAtLocal);
+            var second = await store.ListAsync(hrId, monday, sunday, 2, 1, cancellationToken);
+            Assert.NotNull(second);
+            Assert.False(second.HasMore);
+            Assert.Equal(new DateOnly(2026, 8, 19), Assert.Single(second.Shifts).WorkDate);
+            Assert.Empty((await store.ListAsync(hrId, monday.AddDays(7),
+                sunday.AddDays(7), 1, 20, cancellationToken))!.Shifts);
+            Assert.Null(await store.ListAsync(occId, monday, sunday, 1, 20,
+                cancellationToken));
+            Assert.Equal(2, (await store.ListAsync(superAdminId, monday, sunday,
+                1, 20, cancellationToken))!.Shifts.Count);
+        }
+
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftReadStore>();
+            Assert.Null(await store.ListAsync(hrId, monday, sunday, 1, 20,
+                cancellationToken));
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesPermitsReadCurrentCyclesOnlyForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -3320,6 +3392,17 @@ public sealed class SqlServerMigrationTests
                 item.ResourceId == operation.PublicId)
             .ToArray();
         Assert.Equal(2, manualHints.Length); // Creation and OCC assignment are separate durable changes.
+        var hrAccountDbId = await inspection.Users.AsNoTracking()
+            .Where(item => item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000004"))
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var shiftHints = (await inspection.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "hr_shifts" && item.ResourceId == shift.ShiftId &&
+                item.RecipientAccountId == hrAccountDbId)
+            .ToArray();
+        Assert.Single(shiftHints); // The successful retry must not publish a second HR hint.
         Assert.Equal(1, await inspection.ShiftAssignments.AsNoTracking()
             .CountAsync(item => item.PublicId == shift.ShiftId, cancellationToken));
         Assert.Equal(1, await inspection.AuditEntries.AsNoTracking()
