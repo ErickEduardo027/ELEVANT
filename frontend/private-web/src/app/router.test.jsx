@@ -66,7 +66,7 @@ describe('HR routes with operational ramp profiles', () => {
       { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
-  it('mounts the real read-only permit page in the restricted release', async () => {
+  it('mounts the real permit page with a recording entry point in the restricted release', async () => {
     getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 20,
       hasMore: false, permits: [] });
     const router = createMemoryRouter(
@@ -78,7 +78,7 @@ describe('HR routes with operational ramp profiles', () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByText(/No hay permisos registrados/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Registrar|Renovar/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Registrar permiso' })).toBeInTheDocument();
     expect(getHumanResourcesPermits).toHaveBeenCalledWith(
       { page: 1, limit: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });

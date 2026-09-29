@@ -137,11 +137,14 @@ renovarlo con UUID de intención estable y `expectedCurrentId`. Conserva el
 historial, audita y emite `hr_permits` de forma durable; el feed vuelve a
 comprobar rol y membresía al leer esa pista.
 La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
-foco/conexión y cada 25 segundos, y aún no ofrece el formulario de renovación
-ni archivos. El documento puede estar vencido aunque su ciclo siga marcado como
+foco/conexión y cada 25 segundos, y ya ofrece captura del primer ciclo y
+renovación después de consultar el par exacto. Reutiliza el UUID ante una
+respuesta incierta y relee el ciclo tras 409; no permite archivos. El documento
+puede estar vencido aunque su ciclo siga marcado como
 actual. La API conserva los ciclos anteriores, pero la vista de historial sigue
 pendiente. Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
+[formulario](../../frontend/private-web/src/features/human-resources/permits/PermitRecordForm.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitWriteStore.cs).
 

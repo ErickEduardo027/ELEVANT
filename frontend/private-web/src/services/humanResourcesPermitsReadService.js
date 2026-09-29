@@ -11,3 +11,14 @@ export async function getHumanResourcesPermits(query, { signal } = {}) {
     throw error;
   }
 }
+
+export async function recordHumanResourcesPermit(id, request, options = {}) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).recordHumanResourcesPermit(id, request, options);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
