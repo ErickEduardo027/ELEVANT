@@ -675,6 +675,21 @@ internal sealed class EfOccPlanningReadStore(
                 .ToArrayAsync(cancellationToken)
             : [];
 
+        var approvedAbsences = await context.AvailabilityRequests
+            .AsNoTracking()
+            .Where(request => agentIds.Contains(request.RampAgentId) &&
+                request.Status == AvailabilityRequestStatus.Approved &&
+                (request.Type == AvailabilityRequestType.DayOff ||
+                 request.Type == AvailabilityRequestType.Restriction) &&
+                request.StartsOn <= localDate && request.EndsOn >= previousDate)
+            .Select(request => new
+            {
+                request.RampAgentId,
+                request.StartsOn,
+                request.EndsOn,
+            })
+            .ToArrayAsync(cancellationToken);
+
         var positionIds = shifts
             .Where(shift => shift.OperationalPositionId.HasValue)
             .Select(shift => shift.OperationalPositionId!.Value)
@@ -733,6 +748,7 @@ internal sealed class EfOccPlanningReadStore(
             .ToHashSet();
         var accountsByPerson = accounts.ToLookup(account => account.PersonId);
         var shiftsByAgent = shifts.ToLookup(shift => shift.RampAgentId);
+        var absencesByAgent = approvedAbsences.ToLookup(absence => absence.RampAgentId);
         var positionsById = positions.ToDictionary(position => position.Id);
         var assignmentConflicts = conflictingAgentIds.ToHashSet();
 
@@ -754,6 +770,11 @@ internal sealed class EfOccPlanningReadStore(
                     localTime))
                 .ToArray();
             var hasShift = compatibleShifts.Length > 0;
+            var hasApprovedAbsence = absencesByAgent[agent.Id].Any(absence =>
+                (absence.StartsOn <= localDate && absence.EndsOn >= localDate) ||
+                compatibleShifts.Any(shift =>
+                    absence.StartsOn <= shift.WorkDate &&
+                    absence.EndsOn >= shift.WorkDate));
             var position = compatibleShifts.Length == 1 &&
                 compatibleShifts[0].OperationalPositionId is long positionId &&
                 positionsById.TryGetValue(
@@ -779,7 +800,8 @@ internal sealed class EfOccPlanningReadStore(
                 driverLicenses.Contains(agent.Id),
                 hasShift,
                 position?.PublicId,
-                assignmentConflicts.Contains(agent.Id));
+                assignmentConflicts.Contains(agent.Id),
+                hasApprovedAbsence);
         }).ToArray();
     }
 

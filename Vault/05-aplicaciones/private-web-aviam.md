@@ -160,8 +160,11 @@ falla la lectura. La API ya permite registrar un turno mediante
 horas, scopes de agente vigentes en estación y terminal, auditoría y señal
 `hr_shifts`. El formulario conserva el UUID de una intención incierta y
 reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
-Las ausencias y su efecto en la
-elegibilidad OCC siguen pendientes. Fuentes:
+Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
+para la fecha local consultada o el día de inicio de un turno nocturno. Las
+solicitudes pendientes y de cambio de turno no son una ausencia. Registrar y
+resolver solicitudes desde Gestión Humana, con aviso durable, sigue pendiente.
+Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftWriteStore.cs).

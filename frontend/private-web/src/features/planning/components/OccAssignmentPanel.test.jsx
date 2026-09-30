@@ -49,6 +49,7 @@ describe('OccAssignmentPanel', () => {
                 'shift_not_compatible',
                 'operational_position_unavailable',
                 'assignment_conflict',
+                'approved_absence',
               ],
             },
           ],
@@ -63,6 +64,9 @@ describe('OccAssignmentPanel', () => {
     );
     expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
       'Conflicto con otra asignación activa'
+    );
+    expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
+      'Ausencia aprobada para la fecha'
     );
   });
 

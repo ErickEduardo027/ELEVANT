@@ -3120,6 +3120,64 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(position.PublicId, rileyCandidate.OperationalPositionId);
             Assert.False(rileyCandidate.HasAssignmentConflict);
 
+            var absence = new AvailabilityRequest
+            {
+                PublicId = Guid.Parse("90000000-0000-7000-8000-000000000025"),
+                RampAgentId = riley.Id,
+                StartsOn = new DateOnly(2026, 8, 19),
+                EndsOn = new DateOnly(2026, 8, 19),
+                Type = AvailabilityRequestType.DayOff,
+                Status = AvailabilityRequestStatus.Pending,
+                Reason = "Test absence",
+                RequestedAt = testInstant,
+                CreatedAt = testInstant,
+                UpdatedAt = testInstant,
+            };
+            context.AvailabilityRequests.Add(absence);
+            await context.SaveChangesAsync(cancellationToken);
+            await using var absenceAdminContext = CreateContext(database.ConnectionString);
+            var pendingAbsenceOptions = Assert.IsType<OccPlanningOptionsSourceData>((await
+                readStore.GetOptionsAsync([stationPublicId], planningTurnaround.PublicId,
+                    cancellationToken)).Options);
+            Assert.False(Assert.Single(pendingAbsenceOptions.AgentCandidates,
+                candidate => candidate.Id == riley.PublicId).HasApprovedAbsence);
+
+            await absenceAdminContext.AvailabilityRequests.Where(item => item.Id == absence.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.Status,
+                    AvailabilityRequestStatus.Approved), cancellationToken);
+            var approvedAbsenceOptions = Assert.IsType<OccPlanningOptionsSourceData>((await
+                readStore.GetOptionsAsync([stationPublicId], planningTurnaround.PublicId,
+                    cancellationToken)).Options);
+            var absentRiley = Assert.Single(approvedAbsenceOptions.AgentCandidates,
+                candidate => candidate.Id == riley.PublicId);
+            Assert.True(absentRiley.HasApprovedAbsence);
+            Assert.NotEqual(pendingAbsenceOptions.Turnaround.ConcurrencyToken,
+                approvedAbsenceOptions.Turnaround.ConcurrencyToken);
+            Assert.Contains("approved_absence",
+                OccAgentEligibilityPolicy.Evaluate(absentRiley).EligibilityReasons);
+
+            await absenceAdminContext.AvailabilityRequests.Where(item => item.Id == absence.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.Type,
+                    AvailabilityRequestType.ShiftChange), cancellationToken);
+            var shiftChangeOptions = Assert.IsType<OccPlanningOptionsSourceData>((await
+                readStore.GetOptionsAsync([stationPublicId], planningTurnaround.PublicId,
+                    cancellationToken)).Options);
+            Assert.False(Assert.Single(shiftChangeOptions.AgentCandidates,
+                candidate => candidate.Id == riley.PublicId).HasApprovedAbsence);
+
+            await absenceAdminContext.AvailabilityRequests.Where(item => item.Id == absence.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.Type,
+                    AvailabilityRequestType.Restriction), cancellationToken);
+            var restrictionOptions = Assert.IsType<OccPlanningOptionsSourceData>((await
+                readStore.GetOptionsAsync([stationPublicId], planningTurnaround.PublicId,
+                    cancellationToken)).Options);
+            Assert.True(Assert.Single(restrictionOptions.AgentCandidates,
+                candidate => candidate.Id == riley.PublicId).HasApprovedAbsence);
+
+            await absenceAdminContext.AvailabilityRequests.Where(item => item.Id == absence.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.Status,
+                    AvailabilityRequestStatus.Cancelled), cancellationToken);
+
             await using (var administratorContext = CreateContext(database.ConnectionString))
             {
                 var changed = await administratorContext.OperationalPositions
