@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getHumanResourcesShifts } from '../../../services/humanResourcesShiftsReadService';
 import { addDays, formatWeekRangeLabel, getWeekStart, toDateKey } from './mappers';
+import ShiftRecordForm from './ShiftRecordForm';
 
 const PAGE_LIMIT = 20;
 const BLOCK_LABELS = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
@@ -11,18 +12,26 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
+  const [formOpen, setFormOpen] = useState(false);
+  const [notice, setNotice] = useState('');
+  const requestVersion = useRef(0);
   const from = toDateKey(weekStart);
   const to = toDateKey(addDays(weekStart, 6));
 
   useEffect(() => {
     const controller = new AbortController();
+    const version = ++requestVersion.current;
     setState({ status: 'loading', data: null });
     getHumanResourcesShifts({ from, to, page, limit: PAGE_LIMIT }, { signal: controller.signal })
       .then(data => {
-        if (!controller.signal.aborted) setState({ status: 'success', data });
+        if (!controller.signal.aborted && version === requestVersion.current)
+          setState({ status: 'success', data });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || version !== requestVersion.current ||
+            error?.name === 'AbortError') return;
+        setFormOpen(false);
+        setNotice('');
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', data: null });
       });
@@ -49,6 +58,8 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   }, []);
 
   const goToWeek = delta => {
+    setFormOpen(false);
+    setNotice('');
     setWeekStart(current => addDays(current, delta));
     setPage(1);
   };
@@ -57,22 +68,45 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana</p>
-        <h1 className="mt-1 text-2xl font-bold">Horarios y disponibilidad</h1>
+        <h1 className="mt-1 text-2xl font-bold">Turnos de rampa</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
           Turnos registrados para agentes de rampa. Cada fecha y hora corresponde a la estación indicada.
         </p>
       </div>
-      <button type="button" onClick={() => setRevision(value => value + 1)}
-        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:bg-surface-dark-card">
-        Actualizar turnos
-      </button>
+      <div className="flex flex-wrap gap-2">
+        {state.status === 'success' && !formOpen && <button type="button"
+          onClick={() => { setNotice(''); setFormOpen(true); }}
+          className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
+          Nuevo turno
+        </button>}
+        <button type="button" onClick={() => setRevision(value => value + 1)}
+          className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:bg-surface-dark-card">
+          Actualizar turnos
+        </button>
+      </div>
     </header>
+
+    {notice && <p role="status" className="rounded-xl bg-status-success/10 p-4 text-sm">{notice}</p>}
+    {formOpen && <ShiftRecordForm initialWorkDate={from} canWrite={state.status === 'success'}
+      onClose={() => setFormOpen(false)}
+      onRecorded={() => {
+        setFormOpen(false);
+        setNotice('Turno registrado. Actualizamos la semana seleccionada.');
+        setPage(1);
+        setRevision(value => value + 1);
+      }}
+      onDenied={status => {
+        requestVersion.current += 1;
+        setFormOpen(false);
+        setNotice('');
+        setState({ status: status === 401 ? 'unauthorized' : 'forbidden', data: null });
+      }} />}
 
     <nav aria-label="Semanas de turnos" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 p-4 dark:bg-surface-dark-card">
       <button type="button" onClick={() => goToWeek(-7)} className="rounded-lg border px-3 py-2 text-sm">Semana anterior</button>
       <span className="font-semibold">{formatWeekRangeLabel(weekStart)}</span>
       <button type="button" onClick={() => goToWeek(7)} className="rounded-lg border px-3 py-2 text-sm">Semana siguiente</button>
-      <button type="button" onClick={() => { setWeekStart(getWeekStart(new Date())); setPage(1); }}
+      <button type="button" onClick={() => { setFormOpen(false); setNotice(''); setWeekStart(getWeekStart(new Date())); setPage(1); }}
         className="rounded-lg border px-3 py-2 text-sm">Semana actual</button>
     </nav>
 
@@ -90,7 +124,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     </div>}
 
     {state.status === 'success' && <>
-      <p className="text-xs text-text-secondary-light">{from} – {to} · página {page} · hasta 20 registros por página · solo lectura</p>
+      <p className="text-xs text-text-secondary-light">{from} – {to} · página {page} · hasta 20 registros por página</p>
       {state.data.shifts.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <table className="w-full min-w-[780px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">

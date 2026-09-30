@@ -100,7 +100,7 @@ el formulario de alta y renovación, sin archivos adjuntos.
 en una ventana máxima de siete fechas locales, en páginas de hasta 100. El
 wrapper valida fechas, identificadores, horarios, bloque y paginación antes de
 entregar datos. La ruta restringida de Private Web presenta esta lectura por
-semana y aún no ofrece programación ni disponibilidad calculada ficticia.
+semana y permite registrar un turno, sin calcular disponibilidad ficticia.
 `recordHumanResourcesShift(id, request)` valida UUID, agente, estación,
 terminal, fecha, horas locales y jornada máxima de 16 horas antes de enviar
 una intención estable. El servidor conserva unicidad por agente/día, scopes
@@ -108,7 +108,7 @@ vigentes, auditoría y aviso durable; un 409 requiere reconsulta antes de un
 nuevo intento. `getHumanResourcesShiftAssignmentOptions({ rampProfileId,
 workDate })` valida el par exacto y entrega solamente estaciones y terminales
 de alcance vigente, además de indicar si ese día ya tiene turno. El formulario
-de Private Web se conectará por separado.
+de Private Web ya utiliza esa consulta antes de enviar el comando.
 
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se

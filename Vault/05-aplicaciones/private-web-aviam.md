@@ -100,10 +100,11 @@ En el worktree local posterior a esta fotografía, el dashboard consulta los
 perfiles de rampa autorizados de la API para contar agentes activos y perfiles
 sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
 para turnos, habilitaciones o cobertura. El modo restringido solo expone
-dashboard, perfiles, habilitaciones, permisos y turnos de lectura; mantiene ocultas las rutas
+dashboard, perfiles, habilitaciones, permisos y turnos conectados a la API; mantiene ocultas las rutas
 profundas aún no integradas. Recibir una señal de cambio, recuperar
 foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
-escritura de habilitaciones ni un despliegue al VPS. Fuentes:
+un despliegue al VPS. Las escrituras de habilitaciones, permisos y turnos se
+describen más abajo y aún requieren validación de navegador y dispositivo. Fuentes:
 [servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
 [vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
 y [perfiles autorizados](../../backend/Elevant.Api/Controllers/RampProfilesController.cs).
@@ -150,15 +151,16 @@ y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHum
 
 La ruta restringida de horarios lee turnos reales por semana local y páginas
 de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
-inferir disponibilidad ni permitir programación desde Gestión Humana. Una
+inferir disponibilidad. Gestión Humana puede registrar un turno nuevo después
+de consultar los scopes de estación y terminal vigentes para el agente/día. Una
 programación OCC emite la señal durable `hr_shifts`; la vista revalida también
 por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
 falla la lectura. La API ya permite registrar un turno mediante
 `PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
 horas, scopes de agente vigentes en estación y terminal, auditoría y señal
-`hr_shifts`. La ruta de Private Web aún no tiene formulario de programación;
-la API ya entrega opciones de estación y terminal limitadas a los scopes
-vigentes del agente para una fecha exacta. Las ausencias y su efecto en la
+`hr_shifts`. El formulario conserva el UUID de una intención incierta y
+reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
+Las ausencias y su efecto en la
 elegibilidad OCC siguen pendientes. Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
