@@ -138,6 +138,10 @@ a 60 minutos y usa 15 por defecto.
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o
   Superadministración interna vigente y no calcula disponibilidad.
+  `GET /api/v1/human-resources/shifts/options?rampProfileId=&workDate=` entrega
+  únicamente las estaciones y terminales activas dentro de los scopes
+  vigentes de ese agente en esa fecha, junto con `hasShift`; una selección
+  ofrecida no sustituye la revalidación del comando.
   `PUT /api/v1/human-resources/shifts/{id}` registra un turno por agente y día con
   UUID de intención estable: exige agente, estación y terminal activos y scopes
   vigentes en esa fecha, asigna la posición `RAMP-AGENT`, limita la jornada

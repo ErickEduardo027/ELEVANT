@@ -57,6 +57,58 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task AssignmentOptionsRequireAuthenticationAndPublishAnExactAgentDateRoute()
+    {
+        using var client = factory.CreateClient();
+        using var anonymous = await client.GetAsync(
+            $"/api/v1/human-resources/shifts/options?rampProfileId={Guid.NewGuid():D}&workDate=2026-10-01",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var endpoint = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/human-resources/shifts/options").GetProperty("get");
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+    }
+
+    [Fact]
+    public async Task AssignmentOptionsRequireBothFiltersAndReturnOnlyTheStoreResult()
+    {
+        var agentId = Guid.NewGuid();
+        var stationId = Guid.NewGuid();
+        var terminalId = Guid.NewGuid();
+        var date = new DateOnly(2026, 10, 1);
+        var stub = new Stub { Options = new HumanResourcesShiftAssignmentOptions(agentId,
+            date, false, [new HumanResourcesShiftStationOption(stationId, "PUJ",
+                [new HumanResourcesShiftTerminalOption(terminalId, "A")])]) };
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesShiftReadStore>();
+                services.AddSingleton<IHumanResourcesShiftReadStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var missing = await client.GetAsync(
+            $"/api/v1/human-resources/shifts/options?rampProfileId={agentId:D}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        using var response = await client.GetAsync(
+            $"/api/v1/human-resources/shifts/options?rampProfileId={agentId:D}&workDate=2026-10-01",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal((AccountId, agentId, date), stub.OptionsRequest);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(terminalId, json.RootElement.GetProperty("stations")[0]
+            .GetProperty("terminals")[0].GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task AuthenticatedShiftRecordingPassesExactIntentAndMapsConflict()
     {
         var id = Guid.NewGuid();
@@ -181,13 +233,23 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
     private sealed class Stub : IHumanResourcesShiftReadStore
     {
         public HumanResourcesShiftPage? Data { get; init; }
+        public HumanResourcesShiftAssignmentOptions? Options { get; init; }
         public (Guid AccountId, DateOnly From, DateOnly To, int Page, int Limit)? Request { get; private set; }
+        public (Guid AccountId, Guid RampProfileId, DateOnly WorkDate)? OptionsRequest { get; private set; }
 
         public Task<HumanResourcesShiftPage?> ListAsync(Guid actorId, DateOnly from, DateOnly to,
             int page, int limit, CancellationToken cancellationToken = default)
         {
             Request = (actorId, from, to, page, limit);
             return Task.FromResult(Data);
+        }
+
+        public Task<HumanResourcesShiftAssignmentOptions?> GetAssignmentOptionsAsync(
+            Guid actorId, Guid rampProfileId, DateOnly workDate,
+            CancellationToken cancellationToken = default)
+        {
+            OptionsRequest = (actorId, rampProfileId, workDate);
+            return Task.FromResult(Options);
         }
     }
 

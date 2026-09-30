@@ -415,6 +415,20 @@ public sealed class SqlServerMigrationTests
             Assert.Equal("Morning", shift.Block);
             Assert.Equal(new TimeOnly(6, 0), shift.StartsAtLocal);
             Assert.Equal(new TimeOnly(14, 0), shift.EndsAtLocal);
+            var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+            var available = await store.GetAssignmentOptionsAsync(hrId, agentId,
+                new DateOnly(2026, 8, 20), cancellationToken);
+            Assert.NotNull(available);
+            Assert.False(available.HasShift);
+            var station = Assert.Single(available.Stations);
+            Assert.Equal("PUJ", station.Code);
+            Assert.Equal("A", Assert.Single(station.Terminals).Code);
+            Assert.True((await store.GetAssignmentOptionsAsync(hrId, agentId,
+                new DateOnly(2026, 8, 18), cancellationToken))!.HasShift);
+            Assert.Empty((await store.GetAssignmentOptionsAsync(hrId, agentId,
+                new DateOnly(2025, 12, 31), cancellationToken))!.Stations);
+            Assert.Null(await store.GetAssignmentOptionsAsync(occId, agentId,
+                new DateOnly(2026, 8, 20), cancellationToken));
             var second = await store.ListAsync(hrId, monday, sunday, 2, 1, cancellationToken);
             Assert.NotNull(second);
             Assert.False(second.HasMore);
@@ -441,6 +455,9 @@ public sealed class SqlServerMigrationTests
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftReadStore>();
             Assert.Null(await store.ListAsync(hrId, monday, sunday, 1, 20,
                 cancellationToken));
+            Assert.Null(await store.GetAssignmentOptionsAsync(hrId,
+                Guid.Parse("50000000-0000-7000-8000-000000000001"),
+                new DateOnly(2026, 8, 20), cancellationToken));
         }
     }
 

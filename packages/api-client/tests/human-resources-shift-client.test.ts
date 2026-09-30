@@ -76,3 +76,35 @@ it("records a bounded HR shift with a stable UUID and rejects an overlong interv
   await expect(client.recordHumanResourcesShift(id, { ...request,
     endsAtLocal: "04:00:00" })).rejects.toBeInstanceOf(TypeError);
 });
+
+it("reads date-effective assignment choices for one agent and rejects foreign or duplicate choices", async () => {
+  const query = { rampProfileId: shift.rampProfileId, workDate: "2026-10-01" };
+  const options = { ...query, hasShift: false, stations: [{ id: shift.stationId,
+    code: "PUJ", terminals: [{ id: shift.terminalId, code: "A" }] }] };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async (url, init) => {
+      expect(String(url)).toBe("https://api.example.test/api/v1/human-resources/shifts/options" +
+        `?rampProfileId=${shift.rampProfileId}&workDate=2026-10-01`);
+      expect(init?.method).toBe("GET");
+      return new Response(JSON.stringify(options),
+        { headers: { "content-type": "application/json" } });
+    },
+  });
+  await expect(client.getHumanResourcesShiftAssignmentOptions(query))
+    .resolves.toEqual(options);
+  await expect(client.getHumanResourcesShiftAssignmentOptions({ ...query,
+    workDate: "wrong" })).rejects.toBeInstanceOf(TypeError);
+  const wrongAgent = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ ...options, rampProfileId: shift.id }),
+      { headers: { "content-type": "application/json" } }),
+  });
+  await expect(wrongAgent.getHumanResourcesShiftAssignmentOptions(query))
+    .rejects.toMatchObject({ kind: "malformed-response" });
+  const duplicate = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ ...options,
+      stations: [options.stations[0], options.stations[0]] }),
+    { headers: { "content-type": "application/json" } }),
+  });
+  await expect(duplicate.getHumanResourcesShiftAssignmentOptions(query))
+    .rejects.toMatchObject({ kind: "malformed-response" });
+});

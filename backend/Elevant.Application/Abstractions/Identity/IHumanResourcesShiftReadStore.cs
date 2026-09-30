@@ -8,9 +8,19 @@ public sealed record HumanResourcesShiftData(Guid Id, Guid RampProfileId,
 public sealed record HumanResourcesShiftPage(DateOnly From, DateOnly To,
     int Page, int Limit, bool HasMore, IReadOnlyList<HumanResourcesShiftData> Shifts);
 
+public sealed record HumanResourcesShiftTerminalOption(Guid Id, string Code);
+public sealed record HumanResourcesShiftStationOption(Guid Id, string Code,
+    IReadOnlyList<HumanResourcesShiftTerminalOption> Terminals);
+public sealed record HumanResourcesShiftAssignmentOptions(Guid RampProfileId,
+    DateOnly WorkDate, bool HasShift,
+    IReadOnlyList<HumanResourcesShiftStationOption> Stations);
+
 public interface IHumanResourcesShiftReadStore
 {
     /// <summary>Returns null unless the actor has live internal HR or Superadmin access.</summary>
     Task<HumanResourcesShiftPage?> ListAsync(Guid actorId, DateOnly startDate, DateOnly endDate,
         int page, int limit, CancellationToken cancellationToken = default);
+    /// <summary>Returns only date-effective active agent station/terminal choices, or null on denial.</summary>
+    Task<HumanResourcesShiftAssignmentOptions?> GetAssignmentOptionsAsync(Guid actorId,
+        Guid rampProfileId, DateOnly workDate, CancellationToken cancellationToken = default);
 }

@@ -4439,6 +4439,79 @@
         ]
       }
     },
+    "/api/v1/human-resources/shifts/options": {
+      "get": {
+        "tags": [
+          "HumanResourcesShifts"
+        ],
+        "operationId": "GetHumanResourcesShiftAssignmentOptions",
+        "parameters": [
+          {
+            "name": "rampProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "workDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesShiftAssignmentOptions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/human-resources/shifts": {
       "get": {
         "tags": [
@@ -10593,6 +10666,35 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesShiftAssignmentOptions": {
+        "required": [
+          "hasShift",
+          "rampProfileId",
+          "stations",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "hasShift": {
+            "type": "boolean"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesShiftStationOption"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesShiftData": {
         "required": [
           "agentName",
@@ -10713,6 +10815,47 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesShiftStationOption": {
+        "required": [
+          "code",
+          "id",
+          "terminals"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesShiftTerminalOption"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesShiftTerminalOption": {
+        "required": [
+          "code",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
           }
         },
         "additionalProperties": false

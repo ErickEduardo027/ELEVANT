@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
@@ -10,6 +11,58 @@ internal sealed class EfHumanResourcesShiftReadStore(
     ElevantDbContext context, IActorContextResolver actors)
     : IHumanResourcesShiftReadStore
 {
+    public async Task<HumanResourcesShiftAssignmentOptions?> GetAssignmentOptionsAsync(
+        Guid actorId, Guid rampProfileId, DateOnly workDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (actorId == Guid.Empty || rampProfileId == Guid.Empty || workDate == default)
+            throw new ArgumentOutOfRangeException(nameof(rampProfileId));
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
+                role.Code is "GESTION_HUMANA" or "SUPERADMIN") != true ||
+            !actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff)) return null;
+
+        var agentId = await context.RampAgents.AsNoTracking()
+            .Where(agent => agent.PublicId == rampProfileId && agent.IsActive)
+            .Select(agent => (long?)agent.Id).SingleOrDefaultAsync(cancellationToken);
+        if (agentId is null)
+            return new HumanResourcesShiftAssignmentOptions(rampProfileId, workDate,
+                false, []);
+
+        var stations = await (
+            from scope in context.Set<RampAgentStationScope>().AsNoTracking()
+            join station in context.Stations.AsNoTracking()
+                on scope.StationId equals station.Id
+            where scope.RampAgentId == agentId && station.IsActive &&
+                scope.ValidFrom <= workDate &&
+                (scope.ValidTo == null || scope.ValidTo >= workDate)
+            orderby station.Code
+            select new { station.Id, station.PublicId, station.Code })
+            .Distinct().ToArrayAsync(cancellationToken);
+        var terminals = await (
+            from scope in context.Set<RampAgentTerminalScope>().AsNoTracking()
+            join terminal in context.Terminals.AsNoTracking()
+                on scope.TerminalId equals terminal.Id
+            where scope.RampAgentId == agentId && terminal.IsActive &&
+                scope.ValidFrom <= workDate &&
+                (scope.ValidTo == null || scope.ValidTo >= workDate)
+            orderby terminal.Code
+            select new { terminal.StationId, terminal.PublicId, terminal.Code })
+            .Distinct().ToArrayAsync(cancellationToken);
+        var hasShift = await context.ShiftAssignments.AsNoTracking()
+            .AnyAsync(shift => shift.RampAgentId == agentId &&
+                shift.WorkDate == workDate, cancellationToken);
+        return new HumanResourcesShiftAssignmentOptions(rampProfileId, workDate,
+            hasShift, stations.Select(station => new HumanResourcesShiftStationOption(
+                station.PublicId, station.Code, terminals
+                    .Where(terminal => terminal.StationId == station.Id)
+                    .Select(terminal => new HumanResourcesShiftTerminalOption(
+                        terminal.PublicId, terminal.Code)).ToArray()))
+                .Where(station => station.Terminals.Count > 0).ToArray());
+    }
+
     public async Task<HumanResourcesShiftPage?> ListAsync(
         Guid actorId, DateOnly startDate, DateOnly endDate, int page, int limit,
         CancellationToken cancellationToken = default)

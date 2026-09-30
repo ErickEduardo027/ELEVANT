@@ -157,7 +157,9 @@ falla la lectura. La API ya permite registrar un turno mediante
 `PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
 horas, scopes de agente vigentes en estación y terminal, auditoría y señal
 `hr_shifts`. La ruta de Private Web aún no tiene formulario de programación;
-las ausencias y su efecto en la elegibilidad OCC siguen pendientes. Fuentes:
+la API ya entrega opciones de estación y terminal limitadas a los scopes
+vigentes del agente para una fecha exacta. Las ausencias y su efecto en la
+elegibilidad OCC siguen pendientes. Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftWriteStore.cs).

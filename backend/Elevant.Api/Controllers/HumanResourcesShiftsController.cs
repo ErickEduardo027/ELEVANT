@@ -17,6 +17,23 @@ public sealed class HumanResourcesShiftsController(
     IHumanResourcesShiftReadStore store,
     IHumanResourcesShiftWriteStore writeStore) : ControllerBase
 {
+    [HttpGet("options", Name = "GetHumanResourcesShiftAssignmentOptions")]
+    [ProducesResponseType<HumanResourcesShiftAssignmentOptions>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> GetAssignmentOptions([FromQuery] Guid? rampProfileId,
+        [FromQuery] DateOnly? workDate, CancellationToken cancellationToken = default)
+    {
+        if (rampProfileId is null || rampProfileId == Guid.Empty || workDate is null)
+            return Problem(statusCode: 400, title: "Invalid shift assignment query.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await store.GetAssignmentOptionsAsync(actorId, rampProfileId.Value,
+            workDate.Value, cancellationToken);
+        return result is null ? Forbid() : Ok(result);
+    }
+
     [HttpGet(Name = "ListHumanResourcesShifts")]
     [ProducesResponseType<HumanResourcesShiftPage>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

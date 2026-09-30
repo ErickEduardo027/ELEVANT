@@ -21,6 +21,7 @@ import {
   getListHumanResourcesQualificationEquipmentTypesUrl,
   getRecordHumanResourcesQualificationUrl,
   getListHumanResourcesShiftsUrl,
+  getGetHumanResourcesShiftAssignmentOptionsUrl,
   getRecordHumanResourcesShiftUrl,
   getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
@@ -110,6 +111,8 @@ import {
   type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
+  type HumanResourcesShiftAssignmentOptions,
+  type GetHumanResourcesShiftAssignmentOptionsParams,
   type ListHumanResourcesShiftsParams,
   type HumanResourcesShiftRecorded,
   type RecordHumanResourcesShiftInput,
@@ -224,6 +227,8 @@ export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "b
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesShiftAssignmentOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesShiftAssignmentQuery = Required<GetHumanResourcesShiftAssignmentOptionsParams>;
 export type RecordHumanResourcesShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "from" | "to"> & {
   readonly from: string;
@@ -397,6 +402,10 @@ export interface ElevantApiClient {
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
   ): Promise<HumanResourcesShiftPage>;
+  getHumanResourcesShiftAssignmentOptions(
+    query: HumanResourcesShiftAssignmentQuery,
+    options?: GetHumanResourcesShiftAssignmentOptionsOptions,
+  ): Promise<HumanResourcesShiftAssignmentOptions>;
   recordHumanResourcesShift(
     id: string,
     request: RecordHumanResourcesShiftInput,
@@ -2415,6 +2424,42 @@ function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): H
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
+function validatedHumanResourcesShiftAssignmentQuery(
+  query: HumanResourcesShiftAssignmentQuery,
+): HumanResourcesShiftAssignmentQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["rampProfileId", "workDate"]) ||
+      !isUuid(query.rampProfileId) || !isDateOnly(query.workDate))
+    throw new TypeError("Human Resources shift assignment query is invalid.");
+  return { rampProfileId: query.rampProfileId, workDate: query.workDate };
+}
+
+function isHumanResourcesShiftAssignmentOptions(
+  value: unknown, query: HumanResourcesShiftAssignmentQuery,
+): value is HumanResourcesShiftAssignmentOptions {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["rampProfileId", "workDate", "hasShift", "stations"]) ||
+      !isUuid(value.rampProfileId) ||
+      value.rampProfileId.toLowerCase() !== query.rampProfileId.toLowerCase() ||
+      value.workDate !== query.workDate || typeof value.hasShift !== "boolean" ||
+      !Array.isArray(value.stations)) return false;
+  const stationIds = new Set<string>();
+  const terminalIds = new Set<string>();
+  return value.stations.every(station => {
+    if (!isRecord(station) || !hasOnlyKeys(station, ["id", "code", "terminals"]) ||
+        !isUuid(station.id) || !isNonEmptyString(station.code) ||
+        stationIds.has(station.id.toLowerCase()) ||
+        !Array.isArray(station.terminals) || station.terminals.length === 0) return false;
+    stationIds.add(station.id.toLowerCase());
+    return station.terminals.every(terminal => {
+      if (!isRecord(terminal) || !hasOnlyKeys(terminal, ["id", "code"]) ||
+          !isUuid(terminal.id) || !isNonEmptyString(terminal.code) ||
+          terminalIds.has(terminal.id.toLowerCase())) return false;
+      terminalIds.add(terminal.id.toLowerCase());
+      return true;
+    });
+  });
+}
+
 function validatedHumanResourcesShiftInput(
   request: RecordHumanResourcesShiftInput,
 ): RecordHumanResourcesShiftInput {
@@ -3702,6 +3747,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.from !== scope.from || result.data.to !== scope.to ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesShiftAssignmentOptions(
+      query: HumanResourcesShiftAssignmentQuery,
+      options?: GetHumanResourcesShiftAssignmentOptionsOptions,
+    ) {
+      const scope = validatedHumanResourcesShiftAssignmentQuery(query);
+      const result = await execute(getGetHumanResourcesShiftAssignmentOptionsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesShiftAssignmentOptions(result.data, scope))
         throw malformedResponse(result.status);
       return result.data;
     },
