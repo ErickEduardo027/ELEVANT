@@ -21,6 +21,7 @@ import {
   getListHumanResourcesQualificationEquipmentTypesUrl,
   getRecordHumanResourcesQualificationUrl,
   getListHumanResourcesShiftsUrl,
+  getRecordHumanResourcesShiftUrl,
   getListFinanceReconciliationUrl,
   getCreatePreinvoiceDraftUrl,
   getGetPreinvoiceDraftUrl,
@@ -110,6 +111,8 @@ import {
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
   type ListHumanResourcesShiftsParams,
+  type HumanResourcesShiftRecorded,
+  type RecordHumanResourcesShiftInput,
   type FinanceReconciliationPageData,
   type ListFinanceReconciliationParams,
   type CreatePreinvoiceDraftRequest,
@@ -221,6 +224,7 @@ export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "b
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "from" | "to"> & {
   readonly from: string;
   readonly to: string;
@@ -393,6 +397,11 @@ export interface ElevantApiClient {
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
   ): Promise<HumanResourcesShiftPage>;
+  recordHumanResourcesShift(
+    id: string,
+    request: RecordHumanResourcesShiftInput,
+    options?: RecordHumanResourcesShiftOptions,
+  ): Promise<HumanResourcesShiftRecorded>;
   getFinanceReconciliation(
     query: ListFinanceReconciliationParams,
     options?: GetFinanceReconciliationOptions,
@@ -2406,6 +2415,33 @@ function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): H
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
+function validatedHumanResourcesShiftInput(
+  request: RecordHumanResourcesShiftInput,
+): RecordHumanResourcesShiftInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+      ["rampProfileId", "stationId", "terminalId", "workDate",
+        "startsAtLocal", "endsAtLocal", "notes"]) ||
+      !isUuid(request.rampProfileId) || !isUuid(request.stationId) ||
+      !isUuid(request.terminalId) || !isDateOnly(request.workDate) ||
+      typeof request.startsAtLocal !== "string" ||
+      typeof request.endsAtLocal !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.startsAtLocal) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.endsAtLocal) ||
+      request.startsAtLocal === request.endsAtLocal ||
+      (request.notes != null && (typeof request.notes !== "string" ||
+        request.notes.trim().length > 500)))
+    throw new TypeError("Human Resources shift input is invalid.");
+  const toSeconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const start = toSeconds(request.startsAtLocal);
+  const end = toSeconds(request.endsAtLocal);
+  if ((end > start ? end - start : end + 86400 - start) > 16 * 3600)
+    throw new TypeError("Human Resources shift cannot exceed sixteen hours.");
+  return request;
+}
+
 function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShiftPage {
   if (!isRecord(value) || !hasOnlyKeys(value,
     ["from", "to", "page", "limit", "hasMore", "shifts"]) ||
@@ -3668,6 +3704,23 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.limit !== (scope.limit ?? 50))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async recordHumanResourcesShift(
+      id: string,
+      request: RecordHumanResourcesShiftInput,
+      options?: RecordHumanResourcesShiftOptions,
+    ) {
+      const shiftId = validatedUuid(id, "Shift ID");
+      const body = validatedHumanResourcesShiftInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesShiftUrl(shiftId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id"]) || !isUuid(result.data.id) ||
+          result.data.id.toLowerCase() !== shiftId)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesShiftRecorded;
     },
     async getFinanceReconciliation(
       query: ListFinanceReconciliationParams,

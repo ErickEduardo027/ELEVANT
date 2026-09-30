@@ -14,7 +14,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/human-resources/shifts")]
 public sealed class HumanResourcesShiftsController(
-    IHumanResourcesShiftReadStore store) : ControllerBase
+    IHumanResourcesShiftReadStore store,
+    IHumanResourcesShiftWriteStore writeStore) : ControllerBase
 {
     [HttpGet(Name = "ListHumanResourcesShifts")]
     [ProducesResponseType<HumanResourcesShiftPage>(StatusCodes.Status200OK, "application/json")]
@@ -34,5 +35,32 @@ public sealed class HumanResourcesShiftsController(
         var result = await store.ListAsync(actorId, from.Value, to.Value,
             page, limit, cancellationToken);
         return result is null ? Forbid() : Ok(result);
+    }
+
+    [HttpPut("{id:guid}", Name = "RecordHumanResourcesShift")]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<HumanResourcesShiftRecorded>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Record(Guid id,
+        [FromBody] RecordHumanResourcesShiftInput input,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty) return Problem(statusCode: 400, title: "Invalid shift identifier.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.RecordAsync(actorId, id, input, cancellationToken);
+        return result.Failure switch
+        {
+            null => Ok(result.Shift),
+            HumanResourcesShiftWriteFailure.Forbidden => Forbid(),
+            HumanResourcesShiftWriteFailure.Invalid => Problem(statusCode: 400,
+                title: "Invalid shift record."),
+            HumanResourcesShiftWriteFailure.Conflict => Problem(statusCode: 409,
+                title: "Shift conflicts with current state."),
+            _ => throw new InvalidOperationException(),
+        };
     }
 }

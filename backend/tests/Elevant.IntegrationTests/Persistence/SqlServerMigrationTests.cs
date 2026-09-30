@@ -445,6 +445,123 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task HumanResourcesShiftRecordingRespectsScopesReplaysAndEmitsOneChange()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migrationContext = CreateContext(database.ConnectionString))
+            await migrationContext.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seederContext = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seederContext).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        var terminalId = Guid.Parse("20000000-0000-7000-8000-000000000004");
+        var date = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1);
+        var id = Guid.NewGuid();
+        var input = new RecordHumanResourcesShiftInput(agentId, stationId, terminalId,
+            date, new TimeOnly(6, 0), new TimeOnly(14, 0), "Development coverage");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+            Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                (await store.RecordAsync(occId, Guid.NewGuid(), input,
+                    cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesShiftWriteFailure.Invalid,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                { EndsAtLocal = new TimeOnly(4, 0) }, cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                { TerminalId = Guid.NewGuid() }, cancellationToken)).Failure);
+            var saved = await store.RecordAsync(hrId, id, input, cancellationToken);
+            Assert.Null(saved.Failure);
+            Assert.Equal(id, saved.Shift!.Id);
+            Assert.Equal(saved.Shift, (await store.RecordAsync(hrId, id, input,
+                cancellationToken)).Shift);
+            Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, id, input with
+                { Notes = "Different" }, cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                    cancellationToken)).Failure);
+        }
+        var concurrentId = Guid.NewGuid();
+        var concurrentInput = input with { WorkDate = date.AddDays(1) };
+        async Task<HumanResourcesShiftWriteResult> ConcurrentRecordAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesShiftWriteStore>()
+                .RecordAsync(hrId, concurrentId, concurrentInput, cancellationToken);
+        }
+        var concurrentResults = await Task.WhenAll(ConcurrentRecordAsync(), ConcurrentRecordAsync());
+        Assert.All(concurrentResults, result =>
+        {
+            Assert.Null(result.Failure);
+            Assert.Equal(concurrentId, result.Shift!.Id);
+        });
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var saved = await context.ShiftAssignments.AsNoTracking()
+                .SingleAsync(shift => shift.PublicId == id, cancellationToken);
+            Assert.Equal(date, saved.WorkDate);
+            Assert.Equal(ShiftBlock.Morning, saved.Block);
+            Assert.Equal(1, await context.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.shift.recorded" && entry.EntityPublicId == id,
+                cancellationToken));
+            Assert.Equal(1, await context.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.shift.recorded" && entry.EntityPublicId == concurrentId,
+                cancellationToken));
+            Assert.NotEmpty(await context.OutboxMessages.AsNoTracking()
+                .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_shifts\""))
+                .ToArrayAsync(cancellationToken));
+            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            var agentKey = await context.RampAgents.Where(agent => agent.PublicId == agentId)
+                .Select(agent => agent.Id).SingleAsync(cancellationToken);
+            await context.Set<RampAgentTerminalScope>()
+                .Where(scope => scope.RampAgentId == agentKey && scope.ValidTo == null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(scope => scope.ValidTo,
+                    date.AddDays(1)), cancellationToken);
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+                Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
+                    (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                    { WorkDate = date.AddDays(2) }, cancellationToken)).Failure);
+            }
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+            Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                { WorkDate = date.AddDays(1) }, cancellationToken)).Failure);
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesPermitsReadCurrentCyclesOnlyForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

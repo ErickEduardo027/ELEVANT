@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -34,6 +35,57 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             .GetProperty("/api/v1/human-resources/shifts").GetProperty("get");
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+    }
+
+    [Fact]
+    public async Task ShiftRecordingHasAnAuthenticatedVersionedRoute()
+    {
+        using var client = factory.CreateClient();
+        using var anonymous = await client.PutAsync(
+            $"/api/v1/human-resources/shifts/{Guid.NewGuid():D}",
+            new StringContent("{}"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var endpoint = json.RootElement.GetProperty("paths")
+            .GetProperty("/api/v1/human-resources/shifts/{id}").GetProperty("put");
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
+    }
+
+    [Fact]
+    public async Task AuthenticatedShiftRecordingPassesExactIntentAndMapsConflict()
+    {
+        var id = Guid.NewGuid();
+        var input = new RecordHumanResourcesShiftInput(Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), new DateOnly(2026, 10, 1), new TimeOnly(6, 0),
+            new TimeOnly(14, 0), "Development coverage");
+        var stub = new WriteStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesShiftWriteStore>();
+                services.AddSingleton<IHumanResourcesShiftWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var first = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/shifts/{id:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal((AccountId, id, input), stub.Request);
+        using var json = JsonDocument.Parse(await first.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(id, json.RootElement.GetProperty("id").GetGuid());
+
+        stub.Conflict = true;
+        using var second = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/shifts/{id:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
     [Fact]
@@ -136,6 +188,22 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         {
             Request = (actorId, from, to, page, limit);
             return Task.FromResult(Data);
+        }
+    }
+
+    private sealed class WriteStub : IHumanResourcesShiftWriteStore
+    {
+        public (Guid ActorId, Guid ShiftId, RecordHumanResourcesShiftInput Input)? Request
+        { get; private set; }
+        public bool Conflict { get; set; }
+
+        public Task<HumanResourcesShiftWriteResult> RecordAsync(Guid actorId, Guid shiftId,
+            RecordHumanResourcesShiftInput input, CancellationToken cancellationToken = default)
+        {
+            Request = (actorId, shiftId, input);
+            return Task.FromResult(Conflict
+                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
+                : HumanResourcesShiftWriteResult.Success(shiftId));
         }
     }
 }

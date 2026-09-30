@@ -93,14 +93,19 @@ puede contener otro par ni otra página. `recordHumanResourcesPermit(id, request
 exige UUID estable, tipo exacto, fechas y `expectedCurrentId` del ciclo observado
 (o `null` para el primero). Valida la respuesta cerrada y permite repetir la
 misma intención si la red no confirmó el resultado. Un 409 exige releer el par
-antes de crear otra intención. La ruta restringida de Private Web todavía
-muestra permisos en solo lectura; su formulario se entregará por separado.
+antes de crear otra intención. La ruta restringida de Private Web ya ofrece
+el formulario de alta y renovación, sin archivos adjuntos.
 
 `getHumanResourcesShifts({ from, to, page?, limit? })` lee turnos registrados
 en una ventana máxima de siete fechas locales, en páginas de hasta 100. El
 wrapper valida fechas, identificadores, horarios, bloque y paginación antes de
 entregar datos. La ruta restringida de Private Web presenta esta lectura por
-semana y no ofrece programación ni disponibilidad calculada ficticia.
+semana y aún no ofrece programación ni disponibilidad calculada ficticia.
+`recordHumanResourcesShift(id, request)` valida UUID, agente, estación,
+terminal, fecha, horas locales y jornada máxima de 16 horas antes de enviar
+una intención estable. El servidor conserva unicidad por agente/día, scopes
+vigentes, auditoría y aviso durable; un 409 requiere reconsulta antes de un
+nuevo intento. El formulario de Private Web se conectará por separado.
 
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se

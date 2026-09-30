@@ -57,3 +57,22 @@ it("rejects malformed shift rows, foreign weeks and mismatched pages", async () 
   await expect(mismatched.getHumanResourcesShifts({ ...query, page: 2, limit: 1 }))
     .rejects.toMatchObject({ kind: "malformed-response" });
 });
+
+it("records a bounded HR shift with a stable UUID and rejects an overlong interval", async () => {
+  const id = "50000000-0000-7000-8000-000000000050";
+  const request = { rampProfileId: shift.rampProfileId, stationId: shift.stationId,
+    terminalId: shift.terminalId, workDate: "2026-10-01",
+    startsAtLocal: "06:00:00", endsAtLocal: "14:00:00", notes: "Development coverage" };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async (url, init) => {
+      expect(String(url)).toBe(`https://api.example.test/api/v1/human-resources/shifts/${id}`);
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual(request);
+      return new Response(JSON.stringify({ id }),
+        { headers: { "content-type": "application/json" } });
+    },
+  });
+  await expect(client.recordHumanResourcesShift(id, request)).resolves.toEqual({ id });
+  await expect(client.recordHumanResourcesShift(id, { ...request,
+    endsAtLocal: "04:00:00" })).rejects.toBeInstanceOf(TypeError);
+});

@@ -36,6 +36,7 @@ export {
   type GetHumanResourcesQualificationEquipmentTypesOptions,
   type RecordHumanResourcesQualificationOptions,
   type GetHumanResourcesShiftsOptions,
+  type RecordHumanResourcesShiftOptions,
   type HumanResourcesShiftsQuery,
   type GetFinanceReconciliationOptions,
   type CreatePreinvoiceDraftOptions,

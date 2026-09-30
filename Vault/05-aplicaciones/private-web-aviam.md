@@ -153,8 +153,14 @@ de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
 inferir disponibilidad ni permitir programación desde Gestión Humana. Una
 programación OCC emite la señal durable `hr_shifts`; la vista revalida también
 por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
-falla la lectura. Crear turnos y gestionar ausencias desde Gestión Humana aún
-requiere contratos propios. Fuentes: [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs) y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftReadStore.cs).
+falla la lectura. La API ya permite registrar un turno mediante
+`PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
+horas, scopes de agente vigentes en estación y terminal, auditoría y señal
+`hr_shifts`. La ruta de Private Web aún no tiene formulario de programación;
+las ausencias y su efecto en la elegibilidad OCC siguen pendientes. Fuentes:
+[vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
+[controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftWriteStore.cs).
 
 La ruta restringida de Reportes de personal combina las primeras 100
 habilitaciones y permisos actuales con los primeros 100 turnos de la semana

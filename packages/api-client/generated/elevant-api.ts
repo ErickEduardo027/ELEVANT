@@ -846,6 +846,10 @@ export interface HumanResourcesShiftPage {
   shifts: HumanResourcesShiftData[];
 }
 
+export interface HumanResourcesShiftRecorded {
+  id: string;
+}
+
 export interface IssueFinanceInvoiceRequest {
   preinvoiceId: string;
   requestId: string;
@@ -1767,6 +1771,17 @@ export interface RecordHumanResourcesQualificationInput {
   expiresOn: string;
   certifyingEntity: string;
   instructorName: string;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface RecordHumanResourcesShiftInput {
+  rampProfileId: string;
+  stationId: string;
+  terminalId: string;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
   /** @nullable */
   notes?: string | null;
 }
@@ -4402,6 +4417,41 @@ export const listHumanResourcesShifts = async (params?: ListHumanResourcesShifts
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesShiftPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesShiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/shifts/${id}`
+}
+
+export const recordHumanResourcesShift = async (id: string,
+    recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesShiftUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesShiftInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftRecorded = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -137,9 +137,14 @@ a 60 minutos y usa 15 por defecto.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o
-  Superadministración interna vigente; no calcula disponibilidad ni permite
-  programar turnos desde esta ruta. La programación OCC emite `hr_shifts` en
-  el outbox de cambios para esas cuentas dentro de su transacción SQL.
+  Superadministración interna vigente y no calcula disponibilidad.
+  `PUT /api/v1/human-resources/shifts/{id}` registra un turno por agente y día con
+  UUID de intención estable: exige agente, estación y terminal activos y scopes
+  vigentes en esa fecha, asigna la posición `RAMP-AGENT`, limita la jornada
+  local a 16 horas y rechaza otra programación del mismo día. La transacción
+  serializable guarda turno, auditoría y pista durable `hr_shifts`; reintentos
+  idénticos del mismo actor no duplican registros. La programación OCC también
+  emite `hr_shifts`. Las ausencias y sus efectos en elegibilidad aún faltan.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el
