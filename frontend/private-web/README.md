@@ -90,6 +90,13 @@ estación y sus opciones de asignación ante la pista durable, foco o conexión
 recuperada y cada 25 segundos si la pestaña está visible. El backend sigue
 revalidando elegibilidad y ETag al confirmar una asignación.
 
+Durante una revalidación de la misma estación y fecha, la ruta conserva el
+último snapshot de planificación para que el panel de una escala abierta no se
+cierre antes de recibir la respuesta. Al cambiar estación o fecha, o si la
+lectura falla, retira el snapshot anterior; una respuesta nueva sin esa escala
+cierra el panel. Este ajuste de la rama de integración aún requiere aceptación
+en navegador tras su promoción.
+
 ## Frontera de seguridad
 
 Las rutas canónicas `/admin-occ/chat` y `/admin-occ/notifications` recuperan

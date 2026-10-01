@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const mapperMocks = vi.hoisted(() => ({
   mapOccPlanningSnapshot: vi.fn(),
@@ -84,6 +84,46 @@ describe('usePlanningData', () => {
     await waitFor(() => expect(serviceSpy).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(result.current.status).toBe('success'));
     expect(serviceSpy.mock.calls[1][0]).not.toHaveProperty('date');
+  });
+
+  it('keeps the current station snapshot visible while the same scope revalidates', async () => {
+    let resolveRefresh;
+    vi.spyOn(planningService, 'getPlanningSnapshot')
+      .mockResolvedValueOnce(rawSnapshot)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRefresh = resolve; }));
+    const { result, rerender } = renderHook(
+      ({ refreshToken }) => usePlanningData({ stationId, date: '2026-08-19', refreshToken }),
+      { initialProps: { refreshToken: 0 } }
+    );
+
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    rerender({ refreshToken: 1 });
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.data?.flights).toEqual(rawSnapshot.turnarounds);
+
+    await act(async () => resolveRefresh({ ...rawSnapshot, turnarounds: [] }));
+    expect(result.current.status).toBe('empty');
+    expect(result.current.data?.flights).toEqual([]);
+  });
+
+  it.each([
+    { stationId: '20000000-0000-0000-0000-000000000002', date: '2026-08-19' },
+    { stationId, date: '2026-08-20' },
+  ])('does not carry a prior snapshot into a new station or date while loading: %o', async nextScope => {
+    vi.spyOn(planningService, 'getPlanningSnapshot')
+      .mockResolvedValueOnce(rawSnapshot)
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      scope => usePlanningData(scope),
+      { initialProps: { stationId, date: '2026-08-19' } }
+    );
+
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    rerender(nextScope);
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.data).toBeNull();
   });
 
   it('preserves the mapped station and date in an empty state', async () => {
