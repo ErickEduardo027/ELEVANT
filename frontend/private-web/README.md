@@ -219,7 +219,7 @@ El runtime usa Nginx sin privilegios, UID `101`, puerto `8080`, raíz de solo le
 
 `compose.development.aviam-web.yml` exige `ELEVANT_AVIAM_WEB_IMAGE` por digest, publica únicamente `127.0.0.1:18081` y conecta solo la red externa `elevant-dev-aviam-web-runtime`. Tailscale termina HTTPS fuera del contenedor. La aplicación no comparte la red de SQL Server.
 
-CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API certificada y los dos proveedores de mapas revisados.
+CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API HTTPS certificada, su equivalente `wss://` para el hub SignalR y los dos proveedores de mapas revisados. No se permite un comodín `wss:` ni otro host de WebSocket.
 
 ## Promoción en Development
 

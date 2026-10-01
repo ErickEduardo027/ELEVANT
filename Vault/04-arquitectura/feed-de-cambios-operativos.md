@@ -25,6 +25,8 @@ sources:
   - frontend/private-web/src/services/accountChangeObserver.test.js
   - frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx
   - frontend/private-web/README.md
+  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/Dockerfile
   - frontend/mobile-agent/src/services/mobile-change-observer.ts
   - frontend/mobile-agent/src/services/mobile-change-feed.ts
   - frontend/mobile-agent/tests/mobile-change-observer.test.js
@@ -33,6 +35,8 @@ sources:
   - frontend/public-web/src/components/auth/AirlineSessionProvider.tsx
   - frontend/public-web/tests/unit/airline-change-observer.test.ts
   - frontend/public-web/README.md
+  - frontend/public-web/next.config.ts
+  - frontend/scripts/deployment/csp-tool.mjs
 tags:
   - arquitectura
   - tiempo-real
@@ -55,6 +59,14 @@ mensajes, datos personales ni identificadores internos. Un fallo de WebSocket
 no revierte la proyección. El cliente recupera el estado con
 `GET /api/v1/changes?after&limit`, usando un cursor firmado y ligado a su
 cuenta, y después vuelve a consultar el recurso mediante su endpoint REST.
+
+La CSP de ambos clientes web permite únicamente el origen HTTPS de la API y
+su equivalente exacto `wss://` para el hub. El certificador rechaza otros
+hosts y comodines. Una prueba local de Public Web contra Development detectó
+que la política anterior bloqueaba el WebSocket; después de corregirla, el
+portal recargó sin ese error de consola. Esto no equivale a una medición de
+latencia ni demuestra todavía la promoción de la nueva política al VPS.
+
 Cada página revalida la cuenta, sus roles, membresías y estaciones vigentes;
 una estación revocada deja de mostrar pistas antiguas. Para pistas de
 operaciones de aerolínea, además exige un rol del portal y una membresía
