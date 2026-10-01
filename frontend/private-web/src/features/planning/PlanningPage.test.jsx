@@ -242,6 +242,21 @@ describe('PlanningPage', () => {
     });
   });
 
+  it('invalidates selected assignment options when the station snapshot revision changes', async () => {
+    const { rerender } = renderPage({ dataRevision: 0 });
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith(expect.objectContaining({
+      refreshToken: 0,
+      enabled: true,
+    }));
+
+    rerender(<PlanningPage {...DEFAULT_PROPS} dataRevision={1} />);
+    expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith(expect.objectContaining({
+      refreshToken: 1,
+      enabled: true,
+    }));
+  });
+
   it('submits an eligible initial assignment, refreshes the snapshot, and confirms success', async () => {
     const onRetry = vi.fn();
     renderPage({ onRetry });

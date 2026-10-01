@@ -291,7 +291,7 @@
         "title": "Solicitudes, contratos y servicios",
         "type": "capability",
         "area": "domain",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -461,7 +461,7 @@
         "title": "Public Web y portal de aerolíneas",
         "type": "architecture",
         "area": "public-web",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -1053,13 +1053,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "a5a00bde85d50692f5d0f5d25d27544ba79f24948cf81137ba1867967478f3ba",
+        "sha256": "c67e5c552e53e3a9d61e86afce21d682c6bddf703d09f8320e15c9f2175a525c",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "31e49830b34708593c69b1124cfb8984dd042c098658d42433c4c9d1184aa9b3",
+        "sha256": "1e58f1ac7c52988fb15a7068b2be4551aadc7916b9446ee36c30a9b10370f4d3",
         "title": null,
         "version": null
       }
@@ -1184,6 +1184,36 @@
         "name": "PersonAvatarMedia",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927204956_PersonAvatarMedia.cs",
         "sha256": "c492d9d59c9b1704b94cd3b01f715b24a67ac76c97329f53b8cf0a38b3f1c6e6"
+      },
+      {
+        "id": "20260928155349",
+        "name": "PreinvoiceDisputes",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928155349_PreinvoiceDisputes.cs",
+        "sha256": "85dd4744cd067c24a6271eda3caa7ed9930e7204a6a6d8a434754da4332bbc17"
+      },
+      {
+        "id": "20260928163437",
+        "name": "NonFiscalInvoices",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928163437_NonFiscalInvoices.cs",
+        "sha256": "9d1457bc7278f640d3b23d315f53679f1d58d29b3143c359c26add7ad4be5ee4"
+      },
+      {
+        "id": "20260928170918",
+        "name": "NonFiscalPayments",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928170918_NonFiscalPayments.cs",
+        "sha256": "b89fe21ca34b4d4921f47f048baf86cb46fe84d05a8f69769cf85e67cd3bbdd1"
+      },
+      {
+        "id": "20260928174712",
+        "name": "ResolvePreinvoiceDisputes",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928174712_ResolvePreinvoiceDisputes.cs",
+        "sha256": "4382acbe676013129f1d7177b5ca45a3cb6175ef45b33a197a2cb37f4e6e42ea"
+      },
+      {
+        "id": "20260928185354",
+        "name": "FinancialDocuments",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260928185354_FinancialDocuments.cs",
+        "sha256": "fc1720aefdc17d1b40d648676d17b8f2d6aa529e430a82d2eb6ac6eb5f4ce1d1"
       }
     ],
     "manifestContracts": [

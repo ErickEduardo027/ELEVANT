@@ -12,20 +12,36 @@ El botón naranja **Solicitar acceso** abre `/solicitar-acceso` en cuatro pasos:
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
-autorizadas; inicio, vuelos, detalle y perfil separan esa respuesta de las
-muestras visuales. La ruta separada `/dev-airline` fue retirada. Inicio y vuelos
-conservan una secuencia sintética del prototipo en una sección señalizada, sin
-enlaces a detalles inventados. Contratos consulta versiones aprobadas reales,
+autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. En la
+rama de integración, Vuelos consulta además el historial paginado de su tenant
+mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
+histórica se relee por su ID público con autorización en la API, aunque ya no
+figure en la ventana actual del bootstrap; servicios y evidencias aún faltan.
+La ruta separada `/dev-airline` fue retirada. Inicio y vuelos ya no montan la
+secuencia sintética del prototipo. Contratos consulta versiones aprobadas reales,
 incluyendo historial vencido, con cobertura y tarifas de la aerolínea
-autenticada. Solicitudes, documentos, finanzas y reportes conservan una vista visual de demostración claramente
-marcada: sus cifras y registros son sintéticos y sus acciones están deshabilitadas.
-No representan datos de la cuenta ni un portal operativo completo de Production.
+autenticada. En la rama de integración, Solicitudes consulta registros
+operativos reales, paginados y propios de la aerolínea; crear y cancelar siguen
+deshabilitados. Finanzas consulta prefacturas publicadas de su tenant mediante
+`GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y abre
+líneas, disputas, factura no fiscal y estado del pago manual por ID propio.
+En esta rama local, Documentos deja atrás el listado de ejemplo: consulta
+prefacturas `Invoiced` del tenant, relee factura y pago y descarga PDFs
+privados desde la API con la sesión vigente. Un vacío real indica que aún no
+hay facturas emitidas en las páginas cargadas; `404`, error recuperable y
+revocación no se reemplazan con mocks. Reportes consulta la primera página
+autorizada de operaciones y prefacturas publicadas, muestra solo conteos de
+registros cargados y enlaza a los historiales paginados; no presenta porcentajes
+de puntualidad, cumplimiento ni facturación total sin un contrato agregado.
+Las descargas no son comprobantes fiscales
+ni acreditan una transferencia bancaria. El cambio no está desplegado.
 
 En la rama de integración, la sesión del portal revalida identidad y
 `bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
 `ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
-cuenta y vuelve a consultar el `bootstrap` cuando aparece
-`airline_operations`. El socket nunca entrega datos del tenant; si falla,
+cuenta, vuelve a consultar el `bootstrap` cuando aparece
+`airline_operations` y relee Finanzas al recibir `airline_preinvoices`.
+El socket nunca entrega importes ni líneas del tenant; si falla,
 el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
 un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
 la sesión visible. Falta medir latencia real en navegador y VPS.
@@ -59,14 +75,37 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 ## Rutas observadas
 
 - `/`: landing y acceso al flujo comercial real.
-- `/solicitar-acceso`: solicitud comercial en tres pasos; no crea usuario ni acepta contraseña.
+- `/solicitar-acceso`: solicitud comercial en cuatro pasos; no crea usuario ni acepta contraseña.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal. El acceso heredado a `/login?mode=register` redirige a `/solicitar-acceso`; no existe un alta paralela con contraseña elegida por el solicitante.
-- `/portal`: alcance y operaciones actuales del bootstrap autorizado, separados de una secuencia visual sintética.
-- `/portal/vuelos`: lista real de la ventana actual y una tabla de ejemplo filtrable, señalizada y no navegable. `/portal/vuelos/[operationId]` solo muestra detalles de una operación real devuelta por la API.
+- `/portal`: alcance y operaciones actuales del bootstrap autorizado, sin rotaciones ficticias.
+- `/portal/vuelos`: historial real paginado de operaciones propias en la rama de integración; `/portal/vuelos/[operationId]` relee el detalle propio desde la API sin depender de la ventana del bootstrap.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
-- `/portal/solicitudes`, `/portal/documentos`, `/portal/finanzas` y `/portal/reportes`: vistas sintéticas de solo lectura, sin consultas de negocio ni acciones reales.
+- `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
+- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Documentos ofrece el recibo no fiscal de prueba cuando existe ese pago.
+- `/portal/documentos`: consulta y descarga autorizada de facturas y recibos no fiscales de prueba; un vacío no se rellena con fixtures.
+- `/portal/reportes`: resumen de solo lectura de la primera página de operaciones y prefacturas propias, con estados vacíos/errores y enlaces a los historiales completos; no exporta ni afirma métricas globales.
 - `/dev-airline`: retirada; responde 404.
+
+En esta rama aún no promocionada, `/portal/finanzas` también permite seleccionar
+líneas de una prefactura `Submitted`, escribir el motivo y confirmar una disputa
+persistida por `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
+La respuesta se relee desde la API; el mismo intento usa la misma clave si la
+red falla. La aerolínea consulta su historial de disputas mediante el endpoint
+aditivo `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes`;
+la respuesta v1 del detalle de prefactura no cambia.
+Finanzas debe resolver cada disputa antes del cierre. En esta rama la aerolínea
+puede releer la decisión y el motivo de Finanzas: una decisión de mantener
+devuelve la prefactura a `Submitted` y permite responder otra vez; una anulada
+permanece visible como historial de solo lectura, sin aceptar ni disputar.
+Una prefactura `Invoiced`
+permite releer su factura no fiscal por
+`GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`; el portal
+muestra número, fecha, líneas y total emitidos sin inventar saldos. Si Finanzas
+registró un pago manual completo, el portal relee importe y referencia por
+`GET /api/v1/airline/portal/invoices/{invoiceId}/payment`; si aún no lo hay,
+muestra un estado vacío real. No hay verificación bancaria ni documento
+tributario descargable y este tramo no está promocionado.
 
 ## Contrato de seguridad
 
@@ -76,7 +115,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-Las tarjetas de ejemplo están etiquetadas como datos de demostración y no pertenecen al tenant autenticado. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme».
+Las rutas activas de Inicio, Vuelos, Solicitudes, Finanzas, Documentos y Reportes no muestran tarjetas de negocio inventadas. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
 
 ## Criterio de promoción en Development
 
@@ -94,7 +133,7 @@ Un tag mutable o un redeploy manual no constituye una identidad de release. El c
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
 
-Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional: autenticación, tenant y operaciones actuales usan el contrato OpenAPI; los demás módulos aún son presentaciones sintéticas sin acciones. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
+Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional completo: autenticación, tenant, operaciones actuales y contratos usan el contrato OpenAPI. El historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes pertenecen todavía a esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
 
 El Dockerfile se construye desde la raíz del monorepo porque consume `packages/api-client`:
 
@@ -117,6 +156,6 @@ docker build \
   --tag elevant-public-web:local .
 ```
 
-La canalización suministra los argumentos de procedencia, los orígenes HTTPS y el manifiesto inmutable de API. `scripts/validate-development-env.mjs` rechaza valores incompletos, loopback, orígenes distintos para los adaptadores y un deployment ID que no coincida con el commit. `scripts/certify-image.sh` prueba la imagen con rootfs de solo lectura, usuario no-root, health, rutas, headers, deployment ID y ausencia del antiguo fallback local. La certificación interpreta la CSP como directivas cerradas: rechaza nombres duplicados y exige que `connect-src` contenga exactamente `'self'` y el origen certificado de la API, sin esquemas ni hosts adicionales. Antes de construir o publicar, CI también renderiza el Compose real y valida su servicio único, puerto loopback, red externa aislada, usuario, restricciones, recursos y healthcheck.
+La canalización suministra los argumentos de procedencia, los orígenes HTTPS y el manifiesto inmutable de API. `scripts/validate-development-env.mjs` rechaza valores incompletos, loopback, orígenes distintos para los adaptadores y un deployment ID que no coincida con el commit. `scripts/certify-image.sh` prueba la imagen con rootfs de solo lectura, usuario no-root, health, rutas, headers, deployment ID y ausencia del antiguo fallback local. La certificación interpreta la CSP como directivas cerradas: rechaza nombres duplicados y exige que `connect-src` contenga exactamente `'self'`, el origen HTTPS certificado de la API y su equivalente `wss://` para el hub SignalR, sin hosts adicionales ni comodines de esquema. Antes de construir o publicar, CI también renderiza el Compose real y valida su servicio único, puerto loopback, red externa aislada, usuario, restricciones, recursos y healthcheck.
 
 `ELEVANT_DEPLOYMENT_ID` es la entrada de procedencia controlada por ELEVANT y debe coincidir con `VCS_REF`. No use `NEXT_DEPLOYMENT_ID` para este contrato: ese nombre está reservado por Next.js y puede cambiar durante la evaluación interna del build.

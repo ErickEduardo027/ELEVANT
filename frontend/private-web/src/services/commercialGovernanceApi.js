@@ -1,11 +1,13 @@
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
 
 const origin = String(import.meta.env.VITE_ELEVANT_API_URL || '').replace(/\/$/, '');
 
 export async function commercialApi(path, options = {}) {
   if (!origin) throw new Error('No está configurado el API de ELEVANT.');
   const token = readSession()?.token;
-  if (!token) throw new Error('La sesión expiró. Vuelva a iniciar sesión.');
+  if (!token) throw Object.assign(new Error('La sesión expiró. Vuelva a iniciar sesión.'),
+    { status: 401 });
   let response;
   try {
     response = await fetch(`${origin}/api/v1${path}`, {
@@ -23,7 +25,7 @@ export async function commercialApi(path, options = {}) {
   if (!response.ok) {
     const problem = await response.json().catch(() => ({}));
     const title = typeof problem.title === 'string' ? problem.title : 'No se pudo completar la acción.';
-    throw new Error(title);
+    throw Object.assign(new Error(title), { status: response.status });
   }
   if (response.status === 204) return null;
   return response.json();
@@ -74,6 +76,16 @@ export const decideCommercialRequest = (id, values) => commercialApi(`/contracts
   method: 'POST', body: JSON.stringify(values),
 });
 export const getManagedServices = () => commercialApi('/contracts/catalog/services');
+export async function getManagedContracts(page = 1) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getManagedContracts({ page, limit: 20 });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
 export async function uploadCommercialMedia(purpose, file) {
   const token = readSession()?.token;
   if (!token || !origin) throw new Error('La sesión expiró. Vuelva a iniciar sesión.');

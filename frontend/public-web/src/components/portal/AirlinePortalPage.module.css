@@ -26,6 +26,9 @@
 .realScope { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 1rem; border: 1px solid #cad8e8; border-radius: .75rem; background: #f8fbff; }
 .realScope h1 { margin: .25rem 0 0; color: #102a51; font-family: var(--font-display); font-size: 1.12rem; }
 .realScope p { color: #435c76; font-size: .75rem; font-weight: 650; line-height: 1.4; }
+.flightSearch { display: grid; gap: .45rem; font-size: .78rem; font-weight: 700; color: #244666; }
+.flightSearch input { width: 100%; min-height: 2.75rem; padding: .7rem .85rem; border: 1px solid #b8c9db; border-radius: .55rem; background: #fff; color: #102138; font: inherit; }
+.flightSearch input:focus-visible { outline: 2px solid #1757d8; outline-offset: 2px; }
 .requestHeading { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; padding: 1.25rem 0 .35rem; }
 .requestHeading h1 { max-width: 12ch; margin: .65rem 0; color: #0a1933; font-family: var(--font-display); font-size: clamp(2.5rem, 7vw, 4.2rem); line-height: 1.02; letter-spacing: -.045em; }
 .requestHeading p { max-width: 40rem; color: #586b80; line-height: 1.55; }
@@ -45,9 +48,6 @@
 .profileHero p { margin-top: .4rem; color: #d0e2f7; }
 .profileHero div { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.1rem; }
 .profileHero div span { padding: .3rem .55rem; border-radius: 1rem; background: #fff; color: #0c397b; font-size: .7rem; font-weight: 700; }
-.demoBanner { padding: 1rem 1.25rem; border: 1px solid #f0b46b; border-left: .3rem solid #dd7c12; border-radius: .75rem; background: #fff7e9; color: #693c06; }
-.demoBanner strong { font-size: .85rem; }
-.demoBanner p { margin-top: .35rem; font-size: .75rem; line-height: 1.5; }
 .previewPill { color: #64778e; font-size: .65rem; }
 .previewRows { display: grid; gap: .75rem; margin: 1.25rem 0 0; padding: 0; list-style: none; }
 .previewRows li { padding: 1rem; border: 1px solid #dce6f0; border-radius: .7rem; background: #fbfdff; }
@@ -55,8 +55,6 @@
 .previewRows p { margin-top: .3rem; color: #596b80; font-size: .78rem; }
 .previewRows button { margin-top: .7rem; padding: .6rem .8rem; border: 1px solid #ccd7e5; border-radius: .5rem; background: #edf1f6; color: #738093; cursor: not-allowed; }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.previewBar { width: 100%; max-width: 23rem; height: .45rem; margin-top: .8rem; border-radius: 1rem; background: #dce6f0; }
-.previewBar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #1c63d6, #5dc6ef); }
 .contractGrid { display: grid; gap: 1rem; }
 .contractVersion { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #dce6f0; }
 .contractVersion h3 { margin: 0 0 .45rem; color: #123f81; font-size: .95rem; }
@@ -64,6 +62,14 @@
 .contractRateList { display: grid; gap: .4rem; margin-top: .8rem; }
 .contractRateList > div { display: grid; grid-template-columns: minmax(11rem, 2fr) minmax(8rem, 1fr) minmax(9rem, 1fr); gap: .7rem; padding: .65rem; border-radius: .45rem; background: #f3f7fc; font-size: .78rem; }
 .contractRateList span { color: #435c76; }
+.preinvoiceLines { display: grid; gap: .5rem; margin-top: 1rem; }
+.preinvoiceLines > div { display: grid; grid-template-columns: minmax(10rem, 2fr) minmax(9rem, 1fr) minmax(10rem, 1fr) auto; align-items: center; gap: .7rem; padding: .75rem; border-radius: .5rem; background: #f3f7fc; font-size: .78rem; }
+.preinvoiceLines span { color: #435c76; }
+.disputeLineChoice { display: flex; gap: .5rem; align-items: center; grid-column: 1 / -1; font-weight: 600; }
+.disputeForm, .disputeRecord { display: grid; gap: .65rem; padding: .9rem; border: 1px solid #c5d7ed; border-radius: .6rem; background: #f7faff; }
+.disputeForm label { display: grid; gap: .3rem; font-weight: 600; font-size: .8rem; }
+.disputeForm input, .disputeForm textarea { width: 100%; border: 1px solid #b6c9e1; border-radius: .4rem; padding: .55rem; color: #0b1d39; background: #fff; }
+.disputeForm textarea { min-height: 6rem; resize: vertical; }
 .loadMore { justify-self: center; padding: .7rem 1rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
 .loadMore:disabled { cursor: wait; opacity: .65; }
 .draftBadge { border-radius: 1rem; background: #fff0e6; color: #b94c16; padding: .45rem .7rem; font: 700 .68rem var(--font-data); letter-spacing: .06em; }
@@ -77,4 +83,5 @@
 .draftCommentForm button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
 .draftCommentForm button:disabled { opacity: .5; cursor: wait; }
 @media (max-width: 38rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } }
+@media (max-width: 50rem) { .preinvoiceLines > div { grid-template-columns: 1fr; gap: .2rem; } }
 @media (max-width: 38rem) { .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } }

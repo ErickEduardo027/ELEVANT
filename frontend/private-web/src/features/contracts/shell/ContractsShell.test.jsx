@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ContractsShell from './ContractsShell';
+import { getManagedContracts } from '../../../services/commercialGovernanceApi';
+
+vi.mock('../../../services/commercialGovernanceApi', () => ({
+  getManagedContracts: vi.fn().mockResolvedValue({ page: 1, limit: 20,
+    hasMore: false, contracts: [] }),
+}));
+vi.mock('../../../hooks/useCommercialRevalidation', () => ({ useCommercialRevalidation: vi.fn() }));
 
 vi.mock('../../../services/contractsHomeService', () => ({
   getContractsHomeSnapshot: vi.fn().mockResolvedValue({
@@ -32,5 +39,22 @@ describe('ContractsShell', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Borradores por activar' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: /ver borradores/i }));
     expect(await screen.findByRole('heading', { name: 'Borradores' })).toBeInTheDocument();
+  });
+
+  it('does not expose deferred prototype departmental chat', async () => {
+    render(<ContractsShell />);
+    expect(await screen.findByRole('heading', { name: 'Resumen contractual' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation')).queryByText('Comunicaciones')).not.toBeInTheDocument();
+  });
+
+  it('uses the canonical agreement read for every published contract module', async () => {
+    render(<ContractsShell />);
+    const navigation = screen.getByRole('navigation');
+    for (const label of ['Contratos', 'Servicios pactados', 'Reportes']) {
+      await userEvent.click(within(navigation).getByText(label).closest('button'));
+      expect(await screen.findByRole('heading', { name: label === 'Reportes'
+        ? 'Reportes contractuales' : label })).toBeInTheDocument();
+    }
+    expect(getManagedContracts).toHaveBeenCalledTimes(3);
   });
 });

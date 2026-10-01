@@ -82,6 +82,19 @@ describe('PositionsMapPage', () => {
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
   });
 
+  it('shows a real planned-stand list for another station without drawing PUJ', () => {
+    render(<PositionsMapPage status="success" data={{
+      station: { code: 'SDQ', name: 'Santo Domingo' }, source: 'planning-no-map',
+      positions: [{ id: 'G1', terminal: 'T1', status: 'planned',
+        latitude: null, longitude: null, plannedFlights: ['EV311'] }],
+    }} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByText(/SDQ/)).toBeInTheDocument();
+    expect(screen.getByText('G1')).toBeInTheDocument();
+    expect(screen.getByText(/Vuelos planificados: EV311/)).toBeInTheDocument();
+    expect(screen.queryByTestId('position-map-stub')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aeropuerto Internacional de Punta Cana/)).not.toBeInTheDocument();
+  });
+
   it('shows "No se encontró la posición." when a search does not match any position', async () => {
     render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
     const input = screen.getByPlaceholderText('Buscar posición, vuelo o matrícula...');

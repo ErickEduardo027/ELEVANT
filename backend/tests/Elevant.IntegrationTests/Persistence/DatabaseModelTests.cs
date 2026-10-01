@@ -67,6 +67,26 @@ public sealed class DatabaseModelTests
             Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
     }
 
+    [Fact]
+    public void FinancialDocumentsKeepPrivateHashMetadataSeparateFromCommercialMedia()
+    {
+        using var context = CreateContext();
+        var document = context.Model.FindEntityType(typeof(FinancialDocument));
+
+        Assert.NotNull(document);
+        Assert.Equal("commercial", document.GetSchema());
+        Assert.Equal("financial_documents", document.GetTableName());
+        Assert.Equal(3, document.FindProperty(nameof(FinancialDocument.CreatedAt))?.GetPrecision());
+        Assert.Contains(document.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(FinancialDocument.InvoiceId), nameof(FinancialDocument.Kind)]));
+        Assert.Contains(document.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(FinancialDocument.ObjectKey)]));
+        Assert.All(document.GetForeignKeys(), foreignKey =>
+            Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+    }
+
     private static ElevantDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ElevantDbContext>()

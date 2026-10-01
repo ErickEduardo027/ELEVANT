@@ -10,6 +10,17 @@ internal static class AirlineOperationChangeWriter
 {
     public static async Task AddAsync(ElevantDbContext context, long airlineOrganizationId,
         Guid operationId, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+        => await AddForResourceAsync(context, airlineOrganizationId,
+            "airline_operations", operationId, occurredAt, cancellationToken);
+
+    public static async Task AddPreinvoiceAsync(ElevantDbContext context, long airlineOrganizationId,
+        Guid preinvoiceId, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+        => await AddForResourceAsync(context, airlineOrganizationId,
+            "airline_preinvoices", preinvoiceId, occurredAt, cancellationToken);
+
+    private static async Task AddForResourceAsync(ElevantDbContext context,
+        long airlineOrganizationId, string resource, Guid resourceId,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
         var recipients = await (
@@ -38,6 +49,6 @@ internal static class AirlineOperationChangeWriter
 
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
-                "airline_operations", operationId, occurredAt);
+                resource, resourceId, occurredAt);
     }
 }

@@ -7,6 +7,7 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Realtime;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -152,6 +153,7 @@ internal sealed class EfOccPlanningCommandStore(
                     turnaround.OperationDate,
                     turnaround.CurrentStatus,
                     station.Id,
+                    station.PublicId,
                     airline.OrganizationId,
                     actorAccount.Id))
             .SingleOrDefaultAsync(cancellationToken);
@@ -397,6 +399,8 @@ internal sealed class EfOccPlanningCommandStore(
 
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
+        await OccPlanningChangeWriter.AddForStationAsync(context,
+            scope.StationInternalId, scope.StationPublicId, now, cancellationToken);
 
         await context.SaveChangesAsync(cancellationToken);
 
@@ -656,6 +660,7 @@ internal sealed class EfOccPlanningCommandStore(
         DateOnly OperationDate,
         TurnaroundStatus TurnaroundStatus,
         long StationInternalId,
+        Guid StationPublicId,
         long AirlineOrganizationId,
         long ActorAccountInternalId);
 

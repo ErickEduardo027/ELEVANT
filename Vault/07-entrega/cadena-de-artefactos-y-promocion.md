@@ -26,6 +26,8 @@ sources:
   - backend/scripts/deployment/certify-api-image.sh
   - frontend/scripts/deployment/resolve-api-release.sh
   - frontend/scripts/deployment/web_release_manifest.py
+  - frontend/private-web/scripts/certify-image.sh
+  - frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx
   - packages/api-client/openapi/source.json
   - packages/api-client/scripts/snapshot-utils.mjs
   - ops/dokploy/web-cd/openapi-tool.mjs
@@ -137,6 +139,12 @@ puede fijar la API vigente.
 Las webs son previews técnicos independientes: una shell/health saludable no
 prueba que la API ya tenga los endpoints de autenticación y negocio de los
 prototipos. Ninguna web entra a la red SQL ni mueve el otro perfil.
+
+En el PR de integración #118, el certifier de AVIAM verifica que el bundle
+incluya el dashboard HR conectado y excluya el antiguo banner permanente de
+datos sintéticos. El gate anterior exigía ese banner y fallaba aun cuando las
+pruebas del dashboard canónico pasaban. Incorporar este ajuste al VPS exige
+un nuevo run certificado y la promoción normal del perfil AVIAM.
 
 ## Coordinación de fuente y publicación
 

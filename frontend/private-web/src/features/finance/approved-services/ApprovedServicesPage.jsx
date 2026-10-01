@@ -23,8 +23,8 @@ function date(value) {
   }).format(new Date(`${value}T12:00:00Z`));
 }
 
-export default function ApprovedServicesPage() {
-  const data = useApprovedServicesData();
+export default function ApprovedServicesPage({ initialStationId }) {
+  const data = useApprovedServicesData(initialStationId);
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-5">

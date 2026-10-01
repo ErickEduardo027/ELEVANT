@@ -87,7 +87,12 @@ abiertos; no reemplaza filas existentes. El nombre visible del tenant legado
 se cambia mediante una acción administrativa auditada, conservando identidad
 y relaciones. Credenciales permanecen fuera del repositorio y artefactos CI.
 
-La base de implementación es el merge #114 en `Development`. La rama previa
+La base inicial de la especificación fue el merge #114. La implementación
+actual se ha actualizado sobre #115, #116 y #117 en `Development`: conserva
+la solicitud sin contraseña y la provisión supervisada, extiende los perfiles
+de rampa y su elegibilidad existentes, y reutiliza el almacenamiento S3 privado
+de #117 con autorización financiera separada para factura y recibo. Las
+migraciones siguientes parten del snapshot de #117. La rama previa
 de afiliación pendiente queda preservada solo como referencia: sus endpoints
 de alta y cola, su migración de solicitantes y su formulario con contraseña
 no se fusionan con #114. Se portan solo hallazgos y pruebas compatibles con

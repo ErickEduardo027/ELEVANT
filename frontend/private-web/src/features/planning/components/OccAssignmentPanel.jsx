@@ -10,6 +10,7 @@ const ELIGIBILITY_REASON_LABELS = {
   airport_id_not_current: 'Identificación aeroportuaria no vigente',
   ramp_driver_license_not_current: 'Licencia de rampa no vigente',
   shift_not_compatible: 'Turno no compatible',
+  approved_absence: 'Ausencia aprobada para la fecha',
   assignment_conflict: 'Conflicto con otra asignación activa',
 };
 

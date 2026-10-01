@@ -65,7 +65,17 @@ public static class DependencyInjection
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IGovernanceStore, EfGovernanceStore>();
         services.AddScoped<IRampProfileStore, EfRampProfileStore>();
+        services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();
+        services.AddScoped<IHumanResourcesQualificationWriteStore, EfHumanResourcesQualificationWriteStore>();
+        services.AddScoped<IHumanResourcesPermitReadStore, EfHumanResourcesPermitReadStore>();
+        services.AddScoped<IHumanResourcesPermitWriteStore, EfHumanResourcesPermitWriteStore>();
+        services.AddScoped<IHumanResourcesShiftReadStore, EfHumanResourcesShiftReadStore>();
+        services.AddScoped<IHumanResourcesShiftWriteStore, EfHumanResourcesShiftWriteStore>();
+        services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
+        services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
+        services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
         services.AddScoped<IAffiliationStore, EfAffiliationStore>();
         services.AddScoped<ICommercialIntakeStore, EfCommercialIntakeStore>();
         services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
@@ -79,8 +89,25 @@ public static class DependencyInjection
         services.AddScoped<ICommercialWorkflowStore, EfCommercialWorkflowStore>();
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
+        services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
+        services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
+        services.AddScoped<IFinanceReconciliationReadStore, EfFinanceReconciliationReadStore>();
+        services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
+        services.AddScoped<IPreinvoiceSubmissionStore, EfPreinvoiceSubmissionStore>();
+        services.AddScoped<IPreinvoiceDisputeResolutionStore, EfPreinvoiceDisputeResolutionStore>();
+        services.AddScoped<IFinanceInvoiceIssueStore, EfFinanceInvoiceIssueStore>();
+        services.AddScoped<INonFiscalInvoiceReadStore, EfNonFiscalInvoiceReadStore>();
+        services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();
+        services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
+        services.AddScoped<IPrivateFinancialObjectStore>(
+            _ => new S3PrivateFinancialObjectStore(configuration));
+        services.AddScoped<IFinancialDocumentStore>(provider => new EfFinancialDocumentStore(
+            provider.GetRequiredService<ElevantDbContext>(),
+            provider.GetRequiredService<IPrivateFinancialObjectStore>(),
+            provider.GetRequiredService<IFinancialDocumentPdfRenderer>(),
+            provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<IOccPlanningReadStore, EfOccPlanningReadStore>();
         services.AddScoped<IOccPlanningCommandStore, EfOccPlanningCommandStore>();
         services.AddScoped<IManualTurnaroundStore, EfManualTurnaroundStore>();

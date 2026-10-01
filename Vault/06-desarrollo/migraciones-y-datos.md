@@ -53,6 +53,13 @@ el mismo diseño lógico, no las mismas credenciales ni los mismos datos.
 `backend` consume `Elevant.Persistence`, pero la historia EF vive bajo
 `database/DevelopmentDB`. No crees otro DbContext por cliente.
 
+La rama local añade una preparación opcional de escenario mediante
+`seed-development-scenario`: el operador elige una fecha local PUJ y ejecuta
+un comando separado del CD, sin compartir credenciales en el repositorio.
+Inserta solo datos sintéticos de operaciones planificadas y turnos; se puede
+repetir sin restablecer filas trabajadas y nunca se usa en Production. Los
+prerrequisitos y límites están en el [README de DevelopmentDB](../../database/DevelopmentDB/README.md).
+
 ## Infraestructura local
 
 Prepara una copia ignorada del ejemplo:

@@ -27,6 +27,7 @@ public sealed class OccAgentEligibilityPolicyTests
             HasCurrentRampDriverLicense = false,
             HasCompatibleShift = false,
             HasAssignmentConflict = true,
+            HasApprovedAbsence = true,
         });
 
         Assert.False(result.Eligible);
@@ -40,6 +41,7 @@ public sealed class OccAgentEligibilityPolicyTests
                 "airport_id_not_current",
                 "ramp_driver_license_not_current",
                 "shift_not_compatible",
+                "approved_absence",
                 "assignment_conflict",
             ],
             result.EligibilityReasons);
@@ -65,6 +67,7 @@ public sealed class OccAgentEligibilityPolicyTests
                 }
             },
             { "assignment_conflict", candidate => candidate with { HasAssignmentConflict = true } },
+            { "approved_absence", candidate => candidate with { HasApprovedAbsence = true } },
         };
 
     [Theory]

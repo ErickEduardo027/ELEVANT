@@ -21,6 +21,7 @@ sources:
   - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
+  - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/nginx/security-headers.conf
@@ -83,15 +84,141 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
+En el worktree local de integración, el Dashboard OCC dejó de mostrar cifras sintéticas: consulta la planificación de la fecha local de una estación autorizada de la sesión, calculada con la zona IANA de su cola de revisión, y las notificaciones persistidas de la cuenta filtradas a esa estación. Expone conteos de las consultas acotadas, no totales históricos; al perder autorización o fallar una lectura, oculta los resultados previos. Revalida tras una señal durable de notificaciones, al recuperar foco o conexión y cada 25 segundos mientras la pestaña está visible. No implica una fuente aeronáutica externa ni acredita promoción al VPS. Fuentes: [adaptador del dashboard](../../frontend/private-web/src/services/dashboardService.js), [ruta](../../frontend/private-web/src/features/dashboard/DashboardRoute.jsx) y [vista](../../frontend/private-web/src/features/dashboard/DashboardPage.jsx).
+
+Monitoreo OCC también selecciona una estación de la sesión. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
+
+En la rama de integración, Monitoreo y Mapa releen la estación autorizada
+cuando reciben `occ_planning` tras una asignación OCC. También refrescan al
+recuperar foco/conexión y cada 25 segundos con la pestaña visible; los sondeos
+de snapshot existentes continúan. La señal no sustituye la lectura REST ni
+acredita latencia o promoción remota.
+
+El Mapa de posiciones también usa la estación OCC seleccionada. En PUJ representa geometría local revisada y superpone únicamente asignaciones planificadas, sin inferir disponibilidad física. En otra estación muestra una lista de posiciones asignadas desde planificación, sin reutilizar coordenadas de PUJ; si no hay asignaciones, el vacío es explícito. Refresca el snapshot entero cada 30 segundos, oculta resultados previos ante fallos y conserva la estación al abrir un vuelo en Monitoreo. Faltan coordenadas y ocupación física verificadas de otras estaciones, así como prueba remota. Fuentes: [adaptador de posiciones](../../frontend/private-web/src/services/positionsMapService.js), [ruta](../../frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx) y [vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx).
+
 En la rama de integración de Development, planificación incorpora el alta manual de una escala OCC. La pantalla obtiene de la API las aerolíneas con contrato vigente, aeropuertos y posiciones activas para una estación autorizada; envía llegada, salida, fecha, posición y un UUID de intención estable para un reintento ambiguo. La API vuelve a comprobar alcance, contrato, ruta y disponibilidad de posición. Crear una escala deja su operación planificada. OCC puede programar después un turno local para un agente cuyo único impedimento sea la cobertura; el panel refresca opciones y ETag antes de asignar. Ninguno de esos comandos factura ni demuestra por sí solo promoción o prueba de navegador contra el VPS.
 
 ### Gestión Humana
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
+En el worktree local posterior a esta fotografía, el dashboard consulta los
+perfiles de rampa autorizados de la API para contar agentes activos y perfiles
+sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
+para turnos, habilitaciones o cobertura. El modo restringido solo expone
+dashboard, perfiles, habilitaciones, permisos y turnos conectados a la API; mantiene ocultas las rutas
+profundas aún no integradas. Recibir una señal de cambio, recuperar
+foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
+un despliegue al VPS. Las escrituras de habilitaciones, permisos y turnos se
+describen más abajo y aún requieren validación de navegador y dispositivo. Fuentes:
+[servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
+[vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
+y [perfiles autorizados](../../backend/Elevant.Api/Controllers/RampProfilesController.cs).
+
+La lista activa de perfiles de rampa revalida el alcance autorizado mediante
+señales durables, foco, reconexión y sondeo de 25 segundos. Si falla la lectura,
+retira perfiles y formulario de edición anteriores sin exponer el error interno;
+un guardado fallido conserva el formulario sin exponer trazas; las respuestas
+tardías no pueden sobrescribir una consulta más reciente. Es un
+cambio local de esta rama, no una prueba de despliegue remoto ni de los módulos
+profundos de Gestión Humana. Guardar un perfil invalida la planificación OCC de
+la unión de sus estaciones anteriores y solicitadas en el mismo commit SQL,
+incluso si se desactiva y pierde todos los scopes efectivos. El aviso solo
+incluye el UUID de estación, no la identidad del agente. Fuentes:
+[panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs).
+
+La API de esta rama agrega una lectura paginada de los ciclos actuales de
+habilitación de rampa para Gestión Humana y Superadministración internas. La
+ruta restringida consulta esa API en páginas de 20, calcula vigencia por
+fechas y retira datos antiguos ante error o revocación. Puede registrar el
+primer ciclo y renovar: obtiene agentes y equipos activos, consulta el par
+exacto antes de guardar, envía el identificador del ciclo observado como
+precondición y conserva el UUID de intención para un reintento incierto. Un
+conflicto obliga a releer el ciclo. La API conserva historial, auditoría y
+señal durable `hr_qualifications` y una invalidación OCC por estación en la
+transacción; no hay archivos adjuntos ni promociones al
+VPS demostradas para esta rama. La vista heredada sigue separada fuera del
+modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [servicio](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs) y [README del backend](../../backend/README.md).
+
+La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
+rampa, paginados y reservados a Gestión Humana o Superadministración internas.
+En la rama local, la lectura admite un filtro conjunto de agente y tipo para
+encontrar el ciclo exacto sin recorrer páginas globales. La API ya ofrece
+`PUT /api/v1/human-resources/permits/{id}` para registrar el primer ciclo o
+renovarlo con UUID de intención estable y `expectedCurrentId`. Conserva el
+historial, audita y emite `hr_permits` y `occ_planning` de forma durable; el feed vuelve a
+comprobar rol y membresía al leer esa pista.
+La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
+foco/conexión y cada 25 segundos, y ya ofrece captura del primer ciclo y
+renovación después de consultar el par exacto. Reutiliza el UUID ante una
+respuesta incierta y relee el ciclo tras 409; no permite archivos. El documento
+puede estar vencido aunque su ciclo siga marcado como
+actual. La API conserva los ciclos anteriores, pero la vista de historial sigue
+pendiente. Fuentes:
+[vista](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
+[formulario](../../frontend/private-web/src/features/human-resources/permits/PermitRecordForm.jsx),
+[controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitWriteStore.cs).
+
+La ruta restringida de horarios lee turnos reales por semana local y páginas
+de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
+inferir disponibilidad. Gestión Humana puede registrar un turno nuevo después
+de consultar los scopes de estación y terminal vigentes para el agente/día. Una
+programación OCC emite las señales durables `hr_shifts` y `occ_planning`; la vista revalida también
+por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
+falla la lectura. La API ya permite registrar un turno mediante
+`PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
+horas, scopes de agente vigentes en estación y terminal, auditoría y señales
+`hr_shifts` y `occ_planning`. El formulario conserva el UUID de una intención incierta y
+reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
+Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
+para la fecha local consultada o el día de inicio de un turno nocturno. Las
+solicitudes pendientes y de cambio de turno no son una ausencia. La API ya
+permite a Gestión Humana y Superadministración registrar solicitudes pendientes
+y aprobarlas o rechazarlas con auditoría y señal durable `hr_absences`. Una
+ausencia aprobada no puede chocar con una operación aún asignada, incluso si
+un turno nocturno cubre una operación del día siguiente. El feed
+revalida el rol antes de entregar la pista. La ruta activa de turnos ahora
+muestra solicitudes persistidas por ventana y página, registra una intención
+`Pending` con UUID estable y permite aprobar o rechazar con relectura ante
+409. El resultado incierto conserva la intención incluso durante una
+revalidación; foco, reconexión, pista durable y sondeo de 25 segundos
+revalidan sin conservar filas tras una denegación. La aprobación de `DayOff`
+o `Restriction` emite además `occ_planning` para las estaciones vigentes del
+agente, en la misma transacción. Solo cuentas OCC activas con membresía interna
+y alcance de estación reciben la pista; el feed revalida rol y estación al
+leerla. El payload contiene la estación, nunca el UUID ni el motivo de la
+solicitud laboral. Planificación OCC invalida snapshot y opciones de asignación
+ante esa pista, foco, reconexión o sondeo visible de 25 segundos. Una pista
+perdida no reemplaza la comprobación final de elegibilidad y ETag en la API.
+La misma pista de estación se confirma al registrar o renovar un carnet o una
+habilitación, y al programar un turno desde Gestión Humana u OCC; ninguna pista
+incluye datos personales del agente.
+Fuentes:
+[vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
+[controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftWriteStore.cs).
+[Solicitudes de disponibilidad](../../backend/Elevant.Api/Controllers/HumanResourcesAvailabilityRequestsController.cs)
+usan [persistencia transaccional](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesAvailabilityWriteStore.cs).
+Su [panel activo](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx)
+usa el [cliente versionado](../../frontend/private-web/src/services/humanResourcesAvailabilityService.js).
+
+La ruta restringida de Reportes de personal combina las primeras 100
+habilitaciones y permisos actuales con los primeros 100 turnos de la semana
+local mediante las tres lecturas autorizadas. Es una muestra, no un total
+histórico: permite abrir los módulos paginados, anuncia cuando una fuente tiene
+más páginas, oculta la muestra anterior ante un error y no ofrece exportaciones
+prototípicas. Revalida con señales durables, foco, reconexión y sondeo de 25
+segundos. Es código del worktree local; aún faltan CI, navegador y promoción al
+VPS. Fuentes: [vista de reportes](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
+y [router](../../frontend/private-web/src/app/router.jsx).
+
 ### Contratos y Finanzas
 
-`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, solicitudes, servicios pactados, reportes y comunicaciones. Finanzas presenta inicio, servicios aprobados, prefacturación, conciliación, tarifas, reportes y comunicaciones. Sus dos resúmenes iniciales están etiquetados como datos sintéticos: Finanzas usa un snapshot local en vez del endpoint heredado inexistente `/api/finance/summary`. El buzón de notificaciones heredado está oculto para ambos roles, evitando solicitudes a `/api/notifications`. Esto no certifica los módulos profundos, que todavía conservan adaptadores de prototipo.
+`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, borradores, solicitudes, servicios, servicios pactados y reportes. Finanzas presenta inicio, servicios aprobados, prefacturación, seguimiento, tarifas y reportes. El chat departamental heredado está diferido: ambos shells ocultan «Comunicaciones» porque `/api/internal-chat/messages` no existe en la API canónica ni persiste en SQL; esto no afecta el chat operativo OCC–agente. En el worktree local, Inicio de Finanzas combina lecturas autorizadas de servicios aprobados y prefacturas por estación: hasta 200 servicios de los últimos 30 días y la primera página de 50 prefacturas, no totales históricos. Reportes agrupa los estados de esa primera página por aerolínea y moneda, sin inventar importes ni exportaciones. Ambas vistas revalidan con cambio durable, foco y polling de 25 segundos. Tarifas consulta versiones contractuales publicadas y paginadas para una estación autorizada mediante `GET /api/v1/finance/tariffs`; conserva cuatro decimales y distingue versiones históricas. La activación de un contrato genera una pista durable `finance_tariffs` para Finanzas, con revalidación del alcance en el feed. Se retiró la acción local de «Programar cambio» que no persistía. Seguimiento consulta prefacturas aceptadas, facturas no fiscales y pagos manuales mediante `GET /api/v1/finance/reconciliation`, con revalidación por `finance_preinvoices`, foco y polling. No acredita conciliación bancaria y retiró la acción local «Conciliar». El buzón heredado está oculto para ambos roles, evitando `/api/notifications`. Nada de esto acredita despliegue al VPS. Fuentes: [servicio de inicio](../../frontend/private-web/src/services/financeHomeService.js), [servicio de reportes](../../frontend/private-web/src/services/financeReportsService.js), [vista de tarifas](../../frontend/private-web/src/features/finance/tariffs/TariffsPage.jsx), [vista de seguimiento](../../frontend/private-web/src/features/finance/reconciliation/ReconciliationPage.jsx), [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceReconciliationController.cs) y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceReconciliationReadStore.cs).
+
+En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; los indicadores del reporte se limitan expresamente a la página consultada. Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
 
 ## Estado de integración
 
@@ -101,7 +228,7 @@ Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, perm
 | Autenticación | `authService.js` usa el cliente OpenAPI para crear y revalidar la sesión de Development; tests usan identidades sintéticas. | La sesión en el navegador no sustituye el enforcement del backend por rol y estación. |
 | Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
 | Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Contratos y Finanzas todavía no migraron sus módulos profundos de forma general. |
-| API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los resúmenes sintéticos no prueban endpoints financieros o contractuales; los módulos heredados pueden seguir fallando hasta su migración. |
+| API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los módulos aún sintéticos no prueban endpoints financieros o contractuales; los adaptadores heredados pueden seguir fallando hasta su migración. |
 
 En la rama de integración posterior al commit histórico de esta nota,
 **Finanzas → Servicios aprobados** consume una nueva lectura canónica por
@@ -111,8 +238,59 @@ no aparece. Revalida por feed durable, foco y polling acotado. El resto de
 Finanzas puede crear y volver a consultar una prefactura interna no fiscal
 desde los servicios elegibles. La selección se reconcilia cuando llega una
 reserva de otro usuario y un reintento conserva su clave idempotente.
-Conciliación, emisión de factura y recibo siguen pendientes; no se ha
+Conciliación externa sigue pendiente; el registro manual de pago se describe
+abajo y no verifica una transferencia bancaria. No se ha
 promovido esta rama al VPS.
+
+**Finanzas → Pre-facturación** ahora lista por estación las prefacturas
+persistidas mediante `GET /api/v1/finance/preinvoices` y abre su detalle
+canónico. La lista exige el rol Finanzas, membresía interna y concesión de
+estación vigente; revalida por feed, foco y polling. Ya no monta
+`/api/finance/preinvoices` ni acciones locales de aprobar/enviar. En esta rama,
+un borrador abierto ofrece confirmación explícita antes de enviarlo a la
+aerolínea mediante el comando canónico. El identificador del borrador es la
+clave estable de ese único envío, incluso si la respuesta de red es incierta;
+la UI relee la lista autorizada sin exponer mensajes internos. Los badges
+del shell no repiten cifras sintéticas. Inicio, Tarifas y Reportes ya tienen
+lecturas acotadas de la API en esta rama; Seguimiento también consulta estados
+financieros persistidos, pero no confirma conciliación bancaria.
+No se ha promovido esta rama.
+
+En la rama local, una prefactura `Accepted` presenta confirmación de emisión
+no fiscal. La API congela la factura y Finanzas relee número, líneas y total
+por una ruta de estación autorizada; la clave de intención se conserva para
+un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
+representa un impuesto ni comprobante fiscal y aún no está promovido al VPS.
+
+En el worktree de integración, Finanzas puede responder a una disputa con
+motivo auditable: `Maintain` devuelve la prefactura a `Submitted` para una
+nueva respuesta de la aerolínea; `Void` la anula y libera las reservas de
+servicio sin borrar el snapshot. La UI exige confirmación y conserva el UUID
+de intención al reintentar, incluso si el foco o una señal de cambio recargan
+la lista durante la edición. El cliente solicita `includeResolutions=true`
+para mostrar la respuesta; la forma v1 sin ese parámetro sigue intacta.
+El estado se relee desde la API. Las pruebas
+locales no equivalen a CI verde ni a despliegue remoto.
+
+En esta rama, Finanzas puede registrar **un pago manual completo de prueba**
+contra una factura no fiscal ya emitida. La API revalida la cuenta y el alcance
+de estación, toma moneda e importe de la factura congelada y conserva UUID de
+intención, referencia y actor para impedir un segundo registro. La vista
+relee `GET /api/v1/finance/payments/by-invoice/{invoiceId}` y distingue
+«Sin pago registrado» de un pago persistido. La operación no consulta al banco,
+no concilia fondos ni emite un comprobante fiscal. Fuentes:
+[controlador](../../backend/Elevant.Api/Controllers/FinancePaymentsController.cs),
+[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfNonFiscalPaymentStore.cs)
+y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
+
+En el tramo local posterior, esa vista descarga PDF privado de la factura no
+fiscal y, cuando el pago manual existe, su recibo. La API comprueba el rol y
+la estación al abrirlos y de nuevo después de leer bytes; no delega la
+autorización al navegador ni sirve objetos S3 directamente. No acredita un
+cobro bancario. Las pruebas locales de la UI y SQL no demuestran promoción
+remota. Fuentes: [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceFinancialDocumentsController.cs),
+[persistencia documental](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinancialDocumentStore.cs)
+y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
 
 ## Desarrollo local
 

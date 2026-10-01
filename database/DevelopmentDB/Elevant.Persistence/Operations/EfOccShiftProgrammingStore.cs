@@ -8,6 +8,8 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Realtime;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -211,6 +213,15 @@ internal sealed class EfOccShiftProgrammingStore(
             }),
         };
         context.AuditEntries.Add(audit);
+        var hrRecipients = await (from link in context.Set<IdentityUserRole<long>>()
+            join role in context.Roles on link.RoleId equals role.Id
+            where role.NormalizedName == "GESTION_HUMANA" || role.NormalizedName == "SUPERADMIN"
+            select link.UserId).Distinct().ToArrayAsync(cancellationToken);
+        foreach (var recipient in hrRecipients)
+            AccountChangeOutboxWriter.Add(context, recipient, null,
+                "hr_shifts", shift.PublicId, now);
+        await OccPlanningChangeWriter.AddForStationAsync(context, target.StationId,
+            target.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return (OccShiftWriteResult.Created(shift.PublicId), audit.PublicId);
     }

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
+using Elevant.Contracts.Commercial;
 using Elevant.Application.Finance;
 using Elevant.Contracts.Finance;
 using Microsoft.AspNetCore.Authorization;
@@ -17,8 +18,64 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/finance/preinvoices")]
 public sealed class PreinvoiceDraftsController(
     CreatePreinvoiceDraftHandler createHandler,
-    GetPreinvoiceDraftHandler getHandler) : ControllerBase
+    GetPreinvoiceDraftHandler getHandler,
+    SubmitPreinvoiceHandler submitHandler) : ControllerBase
 {
+    [HttpGet("{draftId:guid}/disputes", Name = "GetFinancePreinvoiceDisputes")]
+    [ProducesResponseType<PreinvoiceDisputeListResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<PreinvoiceDisputeListResponse>> GetDisputes(
+        [FromRoute] Guid draftId, [FromQuery] bool includeResolutions,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId))
+            return ProblemResult<PreinvoiceDisputeListResponse>(401, "Authentication failed.");
+        var disputes = await getHandler.HandleDisputesAsync(accountId, draftId, cancellationToken);
+        if (disputes is null)
+            return ProblemResult<PreinvoiceDisputeListResponse>(404, "Preinvoice was not found.");
+        return Ok(new PreinvoiceDisputeListResponse(draftId,
+            disputes.Select(item => new PreinvoiceDisputeResponse(
+                item.Id, item.Subject, item.Description, item.CreatedAt, item.LineIds,
+                !includeResolutions || item.Resolution is null ? null : new PreinvoiceDisputeResolutionResponse(
+                    item.Resolution.Id, item.Resolution.Decision,
+                    item.Resolution.Reason, item.Resolution.ResolvedAt))).ToArray()));
+    }
+
+    [HttpPost("{draftId:guid}/submit", Name = "SubmitPreinvoice")]
+    [RequestSizeLimit(1024)]
+    [Consumes("application/json")]
+    [ProducesResponseType<SubmitPreinvoiceResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<ActionResult<SubmitPreinvoiceResponse>> Submit(
+        [FromRoute] Guid draftId, [FromBody] SubmitPreinvoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var accountId))
+            return ProblemResult<SubmitPreinvoiceResponse>(401, "Authentication failed.");
+        var result = await submitHandler.HandleAsync(
+            new SubmitPreinvoiceCommand(accountId, draftId, request.RequestId), cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (status, title) = result.Failure!.Value switch
+            {
+                SubmitPreinvoiceFailure.Unauthorized => (401, "Authentication failed."),
+                SubmitPreinvoiceFailure.Forbidden => (403, "Finance access is forbidden."),
+                SubmitPreinvoiceFailure.InvalidRequest => (400, "Invalid submission request."),
+                SubmitPreinvoiceFailure.NotFound => (404, "Preinvoice was not found."),
+                SubmitPreinvoiceFailure.Conflict => (409, "Preinvoice state conflicts with submission."),
+                _ => throw new InvalidOperationException("Unsupported preinvoice failure."),
+            };
+            return ProblemResult<SubmitPreinvoiceResponse>(status, title);
+        }
+        return Ok(new SubmitPreinvoiceResponse(result.PreinvoiceId!.Value,
+            "Submitted", result.Replayed));
+    }
+
     [HttpPost(Name = "CreatePreinvoiceDraft")]
     [RequestSizeLimit(8192)]
     [Consumes("application/json")]

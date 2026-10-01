@@ -1,4 +1,26 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { reconcileRecord, resetReconciliationsForTests } from './reconciliationService';
-afterEach(resetReconciliationsForTests);
-describe('reconciliationService', () => { it('records the resolution of a difference', async () => { const row = await reconcileRecord('CON-2026-026','Ajuste aprobado'); expect(row.status).toBe('reconciled'); expect(row.note).toBe('Ajuste aprobado'); }); });
+import { beforeEach, expect, it, vi } from 'vitest';
+import { getFinanceReconciliation } from './reconciliationService';
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
+import { readSession } from '../features/auth/authService';
+
+vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
+vi.mock('../features/auth/authService', () => ({ readSession: vi.fn(),
+  handleUnauthorizedResponse: vi.fn() }));
+
+beforeEach(() => {
+  vi.mocked(readSession).mockReturnValue({ token: 'finance-token' });
+});
+
+it('passes station scope and cancellation through the shared client', async () => {
+  const data = { stationId: 'station-one', page: 1, limit: 20,
+    hasMore: false, rows: [] };
+  const list = vi.fn().mockResolvedValue(data);
+  vi.mocked(createPrivateWebApiClient).mockReturnValue({
+    getFinanceReconciliation: list,
+  });
+  const controller = new AbortController();
+  await expect(getFinanceReconciliation({ stationId: 'station-one',
+    page: 1, limit: 20 }, { signal: controller.signal })).resolves.toBe(data);
+  expect(list).toHaveBeenCalledWith({ stationId: 'station-one', page: 1,
+    limit: 20 }, { signal: controller.signal });
+});

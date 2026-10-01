@@ -119,6 +119,29 @@ export default function PositionsMapPage({
     );
   }
 
+  if (status === 'success' && data?.source === 'planning-no-map') {
+    return <section className="mx-auto max-w-[1200px] space-y-4">
+      <header className="rounded-2xl border border-black/5 bg-white/70 p-5 dark:border-white/5 dark:bg-surface-dark-card">
+        <h1 className="text-lg font-semibold">Posiciones planificadas · {data.station.code}</h1>
+        <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          No hay cartografía verificada para esta estación. Estas asignaciones provienen de
+          Planificación OCC; no confirman ocupación física ni disponibilidad.
+        </p>
+      </header>
+      {positions.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {positions.map(position => <li key={position.id}
+          className="rounded-xl border border-black/5 bg-white/70 p-4 dark:border-white/5 dark:bg-surface-dark-card">
+          <p className="font-semibold">{position.id}</p>
+          {position.terminal && <p className="text-xs text-text-secondary-light">
+            Terminal {position.terminal}</p>}
+          <p className="mt-2 text-xs">Vuelos planificados: {position.plannedFlights.join(', ') || 'sin número registrado'}</p>
+        </li>)}
+      </ul> : <p role="status" className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">
+        No hay posiciones asignadas en la planificación consultada para esta estación.
+      </p>}
+    </section>;
+  }
+
   const sidePanel = (
     <PositionsSidePanel
       positions={filteredPositions}

@@ -106,4 +106,48 @@ describe('useFlightMonitoringData', () => {
     rerender({ token: 1 });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
   });
+
+  it('hides prior station data immediately and subscribes to the newly selected station', async () => {
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
+      .mockImplementation(async code => ({ station: { code }, flights: [] }));
+    const unsubscribe = vi.fn();
+    const subscribe = vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates')
+      .mockReturnValue(unsubscribe);
+    const renders = [];
+    const { result, rerender } = renderHook(({ code }) => {
+      const state = useFlightMonitoringData(code);
+      renders.push({ code, state });
+      return state;
+    }, { initialProps: { code: 'PUJ' } });
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    expect(subscribe).toHaveBeenCalledWith(expect.any(Function), 'PUJ',
+      expect.objectContaining({ onSnapshot: expect.any(Function), onError: expect.any(Function) }));
+
+    const from = renders.length;
+    rerender({ code: 'SDQ' });
+    expect(renders.slice(from).every(({ state }) => state.data === null)).toBe(true);
+    await waitFor(() => expect(result.current.data?.station.code).toBe('SDQ'));
+    expect(unsubscribe).toHaveBeenCalled();
+    expect(subscribe).toHaveBeenCalledWith(expect.any(Function), 'SDQ',
+      expect.objectContaining({ onSnapshot: expect.any(Function), onError: expect.any(Function) }));
+  });
+
+  it('drops stale flights on poll failure and replaces the collection after recovery', async () => {
+    vi.spyOn(flightMonitoringService, 'getFlightMonitoringSnapshot')
+      .mockResolvedValue({ station: { code: 'PUJ' }, flights: [{ id: 1 }] });
+    let handlers;
+    vi.spyOn(flightMonitoringService, 'subscribeToFlightUpdates')
+      .mockImplementation((_update, _station, options) => {
+        handlers = options;
+        return () => {};
+      });
+    const { result } = renderHook(() => useFlightMonitoringData('PUJ'));
+    await waitFor(() => expect(result.current.status).toBe('success'));
+    act(() => handlers.onError(new Error('network down')));
+    expect(result.current.status).toBe('error');
+    expect(result.current.data).toBeNull();
+    act(() => handlers.onSnapshot({ station: { code: 'PUJ' }, flights: [{ id: 2 }] }));
+    expect(result.current.status).toBe('success');
+    expect(result.current.data.flights.map(item => item.id)).toEqual([2]);
+  });
 });

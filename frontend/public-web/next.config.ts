@@ -14,7 +14,15 @@ export function buildContentSecurityPolicy(
   configuredApiOrigin: string | undefined,
   environment = process.env.NODE_ENV,
 ) {
-  const connectSources = ["'self'", configuredApiOrigin]
+  let websocketApiOrigin: string | undefined;
+  if (configuredApiOrigin) {
+    const parsedApiOrigin = new URL(configuredApiOrigin);
+    if (parsedApiOrigin.protocol !== "https:" || parsedApiOrigin.origin !== configuredApiOrigin) {
+      throw new Error("NEXT_PUBLIC_ELEVANT_API_URL must be a canonical HTTPS origin.");
+    }
+    websocketApiOrigin = `wss://${parsedApiOrigin.host}`;
+  }
+  const connectSources = ["'self'", configuredApiOrigin, websocketApiOrigin]
     .filter((value): value is string => Boolean(value))
     .join(" ");
   const scriptSources = ["'self'", "'unsafe-inline'", "blob:"];

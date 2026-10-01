@@ -92,6 +92,15 @@ describe('FlightMonitoringPage', () => {
     expect(screen.getByText(/La posición en vivo no está disponible/)).toBeInTheDocument();
   });
 
+  it('does not center another station on PUJ when a local Google key exists', () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<FlightMonitoringPage status="success" data={{ station: { code: 'SDQ' },
+      source: 'planning', flights: [] }} error={null} connection="connected"
+      lastUpdatedAt={null} onRetry={() => {}} />);
+    expect(screen.getByText(/La posición en vivo no está disponible/)).toBeInTheDocument();
+    expect(screen.queryByText(/el mapa muestra PUJ/)).not.toBeInTheDocument();
+  });
+
   it('selects a flight when its list item is clicked, opening the detail popover and passing the id to the map', async () => {
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />

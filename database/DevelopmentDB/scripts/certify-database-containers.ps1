@@ -418,7 +418,8 @@ function Invoke-Release {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Development', 'Production')][string]$Environment,
         [Parameter(Mandatory = $true)][string]$ConnectionString,
-        [Parameter(Mandatory = $true)][ValidateSet('migrate', 'seed-development', 'verify-target')][string]$Command,
+        [Parameter(Mandatory = $true)][ValidateSet('migrate', 'seed-development', 'seed-development-scenario', 'verify-target')][string]$Command,
+        [string]$ScenarioDate,
         [switch]$UseRotatedAdminPassword
     )
 
@@ -447,6 +448,12 @@ function Invoke-Release {
             '--env', "ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD=$($passwords.DemoFinance)",
             '--env', "ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD=$($passwords.DemoSuperAdmin)"
         )
+    }
+    if ($Command -eq 'seed-development-scenario') {
+        if ($ScenarioDate -notmatch '^\d{4}-\d{2}-\d{2}$') {
+            throw 'Scenario certification requires a YYYY-MM-DD local date.'
+        }
+        $arguments += @('--env', "ELEVANT_DEV_SCENARIO_DATE=$ScenarioDate")
     }
     $arguments += @($ReleaseImage, $Command)
 
@@ -832,6 +839,19 @@ DROP DATABASE [ElevantProductionDb];
         '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
         $ReleaseImage,
         'seed-development'
+    )
+    Invoke-DockerExpectedFailure `
+        -FailureMessage 'Development scenario unexpectedly ran on Production.' `
+        -ExpectedErrorPattern 'The Development seeder is forbidden outside Development\.' `
+        -Arguments @(
+        'run', '--rm',
+        '--network', $networkName,
+        '--env', 'ELEVANT_DATABASE_ENVIRONMENT=Production',
+        '--env', 'ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProductionDb',
+        '--env', 'ELEVANT_DEV_SCENARIO_DATE=2026-09-28',
+        '--env', "ConnectionStrings__ElevantDatabase=$productionConnection",
+        $ReleaseImage,
+        'seed-development-scenario'
     )
     Invoke-Release -Environment Production -ConnectionString $productionConnection -Command verify-target
     Invoke-SqlClient -User 'sa' -Password $passwords.Sa -Database 'ElevantProductionDb' -Query $productionIntegrityQuery
@@ -1694,6 +1714,16 @@ IF EXISTS (
     Wait-Sql -User 'elevant_dev_health' -Password $passwords.Health -Database 'ElevantDevelopmentDb'
     Invoke-Ops -Command verify-development
     Invoke-SqlClient -User 'elevant_dev_erick' -Password $passwords.TeamErick -Database 'ElevantDevelopmentDb' -Query 'SELECT 1;'
+
+    Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development-scenario -ScenarioDate '2026-09-28'
+    Invoke-Release -Environment Development -ConnectionString $developmentSeederConnection -Command seed-development-scenario -ScenarioDate '2026-09-28'
+    Invoke-SqlClient -User 'elevant_dev_seeder' -Password $passwords.Seeder -Database 'ElevantDevelopmentDb' -Query @'
+IF (SELECT COUNT_BIG(*) FROM [ops].[turnarounds] WHERE [operation_code] IN (N'DEV-CYCLE-20260928', N'DEV-CYCLE-20260929')) <> 2
+    THROW 53030, 'Scenario command did not create exactly two idempotent turnarounds.', 1;
+IF (SELECT COUNT_BIG(*) FROM [hr].[shift_assignments] WHERE [work_date] IN (CONVERT(date, N'2026-09-28'), CONVERT(date, N'2026-09-29'))) <> 2
+    THROW 53031, 'Scenario command did not create exactly two covering shifts.', 1;
+'@
+    Invoke-Ops -Command verify-development
 
     $succeeded = $true
 }

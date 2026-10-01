@@ -53,6 +53,11 @@ public static class OccAgentEligibilityPolicy
             reasons.Add("shift_not_compatible");
         }
 
+        if (candidate.HasApprovedAbsence)
+        {
+            reasons.Add("approved_absence");
+        }
+
         if (candidate.HasAssignmentConflict)
         {
             reasons.Add("assignment_conflict");

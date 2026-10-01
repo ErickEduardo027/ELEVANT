@@ -76,11 +76,13 @@ test('delivery files preserve the private, non-root runtime boundary', async () 
   assert.match(dockerfile, /io\.elevant\.web\.hr-demo-mode=\$\{VITE_HR_DEMO_MODE\}/);
   assert.match(dockerfile, /VITE_HR_DEMO_MODE=\$\{VITE_HR_DEMO_MODE\}/);
   assert.match(dockerfile, /s\|__ELEVANT_API_ORIGIN__\|\$\{VITE_ELEVANT_API_URL\}\|g/);
+  assert.match(dockerfile, /s\|__ELEVANT_WS_ORIGIN__\|\$\{api_ws_origin\}\|g/);
   assert.doesNotMatch(dockerfile, /backend-prototipo|database\//i);
 
   assert.match(certifier, /EXPECTED_HR_DEMO_MODE="dashboard-read-only"/);
   assert.match(certifier, /inspect_label io\.elevant\.web\.hr-demo-mode/);
-  assert.match(certifier, /permanent synthetic-data banner/);
+  assert.match(certifier, /bundle does not contain the connected HR dashboard/);
+  assert.match(certifier, /still contains the retired synthetic-data banner/);
   assert.match(webCi, /document\["hrDemoMode"\] = "dashboard-read-only"/);
   assert.match(webCi, /expected\.add\("hrDemoMode"\)/);
   assert.match(webCi, /--build-arg VITE_HR_DEMO_MODE=dashboard-read-only/);
@@ -95,7 +97,7 @@ test('delivery files preserve the private, non-root runtime boundary', async () 
   assert.match(certifier, /AVIAM Web brand icon did not match the reviewed asset/);
   assert.match(
     securityHeaders,
-    /connect-src 'self' __ELEVANT_API_ORIGIN__ https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org;/,
+    /connect-src 'self' __ELEVANT_API_ORIGIN__ __ELEVANT_WS_ORIGIN__ https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org;/,
   );
   assert.doesNotMatch(securityHeaders, /connect-src[^;]*(?:https:|wss:)(?:[ ;]|$)/);
 });

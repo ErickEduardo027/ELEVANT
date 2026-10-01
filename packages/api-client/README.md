@@ -20,12 +20,26 @@ la aplicación. `ChangedV1` solo anuncia un cambio; los datos se consultan
 por REST con los permisos vigentes. El wrapper exige un cuerpo cerrado,
 rechaza cursores/parámetros inválidos y no permite introducir una cuenta,
 estación o tenant en la consulta. Esta capacidad se prepara en la rama de
-integración y no demuestra todavía un despliegue remoto.
+integración y no demuestra todavía un despliegue remoto. El servidor filtra
+las pistas de habilitaciones y turnos cuando la cuenta ya no conserva Gestión
+Humana o Superadministración internas.
 
 `getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
 para la única aerolínea derivada en la API de la sesión. El cliente valida
 estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta
 un ID de tenant ni habilita acciones comerciales.
+
+`getManagedContracts({ page?, limit? })` consulta la lectura interna paginada
+de acuerdos publicados, con aerolínea, estado de versión, estaciones y tarifas. La API exige el
+permiso comercial correspondiente y el wrapper valida la forma recibida;
+esta lectura no crea ni modifica contratos.
+
+`getAirlinePreinvoices({ page?, limit? })` consulta prefacturas publicadas y
+propias del tenant derivado por la API; no expone borradores de Finanzas. El
+cliente rechaza parámetros fuera de rango, estados internos y campos ajenos al
+contrato. `getAirlinePreinvoice(id)` relee las líneas y precios congelados de
+una prefactura propia publicada; un ID ajeno o un borrador no revela detalle.
+Factura, pago y recibo siguen fuera de este contrato de lectura.
 
 `getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
 aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía
@@ -33,6 +47,74 @@ una clave UUID estable con 1–100 servicios y valida el ID guardado;
 `getPreinvoiceDraft(id, expectedStationId)` reconsulta y valida el detalle
 persistente y su estación. Solo Finanzas interna autorizada puede usar estos
 contratos. El borrador aún no es factura, pago ni recibo.
+
+`getFinancePreinvoices({ stationId, page?, limit? })` lista hasta 50 prefacturas
+internas por página para la estación con grant vigente de Finanzas. El wrapper
+valida estado, importes, fechas, conteo de líneas y que cada fila pertenece a
+la estación pedida. La API no acepta un tenant suministrado por el cliente.
+
+`getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
+versiones contractuales publicadas que cubren la estación con grant vigente de
+Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
+precios negativos y versiones no publicadas. Es una lectura; no cambia tarifas
+ni revaloriza snapshots operativos o financieros históricos.
+
+`getFinanceReconciliation({ stationId, page?, limit? })` lista hasta 50
+prefacturas aceptadas o facturadas por página, con su factura no fiscal y,
+si existe, el pago manual registrado. La API exige rol Finanzas, membresía
+interna y grant de la estación; el wrapper rechaza otra estación, paginación
+incoherente y combinaciones inválidas de estado, factura y pago. Es una
+proyección de seguimiento, no una confirmación de conciliación bancaria.
+
+`getHumanResourcesQualifications({ page?, limit?, rampProfileId?, equipmentTypeId? })` lee páginas de hasta
+100 ciclos actuales de habilitación registrados para agentes de rampa. Solo
+una sesión interna de Gestión Humana o Superadministración puede obtenerlos;
+el wrapper comprueba identificadores, fechas y paginación. Una fecha vencida
+no se presenta como vigente por el mero valor `is_current` de SQL. La ruta
+restringida de habilitaciones de Private Web usa este método para la tabla
+paginada y, con ambos IDs, para reconsultar el único ciclo actual antes de
+registrar o renovar. El wrapper rechaza un filtro incompleto, IDs inválidos
+o una respuesta que no pertenezca al par solicitado.
+
+`getHumanResourcesQualificationEquipmentTypes()` lee el catálogo activo que
+requiere habilitación. `recordHumanResourcesQualification(id, request)` usa un
+UUID estable elegido por el cliente y `expectedCurrentId` para el ciclo
+observado (o `null` para el primero). Valida campos, fechas, respuesta y
+autorización fresca. El servidor conserva historial, audita y emite una pista
+durable tras confirmar; un 409 exige reconsulta antes de intentar otro cambio.
+La interfaz restringida conecta esa captura; ante una respuesta incierta
+reintenta el mismo UUID y ante 409 relee el ciclo antes de permitir otro envío.
+
+`getHumanResourcesPermits({ page?, limit?, rampProfileId?, documentType? })` lee ciclos actuales de carnet
+aeroportuario y licencia de rampa para Gestión Humana o Superadministración.
+Valida tipos, fechas, identificadores y paginación antes de entregar datos al
+cliente. Los filtros de agente y tipo son inseparables; la respuesta exacta no
+puede contener otro par ni otra página. `recordHumanResourcesPermit(id, request)`
+exige UUID estable, tipo exacto, fechas y `expectedCurrentId` del ciclo observado
+(o `null` para el primero). Valida la respuesta cerrada y permite repetir la
+misma intención si la red no confirmó el resultado. Un 409 exige releer el par
+antes de crear otra intención. La ruta restringida de Private Web ya ofrece
+el formulario de alta y renovación, sin archivos adjuntos.
+
+`getHumanResourcesShifts({ from, to, page?, limit? })` lee turnos registrados
+en una ventana máxima de siete fechas locales, en páginas de hasta 100. El
+wrapper valida fechas, identificadores, horarios, bloque y paginación antes de
+entregar datos. La ruta restringida de Private Web presenta esta lectura por
+semana y permite registrar un turno, sin calcular disponibilidad ficticia.
+`recordHumanResourcesShift(id, request)` valida UUID, agente, estación,
+terminal, fecha, horas locales y jornada máxima de 16 horas antes de enviar
+una intención estable. El servidor conserva unicidad por agente/día, scopes
+vigentes, auditoría y aviso durable; un 409 requiere reconsulta antes de un
+nuevo intento. `getHumanResourcesShiftAssignmentOptions({ rampProfileId,
+workDate })` valida el par exacto y entrega solamente estaciones y terminales
+de alcance vigente, además de indicar si ese día ya tiene turno. El formulario
+de Private Web ya utiliza esa consulta antes de enviar el comando.
+
+`getHumanResourcesAvailabilityRequests({ from, to, page?, limit? })` lee
+solicitudes con fechas solapadas en una ventana de hasta 31 días y valida
+identidad, tipo, estado, fechas, paginación y respuesta. La API vuelve a
+comprobar el rol interno vigente; esta lectura no registra ni aprueba
+ausencias y aún no está conectada a una pantalla activa.
 
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
@@ -164,6 +246,14 @@ devuelto coincide con el solicitado, limita la página a 200 líneas y rechaza
 importes listos sin precio/moneda congelados o filas con propiedades ajenas al
 contrato. La API revalida el rol financiero y la estación; esta lectura no
 emite facturas ni modifica revisiones.
+
+Las cuatro descargas financieras (`getAirlineInvoiceDocument`,
+`getAirlinePaymentReceipt`, `getFinanceInvoiceDocument` y
+`getFinancePaymentReceipt`) usan rutas generadas desde OpenAPI y el Bearer
+vigente. El transporte binario conserva errores HTTP tipados y rechaza HTML,
+respuestas vacías, firmas ajenas a `%PDF-` y cuerpos mayores de 8 MiB. Devuelve
+un `Blob` privado; la UI decide el nombre de descarga. No almacena el token ni
+interpreta el PDF como comprobante fiscal.
 
 ## Contrato y generación
 

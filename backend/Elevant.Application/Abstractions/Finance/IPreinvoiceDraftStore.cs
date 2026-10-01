@@ -11,4 +11,8 @@ public interface IPreinvoiceDraftStore
     Task<PreinvoiceDraftDetail?> GetAsync(
         Guid accountId, Guid draftId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?> GetDisputesAsync(
+        Guid accountId, Guid draftId,
+        CancellationToken cancellationToken = default);
 }

@@ -7,6 +7,7 @@ import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { createPlanningSnapshot, STATION_ID, STATION_SCOPES } from './testing/planningFixtures';
 
 const pageCapture = vi.hoisted(() => ({ props: null }));
+const observerCapture = vi.hoisted(() => ({ onChanges: null, stop: vi.fn() }));
 
 vi.mock('./PlanningPage', () => ({
   default: props => {
@@ -17,6 +18,12 @@ vi.mock('./PlanningPage', () => ({
 vi.mock('./usePlanningData', () => ({ usePlanningData: vi.fn() }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('../admin-occ/AdminOccPreviewContext', () => ({ useAdminOccPreview: vi.fn() }));
+vi.mock('../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: onChanges => {
+    observerCapture.onChanges = onChanges;
+    return { start: async () => {}, stop: observerCapture.stop };
+  },
+}));
 
 const SECOND_STATION = {
   stationId: '20000000-0000-0000-0000-000000000002',
@@ -30,6 +37,8 @@ function setSession(stationScopes) {
 
 beforeEach(() => {
   pageCapture.props = null;
+  observerCapture.onChanges = null;
+  observerCapture.stop.mockReset();
   vi.mocked(usePlanningData).mockReset();
   vi.mocked(useAuth).mockReset();
   vi.mocked(useAdminOccPreview).mockReset();
@@ -123,6 +132,40 @@ describe('PlanningRoute', () => {
       refreshToken: 1,
       enabled: true,
     });
+  });
+
+  it('refreshes station planning and assignment options after a durable OCC invalidation', () => {
+    render(<PlanningRoute />);
+    expect(pageCapture.props.dataRevision).toBe(0);
+
+    act(() => observerCapture.onChanges(['hr_absences']));
+    expect(pageCapture.props.dataRevision).toBe(0);
+    act(() => observerCapture.onChanges(['occ_planning']));
+    expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
+      stationId: STATION_ID,
+      refreshToken: 1,
+    }));
+    expect(pageCapture.props.dataRevision).toBe(1);
+  });
+
+  it('reconciles planning on focus and disconnects the observer on unmount', () => {
+    const { unmount } = render(<PlanningRoute />);
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(pageCapture.props.dataRevision).toBe(1);
+    unmount();
+    expect(observerCapture.stop).toHaveBeenCalledOnce();
+  });
+
+  it('revalidates the station snapshot when visible even without a delivered hint', () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(<PlanningRoute />);
+      act(() => vi.advanceTimersByTime(25_000));
+      expect(pageCapture.props.dataRevision).toBe(1);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the resolved API date stable while a manual refresh is loading', () => {

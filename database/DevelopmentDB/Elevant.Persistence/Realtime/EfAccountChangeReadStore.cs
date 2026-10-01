@@ -3,6 +3,7 @@ using Elevant.Application.Abstractions.Realtime;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Commercial;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
@@ -50,6 +51,11 @@ internal sealed class EfAccountChangeReadStore(
             membership.OrganizationType == OrganizationType.AviamOperator);
         var isSuperAdmin = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "SUPERADMIN" && role.Portal == PortalKind.BackOffice);
+        var hasHumanResourcesAccess = isSuperAdmin ||
+            hasInternalMembership && actor.Roles.Any(role =>
+                role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
+        var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
         var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
             .Select(role => role.RoleId).ToArray();
         var commercialGrants = hasInternalMembership ? await (
@@ -72,6 +78,13 @@ internal sealed class EfAccountChangeReadStore(
                 (change.StationId == null || context.Stations.Any(station =>
                     station.Id == change.StationId &&
                     allowedStations.Contains(station.PublicId))) &&
+                ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts" &&
+                  change.Resource != "hr_permits" && change.Resource != "hr_absences") ||
+                    hasHumanResourcesAccess) &&
+                (change.Resource != "occ_planning" ||
+                    (hasOccPlanningAccess && change.StationId != null &&
+                     context.Stations.Any(station => station.Id == change.StationId &&
+                         station.PublicId == change.ResourceId))) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>
@@ -85,6 +98,15 @@ internal sealed class EfAccountChangeReadStore(
                      context.Preinvoices.Any(draft =>
                          draft.PublicId == change.ResourceId &&
                          draft.StationId == change.StationId))) &&
+                (change.Resource != "finance_tariffs" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.ContractVersions.Any(version =>
+                         version.PublicId == change.ResourceId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         context.Set<ContractVersionStation>().Any(coverage =>
+                             coverage.ContractVersionId == version.Id &&
+                             coverage.StationId == change.StationId)))) &&
                 (change.Resource != "airline_operations" ||
                     (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
                         operation.PublicId == change.ResourceId &&
@@ -95,6 +117,15 @@ internal sealed class EfAccountChangeReadStore(
                                 context.Organizations.Any(organization =>
                                     organization.Id == airline.OrganizationId &&
                                     airlineOrganizationIds.Contains(organization.PublicId))))))) &&
+                (change.Resource != "airline_preinvoices" ||
+                    (hasAirlinePortalRole && context.Preinvoices.Any(preinvoice =>
+                        preinvoice.PublicId == change.ResourceId &&
+                        preinvoice.Status != PreinvoiceStatus.Draft &&
+                        preinvoice.Status != PreinvoiceStatus.Voided &&
+                        context.Airlines.Any(airline => airline.Id == preinvoice.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId)))))) &&
                 (change.Resource != "commercial_catalog" ||
                     (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
                         service.PublicId == change.ResourceId))) &&

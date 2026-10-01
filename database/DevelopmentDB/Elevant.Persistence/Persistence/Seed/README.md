@@ -15,3 +15,14 @@ date mismatch, and add `DEV-TAT-0002` on 2026-08-19 as the deterministic plannin
 example. The second turnaround uses stand A02, the BAGGAGE contract service and a
 compatible Riley Ramp shift, but starts without an agent assignment so the OCC
 read and future assignment flows remain observable.
+
+`seed-development-scenario` is a separate, operator-triggered command. It
+requires `ELEVANT_DEV_SCENARIO_DATE` in `YYYY-MM-DD` station-local form and the
+same Development-only seeder database identity. It adds planned synthetic
+turnarounds for that date and the next, with contract-rate snapshots and
+covering shifts, but no agent assignment or invented completion. Date-derived
+keys make reruns idempotent; changed operational rows are never reset. The
+serializable transaction fails closed on a conflicting shift, overlapping stand
+window, contract outside its signed/termination dates, missing anchor or
+non-Development marker. CD does not run
+this command automatically.

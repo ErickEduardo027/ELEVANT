@@ -33,3 +33,14 @@ export async function getPreinvoiceDraft(draftId, stationId) {
     throw error;
   }
 }
+
+export async function getFinancePreinvoiceDisputes(draftId) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getFinancePreinvoiceDisputes(draftId);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

@@ -28,6 +28,18 @@ describe("Next Content-Security-Policy", () => {
     expect(policy).toContain("media-src 'self' blob: https://api.development.elevant.test");
   });
 
+  it("allows only the matching API websocket origin for the durable change feed", () => {
+    const policy = buildContentSecurityPolicy(
+      "https://api.development.elevant.test",
+      "production",
+    );
+
+    expect(policy).toContain(
+      "connect-src 'self' https://api.development.elevant.test wss://api.development.elevant.test;",
+    );
+    expect(policy).not.toContain("connect-src 'self' wss:");
+  });
+
   it("does not consume Next.js reserved NEXT_DEPLOYMENT_ID state", async () => {
     const revision = "a".repeat(40);
     vi.stubEnv("ELEVANT_DEPLOYMENT_ID", revision);

@@ -10,9 +10,12 @@ import ModulePlaceholder from '../features/shell/components/ModulePlaceholder';
 import HumanResourcesDashboardPage from '../features/human-resources/dashboard/DashboardPage';
 import RampProfilesPanel from '../features/human-resources/users/RampProfilesPanel';
 import CertificationsPage from '../features/human-resources/certifications/CertificationsPage';
+import CurrentQualificationsPage from '../features/human-resources/certifications/CurrentQualificationsPage';
+import CurrentPermitsPage from '../features/human-resources/permits/CurrentPermitsPage';
+import CurrentShiftsPage from '../features/human-resources/schedules/CurrentShiftsPage';
 import PermitsPage from '../features/human-resources/permits/PermitsPage';
 import SchedulesPage from '../features/human-resources/schedules/SchedulesPage';
-import HumanResourcesReportsPage from '../features/human-resources/reports/ReportsRoute';
+import CurrentReportsPage from '../features/human-resources/reports/CurrentReportsPage';
 import AuditRoute from '../features/human-resources/audit/AuditRoute';
 import HumanResourcesNotificationsRoute from '../features/human-resources/notifications/NotificationsRoute';
 import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_MODULE_IDS } from '../features/human-resources/navigation';
@@ -84,10 +87,13 @@ export function createHumanResourcesChildren(
     element: item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD
       ? <HumanResourcesDashboardPage dashboardReadOnlyDemo={dashboardReadOnlyDemo} />
       : item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ? <RampProfilesPanel />
-        : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ? <CertificationsPage />
-          : item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ? <PermitsPage />
-            : item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ? <SchedulesPage />
-              : item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ? <HumanResourcesReportsPage />
+        : item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS
+          ? dashboardReadOnlyDemo ? <CurrentQualificationsPage /> : <CertificationsPage />
+          : item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS
+            ? dashboardReadOnlyDemo ? <CurrentPermitsPage /> : <PermitsPage />
+            : item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES
+              ? dashboardReadOnlyDemo ? <CurrentShiftsPage /> : <SchedulesPage />
+              : item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ? <CurrentReportsPage />
                 : item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ? <AuditRoute />
                   : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ? <HumanResourcesNotificationsRoute />
                     : <ModulePlaceholder icon={item.icon} label={item.label} description={item.description} />,
@@ -98,6 +104,10 @@ export function createHumanResourcesChildren(
   return [
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD),
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.USERS),
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS),
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.PERMITS),
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES),
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.REPORTS),
     {
       path: '*',
       element: <Navigate to={`${HUMAN_RESOURCES_BASE_PATH}/dashboard`} replace />,

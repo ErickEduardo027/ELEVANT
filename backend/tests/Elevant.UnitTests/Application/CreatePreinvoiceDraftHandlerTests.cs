@@ -83,5 +83,9 @@ public sealed class CreatePreinvoiceDraftHandlerTests
 
         public Task<PreinvoiceDraftDetail?> GetAsync(Guid accountId, Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<Elevant.Application.Commercial.PreinvoiceDisputeData>?> GetDisputesAsync(
+            Guid accountId, Guid draftId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 }

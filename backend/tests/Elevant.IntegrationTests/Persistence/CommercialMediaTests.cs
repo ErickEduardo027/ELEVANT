@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Elevant.Persistence.Commercial;
 using Elevant.Infrastructure.Persistence.Seed;
 
@@ -44,6 +45,10 @@ public sealed class CommercialMediaTests
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !Directory.Exists(Path.Combine(root.FullName, "frontend")))
             root = root.Parent;
+        // Isolated test output and testhost working directories may both be outside the worktree.
+        root ??= new DirectoryInfo(Path.GetDirectoryName(SourcePath())!);
+        while (root is not null && !Directory.Exists(Path.Combine(root.FullName, "frontend")))
+            root = root.Parent;
         Assert.NotNull(root);
         Assert.Equal(51, AviamAirlineReference.Research.Count);
         foreach (var airline in AviamAirlineReference.Research.Keys)
@@ -56,4 +61,6 @@ public sealed class CommercialMediaTests
             }
         }
     }
+
+    private static string SourcePath([CallerFilePath] string path = "") => path;
 }
