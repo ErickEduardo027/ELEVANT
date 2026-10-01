@@ -44,7 +44,10 @@ cuenta, vuelve a consultar el `bootstrap` cuando aparece
 El socket nunca entrega importes ni líneas del tenant; si falla,
 el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
 un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
-la sesión visible. Falta medir latencia real en navegador y VPS.
+la sesión visible. El observador desactiva los logs internos del transporte
+SignalR en el navegador, porque un WebSocket autenticado puede incluir el JWT
+en la URL registrada a nivel informativo; esto no desactiva la reconciliación
+HTTP ni el sondeo de respaldo. Falta medir latencia real en navegador y VPS.
 
 ## Ejecutar y validar
 

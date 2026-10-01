@@ -761,7 +761,17 @@
         "title": "Seguridad y límites de acceso",
         "type": "index",
         "area": "security",
-        "status": "verified",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/10-seguridad/registro-signalr-sin-tokens.md",
+        "id": "seguridad-registro-signalr-sin-tokens",
+        "title": "Registro del transporte SignalR en los clientes web",
+        "type": "capability",
+        "area": "security",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },

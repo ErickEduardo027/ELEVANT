@@ -1,4 +1,4 @@
-import { HubConnectionBuilder } from '@microsoft/signalr';
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { readSession } from '../features/auth/authService';
 
@@ -93,6 +93,7 @@ export function createPrivateWebAccountChangeObserver(onChanges) {
   return createAccountChangeObserver({ api, onChanges,
     createHubConnection: path => new HubConnectionBuilder()
       .withUrl(`${baseUrl}${path}`, { accessTokenFactory: () => readSession()?.token ?? '' })
+      .configureLogging(LogLevel.None)
       .withAutomaticReconnect([0, 2_000, 10_000, 30_000])
       .build() });
 }

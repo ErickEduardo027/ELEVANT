@@ -1,4 +1,4 @@
-import { HubConnectionBuilder } from "@microsoft/signalr";
+import { HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
 import type { AccountChangeListResponse } from "@elevant/api-client";
 import { createPublicWebApiClient } from "./elevant-api";
 
@@ -94,5 +94,6 @@ export function createPublicAirlineChangeObserver({ baseUrl, getAccessToken, onC
   return createAirlineChangeObserver({ api, onChanges,
     createHubConnection: () => new HubConnectionBuilder()
       .withUrl(`${origin.replace(/\/$/, "")}/hubs/operations`, { accessTokenFactory: getAccessToken })
+      .configureLogging(LogLevel.None)
       .withAutomaticReconnect([0, 2_000, 10_000, 30_000]).build() });
 }

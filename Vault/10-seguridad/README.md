@@ -3,14 +3,17 @@ id: seguridad-indice
 title: "Seguridad y límites de acceso"
 type: index
 area: security
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-09-12"
-verified_commit: "ca10cdb73e729622f0c1870e1c8762756a9138a4"
+verified_commit: pending
 sources:
   - AGENTS.md
+  - backend/Elevant.Api/Controllers/AuthenticationController.cs
+  - frontend/private-web/src/services/accountChangeObserver.js
+  - frontend/public-web/src/lib/airline-change-observer.ts
   - docs/security/database-access.md
   - docs/security/secrets-management.md
   - docs/deployment/development-hardening-backlog.md
@@ -35,6 +38,7 @@ La seguridad de ELEVANT tiene tres planos distintos: **quién alcanza un servici
 | --- | --- | --- |
 | ¿Por dónde se alcanza Development? | [Perímetro y acceso privado](perimetro-development-y-acceso-privado.md) | [Tailscale](../../ops/dokploy/tailscale/README.md), [firewall](../../ops/dokploy/firewall/README.md), [SSH](../../ops/dokploy/ssh/README.md) |
 | ¿Dónde viven secretos y qué puede hacer una persona en SQL? | [Identidades, secretos y datos](identidades-secretos-y-datos-de-prueba.md) | [Gestión de secretos](../../docs/security/secrets-management.md), [acceso SQL](../../docs/security/database-access.md) |
+| ¿Cómo se evita registrar tokens de los WebSockets autenticados? | [Registro del transporte SignalR](registro-signalr-sin-tokens.md) | [Observador AVIAM](../../frontend/private-web/src/services/accountChangeObserver.js), [observador Public Web](../../frontend/public-web/src/lib/airline-change-observer.ts) |
 | ¿Qué amenaza o control sigue abierto? | [Riesgos y controles pendientes](riesgos-y-controles-pendientes.md) | [Backlog de hardening](../../docs/deployment/development-hardening-backlog.md), [protección de ramas](../../.github/BRANCH_PROTECTION.md) |
 
 ## Modelo resumido
@@ -52,7 +56,7 @@ flowchart LR
     DIRECT[Push directo técnicamente posible] -. omite revisión .-> CI
 ```
 
-La política define grants privados y pruebas negativas; no autoriza conectar clientes directamente a SQL. A la vez, la API de negocio todavía no tiene autenticación/autorización implementada y el repositorio privado no impone técnicamente el PR antes de un push. Esas brechas no se maquillan con aislamiento de red.
+La política define grants privados y pruebas negativas; no autoriza conectar clientes directamente a SQL. La API de negocio tiene sesiones autenticadas, pero cada contrato debe verificar sus roles y alcances efectivos en el servidor. El repositorio privado no impone técnicamente el PR antes de un push; el aislamiento de red no sustituye ninguna de estas comprobaciones.
 
 ## Límites del mapa
 
