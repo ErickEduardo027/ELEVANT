@@ -77,6 +77,12 @@ La pantalla representa una escala completa, conserva sus tramos de llegada y sal
 
 El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned` y no despacha automáticamente. El panel de cobertura muestra solo agentes cuyo único impedimento es el turno; la API revalida permisos, terminal, jornada de hasta 16 horas y cobertura completa. Tras programar, la web obtiene opciones y ETag nuevos antes de permitir asignar. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Editar escalas existentes, importar vuelos y generar Work Orders permanecen deshabilitados. Los fixtures del módulo se usan solo en pruebas.
 
+Una ausencia o restricción aprobada para un agente con alcance en la estación
+emite `occ_planning` sin detalles laborales. Planificación reconsulta la
+estación y sus opciones de asignación ante la pista durable, foco o conexión
+recuperada y cada 25 segundos si la pestaña está visible. El backend sigue
+revalidando elegibilidad y ETag al confirmar una asignación.
+
 ## Frontera de seguridad
 
 Las rutas canónicas `/admin-occ/chat` y `/admin-occ/notifications` recuperan

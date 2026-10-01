@@ -80,6 +80,7 @@ export default function PlanningPage({
   filterScopeKey,
   hasStationScope = true,
   forceState = 'default',
+  dataRevision = 0,
 }) {
   const [activeView, setActiveView] = useState('timeline');
   const [selectedFlightId, setSelectedFlightId] = useState(null);
@@ -108,7 +109,7 @@ export default function PlanningPage({
   const canLoadAssignmentOptions = isInitialAssignmentCandidate(selectedFlight);
   const planningOptions = usePlanningOptions({
     turnaroundId: selectedFlight?.turnaroundId,
-    refreshToken: optionsRetryToken,
+    refreshToken: optionsRetryToken + dataRevision,
     enabled: canLoadAssignmentOptions,
   });
 

@@ -172,9 +172,14 @@ muestra solicitudes persistidas por ventana y página, registra una intención
 `Pending` con UUID estable y permite aprobar o rechazar con relectura ante
 409. El resultado incierto conserva la intención incluso durante una
 revalidación; foco, reconexión, pista durable y sondeo de 25 segundos
-revalidan sin conservar filas tras una
-denegación. OCC no recibe sus motivos laborales ni revalida automáticamente
-ante la nueva pista.
+revalidan sin conservar filas tras una denegación. La aprobación de `DayOff`
+o `Restriction` emite además `occ_planning` para las estaciones vigentes del
+agente, en la misma transacción. Solo cuentas OCC activas con membresía interna
+y alcance de estación reciben la pista; el feed revalida rol y estación al
+leerla. El payload contiene la estación, nunca el UUID ni el motivo de la
+solicitud laboral. Planificación OCC invalida snapshot y opciones de asignación
+ante esa pista, foco, reconexión o sondeo visible de 25 segundos. Una pista
+perdida no reemplaza la comprobación final de elegibilidad y ETag en la API.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)

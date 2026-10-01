@@ -742,6 +742,23 @@ public sealed class SqlServerMigrationTests
             Assert.NotEmpty(await inspection.OutboxMessages.AsNoTracking()
                 .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_absences\""))
                 .ToArrayAsync(cancellationToken));
+            var station = await inspection.Stations.AsNoTracking()
+                .SingleAsync(item => item.Code == "PUJ", cancellationToken);
+            var occKey = await inspection.Users.AsNoTracking()
+                .Where(item => item.PublicId == occId).Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var occHints = await inspection.OutboxMessages.AsNoTracking()
+                .Where(message => message.PayloadJson.Contains("\"resource\":\"occ_planning\""))
+                .ToArrayAsync(cancellationToken);
+            var occHint = Assert.Single(occHints);
+            var payload = AccountChangeOutboxWriter.Decode(occHint);
+            Assert.Equal(occKey, payload.RecipientAccountId);
+            Assert.Equal(station.Id, payload.StationId);
+            Assert.Equal(station.PublicId, payload.ResourceId);
+            Assert.DoesNotContain(firstId.ToString(), occHint.PayloadJson,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(input.Reason, occHint.PayloadJson,
+                StringComparison.Ordinal);
             Assert.Equal(AvailabilityRequestStatus.Pending,
                 (await inspection.AvailabilityRequests.AsNoTracking()
                     .SingleAsync(request => request.PublicId == collidingId,
@@ -800,6 +817,10 @@ public sealed class SqlServerMigrationTests
                     new ResolveHumanResourcesAvailabilityInput("Reject", "Not scheduled"),
                     cancellationToken)).Failure);
         }
+        await using (var inspection = CreateContext(database.ConnectionString))
+            Assert.Equal(2, await inspection.OutboxMessages.AsNoTracking()
+                .CountAsync(message => message.PayloadJson.Contains(
+                    "\"resource\":\"occ_planning\""), cancellationToken));
         await using (var revoke = CreateContext(database.ConnectionString))
         {
             var hrKey = await revoke.Users.Where(user => user.PublicId == hrId)
@@ -7355,13 +7376,18 @@ public sealed class SqlServerMigrationTests
                 .Select(role => role.Id).SingleAsync(cancellationToken);
             setup.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
                 { UserId = hrInternalId, RoleId = contractsRoleId });
+            setup.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
+                { UserId = occInternalId, RoleId = contractsRoleId });
             stationInternalId = await setup.Stations.Where(station => station.Code == "PUJ")
                 .Select(station => station.Id).SingleAsync(cancellationToken);
+            var stationPublicId = await setup.Stations.Where(station => station.Id == stationInternalId)
+                .Select(station => station.PublicId).SingleAsync(cancellationToken);
             var now = DateTimeOffset.UtcNow;
             foreach (var (recipient, resource) in new[]
             {
                 (occInternalId, "notifications"),
                 (occInternalId, "operation_messages"),
+                (occInternalId, "occ_planning"),
                 (agentInternalId, "notifications"),
             })
             {
@@ -7372,7 +7398,7 @@ public sealed class SqlServerMigrationTests
                     RecipientAccountId = recipient,
                     StationId = stationInternalId,
                     Resource = resource,
-                    ResourceId = Guid.NewGuid(),
+                    ResourceId = resource == "occ_planning" ? stationPublicId : Guid.NewGuid(),
                     OccurredAt = now,
                     CreatedAt = now,
                 });
@@ -7417,7 +7443,8 @@ public sealed class SqlServerMigrationTests
         Assert.True(first.HasMore);
         var next = await ReadAsync(occPublicId, first.Changes[0].Sequence, 10);
         Assert.NotNull(next);
-        Assert.Single(next.Changes);
+        Assert.Equal(2, next.Changes.Count);
+        Assert.Contains(next.Changes, item => item.Resource == "occ_planning");
         Assert.False(next.HasMore);
         var agent = await ReadAsync(agentPublicId, 0, 10);
         Assert.NotNull(agent);
@@ -7429,6 +7456,19 @@ public sealed class SqlServerMigrationTests
         var humanResources = await ReadAsync(hrPublicId, 0, 10);
         Assert.NotNull(humanResources);
         Assert.Equal(4, humanResources.Changes.Count);
+
+        await using (var revokeRole = CreateContext(database.ConnectionString))
+        {
+            var occRoleId = await revokeRole.Roles.Where(role => role.NormalizedName == "ADMIN_OCC")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await revokeRole.Set<IdentityUserRole<long>>().Where(link =>
+                link.UserId == occInternalId && link.RoleId == occRoleId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        var afterRoleRevoke = await ReadAsync(occPublicId, 0, 10);
+        Assert.NotNull(afterRoleRevoke);
+        Assert.DoesNotContain(afterRoleRevoke.Changes, item => item.Resource == "occ_planning");
+        Assert.Equal(2, afterRoleRevoke.Changes.Count);
 
         await using (var setup = CreateContext(database.ConnectionString))
         {

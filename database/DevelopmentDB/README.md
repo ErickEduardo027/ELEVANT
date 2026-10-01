@@ -58,6 +58,10 @@ No introduce una migración ni modifica los datos existentes al desplegarse.
 Las solicitudes de disponibilidad usan la tabla existente
 `hr.availability_requests`: alta pendiente y decisión se confirman en
 transacciones serializables con auditoría y pistas `hr_absences` en el outbox.
+La aprobación de `DayOff` o `Restriction` agrega en esa transacción una pista
+`occ_planning` por estación de agente y destinatario OCC autorizado, sin motivo
+ni identificador de solicitud en el payload; el feed comprueba de nuevo rol y
+estación antes de entregarla.
 La aprobación de `DayOff` o `Restriction` comprueba que el agente no conserve
 una asignación activa en las fechas solicitadas o al día siguiente bajo un
 turno nocturno iniciado durante la ausencia. La aprobación de

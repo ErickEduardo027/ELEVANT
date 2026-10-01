@@ -54,6 +54,8 @@ internal sealed class EfAccountChangeReadStore(
         var hasHumanResourcesAccess = isSuperAdmin ||
             hasInternalMembership && actor.Roles.Any(role =>
                 role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
+        var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
         var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
             .Select(role => role.RoleId).ToArray();
         var commercialGrants = hasInternalMembership ? await (
@@ -79,6 +81,10 @@ internal sealed class EfAccountChangeReadStore(
                 ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts" &&
                   change.Resource != "hr_permits" && change.Resource != "hr_absences") ||
                     hasHumanResourcesAccess) &&
+                (change.Resource != "occ_planning" ||
+                    (hasOccPlanningAccess && change.StationId != null &&
+                     context.Stations.Any(station => station.Id == change.StationId &&
+                         station.PublicId == change.ResourceId))) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>
