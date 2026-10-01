@@ -167,16 +167,22 @@ permite a Gestión Humana y Superadministración registrar solicitudes pendiente
 y aprobarlas o rechazarlas con auditoría y señal durable `hr_absences`. Una
 ausencia aprobada no puede chocar con una operación aún asignada, incluso si
 un turno nocturno cubre una operación del día siguiente. El feed
-revalida el rol antes de entregar la pista. La API también consulta solicitudes
-persistidas por ventana y página; esta lectura y las acciones todavía no están
-montadas en la ruta activa de horarios. OCC no recibe sus motivos laborales ni
-revalida automáticamente ante la nueva pista.
+revalida el rol antes de entregar la pista. La ruta activa de turnos ahora
+muestra solicitudes persistidas por ventana y página, registra una intención
+`Pending` con UUID estable y permite aprobar o rechazar con relectura ante
+409. El resultado incierto conserva la intención incluso durante una
+revalidación; foco, reconexión, pista durable y sondeo de 25 segundos
+revalidan sin conservar filas tras una
+denegación. OCC no recibe sus motivos laborales ni revalida automáticamente
+ante la nueva pista.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftWriteStore.cs).
 [Solicitudes de disponibilidad](../../backend/Elevant.Api/Controllers/HumanResourcesAvailabilityRequestsController.cs)
 usan [persistencia transaccional](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesAvailabilityWriteStore.cs).
+Su [panel activo](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx)
+usa el [cliente versionado](../../frontend/private-web/src/services/humanResourcesAvailabilityService.js).
 
 La ruta restringida de Reportes de personal combina las primeras 100
 habilitaciones y permisos actuales con los primeros 100 turnos de la semana

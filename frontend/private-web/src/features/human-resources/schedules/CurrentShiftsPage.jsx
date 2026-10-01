@@ -3,6 +3,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { getHumanResourcesShifts } from '../../../services/humanResourcesShiftsReadService';
 import { addDays, formatWeekRangeLabel, getWeekStart, toDateKey } from './mappers';
 import ShiftRecordForm from './ShiftRecordForm';
+import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
 
 const PAGE_LIMIT = 20;
 const BLOCK_LABELS = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
@@ -12,6 +13,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
+  const [requestsAuthorized, setRequestsAuthorized] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const requestVersion = useRef(0);
@@ -24,14 +26,18 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     setState({ status: 'loading', data: null });
     getHumanResourcesShifts({ from, to, page, limit: PAGE_LIMIT }, { signal: controller.signal })
       .then(data => {
-        if (!controller.signal.aborted && version === requestVersion.current)
+        if (!controller.signal.aborted && version === requestVersion.current) {
+          setRequestsAuthorized(true);
           setState({ status: 'success', data });
+        }
       })
       .catch(error => {
         if (controller.signal.aborted || version !== requestVersion.current ||
             error?.name === 'AbortError') return;
         setFormOpen(false);
         setNotice('');
+        if (error?.status === 401 || error?.status === 403)
+          setRequestsAuthorized(false);
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', data: null });
       });
@@ -41,7 +47,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   useEffect(() => {
     const refresh = () => setRevision(value => value + 1);
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('hr_shifts')) refresh();
+      if (resources.includes('hr_shifts') || resources.includes('hr_absences')) refresh();
     });
     void observer.start().catch(() => {});
     window.addEventListener('focus', refresh);
@@ -151,5 +157,14 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
           className="rounded-lg border px-3 py-2 disabled:opacity-40">Siguiente página</button>
       </nav>
     </>}
+    {requestsAuthorized && <AvailabilityRequestsPanel key={`${from}-${to}`}
+      from={from} to={to} revision={revision}
+      onDenied={status => {
+        requestVersion.current += 1;
+        setRequestsAuthorized(false);
+        setFormOpen(false);
+        setNotice('');
+        setState({ status: status === 401 ? 'unauthorized' : 'forbidden', data: null });
+      }} />}
   </div>;
 }
