@@ -64,6 +64,10 @@ hasta certificar una política CSP compatible y revisar los dominios cargados.
 
 ## Planificación OCC remota
 
+Guardar o desactivar un perfil de rampa invalida la planificación OCC de sus
+estaciones anteriores y solicitadas, sin identidad del agente en la pista
+durable. Una desactivación también avisa a la estación cuyo scope se retira.
+
 La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
 
 - `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;

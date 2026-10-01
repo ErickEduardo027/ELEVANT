@@ -115,7 +115,12 @@ retira perfiles y formulario de edición anteriores sin exponer el error interno
 un guardado fallido conserva el formulario sin exponer trazas; las respuestas
 tardías no pueden sobrescribir una consulta más reciente. Es un
 cambio local de esta rama, no una prueba de despliegue remoto ni de los módulos
-profundos de Gestión Humana. Fuente: [panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx).
+profundos de Gestión Humana. Guardar un perfil invalida la planificación OCC de
+la unión de sus estaciones anteriores y solicitadas en el mismo commit SQL,
+incluso si se desactiva y pierde todos los scopes efectivos. El aviso solo
+incluye el UUID de estación, no la identidad del agente. Fuentes:
+[panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs).
 
 La API de esta rama agrega una lectura paginada de los ciclos actuales de
 habilitación de rampa para Gestión Humana y Superadministración internas. La

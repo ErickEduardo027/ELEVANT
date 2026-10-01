@@ -844,6 +844,63 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task RampProfileDeactivationInvalidatesFormerOccStationWithoutAgentIdentity()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var stationId = Guid.Parse("20000000-0000-7000-8000-000000000003");
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var profile = Assert.Single((await store.ListAsync(hrId, cancellationToken))!.Profiles,
+            item => item.EmployeeNumber == "DEV-RA-001");
+        var before = await CountOccPlanningHintsAsync();
+        var result = await store.SaveAsync(hrId, profile.Id,
+            new SaveRampProfileInput(profile.FirstName, profile.LastName,
+                profile.EmployeeNumber, profile.Category, profile.HireDate, false,
+                [stationId]),
+            cancellationToken);
+        Assert.Null(result.Failure);
+        Assert.False(result.Profile!.IsActive);
+        Assert.Equal(before + 1, await CountOccPlanningHintsAsync());
+        await using var inspection = CreateContext(database.ConnectionString);
+        var hint = Assert.Single(await inspection.OutboxMessages.AsNoTracking()
+            .Where(item => item.PayloadJson.Contains("\"resource\":\"occ_planning\""))
+            .ToArrayAsync(cancellationToken));
+        var payload = AccountChangeOutboxWriter.Decode(hint);
+        Assert.Equal(stationId, payload.ResourceId);
+        Assert.Equal(await inspection.Users.AsNoTracking()
+            .Where(item => item.PublicId == occId).Select(item => item.Id)
+            .SingleAsync(cancellationToken), payload.RecipientAccountId);
+        Assert.DoesNotContain(profile.Id.ToString(), hint.PayloadJson,
+            StringComparison.OrdinalIgnoreCase);
+
+        async Task<int> CountOccPlanningHintsAsync()
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            return await check.OutboxMessages.AsNoTracking().CountAsync(item =>
+                item.PayloadJson.Contains("\"resource\":\"occ_planning\""),
+                cancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesShiftRecordingRespectsScopesReplaysAndEmitsOneChange()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

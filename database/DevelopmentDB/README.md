@@ -56,6 +56,9 @@ La auditoría y la pista `hr_qualifications` se confirman en esa misma transacci
 Los cambios de habilitaciones, carnets y turnos (de Gestión Humana u OCC)
 escriben además una pista `occ_planning` por estación para invalidar opciones
 de asignación; no exponen nombre, documento ni identificador de agente.
+La edición o desactivación de un perfil de rampa emite la misma pista para la
+unión de sus estaciones anteriores y solicitadas, de modo que la retirada de
+scope también invalide a OCC sin filtrar la identidad del agente.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
 Las solicitudes de disponibilidad usan la tabla existente

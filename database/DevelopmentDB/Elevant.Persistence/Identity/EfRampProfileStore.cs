@@ -119,6 +119,8 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 var oldScopes = await context.Set<RampAgentStationScope>()
                     .Where(item => item.RampAgentId == profile.Id && item.ValidTo == null)
                     .ToArrayAsync(cancellationToken);
+                var affectedStationIds = oldScopes.Select(item => item.StationId)
+                    .Concat(requestedStations.Select(item => item.Id)).Distinct().ToArray();
                 HashSet<long> wantedIds = input.IsActive ? requestedStations.Select(item => item.Id).ToHashSet() : [];
                 foreach (var scope in oldScopes.Where(item => !wantedIds.Contains(item.StationId)))
                 {
@@ -159,6 +161,13 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 foreach (var recipient in recipients)
                     AccountChangeOutboxWriter.Add(context, recipient, null,
                         "ramp_profiles", profile.PublicId, now);
+                var affectedStations = await context.Stations.AsNoTracking()
+                    .Where(item => affectedStationIds.Contains(item.Id))
+                    .Select(item => new { item.Id, item.PublicId })
+                    .ToArrayAsync(cancellationToken);
+                foreach (var station in affectedStations)
+                    await OccPlanningChangeWriter.AddForStationAsync(context, station.Id,
+                        station.PublicId, now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return RampProfileResult.Success(new RampProfileData(profile.PublicId,
