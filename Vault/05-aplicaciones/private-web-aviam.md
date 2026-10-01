@@ -164,6 +164,9 @@ Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
 para la fecha local consultada o el día de inicio de un turno nocturno. Las
 solicitudes pendientes y de cambio de turno no son una ausencia. Registrar y
 resolver solicitudes desde Gestión Humana, con aviso durable, sigue pendiente.
+La API ya permite a Gestión Humana y Superadministración consultar solicitudes
+persistidas por ventana y página; esta lectura todavía no está montada en la
+ruta activa de horarios. OCC no recibe sus motivos laborales.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)

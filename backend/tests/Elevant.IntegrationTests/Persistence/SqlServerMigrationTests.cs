@@ -462,6 +462,114 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task HumanResourcesAvailabilityReadIsBoundedPagedAndRevocationSafe()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var monday = new DateOnly(2026, 8, 17);
+        var sunday = monday.AddDays(6);
+        var firstId = Guid.NewGuid();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var agentId = await setup.RampAgents.Where(agent =>
+                agent.EmployeeNumber == "DEV-RA-001").Select(agent => agent.Id)
+                .SingleAsync(cancellationToken);
+            var hrKey = await setup.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var now = new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
+            setup.AvailabilityRequests.AddRange(
+                new AvailabilityRequest
+                {
+                    PublicId = firstId, RampAgentId = agentId,
+                    StartsOn = monday, EndsOn = monday.AddDays(1),
+                    Type = AvailabilityRequestType.DayOff,
+                    Status = AvailabilityRequestStatus.Approved,
+                    Reason = "Synthetic leave", RequestedAt = now,
+                    ResolvedAt = now.AddMinutes(1), ResolvedByAccountId = hrKey,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                new AvailabilityRequest
+                {
+                    PublicId = Guid.NewGuid(), RampAgentId = agentId,
+                    StartsOn = monday.AddDays(4), EndsOn = sunday.AddDays(2),
+                    Type = AvailabilityRequestType.Restriction,
+                    Status = AvailabilityRequestStatus.Pending,
+                    Reason = "Synthetic restriction", RequestedAt = now,
+                    CreatedAt = now, UpdatedAt = now,
+                },
+                new AvailabilityRequest
+                {
+                    PublicId = Guid.NewGuid(), RampAgentId = agentId,
+                    StartsOn = sunday.AddDays(1), EndsOn = sunday.AddDays(2),
+                    Type = AvailabilityRequestType.DayOff,
+                    Status = AvailabilityRequestStatus.Pending,
+                    Reason = "Outside query", RequestedAt = now,
+                    CreatedAt = now, UpdatedAt = now,
+                });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesAvailabilityReadStore>();
+            var first = await store.ListAsync(hrId, monday, sunday, 1, 1,
+                cancellationToken);
+            Assert.NotNull(first);
+            Assert.True(first.HasMore);
+            var request = Assert.Single(first.Requests);
+            Assert.Equal(firstId, request.Id);
+            Assert.Equal("DEV-RA-001", request.EmployeeNumber);
+            Assert.Equal("DayOff", request.Type);
+            Assert.Equal("Approved", request.Status);
+            var second = await store.ListAsync(hrId, monday, sunday, 2, 1,
+                cancellationToken);
+            Assert.NotNull(second);
+            Assert.False(second.HasMore);
+            Assert.Equal("Restriction", Assert.Single(second.Requests).Type);
+            Assert.Null(await store.ListAsync(occId, monday, sunday, 1, 20,
+                cancellationToken));
+            Assert.Equal(2, (await store.ListAsync(superAdminId, monday, sunday,
+                1, 20, cancellationToken))!.Requests.Count);
+        }
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var hrKey = await setup.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await setup.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+                .Select(role => role.Id).SingleAsync(cancellationToken);
+            await setup.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+                link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesAvailabilityReadStore>();
+            Assert.Null(await store.ListAsync(hrId, monday, sunday, 1, 20,
+                cancellationToken));
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesShiftRecordingRespectsScopesReplaysAndEmitsOneChange()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

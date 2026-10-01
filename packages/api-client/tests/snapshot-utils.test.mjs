@@ -143,7 +143,7 @@ describe("OpenAPI source descriptor", () => {
     expect(source).toEqual({
       schemaVersion: 1,
       openApiSha256:
-        "sha256:7563fc32d8b043952106a58bc9eaba09447ac48260a2ec5d13413a9d77463cd9",
+        "sha256:18507aed0f62dc0e528cb49a4e438d1c9099a1f20127966c3a47977a860075ca",
       swaggerPath,
     });
     expect(source.openApiSha256).toBe(canonicalJsonSha256(snapshot));

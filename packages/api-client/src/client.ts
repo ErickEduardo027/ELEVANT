@@ -21,6 +21,7 @@ import {
   getListHumanResourcesQualificationEquipmentTypesUrl,
   getRecordHumanResourcesQualificationUrl,
   getListHumanResourcesShiftsUrl,
+  getListHumanResourcesAvailabilityRequestsUrl,
   getGetHumanResourcesShiftAssignmentOptionsUrl,
   getRecordHumanResourcesShiftUrl,
   getListFinanceReconciliationUrl,
@@ -111,6 +112,8 @@ import {
   type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
+  type HumanResourcesAvailabilityRequestPage,
+  type ListHumanResourcesAvailabilityRequestsParams,
   type HumanResourcesShiftAssignmentOptions,
   type GetHumanResourcesShiftAssignmentOptionsParams,
   type ListHumanResourcesShiftsParams,
@@ -227,6 +230,9 @@ export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "b
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesAvailabilityRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesAvailabilityQuery = Omit<ListHumanResourcesAvailabilityRequestsParams,
+  "from" | "to"> & { readonly from: string; readonly to: string };
 export type GetHumanResourcesShiftAssignmentOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type HumanResourcesShiftAssignmentQuery = Required<GetHumanResourcesShiftAssignmentOptionsParams>;
 export type RecordHumanResourcesShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -402,6 +408,10 @@ export interface ElevantApiClient {
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
   ): Promise<HumanResourcesShiftPage>;
+  getHumanResourcesAvailabilityRequests(
+    query: HumanResourcesAvailabilityQuery,
+    options?: GetHumanResourcesAvailabilityRequestsOptions,
+  ): Promise<HumanResourcesAvailabilityRequestPage>;
   getHumanResourcesShiftAssignmentOptions(
     query: HumanResourcesShiftAssignmentQuery,
     options?: GetHumanResourcesShiftAssignmentOptionsOptions,
@@ -2424,6 +2434,23 @@ function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): H
     ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
+function validatedHumanResourcesAvailabilityQuery(
+  query: HumanResourcesAvailabilityQuery,
+): HumanResourcesAvailabilityQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
+      !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 30 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 ||
+        query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 ||
+        query.limit > 100)))
+    throw new TypeError("Human Resources availability range or paging is invalid.");
+  return { from: query.from, to: query.to,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
 function validatedHumanResourcesShiftAssignmentQuery(
   query: HumanResourcesShiftAssignmentQuery,
 ): HumanResourcesShiftAssignmentQuery {
@@ -2485,6 +2512,41 @@ function validatedHumanResourcesShiftInput(
   if ((end > start ? end - start : end + 86400 - start) > 16 * 3600)
     throw new TypeError("Human Resources shift cannot exceed sixteen hours.");
   return request;
+}
+
+function isHumanResourcesAvailabilityRequestPage(
+  value: unknown,
+): value is HumanResourcesAvailabilityRequestPage {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["from", "to", "page", "limit", "hasMore", "requests"]) ||
+      !isDateOnly(value.from) || !isDateOnly(value.to) || value.from > value.to ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.requests) ||
+      value.requests.length > value.limit ||
+      (value.hasMore && value.requests.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  const from = value.from;
+  const to = value.to;
+  return value.requests.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "startsOn",
+        "endsOn", "type", "status", "reason", "requestedAt", "resolvedAt",
+        "resolutionNote"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        !isDateOnly(item.startsOn) || !isDateOnly(item.endsOn) ||
+        item.startsOn > item.endsOn || item.startsOn > to || item.endsOn < from ||
+        typeof item.type !== "string" ||
+        !["DayOff", "ShiftChange", "Restriction"].includes(item.type) ||
+        typeof item.status !== "string" ||
+        !["Pending", "Approved", "Rejected", "Cancelled"].includes(item.status) ||
+        !isNonEmptyString(item.reason) || !isDateTimeOffset(item.requestedAt) ||
+        !isOptionalNullable(item.resolvedAt, isDateTimeOffset) ||
+        !isOptionalNullable(item.resolutionNote, isNonEmptyString)) return false;
+    ids.add(item.id);
+    return true;
+  });
 }
 
 function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShiftPage {
@@ -3744,6 +3806,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getListHumanResourcesShiftsUrl(scope),
         { ...options, method: "GET" }, true);
       if (!isHumanResourcesShiftPage(result.data) ||
+          result.data.from !== scope.from || result.data.to !== scope.to ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesAvailabilityRequests(
+      query: HumanResourcesAvailabilityQuery,
+      options?: GetHumanResourcesAvailabilityRequestsOptions,
+    ) {
+      const scope = validatedHumanResourcesAvailabilityQuery(query);
+      const result = await execute(getListHumanResourcesAvailabilityRequestsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesAvailabilityRequestPage(result.data) ||
           result.data.from !== scope.from || result.data.to !== scope.to ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 50))

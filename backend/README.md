@@ -151,8 +151,12 @@ a 60 minutos y usa 15 por defecto.
   emite `hr_shifts`. La lectura OCC ya excluye de la elegibilidad a un agente
   con un día libre o restricción `Approved` que cubra la fecha local consultada
   o el inicio de su turno nocturno; `Pending`, `Rejected`, `Cancelled` y
-  `ShiftChange` no son ausencias. El alta/resolución de solicitudes y su aviso
-  durable todavía faltan.
+  `ShiftChange` no son ausencias.
+- `GET /api/v1/human-resources/availability-requests?from=&to=&page=&limit=`
+  devuelve solicitudes de disponibilidad que se solapan con una ventana de
+  hasta 31 fechas locales, paginadas de forma estable. Exige Gestión Humana o
+  Superadministración internas vigentes; OCC no puede leer motivos laborales.
+  El alta/resolución auditada de solicitudes y su aviso durable todavía faltan.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

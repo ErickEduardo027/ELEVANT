@@ -110,6 +110,12 @@ workDate })` valida el par exacto y entrega solamente estaciones y terminales
 de alcance vigente, además de indicar si ese día ya tiene turno. El formulario
 de Private Web ya utiliza esa consulta antes de enviar el comando.
 
+`getHumanResourcesAvailabilityRequests({ from, to, page?, limit? })` lee
+solicitudes con fechas solapadas en una ventana de hasta 31 días y valida
+identidad, tipo, estado, fechas, paginación y respuesta. La API vuelve a
+comprobar el rol interno vigente; esta lectura no registra ni aprueba
+ausencias y aún no está conectada a una pantalla activa.
+
 `@elevant/api-client` es el cliente TypeScript privado y sin dependencias de
 ejecución que comparten Private Web, Public Web y Mobile Agent. El contrato se
 genera con Orval `8.27.0` desde un snapshot OpenAPI revisado; los consumidores

@@ -760,6 +760,32 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HumanResourcesAvailabilityRequestData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  startsOn: string;
+  endsOn: string;
+  type: string;
+  status: string;
+  reason: string;
+  requestedAt: string;
+  /** @nullable */
+  resolvedAt?: string | null;
+  /** @nullable */
+  resolutionNote?: string | null;
+}
+
+export interface HumanResourcesAvailabilityRequestPage {
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  requests: HumanResourcesAvailabilityRequestData[];
+}
+
 export interface HumanResourcesPermitData {
   id: string;
   rampProfileId: string;
@@ -2126,6 +2152,13 @@ limit?: number;
 };
 
 export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesAvailabilityRequestsParams = {
+from?: string;
+to?: string;
 page?: number;
 limit?: number;
 };
@@ -4237,6 +4270,41 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesAvailabilityRequestsUrl = (params?: ListHumanResourcesAvailabilityRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/availability-requests?${stringifiedParams}` : `/api/v1/human-resources/availability-requests`
+}
+
+export const listHumanResourcesAvailabilityRequests = async (params?: ListHumanResourcesAvailabilityRequestsParams, options?: RequestInit): Promise<HumanResourcesAvailabilityRequestPage> => {
+
+  const res = await fetch(getListHumanResourcesAvailabilityRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityRequestPage = body ? JSON.parse(body) : {}
   return data
 }
 
