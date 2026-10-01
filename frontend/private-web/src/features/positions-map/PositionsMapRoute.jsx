@@ -5,6 +5,7 @@ import PositionsMapPage from './PositionsMapPage';
 import { usePositionsMapData } from './usePositionsMapData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useTheme } from '../shell/useTheme';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
 // `theme` es de alcance de la app (shell), no de la vista previa de Admin/OCC,
 // por eso se resuelve aquí vía el hook compartido en vez de AdminOccPreviewContext
@@ -21,6 +22,25 @@ export default function PositionsMapRoute() {
   const { theme } = useTheme();
   const positionsMap = usePositionsMapData(selected?.stationCode ?? '', retryToken,
     forceState === 'positionsMapDisconnected', session?.accountId);
+
+  useEffect(() => {
+    const refresh = () => setRetryToken(token => token + 1);
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('occ_planning')) refresh();
+    });
+    void observer.start().catch(() => {});
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      void observer.stop();
+    };
+  }, [session?.accountId]);
   const navigate = useNavigate();
 
   useEffect(() => {

@@ -102,6 +102,13 @@ reconcilia el feed; una consulta cada 25 segundos respalda WebSocket y los
 sondeos existentes de las pantallas permanecen. No implica entrega con la
 pestaña cerrada ni garantiza la latencia hasta la prueba real del VPS.
 
+En esta rama, una asignación OCC agrega en la misma transacción una invalidación
+`occ_planning` limitada a las cuentas OCC vigentes de su estación. Planificación,
+Monitoreo y Mapa de posiciones releen sus snapshots autorizados cuando reciben
+esa señal; foco, reconexión y sondeo visible conservan una ruta de recuperación.
+El aviso no transporta identidad del agente ni estado del vuelo. Esto todavía
+no demuestra latencia en el VPS ni despliegue de esta rama.
+
 La ruta `/admin-occ/review` consume exclusivamente la API canónica de revisión:
 cola limitada por la estación del actor, detalle de la última entrega y decisión
 individual. Muestra checklist, servicios, incidencias y nota del agente sin

@@ -1,9 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import FlightMonitoringRoute from './FlightMonitoringRoute';
 import { useAuth } from '../auth/AuthContext';
 import { useFlightMonitoringData } from './useFlightMonitoringData';
+
+const observerFactory = vi.hoisted(() => vi.fn());
+vi.mock('../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: observerFactory,
+}));
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('./useFlightMonitoringData', () => ({ useFlightMonitoringData: vi.fn() }));
@@ -24,6 +29,9 @@ function LocationProbe() {
 }
 
 beforeEach(() => {
+  observerFactory.mockReset();
+  observerFactory.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined) });
   vi.mocked(useAuth).mockReturnValue({ session: { accountId: 'occ-account',
     stationScopes: [{ stationId: firstId, stationCode: 'PUJ' },
       { stationId: secondId, stationCode: 'SDQ' }] } });
@@ -31,6 +39,14 @@ beforeEach(() => {
     status: 'success', data: { station: { code }, flights: [] },
     error: null, connection: 'connected', lastUpdatedAt: null,
   }));
+});
+
+it('revalidates monitoring when another OCC session changes planning', async () => {
+  render(<MemoryRouter><FlightMonitoringRoute /></MemoryRouter>);
+  expect(useFlightMonitoringData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
+  expect(observerFactory).toHaveBeenCalledOnce();
+  await act(async () => observerFactory.mock.calls[0][0](['occ_planning']));
+  expect(useFlightMonitoringData).toHaveBeenCalledWith('PUJ', 1, false, 'occ-account');
 });
 
 it('chooses an authorized station and moves the active read with the selector', () => {

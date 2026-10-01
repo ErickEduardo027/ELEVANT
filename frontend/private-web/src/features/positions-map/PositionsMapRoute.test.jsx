@@ -1,9 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PositionsMapRoute from './PositionsMapRoute';
 import { useAuth } from '../auth/AuthContext';
 import { usePositionsMapData } from './usePositionsMapData';
+
+const observerFactory = vi.hoisted(() => vi.fn());
+vi.mock('../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: observerFactory,
+}));
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('./usePositionsMapData', () => ({ usePositionsMapData: vi.fn() }));
@@ -25,6 +30,9 @@ const firstId = '20000000-0000-7000-8000-000000000003';
 const secondId = '20000000-0000-7000-8000-000000000004';
 
 beforeEach(() => {
+  observerFactory.mockReset();
+  observerFactory.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined) });
   vi.mocked(useAuth).mockReturnValue({ session: { accountId: 'occ-account',
     stationScopes: [{ stationId: firstId, stationCode: 'PUJ' },
       { stationId: secondId, stationCode: 'SDQ' }] } });
@@ -32,6 +40,14 @@ beforeEach(() => {
     status: 'success', data: { station: { code }, positions: [] },
     error: null, connection: 'connected', lastUpdatedAt: null,
   }));
+});
+
+it('revalidates positions when another OCC session changes planning', async () => {
+  render(<MemoryRouter><PositionsMapRoute /></MemoryRouter>);
+  expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
+  expect(observerFactory).toHaveBeenCalledOnce();
+  await act(async () => observerFactory.mock.calls[0][0](['occ_planning']));
+  expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 1, false, 'occ-account');
 });
 
 it('uses the authorized station selection for the active positions read', () => {

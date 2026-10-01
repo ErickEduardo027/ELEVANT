@@ -12,6 +12,8 @@ verified_commit: "e047f7ac69c241d354fff9144f47747b98963719"
 sources:
   - database/DevelopmentDB/Elevant.Persistence/Realtime/AccountChangeOutboxWriter.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/AirlineOperationChangeWriter.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfOccPlanningCommandStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Realtime/OccPlanningChangeWriter.cs
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeDispatcherStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Realtime/EfAccountChangeReadStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260926062846_AccountChangeFeed.cs
@@ -24,6 +26,8 @@ sources:
   - frontend/private-web/src/services/accountChangeObserver.js
   - frontend/private-web/src/services/accountChangeObserver.test.js
   - frontend/private-web/src/features/admin-occ/CanonicalReadRoutes.test.jsx
+  - frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx
+  - frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx
   - frontend/private-web/README.md
   - frontend/private-web/nginx/security-headers.conf
   - frontend/private-web/Dockerfile
@@ -98,3 +102,12 @@ recobrar foco o conectividad. La prueba SQL cubre la revocación de membresía
 de aerolínea sin perder otra membresía activa. Esto **no** demuestra todavía
 navegación real con VPS o emulador, latencia p95, entrega con la app cerrada,
 historial completo de aerolínea ni promoción remota.
+
+En esta rama, asignar un agente a una operación OCC agrega también una pista
+`occ_planning` para las cuentas OCC activas de la estación, en el mismo commit
+que la asignación. La pista contiene el UUID de la estación, no datos del
+agente ni del vuelo. Planificación, Monitoreo y Mapa de posiciones vuelven a
+leer sus snapshots autorizados al recibirla; foco, reconexión y sondeo visible
+permiten recuperación. La prueba SQL exige el destinatario y alcance de esa
+pista; las pruebas de rutas comprueban la invalidación en Monitoreo y Mapa.
+La entrega efectiva y latencia entre navegadores en el VPS siguen pendientes.

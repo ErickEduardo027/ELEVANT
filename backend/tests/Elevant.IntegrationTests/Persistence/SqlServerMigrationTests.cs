@@ -4621,6 +4621,16 @@ public sealed class SqlServerMigrationTests
             (await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) })).Failure);
         Assert.Equal(OccShiftWriteFailure.NotFound,
             (await ProgramShiftAsync(shiftRequest with { AllowedStationIds = [] })).Failure);
+        await using (var beforeAssignment = CreateContext(database.ConnectionString))
+        {
+            var shiftPlanningHints = (await beforeAssignment.OutboxMessages.AsNoTracking()
+                .Where(item => item.EventType == "account.changed.v1")
+                .ToArrayAsync(cancellationToken))
+                .Select(AccountChangeOutboxWriter.Decode)
+                .Where(item => item.Resource == "occ_planning" && item.ResourceId == stationId)
+                .ToArray();
+            Assert.Single(shiftPlanningHints); // The shift replay does not publish twice.
+        }
         await using (var scope = provider.CreateAsyncScope())
         {
             var planning = await scope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>()
@@ -4706,7 +4716,7 @@ public sealed class SqlServerMigrationTests
                 item.ResourceId == stationId &&
                 item.RecipientAccountId == actorDbId)
             .ToArray();
-        Assert.Single(occPlanningHints); // Retrying the OCC shift does not republish its hint.
+        Assert.Equal(2, occPlanningHints.Length); // Shift and assignment each publish once.
         await inspection.AccountStationScopes.Where(item => item.AccountId == actorDbId &&
             item.StationId == turnaround.StationId && item.RevokedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.RevokedAt,
@@ -5088,12 +5098,18 @@ public sealed class SqlServerMigrationTests
                     item.EntityPublicId == operation.PublicId &&
                     item.Action == "occ.operation.assigned")
                 .ToArrayAsync(cancellationToken));
+            var stationInternalId = await verificationContext.Turnarounds.AsNoTracking()
+                .Where(item => item.Id == turnaroundInternalId)
+                .Select(item => item.StationId)
+                .SingleAsync(cancellationToken);
             var assignmentHints = (await verificationContext.OutboxMessages.AsNoTracking()
                 .Where(item => item.EventType == "account.changed.v1")
                 .ToArrayAsync(cancellationToken))
                 .Select(AccountChangeOutboxWriter.Decode).ToArray();
             Assert.Single(assignmentHints, item => item.Resource == "airline_operations" &&
                 item.ResourceId == operation.PublicId && item.StationId == null);
+            Assert.Single(assignmentHints, item => item.Resource == "occ_planning" &&
+                item.ResourceId == stationId && item.StationId == stationInternalId);
         }
 
         await using (var upgradeSetupContext = CreateContext(database.ConnectionString))

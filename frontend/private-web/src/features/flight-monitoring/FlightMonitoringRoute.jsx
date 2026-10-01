@@ -5,6 +5,7 @@ import FlightMonitoringPage from './FlightMonitoringPage';
 import { useFlightMonitoringData } from './useFlightMonitoringData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useTheme } from '../shell/useTheme';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
 // El `focusFlightId` que el `AppShell` original guardaba en estado local al
 // navegar desde Notificaciones/Revisión (`handleNavigateToResource`) ahora se
@@ -28,6 +29,25 @@ export default function FlightMonitoringRoute() {
   const { theme } = useTheme();
   const monitoring = useFlightMonitoringData(selected?.stationCode ?? '', retryToken,
     forceState === 'monitoringDisconnected', session?.accountId);
+
+  useEffect(() => {
+    const refresh = () => setRetryToken(token => token + 1);
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('occ_planning')) refresh();
+    });
+    void observer.start().catch(() => {});
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      void observer.stop();
+    };
+  }, [session?.accountId]);
 
   useEffect(() => {
     if (stationScopes.some(scope => scope.stationId === stationId)) return;
