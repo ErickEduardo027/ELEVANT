@@ -121,6 +121,8 @@ internal sealed class EfHumanResourcesQualificationWriteStore(
                 foreach (var recipient in recipients)
                     AccountChangeOutboxWriter.Add(context, recipient, null,
                         "hr_qualifications", qualificationId, now);
+                await OccPlanningChangeWriter.AddForAgentAsync(context, agent.Id,
+                    today, DateOnly.MaxValue, now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return HumanResourcesQualificationWriteResult.Success(

@@ -931,6 +931,9 @@ public sealed class SqlServerMigrationTests
             Assert.NotEmpty(await context.OutboxMessages.AsNoTracking()
                 .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_shifts\""))
                 .ToArrayAsync(cancellationToken));
+            Assert.Equal(2, await context.OutboxMessages.AsNoTracking()
+                .CountAsync(message => message.PayloadJson.Contains(
+                    "\"resource\":\"occ_planning\""), cancellationToken));
             var hrKey = await context.Users.Where(user => user.PublicId == hrId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
             var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
@@ -1159,6 +1162,9 @@ public sealed class SqlServerMigrationTests
             Assert.NotEmpty(await context.OutboxMessages.AsNoTracking()
                 .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_permits\""))
                 .ToArrayAsync(cancellationToken));
+            Assert.Equal(2, await context.OutboxMessages.AsNoTracking()
+                .CountAsync(message => message.PayloadJson.Contains(
+                    "\"resource\":\"occ_planning\""), cancellationToken));
             var hrKey = await context.Users.Where(user => user.PublicId == hrId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
             var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
@@ -1372,6 +1378,9 @@ public sealed class SqlServerMigrationTests
             Assert.NotEmpty(await context.OutboxMessages.AsNoTracking()
                 .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_qualifications\""))
                 .ToArrayAsync(cancellationToken));
+            Assert.Equal(3, await context.OutboxMessages.AsNoTracking()
+                .CountAsync(message => message.PayloadJson.Contains(
+                    "\"resource\":\"occ_planning\""), cancellationToken));
             // Emulate an EF retry after the first SaveChanges rolled back in SQL:
             // the context still holds an unchanged, no-longer-current entity.
             var afterRollbackId = Guid.NewGuid();
@@ -1394,6 +1403,9 @@ public sealed class SqlServerMigrationTests
             }
             Assert.True(await context.QualificationCycles.AsNoTracking().AnyAsync(cycle =>
                 cycle.PublicId == afterRollbackId && cycle.IsCurrent, cancellationToken));
+            Assert.Equal(4, await context.OutboxMessages.AsNoTracking()
+                .CountAsync(message => message.PayloadJson.Contains(
+                    "\"resource\":\"occ_planning\""), cancellationToken));
             var hrKey = await context.Users.Where(user => user.PublicId == hrId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
             var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
@@ -4629,6 +4641,15 @@ public sealed class SqlServerMigrationTests
         var actorDbId = await inspection.Users.AsNoTracking()
             .Where(item => item.PublicId == actorId).Select(item => item.Id)
             .SingleAsync(cancellationToken);
+        var occPlanningHints = (await inspection.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken))
+            .Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "occ_planning" &&
+                item.ResourceId == stationId &&
+                item.RecipientAccountId == actorDbId)
+            .ToArray();
+        Assert.Single(occPlanningHints); // Retrying the OCC shift does not republish its hint.
         await inspection.AccountStationScopes.Where(item => item.AccountId == actorDbId &&
             item.StationId == turnaround.StationId && item.RevokedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.RevokedAt,

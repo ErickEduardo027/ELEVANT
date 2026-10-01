@@ -125,7 +125,8 @@ primer ciclo y renovar: obtiene agentes y equipos activos, consulta el par
 exacto antes de guardar, envía el identificador del ciclo observado como
 precondición y conserva el UUID de intención para un reintento incierto. Un
 conflicto obliga a releer el ciclo. La API conserva historial, auditoría y
-señal durable en la transacción; no hay archivos adjuntos ni promociones al
+señal durable `hr_qualifications` y una invalidación OCC por estación en la
+transacción; no hay archivos adjuntos ni promociones al
 VPS demostradas para esta rama. La vista heredada sigue separada fuera del
 modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [servicio](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs) y [README del backend](../../backend/README.md).
 
@@ -135,7 +136,7 @@ En la rama local, la lectura admite un filtro conjunto de agente y tipo para
 encontrar el ciclo exacto sin recorrer páginas globales. La API ya ofrece
 `PUT /api/v1/human-resources/permits/{id}` para registrar el primer ciclo o
 renovarlo con UUID de intención estable y `expectedCurrentId`. Conserva el
-historial, audita y emite `hr_permits` de forma durable; el feed vuelve a
+historial, audita y emite `hr_permits` y `occ_planning` de forma durable; el feed vuelve a
 comprobar rol y membresía al leer esa pista.
 La ruta restringida calcula vigencia a partir de fechas, revalida al volver a
 foco/conexión y cada 25 segundos, y ya ofrece captura del primer ciclo y
@@ -153,12 +154,12 @@ La ruta restringida de horarios lee turnos reales por semana local y páginas
 de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
 inferir disponibilidad. Gestión Humana puede registrar un turno nuevo después
 de consultar los scopes de estación y terminal vigentes para el agente/día. Una
-programación OCC emite la señal durable `hr_shifts`; la vista revalida también
+programación OCC emite las señales durables `hr_shifts` y `occ_planning`; la vista revalida también
 por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
 falla la lectura. La API ya permite registrar un turno mediante
 `PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
-horas, scopes de agente vigentes en estación y terminal, auditoría y señal
-`hr_shifts`. El formulario conserva el UUID de una intención incierta y
+horas, scopes de agente vigentes en estación y terminal, auditoría y señales
+`hr_shifts` y `occ_planning`. El formulario conserva el UUID de una intención incierta y
 reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
 Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
 para la fecha local consultada o el día de inicio de un turno nocturno. Las
@@ -180,6 +181,9 @@ leerla. El payload contiene la estación, nunca el UUID ni el motivo de la
 solicitud laboral. Planificación OCC invalida snapshot y opciones de asignación
 ante esa pista, foco, reconexión o sondeo visible de 25 segundos. Una pista
 perdida no reemplaza la comprobación final de elegibilidad y ETag en la API.
+La misma pista de estación se confirma al registrar o renovar un carnet o una
+habilitación, y al programar un turno desde Gestión Humana u OCC; ninguna pista
+incluye datos personales del agente.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs)

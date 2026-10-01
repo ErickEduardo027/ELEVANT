@@ -53,6 +53,9 @@ El registro de habilitaciones de Gestión Humana reutiliza `hr.qualification_cyc
 y sus índices únicos existentes: crea un ciclo nuevo, deja el anterior como
 histórico y exige el UUID del ciclo observado en una transacción serializable.
 La auditoría y la pista `hr_qualifications` se confirman en esa misma transacción.
+Los cambios de habilitaciones, carnets y turnos (de Gestión Humana u OCC)
+escriben además una pista `occ_planning` por estación para invalidar opciones
+de asignación; no exponen nombre, documento ni identificador de agente.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
 Las solicitudes de disponibilidad usan la tabla existente

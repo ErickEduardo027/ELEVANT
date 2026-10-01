@@ -175,7 +175,9 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
                 if (targetStatus == AvailabilityRequestStatus.Approved &&
                     request.Type is AvailabilityRequestType.DayOff or
                         AvailabilityRequestType.Restriction)
-                    await AddOccPlanningHintsAsync(request, now, cancellationToken);
+                    await OccPlanningChangeWriter.AddForAgentAsync(context,
+                        request.RampAgentId, request.StartsOn, request.EndsOn,
+                        now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return HumanResourcesAvailabilityWriteResult.Success(
@@ -268,48 +270,6 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "hr_absences", id, now);
-    }
-
-    private async Task AddOccPlanningHintsAsync(AvailabilityRequest request,
-        DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        var stations = await (from scope in context.Set<RampAgentStationScope>().AsNoTracking()
-            join station in context.Stations.AsNoTracking() on scope.StationId equals station.Id
-            where scope.RampAgentId == request.RampAgentId &&
-                scope.ValidFrom <= request.EndsOn &&
-                (scope.ValidTo == null || scope.ValidTo >= request.StartsOn)
-            select new { station.Id, station.PublicId }).Distinct()
-            .ToArrayAsync(cancellationToken);
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        foreach (var station in stations)
-        {
-            var recipients = await context.Users.AsNoTracking()
-                .Where(account => account.Status == AccountLifecycleStatus.Active &&
-                    account.InvitationStatus == InvitationStatus.Accepted &&
-                    account.EmailConfirmed &&
-                    context.UserRoles.Any(link => link.UserId == account.Id &&
-                        context.Roles.Any(role => role.Id == link.RoleId &&
-                            role.NormalizedName == "ADMIN_OCC" &&
-                            role.Portal == PortalKind.BackOffice)) &&
-                    context.AccountStationScopes.Any(scope =>
-                        scope.AccountId == account.Id && scope.StationId == station.Id &&
-                        scope.GrantedAt <= now && scope.RevokedAt == null) &&
-                    context.OrganizationMemberships.Any(membership =>
-                        membership.AccountId == account.Id &&
-                        membership.Kind == MembershipKind.InternalStaff &&
-                        membership.Status == MembershipStatus.Active &&
-                        (membership.ValidFrom == null || membership.ValidFrom <= today) &&
-                        (membership.ValidTo == null || membership.ValidTo >= today) &&
-                        context.Organizations.Any(organization =>
-                            organization.Id == membership.OrganizationId &&
-                            organization.Type == OrganizationType.AviamOperator &&
-                            organization.Status == OrganizationStatus.Active)))
-                .Select(account => account.Id).Distinct()
-                .ToArrayAsync(cancellationToken);
-            foreach (var recipient in recipients)
-                AccountChangeOutboxWriter.Add(context, recipient, station.Id,
-                    "occ_planning", station.PublicId, now);
-        }
     }
 
     private static bool TryType(string? text, out AvailabilityRequestType type)

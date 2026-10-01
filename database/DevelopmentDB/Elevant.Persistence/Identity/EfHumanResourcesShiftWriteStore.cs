@@ -122,6 +122,8 @@ internal sealed class EfHumanResourcesShiftWriteStore(
                 foreach (var recipient in recipients)
                     AccountChangeOutboxWriter.Add(context, recipient, null,
                         "hr_shifts", shiftId, now);
+                await OccPlanningChangeWriter.AddForStationAsync(context, station.Id,
+                    station.PublicId, now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return HumanResourcesShiftWriteResult.Success(shiftId);
