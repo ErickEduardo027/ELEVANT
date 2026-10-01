@@ -416,6 +416,12 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         Assert.False(root.TryGetProperty("agentName", out _));
         Assert.False(root.TryGetProperty("agentNote", out _));
         Assert.False(root.TryGetProperty("incidents", out _));
+
+        using var hidden = await client.GetAsync(
+            $"/api/v1/airline/portal/operations/{Guid.NewGuid():D}/approved-evidence",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, hidden.StatusCode);
+        Assert.Equal("application/problem+json", hidden.Content.Headers.ContentType?.MediaType);
     }
 
     [Fact]

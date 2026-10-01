@@ -109,37 +109,53 @@ function AirlineFlightsPage({ airlineName }: {
 
 function AirlineFlightDetail({ operationId }: { operationId: string }) {
   const { getOperation, getApprovedEvidence, operationRevision } = useAirlineSession();
-  const [operation, setOperation] = useState<AirlinePortalOperationResponse | null>(null);
-  const [evidence, setEvidence] = useState<AirlineApprovedOperationEvidenceResponse | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [retryKey, setRetryKey] = useState(0);
-  const generation = useRef(0);
+  const [evidenceRetryKey, setEvidenceRetryKey] = useState(0);
+  const [detailState, setDetailState] = useState<{ key: string; status: "ready" | "missing" | "error";
+    operation?: AirlinePortalOperationResponse } | null>(null);
+  const [evidenceState, setEvidenceState] = useState<{ key: string; status: "ready" | "error";
+    evidence?: AirlineApprovedOperationEvidenceResponse } | null>(null);
+  const detailGeneration = useRef(0);
+  const evidenceGeneration = useRef(0);
+  const detailKey = `${operationId}:${operationRevision}:${retryKey}`;
+  const evidenceKey = `${detailKey}:${evidenceRetryKey}`;
+  const detail = detailState?.key === detailKey ? detailState : null;
+  const status = detail?.status ?? "loading";
+  const operation = detail?.operation;
+  const evidenceResult = evidenceState?.key === evidenceKey ? evidenceState : null;
+  const evidence = evidenceResult?.evidence;
 
   useEffect(() => {
-    const request = ++generation.current;
-    void Promise.all([getOperation(operationId), getApprovedEvidence(operationId)]).then(([result, snapshot]) => {
-      if (request === generation.current) {
-        setOperation(result);
-        setEvidence(snapshot);
-        setStatus("ready");
-      }
+    const request = ++detailGeneration.current;
+    void getOperation(operationId).then(result => {
+      if (request === detailGeneration.current)
+        setDetailState({ key: detailKey, status: "ready", operation: result });
     }).catch(error => {
-      if (request !== generation.current) return;
-      if (error instanceof ElevantApiError && error.status === 404) {
-        setOperation(null);
-        setEvidence(null);
-        setStatus("missing");
-      } else setStatus("error");
+      if (request !== detailGeneration.current) return;
+      setDetailState({ key: detailKey,
+        status: error instanceof ElevantApiError && error.status === 404 ? "missing" : "error" });
     });
-    return () => { generation.current += 1; };
-  }, [getOperation, getApprovedEvidence, operationId, operationRevision, retryKey]);
+    return () => { detailGeneration.current += 1; };
+  }, [getOperation, operationId, detailKey]);
+
+  useEffect(() => {
+    const request = ++evidenceGeneration.current;
+    void getApprovedEvidence(operationId).then(snapshot => {
+      if (request === evidenceGeneration.current)
+        setEvidenceState({ key: evidenceKey, status: "ready", evidence: snapshot });
+    }).catch(() => {
+      if (request === evidenceGeneration.current)
+        setEvidenceState({ key: evidenceKey, status: "error" });
+    });
+    return () => { evidenceGeneration.current += 1; };
+  }, [getApprovedEvidence, operationId, evidenceKey]);
 
   return <div className={styles.page}>
     <header className={styles.pageHeader}><span className={styles.kicker}>Detalle autorizado</span><h1>Detalle de vuelo</h1></header>
     {status === "loading" && <p role="status">Cargando operación autorizada…</p>}
     {status === "missing" && <section className={styles.panel}><p>Esta operación no está disponible en la consulta autorizada.</p></section>}
     {status === "error" && <div role="alert"><p>No se pudo actualizar el detalle del vuelo.</p>
-      <button type="button" onClick={() => { setStatus("loading"); setRetryKey(current => current + 1); }}>Reintentar</button></div>}
+      <button type="button" onClick={() => setRetryKey(current => current + 1)}>Reintentar</button></div>}
     {status === "ready" && operation && <section className={styles.panel}>
       <h2>{operation.code}</h2>
       <dl className={styles.details}>
@@ -149,7 +165,10 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
         {operation.arrivalFlightNumber && <div><dt>Vuelo de llegada</dt><dd>{operation.arrivalFlightNumber}</dd></div>}
         {operation.departureFlightNumber && <div><dt>Vuelo de salida</dt><dd>{operation.departureFlightNumber}</dd></div>}
       </dl>
-      {evidence?.available ? <div>
+      {!evidenceResult && <p role="status">Cargando evidencia aprobada…</p>}
+      {evidenceResult?.status === "error" && <div role="alert"><p>No se pudo cargar la evidencia aprobada.</p>
+        <button type="button" onClick={() => setEvidenceRetryKey(current => current + 1)}>Reintentar evidencia</button></div>}
+      {evidence?.available && operation.status === "Approved" ? <div>
         <h3>Ejecución aprobada</h3>
         <p className={styles.note}>Aprobada por OCC {evidence.approvedAt
           ? operationTime(evidence.approvedAt) : ""}. {evidence.incidentCount} {evidence.incidentCount === 1 ? "incidencia registrada" : "incidencias registradas"}.</p>
@@ -163,7 +182,7 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
           <div className={styles.operationSide}><span>{service.status === "Completed" ? "Completado" : service.status === "NotPerformed" ? "No realizado" : "Con excepción"}</span>
             <span>{service.executedQuantity} / {service.contractedQuantity} {service.billingUnit}</span></div>
         </li>)}</ul>
-      </div> : <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
+      </div> : evidenceResult?.status === "ready" && <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
     </section>}
     <Link href="/portal/vuelos">Volver a vuelos</Link>
   </div>;

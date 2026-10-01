@@ -162,6 +162,7 @@ it("loads an authorized historical operation detail outside the bootstrap", asyn
 });
 
 it("shows only the approved service snapshot in the airline operation detail", async () => {
+  detailOperation = { ...bootstrap.currentOperations[0], status: "Approved" };
   approvedEvidence = {
     operationId: bootstrap.currentOperations[0].id!, available: true,
     approvedAt: "2026-09-25T16:00:00Z",
@@ -184,6 +185,28 @@ it("keeps an authorized unapproved operation visible without inventing evidence"
   expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
   expect(screen.getByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
   expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
+});
+
+it("does not show an old approved snapshot beside a newer unapproved status", async () => {
+  approvedEvidence = { ...emptyEvidence, available: true,
+    approvedAt: "2026-09-25T16:00:00Z",
+    services: [{ id: "30000000-0000-7000-8000-000000000007", code: "BAGGAGE",
+      name: "Baggage handling", status: "Completed",
+      contractedQuantity: 1, executedQuantity: 1, billingUnit: "operation" }] };
+  render(<AirlinePortalPage view="flightDetail" operationId={approvedEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(await screen.findByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
+});
+
+it("keeps the flight detail readable when only approved evidence fails", async () => {
+  getApprovedEvidence.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 503 }));
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(/evidencia aprobada/i);
+  fireEvent.click(screen.getByRole("button", { name: "Reintentar evidencia" }));
+  expect(await screen.findByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(getApprovedEvidence).toHaveBeenCalledTimes(2);
 });
 
 it("does not invent details for an operation outside the authorized tenant", async () => {

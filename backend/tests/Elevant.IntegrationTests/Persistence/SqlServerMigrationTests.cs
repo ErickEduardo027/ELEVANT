@@ -2581,10 +2581,53 @@ public sealed class SqlServerMigrationTests
 
         var approvedAt = new DateTimeOffset(2026, 8, 18, 15, 0, 0, TimeSpan.Zero);
         Guid operationId;
+        var otherOrganizationId = Guid.NewGuid();
         await using (var update = CreateContext(database.ConnectionString))
         {
+            var otherOrganization = new Organization
+            {
+                PublicId = otherOrganizationId, Code = "QA-OTHER-AIR",
+                LegalName = "OTHER SYNTHETIC AIRLINE", DisplayName = "Other Airline",
+                Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Organizations.Add(otherOrganization);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherAirline = new Airline
+            {
+                PublicId = Guid.NewGuid(), OrganizationId = otherOrganization.Id,
+                IataCode = "QA", IcaoCode = "QAT", Name = "Other Airline", IsActive = true,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Airlines.Add(otherAirline);
+            await update.SaveChangesAsync(cancellationToken);
+
             var turnaround = await update.Turnarounds.SingleAsync(item =>
                 item.OperationCode == "DEV-TAT-0001", cancellationToken);
+            var otherContract = new Contract
+            {
+                PublicId = Guid.NewGuid(), AirlineId = otherAirline.Id,
+                ContractCode = "QA-OTHER-CONTRACT", Status = ContractStatus.Active,
+                SignedOn = new DateOnly(2026, 1, 1),
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Contracts.Add(otherContract);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherVersion = new ContractVersion
+            {
+                PublicId = Guid.NewGuid(), ContractId = otherContract.Id,
+                VersionNumber = 1, Status = ContractVersionStatus.Approved,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                ValidTo = new DateOnly(2026, 12, 31), CurrencyCode = "USD",
+                ApprovedAt = approvedAt, CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.ContractVersions.Add(otherVersion);
+            await update.SaveChangesAsync(cancellationToken);
+            update.Set<ContractVersionStation>().Add(new ContractVersionStation
+            {
+                ContractVersionId = otherVersion.Id, StationId = turnaround.StationId,
+            });
+            await update.SaveChangesAsync(cancellationToken);
             var operation = await update.GroundOperations.SingleAsync(item =>
                 item.TurnaroundId == turnaround.Id, cancellationToken);
             operationId = operation.PublicId;
@@ -2661,7 +2704,7 @@ public sealed class SqlServerMigrationTests
         Assert.Equal("BAGGAGE", Assert.Single(evidence.Services).Code);
         Assert.Equal(1m, Assert.Single(evidence.Services).ExecutedQuantity);
         Assert.Null(await store.GetApprovedOperationEvidenceAsync(
-            Guid.NewGuid(), operationId, cancellationToken));
+            otherOrganizationId, operationId, cancellationToken));
         Assert.Null(await store.GetApprovedOperationEvidenceAsync(
             organizationId, Guid.NewGuid(), cancellationToken));
         var planned = await store.GetApprovedOperationEvidenceAsync(
