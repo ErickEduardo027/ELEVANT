@@ -153,7 +153,7 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
     }
 
     private static string Money(decimal amount) =>
-        amount.ToString("N2", CultureInfo.InvariantCulture);
+        amount.ToString("#,##0.00##", CultureInfo.InvariantCulture);
 
     private sealed class BundledFontResolver : IFontResolver
     {

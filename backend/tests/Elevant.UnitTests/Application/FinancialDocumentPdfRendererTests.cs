@@ -2,6 +2,7 @@ using Elevant.Application.Finance;
 using Elevant.Infrastructure.Finance;
 using PdfSharp.Pdf.IO;
 using System.Security.Cryptography;
+using System.Reflection;
 
 namespace Elevant.UnitTests.Application;
 
@@ -42,6 +43,21 @@ public sealed class FinancialDocumentPdfRendererTests
         Assert.Single(document.Pages);
         Assert.Contains(payment.Reference, document.Info.Title);
         Assert.Contains("NonFiscal", document.Info.Subject);
+    }
+
+    [Theory]
+    [InlineData("125.5000", "125.50")]
+    [InlineData("0.0001", "0.0001")]
+    [InlineData("12,345.6789", "12,345.6789")]
+    public void FinancialPdfAmountRetainsSnapshotPrecision(string input, string expected)
+    {
+        var amount = decimal.Parse(input, System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture);
+        var money = typeof(FinancialDocumentPdfRenderer).GetMethod("Money",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        Assert.NotNull(money);
+        Assert.Equal(expected, money.Invoke(null, [amount]));
     }
 
     [Fact]

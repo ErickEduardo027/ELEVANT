@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getDashboardSnapshot } from './dashboardService';
 import { getPlanningSnapshot } from './planningService';
 import { loadOccReviewQueue } from './occReviewService';
@@ -41,6 +41,20 @@ beforeEach(() => {
   vi.mocked(getPlanningSnapshot).mockReset().mockResolvedValue(planning);
   vi.mocked(loadOccReviewQueue).mockReset().mockResolvedValue(review);
   vi.mocked(loadOperationalNotifications).mockReset().mockResolvedValue(notices);
+});
+
+afterEach(() => vi.useRealTimers());
+
+it('uses the authorized station timezone when UTC has already rolled into tomorrow', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-02T02:00:00Z'));
+  vi.mocked(getPlanningSnapshot).mockResolvedValue({ ...planning, date: '2026-10-01' });
+
+  const result = await getDashboardSnapshot({ stationId, stationCode: 'PUJ' });
+
+  expect(getPlanningSnapshot).toHaveBeenCalledWith(
+    expect.objectContaining({ stationId, date: '2026-10-01' }));
+  expect(result.date).toBe('2026-10-01');
 });
 
 it('combines actual scoped reads and never counts another station notification', async () => {

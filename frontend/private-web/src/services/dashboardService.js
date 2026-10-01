@@ -2,24 +2,35 @@ import { getPlanningSnapshot } from './planningService';
 import { loadOccReviewQueue } from './occReviewService';
 import { loadOperationalNotifications } from './operationalCommunicationService';
 
+function stationToday(timeZone) {
+  const parts = new Intl.DateTimeFormat('en', { timeZone, year: 'numeric',
+    month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
 export async function getDashboardSnapshot({ stationId, stationCode, date }, { signal } = {}) {
-  if (!stationId || !stationCode || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) {
+  if (!stationId || !stationCode || (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
     throw new TypeError('El panorama operativo requiere estación y fecha.');
   }
 
-  const [planning, review, notices] = await Promise.all([
-    getPlanningSnapshot({ stationId, date, signal }),
+  const [review, notices] = await Promise.all([
     loadOccReviewQueue(stationId, { signal }),
     loadOperationalNotifications({ signal }),
   ]);
+  if (review.stationId !== stationId || review.stationCode !== stationCode ||
+      !review.ianaTimeZone) {
+    throw new Error('El panorama operativo no coincide con la estación solicitada.');
+  }
+  const operationDate = date ?? stationToday(review.ianaTimeZone);
+  const planning = await getPlanningSnapshot({ stationId, date: operationDate, signal });
   if (planning.station?.id !== stationId || planning.station?.code !== stationCode ||
-      planning.date !== date || review.stationId !== stationId ||
-      review.stationCode !== stationCode) {
+      planning.date !== operationDate) {
     throw new Error('El panorama operativo no coincide con la estación solicitada.');
   }
 
   return {
-    stationId, stationCode, date,
+    stationId, stationCode, date: operationDate,
     turnarounds: planning.turnarounds,
     reviews: review.operations,
     reviewHasMore: review.hasMore,

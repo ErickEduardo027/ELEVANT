@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import DashboardRoute from './DashboardRoute';
 import { useAuth } from '../auth/AuthContext';
 import { getDashboardSnapshot } from '../../services/dashboardService';
@@ -28,6 +28,19 @@ beforeEach(() => {
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
   });
+});
+
+afterEach(() => vi.useRealTimers());
+
+it('delegates the current station day instead of sending the UTC browser date', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-02T02:00:00Z'));
+
+  render(<MemoryRouter><DashboardRoute /></MemoryRouter>);
+
+  await waitFor(() => expect(getDashboardSnapshot).toHaveBeenCalledWith(
+    expect.objectContaining({ stationId: firstId, date: undefined }),
+    expect.anything()));
 });
 
 it('reads the first authorized station and switches to the selected station', async () => {

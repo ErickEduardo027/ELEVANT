@@ -13,12 +13,11 @@ export default function DashboardRoute() {
   const [stationId, setStationId] = useState(stationScopes[0]?.stationId ?? '');
   const [retryToken, setRetryToken] = useState(0);
   const selected = stationScopes.find(scope => scope.stationId === stationId);
-  const date = new Date().toISOString().slice(0, 10);
   const dashboard = useDashboardData({
     accountId: session?.accountId,
     stationId: selected?.stationId ?? '',
     stationCode: selected?.stationCode ?? '',
-    date, refreshToken: retryToken,
+    refreshToken: retryToken,
   });
 
   useEffect(() => {
