@@ -41,6 +41,12 @@ describe('ContractsShell', () => {
     expect(await screen.findByRole('heading', { name: 'Borradores' })).toBeInTheDocument();
   });
 
+  it('does not expose deferred prototype departmental chat', async () => {
+    render(<ContractsShell />);
+    expect(await screen.findByRole('heading', { name: 'Resumen contractual' })).toBeInTheDocument();
+    expect(within(screen.getByRole('navigation')).queryByText('Comunicaciones')).not.toBeInTheDocument();
+  });
+
   it('uses the canonical agreement read for every published contract module', async () => {
     render(<ContractsShell />);
     const navigation = screen.getByRole('navigation');

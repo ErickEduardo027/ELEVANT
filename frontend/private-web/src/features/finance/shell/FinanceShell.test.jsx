@@ -10,4 +10,10 @@ describe('FinanceShell', () => {
     expect(screen.queryByText(/Datos sintéticos/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Notificaciones' })).not.toBeInTheDocument();
   });
+
+  it('does not expose deferred prototype departmental chat', async () => {
+    render(<FinanceShell />);
+    expect(await screen.findByRole('heading', { name: 'Resumen financiero' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation')).not.toHaveTextContent('Comunicaciones');
+  });
 });

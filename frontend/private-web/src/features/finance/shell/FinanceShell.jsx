@@ -11,7 +11,6 @@ import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
 import ReconciliationPage from '../reconciliation/ReconciliationPage';
 import TariffsPage from '../tariffs/TariffsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
-import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { FINANCE_MODULES, FINANCE_MODULE_IDS } from './modules';
 
 const CURRENT_USER = { name: 'Usuario de Finanzas', role: 'Departamento de Finanzas' };
@@ -44,7 +43,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
-          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.CHAT ? <DepartmentChatPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage initialStationId={home.stationId} /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
         </main>
       </div>
     </div>

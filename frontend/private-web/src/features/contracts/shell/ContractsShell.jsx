@@ -10,7 +10,6 @@ import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
 import CommercialIntakePage from '../requests/CommercialIntakePage';
 import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
 import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
-import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
@@ -89,8 +88,6 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
             <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
             <ManagedAgreementsPage mode="reports" />
-          ) : activeModule.id === CONTRACT_MODULE_IDS.CHAT ? (
-            <DepartmentChatPage />
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}

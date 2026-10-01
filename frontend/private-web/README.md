@@ -45,6 +45,8 @@ El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente Open
 
 En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** leen páginas de acuerdos con versiones publicadas mediante `GET /api/v1/contracts/agreements`. Comparten datos autorizados por `commercial.requests.read`; la tabla distingue tarifas de versiones aprobadas y reemplazadas, muestra sus estaciones y conserva cuatro decimales del precio pactado. El reporte indica que sus indicadores son de la página visible, no del historial completo. Los antiguos formularios de alta/edición y la auditoría ficticia de exportación ya no están montados: se mantienen fuera de la sesión hasta disponer de comandos reales. Los demás módulos no descritos aquí aún requieren revisión de integración y pruebas remotas.
 
+«Comunicaciones» de Contratos y Finanzas permanece fuera de la navegación y del montaje activo. Su adaptador heredado usa `/api/internal-chat/messages`, ausente de OpenAPI y sin persistencia en la base compartida; no debe presentarse como chat funcional. El chat operativo OCC–agente sí conserva su contrato `/api/v1` independiente. El chat departamental se retomará en otra entrega.
+
 Estas vistas comerciales y la gobernanza releen HTTP al recuperar foco o conexión y cada 25 segundos mientras están visibles. Es un respaldo del feed de cambios cuando falla una recarga puntual; el socket no reemplaza la API como fuente de verdad.
 
 Si la API devuelve `409 password_change_required`, la web muestra una activación

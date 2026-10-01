@@ -6,7 +6,6 @@ import {
   ReportIcon,
   TariffIcon,
 } from '../components/icons';
-import { MessageCircleIcon } from '../../shell/components/icons';
 
 export const FINANCE_MODULE_IDS = {
   HOME: 'finance-home',
@@ -15,7 +14,6 @@ export const FINANCE_MODULE_IDS = {
   RECONCILIATION: 'finance-reconciliation',
   TARIFFS: 'finance-tariffs',
   REPORTS: 'finance-reports',
-  CHAT: 'finance-chat',
 };
 
 export const FINANCE_MODULES = [
@@ -25,5 +23,4 @@ export const FINANCE_MODULES = [
   { id: FINANCE_MODULE_IDS.RECONCILIATION, label: 'Seguimiento', icon: ReconciliationIcon, description: 'Prefacturas aceptadas, facturas no fiscales y pagos manuales registrados.' },
   { id: FINANCE_MODULE_IDS.TARIFFS, label: 'Tarifas', icon: TariffIcon, description: 'Consulta de tarifas contractuales publicadas por estación autorizada.' },
   { id: FINANCE_MODULE_IDS.REPORTS, label: 'Reportes', icon: ReportIcon, description: 'Estados de prefacturas por aerolínea y moneda.' },
-  { id: FINANCE_MODULE_IDS.CHAT, label: 'Comunicaciones', icon: MessageCircleIcon, description: 'Coordinación persistente con los demás departamentos.' },
 ];
