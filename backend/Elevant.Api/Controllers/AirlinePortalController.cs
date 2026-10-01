@@ -333,6 +333,43 @@ public sealed class AirlinePortalController(
             operation.PlannedEndAt));
     }
 
+    [HttpGet("operations/{operationId:guid}/approved-evidence",
+        Name = "GetAirlineApprovedOperationEvidence")]
+    [ProducesResponseType<AirlineApprovedOperationEvidenceResponse>(
+        StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlineApprovedOperationEvidenceResponse>> GetApprovedEvidence(
+        Guid operationId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineApprovedOperationEvidenceResponse>(
+                StatusCodes.Status401Unauthorized, "Authentication failed.");
+        }
+
+        var result = await operationHandler.HandleEvidenceAsync(
+            accountId, operationId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == StatusCodes.Status401Unauthorized)
+                Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineApprovedOperationEvidenceResponse>(statusCode, title);
+        }
+
+        var evidence = result.Evidence!;
+        return Ok(new AirlineApprovedOperationEvidenceResponse(
+            evidence.OperationId, evidence.Available, evidence.ApprovedAt,
+            evidence.ActualStartAt, evidence.ActualEndAt, evidence.IncidentCount,
+            evidence.Services.Select(service => new AirlineApprovedServiceResponse(
+                service.Id, service.Code, service.Name, service.Status,
+                service.ContractedQuantity, service.ExecutedQuantity,
+                service.BillingUnit)).ToArray()));
+    }
+
     [HttpGet("operations", Name = "GetAirlineOperations")]
     [ProducesResponseType<AirlineOperationPageResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

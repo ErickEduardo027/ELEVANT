@@ -3,6 +3,7 @@ import {
   getGetAirlineContractsUrl,
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
+  getGetAirlineApprovedOperationEvidenceUrl,
   getGetAirlineOperationalRequestsUrl,
   getGetAirlinePreinvoiceUrl,
   getGetAirlinePreinvoiceDisputesUrl,
@@ -78,6 +79,7 @@ import {
   type AirlineContractPageResponse,
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
+  type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationalRequestPageResponse,
   type AirlinePreinvoiceDetailResponse,
   type AcceptAirlinePreinvoiceRequest,
@@ -211,6 +213,7 @@ export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" |
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineApprovedOperationEvidenceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -343,6 +346,10 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetAirlineOperationOptions,
   ): Promise<AirlinePortalOperationResponse>;
+  getAirlineApprovedOperationEvidence(
+    operationId: string,
+    options?: GetAirlineApprovedOperationEvidenceOptions,
+  ): Promise<AirlineApprovedOperationEvidenceResponse>;
   getAirlineOperationalRequests(
     parameters?: GetAirlineOperationalRequestsParams,
     options?: GetAirlineOperationalRequestsOptions,
@@ -2034,6 +2041,32 @@ function isAirlineOperationDetailResponse(value: unknown): value is AirlinePorta
     isOptionalNullable(value.plannedEndAt, isDateTimeOffset);
 }
 
+function isAirlineApprovedOperationEvidenceResponse(
+  value: unknown,
+): value is AirlineApprovedOperationEvidenceResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["operationId", "available", "approvedAt", "actualStartAt", "actualEndAt",
+      "incidentCount", "services"]) ||
+    !isUuid(value.operationId) || typeof value.available !== "boolean" ||
+    !isInt32(value.incidentCount) || value.incidentCount < 0 ||
+    !Array.isArray(value.services) ||
+    !value.services.every(service => isRecord(service) && hasOnlyKeys(service,
+      ["id", "code", "name", "status", "contractedQuantity", "executedQuantity",
+        "billingUnit"]) &&
+      isUuid(service.id) && isNonEmptyString(service.code) &&
+      isNonEmptyString(service.name) &&
+      ["Completed", "NotPerformed", "Exception"].includes(String(service.status)) &&
+      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
+      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
+      isNonEmptyString(service.billingUnit))) return false;
+  if (value.available)
+    return isDateTimeOffset(value.approvedAt) &&
+      isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
+      isOptionalNullable(value.actualEndAt, isDateTimeOffset);
+  return (value.approvedAt == null && value.actualStartAt == null &&
+    value.actualEndAt == null && value.incidentCount === 0 && value.services.length === 0);
+}
+
 function isAirlineOperationPageResponse(value: unknown): value is AirlineOperationPageResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "operations"]) ||
       !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
@@ -3608,6 +3641,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         getGetAirlineOperationUrl(operationId), { ...options, method: "GET" }, true,
       );
       if (!isAirlineOperationDetailResponse(result.data) || result.data.id !== operationId)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineApprovedOperationEvidence(
+      operationId: string, options?: GetAirlineApprovedOperationEvidenceOptions,
+    ) {
+      if (!isUuid(operationId)) throw new TypeError("Operation ID must be a UUID.");
+      const result = await execute(
+        getGetAirlineApprovedOperationEvidenceUrl(operationId),
+        { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineApprovedOperationEvidenceResponse(result.data) ||
+          result.data.operationId !== operationId)
         throw malformedResponse(result.status);
       return result.data;
     },

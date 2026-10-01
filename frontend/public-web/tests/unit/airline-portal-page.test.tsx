@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { ElevantApiError, type AirlineOperationPageResponse,
+import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
+  type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type NonFiscalPaymentLookupResponse, type PreinvoiceDisputeListResponse,
   type SessionActorResponse } from "@elevant/api-client";
@@ -33,6 +34,13 @@ const getOperation = vi.fn(async (id: string) => {
   if (detailOperation?.id === id) return detailOperation;
   throw new ElevantApiError({ kind: "http", status: 404 });
 });
+const emptyEvidence: AirlineApprovedOperationEvidenceResponse = {
+  operationId: bootstrap.currentOperations[0].id!, available: false,
+  approvedAt: null, actualStartAt: null, actualEndAt: null,
+  incidentCount: 0, services: [],
+};
+let approvedEvidence = emptyEvidence;
+const getApprovedEvidence = vi.fn(async () => approvedEvidence);
 const initialRequestPage: AirlineOperationalRequestPageResponse = {
   page: 1, limit: 20, hasMore: false,
   requests: [{ id: "73000000-0000-7000-8000-000000000001",
@@ -83,12 +91,13 @@ const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
-}; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
+}; detailOperation = bootstrap.currentOperations[0]; approvedEvidence = emptyEvidence;
+  getOperations.mockClear(); getOperation.mockClear(); getApprovedEvidence.mockClear();
   requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
   preinvoicePage = initialPreinvoicePage;
   getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
@@ -150,6 +159,31 @@ it("loads an authorized historical operation detail outside the bootstrap", asyn
   render(<AirlinePortalPage view="flightDetail" operationId={detailOperation.id} />);
   expect(await screen.findByText("DEV-TAT-0001")).toBeInTheDocument();
   expect(getOperation).toHaveBeenCalledWith(detailOperation.id);
+});
+
+it("shows only the approved service snapshot in the airline operation detail", async () => {
+  approvedEvidence = {
+    operationId: bootstrap.currentOperations[0].id!, available: true,
+    approvedAt: "2026-09-25T16:00:00Z",
+    actualStartAt: "2026-09-25T13:00:00Z",
+    actualEndAt: "2026-09-25T15:45:00Z", incidentCount: 1,
+    services: [{ id: "30000000-0000-7000-8000-000000000007", code: "BAGGAGE",
+      name: "Baggage handling", status: "Completed",
+      contractedQuantity: 1, executedQuantity: 1, billingUnit: "operation" }],
+  };
+  render(<AirlinePortalPage view="flightDetail" operationId={approvedEvidence.operationId} />);
+  expect(await screen.findByText("Baggage handling")).toBeInTheDocument();
+  expect(screen.getByText(/Aprobada por OCC/)).toBeInTheDocument();
+  expect(screen.getByText(/1 incidencia registrada/)).toBeInTheDocument();
+  expect(getApprovedEvidence).toHaveBeenCalledWith(approvedEvidence.operationId);
+  expect(screen.queryByText(/nota interna/i)).not.toBeInTheDocument();
+});
+
+it("keeps an authorized unapproved operation visible without inventing evidence", async () => {
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(screen.getByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
 });
 
 it("does not invent details for an operation outside the authorized tenant", async () => {

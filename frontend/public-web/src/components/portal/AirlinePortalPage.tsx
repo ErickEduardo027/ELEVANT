@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ElevantApiError, type AirlineOperationPageResponse,
+import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
+  type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type AirlinePortalOperationResponse } from "@elevant/api-client";
 
@@ -20,6 +21,11 @@ const REQUEST_STATUS_LABELS: Record<string, string> = {
   Submitted: "Recibida", InReview: "En revisión", Accepted: "Aceptada",
   Rejected: "Rechazada", Completed: "Completada", Cancelled: "Cancelada",
 };
+
+const operationTime = (value: string) => new Intl.DateTimeFormat("es-DO", {
+  year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  timeZone: "UTC", timeZoneName: "short",
+}).format(new Date(value));
 
 function Operation({ operation }: { operation: AirlinePortalBootstrapResponse["currentOperations"][number] }) {
   return <li className={styles.operation}>
@@ -102,25 +108,31 @@ function AirlineFlightsPage({ airlineName }: {
 }
 
 function AirlineFlightDetail({ operationId }: { operationId: string }) {
-  const { getOperation, operationRevision } = useAirlineSession();
+  const { getOperation, getApprovedEvidence, operationRevision } = useAirlineSession();
   const [operation, setOperation] = useState<AirlinePortalOperationResponse | null>(null);
+  const [evidence, setEvidence] = useState<AirlineApprovedOperationEvidenceResponse | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [retryKey, setRetryKey] = useState(0);
   const generation = useRef(0);
 
   useEffect(() => {
     const request = ++generation.current;
-    void getOperation(operationId).then(result => {
-      if (request === generation.current) { setOperation(result); setStatus("ready"); }
+    void Promise.all([getOperation(operationId), getApprovedEvidence(operationId)]).then(([result, snapshot]) => {
+      if (request === generation.current) {
+        setOperation(result);
+        setEvidence(snapshot);
+        setStatus("ready");
+      }
     }).catch(error => {
       if (request !== generation.current) return;
       if (error instanceof ElevantApiError && error.status === 404) {
         setOperation(null);
+        setEvidence(null);
         setStatus("missing");
       } else setStatus("error");
     });
     return () => { generation.current += 1; };
-  }, [getOperation, operationId, operationRevision, retryKey]);
+  }, [getOperation, getApprovedEvidence, operationId, operationRevision, retryKey]);
 
   return <div className={styles.page}>
     <header className={styles.pageHeader}><span className={styles.kicker}>Detalle autorizado</span><h1>Detalle de vuelo</h1></header>
@@ -137,7 +149,21 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
         {operation.arrivalFlightNumber && <div><dt>Vuelo de llegada</dt><dd>{operation.arrivalFlightNumber}</dd></div>}
         {operation.departureFlightNumber && <div><dt>Vuelo de salida</dt><dd>{operation.departureFlightNumber}</dd></div>}
       </dl>
-      <p className={styles.note}>Los servicios, evidencias y tiempos reales aún no están disponibles en esta consulta.</p>
+      {evidence?.available ? <div>
+        <h3>Ejecución aprobada</h3>
+        <p className={styles.note}>Aprobada por OCC {evidence.approvedAt
+          ? operationTime(evidence.approvedAt) : ""}. {evidence.incidentCount} {evidence.incidentCount === 1 ? "incidencia registrada" : "incidencias registradas"}.</p>
+        <dl className={styles.details}>
+          {evidence.actualStartAt && <div><dt>Inicio real</dt><dd>{operationTime(evidence.actualStartAt)}</dd></div>}
+          {evidence.actualEndAt && <div><dt>Fin real</dt><dd>{operationTime(evidence.actualEndAt)}</dd></div>}
+        </dl>
+        <h3>Servicios ejecutados</h3>
+        <ul className={styles.operations}>{evidence.services.map(service => <li className={styles.operation} key={service.id}>
+          <div><strong>{service.name}</strong><span className={styles.kicker}>{service.code}</span></div>
+          <div className={styles.operationSide}><span>{service.status === "Completed" ? "Completado" : service.status === "NotPerformed" ? "No realizado" : "Con excepción"}</span>
+            <span>{service.executedQuantity} / {service.contractedQuantity} {service.billingUnit}</span></div>
+        </li>)}</ul>
+      </div> : <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
     </section>}
     <Link href="/portal/vuelos">Volver a vuelos</Link>
   </div>;

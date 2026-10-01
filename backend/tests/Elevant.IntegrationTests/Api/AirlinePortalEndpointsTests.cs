@@ -384,6 +384,41 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
     }
 
     [Fact]
+    public async Task ApprovedOperationEvidenceExposesOnlyTenantScopedServiceSnapshot()
+    {
+        var operationId = Guid.NewGuid();
+        var state = new StubState(CreateActor())
+        {
+            DetailOperation = new AirlinePortalOperationData(operationId, "DEV-TAT-0001",
+                StationId, "PUJ", new DateOnly(2026, 8, 18), "Approved", "ZZ100",
+                "ZZ101", null, null),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/airline/portal/operations/{operationId:D}/approved-evidence",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(),
+            StringComparison.Ordinal);
+        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
+        Assert.Equal(operationId, state.QueriedOperationId);
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var json = await JsonDocument.ParseAsync(stream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var root = json.RootElement;
+        Assert.Equal(operationId, root.GetProperty("operationId").GetGuid());
+        Assert.True(root.GetProperty("available").GetBoolean());
+        Assert.Equal("BAGGAGE", root.GetProperty("services")[0].GetProperty("code").GetString());
+        Assert.False(root.TryGetProperty("agentName", out _));
+        Assert.False(root.TryGetProperty("agentNote", out _));
+        Assert.False(root.TryGetProperty("incidents", out _));
+    }
+
+    [Fact]
     public async Task OperationalRequestsUseServerTenantAndReturnOnlyItsPage()
     {
         var requestId = Guid.NewGuid();
@@ -644,6 +679,20 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedOrganizationId = organizationId;
             QueriedOperationId = operationId;
             return Task.FromResult(DetailOperation);
+        }
+
+        public Task<AirlineApprovedOperationEvidenceData?> GetApprovedOperationEvidenceAsync(
+            Guid organizationId, Guid operationId, CancellationToken cancellationToken = default)
+        {
+            QueriedOrganizationId = organizationId;
+            QueriedOperationId = operationId;
+            if (organizationId != OrganizationId || DetailOperation?.Id != operationId)
+                return Task.FromResult<AirlineApprovedOperationEvidenceData?>(null);
+            return Task.FromResult<AirlineApprovedOperationEvidenceData?>(new(
+                operationId, true, new DateTimeOffset(2026, 8, 18, 15, 0, 0, TimeSpan.Zero),
+                null, null, 0,
+                [new AirlineApprovedServiceData(Guid.NewGuid(), "BAGGAGE", "Baggage handling",
+                    "Completed", 1m, 1m, "operation")]));
         }
 
         public Task<AirlineOperationalRequestPageData?> GetRequestsAsync(

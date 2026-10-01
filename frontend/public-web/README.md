@@ -16,7 +16,13 @@ autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. Vuelos
 consulta además el historial paginado de su tenant
 mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
 histórica se relee por su ID público con autorización en la API, aunque ya no
-figure en la ventana actual del bootstrap; servicios y evidencias aún faltan.
+figure en la ventana actual del bootstrap. Esta rama añade
+`GET /api/v1/airline/portal/operations/{operationId}/approved-evidence`:
+solo devuelve el snapshot de servicios de la última entrega aprobada por OCC,
+tiempos reales y el conteo de incidencias de esa entrega. No expone notas,
+identidades de agentes ni descripciones internas. Antes de la aprobación
+muestra un estado vacío real; una operación de otro tenant responde 404.
+La nueva ruta aún no forma parte de la API promovida en Development.
 La ruta separada `/dev-airline` fue retirada. Inicio y vuelos ya no montan la
 secuencia sintética del prototipo. Contratos consulta versiones aprobadas reales,
 incluyendo historial vencido, con cobertura y tarifas de la aerolínea
@@ -139,7 +145,7 @@ Un tag mutable o un redeploy manual no constituye una identidad de release. El c
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
 
-Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional completo: autenticación, tenant, operaciones actuales y contratos usan el contrato OpenAPI. El historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes pertenecen todavía a esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
+Esta publicación sigue siendo un **preview privado de Development**, no un portal de Production. La release #118 ya incluye historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes; la lectura nueva de evidencias aprobadas sigue en esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
 
 El Dockerfile se construye desde la raíz del monorepo porque consume `packages/api-client`:
 

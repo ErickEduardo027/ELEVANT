@@ -228,6 +228,17 @@ aprobadas, estaciones y tarifas. Conserva las versiones aprobadas aunque el
 contrato venza, pero nunca expone borradores; el portal las consulta en modo
 solo lectura. No crea ni aprueba contratos.
 
+En esta rama posterior a #118,
+`GET /api/v1/airline/portal/operations/{operationId}/approved-evidence`
+revalida la membresía de aerolínea y la cobertura contractual histórica de
+la estación en la fecha operativa. Una operación ajena devuelve `404`; una
+propia sin aprobación devuelve `200` con `available=false`. Tras la aprobación
+proyecta servicios e incidencias desde la última entrega inmutable aprobada
+por OCC, pero solo expone el conteo de incidencias, sin descripciones, notas
+ni identidades internas. También muestra los tiempos reales de la operación.
+Es una lectura aditiva sin migración y requiere promoción API-primero antes
+del cliente Public Web que la consume.
+
 En la rama de integración de Development, la asignación OCC, el inicio y la
 entrega del agente, y la decisión OCC escriben una invalidación
 `airline_operations` por miembro vigente del portal de esa aerolínea en la
