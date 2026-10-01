@@ -1,6 +1,6 @@
 # ELEVANT AVIAM Web
 
-En este worktree, **Reportes de personal** está disponible en el modo restringido de Gestión Humana. Combina las primeras 100 habilitaciones, permisos y turnos de la semana local leídos de sus tres endpoints autorizados; muestra una muestra, no totales globales, y permite abrir cada módulo paginado. Oculta los datos anteriores si una fuente falla y se revalida con cambios durables, foco, reconexión y sondeo de 25 segundos. No ofrece exportación ni estadísticas históricas ficticias. El adaptador prototípico de `/api/hr/reports/*` ya no está montado en la ruta. Esto sigue sin promoción ni prueba de navegador contra el VPS.
+**Reportes de personal** está disponible en el modo restringido de Gestión Humana. Combina las primeras 100 habilitaciones, permisos y turnos de la semana local leídos de sus tres endpoints autorizados; muestra una muestra, no totales globales, y permite abrir cada módulo paginado. Oculta los datos anteriores si una fuente falla y se revalida con cambios durables, foco, reconexión y sondeo de 25 segundos. No ofrece exportación ni estadísticas históricas ficticias. El adaptador prototípico de `/api/hr/reports/*` ya no está montado en la ruta. Tras #118, la ruta y las otras cinco rutas HR visibles se recorrieron en navegador contra el VPS sin 404/405/5xx observados; las escrituras de un ciclo nuevo siguen pendientes de aceptación remota.
 
 ## Medios del flujo comercial
 
@@ -33,17 +33,17 @@ Vite sirve localmente en `http://localhost:5173`. Abre ese origen exacto, no `ht
 
 Las variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. Las tres primeras son obligatorias; la clave de Google Maps es opcional y visible en el navegador cuando se configura. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development.
 
-En esta rama local, el dashboard de Gestión Humana deriva el total de agentes activos y perfiles sin cuenta vinculada de `GET /api/v1/human-resources/ramp-profiles`; ya no muestra las cifras sintéticas de turnos, habilitaciones o cobertura. Revalida al recibir un cambio durable, al recuperar foco/conexión y cada 25 segundos. **Agentes de rampa** sigue usando perfiles y estaciones reales del API. **Habilitaciones y certificaciones** consulta `GET /api/v1/human-resources/qualifications` en páginas de 20, obtiene un ciclo puntual por agente y equipo, y permite registrar o renovar mediante `PUT /api/v1/human-resources/qualifications/{id}`. Conserva la clave de intención para un reintento incierto y relee el ciclo al recibir 409; no inventa adjuntos.
+El dashboard de Gestión Humana deriva el total de agentes activos y perfiles sin cuenta vinculada de `GET /api/v1/human-resources/ramp-profiles`; ya no muestra las cifras sintéticas de turnos, habilitaciones o cobertura. Revalida al recibir un cambio durable, al recuperar foco/conexión y cada 25 segundos. **Agentes de rampa** sigue usando perfiles y estaciones reales del API. **Habilitaciones y certificaciones** consulta `GET /api/v1/human-resources/qualifications` en páginas de 20, obtiene un ciclo puntual por agente y equipo, y permite registrar o renovar mediante `PUT /api/v1/human-resources/qualifications/{id}`. Conserva la clave de intención para un reintento incierto y relee el ciclo al recibir 409; no inventa adjuntos.
 
-**Carnets y permisos aeroportuarios** consulta `GET /api/v1/human-resources/permits` en páginas de 20 y permite registrar el primer ciclo o renovarlo con `PUT /api/v1/human-resources/permits/{id}`. Consulta antes el par exacto agente/tipo; una respuesta incierta reutiliza el UUID y un 409 exige relectura. No simula archivos adjuntos. Ambas vistas calculan vigencia por fecha. **Turnos de rampa** consulta `GET /api/v1/human-resources/shifts` por semana local y páginas de 20; presenta turnos registrados con estación, terminal, horario y posición. Permite registrar un turno tras consultar opciones activas y vigentes por agente/día; conserva el UUID en un reintento incierto y relee tras 409. En la misma ruta, **Ausencias y solicitudes** lista solicitudes reales por ventana y página, registra una intención `Pending` con UUID estable y permite aprobar o rechazar con relectura ante 409 o resultado incierto. Un `ShiftChange` aprobado no reprograma el turno. El feed `hr_absences`, el foco, la reconexión y el sondeo de 25 segundos revalidan la lista; una pérdida de acceso oculta solicitudes y turnos. No calcula disponibilidad ficticia. Las otras rutas profundas aún no conectadas continúan ocultas en este modo. No se ha promocionado este cambio.
+**Carnets y permisos aeroportuarios** consulta `GET /api/v1/human-resources/permits` en páginas de 20 y permite registrar el primer ciclo o renovarlo con `PUT /api/v1/human-resources/permits/{id}`. Consulta antes el par exacto agente/tipo; una respuesta incierta reutiliza el UUID y un 409 exige relectura. No simula archivos adjuntos. Ambas vistas calculan vigencia por fecha. **Turnos de rampa** consulta `GET /api/v1/human-resources/shifts` por semana local y páginas de 20; presenta turnos registrados con estación, terminal, horario y posición. Permite registrar un turno tras consultar opciones activas y vigentes por agente/día; conserva el UUID en un reintento incierto y relee tras 409. En la misma ruta, **Ausencias y solicitudes** lista solicitudes reales por ventana y página, registra una intención `Pending` con UUID estable y permite aprobar o rechazar con relectura ante 409 o resultado incierto. Un `ShiftChange` aprobado no reprograma el turno. El feed `hr_absences`, el foco, la reconexión y el sondeo de 25 segundos revalidan la lista; una pérdida de acceso oculta solicitudes y turnos. No calcula disponibilidad ficticia. Las otras rutas profundas aún no conectadas continúan ocultas en este modo.
 
-La lista activa de **Agentes de rampa** revalida perfiles autorizados ante cambios durables, foco, reconexión y cada 25 segundos. Una lectura fallida oculta los perfiles y la edición anteriores, muestra un error recuperable y evita renderizar detalles internos del servidor; una respuesta tardía no reemplaza una lectura más reciente. Si falla guardar, conserva el formulario sin exponer trazas internas. Este ajuste permanece solo en la rama local.
+La lista activa de **Agentes de rampa** revalida perfiles autorizados ante cambios durables, foco, reconexión y cada 25 segundos. Una lectura fallida oculta los perfiles y la edición anteriores, muestra un error recuperable y evita renderizar detalles internos del servidor; una respuesta tardía no reemplaza una lectura más reciente. Si falla guardar, conserva el formulario sin exponer trazas internas.
 
 El formulario de acceso usa `POST /api/v1/auth/session` mediante el cliente OpenAPI compartido. Acepta los roles internos, `SUPERADMIN` y roles personalizados del portal `back_office`; estos últimos consultan sus permisos vigentes y abren `/espacio-de-trabajo`. Conserva el Bearer de corta duración en el almacenamiento elegido por el usuario y elimina la sesión al vencer o cuando la API responde `401`. Las credenciales mock existen únicamente durante las pruebas automatizadas.
 
 `/superadmin` ofrece **Inicio**, **Usuarios**, **Aerolíneas** y **Configuración**. Inicio permite crear manualmente la cuenta de una aerolínea después de la aprobación por Contratos. Usuarios administra cuentas y roles personalizados con acciones Ver/Crear/Editar/Acceso completo para los módulos comerciales; vincula cuentas `RAMP_AGENT` a perfiles creados por Gestión Humana. Aerolíneas administra las fichas públicas y ofrece una acción supervisada para completar registros históricos sin sobrescribir ediciones manuales. Configuración muestra auditoría paginada con cambios permitidos, sin contraseñas ni correos en el detalle. Contratos dispone de **Inicio**, **Solicitudes**, **Servicios** y **Borradores** conectados a la API. El borrador exige confirmación explícita de cada tarifa, incluso cuando es cero por cortesía. Inicio resume hasta 200 solicitudes y consulta una proyección de hasta 100 borradores con cinco recientes; no descarga comentarios, tarifas, términos ni el catálogo completo para calcular sus KPI. El detalle está en [el flujo comercial](../../docs/workflows/commercial-intake-and-governance.md) y la [guía de rampa](../../docs/workflows/ramp-agent-readiness.md).
 
-En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** leen páginas de acuerdos con versiones publicadas mediante `GET /api/v1/contracts/agreements`. Comparten datos autorizados por `commercial.requests.read`; la tabla distingue tarifas de versiones aprobadas y reemplazadas, muestra sus estaciones y conserva cuatro decimales del precio pactado. El reporte indica que sus indicadores son de la página visible, no del historial completo. Los antiguos formularios de alta/edición y la auditoría ficticia de exportación ya no están montados: se mantienen fuera de la sesión hasta disponer de comandos reales. Los demás módulos no descritos aquí aún requieren revisión de integración y pruebas remotas.
+**Contratos**, **Servicios pactados** y **Reportes contractuales** leen páginas de acuerdos con versiones publicadas mediante `GET /api/v1/contracts/agreements`. Comparten datos autorizados por `commercial.requests.read`; la tabla distingue tarifas de versiones aprobadas y reemplazadas, muestra sus estaciones y conserva cuatro decimales del precio pactado. El reporte indica que sus indicadores son de la página visible, no del historial completo. Los antiguos formularios de alta/edición y la auditoría ficticia de exportación ya no están montados: se mantienen fuera de la sesión hasta disponer de comandos reales. Las seis vistas visibles de Contratos se recorrieron contra el VPS sin 404/405/5xx observados; eso no equivale a probar sus escrituras comerciales de punta a punta.
 
 «Comunicaciones» de Contratos y Finanzas permanece fuera de la navegación y del montaje activo. Su adaptador heredado usa `/api/internal-chat/messages`, ausente de OpenAPI y sin persistencia en la base compartida; no debe presentarse como chat funcional. El chat operativo OCC–agente sí conserva su contrato `/api/v1` independiente. El chat departamental se retomará en otra entrega.
 
@@ -101,9 +101,10 @@ servidor. Al reconectar, volver a enfocar la pestaña o recuperar la red se
 reconcilia el feed; una consulta cada 25 segundos respalda WebSocket y los
 sondeos existentes de las pantallas permanecen. No implica entrega con la
 pestaña cerrada ni garantiza la latencia hasta la prueba real del VPS.
-El observador desactiva los logs internos del transporte SignalR en el
-navegador para que un WebSocket autenticado no registre su URL con token; la
-reconciliación HTTP y el sondeo de respaldo siguen activos.
+La corrección pendiente de esta rama desactiva los logs internos del transporte
+SignalR en el navegador para que un WebSocket autenticado no registre su URL
+con token; la reconciliación HTTP y el sondeo de respaldo siguen activos.
+Esta corrección no forma parte de la imagen #118 ya promovida.
 
 En esta rama, una asignación OCC agrega en la misma transacción una invalidación
 `occ_planning` limitada a las cuentas OCC vigentes de su estación. Planificación,
@@ -147,10 +148,11 @@ invalidación durable `finance_tariffs`; el cliente también reconsulta al
 recuperar foco/conectividad y cada 25 segundos mientras está visible. Se
 retiró «Programar cambio» porque solo modificaba memoria local. Crear una
 nueva versión contractual con precios futuros todavía requiere un comando
-canónico; esta vista es de solo lectura. Aún no hay prueba remota del corte.
+canónico; esta vista es de solo lectura. La lectura remota carga sin 404, pero
+no se ha probado un cambio futuro de tarifa de punta a punta.
 
-El resumen de Contratos permanece sintético y se señala en la interfaz. En
-esta rama local, **Finanzas → Inicio** consulta servicios aprobados de los
+El resumen de Contratos consulta solicitudes y borradores autorizados.
+**Finanzas → Inicio** consulta servicios aprobados de los
 últimos 30 días y la primera página de prefacturas de la estación autorizada
 mediante la API versionada. Los contadores son del conjunto consultado (máximo
 200 servicios y 50 prefacturas), no totales históricos. Expone los límites de
@@ -159,12 +161,10 @@ polling. No consulta `/api/finance/summary` ni inventa saldos o conciliaciones.
 Los dos departamentos mantienen oculto el antiguo buzón `/api/notifications`,
 ausente del OpenAPI canónico.
 El icono de notificaciones de esos dos departamentos permanece oculto hasta
-que exista un feed autorizado para sus roles. Los módulos profundos no
-enumerados como integrados abajo siguen siendo prototipos y no deben
-interpretarse como un circuito completo sin endpoints heredados.
+que exista un feed autorizado para sus roles. Los módulos que aún dependan de
+endpoints heredados no deben montarse ni interpretarse como parte del circuito.
 
-En la rama de integración, **Finanzas → Servicios aprobados** es una excepción
-concreta a esa descripción histórica: consulta la API versionada con estación
+**Finanzas → Servicios aprobados** consulta la API versionada con estación
 y período explícitos, muestra evidencia aprobada y razones de bloqueo reales,
 escucha el feed durable y reconsulta al recuperar foco o como máximo cada 25
 segundos. La antigua acción local «Marcar revisado» se retiró porque no
@@ -173,8 +173,8 @@ persistía ni auditaba. Desde esta misma vista, Finanzas puede elegir hasta
 prefactura de prueba persistente y auditada. La selección se reconcilia con
 las reservas de otros usuarios; un intento incierto conserva su clave para
 reintentar sin duplicar. El detalle se lee de nuevo de la API, no del estado
-del navegador. La prefactura no es una factura ni un recibo: conciliación,
-emisión y cobro siguen pendientes. No se ha promovido al VPS.
+del navegador. La prefactura no es una factura ni un recibo: emisión, pago
+manual y documentos son transiciones posteriores y separadas.
 
 **Finanzas → Pre-facturación** consulta `GET /api/v1/finance/preinvoices`
 por estación autorizada y página. Muestra importes, estado y número de líneas
@@ -193,7 +193,7 @@ El detalle de Pre-facturación también lee las disputas de la aerolínea con
 asunto, descripción y líneas cuestionadas desde
 `GET /api/v1/finance/preinvoices/{draftId}/disputes`, separado del detalle
 v1 existente para conservar compatibilidad durante una promoción API-primero;
-no inventa casos ni saldos. En esta rama local, Finanzas puede resolver la
+no inventa casos ni saldos. Finanzas puede resolver la
 disputa más reciente con motivo y confirmación explícita: mantener devuelve
 `Submitted` para otra respuesta de la aerolínea; anular deja `Voided` y libera
 los servicios para una prefactura nueva. El intento conserva su UUID al
@@ -203,17 +203,18 @@ No se modifica una línea ni su importe histórico. Desde una prefactura
 `POST /api/v1/finance/invoices`. El reintento conserva el mismo UUID de intención;
 la tabla se relee al recibir el aviso durable o al recuperar foco/conectividad.
 Una prefactura `Invoiced` consulta el snapshot emitido por
-`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. Esta rama añade
+`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. Se ofrece
 un registro manual de pago completo sobre la factura no fiscal. La pantalla
 exige referencia y confirmación; envía una clave de intención estable, relee
 el pago por la API y no lo presenta como conciliación bancaria verificada.
 El aviso durable `finance_preinvoices` provoca revalidación. Todavía no hay
-PDF fiscal, impuesto ni conciliación. En este tramo local, el detalle permite
+PDF fiscal, impuesto ni conciliación. El detalle permite
 descargar la factura no fiscal y, si existe un pago registrado, su recibo PDF
 privado. Ambos se obtienen por la API con la sesión de Finanzas y alcance de
 estación vigente; no se generan en el navegador. Una transferencia bancaria
-no queda verificada por registrar su referencia. El flujo sigue en la rama
-local, sin promoción al VPS.
+no queda verificada por registrar su referencia. La release #118 está
+promovida en Development; todavía falta recorrer en el VPS una operación nueva
+hasta factura, pago y recibo.
 
 ## Imagen de Development
 
