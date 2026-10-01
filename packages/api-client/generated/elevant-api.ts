@@ -786,6 +786,11 @@ export interface HumanResourcesAvailabilityRequestPage {
   requests: HumanResourcesAvailabilityRequestData[];
 }
 
+export interface HumanResourcesAvailabilityWritten {
+  id: string;
+  status: string;
+}
+
 export interface HumanResourcesPermitData {
   id: string;
   rampProfileId: string;
@@ -1795,6 +1800,14 @@ export interface RampProfileCatalog {
   availableStations: RampProfileStation[];
 }
 
+export interface RecordHumanResourcesAvailabilityInput {
+  rampProfileId: string;
+  startsOn: string;
+  endsOn: string;
+  type: string;
+  reason: string;
+}
+
 export interface RecordHumanResourcesPermitInput {
   rampProfileId: string;
   documentType: string;
@@ -1904,6 +1917,12 @@ export interface ReportRampIncidentRequest {
 
 export interface ResetGovernancePasswordRequest {
   temporaryPassword: string;
+}
+
+export interface ResolveHumanResourcesAvailabilityInput {
+  decision: string;
+  /** @nullable */
+  note?: string | null;
 }
 
 export interface ResolvePreinvoiceDisputeRequest {
@@ -4305,6 +4324,76 @@ export const listHumanResourcesAvailabilityRequests = async (params?: ListHumanR
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesAvailabilityRequestPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesAvailabilityRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/availability-requests/${id}`
+}
+
+export const recordHumanResourcesAvailabilityRequest = async (id: string,
+    recordHumanResourcesAvailabilityInput?: RecordHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityWritten> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesAvailabilityRequestUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesAvailabilityInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResolveHumanResourcesAvailabilityRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/availability-requests/${id}/resolution`
+}
+
+export const resolveHumanResourcesAvailabilityRequest = async (id: string,
+    resolveHumanResourcesAvailabilityInput?: ResolveHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityWritten> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResolveHumanResourcesAvailabilityRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resolveHumanResourcesAvailabilityInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
   return data
 }
 

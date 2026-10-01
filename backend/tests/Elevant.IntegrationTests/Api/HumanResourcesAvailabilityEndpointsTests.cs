@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -35,6 +36,39 @@ public sealed class HumanResourcesAvailabilityEndpointsTests(ElevantApiFactory f
             .GetProperty("get");
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+    }
+
+    [Fact]
+    public async Task AvailabilityWriteRoutesAreVersionedAndAuthenticated()
+    {
+        using var client = factory.CreateClient();
+        var id = Guid.NewGuid();
+        using var anonymousRecord = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id}", new
+            {
+                rampProfileId = Guid.NewGuid(), startsOn = "2026-10-01",
+                endsOn = "2026-10-02", type = "DayOff", reason = "Synthetic leave",
+            }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousRecord.StatusCode);
+        using var anonymousResolution = await client.PostAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id}/resolution",
+            new { decision = "Approve", note = "Coverage arranged" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResolution.StatusCode);
+
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var paths = json.RootElement.GetProperty("paths");
+        var record = paths.GetProperty("/api/v1/human-resources/availability-requests/{id}")
+            .GetProperty("put");
+        var resolution = paths.GetProperty(
+            "/api/v1/human-resources/availability-requests/{id}/resolution")
+            .GetProperty("post");
+        Assert.True(record.GetProperty("responses").TryGetProperty("409", out _));
+        Assert.True(resolution.GetProperty("responses").TryGetProperty("409", out _));
     }
 
     [Fact]
@@ -82,6 +116,50 @@ public sealed class HumanResourcesAvailabilityEndpointsTests(ElevantApiFactory f
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
+    [Fact]
+    public async Task AvailabilityWritesPassExactIntentAndMapFailures()
+    {
+        var id = Guid.NewGuid();
+        var input = new RecordHumanResourcesAvailabilityInput(Guid.NewGuid(),
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 2),
+            "DayOff", "Synthetic leave");
+        var resolution = new ResolveHumanResourcesAvailabilityInput(
+            "Approve", "Coverage arranged");
+        var stub = new WriteStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesAvailabilityWriteStore>();
+                services.AddSingleton<IHumanResourcesAvailabilityWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var first = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal((AccountId, id, input), stub.RecordRequest);
+        using var decision = await client.PostAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id:D}/resolution",
+            resolution, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, decision.StatusCode);
+        Assert.Equal((AccountId, id, resolution), stub.ResolveRequest);
+        using var json = JsonDocument.Parse(await decision.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("Approved", json.RootElement.GetProperty("status").GetString());
+
+        stub.Failure = HumanResourcesAvailabilityWriteFailure.Conflict;
+        using var conflict = await client.PostAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id:D}/resolution",
+            resolution, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        stub.Failure = HumanResourcesAvailabilityWriteFailure.Forbidden;
+        using var denied = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/availability-requests/{id:D}", input,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
     private static string Token()
     {
         var now = DateTimeOffset.UtcNow;
@@ -121,6 +199,35 @@ public sealed class HumanResourcesAvailabilityEndpointsTests(ElevantApiFactory f
         {
             Request = (actorId, from, to, page, limit);
             return Task.FromResult(Data);
+        }
+    }
+
+    private sealed class WriteStub : IHumanResourcesAvailabilityWriteStore
+    {
+        public HumanResourcesAvailabilityWriteFailure? Failure { get; set; }
+        public (Guid ActorId, Guid Id, RecordHumanResourcesAvailabilityInput Input)? RecordRequest
+        { get; private set; }
+        public (Guid ActorId, Guid Id, ResolveHumanResourcesAvailabilityInput Input)? ResolveRequest
+        { get; private set; }
+
+        public Task<HumanResourcesAvailabilityWriteResult> RecordAsync(Guid actorId,
+            Guid requestId, RecordHumanResourcesAvailabilityInput input,
+            CancellationToken cancellationToken = default)
+        {
+            RecordRequest = (actorId, requestId, input);
+            return Task.FromResult(Failure is null
+                ? HumanResourcesAvailabilityWriteResult.Success(requestId, "Pending")
+                : HumanResourcesAvailabilityWriteResult.Failed(Failure.Value));
+        }
+
+        public Task<HumanResourcesAvailabilityWriteResult> ResolveAsync(Guid actorId,
+            Guid requestId, ResolveHumanResourcesAvailabilityInput input,
+            CancellationToken cancellationToken = default)
+        {
+            ResolveRequest = (actorId, requestId, input);
+            return Task.FromResult(Failure is null
+                ? HumanResourcesAvailabilityWriteResult.Success(requestId, "Approved")
+                : HumanResourcesAvailabilityWriteResult.Failed(Failure.Value));
         }
     }
 }

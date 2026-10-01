@@ -570,6 +570,259 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task HumanResourcesAvailabilityWriteReplaysResolvesAndRejectsActiveAssignment()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
+            .BuildServiceProvider();
+        var hrId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        var firstId = Guid.NewGuid();
+        var date = new DateOnly(2031, 2, 4);
+        var input = new RecordHumanResourcesAvailabilityInput(agentId, date,
+            date.AddDays(1), "DayOff", "Synthetic planned leave");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Forbidden,
+                (await store.RecordAsync(occId, firstId, input, cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Invalid,
+                (await store.RecordAsync(hrId, firstId, input with
+                { EndsOn = date.AddDays(31) }, cancellationToken)).Failure);
+            Assert.Null((await store.RecordAsync(hrId, firstId, input,
+                cancellationToken)).Failure);
+            Assert.Null((await store.RecordAsync(hrId, firstId, input,
+                cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, firstId, input with
+                { Reason = "Changed intention" }, cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                cancellationToken)).Failure);
+            Assert.Null((await store.ResolveAsync(hrId, firstId,
+                new ResolveHumanResourcesAvailabilityInput("Approve", "Coverage arranged"),
+                cancellationToken)).Failure);
+            Assert.Null((await store.ResolveAsync(hrId, firstId,
+                new ResolveHumanResourcesAvailabilityInput("Approve", "Coverage arranged"),
+                cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
+                (await store.ResolveAsync(hrId, firstId,
+                new ResolveHumanResourcesAvailabilityInput("Reject", "Different decision"),
+                cancellationToken)).Failure);
+        }
+        var raceDate = date.AddDays(10);
+        async Task<HumanResourcesAvailabilityWriteResult> RaceRecordAsync(Guid id)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>()
+                .RecordAsync(hrId, id, input with
+                { StartsOn = raceDate, EndsOn = raceDate }, cancellationToken);
+        }
+        var race = await Task.WhenAll(RaceRecordAsync(Guid.NewGuid()),
+            RaceRecordAsync(Guid.NewGuid()));
+        Assert.Single(race, result => result.Failure is null);
+        Assert.Single(race, result => result.Failure ==
+            HumanResourcesAvailabilityWriteFailure.Conflict);
+        var collidingId = Guid.NewGuid();
+        var collidingDate = date.AddDays(3);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var agentKey = await setup.RampAgents.Where(agent => agent.PublicId == agentId)
+                .Select(agent => agent.Id).SingleAsync(cancellationToken);
+            var airlineKey = await setup.Airlines.Where(airline => airline.IataCode == "ZZ")
+                .Select(airline => airline.Id).SingleAsync(cancellationToken);
+            var stationKey = await setup.Stations.Where(station => station.Code == "PUJ")
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            var now = DateTimeOffset.UtcNow;
+            var turnaround = new Turnaround
+            {
+                PublicId = Guid.NewGuid(), OperationCode = "HR-ABSENCE-COLLISION",
+                AirlineId = airlineKey, StationId = stationKey,
+                OperationDate = collidingDate,
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Turnarounds.Add(turnaround);
+            await setup.SaveChangesAsync(cancellationToken);
+            var operation = new GroundOperation
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = turnaround.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.GroundOperations.Add(operation);
+            await setup.SaveChangesAsync(cancellationToken);
+            setup.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.NewGuid(), GroundOperationId = operation.Id,
+                RampAgentId = agentKey, AssignmentRole = "RampAgent",
+                AssignedAt = now, CreatedAt = now, UpdatedAt = now,
+            });
+            var terminalKey = await setup.Terminals.Where(terminal =>
+                terminal.StationId == stationKey && terminal.Code == "A")
+                .Select(terminal => terminal.Id).SingleAsync(cancellationToken);
+            setup.ShiftAssignments.Add(new ShiftAssignment
+            {
+                PublicId = Guid.NewGuid(), RampAgentId = agentKey,
+                StationId = stationKey, TerminalId = terminalKey,
+                WorkDate = collidingDate, StartsAtLocal = new TimeOnly(22, 0),
+                EndsAtLocal = new TimeOnly(6, 0), Block = ShiftBlock.Night,
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+            var overnightTurnaround = new Turnaround
+            {
+                PublicId = Guid.NewGuid(), OperationCode = "HR-ABSENCE-OVERNIGHT",
+                AirlineId = airlineKey, StationId = stationKey,
+                OperationDate = collidingDate.AddDays(1),
+                CurrentStatus = TurnaroundStatus.Confirmed,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.Turnarounds.Add(overnightTurnaround);
+            await setup.SaveChangesAsync(cancellationToken);
+            var overnightOperation = new GroundOperation
+            {
+                PublicId = Guid.NewGuid(), TurnaroundId = overnightTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            setup.GroundOperations.Add(overnightOperation);
+            await setup.SaveChangesAsync(cancellationToken);
+            setup.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.NewGuid(), GroundOperationId = overnightOperation.Id,
+                RampAgentId = agentKey, AssignmentRole = "RampAgent",
+                AssignedAt = now, CreatedAt = now, UpdatedAt = now,
+            });
+            await setup.SaveChangesAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
+            Assert.Null((await store.RecordAsync(hrId, collidingId, input with
+            { StartsOn = collidingDate, EndsOn = collidingDate },
+                cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
+                (await store.ResolveAsync(hrId, collidingId,
+                    new ResolveHumanResourcesAvailabilityInput("Approve", null),
+                    cancellationToken)).Failure);
+        }
+        await using (var inspection = CreateContext(database.ConnectionString))
+        {
+            var saved = await inspection.AvailabilityRequests.AsNoTracking()
+                .SingleAsync(request => request.PublicId == firstId, cancellationToken);
+            Assert.Equal(AvailabilityRequestStatus.Approved, saved.Status);
+            Assert.NotNull(saved.ResolvedAt);
+            Assert.Equal(1, await inspection.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.availability.recorded" &&
+                entry.EntityPublicId == firstId, cancellationToken));
+            Assert.Equal(1, await inspection.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.availability.approved" &&
+                entry.EntityPublicId == firstId, cancellationToken));
+            Assert.NotEmpty(await inspection.OutboxMessages.AsNoTracking()
+                .Where(message => message.PayloadJson.Contains("\"resource\":\"hr_absences\""))
+                .ToArrayAsync(cancellationToken));
+            Assert.Equal(AvailabilityRequestStatus.Pending,
+                (await inspection.AvailabilityRequests.AsNoTracking()
+                    .SingleAsync(request => request.PublicId == collidingId,
+                        cancellationToken)).Status);
+            var turnaroundKey = await inspection.Turnarounds.Where(turnaround =>
+                turnaround.OperationCode == "HR-ABSENCE-COLLISION")
+                .Select(turnaround => turnaround.Id).SingleAsync(cancellationToken);
+            var operationKey = await inspection.GroundOperations.Where(operation =>
+                operation.TurnaroundId == turnaroundKey).Select(operation => operation.Id)
+                .SingleAsync(cancellationToken);
+            var assignment = await inspection.OperationAgentAssignments.SingleAsync(item =>
+                item.GroundOperationId == operationKey && item.ReleasedAt == null,
+                cancellationToken);
+            assignment.ReleasedAt = DateTimeOffset.UtcNow;
+            await inspection.SaveChangesAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
+                (await store.ResolveAsync(hrId, collidingId,
+                    new ResolveHumanResourcesAvailabilityInput("Approve", null),
+                    cancellationToken)).Failure);
+        }
+        await using (var inspection = CreateContext(database.ConnectionString))
+        {
+            var turnaroundKey = await inspection.Turnarounds.Where(turnaround =>
+                turnaround.OperationCode == "HR-ABSENCE-OVERNIGHT")
+                .Select(turnaround => turnaround.Id).SingleAsync(cancellationToken);
+            var operationKey = await inspection.GroundOperations.Where(operation =>
+                operation.TurnaroundId == turnaroundKey).Select(operation => operation.Id)
+                .SingleAsync(cancellationToken);
+            var assignment = await inspection.OperationAgentAssignments.SingleAsync(item =>
+                item.GroundOperationId == operationKey && item.ReleasedAt == null,
+                cancellationToken);
+            assignment.ReleasedAt = DateTimeOffset.UtcNow;
+            await inspection.SaveChangesAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
+            Assert.Null((await store.ResolveAsync(hrId, collidingId,
+                new ResolveHumanResourcesAvailabilityInput("Approve", null),
+                cancellationToken)).Failure);
+            var rejectedId = Guid.NewGuid();
+            Assert.Null((await store.RecordAsync(hrId, rejectedId, input with
+            { StartsOn = collidingDate.AddDays(2), EndsOn = collidingDate.AddDays(2),
+              Type = "ShiftChange" }, cancellationToken)).Failure);
+            Assert.Null((await store.ResolveAsync(hrId, rejectedId,
+                new ResolveHumanResourcesAvailabilityInput("Reject", "Not scheduled"),
+                cancellationToken)).Failure);
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Forbidden,
+                (await store.ResolveAsync(occId, rejectedId,
+                    new ResolveHumanResourcesAvailabilityInput("Reject", "Not scheduled"),
+                    cancellationToken)).Failure);
+        }
+        await using (var revoke = CreateContext(database.ConnectionString))
+        {
+            var hrKey = await revoke.Users.Where(user => user.PublicId == hrId)
+                .Select(user => user.Id).SingleAsync(cancellationToken);
+            var roleKey = await revoke.Roles.Where(role =>
+                role.NormalizedName == "GESTION_HUMANA").Select(role => role.Id)
+                .SingleAsync(cancellationToken);
+            await revoke.Set<IdentityUserRole<long>>().Where(link =>
+                link.UserId == hrKey && link.RoleId == roleKey)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider
+                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
+            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Forbidden,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                { StartsOn = date.AddDays(20), EndsOn = date.AddDays(20) },
+                    cancellationToken)).Failure);
+        }
+    }
+
+    [Fact]
     public async Task HumanResourcesShiftRecordingRespectsScopesReplaysAndEmitsOneChange()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -7134,7 +7387,8 @@ public sealed class SqlServerMigrationTests
                 OccurredAt = now,
                 CreatedAt = now,
             });
-            foreach (var resource in new[] { "hr_qualifications", "hr_shifts", "hr_permits" })
+            foreach (var resource in new[]
+                { "hr_qualifications", "hr_shifts", "hr_permits", "hr_absences" })
                 setup.AccountChanges.Add(new AccountChange
                 {
                     PublicId = Guid.NewGuid(),
@@ -7174,7 +7428,7 @@ public sealed class SqlServerMigrationTests
         Assert.Single(airline.Changes);
         var humanResources = await ReadAsync(hrPublicId, 0, 10);
         Assert.NotNull(humanResources);
-        Assert.Equal(3, humanResources.Changes.Count);
+        Assert.Equal(4, humanResources.Changes.Count);
 
         await using (var setup = CreateContext(database.ConnectionString))
         {

@@ -156,7 +156,19 @@ a 60 minutos y usa 15 por defecto.
   devuelve solicitudes de disponibilidad que se solapan con una ventana de
   hasta 31 fechas locales, paginadas de forma estable. Exige Gestión Humana o
   Superadministración internas vigentes; OCC no puede leer motivos laborales.
-  El alta/resolución auditada de solicitudes y su aviso durable todavía faltan.
+  `PUT /api/v1/human-resources/availability-requests/{id}` registra una
+  solicitud `Pending` con UUID de intención estable, perfil activo, tipo
+  `DayOff`, `Restriction` o `ShiftChange`, motivo y hasta 31 fechas locales.
+  Rechaza otra solicitud `Pending`/`Approved` del mismo tipo con fechas
+  solapadas para el agente. `POST /{id}/resolution` decide `Approve` o
+  `Reject` sobre una solicitud pendiente; aprobar una ausencia/restricción
+  exige que no haya una operación todavía asignada al agente en esas fechas,
+  incluida una operación del día siguiente cubierta por un turno nocturno que
+  comenzó durante la ausencia.
+  Ambas transiciones son serializables, auditadas, reintentables sólo con la
+  misma intención/actor y emiten `hr_absences` en el outbox. El feed vuelve a
+  verificar rol y membresía antes de entregar el aviso. La UI de solicitudes
+  y la invalidación OCC en vivo aún no están conectadas.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el

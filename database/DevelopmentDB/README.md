@@ -55,6 +55,15 @@ histórico y exige el UUID del ciclo observado en una transacción serializable.
 La auditoría y la pista `hr_qualifications` se confirman en esa misma transacción.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
+Las solicitudes de disponibilidad usan la tabla existente
+`hr.availability_requests`: alta pendiente y decisión se confirman en
+transacciones serializables con auditoría y pistas `hr_absences` en el outbox.
+La aprobación de `DayOff` o `Restriction` comprueba que el agente no conserve
+una asignación activa en las fechas solicitadas o al día siguiente bajo un
+turno nocturno iniciado durante la ausencia. La aprobación de
+`ShiftChange` no reprograma un turno. Este contrato no agrega migración ni
+modifica registros al desplegarse.
+
 La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
 y concede a `elevant_app_role` permisos de objeto limitados para
 escribir/procesar el outbox y leer/insertar pistas del feed.

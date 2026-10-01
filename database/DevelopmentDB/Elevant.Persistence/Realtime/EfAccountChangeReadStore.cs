@@ -77,7 +77,7 @@ internal sealed class EfAccountChangeReadStore(
                     station.Id == change.StationId &&
                     allowedStations.Contains(station.PublicId))) &&
                 ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts" &&
-                  change.Resource != "hr_permits") ||
+                  change.Resource != "hr_permits" && change.Resource != "hr_absences") ||
                     hasHumanResourcesAccess) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&

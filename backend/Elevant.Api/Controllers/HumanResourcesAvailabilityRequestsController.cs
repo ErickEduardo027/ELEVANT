@@ -14,7 +14,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/human-resources/availability-requests")]
 public sealed class HumanResourcesAvailabilityRequestsController(
-    IHumanResourcesAvailabilityReadStore store) : ControllerBase
+    IHumanResourcesAvailabilityReadStore store,
+    IHumanResourcesAvailabilityWriteStore writeStore) : ControllerBase
 {
     [HttpGet(Name = "ListHumanResourcesAvailabilityRequests")]
     [ProducesResponseType<HumanResourcesAvailabilityRequestPage>(StatusCodes.Status200OK,
@@ -40,4 +41,64 @@ public sealed class HumanResourcesAvailabilityRequestsController(
             page, limit, cancellationToken);
         return result is null ? Forbid() : Ok(result);
     }
+
+    [HttpPut("{id:guid}", Name = "RecordHumanResourcesAvailabilityRequest")]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<HumanResourcesAvailabilityWritten>(StatusCodes.Status200OK,
+        "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict,
+        "application/problem+json")]
+    public async Task<IActionResult> Record(Guid id,
+        [FromBody] RecordHumanResourcesAvailabilityInput input,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty) return Problem(statusCode: 400,
+            title: "Invalid availability request identifier.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.RecordAsync(actorId, id, input, cancellationToken);
+        return MapWriteResult(result);
+    }
+
+    [HttpPost("{id:guid}/resolution", Name = "ResolveHumanResourcesAvailabilityRequest")]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<HumanResourcesAvailabilityWritten>(StatusCodes.Status200OK,
+        "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict,
+        "application/problem+json")]
+    public async Task<IActionResult> Resolve(Guid id,
+        [FromBody] ResolveHumanResourcesAvailabilityInput input,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty) return Problem(statusCode: 400,
+            title: "Invalid availability request identifier.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.ResolveAsync(actorId, id, input, cancellationToken);
+        return MapWriteResult(result);
+    }
+
+    private IActionResult MapWriteResult(HumanResourcesAvailabilityWriteResult result) =>
+        result.Failure switch
+        {
+            null => Ok(result.Request),
+            HumanResourcesAvailabilityWriteFailure.Forbidden => Forbid(),
+            HumanResourcesAvailabilityWriteFailure.Invalid => Problem(statusCode: 400,
+                title: "Invalid availability request."),
+            HumanResourcesAvailabilityWriteFailure.Conflict => Problem(statusCode: 409,
+                title: "Availability request conflicts with current state."),
+            _ => throw new InvalidOperationException(),
+        };
 }

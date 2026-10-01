@@ -22,6 +22,8 @@ import {
   getRecordHumanResourcesQualificationUrl,
   getListHumanResourcesShiftsUrl,
   getListHumanResourcesAvailabilityRequestsUrl,
+  getRecordHumanResourcesAvailabilityRequestUrl,
+  getResolveHumanResourcesAvailabilityRequestUrl,
   getGetHumanResourcesShiftAssignmentOptionsUrl,
   getRecordHumanResourcesShiftUrl,
   getListFinanceReconciliationUrl,
@@ -113,6 +115,9 @@ import {
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
   type HumanResourcesAvailabilityRequestPage,
+  type HumanResourcesAvailabilityWritten,
+  type RecordHumanResourcesAvailabilityInput,
+  type ResolveHumanResourcesAvailabilityInput,
   type ListHumanResourcesAvailabilityRequestsParams,
   type HumanResourcesShiftAssignmentOptions,
   type GetHumanResourcesShiftAssignmentOptionsParams,
@@ -231,6 +236,8 @@ export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRe
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesAvailabilityRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ResolveHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type HumanResourcesAvailabilityQuery = Omit<ListHumanResourcesAvailabilityRequestsParams,
   "from" | "to"> & { readonly from: string; readonly to: string };
 export type GetHumanResourcesShiftAssignmentOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -412,6 +419,16 @@ export interface ElevantApiClient {
     query: HumanResourcesAvailabilityQuery,
     options?: GetHumanResourcesAvailabilityRequestsOptions,
   ): Promise<HumanResourcesAvailabilityRequestPage>;
+  recordHumanResourcesAvailabilityRequest(
+    id: string,
+    request: RecordHumanResourcesAvailabilityInput,
+    options?: RecordHumanResourcesAvailabilityOptions,
+  ): Promise<HumanResourcesAvailabilityWritten>;
+  resolveHumanResourcesAvailabilityRequest(
+    id: string,
+    request: ResolveHumanResourcesAvailabilityInput,
+    options?: ResolveHumanResourcesAvailabilityOptions,
+  ): Promise<HumanResourcesAvailabilityWritten>;
   getHumanResourcesShiftAssignmentOptions(
     query: HumanResourcesShiftAssignmentQuery,
     options?: GetHumanResourcesShiftAssignmentOptionsOptions,
@@ -2549,6 +2566,44 @@ function isHumanResourcesAvailabilityRequestPage(
   });
 }
 
+function validatedHumanResourcesAvailabilityInput(
+  input: RecordHumanResourcesAvailabilityInput,
+): RecordHumanResourcesAvailabilityInput {
+  if (!isRecord(input) || !hasOnlyKeys(input,
+      ["rampProfileId", "startsOn", "endsOn", "type", "reason"]) ||
+      !isUuid(input.rampProfileId) || !isDateOnly(input.startsOn) ||
+      !isDateOnly(input.endsOn) || input.startsOn > input.endsOn ||
+      (Date.parse(`${input.endsOn}T00:00:00Z`) -
+        Date.parse(`${input.startsOn}T00:00:00Z`)) / 86_400_000 > 30 ||
+      !["DayOff", "ShiftChange", "Restriction"].includes(input.type) ||
+      typeof input.reason !== "string" || !input.reason.trim() ||
+      input.reason.trim().length > 1000)
+    throw new TypeError("Human Resources availability input is invalid.");
+  return { rampProfileId: input.rampProfileId, startsOn: input.startsOn,
+    endsOn: input.endsOn, type: input.type, reason: input.reason.trim() };
+}
+
+function validatedHumanResourcesAvailabilityResolution(
+  input: ResolveHumanResourcesAvailabilityInput,
+): ResolveHumanResourcesAvailabilityInput {
+  if (!isRecord(input) || !hasOnlyKeys(input, ["decision", "note"]) ||
+      !["Approve", "Reject"].includes(input.decision) ||
+      (input.note != null && (typeof input.note !== "string" ||
+        input.note.trim().length > 1000)))
+    throw new TypeError("Human Resources availability resolution is invalid.");
+  return { decision: input.decision,
+    ...(input.note == null ? {} : { note: input.note.trim() || null }) };
+}
+
+function isHumanResourcesAvailabilityWritten(
+  value: unknown, id: string,
+  expectedStatuses: readonly string[],
+): value is HumanResourcesAvailabilityWritten {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "status"]) &&
+    isUuid(value.id) && value.id.toLowerCase() === id &&
+    typeof value.status === "string" && expectedStatuses.includes(value.status);
+}
+
 function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShiftPage {
   if (!isRecord(value) || !hasOnlyKeys(value,
     ["from", "to", "page", "limit", "hasMore", "shifts"]) ||
@@ -3823,6 +3878,38 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.from !== scope.from || result.data.to !== scope.to ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesAvailabilityRequest(
+      id: string,
+      request: RecordHumanResourcesAvailabilityInput,
+      options?: RecordHumanResourcesAvailabilityOptions,
+    ) {
+      const requestId = validatedUuid(id, "Availability request ID");
+      const body = validatedHumanResourcesAvailabilityInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesAvailabilityRequestUrl(requestId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
+        requestId, ["Pending", "Approved", "Rejected"]))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async resolveHumanResourcesAvailabilityRequest(
+      id: string,
+      request: ResolveHumanResourcesAvailabilityInput,
+      options?: ResolveHumanResourcesAvailabilityOptions,
+    ) {
+      const requestId = validatedUuid(id, "Availability request ID");
+      const body = validatedHumanResourcesAvailabilityResolution(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getResolveHumanResourcesAvailabilityRequestUrl(requestId),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
+        requestId, [body.decision === "Approve" ? "Approved" : "Rejected"]))
         throw malformedResponse(result.status);
       return result.data;
     },
