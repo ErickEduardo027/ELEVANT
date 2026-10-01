@@ -234,10 +234,14 @@ grep -R --binary-files=text -Fq -- "$EXPECTED_HR_DEMO_MODE" "$response_root/html
   echo "AVIAM Web bundle does not contain the certified HR demo mode." >&2
   exit 1
 }
-grep -R --binary-files=text -Fq -- 'Datos sintéticos · Solo lectura' "$response_root/html" || {
-  echo "AVIAM Web bundle does not contain the permanent synthetic-data banner." >&2
+grep -R --binary-files=text -Fq -- 'Agentes de rampa activos' "$response_root/html" || {
+  echo "AVIAM Web bundle does not contain the connected HR dashboard." >&2
   exit 1
 }
+if grep -R --binary-files=text -Fq -- 'Datos sintéticos · Solo lectura' "$response_root/html"; then
+  echo "AVIAM Web bundle still contains the retired synthetic-data banner." >&2
+  exit 1
+fi
 if grep -R --binary-files=text -Fq -- 'http://localhost:4310' "$response_root/html"; then
   echo "AVIAM Web bundle leaked the local prototype origin." >&2
   exit 1

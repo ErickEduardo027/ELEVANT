@@ -81,7 +81,8 @@ test('delivery files preserve the private, non-root runtime boundary', async () 
 
   assert.match(certifier, /EXPECTED_HR_DEMO_MODE="dashboard-read-only"/);
   assert.match(certifier, /inspect_label io\.elevant\.web\.hr-demo-mode/);
-  assert.match(certifier, /permanent synthetic-data banner/);
+  assert.match(certifier, /bundle does not contain the connected HR dashboard/);
+  assert.match(certifier, /still contains the retired synthetic-data banner/);
   assert.match(webCi, /document\["hrDemoMode"\] = "dashboard-read-only"/);
   assert.match(webCi, /expected\.add\("hrDemoMode"\)/);
   assert.match(webCi, /--build-arg VITE_HR_DEMO_MODE=dashboard-read-only/);
