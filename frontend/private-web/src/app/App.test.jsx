@@ -113,7 +113,7 @@ describe('App routing', () => {
 
       await userEvent.click(await screen.findByRole('button', { name: logoutButton }));
       await waitFor(() => expect(window.location.pathname).toBe('/login'));
-      expect(await screen.findByText(/inicia sesión para continuar/i)).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
     },
     15000
   );
@@ -155,6 +155,6 @@ describe('App routing', () => {
     });
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
-    expect(await screen.findByText(/inicia sesión para continuar/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
   });
 });
