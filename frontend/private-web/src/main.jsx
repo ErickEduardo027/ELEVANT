@@ -6,7 +6,6 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import router from './app/router.jsx';
 import { AuthProvider } from './features/auth/AuthContext.jsx';
 import { ThemeProvider } from './features/shell/useTheme.jsx';
-import { LanguageProvider } from './features/shell/useLanguage.jsx';
 import './styles/tokens.css';
 
 // MapLibre resolves its default worker relative to its own module URL. Vite bundles that module
@@ -17,11 +16,9 @@ setWorkerUrl(maplibreWorkerUrl);
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
-      <LanguageProvider>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
-      </LanguageProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </ThemeProvider>
   </StrictMode>,
 );

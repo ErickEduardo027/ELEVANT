@@ -3,20 +3,6 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { clearSession, handleUnauthorizedResponse } from '../features/auth/authService';
-import { ThemeProvider } from '../features/shell/useTheme.jsx';
-import { LanguageProvider } from '../features/shell/useLanguage.jsx';
-
-// App is the root of the legacy multi-page entries (dashboard/contracts/finance
-// -main.jsx), which mount these providers around it. LoginPage reads both.
-function renderApp() {
-  return render(
-    <ThemeProvider>
-      <LanguageProvider>
-        <App />
-      </LanguageProvider>
-    </ThemeProvider>,
-  );
-}
 
 vi.mock('../features/shell/AppShell.jsx', () => ({
   default: ({ onLogout }) => (
@@ -75,9 +61,9 @@ describe('App routing', () => {
   it(
     'logs in the admin user and lands on Admin/OCC',
     async () => {
-      renderApp();
-      expect(screen.getByRole('checkbox', { name: /recordar sesión/i })).not.toBeChecked();
-      await userEvent.type(screen.getByLabelText(/correo electrónico/i), 'admin@elevant.test');
+      render(<App />);
+      expect(screen.getByRole('checkbox', { name: /recordarme/i })).not.toBeChecked();
+      await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
       await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
       await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
 
@@ -117,8 +103,8 @@ describe('App routing', () => {
   ])(
     'logs out from $path back to /login',
     async ({ email, shell, logoutButton, path }) => {
-      renderApp();
-      await userEvent.type(screen.getByLabelText(/correo electrónico/i), email);
+      render(<App />);
+      await userEvent.type(screen.getByLabelText(/correo corporativo/i), email);
       await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
       await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
 
@@ -127,7 +113,7 @@ describe('App routing', () => {
 
       await userEvent.click(await screen.findByRole('button', { name: logoutButton }));
       await waitFor(() => expect(window.location.pathname).toBe('/login'));
-      expect(await screen.findByText(/gestiona tus operaciones desde un solo lugar/i)).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
     },
     15000
   );
@@ -149,7 +135,7 @@ describe('App routing', () => {
       );
       window.history.replaceState({}, '', '/admin-occ');
 
-      renderApp();
+      render(<App />);
 
       expect(await screen.findByText('Gestión Humana shell')).toBeInTheDocument();
       await waitFor(() => expect(window.location.pathname).toBe('/gestion-humana'));
@@ -158,8 +144,8 @@ describe('App routing', () => {
   );
 
   it('clears the active App session and redirects when the API reports 401', async () => {
-    renderApp();
-    await userEvent.type(screen.getByLabelText(/correo electrónico/i), 'admin@elevant.test');
+    render(<App />);
+    await userEvent.type(screen.getByLabelText(/correo corporativo/i), 'admin@elevant.test');
     await userEvent.type(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), 'Elevant2026!');
     await userEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
     expect(await screen.findByText('Admin OCC shell')).toBeInTheDocument();
@@ -169,6 +155,6 @@ describe('App routing', () => {
     });
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
-    expect(await screen.findByText(/gestiona tus operaciones desde un solo lugar/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Bienvenido de nuevo' })).toBeInTheDocument();
   });
 });
