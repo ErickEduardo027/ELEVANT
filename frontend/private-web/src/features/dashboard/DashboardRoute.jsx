@@ -1,23 +1,39 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import DashboardPage from './DashboardPage';
 import { useDashboardData } from './useDashboardData';
-import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 
 export default function DashboardRoute() {
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const stationScopes = useMemo(() => (session?.stationScopes ?? [])
+    .filter(scope => scope?.stationId && scope?.stationCode),
+  [session?.stationScopes]);
+  const [stationId, setStationId] = useState(stationScopes[0]?.stationId ?? '');
   const [retryToken, setRetryToken] = useState(0);
-  const { status, data, error } = useDashboardData('PUJ', retryToken);
-  const { forceState } = useAdminOccPreview();
+  const selected = stationScopes.find(scope => scope.stationId === stationId);
+  const dashboard = useDashboardData({
+    accountId: session?.accountId,
+    stationId: selected?.stationId ?? '',
+    stationCode: selected?.stationCode ?? '',
+    refreshToken: retryToken,
+  });
 
-  return (
-    <DashboardPage
-      status={status}
-      data={data}
-      error={error}
-      onRetry={() => setRetryToken(token => token + 1)}
-      forceState={forceState}
-      onOpenPositionsMap={() => navigate('/admin-occ/positions-map')}
-    />
-  );
+  useEffect(() => {
+    if (stationScopes.some(scope => scope.stationId === stationId)) return;
+    setStationId(stationScopes[0]?.stationId ?? '');
+  }, [stationId, stationScopes]);
+
+  return <DashboardPage
+    status={dashboard.status}
+    data={dashboard.data}
+    stationScopes={stationScopes}
+    selectedStationId={selected?.stationId ?? ''}
+    onStationChange={setStationId}
+    onRetry={() => setRetryToken(value => value + 1)}
+    onOpenPlanning={() => navigate('/admin-occ/planning')}
+    onOpenReview={() => navigate('/admin-occ/review')}
+    onOpenNotifications={() => navigate('/admin-occ/notifications')}
+  />;
 }

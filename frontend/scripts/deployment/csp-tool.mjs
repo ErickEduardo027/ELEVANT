@@ -98,7 +98,8 @@ function validate(args) {
   const policies = headers.get("content-security-policy") || [];
   assert(policies.length === 1, "response must contain exactly one Content-Security-Policy header");
   const directives = parsePolicy(policies[0]);
-  const expectedConnect = [...EXPECTED_CONNECT[args.application], apiOrigin];
+  const websocketOrigin = apiOrigin.replace(/^https:/u, "wss:");
+  const expectedConnect = [...EXPECTED_CONNECT[args.application], apiOrigin, websocketOrigin];
   const connectSources = directives.get("connect-src") || [];
   assert(equalSet(connectSources, expectedConnect), `${args.application} connect-src must contain exactly its certified API and approved sources`);
   assert(equalSet(directives.get("frame-ancestors") || [], ["'none'"]), "frame-ancestors must be exactly 'none'");

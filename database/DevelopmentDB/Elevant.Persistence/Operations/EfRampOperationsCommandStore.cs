@@ -365,6 +365,9 @@ internal sealed class EfRampOperationsCommandStore(
             }, ReceiptJsonOptions),
         };
         context.AuditEntries.Add(auditEntry);
+        await AirlineOperationChangeWriter.AddAsync(context,
+            scope.AirlineOrganizationInternalId, operation.PublicId, now,
+            cancellationToken);
 
         var start = new RampOperationStartData(
             receipt.PublicId,

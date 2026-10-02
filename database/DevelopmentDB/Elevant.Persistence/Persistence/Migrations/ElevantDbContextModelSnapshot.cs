@@ -157,6 +157,128 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("audit_entries", "audit");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.CommercialAirlineProfile", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("CanonicalAirlineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("canonical_airline_id");
+
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("country_code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("IataCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("iata_code");
+
+                    b.Property<string>("IcaoCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasColumnName("icao_code");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_published");
+
+                    b.Property<string>("LegalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("legal_name");
+
+                    b.Property<string>("LogoObjectKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("logo_object_key");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("region");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("source_name");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("source_url");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("VerificationSourceUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("verification_source_url");
+
+                    b.Property<DateTimeOffset?>("VerifiedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("verified_at");
+
+                    b.Property<long?>("VerifiedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("verified_by_account_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CanonicalAirlineId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("SourceName")
+                        .IsUnique();
+
+                    b.HasIndex("VerifiedByAccountId");
+
+                    b.ToTable("airline_profiles", "commercial");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.Contract", b =>
                 {
                     b.Property<long>("Id")
@@ -239,6 +361,68 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractDraftComment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AuthorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("author_account_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("body");
+
+                    b.Property<long>("ContractVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_version_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ContractVersionId", "CreatedAt");
+
+                    b.ToTable("contract_draft_comments", "commercial");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractServiceRate", b =>
                 {
                     b.Property<long>("Id")
@@ -264,6 +448,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<bool?>("IsConfirmed")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_confirmed");
 
                     b.Property<decimal>("MinimumQuantity")
                         .HasPrecision(18, 4)
@@ -479,6 +667,955 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("contract_version_stations", "commercial");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancialDocument", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("bigint")
+                        .HasColumnName("length");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("object_key");
+
+                    b.Property<long?>("PaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("payment_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObjectKey")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasFilter("[payment_id] IS NOT NULL");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("InvoiceId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("financial_documents", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_financial_document_content_type", "[content_type] = 'application/pdf'");
+
+                            t.HasCheckConstraint("ck_financial_document_kind", "([kind] = 'Invoice' AND [payment_id] IS NULL) OR ([kind] = 'Receipt' AND [payment_id] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_financial_document_length", "[length] > 0");
+
+                            t.HasCheckConstraint("ck_financial_document_sha256", "LEN([sha256]) = 64");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.MediaAsset", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("bigint")
+                        .HasColumnName("length");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("object_key");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("purpose");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<long>("UploadedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("uploaded_by_account_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObjectKey")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("UploadedByAccountId");
+
+                    b.ToTable("media_assets", "commercial");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalInvoice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AirlineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<long>("IssuedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("issued_by_account_id");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(35)
+                        .HasColumnType("nvarchar(35)")
+                        .HasColumnName("number");
+
+                    b.Property<long>("PreinvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("preinvoice_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("total");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssuedByAccountId");
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("PreinvoiceId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("AirlineId", "CreatedAt");
+
+                    b.ToTable("non_fiscal_invoices", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_number", "LEN([number]) = 35");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_total", "[total] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalInvoiceLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("BillingUnit")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("billing_unit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<decimal>("ExecutedQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("executed_quantity");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("OperationCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("operation_code");
+
+                    b.Property<DateOnly>("OperationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("operation_date");
+
+                    b.Property<long>("PreinvoiceLineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("preinvoice_line_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("ServiceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("service_code");
+
+                    b.Property<string>("ServiceName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("service_name");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreinvoiceLineId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("InvoiceId", "LineNumber")
+                        .IsUnique();
+
+                    b.ToTable("non_fiscal_invoice_lines", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_number", "[line_number] > 0");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_price", "[unit_price] >= 0 AND [amount] >= 0");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity", "[executed_quantity] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalPayment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long>("RecordedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("recorded_by_account_id");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RecordedByAccountId");
+
+                    b.HasIndex("Reference")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.ToTable("non_fiscal_payments", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_non_fiscal_payment_amount", "[amount] > 0");
+
+                            t.HasCheckConstraint("ck_non_fiscal_payment_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_non_fiscal_payment_reference", "LEN([reference]) BETWEEN 8 AND 80");
+
+                            t.HasCheckConstraint("ck_non_fiscal_payment_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.Preinvoice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AirlineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("date")
+                        .HasColumnName("from");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateOnly>("To")
+                        .HasColumnType("date")
+                        .HasColumnName("to");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("total");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("AirlineId", "StationId", "Status", "From");
+
+                    b.ToTable("preinvoices", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_preinvoice_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_preinvoice_dates", "[to] >= [from]");
+
+                            t.HasCheckConstraint("ck_preinvoice_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("ck_preinvoice_total", "[total] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDispute", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<long>("PreinvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("preinvoice_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("subject");
+
+                    b.Property<long>("SubmittedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("submitted_by_account_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("SubmittedByAccountId");
+
+                    b.HasIndex("PreinvoiceId", "CreatedAt");
+
+                    b.ToTable("preinvoice_disputes", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_preinvoice_dispute_description", "LEN([description]) BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("ck_preinvoice_dispute_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("ck_preinvoice_dispute_subject", "LEN([subject]) BETWEEN 1 AND 160");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("DisputeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("dispute_id");
+
+                    b.Property<long>("PreinvoiceLineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("preinvoice_line_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreinvoiceLineId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("DisputeId", "PreinvoiceLineId")
+                        .IsUnique();
+
+                    b.ToTable("preinvoice_dispute_lines", "commercial");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeResolution", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("decision");
+
+                    b.Property<long>("DisputeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("dispute_id");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_hash");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<long>("ResolvedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("resolved_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisputeId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("ResolvedByAccountId");
+
+                    b.ToTable("preinvoice_dispute_resolutions", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_preinvoice_resolution_decision", "[decision] IN ('Maintain', 'Void')");
+
+                            t.HasCheckConstraint("ck_preinvoice_resolution_reason", "LEN([reason]) BETWEEN 1 AND 1000");
+
+                            t.HasCheckConstraint("ck_preinvoice_resolution_request_id", "[request_id] <> '00000000-0000-0000-0000-000000000000'");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("amount");
+
+                    b.Property<long>("ApprovedSubmissionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("approved_submission_id");
+
+                    b.Property<string>("BillingUnit")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("billing_unit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasColumnType("char(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<decimal>("ExecutedQuantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)")
+                        .HasColumnName("executed_quantity");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("OperationCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("operation_code");
+
+                    b.Property<DateOnly>("OperationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("operation_date");
+
+                    b.Property<long>("OperationServiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("operation_service_id");
+
+                    b.Property<long>("PreinvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("preinvoice_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("released_at");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("ServiceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("service_code");
+
+                    b.Property<string>("ServiceName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("service_name");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovedSubmissionId");
+
+                    b.HasIndex("OperationServiceId")
+                        .IsUnique()
+                        .HasFilter("[released_at] IS NULL");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("PreinvoiceId", "LineNumber")
+                        .IsUnique();
+
+                    b.ToTable("preinvoice_lines", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_preinvoice_line_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_preinvoice_line_number", "[line_number] > 0");
+
+                            t.HasCheckConstraint("ck_preinvoice_line_price", "[unit_price] >= 0 AND [amount] >= 0");
+
+                            t.HasCheckConstraint("ck_preinvoice_line_quantity", "[executed_quantity] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -492,10 +1629,43 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("airline_id");
 
+                    b.Property<string>("AirlineLegalNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("airline_legal_name_snapshot");
+
+                    b.Property<long?>("AirlineProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_profile_id");
+
+                    b.Property<bool>("AuthorityDeclared")
+                        .HasColumnType("bit")
+                        .HasColumnName("authority_declared");
+
                     b.Property<DateTimeOffset?>("CancelledAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("cancelled_at");
+
+                    b.Property<string>("ContactAddress")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)")
+                        .HasColumnName("contact_address");
+
+                    b.Property<string>("ContactCountry")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_country");
+
+                    b.Property<string>("ContactDocumentNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("contact_document_number");
+
+                    b.Property<string>("ContactDocumentType")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("contact_document_type");
 
                     b.Property<string>("ContactEmail")
                         .IsRequired()
@@ -503,16 +1673,36 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(256)")
                         .HasColumnName("contact_email");
 
+                    b.Property<string>("ContactMunicipality")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_municipality");
+
                     b.Property<string>("ContactName")
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)")
                         .HasColumnName("contact_name");
 
+                    b.Property<string>("ContactNationalityCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("contact_nationality_code");
+
                     b.Property<string>("ContactPhone")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("contact_phone");
+
+                    b.Property<string>("ContactProvince")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_province");
+
+                    b.Property<string>("ContactTitle")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("contact_title");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -525,6 +1715,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("decision_reason");
+
+                    b.Property<long?>("ProvisionedAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("provisioned_account_id");
 
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
@@ -566,6 +1760,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(16)")
                         .HasColumnName("status");
 
+                    b.Property<string>("SubmissionHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("submission_hash");
+
                     b.Property<DateTimeOffset>("SubmittedAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
@@ -585,6 +1784,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AirlineProfileId");
+
+                    b.HasIndex("ProvisionedAccountId");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -1008,6 +2211,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("AvatarMediaUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("avatar_media_url");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
@@ -1099,6 +2307,69 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("PermissionId");
 
                     b.ToTable("role_permissions", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.AccountChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("OutboxPublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("outbox_public_id");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<long>("RecipientAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("recipient_account_id");
+
+                    b.Property<string>("Resource")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("resource");
+
+                    b.Property<Guid>("ResourceId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("resource_id");
+
+                    b.Property<long?>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("OutboxPublicId", "RecipientAccountId")
+                        .IsUnique();
+
+                    b.HasIndex("RecipientAccountId", "Id");
+
+                    b.ToTable("account_changes", "infra", t =>
+                        {
+                            t.HasCheckConstraint("ck_account_changes_resource", "LEN([resource]) BETWEEN 1 AND 64");
+                        });
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.OutboxMessage", b =>
@@ -3773,9 +5044,22 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("description");
 
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("int")
+                        .HasColumnName("display_order");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("image_url");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit")
                         .HasColumnName("is_active");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_public");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -3802,6 +5086,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("updated_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("VideoUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("video_url");
 
                     b.HasKey("Id");
 
@@ -4697,6 +5986,18 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(500)")
                         .HasColumnName("description");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsCustom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_custom");
+
                     b.Property<string>("Name")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
@@ -5065,6 +6366,19 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.CommercialAirlineProfile", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
+                        .WithMany()
+                        .HasForeignKey("CanonicalAirlineId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("VerifiedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.Contract", b =>
                 {
                     b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
@@ -5077,6 +6391,21 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("OriginatingServiceRequestId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractDraftComment", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ContractVersion", null)
+                        .WithMany()
+                        .HasForeignKey("ContractVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractServiceRate", b =>
@@ -5137,11 +6466,188 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancialDocument", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.NonFiscalInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.NonFiscalPayment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.MediaAsset", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalInvoice", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("IssuedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.Preinvoice", null)
+                        .WithMany()
+                        .HasForeignKey("PreinvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalInvoiceLine", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.NonFiscalInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceLine", null)
+                        .WithMany()
+                        .HasForeignKey("PreinvoiceLineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.NonFiscalPayment", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.NonFiscalInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecordedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.Preinvoice", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDispute", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.Preinvoice", null)
+                        .WithMany()
+                        .HasForeignKey("PreinvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeLine", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceDispute", null)
+                        .WithMany()
+                        .HasForeignKey("DisputeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceLine", null)
+                        .WithMany()
+                        .HasForeignKey("PreinvoiceLineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceDisputeResolution", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.PreinvoiceDispute", null)
+                        .WithMany()
+                        .HasForeignKey("DisputeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ResolvedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.PreinvoiceLine", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationSubmission", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedSubmissionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationService", null)
+                        .WithMany()
+                        .HasForeignKey("OperationServiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.Preinvoice", null)
+                        .WithMany()
+                        .HasForeignKey("PreinvoiceId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequest", b =>
                 {
                     b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
                         .WithMany()
                         .HasForeignKey("AirlineId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.CommercialAirlineProfile", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineProfileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ProvisionedAccountId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
@@ -5157,11 +6663,13 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ServiceDefinitionId")
                         .OnDelete(DeleteBehavior.NoAction);
 
-                    b.HasOne("Elevant.Domain.Entities.Commercial.ServiceRequest", null)
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ServiceRequest", "ServiceRequest")
                         .WithMany()
                         .HasForeignKey("ServiceRequestId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.Navigation("ServiceRequest");
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequestStation", b =>
@@ -5236,6 +6744,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.AccountChange", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Integration.MobileCommandReceipt", b =>

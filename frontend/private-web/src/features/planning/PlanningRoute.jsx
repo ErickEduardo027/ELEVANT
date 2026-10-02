@@ -3,6 +3,7 @@ import PlanningPage from './PlanningPage';
 import { usePlanningData } from './usePlanningData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useAuth } from '../auth/AuthContext';
+import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
 export default function PlanningRoute() {
   const { session } = useAuth();
@@ -15,6 +16,24 @@ export default function PlanningRoute() {
   const [requestedDate, setRequestedDate] = useState('');
   const [resolvedScope, setResolvedScope] = useState({ stationId: '', date: '' });
   const [retryToken, setRetryToken] = useState(0);
+  useEffect(() => {
+    const refresh = () => setRetryToken(token => token + 1);
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('occ_planning')) refresh();
+    });
+    void observer.start().catch(() => {});
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 25_000);
+    return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      void observer.stop();
+    };
+  }, []);
   const planning = usePlanningData({
     stationId: stationId || undefined,
     date: requestedDate || undefined,
@@ -63,6 +82,7 @@ export default function PlanningRoute() {
       filterScopeKey={`${stationId}|${effectiveDate}`}
       hasStationScope={stationScopes.length > 0}
       forceState={forceState}
+      dataRevision={retryToken}
     />
   );
 }

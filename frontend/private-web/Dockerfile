@@ -46,9 +46,13 @@ LABEL org.opencontainers.image.title="ELEVANT AVIAM Web" \
 COPY --from=build --chown=101:101 /workspace/frontend/private-web/dist/ /usr/share/nginx/html/
 COPY --chown=101:101 frontend/private-web/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --chown=101:101 frontend/private-web/nginx/security-headers.conf /etc/nginx/snippets/elevant-security-headers.conf
-RUN sed -i "s|__ELEVANT_API_ORIGIN__|${VITE_ELEVANT_API_URL}|g" \
+RUN case "${VITE_ELEVANT_API_URL}" in https://*) ;; *) exit 1 ;; esac \
+    && api_ws_origin="wss://${VITE_ELEVANT_API_URL#https://}" \
+    && sed -i "s|__ELEVANT_API_ORIGIN__|${VITE_ELEVANT_API_URL}|g" \
       /etc/nginx/snippets/elevant-security-headers.conf \
-    && ! grep -q '__ELEVANT_API_ORIGIN__' \
+    && sed -i "s|__ELEVANT_WS_ORIGIN__|${api_ws_origin}|g" \
+      /etc/nginx/snippets/elevant-security-headers.conf \
+    && ! grep -Eq '__ELEVANT_(API|WS)_ORIGIN__' \
       /etc/nginx/snippets/elevant-security-headers.conf
 
 EXPOSE 8080

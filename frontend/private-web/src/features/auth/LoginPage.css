@@ -290,6 +290,9 @@
   cursor: not-allowed;
 }
 
+.elv-input[type="password"]::-ms-reveal,
+.elv-input[type="password"]::-ms-clear { display: none; }
+
 .elv-row-between {
   display: flex;
   align-items: center;

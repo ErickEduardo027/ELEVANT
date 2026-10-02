@@ -10,7 +10,6 @@ describe('finance modules', () => {
       FINANCE_MODULE_IDS.RECONCILIATION,
       FINANCE_MODULE_IDS.TARIFFS,
       FINANCE_MODULE_IDS.REPORTS,
-      FINANCE_MODULE_IDS.CHAT,
     ]);
     expect(new Set(FINANCE_MODULES.map(module => module.id)).size).toBe(FINANCE_MODULES.length);
   });

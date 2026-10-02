@@ -26,6 +26,10 @@ export function LayoutGridIcon(props) {
   );
 }
 
+export function SettingsIcon(props) {
+  return <Icon {...props}><circle cx="12" cy="12" r="3.2" /><path d="M12 2.5v2m0 15v2M4.5 4.5l1.4 1.4m12.2 12.2 1.4 1.4M2.5 12h2m15 0h2M4.5 19.5l1.4-1.4M18.1 5.9l1.4-1.4" /></Icon>;
+}
+
 export function CalendarIcon(props) {
   return (
     <Icon {...props}>

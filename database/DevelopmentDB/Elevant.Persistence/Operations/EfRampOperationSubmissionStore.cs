@@ -260,6 +260,10 @@ internal sealed class EfRampOperationSubmissionStore(
         };
         context.AuditEntries.Add(audit);
 
+        await AirlineOperationChangeWriter.AddAsync(context,
+            scope.AirlineOrganizationInternalId, scope.Operation.PublicId, now,
+            cancellationToken);
+
         var result = await CompleteReceiptAsync(
             receipt, submission, checklist.PublicId, now, request.OperationId,
             device, now, cancellationToken);

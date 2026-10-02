@@ -1,6 +1,7 @@
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
@@ -13,6 +14,79 @@ namespace Elevant.IntegrationTests.Persistence;
 
 public sealed class DatabaseModelTests
 {
+    [Fact]
+    public void PublicAirlineProfilesDoNotCreateTenantsBeforeApproval()
+    {
+        using var context = CreateContext();
+        var profile = context.Model.FindEntityType(typeof(CommercialAirlineProfile));
+
+        Assert.NotNull(profile);
+        Assert.Equal("commercial", profile.GetSchema());
+        Assert.Equal("airline_profiles", profile.GetTableName());
+        Assert.Null(profile.FindProperty("OrganizationId"));
+        Assert.Contains(profile.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(CommercialAirlineProfile.SourceName)]));
+    }
+
+    [Fact]
+    public void PublicApplicationSnapshotsTheSelectedProfileAndRepresentative()
+    {
+        using var context = CreateContext();
+        var request = context.Model.FindEntityType(typeof(ServiceRequest));
+
+        Assert.NotNull(request);
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.AirlineProfileId)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.ContactTitle)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.AirlineLegalNameSnapshot)));
+        Assert.NotNull(request.FindProperty(nameof(ServiceRequest.SubmissionHash)));
+        Assert.Contains(request.GetForeignKeys(), foreignKey =>
+            foreignKey.PrincipalEntityType.ClrType == typeof(CommercialAirlineProfile) &&
+            foreignKey.DeleteBehavior == DeleteBehavior.NoAction);
+    }
+
+    [Fact]
+    public void AccountChangeFeedHasStableRecipientAndOutboxIdentity()
+    {
+        using var context = CreateContext();
+        var change = context.Model.FindEntityType(typeof(AccountChange));
+
+        Assert.NotNull(change);
+        Assert.Equal("infra", change.GetSchema());
+        Assert.Equal("account_changes", change.GetTableName());
+        Assert.Equal(3, change.FindProperty(nameof(AccountChange.OccurredAt))?.GetPrecision());
+        Assert.Equal(3, change.FindProperty(nameof(AccountChange.CreatedAt))?.GetPrecision());
+        Assert.Contains(change.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(AccountChange.OutboxPublicId), nameof(AccountChange.RecipientAccountId)]));
+        Assert.Contains(change.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(AccountChange.RecipientAccountId), nameof(AccountChange.Id)]));
+        Assert.Equal(2, change.GetForeignKeys().Count());
+        Assert.All(change.GetForeignKeys(), foreignKey =>
+            Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+    }
+
+    [Fact]
+    public void FinancialDocumentsKeepPrivateHashMetadataSeparateFromCommercialMedia()
+    {
+        using var context = CreateContext();
+        var document = context.Model.FindEntityType(typeof(FinancialDocument));
+
+        Assert.NotNull(document);
+        Assert.Equal("commercial", document.GetSchema());
+        Assert.Equal("financial_documents", document.GetTableName());
+        Assert.Equal(3, document.FindProperty(nameof(FinancialDocument.CreatedAt))?.GetPrecision());
+        Assert.Contains(document.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(FinancialDocument.InvoiceId), nameof(FinancialDocument.Kind)]));
+        Assert.Contains(document.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                [nameof(FinancialDocument.ObjectKey)]));
+        Assert.All(document.GetForeignKeys(), foreignKey =>
+            Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+    }
+
     private static ElevantDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ElevantDbContext>()

@@ -444,6 +444,7 @@ jobs:
           ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD: "CI-Only_HumanResourcesAccount!2026"
           ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD: "CI-Only_ContractsAccount!2026"
           ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD: "CI-Only_FinanceAccount!2026"
+          ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD: "CI-Only_SuperAdminAccount!2026"
         run: |
           docker compose -f ../database/DevelopmentDB/compose.development.database.yml config --quiet
           docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet
@@ -453,7 +454,8 @@ jobs:
             ELEVANT_DEV_AIRLINE_ACCOUNT_PASSWORD \
             ELEVANT_DEV_HUMAN_RESOURCES_ACCOUNT_PASSWORD \
             ELEVANT_DEV_CONTRACTS_ACCOUNT_PASSWORD \
-            ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD; do
+            ELEVANT_DEV_FINANCE_ACCOUNT_PASSWORD \
+            ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD; do
             if env -u "$required_secret" \
               docker compose -f ../database/DevelopmentDB/compose.development.release.yml config --quiet \
               >/dev/null 2>&1; then
@@ -471,6 +473,11 @@ jobs:
           ELEVANT_API_AUTH_AUDIENCE: "elevant-ci-clients"
           ELEVANT_API_AUTH_SIGNING_KEY_BASE64: "RUxFVkFOVCBzeW50aGV0aWMgc2lnbmluZyBtYXRlcmlhbCBmb3IgdGVzdHMgb25seSAyMDI2LTA5LTE2"
           ELEVANT_API_AUTH_ACCESS_TOKEN_MINUTES: "15"
+          ELEVANT_MEDIA_ENDPOINT: "http://elevant-dev-media:3900"
+          ELEVANT_MEDIA_REGION: "garage"
+          ELEVANT_MEDIA_BUCKET: "elevant-development-media"
+          ELEVANT_MEDIA_ACCESS_KEY: "GKciSyntheticOnly00000000000000"
+          ELEVANT_MEDIA_SECRET_KEY: "${{ github.sha }}"
           ELEVANT_API_PRIVATE_WEB_ORIGIN: "https://private-web.elevant.test"
           ELEVANT_API_PUBLIC_WEB_ORIGIN: "https://public-web.elevant.test"
           ELEVANT_API_TRUSTED_PROXY: "172.30.241.1"
@@ -479,6 +486,10 @@ jobs:
             ELEVANT_API_AUTH_ISSUER \
             ELEVANT_API_AUTH_AUDIENCE \
             ELEVANT_API_AUTH_SIGNING_KEY_BASE64 \
+            ELEVANT_MEDIA_ENDPOINT \
+            ELEVANT_MEDIA_BUCKET \
+            ELEVANT_MEDIA_ACCESS_KEY \
+            ELEVANT_MEDIA_SECRET_KEY \
             ELEVANT_API_PRIVATE_WEB_ORIGIN \
             ELEVANT_API_PUBLIC_WEB_ORIGIN; do
             if env -u "$required_setting" \

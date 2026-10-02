@@ -1,4 +1,47 @@
 import {
+  getGetAccountChangesUrl,
+  getGetAirlineContractsUrl,
+  getGetAirlineOperationsUrl,
+  getGetAirlineOperationUrl,
+  getGetAirlineOperationalRequestsUrl,
+  getGetAirlinePreinvoiceUrl,
+  getGetAirlinePreinvoiceDisputesUrl,
+  getAcceptAirlinePreinvoiceUrl,
+  getDisputeAirlinePreinvoiceUrl,
+  getGetAirlinePreinvoicesUrl,
+  getListManagedContractsUrl,
+  getGetPublicCommercialCatalogUrl,
+  getSubmitCommercialRequestUrl,
+  getGetFinanceApprovedServicesUrl,
+  getListFinancePreinvoicesUrl,
+  getListFinanceTariffsUrl,
+  getListHumanResourcesPermitsUrl,
+  getRecordHumanResourcesPermitUrl,
+  getListHumanResourcesQualificationsUrl,
+  getListHumanResourcesQualificationEquipmentTypesUrl,
+  getRecordHumanResourcesQualificationUrl,
+  getListHumanResourcesShiftsUrl,
+  getListHumanResourcesAvailabilityRequestsUrl,
+  getRecordHumanResourcesAvailabilityRequestUrl,
+  getResolveHumanResourcesAvailabilityRequestUrl,
+  getGetHumanResourcesShiftAssignmentOptionsUrl,
+  getRecordHumanResourcesShiftUrl,
+  getListFinanceReconciliationUrl,
+  getCreatePreinvoiceDraftUrl,
+  getGetPreinvoiceDraftUrl,
+  getGetFinancePreinvoiceDisputesUrl,
+  getResolveFinancePreinvoiceDisputeUrl,
+  getIssueFinanceInvoiceUrl,
+  getGetFinanceInvoiceByPreinvoiceUrl,
+  getGetAirlineInvoiceByPreinvoiceUrl,
+  getGetAirlinePaymentByInvoiceUrl,
+  getGetAirlineInvoiceDocumentUrl,
+  getGetAirlinePaymentReceiptUrl,
+  getGetFinanceInvoiceDocumentUrl,
+  getGetFinancePaymentReceiptUrl,
+  getGetFinancePaymentByInvoiceUrl,
+  getRecordNonFiscalPaymentUrl,
+  getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -6,6 +49,9 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetManualTurnaroundOptionsUrl,
+  getCreateManualTurnaroundUrl,
+  getProgramOccShiftUrl,
   getGetOccReviewQueueUrl,
   getGetOccReviewDetailUrl,
   getGetOccReviewSubmissionDetailUrl,
@@ -28,6 +74,68 @@ import {
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
   type AssignOccOperationRequest,
+  type AccountChangeListResponse,
+  type AirlineContractPageResponse,
+  type AirlineOperationPageResponse,
+  type AirlinePortalOperationResponse,
+  type AirlineOperationalRequestPageResponse,
+  type AirlinePreinvoiceDetailResponse,
+  type AcceptAirlinePreinvoiceRequest,
+  type AcceptAirlinePreinvoiceResponse,
+  type DisputeAirlinePreinvoiceRequest,
+  type DisputeAirlinePreinvoiceResponse,
+  type PreinvoiceDisputeListResponse,
+  type ResolvePreinvoiceDisputeRequest,
+  type ResolvePreinvoiceDisputeResponse,
+  type IssueFinanceInvoiceRequest,
+  type IssueFinanceInvoiceResponse,
+  type NonFiscalInvoiceResponse,
+  type NonFiscalPaymentLookupResponse,
+  type RecordNonFiscalPaymentRequest,
+  type RecordNonFiscalPaymentResponse,
+  type AirlinePreinvoicePageResponse,
+  type ManagedContractPageData,
+  type ListManagedContractsParams,
+  type PublicCommercialCatalog,
+  type SubmitCommercialRequestRequest,
+  type SubmitCommercialRequestResponse,
+  type FinanceApprovedServicesResponse,
+  type FinancePreinvoicePageData,
+  type ListFinancePreinvoicesParams,
+  type FinanceTariffPageData,
+  type ListFinanceTariffsParams,
+  type HumanResourcesPermitPage,
+  type HumanResourcesPermitRecorded,
+  type ListHumanResourcesPermitsParams,
+  type RecordHumanResourcesPermitInput,
+  type HumanResourcesQualificationPage,
+  type HumanResourcesQualificationEquipmentType,
+  type HumanResourcesQualificationRecorded,
+  type RecordHumanResourcesQualificationInput,
+  type ListHumanResourcesQualificationsParams,
+  type HumanResourcesShiftPage,
+  type HumanResourcesAvailabilityRequestPage,
+  type HumanResourcesAvailabilityWritten,
+  type RecordHumanResourcesAvailabilityInput,
+  type ResolveHumanResourcesAvailabilityInput,
+  type ListHumanResourcesAvailabilityRequestsParams,
+  type HumanResourcesShiftAssignmentOptions,
+  type GetHumanResourcesShiftAssignmentOptionsParams,
+  type ListHumanResourcesShiftsParams,
+  type HumanResourcesShiftRecorded,
+  type RecordHumanResourcesShiftInput,
+  type FinanceReconciliationPageData,
+  type ListFinanceReconciliationParams,
+  type CreatePreinvoiceDraftRequest,
+  type CreatePreinvoiceDraftResponse,
+  type PreinvoiceDraftResponse,
+  type SubmitPreinvoiceRequest,
+  type SubmitPreinvoiceResponse,
+  type GetAirlineContractsParams,
+  type GetAirlineOperationsParams,
+  type GetAirlineOperationalRequestsParams,
+  type GetAirlinePreinvoicesParams,
+  type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
   type ChangePasswordRequest,
@@ -36,6 +144,12 @@ import {
   type GetRampIncidentsResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
+  type GetManualTurnaroundOptionsParams,
+  type CreateManualTurnaroundRequest,
+  type ManualTurnaroundOptionsResponse,
+  type ManualTurnaroundResponse,
+  type ProgramOccShiftRequest,
+  type ProgramOccShiftResponse,
   type GetOccReviewQueueParams,
   type OccReviewQueueResponse,
   type OccReviewDetailResponse,
@@ -94,6 +208,54 @@ export type CreateSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ChangePasswordOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetCurrentSessionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetManagedContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesPermitOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesAvailabilityRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type RecordHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ResolveHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesAvailabilityQuery = Omit<ListHumanResourcesAvailabilityRequestsParams,
+  "from" | "to"> & { readonly from: string; readonly to: string };
+export type GetHumanResourcesShiftAssignmentOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesShiftAssignmentQuery = Required<GetHumanResourcesShiftAssignmentOptionsParams>;
+export type RecordHumanResourcesShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "from" | "to"> & {
+  readonly from: string;
+  readonly to: string;
+};
+export type GetFinanceReconciliationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type SubmitPreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export interface FinanceApprovedServicesQuery {
+  readonly stationId: string;
+  readonly from: string;
+  readonly to: string;
+}
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -102,8 +264,12 @@ export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetManualTurnaroundOptionsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -149,6 +315,10 @@ export interface OccAssignmentWithMetadata {
 }
 
 export interface ElevantApiClient {
+  getAccountChanges(
+    parameters?: GetAccountChangesParams,
+    options?: GetAccountChangesOptions,
+  ): Promise<AccountChangeListResponse>;
   createSession(
     request: CreateSessionRequest,
     options?: CreateSessionOptions,
@@ -161,6 +331,173 @@ export interface ElevantApiClient {
   getAirlinePortalBootstrap(
     options?: GetAirlinePortalBootstrapOptions,
   ): Promise<AirlinePortalBootstrapResponse>;
+  getAirlineContracts(
+    parameters?: GetAirlineContractsParams,
+    options?: GetAirlineContractsOptions,
+  ): Promise<AirlineContractPageResponse>;
+  getAirlineOperations(
+    parameters?: GetAirlineOperationsParams,
+    options?: GetAirlineOperationsOptions,
+  ): Promise<AirlineOperationPageResponse>;
+  getAirlineOperation(
+    operationId: string,
+    options?: GetAirlineOperationOptions,
+  ): Promise<AirlinePortalOperationResponse>;
+  getAirlineOperationalRequests(
+    parameters?: GetAirlineOperationalRequestsParams,
+    options?: GetAirlineOperationalRequestsOptions,
+  ): Promise<AirlineOperationalRequestPageResponse>;
+  getAirlinePreinvoices(
+    parameters?: GetAirlinePreinvoicesParams,
+    options?: GetAirlinePreinvoicesOptions,
+  ): Promise<AirlinePreinvoicePageResponse>;
+  getAirlinePreinvoice(
+    preinvoiceId: string,
+    options?: GetAirlinePreinvoiceOptions,
+  ): Promise<AirlinePreinvoiceDetailResponse>;
+  getAirlinePreinvoiceDisputes(
+    preinvoiceId: string,
+    options?: GetPreinvoiceDisputesOptions,
+  ): Promise<PreinvoiceDisputeListResponse>;
+  acceptAirlinePreinvoice(
+    preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
+    options?: AcceptAirlinePreinvoiceOptions,
+  ): Promise<AcceptAirlinePreinvoiceResponse>;
+  disputeAirlinePreinvoice(
+    preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
+    options?: DisputeAirlinePreinvoiceOptions,
+  ): Promise<DisputeAirlinePreinvoiceResponse>;
+  getManagedContracts(
+    parameters?: ListManagedContractsParams,
+    options?: GetManagedContractsOptions,
+  ): Promise<ManagedContractPageData>;
+  getPublicCommercialCatalog(
+    options?: GetPublicCommercialCatalogOptions,
+  ): Promise<PublicCommercialCatalog>;
+  submitCommercialRequest(
+    request: SubmitCommercialRequestRequest,
+    options?: SubmitCommercialRequestOptions,
+  ): Promise<SubmitCommercialRequestResponse>;
+  getFinanceApprovedServices(
+    query: FinanceApprovedServicesQuery,
+    options?: GetFinanceApprovedServicesOptions,
+  ): Promise<FinanceApprovedServicesResponse>;
+  getFinancePreinvoices(
+    query: ListFinancePreinvoicesParams,
+    options?: GetFinancePreinvoicesOptions,
+  ): Promise<FinancePreinvoicePageData>;
+  getFinanceTariffs(
+    query: ListFinanceTariffsParams,
+    options?: GetFinanceTariffsOptions,
+  ): Promise<FinanceTariffPageData>;
+  getHumanResourcesPermits(
+    query?: ListHumanResourcesPermitsParams,
+    options?: GetHumanResourcesPermitsOptions,
+  ): Promise<HumanResourcesPermitPage>;
+  recordHumanResourcesPermit(
+    id: string,
+    request: RecordHumanResourcesPermitInput,
+    options?: RecordHumanResourcesPermitOptions,
+  ): Promise<HumanResourcesPermitRecorded>;
+  getHumanResourcesQualifications(
+    query?: ListHumanResourcesQualificationsParams,
+    options?: GetHumanResourcesQualificationsOptions,
+  ): Promise<HumanResourcesQualificationPage>;
+  getHumanResourcesQualificationEquipmentTypes(
+    options?: GetHumanResourcesQualificationEquipmentTypesOptions,
+  ): Promise<HumanResourcesQualificationEquipmentType[]>;
+  recordHumanResourcesQualification(
+    id: string,
+    request: RecordHumanResourcesQualificationInput,
+    options?: RecordHumanResourcesQualificationOptions,
+  ): Promise<HumanResourcesQualificationRecorded>;
+  getHumanResourcesShifts(
+    query: HumanResourcesShiftsQuery,
+    options?: GetHumanResourcesShiftsOptions,
+  ): Promise<HumanResourcesShiftPage>;
+  getHumanResourcesAvailabilityRequests(
+    query: HumanResourcesAvailabilityQuery,
+    options?: GetHumanResourcesAvailabilityRequestsOptions,
+  ): Promise<HumanResourcesAvailabilityRequestPage>;
+  recordHumanResourcesAvailabilityRequest(
+    id: string,
+    request: RecordHumanResourcesAvailabilityInput,
+    options?: RecordHumanResourcesAvailabilityOptions,
+  ): Promise<HumanResourcesAvailabilityWritten>;
+  resolveHumanResourcesAvailabilityRequest(
+    id: string,
+    request: ResolveHumanResourcesAvailabilityInput,
+    options?: ResolveHumanResourcesAvailabilityOptions,
+  ): Promise<HumanResourcesAvailabilityWritten>;
+  getHumanResourcesShiftAssignmentOptions(
+    query: HumanResourcesShiftAssignmentQuery,
+    options?: GetHumanResourcesShiftAssignmentOptionsOptions,
+  ): Promise<HumanResourcesShiftAssignmentOptions>;
+  recordHumanResourcesShift(
+    id: string,
+    request: RecordHumanResourcesShiftInput,
+    options?: RecordHumanResourcesShiftOptions,
+  ): Promise<HumanResourcesShiftRecorded>;
+  getFinanceReconciliation(
+    query: ListFinanceReconciliationParams,
+    options?: GetFinanceReconciliationOptions,
+  ): Promise<FinanceReconciliationPageData>;
+  createPreinvoiceDraft(
+    request: CreatePreinvoiceDraftRequest,
+    options?: CreatePreinvoiceDraftOptions,
+  ): Promise<CreatePreinvoiceDraftResponse>;
+  getPreinvoiceDraft(
+    draftId: string, expectedStationId: string,
+    options?: GetPreinvoiceDraftOptions,
+  ): Promise<PreinvoiceDraftResponse>;
+  getFinancePreinvoiceDisputes(
+    draftId: string,
+    options?: GetPreinvoiceDisputesOptions,
+  ): Promise<PreinvoiceDisputeListResponse>;
+  resolveFinancePreinvoiceDispute(
+    preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
+    options?: ResolvePreinvoiceDisputeOptions,
+  ): Promise<ResolvePreinvoiceDisputeResponse>;
+  issueFinanceInvoice(
+    request: IssueFinanceInvoiceRequest,
+    options?: IssueFinanceInvoiceOptions,
+  ): Promise<IssueFinanceInvoiceResponse>;
+  getFinanceInvoiceByPreinvoice(
+    preinvoiceId: string,
+    options?: GetNonFiscalInvoiceOptions,
+  ): Promise<NonFiscalInvoiceResponse>;
+  getAirlineInvoiceByPreinvoice(
+    preinvoiceId: string,
+    options?: GetNonFiscalInvoiceOptions,
+  ): Promise<NonFiscalInvoiceResponse>;
+  recordNonFiscalPayment(
+    request: RecordNonFiscalPaymentRequest,
+    options?: RecordNonFiscalPaymentOptions,
+  ): Promise<RecordNonFiscalPaymentResponse>;
+  getFinancePaymentByInvoice(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlinePaymentByInvoice(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlineInvoiceDocument(
+    preinvoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getAirlinePaymentReceipt(
+    invoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getFinanceInvoiceDocument(
+    preinvoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  getFinancePaymentReceipt(
+    invoiceId: string, options?: GetFinancialDocumentOptions,
+  ): Promise<Blob>;
+  submitPreinvoice(
+    draftId: string, request: SubmitPreinvoiceRequest,
+    options?: SubmitPreinvoiceOptions,
+  ): Promise<SubmitPreinvoiceResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -173,6 +510,19 @@ export interface ElevantApiClient {
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
   ): Promise<OccPlanningOptionsWithMetadata>;
+  getManualTurnaroundOptions(
+    parameters: GetManualTurnaroundOptionsParams,
+    options?: GetManualTurnaroundOptionsOptions,
+  ): Promise<ManualTurnaroundOptionsResponse>;
+  createManualTurnaround(
+    request: CreateManualTurnaroundRequest,
+    options?: CreateManualTurnaroundOptions,
+  ): Promise<ManualTurnaroundResponse>;
+  programOccShift(
+    turnaroundId: string,
+    request: ProgramOccShiftRequest,
+    options?: ProgramOccShiftOptions,
+  ): Promise<ProgramOccShiftResponse>;
   getOccReviewQueue(
     stationId: string,
     options?: GetOccReviewOptions,
@@ -534,6 +884,31 @@ function isOptionalNullable(
   return value === undefined || value === null || predicate(value);
 }
 
+function isChangeCursor(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128 &&
+    /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function isAccountChangeListResponse(
+  value: unknown, after: string | undefined, limit: number,
+): value is AccountChangeListResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["changes", "nextCursor", "hasMore"]) ||
+      !Array.isArray(value.changes) || value.changes.length > limit ||
+      typeof value.hasMore !== "boolean" ||
+      (value.hasMore && value.changes.length === 0)) return false;
+  if (!value.changes.every((item: unknown) =>
+    isRecord(item) &&
+    hasOnlyKeys(item, ["eventId", "cursor", "resource", "resourceId", "occurredAt"]) &&
+    isUuid(item.eventId) && isChangeCursor(item.cursor) &&
+    isNonEmptyString(item.resource) && item.resource.length <= 64 &&
+    /^[a-z0-9_-]+$/.test(item.resource) && isUuid(item.resourceId) &&
+    isDateTimeOffset(item.occurredAt))) return false;
+  const last = value.changes.at(-1) as { cursor: string } | undefined;
+  return last ? value.nextCursor === last.cursor :
+    (after === undefined ? value.nextCursor === null || value.nextCursor === undefined
+      : value.nextCursor === after);
+}
+
 function isOccStationResponse(value: unknown) {
   return (
     isRecord(value) &&
@@ -775,6 +1150,34 @@ function isOccPlanningSnapshotResponse(
     Array.isArray(value.turnarounds) &&
     value.turnarounds.every(isOccTurnaroundResponse)
   );
+}
+
+function isManualTurnaroundOptionsResponse(
+  value: unknown,
+): value is ManualTurnaroundOptionsResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands"]) &&
+    isOccStationResponse(value.station) && isDateOnly(value.date) &&
+    isOccAirportResponse(value.stationAirport) &&
+    Array.isArray(value.airlines) && value.airlines.every((airline: unknown) =>
+      isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
+      isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name)) &&
+    Array.isArray(value.airports) && value.airports.every(isOccAirportResponse) &&
+    Array.isArray(value.stands) && value.stands.every(isOccStandResponse);
+}
+
+function isManualTurnaroundResponse(value: unknown): value is ManualTurnaroundResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) &&
+    typeof value.replayed === "boolean";
+}
+
+function isProgramOccShiftResponse(value: unknown): value is ProgramOccShiftResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "shiftId", "replayed"]) &&
+    isUuid(value.turnaroundId) && isUuid(value.shiftId) &&
+    typeof value.replayed === "boolean";
 }
 
 function isOccContractOptionResponse(value: unknown) {
@@ -1550,6 +1953,1032 @@ function isAirlinePortalBootstrapResponse(
       isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
 }
 
+function isAirlineContractPageResponse(value: unknown): value is AirlineContractPageResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
+    isInt32(value.page) && value.page >= 1 &&
+    isInt32(value.limit) && value.limit >= 1 && value.limit <= 50 &&
+    typeof value.hasMore === "boolean" &&
+    Array.isArray(value.contracts) && value.contracts.length <= value.limit &&
+    value.contracts.every((contract) => isRecord(contract) &&
+      hasOnlyKeys(contract, ["id", "code", "status", "signedOn", "terminatedOn", "approvedVersions"]) &&
+      isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
+      isOptionalNullable(contract.signedOn, isDateOnly) &&
+      isOptionalNullable(contract.terminatedOn, isDateOnly) &&
+      Array.isArray(contract.approvedVersions) && contract.approvedVersions.length > 0 &&
+      contract.approvedVersions.every((version) => isRecord(version) &&
+        hasOnlyKeys(version, ["id", "versionNumber", "validFrom", "validTo", "currencyCode", "stations", "rates"]) &&
+        isUuid(version.id) && isInt32(version.versionNumber) && version.versionNumber > 0 &&
+        isDateOnly(version.validFrom) && isOptionalNullable(version.validTo, isDateOnly) &&
+        typeof version.currencyCode === "string" && /^[A-Z]{3}$/.test(version.currencyCode) &&
+        Array.isArray(version.stations) && version.stations.every((station) =>
+          isRecord(station) && hasOnlyKeys(station, ["id", "code", "name"]) &&
+          isUuid(station.id) && isNonEmptyString(station.code) && isNonEmptyString(station.name)) &&
+        Array.isArray(version.rates) && version.rates.every((rate) =>
+          isRecord(rate) && hasOnlyKeys(rate, ["id", "serviceCode", "serviceName", "billingUnit",
+            "unitPrice", "minimumQuantity"]) &&
+          isUuid(rate.id) && isNonEmptyString(rate.serviceCode) &&
+          isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+          isFiniteNumber(rate.unitPrice) && rate.unitPrice >= 0 &&
+          isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
+}
+
+function isManagedContractPageData(value: unknown): value is ManagedContractPageData {
+  return isRecord(value) && hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
+    isInt32(value.page) && value.page >= 1 &&
+    isInt32(value.limit) && value.limit >= 1 && value.limit <= 50 &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.contracts) &&
+    value.contracts.length <= value.limit &&
+    (!value.hasMore || value.contracts.length === value.limit) &&
+    value.contracts.every(contract => isRecord(contract) &&
+      hasOnlyKeys(contract, ["id", "code", "airline", "airlineCode", "status",
+        "signedOn", "terminatedOn", "approvedVersions"]) &&
+      isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      isNonEmptyString(contract.airline) && isString(contract.airlineCode) &&
+      ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
+      isOptionalNullable(contract.signedOn, isDateOnly) &&
+      isOptionalNullable(contract.terminatedOn, isDateOnly) &&
+      Array.isArray(contract.approvedVersions) && contract.approvedVersions.length > 0 &&
+      contract.approvedVersions.every(version => isRecord(version) &&
+        hasOnlyKeys(version, ["id", "versionNumber", "status", "validFrom", "validTo",
+          "currencyCode", "terms", "stations", "rates"]) &&
+        isUuid(version.id) && isInt32(version.versionNumber) && version.versionNumber > 0 &&
+        ["Approved", "Superseded"].includes(String(version.status)) &&
+        isDateOnly(version.validFrom) && isOptionalNullable(version.validTo, isDateOnly) &&
+        typeof version.currencyCode === "string" && /^[A-Z]{3}$/.test(version.currencyCode) &&
+        isOptionalNullable(version.terms, isString) &&
+        Array.isArray(version.stations) && version.stations.every(station =>
+          isRecord(station) && hasOnlyKeys(station, ["id", "code", "name"]) &&
+          isUuid(station.id) && isNonEmptyString(station.code) && isNonEmptyString(station.name)) &&
+        Array.isArray(version.rates) && version.rates.every(rate =>
+          isRecord(rate) && hasOnlyKeys(rate, ["id", "serviceCode", "serviceName",
+            "billingUnit", "unitPrice", "minimumQuantity"]) &&
+          isUuid(rate.id) && isNonEmptyString(rate.serviceCode) &&
+          isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+          isFiniteNumber(rate.unitPrice) && rate.unitPrice >= 0 &&
+          isFiniteNumber(rate.minimumQuantity) && rate.minimumQuantity >= 0)));
+}
+
+function isAirlineOperationDetailResponse(value: unknown): value is AirlinePortalOperationResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "code", "stationId", "stationCode", "operationDate", "status",
+      "arrivalFlightNumber", "departureFlightNumber", "plannedStartAt", "plannedEndAt"]) &&
+    isUuid(value.id) && isNonEmptyString(value.code) && isUuid(value.stationId) &&
+    isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) &&
+    ["Planned", "Assigned", "InProgress", "PendingReview", "InReview",
+      "Approved", "Returned", "Cancelled"].includes(String(value.status)) &&
+    isOptionalNullable(value.arrivalFlightNumber, isNonEmptyString) &&
+    isOptionalNullable(value.departureFlightNumber, isNonEmptyString) &&
+    isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
+    isOptionalNullable(value.plannedEndAt, isDateTimeOffset);
+}
+
+function isAirlineOperationPageResponse(value: unknown): value is AirlineOperationPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "operations"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.operations) || value.operations.length > value.limit ||
+      (value.hasMore && value.operations.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.operations.every((operation) => {
+    if (!isAirlineOperationDetailResponse(operation) || ids.has(operation.id)) return false;
+    ids.add(operation.id);
+    return true;
+  });
+}
+
+function isAirlineOperationalRequestPageResponse(
+  value: unknown,
+): value is AirlineOperationalRequestPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "requests"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.requests) || value.requests.length > value.limit ||
+      (value.hasMore && value.requests.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.requests.every(request => {
+    if (!isRecord(request) || !hasOnlyKeys(request,
+      ["id", "stationId", "stationCode", "serviceName", "description", "status",
+        "requestedAt", "neededAt", "operationId", "operationCode", "resolvedAt"]) ||
+        !isUuid(request.id) || ids.has(request.id) ||
+        !isUuid(request.stationId) || !isNonEmptyString(request.stationCode) ||
+        !isNonEmptyString(request.serviceName) || typeof request.description !== "string" ||
+        !["Submitted", "InReview", "Accepted", "Rejected", "Completed", "Cancelled"]
+          .includes(String(request.status)) ||
+        !isDateTimeOffset(request.requestedAt) ||
+        !isOptionalNullable(request.neededAt, isDateTimeOffset) ||
+        !isOptionalNullable(request.operationId, isUuid) ||
+        !isOptionalNullable(request.operationCode, isNonEmptyString) ||
+        !isOptionalNullable(request.resolvedAt, isDateTimeOffset) ||
+        Boolean(request.operationId) !== Boolean(request.operationCode)) return false;
+    ids.add(request.id);
+    return true;
+  });
+}
+
+function isAirlinePreinvoicePageResponse(
+  value: unknown,
+): value is AirlinePreinvoicePageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
+      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
+      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
+      !Array.isArray(value.preinvoices) || value.preinvoices.length > value.limit ||
+      (value.hasMore && value.preinvoices.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.preinvoices.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "stationId", "stationCode", "from", "to", "currencyCode", "total",
+        "status", "createdAt"]) || !isUuid(item.id) || ids.has(item.id) ||
+        !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
+        !isDateOnly(item.from) || !isDateOnly(item.to) || item.from > item.to ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isFiniteNumber(item.total) || item.total < 0 ||
+        !["Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(item.status)) ||
+        !isDateTimeOffset(item.createdAt)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePreinvoiceDetailResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "stationId", "stationCode",
+      "from", "to", "currencyCode", "total", "status", "createdAt", "lines"]) ||
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+    return false;
+  const { lines, ...header } = value;
+  if (!isAirlinePreinvoicePageResponse({ page: 1, limit: 1, hasMore: false,
+    preinvoices: [header] })) return false;
+  const periodFrom = String(value.from);
+  const periodTo = String(value.to);
+  const ids = new Set<string>();
+  const validLines = lines.every(line => {
+    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
+        "serviceCode", "serviceName", "executedQuantity", "billingUnit",
+        "unitPrice", "amount"]) || !isUuid(line.id) || ids.has(line.id) ||
+        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
+        line.operationDate < periodFrom || line.operationDate > periodTo ||
+        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
+        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
+        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
+        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0) return false;
+    ids.add(line.id);
+    return true;
+  });
+  return validLines;
+}
+
+function isPreinvoiceDisputes(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 50) return false;
+  const disputeIds = new Set<string>();
+  return value.every(dispute => {
+    if (!isRecord(dispute) || !hasOnlyKeys(dispute,
+        ["id", "subject", "description", "createdAt", "lineIds", "resolution"]) ||
+        !isUuid(dispute.id) || disputeIds.has(dispute.id) ||
+        !isNonEmptyString(dispute.subject) || dispute.subject.length > 160 ||
+        !isNonEmptyString(dispute.description) || dispute.description.length > 1000 ||
+        !isDateTimeOffset(dispute.createdAt) ||
+        !Array.isArray(dispute.lineIds) || dispute.lineIds.length < 1 ||
+        dispute.lineIds.length > 50 ||
+        !isOptionalNullable(dispute.resolution, resolution =>
+          isRecord(resolution) && hasOnlyKeys(resolution,
+            ["id", "decision", "reason", "resolvedAt"]) &&
+          isUuid(resolution.id) &&
+          (resolution.decision === "Maintain" || resolution.decision === "Void") &&
+          isNonEmptyString(resolution.reason) && resolution.reason.length <= 1000 &&
+          isDateTimeOffset(resolution.resolvedAt))) return false;
+    const selected = new Set<string>();
+    for (const id of dispute.lineIds) {
+      if (!isUuid(id) || selected.has(id)) return false;
+      selected.add(id);
+    }
+    disputeIds.add(dispute.id);
+    return true;
+  });
+}
+
+function isPreinvoiceDisputeListResponse(value: unknown, preinvoiceId: string):
+  value is PreinvoiceDisputeListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["preinvoiceId", "disputes"]) &&
+    value.preinvoiceId === preinvoiceId && isPreinvoiceDisputes(value.disputes);
+}
+
+function isResolvePreinvoiceDisputeResponse(value: unknown, preinvoiceId: string,
+  decision: string): value is ResolvePreinvoiceDisputeResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "preinvoiceId", "status", "replayed"]) &&
+    isUuid(value.id) && value.preinvoiceId === preinvoiceId &&
+    value.status === (decision === "Void" ? "Voided" : "Submitted") &&
+    typeof value.replayed === "boolean";
+}
+
+function isIssueFinanceInvoiceResponse(value: unknown,
+  request: IssueFinanceInvoiceRequest): value is IssueFinanceInvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "preinvoiceId", "number", "kind", "replayed"]) &&
+    isUuid(value.id) && value.preinvoiceId === request.preinvoiceId &&
+    value.number === `NF-${value.id.replaceAll("-", "")}` &&
+    value.kind === "NonFiscal" && typeof value.replayed === "boolean";
+}
+
+function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
+  value is NonFiscalInvoiceResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+      ["id", "preinvoiceId", "airlineId", "stationId", "number", "kind",
+        "currencyCode", "total", "issuedAt", "lines"]) ||
+      !isUuid(value.id) || value.preinvoiceId !== preinvoiceId ||
+      !isUuid(value.airlineId) || !isUuid(value.stationId) ||
+      value.number !== `NF-${value.id.replaceAll("-", "")}` ||
+      value.kind !== "NonFiscal" ||
+      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
+      !isFiniteNumber(value.total) || value.total < 0 ||
+      !isDateTimeOffset(value.issuedAt) || !Array.isArray(value.lines) ||
+      value.lines.length < 1 || value.lines.length > 100) return false;
+  const ids = new Set<string>();
+  for (let index = 0; index < value.lines.length; index++) {
+    const line = value.lines[index];
+    if (!isRecord(line) || !hasOnlyKeys(line,
+        ["id", "lineNumber", "operationCode", "operationDate", "serviceCode",
+          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount"]) ||
+        !isUuid(line.id) || ids.has(line.id) || line.lineNumber !== index + 1 ||
+        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
+        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
+        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
+        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
+        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0)
+      return false;
+    ids.add(line.id);
+  }
+  // SQL validates decimal(19,4) snapshots at issuance. Re-adding parsed JSON
+  // numbers here can reject a valid large invoice due to IEEE-754 rounding.
+  return true;
+}
+
+function isPaymentReference(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9-]{8,80}$/.test(value);
+}
+
+function isRecordNonFiscalPaymentResponse(value: unknown,
+  request: RecordNonFiscalPaymentRequest): value is RecordNonFiscalPaymentResponse {
+  return isRecord(value) && hasOnlyKeys(value,
+    ["id", "invoiceId", "reference", "currencyCode", "amount", "replayed"]) &&
+    isUuid(value.id) && value.invoiceId === request.invoiceId &&
+    value.reference === request.reference &&
+    typeof value.currencyCode === "string" && /^[A-Z]{3}$/.test(value.currencyCode) &&
+    isFiniteNumber(value.amount) && value.amount >= 0 &&
+    typeof value.replayed === "boolean";
+}
+
+function isNonFiscalPaymentLookupResponse(value: unknown, invoiceId: string):
+  value is NonFiscalPaymentLookupResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["invoiceId", "payment"]) ||
+      value.invoiceId !== invoiceId) return false;
+  if (value.payment === null || value.payment === undefined) return true;
+  const payment = value.payment;
+  return isRecord(payment) && hasOnlyKeys(payment,
+    ["id", "invoiceId", "reference", "currencyCode", "amount", "recordedAt"]) &&
+    isUuid(payment.id) && payment.invoiceId === invoiceId &&
+    isPaymentReference(payment.reference) &&
+    typeof payment.currencyCode === "string" && /^[A-Z]{3}$/.test(payment.currencyCode) &&
+    isFiniteNumber(payment.amount) && payment.amount >= 0 &&
+    isDateTimeOffset(payment.recordedAt);
+}
+
+function isAcceptAirlinePreinvoiceResponse(value: unknown): value is AcceptAirlinePreinvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
+    isUuid(value.id) && value.status === "Accepted" &&
+    typeof value.replayed === "boolean";
+}
+
+function isDisputeAirlinePreinvoiceResponse(value: unknown): value is DisputeAirlinePreinvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "disputeId", "status", "replayed"]) &&
+    isUuid(value.id) && isUuid(value.disputeId) && value.status === "Disputed" &&
+    typeof value.replayed === "boolean";
+}
+
+function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
+      !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
+  const services = value.services.every((item: unknown) => isRecord(item) &&
+    hasOnlyKeys(item, ["id", "name", "description", "imageUrl", "videoUrl", "displayOrder"]) &&
+    isUuid(item.id) && isNonEmptyString(item.name) && isString(item.description) &&
+    isOptionalNullable(item.imageUrl, isString) &&
+    isOptionalNullable(item.videoUrl, isString) && isInt32(item.displayOrder));
+  const airlines = value.airlines.every((item: unknown) => isRecord(item) &&
+    hasOnlyKeys(item, ["id", "name", "region", "legalName", "countryCode",
+      "iataCode", "icaoCode", "logoUrl", "isVerified"]) &&
+    isUuid(item.id) && isNonEmptyString(item.name) && isNonEmptyString(item.region) &&
+    isOptionalNullable(item.legalName, isString) &&
+    isOptionalNullable(item.countryCode, isString) &&
+    isOptionalNullable(item.iataCode, isString) &&
+    isOptionalNullable(item.icaoCode, isString) &&
+    isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean");
+  return services && airlines &&
+    new Set(value.services.map(item => item.id.toLowerCase())).size === value.services.length &&
+    new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length;
+}
+
+function validatedCommercialRequest(
+  request: SubmitCommercialRequestRequest,
+): SubmitCommercialRequestRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["requestId", "airlineProfileId",
+    "serviceIds", "representativeName", "representativeTitle",
+    "representativeEmail", "representativePhone", "authorityDeclared",
+    "representativeNationalityCode", "representativeAddress", "representativeCountry",
+    "representativeProvince", "representativeMunicipality",
+    "representativeDocumentType", "representativeDocumentNumber"]) ||
+    !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
+    !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
+    request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
+    new Set(request.serviceIds.map(id => id.toLowerCase())).size !== request.serviceIds.length ||
+    !isNonEmptyString(request.representativeName) || request.representativeName.length > 160 ||
+    !isNonEmptyString(request.representativeTitle) || request.representativeTitle.length > 120 ||
+    !isNonEmptyString(request.representativeEmail) || request.representativeEmail.length > 256 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.representativeEmail) ||
+    !isNonEmptyString(request.representativePhone) || request.representativePhone.length > 32 ||
+    !/^\+[0-9 ()-]{7,31}$/.test(request.representativePhone) ||
+    request.representativePhone.replace(/\D/g, "").length < 8 ||
+    request.representativePhone.replace(/\D/g, "").length > 15 ||
+    !isOptionalNullable(request.representativeNationalityCode,
+      value => typeof value === "string" && /^[A-Z]{2}$/.test(value)) ||
+    !isOptionalNullable(request.representativeAddress,
+      value => typeof value === "string" && value.trim().length <= 250) ||
+    !isOptionalNullable(request.representativeCountry,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeProvince,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeMunicipality,
+      value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeDocumentType,
+      value => value === "NationalId" || value === "Passport" || value === "Other") ||
+    !isOptionalNullable(request.representativeDocumentNumber,
+      value => typeof value === "string" && /^[A-Za-z0-9 /-]{3,40}$/.test(value)) ||
+    Boolean(request.representativeDocumentType) !== Boolean(request.representativeDocumentNumber) ||
+    request.authorityDeclared !== true)
+    throw new TypeError("Commercial application is invalid.");
+  return request as unknown as SubmitCommercialRequestRequest;
+}
+
+function isCommercialRequestReceipt(value: unknown): value is SubmitCommercialRequestResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["reference", "replayed"]) &&
+    isNonEmptyString(value.reference) && value.reference.length <= 128 &&
+    typeof value.replayed === "boolean";
+}
+
+function validatedFinanceApprovedServicesQuery(
+  query: FinanceApprovedServicesQuery,
+): FinanceApprovedServicesQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "from", "to"]) ||
+      !isUuid(query.stationId) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 30 || query.to < query.from)
+    throw new TypeError("Finance evidence station and date range are invalid.");
+  return query as unknown as FinanceApprovedServicesQuery;
+}
+
+function validatedFinancePreinvoiceQuery(
+  query: ListFinancePreinvoicesParams,
+): ListFinancePreinvoicesParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
+      !isUuid(query.stationId) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
+    throw new TypeError("Finance preinvoice station or paging is invalid.");
+  return { stationId: query.stationId,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function validatedFinanceTariffQuery(
+  query: ListFinanceTariffsParams,
+): ListFinanceTariffsParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
+      !isUuid(query.stationId) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
+    throw new TypeError("Finance tariff station or paging is invalid.");
+  return { stationId: query.stationId,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function validatedHumanResourcesPaging(
+  query: { page?: number; limit?: number } | undefined,
+): { page?: number; limit?: number } {
+  if (query === undefined) return {};
+  if (!isRecord(query) || !hasOnlyKeys(query, ["page", "limit"]) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources paging is invalid.");
+  return { ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function validatedHumanResourcesQualificationQuery(
+  query: ListHumanResourcesQualificationsParams | undefined,
+): ListHumanResourcesQualificationsParams {
+  if (query === undefined) return {};
+  if (!isRecord(query) || !hasOnlyKeys(query,
+    ["page", "limit", "rampProfileId", "equipmentTypeId"]) ||
+      (query.rampProfileId === undefined) !== (query.equipmentTypeId === undefined) ||
+      (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
+      (query.equipmentTypeId !== undefined && !isUuid(query.equipmentTypeId)))
+    throw new TypeError("Human Resources qualification filter is invalid.");
+  const paging = validatedHumanResourcesPaging({
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }),
+  });
+  return { ...paging,
+    ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
+    ...(query.equipmentTypeId === undefined ? {} : { equipmentTypeId: query.equipmentTypeId }) };
+}
+
+function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPermitPage {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "permits"]) ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.permits) ||
+      value.permits.length > value.limit ||
+      (value.hasMore && value.permits.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.permits.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "documentType",
+        "cycleNumber", "documentNumber", "issuedOn", "expiresOn"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        typeof item.documentType !== "string" ||
+        !["AirportId", "RampDriverLicense"].includes(item.documentType) ||
+        !isInt32(item.cycleNumber) || item.cycleNumber < 1 ||
+        !isNonEmptyString(item.documentNumber) ||
+        !isDateOnly(item.issuedOn) || !isDateOnly(item.expiresOn) ||
+        item.issuedOn > item.expiresOn) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function validatedHumanResourcesPermitQuery(
+  query: ListHumanResourcesPermitsParams | undefined,
+): ListHumanResourcesPermitsParams {
+  if (query === undefined) return {};
+  if (!isRecord(query) || !hasOnlyKeys(query,
+    ["page", "limit", "rampProfileId", "documentType"]) ||
+      (query.rampProfileId === undefined) !== (query.documentType === undefined) ||
+      (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
+      (query.documentType !== undefined &&
+        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+    throw new TypeError("Human Resources permit filter is invalid.");
+  const paging = validatedHumanResourcesPaging({
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }),
+  });
+  return { ...paging,
+    ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
+    ...(query.documentType === undefined ? {} : { documentType: query.documentType }) };
+}
+
+function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): HumanResourcesShiftsQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
+      !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 6 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources shift range or paging is invalid.");
+  return { from: query.from, to: query.to,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function validatedHumanResourcesAvailabilityQuery(
+  query: HumanResourcesAvailabilityQuery,
+): HumanResourcesAvailabilityQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
+      !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
+        86_400_000 > 30 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 ||
+        query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 ||
+        query.limit > 100)))
+    throw new TypeError("Human Resources availability range or paging is invalid.");
+  return { from: query.from, to: query.to,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function validatedHumanResourcesShiftAssignmentQuery(
+  query: HumanResourcesShiftAssignmentQuery,
+): HumanResourcesShiftAssignmentQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["rampProfileId", "workDate"]) ||
+      !isUuid(query.rampProfileId) || !isDateOnly(query.workDate))
+    throw new TypeError("Human Resources shift assignment query is invalid.");
+  return { rampProfileId: query.rampProfileId, workDate: query.workDate };
+}
+
+function isHumanResourcesShiftAssignmentOptions(
+  value: unknown, query: HumanResourcesShiftAssignmentQuery,
+): value is HumanResourcesShiftAssignmentOptions {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["rampProfileId", "workDate", "hasShift", "stations"]) ||
+      !isUuid(value.rampProfileId) ||
+      value.rampProfileId.toLowerCase() !== query.rampProfileId.toLowerCase() ||
+      value.workDate !== query.workDate || typeof value.hasShift !== "boolean" ||
+      !Array.isArray(value.stations)) return false;
+  const stationIds = new Set<string>();
+  const terminalIds = new Set<string>();
+  return value.stations.every(station => {
+    if (!isRecord(station) || !hasOnlyKeys(station, ["id", "code", "terminals"]) ||
+        !isUuid(station.id) || !isNonEmptyString(station.code) ||
+        stationIds.has(station.id.toLowerCase()) ||
+        !Array.isArray(station.terminals) || station.terminals.length === 0) return false;
+    stationIds.add(station.id.toLowerCase());
+    return station.terminals.every(terminal => {
+      if (!isRecord(terminal) || !hasOnlyKeys(terminal, ["id", "code"]) ||
+          !isUuid(terminal.id) || !isNonEmptyString(terminal.code) ||
+          terminalIds.has(terminal.id.toLowerCase())) return false;
+      terminalIds.add(terminal.id.toLowerCase());
+      return true;
+    });
+  });
+}
+
+function validatedHumanResourcesShiftInput(
+  request: RecordHumanResourcesShiftInput,
+): RecordHumanResourcesShiftInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+      ["rampProfileId", "stationId", "terminalId", "workDate",
+        "startsAtLocal", "endsAtLocal", "notes"]) ||
+      !isUuid(request.rampProfileId) || !isUuid(request.stationId) ||
+      !isUuid(request.terminalId) || !isDateOnly(request.workDate) ||
+      typeof request.startsAtLocal !== "string" ||
+      typeof request.endsAtLocal !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.startsAtLocal) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.endsAtLocal) ||
+      request.startsAtLocal === request.endsAtLocal ||
+      (request.notes != null && (typeof request.notes !== "string" ||
+        request.notes.trim().length > 500)))
+    throw new TypeError("Human Resources shift input is invalid.");
+  const toSeconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const start = toSeconds(request.startsAtLocal);
+  const end = toSeconds(request.endsAtLocal);
+  if ((end > start ? end - start : end + 86400 - start) > 16 * 3600)
+    throw new TypeError("Human Resources shift cannot exceed sixteen hours.");
+  return request;
+}
+
+function isHumanResourcesAvailabilityRequestPage(
+  value: unknown,
+): value is HumanResourcesAvailabilityRequestPage {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["from", "to", "page", "limit", "hasMore", "requests"]) ||
+      !isDateOnly(value.from) || !isDateOnly(value.to) || value.from > value.to ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.requests) ||
+      value.requests.length > value.limit ||
+      (value.hasMore && value.requests.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  const from = value.from;
+  const to = value.to;
+  return value.requests.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "startsOn",
+        "endsOn", "type", "status", "reason", "requestedAt", "resolvedAt",
+        "resolutionNote"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        !isDateOnly(item.startsOn) || !isDateOnly(item.endsOn) ||
+        item.startsOn > item.endsOn || item.startsOn > to || item.endsOn < from ||
+        typeof item.type !== "string" ||
+        !["DayOff", "ShiftChange", "Restriction"].includes(item.type) ||
+        typeof item.status !== "string" ||
+        !["Pending", "Approved", "Rejected", "Cancelled"].includes(item.status) ||
+        !isNonEmptyString(item.reason) || !isDateTimeOffset(item.requestedAt) ||
+        !isOptionalNullable(item.resolvedAt, isDateTimeOffset) ||
+        !isOptionalNullable(item.resolutionNote, isNonEmptyString)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function validatedHumanResourcesAvailabilityInput(
+  input: RecordHumanResourcesAvailabilityInput,
+): RecordHumanResourcesAvailabilityInput {
+  if (!isRecord(input) || !hasOnlyKeys(input,
+      ["rampProfileId", "startsOn", "endsOn", "type", "reason"]) ||
+      !isUuid(input.rampProfileId) || !isDateOnly(input.startsOn) ||
+      !isDateOnly(input.endsOn) || input.startsOn > input.endsOn ||
+      (Date.parse(`${input.endsOn}T00:00:00Z`) -
+        Date.parse(`${input.startsOn}T00:00:00Z`)) / 86_400_000 > 30 ||
+      !["DayOff", "ShiftChange", "Restriction"].includes(input.type) ||
+      typeof input.reason !== "string" || !input.reason.trim() ||
+      input.reason.trim().length > 1000)
+    throw new TypeError("Human Resources availability input is invalid.");
+  return { rampProfileId: input.rampProfileId, startsOn: input.startsOn,
+    endsOn: input.endsOn, type: input.type, reason: input.reason.trim() };
+}
+
+function validatedHumanResourcesAvailabilityResolution(
+  input: ResolveHumanResourcesAvailabilityInput,
+): ResolveHumanResourcesAvailabilityInput {
+  if (!isRecord(input) || !hasOnlyKeys(input, ["decision", "note"]) ||
+      !["Approve", "Reject"].includes(input.decision) ||
+      (input.note != null && (typeof input.note !== "string" ||
+        input.note.trim().length > 1000)))
+    throw new TypeError("Human Resources availability resolution is invalid.");
+  return { decision: input.decision,
+    ...(input.note == null ? {} : { note: input.note.trim() || null }) };
+}
+
+function isHumanResourcesAvailabilityWritten(
+  value: unknown, id: string,
+  expectedStatuses: readonly string[],
+): value is HumanResourcesAvailabilityWritten {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "status"]) &&
+    isUuid(value.id) && value.id.toLowerCase() === id &&
+    typeof value.status === "string" && expectedStatuses.includes(value.status);
+}
+
+function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShiftPage {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["from", "to", "page", "limit", "hasMore", "shifts"]) ||
+      !isDateOnly(value.from) || !isDateOnly(value.to) || value.from > value.to ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.shifts) ||
+      value.shifts.length > value.limit ||
+      (value.hasMore && value.shifts.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  const from = value.from;
+  const to = value.to;
+  return value.shifts.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "stationId",
+        "stationCode", "terminalId", "terminalCode", "positionId", "positionCode",
+        "workDate", "startsAtLocal", "endsAtLocal", "block"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
+        !isUuid(item.terminalId) || !isNonEmptyString(item.terminalCode) ||
+        (item.positionId != null && !isUuid(item.positionId)) ||
+        (item.positionCode != null && !isNonEmptyString(item.positionCode)) ||
+        (item.positionId == null) !== (item.positionCode == null) ||
+        !isDateOnly(item.workDate) || item.workDate < from || item.workDate > to ||
+        typeof item.startsAtLocal !== "string" ||
+        typeof item.endsAtLocal !== "string" ||
+        !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(item.startsAtLocal) ||
+        !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(item.endsAtLocal) ||
+        typeof item.block !== "string" ||
+        !["Morning", "Afternoon", "Night"].includes(item.block)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function isHumanResourcesQualificationPage(value: unknown): value is HumanResourcesQualificationPage {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["page", "limit", "hasMore", "qualifications"]) ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 100 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.qualifications) ||
+      value.qualifications.length > value.limit ||
+      (value.hasMore && value.qualifications.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.qualifications.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "rampProfileId", "agentName", "employeeNumber", "equipmentTypeId",
+        "equipmentCode", "equipmentName", "cycleNumber", "trainingDate", "obtainedOn",
+        "expiresOn", "certifyingEntity", "instructorName"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
+        !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
+        !isUuid(item.equipmentTypeId) || !isNonEmptyString(item.equipmentCode) ||
+        !isNonEmptyString(item.equipmentName) || !isInt32(item.cycleNumber) ||
+        item.cycleNumber < 1 || !isDateOnly(item.trainingDate) ||
+        !isDateOnly(item.obtainedOn) || !isDateOnly(item.expiresOn) ||
+        item.trainingDate > item.obtainedOn || item.obtainedOn > item.expiresOn ||
+        !isNonEmptyString(item.certifyingEntity) || !isNonEmptyString(item.instructorName))
+      return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function isHumanResourcesQualificationEquipmentTypes(
+  value: unknown,
+): value is HumanResourcesQualificationEquipmentType[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  return value.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ["id", "code", "name"]) ||
+        !isUuid(item.id) || ids.has(item.id) ||
+        !isNonEmptyString(item.code) || !isNonEmptyString(item.name)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function validatedHumanResourcesQualificationInput(
+  request: RecordHumanResourcesQualificationInput,
+): RecordHumanResourcesQualificationInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+    ["rampProfileId", "equipmentTypeId", "expectedCurrentId", "trainingDate",
+      "obtainedOn", "expiresOn", "certifyingEntity", "instructorName", "notes"]) ||
+      !isUuid(request.rampProfileId) || !isUuid(request.equipmentTypeId) ||
+      (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
+      !isDateOnly(request.trainingDate) || !isDateOnly(request.obtainedOn) ||
+      !isDateOnly(request.expiresOn) || request.trainingDate > request.obtainedOn ||
+      request.obtainedOn > request.expiresOn ||
+      !isNonEmptyString(request.certifyingEntity) ||
+      request.certifyingEntity.trim().length < 2 || request.certifyingEntity.trim().length > 160 ||
+      !isNonEmptyString(request.instructorName) ||
+      request.instructorName.trim().length < 2 || request.instructorName.trim().length > 160 ||
+      (request.notes != null && (typeof request.notes !== "string" || request.notes.trim().length > 1000)))
+    throw new TypeError("Human Resources qualification input is invalid.");
+  return request;
+}
+
+function validatedHumanResourcesPermitInput(
+  request: RecordHumanResourcesPermitInput,
+): RecordHumanResourcesPermitInput {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+    ["rampProfileId", "documentType", "expectedCurrentId", "documentNumber", "issuedOn", "expiresOn"]) ||
+      !isUuid(request.rampProfileId) ||
+      !["AirportId", "RampDriverLicense"].includes(String(request.documentType)) ||
+      (request.expectedCurrentId != null && !isUuid(request.expectedCurrentId)) ||
+      !isNonEmptyString(request.documentNumber) ||
+      request.documentNumber.trim().length < 2 || request.documentNumber.trim().length > 64 ||
+      !isDateOnly(request.issuedOn) || !isDateOnly(request.expiresOn) ||
+      request.issuedOn > request.expiresOn)
+    throw new TypeError("Human Resources permit input is invalid.");
+  return request;
+}
+
+function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["stationId", "page", "limit", "hasMore", "tariffs"]) ||
+      !isUuid(value.stationId) || !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.tariffs) ||
+      value.tariffs.length > value.limit ||
+      (value.hasMore && value.tariffs.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.tariffs.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["id", "contractId", "contractCode", "airlineId", "airlineName",
+        "versionNumber", "versionStatus", "validFrom", "validTo", "currencyCode",
+        "serviceCode", "serviceName", "billingUnit", "unitPrice", "minimumQuantity"]) ||
+        !isUuid(item.id) || ids.has(item.id) || !isUuid(item.contractId) ||
+        !isNonEmptyString(item.contractCode) || !isUuid(item.airlineId) ||
+        !isNonEmptyString(item.airlineName) || !isInt32(item.versionNumber) ||
+        item.versionNumber < 1 || !["Approved", "Superseded"].includes(String(item.versionStatus)) ||
+        !isDateOnly(item.validFrom) || !isOptionalNullable(item.validTo, isDateOnly) ||
+        (item.validTo != null && item.validTo < item.validFrom) ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isNonEmptyString(item.serviceCode) || !isNonEmptyString(item.serviceName) ||
+        !isNonEmptyString(item.billingUnit) || !isFiniteNumber(item.unitPrice) ||
+        item.unitPrice < 0 || !isFiniteNumber(item.minimumQuantity) ||
+        item.minimumQuantity < 0) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function validatedFinanceReconciliationQuery(
+  query: ListFinanceReconciliationParams,
+): ListFinanceReconciliationParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
+      !isUuid(query.stationId) ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
+    throw new TypeError("Finance reconciliation station or paging is invalid.");
+  return { stationId: query.stationId,
+    ...(query.page === undefined ? {} : { page: query.page }),
+    ...(query.limit === undefined ? {} : { limit: query.limit }) };
+}
+
+function isFinanceReconciliationPageData(value: unknown): value is FinanceReconciliationPageData {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["stationId", "page", "limit", "hasMore", "rows"]) ||
+      !isUuid(value.stationId) || !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.rows) ||
+      value.rows.length > value.limit ||
+      (value.hasMore && value.rows.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.rows.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item,
+      ["preinvoiceId", "airlineId", "airlineName", "from", "to", "currencyCode",
+        "preinvoiceTotal", "preinvoiceStatus", "invoiceId", "invoiceNumber",
+        "invoiceTotal", "issuedAt", "paymentId", "paymentReference",
+        "paymentAmount", "paymentRecordedAt"]) ||
+        !isUuid(item.preinvoiceId) || ids.has(item.preinvoiceId) ||
+        !isUuid(item.airlineId) || !isNonEmptyString(item.airlineName) ||
+        !isDateOnly(item.from) || !isDateOnly(item.to) || item.to < item.from ||
+        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isFiniteNumber(item.preinvoiceTotal) || item.preinvoiceTotal < 0 ||
+        !["Accepted", "Invoiced"].includes(String(item.preinvoiceStatus))) return false;
+    ids.add(item.preinvoiceId);
+    const invoiceFields = [item.invoiceId, item.invoiceNumber, item.invoiceTotal, item.issuedAt];
+    const paymentFields = [item.paymentId, item.paymentReference,
+      item.paymentAmount, item.paymentRecordedAt];
+    if (item.preinvoiceStatus === "Accepted")
+      return invoiceFields.every(field => field == null) &&
+        paymentFields.every(field => field == null);
+    if (!isUuid(item.invoiceId) || !isNonEmptyString(item.invoiceNumber) ||
+        !isFiniteNumber(item.invoiceTotal) || item.invoiceTotal !== item.preinvoiceTotal ||
+        !isDateTimeOffset(item.issuedAt)) return false;
+    if (paymentFields.every(field => field == null)) return true;
+    return isUuid(item.paymentId) && isNonEmptyString(item.paymentReference) &&
+      isFiniteNumber(item.paymentAmount) && item.paymentAmount === item.invoiceTotal &&
+      isDateTimeOffset(item.paymentRecordedAt);
+  });
+}
+
+function isFinancePreinvoicePageData(value: unknown): value is FinancePreinvoicePageData {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
+      !isInt32(value.page) || value.page < 1 ||
+      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
+      typeof value.hasMore !== "boolean" || !Array.isArray(value.preinvoices) ||
+      value.preinvoices.length > value.limit ||
+      (value.hasMore && value.preinvoices.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.preinvoices.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item, ["id", "airlineId", "airlineName",
+        "stationId", "from", "to", "currencyCode", "total", "status",
+        "lineCount", "createdAt"]) || !isUuid(item.id) || ids.has(item.id) ||
+        !isUuid(item.airlineId) || !isNonEmptyString(item.airlineName) ||
+        !isUuid(item.stationId) || !isDateOnly(item.from) || !isDateOnly(item.to) ||
+        item.to < item.from || typeof item.currencyCode !== "string" ||
+        !/^[A-Z]{3}$/.test(item.currencyCode) ||
+        !isFiniteNumber(item.total) || item.total < 0 ||
+        !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(item.status)) ||
+        !isInt32(item.lineCount) || item.lineCount < 1 || item.lineCount > 100 ||
+        !isDateTimeOffset(item.createdAt)) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
+function isFinanceApprovedServicesResponse(value: unknown): value is FinanceApprovedServicesResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["stationId", "from", "to", "services", "hasMore"]) &&
+    isUuid(value.stationId) && isDateOnly(value.from) && isDateOnly(value.to) &&
+    typeof value.hasMore === "boolean" && Array.isArray(value.services) &&
+    value.services.length <= 200 &&
+    value.services.every((service) => isRecord(service) &&
+      hasOnlyKeys(service, ["id", "operationId", "turnaroundId", "approvedSubmissionId",
+        "operationCode", "operationDate", "airlineId", "airlineName", "flightNumber", "contractCode",
+        "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
+        "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
+        "ready", "blockingReason", "amount", "preinvoiceId"]) &&
+      isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
+      isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
+      isDateOnly(service.operationDate) && isUuid(service.airlineId) &&
+      isNonEmptyString(service.airlineName) &&
+      isString(service.flightNumber) && isOptionalNullable(service.contractCode, isNonEmptyString) &&
+      isNonEmptyString(service.serviceCode) && isNonEmptyString(service.serviceName) &&
+      ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"].includes(
+        String(service.executionStatus)) &&
+      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
+      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
+      isString(service.billingUnit) &&
+      isOptionalNullable(service.frozenUnitPrice, value => isFiniteNumber(value) && value >= 0) &&
+      isOptionalNullable(service.frozenCurrency, value =>
+        typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
+      isOptionalNullable(service.preinvoiceId, isUuid) &&
+      typeof service.ready === "boolean" &&
+      (service.ready
+        ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
+          isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
+          typeof service.frozenCurrency === "string" &&
+          /^[A-Z]{3}$/.test(service.frozenCurrency) &&
+          (service.blockingReason === null || service.blockingReason === undefined) &&
+          isFiniteNumber(service.amount) && service.amount >= 0
+        : isNonEmptyString(service.blockingReason) &&
+          (service.amount === null || service.amount === undefined)));
+}
+
+function validatedPreinvoiceDraftRequest(
+  request: CreatePreinvoiceDraftRequest,
+): CreatePreinvoiceDraftRequest {
+  if (!isRecord(request) ||
+      !hasOnlyKeys(request, ["stationId", "from", "to", "requestId", "serviceIds"]) ||
+      !isUuid(request.stationId) || !isUuid(request.requestId) ||
+      !isDateOnly(request.from) || !isDateOnly(request.to) ||
+      request.to < request.from ||
+      (Date.parse(`${request.to}T00:00:00Z`) - Date.parse(`${request.from}T00:00:00Z`)) /
+        86_400_000 > 30 || !Array.isArray(request.serviceIds) ||
+      request.serviceIds.length < 1 || request.serviceIds.length > 100 ||
+      !request.serviceIds.every(isUuid) ||
+      new Set(request.serviceIds).size !== request.serviceIds.length)
+    throw new TypeError("Preinvoice draft selection is invalid.");
+  return request as unknown as CreatePreinvoiceDraftRequest;
+}
+
+function isPreinvoiceDraftCreateResponse(value: unknown): value is CreatePreinvoiceDraftResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "replayed"]) &&
+    isUuid(value.id) && typeof value.replayed === "boolean";
+}
+
+function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
+    isUuid(value.id) && value.status === "Submitted" &&
+    typeof value.replayed === "boolean";
+}
+
+function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
+      "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
+      !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
+      !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
+      !isDateOnly(value.to) || value.to < value.from ||
+      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
+      !isFiniteNumber(value.total) || value.total < 0 ||
+      !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+    return false;
+  const validLines = value.lines.every((line, index) => isRecord(line) &&
+    hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
+      "operationCode", "operationDate", "serviceCode", "serviceName",
+      "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
+    isUuid(line.id) && isUuid(line.operationServiceId) && isUuid(line.approvedSubmissionId) &&
+    line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
+    isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
+    String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
+    isNonEmptyString(line.serviceName) && isFiniteNumber(line.executedQuantity) &&
+    line.executedQuantity > 0 && isNonEmptyString(line.billingUnit) &&
+    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
+    line.currencyCode === value.currencyCode &&
+    isFiniteNumber(line.amount) && line.amount >= 0);
+  return validLines;
+}
+
+function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
+  if (!isRecord(parameters) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline contract paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlineOperationParams(parameters: GetAirlineOperationsParams): GetAirlineOperationsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline operation paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlineRequestParams(
+  parameters: GetAirlineOperationalRequestsParams,
+): GetAirlineOperationalRequestsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline request paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedAirlinePreinvoiceParams(
+  parameters: GetAirlinePreinvoicesParams,
+): GetAirlinePreinvoicesParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Airline preinvoice paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
+function validatedManagedContractParams(
+  parameters: ListManagedContractsParams,
+): ListManagedContractsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
+    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
+    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
+    throw new TypeError("Managed contract paging is invalid.");
+  return {
+    ...(parameters.page === undefined ? {} : { page: parameters.page }),
+    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+  };
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -1610,6 +3039,82 @@ function validatedOccPlanningOptionsParams(
   }
 
   return { turnaroundId };
+}
+
+function validatedManualTurnaroundOptionsParams(
+  parameters: GetManualTurnaroundOptionsParams,
+): GetManualTurnaroundOptionsParams {
+  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["stationId", "date"]) ||
+      !isUuid(parameters.stationId))
+    throw new TypeError("stationId must be a canonical UUID.");
+  if (!isDateOnly(parameters.date))
+    throw new TypeError("date must be a valid calendar date.");
+  return { stationId: parameters.stationId, date: parameters.date };
+}
+
+function validatedManualTurnaroundRequest(
+  request: CreateManualTurnaroundRequest,
+): CreateManualTurnaroundRequest {
+  const keys = ["turnaroundId", "stationId", "airlineId", "standId", "operationDate",
+    "arrivalFlightNumber", "arrivalOriginIata", "arrivalScheduledAt",
+    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt"];
+  if (!isRecord(request) || !hasOnlyKeys(request, keys))
+    throw new TypeError("manual turnaround request has unknown or invalid fields.");
+  if (!isUuid(request.turnaroundId) || !isUuid(request.stationId) ||
+      !isUuid(request.airlineId) || !isUuid(request.standId) ||
+      !isDateOnly(request.operationDate))
+    throw new TypeError("manual turnaround identifiers or operationDate are invalid.");
+  const arrivalFlightNumber = typeof request.arrivalFlightNumber === "string"
+    ? request.arrivalFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const departureFlightNumber = typeof request.departureFlightNumber === "string"
+    ? request.departureFlightNumber.replace(/\s+/g, "").toUpperCase() : "";
+  const arrivalOriginIata = typeof request.arrivalOriginIata === "string"
+    ? request.arrivalOriginIata.trim().toUpperCase() : "";
+  const departureDestinationIata = typeof request.departureDestinationIata === "string"
+    ? request.departureDestinationIata.trim().toUpperCase() : "";
+  if (!/^[A-Z0-9]{2,16}$/.test(arrivalFlightNumber) ||
+      !/^[A-Z0-9]{2,16}$/.test(departureFlightNumber) ||
+      !/^[A-Z]{3}$/.test(arrivalOriginIata) ||
+      !/^[A-Z]{3}$/.test(departureDestinationIata))
+    throw new TypeError("manual turnaround flight or airport code is invalid.");
+  if (typeof request.arrivalScheduledAt !== "string" ||
+      typeof request.departureScheduledAt !== "string" ||
+      !isDateTimeOffset(request.arrivalScheduledAt) ||
+      !isDateTimeOffset(request.departureScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.arrivalScheduledAt) ||
+      !/(?:Z|\+00:00)$/.test(request.departureScheduledAt))
+    throw new TypeError("manual turnaround scheduled times must be UTC instants.");
+  const duration = Date.parse(request.departureScheduledAt) - Date.parse(request.arrivalScheduledAt);
+  if (!Number.isFinite(duration) || duration <= 0 || duration > 24 * 60 * 60 * 1000)
+    throw new TypeError("departureScheduledAt must follow arrivalScheduledAt within 24 hours.");
+  return { turnaroundId: request.turnaroundId, stationId: request.stationId,
+    airlineId: request.airlineId, standId: request.standId,
+    operationDate: request.operationDate,
+    arrivalFlightNumber, arrivalOriginIata, arrivalScheduledAt: request.arrivalScheduledAt,
+    departureFlightNumber, departureDestinationIata,
+    departureScheduledAt: request.departureScheduledAt };
+}
+
+function validatedOccShiftRequest(request: ProgramOccShiftRequest): ProgramOccShiftRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request,
+      ["agentId", "startsAtLocal", "endsAtLocal"]) || !isUuid(request.agentId) ||
+      typeof request.startsAtLocal !== "string" ||
+      typeof request.endsAtLocal !== "string" ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.startsAtLocal) ||
+      !/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(request.endsAtLocal) ||
+      request.startsAtLocal === request.endsAtLocal)
+    throw new TypeError("OCC shift requires an agentId and distinct local HH:mm:ss times.");
+  const toSeconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const start = toSeconds(request.startsAtLocal);
+  const end = toSeconds(request.endsAtLocal);
+  const duration = end > start ? end - start : end + 86400 - start;
+  if (duration > 16 * 3600)
+    throw new TypeError("OCC shift cannot exceed sixteen hours.");
+  return { agentId: request.agentId,
+    startsAtLocal: request.startsAtLocal, endsAtLocal: request.endsAtLocal };
 }
 
 function validatedOccAssignmentRequest(
@@ -1889,11 +3394,11 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   }
   const getAccessToken = options.getAccessToken;
 
-  const execute = async (
+  const send = async (
     path: string,
     init: ElevantRequestInit = {},
     includeAccessToken = false,
-  ): Promise<ApiResult> => {
+  ): Promise<Response> => {
     const url = validatedRequestUrl(baseUrl, path);
     const headers = mergeHeaders(defaultHeaders, init.headers);
     if (init.body === undefined || init.body === null) headers.delete("content-type");
@@ -1926,11 +3431,40 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       });
     }
 
+    return response;
+  };
+
+  const execute = async (
+    path: string, init: ElevantRequestInit = {}, includeAccessToken = false,
+  ): Promise<ApiResult> => {
+    const response = await send(path, init, includeAccessToken);
+
     return {
       status: response.status,
       data: await readSuccessBody(response),
       etag: response.headers.get("etag"),
     };
+  };
+
+  const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
+    const response = await send(path, { ...init, method: "GET" }, true);
+    if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
+        "application/pdf") throw malformedResponse(response.status);
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength && Number(declaredLength) > 8_388_608)
+      throw malformedResponse(response.status);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw malformedResponse(response.status);
+    }
+    const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
+    if (bytes.byteLength < 8 || bytes.byteLength > 8_388_608 ||
+        ![37, 80, 68, 70, 45].every((value, index) => header[index] === value))
+      throw malformedResponse(response.status);
+    return new Blob([bytes], { type: "application/pdf" });
   };
 
   const executeOccAssignment = async (
@@ -1963,6 +3497,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   return Object.freeze({
+    async getAccountChanges(
+      parameters?: GetAccountChangesParams,
+      options?: GetAccountChangesOptions,
+    ) {
+      if (parameters !== undefined &&
+          (!isRecord(parameters) || !hasOnlyKeys(parameters, ["after", "limit"])))
+        throw new TypeError("Change feed parameters are invalid.");
+      const after = parameters?.after;
+      const limit = parameters?.limit ?? 50;
+      if (after !== undefined && !isChangeCursor(after))
+        throw new TypeError("Change feed cursor is invalid.");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new TypeError("Change feed limit must be an integer from 1 to 100.");
+      const result = await execute(getGetAccountChangesUrl(parameters),
+        { ...options, method: "GET" }, true);
+      if (!isAccountChangeListResponse(result.data, after, limit))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async createSession(request: CreateSessionRequest, options?: CreateSessionOptions) {
       const credentials = validatedSessionRequest(request);
       const result = await execute(
@@ -2023,6 +3576,542 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       }
       return result.data;
     },
+    async getAirlineContracts(
+      parameters: GetAirlineContractsParams = {}, options?: GetAirlineContractsOptions,
+    ) {
+      const paging = validatedAirlineContractParams(parameters);
+      const result = await execute(
+        getGetAirlineContractsUrl(paging), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineContractPageResponse(result.data) ||
+        result.data.page !== (paging.page ?? 1) ||
+        result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperations(
+      parameters: GetAirlineOperationsParams = {}, options?: GetAirlineOperationsOptions,
+    ) {
+      const paging = validatedAirlineOperationParams(parameters);
+      const result = await execute(
+        getGetAirlineOperationsUrl(paging), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineOperationPageResponse(result.data) ||
+        result.data.page !== (paging.page ?? 1) ||
+        result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperation(operationId: string, options?: GetAirlineOperationOptions) {
+      if (!isUuid(operationId)) throw new TypeError("Operation ID must be a UUID.");
+      const result = await execute(
+        getGetAirlineOperationUrl(operationId), { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineOperationDetailResponse(result.data) || result.data.id !== operationId)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineOperationalRequests(
+      parameters: GetAirlineOperationalRequestsParams = {},
+      options?: GetAirlineOperationalRequestsOptions,
+    ) {
+      const paging = validatedAirlineRequestParams(parameters);
+      const result = await execute(getGetAirlineOperationalRequestsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isAirlineOperationalRequestPageResponse(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePreinvoices(
+      parameters: GetAirlinePreinvoicesParams = {},
+      options?: GetAirlinePreinvoicesOptions,
+    ) {
+      const paging = validatedAirlinePreinvoiceParams(parameters);
+      const result = await execute(getGetAirlinePreinvoicesUrl({ ...paging, includeVoided: true }),
+        { ...options, method: "GET" }, true);
+      if (!isAirlinePreinvoicePageResponse(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePreinvoice(
+      preinvoiceId: string, options?: GetAirlinePreinvoiceOptions,
+    ) {
+      if (!isUuid(preinvoiceId)) throw new TypeError("Preinvoice ID must be a UUID.");
+      const result = await execute(getGetAirlinePreinvoiceUrl(preinvoiceId, { includeVoided: true }),
+        { ...options, method: "GET" }, true);
+      if (!isAirlinePreinvoiceDetailResponse(result.data) ||
+          result.data.id !== preinvoiceId) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePreinvoiceDisputes(
+      preinvoiceId: string, options?: GetPreinvoiceDisputesOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetAirlinePreinvoiceDisputesUrl(id, { includeResolutions: true }),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDisputeListResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async acceptAirlinePreinvoice(
+      preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
+      options?: AcceptAirlinePreinvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      if (!isRecord(request) || !hasOnlyKeys(request, ["requestId"]) ||
+          !isUuid(request.requestId))
+        throw new TypeError("Preinvoice acceptance request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getAcceptAirlinePreinvoiceUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isAcceptAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async disputeAirlinePreinvoice(
+      preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
+      options?: DisputeAirlinePreinvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["requestId", "subject", "description", "lineIds"]) ||
+          !isUuid(request.requestId) ||
+          !isNonEmptyString(request.subject) || request.subject.trim() !== request.subject ||
+          request.subject.length > 160 ||
+          !isNonEmptyString(request.description) ||
+          request.description.trim() !== request.description ||
+          request.description.length > 1000 ||
+          !Array.isArray(request.lineIds) || request.lineIds.length < 1 ||
+          request.lineIds.length > 50 ||
+          request.lineIds.some(lineId => !isUuid(lineId)) ||
+          new Set(request.lineIds).size !== request.lineIds.length)
+        throw new TypeError("Preinvoice dispute request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getDisputeAirlinePreinvoiceUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isDisputeAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getManagedContracts(
+      parameters: ListManagedContractsParams = {}, options?: GetManagedContractsOptions,
+    ) {
+      const paging = validatedManagedContractParams(parameters);
+      const result = await execute(getListManagedContractsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isManagedContractPageData(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getPublicCommercialCatalog(options?: GetPublicCommercialCatalogOptions) {
+      const result = await execute(getGetPublicCommercialCatalogUrl(),
+        { ...options, method: "GET" });
+      if (!isPublicCommercialCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async submitCommercialRequest(
+      request: SubmitCommercialRequestRequest,
+      options?: SubmitCommercialRequestOptions,
+    ) {
+      const body = validatedCommercialRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSubmitCommercialRequestUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) });
+      if (!isCommercialRequestReceipt(result.data) ||
+        result.status !== (result.data.replayed ? 200 : 201))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceApprovedServices(
+      query: FinanceApprovedServicesQuery,
+      options?: GetFinanceApprovedServicesOptions,
+    ) {
+      const scope = validatedFinanceApprovedServicesQuery(query);
+      const result = await execute(getGetFinanceApprovedServicesUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceApprovedServicesResponse(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.from !== scope.from || result.data.to !== scope.to)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePreinvoices(
+      query: ListFinancePreinvoicesParams,
+      options?: GetFinancePreinvoicesOptions,
+    ) {
+      const scope = validatedFinancePreinvoiceQuery(query);
+      const result = await execute(getListFinancePreinvoicesUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinancePreinvoicePageData(result.data) ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 20) ||
+          result.data.preinvoices.some(item => item.stationId !== scope.stationId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceTariffs(
+      query: ListFinanceTariffsParams,
+      options?: GetFinanceTariffsOptions,
+    ) {
+      const scope = validatedFinanceTariffQuery(query);
+      const result = await execute(getListFinanceTariffsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceTariffPageData(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesQualifications(
+      query?: ListHumanResourcesQualificationsParams,
+      options?: GetHumanResourcesQualificationsOptions,
+    ) {
+      const paging = validatedHumanResourcesQualificationQuery(query);
+      const result = await execute(getListHumanResourcesQualificationsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesQualificationPage(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 50) ||
+          (paging.rampProfileId !== undefined &&
+            (result.data.hasMore || result.data.qualifications.length > 1 ||
+             result.data.qualifications.some(item =>
+               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
+               item.equipmentTypeId.toLowerCase() !== paging.equipmentTypeId!.toLowerCase()))))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesQualificationEquipmentTypes(
+      options?: GetHumanResourcesQualificationEquipmentTypesOptions,
+    ) {
+      const result = await execute(getListHumanResourcesQualificationEquipmentTypesUrl(),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesQualificationEquipmentTypes(result.data))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesQualification(
+      id: string,
+      request: RecordHumanResourcesQualificationInput,
+      options?: RecordHumanResourcesQualificationOptions,
+    ) {
+      const qualificationId = validatedUuid(id, "Qualification ID");
+      const body = validatedHumanResourcesQualificationInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesQualificationUrl(qualificationId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id", "cycleNumber"]) ||
+          !isUuid(result.data.id) || result.data.id.toLowerCase() !== qualificationId ||
+          !isInt32(result.data.cycleNumber) || result.data.cycleNumber < 1)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesQualificationRecorded;
+    },
+    async getHumanResourcesPermits(
+      query?: ListHumanResourcesPermitsParams,
+      options?: GetHumanResourcesPermitsOptions,
+    ) {
+      const paging = validatedHumanResourcesPermitQuery(query);
+      const result = await execute(getListHumanResourcesPermitsUrl(paging),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesPermitPage(result.data) ||
+          result.data.page !== (paging.page ?? 1) ||
+          result.data.limit !== (paging.limit ?? 50) ||
+          (paging.rampProfileId !== undefined &&
+            (result.data.hasMore || result.data.permits.length > 1 ||
+             result.data.permits.some(item =>
+               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
+               item.documentType !== paging.documentType))))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesPermit(
+      id: string,
+      request: RecordHumanResourcesPermitInput,
+      options?: RecordHumanResourcesPermitOptions,
+    ) {
+      const permitId = validatedUuid(id, "Permit ID");
+      const body = validatedHumanResourcesPermitInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesPermitUrl(permitId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id", "cycleNumber"]) ||
+          !isUuid(result.data.id) || result.data.id.toLowerCase() !== permitId ||
+          !isInt32(result.data.cycleNumber) || result.data.cycleNumber < 1)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesPermitRecorded;
+    },
+    async getHumanResourcesShifts(
+      query: HumanResourcesShiftsQuery,
+      options?: GetHumanResourcesShiftsOptions,
+    ) {
+      const scope = validatedHumanResourcesShiftsQuery(query);
+      const result = await execute(getListHumanResourcesShiftsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesShiftPage(result.data) ||
+          result.data.from !== scope.from || result.data.to !== scope.to ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesAvailabilityRequests(
+      query: HumanResourcesAvailabilityQuery,
+      options?: GetHumanResourcesAvailabilityRequestsOptions,
+    ) {
+      const scope = validatedHumanResourcesAvailabilityQuery(query);
+      const result = await execute(getListHumanResourcesAvailabilityRequestsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesAvailabilityRequestPage(result.data) ||
+          result.data.from !== scope.from || result.data.to !== scope.to ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesAvailabilityRequest(
+      id: string,
+      request: RecordHumanResourcesAvailabilityInput,
+      options?: RecordHumanResourcesAvailabilityOptions,
+    ) {
+      const requestId = validatedUuid(id, "Availability request ID");
+      const body = validatedHumanResourcesAvailabilityInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesAvailabilityRequestUrl(requestId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
+        requestId, ["Pending", "Approved", "Rejected"]))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async resolveHumanResourcesAvailabilityRequest(
+      id: string,
+      request: ResolveHumanResourcesAvailabilityInput,
+      options?: ResolveHumanResourcesAvailabilityOptions,
+    ) {
+      const requestId = validatedUuid(id, "Availability request ID");
+      const body = validatedHumanResourcesAvailabilityResolution(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getResolveHumanResourcesAvailabilityRequestUrl(requestId),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
+        requestId, [body.decision === "Approve" ? "Approved" : "Rejected"]))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesShiftAssignmentOptions(
+      query: HumanResourcesShiftAssignmentQuery,
+      options?: GetHumanResourcesShiftAssignmentOptionsOptions,
+    ) {
+      const scope = validatedHumanResourcesShiftAssignmentQuery(query);
+      const result = await execute(getGetHumanResourcesShiftAssignmentOptionsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesShiftAssignmentOptions(result.data, scope))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordHumanResourcesShift(
+      id: string,
+      request: RecordHumanResourcesShiftInput,
+      options?: RecordHumanResourcesShiftOptions,
+    ) {
+      const shiftId = validatedUuid(id, "Shift ID");
+      const body = validatedHumanResourcesShiftInput(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordHumanResourcesShiftUrl(shiftId),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isRecord(result.data) ||
+          !hasOnlyKeys(result.data, ["id"]) || !isUuid(result.data.id) ||
+          result.data.id.toLowerCase() !== shiftId)
+        throw malformedResponse(result.status);
+      return result.data as unknown as HumanResourcesShiftRecorded;
+    },
+    async getFinanceReconciliation(
+      query: ListFinanceReconciliationParams,
+      options?: GetFinanceReconciliationOptions,
+    ) {
+      const scope = validatedFinanceReconciliationQuery(query);
+      const result = await execute(getListFinanceReconciliationUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isFinanceReconciliationPageData(result.data) ||
+          result.data.stationId !== scope.stationId ||
+          result.data.page !== (scope.page ?? 1) ||
+          result.data.limit !== (scope.limit ?? 20))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createPreinvoiceDraft(
+      request: CreatePreinvoiceDraftRequest,
+      options?: CreatePreinvoiceDraftOptions,
+    ) {
+      const selection = validatedPreinvoiceDraftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreatePreinvoiceDraftUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(selection) }, true);
+      if (!isPreinvoiceDraftCreateResponse(result.data))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getPreinvoiceDraft(
+      draftId: string, expectedStationId: string,
+      options?: GetPreinvoiceDraftOptions,
+    ) {
+      const draft = validatedUuid(draftId, "draftId");
+      const station = validatedUuid(expectedStationId, "expectedStationId");
+      const result = await execute(getGetPreinvoiceDraftUrl(draft),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDraftResponse(result.data) ||
+          result.data.id !== draft || result.data.stationId !== station)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePreinvoiceDisputes(
+      draftId: string, options?: GetPreinvoiceDisputesOptions,
+    ) {
+      const id = validatedUuid(draftId, "draftId");
+      const result = await execute(getGetFinancePreinvoiceDisputesUrl(id, { includeResolutions: true }),
+        { ...options, method: "GET" }, true);
+      if (!isPreinvoiceDisputeListResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async resolveFinancePreinvoiceDispute(
+      preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
+      options?: ResolvePreinvoiceDisputeOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["requestId", "decision", "reason"]) || !isUuid(request.requestId) ||
+          (request.decision !== "Maintain" && request.decision !== "Void") ||
+          !isNonEmptyString(request.reason) || request.reason.trim() !== request.reason ||
+          request.reason.length > 1000)
+        throw new TypeError("Dispute resolution request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getResolveFinancePreinvoiceDisputeUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isResolvePreinvoiceDisputeResponse(result.data, id, request.decision))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async issueFinanceInvoice(
+      request: IssueFinanceInvoiceRequest, options?: IssueFinanceInvoiceOptions,
+    ) {
+      if (!isRecord(request) || !hasOnlyKeys(request, ["preinvoiceId", "requestId"]) ||
+          !isUuid(request.preinvoiceId) || !isUuid(request.requestId))
+        throw new TypeError("Invoice issuance request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getIssueFinanceInvoiceUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isIssueFinanceInvoiceResponse(result.data, request))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceInvoiceByPreinvoice(
+      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetFinanceInvoiceByPreinvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalInvoiceResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineInvoiceByPreinvoice(
+      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
+    ) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      const result = await execute(getGetAirlineInvoiceByPreinvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalInvoiceResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordNonFiscalPayment(
+      request: RecordNonFiscalPaymentRequest, options?: RecordNonFiscalPaymentOptions,
+    ) {
+      if (!isRecord(request) || !hasOnlyKeys(request,
+          ["invoiceId", "requestId", "reference"]) ||
+          !isUuid(request.invoiceId) || !isUuid(request.requestId) ||
+          !isPaymentReference(request.reference))
+        throw new TypeError("Payment request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRecordNonFiscalPaymentUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isRecordNonFiscalPaymentResponse(result.data, request))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePaymentByInvoice(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetFinancePaymentByInvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalPaymentLookupResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlinePaymentByInvoice(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetAirlinePaymentByInvoiceUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isNonFiscalPaymentLookupResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    getAirlineInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      return executePdf(getGetAirlineInvoiceDocumentUrl(id), options);
+    },
+    getAirlinePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      return executePdf(getGetAirlinePaymentReceiptUrl(id), options);
+    },
+    getFinanceInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(preinvoiceId, "preinvoiceId");
+      return executePdf(getGetFinanceInvoiceDocumentUrl(id), options);
+    },
+    getFinancePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      return executePdf(getGetFinancePaymentReceiptUrl(id), options);
+    },
+    async submitPreinvoice(
+      draftId: string, request: SubmitPreinvoiceRequest,
+      options?: SubmitPreinvoiceOptions,
+    ) {
+      const draft = validatedUuid(draftId, "draftId");
+      if (!isRecord(request) || !hasOnlyKeys(request, ["requestId"]) ||
+          !isUuid(request.requestId))
+        throw new TypeError("Preinvoice submission request is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSubmitPreinvoiceUrl(draft),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isSubmitPreinvoiceResponse(result.data) || result.data.id !== draft)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async getOccPlanningSnapshot(
       parameters: GetOccPlanningSnapshotParams = {},
       options?: GetOccPlanningSnapshotOptions,
@@ -2038,6 +4127,52 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPlanningSnapshotResponse(result.data)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getManualTurnaroundOptions(
+      parameters: GetManualTurnaroundOptionsParams,
+      options?: GetManualTurnaroundOptionsOptions,
+    ) {
+      const query = validatedManualTurnaroundOptionsParams(parameters);
+      const result = await execute(getGetManualTurnaroundOptionsUrl(query),
+        { ...options, method: "GET" }, true);
+      if (!isManualTurnaroundOptionsResponse(result.data) ||
+          result.data.station.id !== query.stationId || result.data.date !== query.date)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createManualTurnaround(
+      request: CreateManualTurnaroundRequest,
+      options?: CreateManualTurnaroundOptions,
+    ) {
+      const body = validatedManualTurnaroundRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getCreateManualTurnaroundUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isManualTurnaroundResponse(result.data) ||
+          result.data.turnaroundId !== body.turnaroundId ||
+          ![200, 201].includes(result.status) || result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async programOccShift(
+      turnaroundId: string,
+      request: ProgramOccShiftRequest,
+      options?: ProgramOccShiftOptions,
+    ) {
+      if (!isUuid(turnaroundId))
+        throw new TypeError("turnaroundId must be a canonical UUID.");
+      const body = validatedOccShiftRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getProgramOccShiftUrl(turnaroundId),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isProgramOccShiftResponse(result.data) ||
+          result.data.turnaroundId !== turnaroundId ||
+          ![200, 201].includes(result.status) ||
+          result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getOccPlanningOptions(

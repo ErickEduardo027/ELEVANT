@@ -5,6 +5,7 @@ import { getPlanningStatusMeta } from '../planningStatus';
 import { isInitialAssignmentCandidate } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
+import OccShiftPanel from './OccShiftPanel';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -58,6 +59,7 @@ export default function PlanningDrawer({
   assignmentState = { status: 'idle', data: null, error: null, reason: null, refreshRequired: false },
   onAssign,
   onRetryOptions,
+  onShiftProgrammed,
 }) {
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
@@ -205,6 +207,8 @@ export default function PlanningDrawer({
           </Section>
 
           <Section title="Asignación OCC">
+            <OccShiftPanel flight={flight} optionsState={optionsState}
+              onProgrammed={onShiftProgrammed} />
             <OccAssignmentPanel
               optionsState={optionsState}
               assignmentState={assignmentState}

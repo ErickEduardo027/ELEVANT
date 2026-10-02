@@ -4,6 +4,16 @@ import userEvent from '@testing-library/user-event';
 import PlanningPage from './PlanningPage';
 import { usePlanningOptions } from './usePlanningOptions';
 import { usePlanningAssignment } from './usePlanningAssignment';
+
+vi.mock('./components/ManualTurnaroundDialog', () => ({
+  default: ({ onCreated, onClose }) => <div role="dialog" aria-label="Nuevo vuelo manual">
+    <button type="button" onClick={() => onCreated('2026-09-26', 'MAN-TEST')}>Simular creación</button>
+    <button type="button" onClick={onClose}>Cerrar nuevo vuelo</button>
+  </div>,
+}));
+vi.mock('./components/OccShiftPanel', () => ({
+  default: ({ onProgrammed }) => <button type="button" onClick={onProgrammed}>Simular turno programado</button>,
+}));
 import {
   createPlanningFlight,
   createPlanningSnapshot,
@@ -110,6 +120,29 @@ describe('PlanningPage', () => {
     expect(screen.queryByTestId('flight-card')).not.toBeInTheDocument();
   });
 
+  it('opens manual flight entry and changes to the newly created operation date', async () => {
+    const onDateChange = vi.fn();
+    const onRetry = vi.fn();
+    renderPage({ status: 'empty', data: createPlanningSnapshot([]), onDateChange, onRetry });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Nuevo vuelo' }));
+    expect(screen.getByRole('dialog', { name: 'Nuevo vuelo manual' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Simular creación' }));
+    expect(onDateChange).toHaveBeenCalledWith('2026-09-26');
+    expect(screen.queryByRole('dialog', { name: 'Nuevo vuelo manual' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Vuelo MAN-TEST creado');
+  });
+
+  it('refreshes OCC options and its ETag after a shift is programmed', async () => {
+    renderPage();
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    await userEvent.click(screen.getByRole('button', { name: 'Simular turno programado' }));
+    await waitFor(() => expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ turnaroundId: UNASSIGNED_DELAYED_FLIGHT.turnaroundId, refreshToken: 1 })));
+    expect(assignmentHook.reset).toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent('Turno programado');
+  });
+
   it('renders a recoverable error and retries without exposing its internal detail', async () => {
     const onRetry = vi.fn();
     renderPage({
@@ -207,6 +240,21 @@ describe('PlanningPage', () => {
         enabled: true,
       });
     });
+  });
+
+  it('invalidates selected assignment options when the station snapshot revision changes', async () => {
+    const { rerender } = renderPage({ dataRevision: 0 });
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith(expect.objectContaining({
+      refreshToken: 0,
+      enabled: true,
+    }));
+
+    rerender(<PlanningPage {...DEFAULT_PROPS} dataRevision={1} />);
+    expect(vi.mocked(usePlanningOptions)).toHaveBeenLastCalledWith(expect.objectContaining({
+      refreshToken: 1,
+      enabled: true,
+    }));
   });
 
   it('submits an eligible initial assignment, refreshes the snapshot, and confirms success', async () => {

@@ -1,0 +1,95 @@
+.access-page { min-height: 100vh; background: #f2f4f6; color: #10213a; }
+.access-header { height: 78px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(20px, 4vw, 64px); background: #061629; color: #fff; border-bottom: 1px solid #30425a; }
+.access-header a { color: inherit; text-decoration: none; }
+.access-header__brand { font-family: var(--font-display); font-weight: 700; font-size: 1.65rem; letter-spacing: -.08em; }
+.access-header__brand span { color: #ff641f; margin: 0 .02em; }
+.access-header__context, .access-header__login { font: .7rem var(--font-data); letter-spacing: .08em; }
+.access-header__context { color: #a8b9ca; display: flex; gap: 12px; align-items: center; }
+.access-header__dot { width: 7px; height: 7px; border-radius: 50%; background: #65d5da; box-shadow: 0 0 0 5px #65d5da20; }
+.access-header__login span { color: #ff641f; }
+.access-shell { display: grid; grid-template-columns: minmax(305px, 32%) minmax(0, 1fr); min-height: calc(100vh - 78px); max-width: 1800px; margin: auto; }
+.access-intro { background: #061629; color: #f4f7fb; padding: clamp(32px, 4.4vw, 75px); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.access-intro::after { content: ""; position: absolute; width: 700px; height: 700px; border: 1px solid #ffffff18; border-radius: 50%; left: -260px; bottom: -520px; box-shadow: 0 0 0 75px #ffffff05, 0 0 0 150px #ffffff05; pointer-events: none; }
+.access-intro__serial, .access-intro__foot, .access-kicker, .access-panel__top, .access-panel__heading > p, .access-carousel__controls, .access-service__media > span, .access-airline__logo small { font: .7rem var(--font-data); letter-spacing: .1em; }
+.access-intro__serial { color: #8da8c5; margin-bottom: clamp(60px, 12vh, 135px); }
+.access-kicker { color: #ff8756; margin: 0 0 16px; }
+.access-intro h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(2.8rem, 4.1vw, 5.4rem); line-height: .98; letter-spacing: -.065em; margin: 0 0 30px; max-width: 620px; }
+.access-intro h1 span { color: #ff641f; }
+.access-intro > p:not(.access-kicker):not(.access-intro__foot) { line-height: 1.7; color: #aebdd0; max-width: 400px; font-size: .94rem; }
+.access-intro__rule { border-top: 1px solid #ffffff2d; margin: clamp(40px, 7vh, 90px) 0 18px; }
+.access-steps { padding: 0; margin: 0; list-style: none; }
+.access-steps li { display: grid; grid-template-columns: 42px 1fr 20px; align-items: center; padding: 17px 0; color: #728aa5; border-bottom: 1px solid #ffffff16; font-size: .9rem; }
+.access-steps li span:first-child { font: .75rem var(--font-data); }
+.access-steps li span:last-child { text-align: right; }
+.access-steps li[data-active="true"] { color: #fff; }
+.access-steps li[data-active="true"] span:first-child, .access-steps li[data-done="true"] span:last-child { color: #ff641f; }
+.access-intro__foot { color: #7188a1; margin-top: auto; padding-top: 45px; }
+.access-panel { padding: clamp(26px, 4vw, 70px) clamp(24px, 5vw, 90px) 35px; display: flex; flex-direction: column; min-width: 0; }
+.access-panel__top { display: flex; justify-content: space-between; color: #668099; border-bottom: 1px solid #cbd5df; padding-bottom: 17px; }
+.access-panel__heading { margin: clamp(40px, 6vh, 72px) 0 30px; }
+.access-panel__heading > p { color: #d35115; margin: 0 0 13px; }
+.access-panel__heading h2 { font-family: var(--font-display); letter-spacing: -.045em; font-weight: 400; font-size: clamp(2.2rem, 3.3vw, 3.9rem); line-height: 1.05; margin: 0 0 10px; }
+.access-panel__heading > span { color: #63768b; line-height: 1.6; }
+.access-carousel__controls { display: flex; align-items: center; justify-content: space-between; color: #627791; margin-bottom: 17px; }
+.access-carousel__controls div { display: flex; gap: 8px; }
+.access-carousel__controls button { width: 39px; height: 39px; border: 1px solid #c1cfdb; background: #fff; color: #12314d; font-size: 1.25rem; cursor: pointer; }
+.access-carousel { display: flex; overflow-x: auto; gap: 18px; scroll-snap-type: x mandatory; padding: 0 1px 16px; scrollbar-color: #ff641f #dce3ea; }
+.access-service { flex: 0 0 min(330px, 80vw); background: #fff; scroll-snap-align: start; border: 1px solid #d6dfe7; min-height: 440px; display: flex; flex-direction: column; transition: border-color .2s, transform .2s; }
+.access-service[data-selected="true"] { border-color: #ff641f; box-shadow: inset 0 0 0 1px #ff641f; }
+.access-service__media { height: 225px; position: relative; overflow: hidden; background: #203954; }
+.access-service__image, .access-service__placeholder { position: absolute; inset: 0; background-size: cover; background-position: center; transition: transform .45s ease; }
+.access-service:hover .access-service__image { transform: scale(1.05); }
+.access-service__media video { width: 100%; height: 100%; object-fit: cover; }
+.access-service__media > span { position: absolute; left: 18px; bottom: 17px; background: #061629df; padding: 7px 9px; color: #fff; }
+.access-service__body { padding: 22px; display: flex; flex-direction: column; flex: 1; }
+.access-service h3 { font-family: var(--font-display); font-size: 1.42rem; letter-spacing: -.03em; line-height: 1.13; margin: 0 0 9px; }
+.access-service p { color: #61758a; font-size: .84rem; line-height: 1.5; margin: 0 0 22px; }
+.access-service button { margin-top: auto; border: 1px solid #0a2846; color: #092746; background: transparent; padding: 11px 15px; text-align: left; font-weight: 650; cursor: pointer; }
+.access-service[data-selected="true"] button { background: #0a2846; color: #fff; }
+.access-label, .access-airline__fields label, .access-representative label { display: block; font-size: .76rem; font-weight: 650; color: #35516c; margin-bottom: 10px; }
+.access-select, .access-airline__fields input, .access-representative input:not([type="checkbox"]) { width: 100%; border: 1px solid #c1ceda; background: #fff; color: #112c46; font: inherit; padding: 13px 15px; min-height: 50px; border-radius: 2px; }
+.access-select:focus-visible, .access-representative input:focus-visible, .access-service button:focus-visible, .access-next:focus-visible { outline: 3px solid #ff641f; outline-offset: 2px; }
+.access-airline { margin-top: 26px; display: grid; grid-template-columns: minmax(150px, 205px) 1fr; gap: 23px; }
+.access-airline__logo { background: #e7edf3; border: 1px solid #c7d3de; min-height: 185px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; color: #174e80; }
+.access-airline__logo > span { font-family: var(--font-display); font-size: 3.6rem; font-weight: 700; letter-spacing: -.1em; }
+.access-airline__logo img { max-width: 75%; max-height: 110px; object-fit: contain; }
+.access-airline__logo small { color: #71859b; text-align: center; }
+.access-airline__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 15px; }
+.access-airline__fields input { margin-top: 7px; color: #60758a; background: #e9eef3; cursor: default; text-overflow: ellipsis; }
+.access-airline__verification { grid-column: 1 / -1; padding: 14px 18px; background: #fff1e9; color: #81401f; font-size: .78rem; line-height: 1.5; margin: 0; }
+.access-representative { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.access-representative input:not([type="checkbox"]) { display: block; margin-top: 9px; }
+.access-representative__wide { grid-column: 1 / -1; }
+.access-representative select { display: block; margin-top: 9px; }
+.access-representative .access-authority { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 12px; font-weight: 400; font-size: .84rem; line-height: 1.5; margin-top: 12px; }
+.access-authority input { width: 20px; height: 20px; margin: 0; accent-color: #e85a1d; flex: none; }
+.access-representative__note { grid-column: 1 / -1; padding: 14px 18px; border-left: 3px solid #ff641f; background: #e9eef3; color: #425e79; font-size: .82rem; line-height: 1.5; }
+.access-summary { display: grid; gap: 16px; }
+.access-summary section { background: #fff; border: 1px solid #d6dfe7; padding: 19px 22px; }
+.access-summary__header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.access-summary h3 { margin: 0 0 12px; font: 400 1.35rem var(--font-display); color: #112c46; }
+.access-summary button { border: 0; background: none; color: #c34d19; font: 700 .78rem var(--font-data); cursor: pointer; }
+.access-summary button:focus-visible { outline: 3px solid #ff641f; outline-offset: 3px; }
+.access-summary ul { margin: 0; padding-left: 20px; color: #35516c; }
+.access-summary p { margin: 0 0 5px; font-weight: 650; }
+.access-summary small { color: #63768b; }
+.access-summary dl { margin: 0; display: grid; gap: 9px; }
+.access-summary dl div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+.access-summary dt { color: #63768b; font-size: .78rem; }
+.access-summary dd { margin: 0; overflow-wrap: anywhere; }
+.access-error { color: #9c2f13; background: #ffe9e0; padding: 13px 16px; font-size: .85rem; }
+.access-loading { color: #425d78; }
+.access-panel__footer { margin-top: auto; padding-top: 38px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.access-panel__footer > span { font: .7rem var(--font-data); color: #8ca0b2; }
+.access-back { border: 0; background: transparent; color: #244565; cursor: pointer; padding: 12px 0; }
+.access-next { border: 0; background: #ff641f; color: #fff; font-weight: 700; padding: 16px 23px; min-width: 195px; display: flex; justify-content: space-between; gap: 35px; cursor: pointer; }
+.access-next:hover { background: #d8470d; }
+.access-next:disabled { opacity: .55; cursor: wait; }
+.access-complete { min-height: calc(100vh - 78px); max-width: 850px; margin: auto; padding: clamp(70px, 12vh, 155px) 24px; }
+.access-complete h1 { font: 400 clamp(3rem, 7vw, 6rem)/.98 var(--font-display); letter-spacing: -.065em; }
+.access-complete > p:not(.access-kicker) { color: #536e86; line-height: 1.7; max-width: 650px; }
+.access-complete strong { display: block; font: .95rem var(--font-data); background: #dfe8ef; padding: 22px; overflow-wrap: anywhere; margin: 34px 0; }
+.access-complete a { color: #da4f16; font-weight: 700; }
+@media (max-width: 1050px) { .access-shell { grid-template-columns: 270px minmax(0,1fr); } .access-intro { padding: 35px 26px; } .access-intro h1 { font-size: 2.8rem; } .access-airline { grid-template-columns: 1fr; } .access-airline__logo { min-height: 130px; } }
+@media (max-width: 750px) { .access-header__context { display: none; } .access-header { height: 65px; } .access-shell { display: block; } .access-intro { min-height: auto; padding: 34px 24px 26px; } .access-intro__serial, .access-intro__rule, .access-intro__foot, .access-intro > p:not(.access-kicker) { display: none; } .access-intro h1 { font-size: 2.8rem; margin-bottom: 25px; } .access-steps { display: flex; gap: 6px; } .access-steps li { display: block; flex: 1; border-bottom: 3px solid #ffffff26; padding: 0 0 8px; font-size: .72rem; } .access-steps li[data-active="true"] { border-color: #ff641f; } .access-steps li span:first-child { display: block; margin-bottom: 4px; } .access-steps li span:last-child { display: none; } .access-panel { padding: 24px; min-height: 620px; } .access-panel__heading { margin-top: 35px; } .access-service { flex-basis: 82%; } .access-representative, .access-airline__fields { grid-template-columns: 1fr; } .access-summary dl div { grid-template-columns: 1fr; gap: 2px; } }
+@media (prefers-reduced-motion: reduce) { .access-service, .access-service__image { transition: none; } .access-carousel { scroll-behavior: auto; } }

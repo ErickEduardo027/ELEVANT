@@ -135,7 +135,8 @@ public sealed record OccAgentCandidateData(
     bool HasCurrentRampDriverLicense,
     bool HasCompatibleShift,
     Guid? OperationalPositionId,
-    bool HasAssignmentConflict);
+    bool HasAssignmentConflict,
+    bool HasApprovedAbsence = false);
 
 public sealed record OccPlanningOptionsSourceData(
     OccPlanningTurnaroundContextData Turnaround,

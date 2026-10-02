@@ -1,0 +1,86 @@
+using System.Security.Claims;
+using Asp.Versioning;
+using Elevant.Api.Configuration;
+using Elevant.Application.Abstractions.Identity;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
+
+namespace Elevant.Api.Controllers;
+
+[ApiController]
+[ApiVersion("1.0")]
+[Authorize]
+[PrivateResponse]
+[Route("api/v{version:apiVersion}/human-resources/qualifications")]
+public sealed class HumanResourcesQualificationsController(
+    IHumanResourcesQualificationReadStore store,
+    IHumanResourcesQualificationWriteStore writeStore) : ControllerBase
+{
+    [HttpGet(Name = "ListHumanResourcesQualifications")]
+    [ProducesResponseType<HumanResourcesQualificationPage>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> List([FromQuery] int page = 1,
+        [FromQuery] int limit = 50, [FromQuery] Guid? rampProfileId = null,
+        [FromQuery] Guid? equipmentTypeId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (page < 1 || limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
+            return Problem(statusCode: 400, title: "Invalid paging parameters.");
+        if ((rampProfileId is null) != (equipmentTypeId is null) ||
+            rampProfileId == Guid.Empty || equipmentTypeId == Guid.Empty)
+            return Problem(statusCode: 400, title: "Incomplete qualification filter.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = rampProfileId is Guid agentId && equipmentTypeId is Guid equipmentId
+            ? await store.ListCurrentAsync(actorId, page, limit, agentId, equipmentId,
+                cancellationToken)
+            : await store.ListCurrentAsync(actorId, page, limit, cancellationToken);
+        return result is null ? Forbid() : Ok(result);
+    }
+
+    [HttpGet("equipment-types", Name = "ListHumanResourcesQualificationEquipmentTypes")]
+    [ProducesResponseType<IReadOnlyList<HumanResourcesQualificationEquipmentType>>(
+        StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> EquipmentTypes(CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await store.ListEquipmentTypesAsync(actorId, cancellationToken);
+        return result is null ? Forbid() : Ok(result);
+    }
+
+    [HttpPut("{id:guid}", Name = "RecordHumanResourcesQualification")]
+    [RequestSizeLimit(32768)]
+    [ProducesResponseType<HumanResourcesQualificationRecorded>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Record(Guid id,
+        [FromBody] RecordHumanResourcesQualificationInput input,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty) return Problem(statusCode: 400, title: "Invalid qualification identifier.");
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.RecordAsync(actorId, id, input, cancellationToken);
+        return result.Failure switch
+        {
+            null => Ok(result.Qualification),
+            HumanResourcesQualificationWriteFailure.Forbidden => Forbid(),
+            HumanResourcesQualificationWriteFailure.Invalid => Problem(statusCode: 400,
+                title: "Invalid qualification record."),
+            HumanResourcesQualificationWriteFailure.NotFound => Problem(statusCode: 404,
+                title: "Ramp profile or equipment type not found."),
+            HumanResourcesQualificationWriteFailure.Conflict => Problem(statusCode: 409,
+                title: "Qualification conflicts with current state."),
+            _ => throw new InvalidOperationException(),
+        };
+    }
+}

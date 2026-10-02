@@ -5,6 +5,9 @@ import {
   type OccAssignmentResponse,
   type OccPlanningOptionsResponse,
   type OccPlanningSnapshotResponse,
+  type ManualTurnaroundOptionsResponse,
+  type CreateManualTurnaroundRequest,
+  type ProgramOccShiftRequest,
 } from "../src";
 
 const stationId = "20000000-0000-7000-8000-000000000003";
@@ -202,6 +205,33 @@ const assignment: OccAssignmentResponse = {
   services: snapshot.turnarounds[0]!.services,
 };
 
+const manualOptions: ManualTurnaroundOptionsResponse = {
+  station,
+  date: "2026-08-19",
+  stationAirport: { id: "20000000-0000-7000-8000-000000000001", iataCode: "PUJ", icaoCode: "MDPC", name: "Punta Cana" },
+  airlines: [{ id: "20000000-0000-7000-8000-000000000010", iataCode: "EV", name: "Elevant Demo" }],
+  airports: [{ id: "20000000-0000-7000-8000-000000000002", iataCode: "MIA", icaoCode: "KMIA", name: "Miami" }],
+  stands: [{ id: "20000000-0000-7000-8000-000000000005", code: "A01", terminal: { id: "20000000-0000-7000-8000-000000000004", code: "A", name: "Terminal A" } }],
+};
+
+const manualRequest: CreateManualTurnaroundRequest = {
+  turnaroundId,
+  stationId,
+  airlineId: manualOptions.airlines[0]!.id,
+  standId: manualOptions.stands[0]!.id,
+  operationDate: "2026-08-19",
+  arrivalFlightNumber: "EV 311",
+  arrivalOriginIata: "mia",
+  arrivalScheduledAt: "2026-08-19T13:00:00Z",
+  departureFlightNumber: "EV 312",
+  departureDestinationIata: "mia",
+  departureScheduledAt: "2026-08-19T15:00:00Z",
+};
+
+const shiftRequest: ProgramOccShiftRequest = {
+  agentId, startsAtLocal: "08:00:00", endsAtLocal: "12:00:00",
+};
+
 function jsonResponse(body: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(body), {
     status,
@@ -214,6 +244,102 @@ function deepClone<T>(value: T): T {
 }
 
 describe("OCC planning API client", () => {
+  it("programs a shift with only an agent and local interval", async () => {
+    const shiftId = "50000000-0000-7000-8000-000000000099";
+    let url = "";
+    let body = "";
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async (input, init) => {
+        url = String(input);
+        body = String(init?.body);
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer occ-token");
+        return jsonResponse({ turnaroundId, shiftId, replayed: false }, 201);
+      },
+    });
+
+    await expect(client.programOccShift(turnaroundId, shiftRequest))
+      .resolves.toEqual({ turnaroundId, shiftId, replayed: false });
+    expect(url).toBe(`https://api.example.test/api/v1/occ/planning/turnarounds/${turnaroundId}/shift`);
+    expect(JSON.parse(body)).toEqual(shiftRequest);
+  });
+
+  it("rejects extra shift authority and a malformed response", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse({ turnaroundId,
+          shiftId: "50000000-0000-7000-8000-000000000099", replayed: false, stationId }, 201);
+      },
+    });
+    await expect(client.programOccShift(turnaroundId,
+      { ...shiftRequest, stationId } as never)).rejects.toThrow("OCC shift");
+    await expect(client.programOccShift(turnaroundId,
+      { ...shiftRequest, endsAtLocal: "08:00:00" })).rejects.toThrow("OCC shift");
+    expect(calls).toBe(0);
+    await expect(client.programOccShift(turnaroundId, shiftRequest))
+      .rejects.toBeInstanceOf(ElevantApiError);
+    expect(calls).toBe(1);
+  });
+  it("loads scoped manual choices and posts one normalized flight", async () => {
+    const urls: string[] = [];
+    const requests: RequestInit[] = [];
+    const authorizations: Array<string | null> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async (input, init) => {
+        urls.push(String(input));
+        requests.push(init ?? {});
+        authorizations.push(new Headers(init?.headers).get("authorization"));
+        return urls.length === 1 ? jsonResponse(manualOptions) :
+          jsonResponse({ turnaroundId, operationCode: "MAN-TEST", replayed: false }, 201);
+      },
+    });
+
+    await expect(client.getManualTurnaroundOptions({ stationId, date: "2026-08-19" }))
+      .resolves.toEqual(manualOptions);
+    await expect(client.createManualTurnaround(manualRequest))
+      .resolves.toEqual({ turnaroundId, operationCode: "MAN-TEST", replayed: false });
+    expect(urls).toEqual([
+      `https://api.example.test/api/v1/occ/planning/manual-options?stationId=${stationId}&date=2026-08-19`,
+      "https://api.example.test/api/v1/occ/planning/turnarounds",
+    ]);
+    expect(requests[0]?.method).toBe("GET");
+    expect(requests[1]?.method).toBe("POST");
+    expect(JSON.parse(String(requests[1]?.body))).toEqual({
+      ...manualRequest,
+      arrivalFlightNumber: "EV311",
+      departureFlightNumber: "EV312",
+      arrivalOriginIata: "MIA",
+      departureDestinationIata: "MIA",
+    });
+    expect(authorizations).toEqual(["Bearer occ-token", "Bearer occ-token"]);
+  });
+
+  it("rejects malformed manual requests and responses before exposing them", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse({ turnaroundId, operationCode: "MAN-TEST", replayed: false, tenantId: "leak" }, 201);
+      },
+    });
+    await expect(client.getManualTurnaroundOptions({ stationId: "bad", date: "2026-08-19" }))
+      .rejects.toThrow("stationId");
+    await expect(client.createManualTurnaround({ ...manualRequest, departureScheduledAt: manualRequest.arrivalScheduledAt }))
+      .rejects.toThrow("departureScheduledAt");
+    await expect(client.createManualTurnaround({ ...manualRequest, extra: true } as never))
+      .rejects.toThrow("manual turnaround");
+    expect(calls).toBe(0);
+    await expect(client.createManualTurnaround(manualRequest))
+      .rejects.toBeInstanceOf(ElevantApiError);
+    expect(calls).toBe(1);
+  });
   it("requests the snapshot without query parameters as an authenticated bodyless GET", async () => {
     let requestedUrl = "";
     let requestedMethod = "";

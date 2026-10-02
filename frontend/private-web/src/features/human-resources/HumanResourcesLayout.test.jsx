@@ -24,10 +24,14 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
     getHumanResourcesUnreadNotificationsCount.mockResolvedValue(2);
   });
 
-  it('exposes only Dashboard and disables notification and placeholder profile actions', () => {
+  it('exposes connected HR reads without a synthetic qualification badge', () => {
     render(<HumanResourcesLayout dashboardReadOnlyDemo />);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard']);
+    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'reports']);
+    expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
+    expect(shellProps.navigation.find(item => item.id === 'permits').badge).toBeNull();
+    expect(shellProps.navigation.find(item => item.id === 'schedules').badge).toBeNull();
+    expect(shellProps.navigation.find(item => item.id === 'reports').badge).toBeNull();
     expect(shellProps.notificationsPath).toBeUndefined();
     expect(shellProps.notificationsEnabled).toBe(false);
     expect(shellProps.profileActionsEnabled).toBe(false);

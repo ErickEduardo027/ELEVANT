@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { DemoRequestForm } from "@/components/marketing/DemoRequestForm";
 import { MotionOrchestrator } from "@/components/marketing/MotionOrchestrator";
 import { SiteHeader } from "@/components/marketing/SiteHeader";
 import { HeroFlightScene } from "@/components/three/HeroFlightScene";
@@ -27,7 +26,7 @@ export default function HomePage() {
             <h1 id="hero-title">{es.hero.title}</h1>
             <p className="hero__lead">{es.hero.lead}</p>
             <div className="hero__actions">
-              <Link className="button" href="#demo">
+              <Link className="button" href="/solicitar-acceso">
                 {es.hero.primaryAction}
                 <ArrowIcon />
               </Link>
@@ -309,7 +308,7 @@ export default function HomePage() {
               <p className="eyebrow">{es.demo.eyebrow}</p>
               <h2 id="demo-title">{es.demo.title}</h2>
               <p className="demo-section__lead">{es.demo.lead}</p>
-              <DemoRequestForm />
+              <Link className="button" href="/solicitar-acceso">Solicitar acceso <ArrowIcon /></Link>
             </div>
           </div>
         </section>

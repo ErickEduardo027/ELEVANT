@@ -1,8 +1,14 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { startMobileChangeFeed, stopMobileChangeFeed } from '../services/mobile-change-feed';
 import { colors } from '../theme/colors';
 
 export default function RootLayout() {
+  useEffect(() => {
+    startMobileChangeFeed();
+    return stopMobileChangeFeed;
+  }, []);
   return <>
     <StatusBar style="dark" />
     <Stack screenOptions={{ headerStyle: { backgroundColor: colors.white }, headerTintColor: colors.navy, headerTitleStyle: { fontWeight: '800' }, contentStyle: { backgroundColor: colors.background } }}>

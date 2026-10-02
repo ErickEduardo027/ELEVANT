@@ -45,6 +45,16 @@ misma secuencia ordenada de migraciones, pero no recibirá fixtures sintéticos.
 
 ## Cadena de migraciones v1
 
+La migración 11, `AccountChangeFeed`, se prepara en esta rama y no está
+desplegada todavía. Agrega `infra.account_changes`: una pista sin contenido
+por cuenta y evento del outbox. Su identidad `bigint` ordena los commits de
+un solo distribuidor y sustenta el cursor opaco de lectura; no refleja el
+orden de asignación de IDs originales del outbox. La pareja
+`(outbox_public_id, recipient_account_id)` es única para evitar duplicados
+en reintentos. La cuenta de la API recibe solo `SELECT/INSERT/UPDATE` sobre
+`infra.outbox_messages` y `SELECT/INSERT` sobre `infra.account_changes`,
+sin `DELETE` ni permisos amplios sobre el esquema `infra`.
+
 | Orden | Migración | Módulos |
 | --- | --- | --- |
 | 1 | `V1_01_Platform` | schemas, outbox y convenciones base |
@@ -72,9 +82,50 @@ Production además exige `ELEVANT_CONFIRM_PRODUCTION_SCHEMA_CHANGE=ElevantProduc
 
 El seed de Development es un ejecutable separado, transaccional, determinista, idempotente y limitado por el marcador. Nunca hace reset, delete global o reemplazo de datos existentes. Todo fixture es sintético y usa identidades `.test`.
 
+En esta rama local, `seed-development-scenario` es un segundo comando explícito
+para preparar una fecha PUJ de prueba después del seed base: crea dos escalas
+planificadas y turnos de cobertura con claves derivadas de la fecha, sin
+asignar agentes ni marcar servicios ejecutados. Valida contrato, estación,
+turno, stand y marcador Development dentro de una transacción serializable;
+no forma parte del CD automático ni se ha ejecutado en el VPS.
+
+## Disputas de prefactura en la rama de integración
+
+La migración aditiva `PreinvoiceDisputes`, posterior a `PersonAvatarMedia`,
+conserva el motivo y las líneas cuestionadas de cada respuesta de aerolínea.
+Una transacción serializable cambia `Submitted` a `Disputed` y guarda la
+objeción, auditoría y pistas de cambio sin alterar los importes congelados.
+`ResolvePreinvoiceDisputes` añade una decisión única por disputa, con clave
+idempotente, actor, motivo y auditoría. `Maintain` devuelve `Disputed` a
+`Submitted` para respuesta nueva de la aerolínea; `Void` pasa a `Voided` y
+marca las líneas como liberadas sin borrar sus snapshots. El índice único de
+servicio se filtra por reservas no liberadas, permitiendo refacturar después
+solo mediante un borrador nuevo. El portal conserva visibilidad de una anulada
+únicamente si existe la resolución `Void` de una disputa publicada; anulaciones
+internas no publicadas siguen ocultas. No hay ajuste parcial ni repricing.
+El rollback de `ResolvePreinvoiceDisputes` se detiene si hay resoluciones o
+líneas liberadas: esos hechos son historial, no datos descartables. La columna
+`released_at` conserva precisión UTC de milisegundos (`datetimeoffset(3)`).
+Conciliación y recibo continúan pendientes; esta rama no está desplegada.
+
+## Factura no fiscal en la rama de integración
+
+`NonFiscalInvoices` agrega `commercial.non_fiscal_invoices` y
+`commercial.non_fiscal_invoice_lines` sin alterar el contrato v1 de prefactura.
+Solo una prefactura `Accepted` se puede emitir: la transacción serializable
+revalida el alcance de Finanzas, conserva moneda, total y cada línea aceptada
+como snapshot, cambia el estado a `Invoiced` y escribe auditoría e invalidaciones
+durables. Los índices únicos de prefactura, clave y línea fuente impiden duplicar
+la emisión. La aerolínea relee su propia factura mediante una ruta tenant-scoped;
+no se infiere un documento tributario ni un pago. La migración es aditiva,
+sin DML de negocio y aún no está desplegada.
+
 ## Diferido explícitamente
 
-- facturas, prefacturas y ledger de conciliación;
+- emisión fiscal, documentos PDF, recibos y ledger de conciliación;
+  la rama local ya modela prefactura, factura no fiscal y anotación manual
+  de pago de Development con snapshots
+  independientes, pero no las ha promovido al VPS;
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas.

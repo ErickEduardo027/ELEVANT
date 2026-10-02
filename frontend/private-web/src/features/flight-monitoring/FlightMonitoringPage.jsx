@@ -14,6 +14,7 @@ import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 import { getFilterOptions } from './flightMonitoringMappers';
 
 function MonitoringMapArea({
+  stationCode,
   flights,
   selectedFlightId,
   onSelectFlight,
@@ -27,11 +28,12 @@ function MonitoringMapArea({
 }) {
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
-  const useGoogle = Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
+  const useGoogle = stationCode === 'PUJ' && Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
   const BaseMap = useGoogle ? GoogleFlightMap : FlightMap;
   return (
     <div className="relative min-h-[420px] flex-1">
-      {geolocatedFlights.length > 0 || useGoogle ? <>
+      {stationCode === 'PUJ' && (geolocatedFlights.length > 0 || useGoogle) ? <>
         <BaseMap
           flights={geolocatedFlights}
           selectedFlightId={selectedFlightId}
@@ -96,7 +98,7 @@ export default function FlightMonitoringPage({
     onlyStationRelated,
     setOnlyStationRelated,
     filteredFlights,
-  } = useFlightMonitoringFilters(flights);
+  } = useFlightMonitoringFilters(flights, data?.station.code);
   const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
 
   const options = getFilterOptions(flights);
@@ -141,6 +143,7 @@ export default function FlightMonitoringPage({
 
   const mapArea = (
     <MonitoringMapArea
+      stationCode={data?.station.code}
       flights={filteredFlights}
       selectedFlightId={selectedFlightId}
       onSelectFlight={setSelectedFlightId}
@@ -157,6 +160,7 @@ export default function FlightMonitoringPage({
   return (
     <div className="mx-auto flex h-full max-w-[1440px] flex-col gap-4">
       <FlightToolbar
+        stationCode={data?.station.code}
         source={data?.source}
         connection={displayConnection}
         lastUpdatedAt={lastUpdatedAt}

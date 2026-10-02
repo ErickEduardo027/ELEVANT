@@ -12,9 +12,10 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const tool = path.join(repositoryRoot, "frontend/scripts/deployment/csp-tool.mjs");
 const apiOrigin = "https://elevant-dev-api.example.ts.net";
+const websocketOrigin = "wss://elevant-dev-api.example.ts.net";
 const validPolicies = {
-  "aviam-web": `default-src 'self'; connect-src 'self' ${apiOrigin} https://demotiles.maplibre.org https://tiles.openfreemap.org; frame-ancestors 'none'; object-src 'none'`,
-  "public-web": `default-src 'self'; connect-src 'self' ${apiOrigin}; frame-ancestors 'none'; object-src 'none'`,
+  "aviam-web": `default-src 'self'; connect-src 'self' ${apiOrigin} ${websocketOrigin} https://demotiles.maplibre.org https://tiles.openfreemap.org; frame-ancestors 'none'; object-src 'none'`,
+  "public-web": `default-src 'self'; connect-src 'self' ${apiOrigin} ${websocketOrigin}; frame-ancestors 'none'; object-src 'none'`,
 };
 
 function validate(application, policy) {
@@ -45,11 +46,21 @@ for (const application of Object.keys(validPolicies)) {
 
 for (const source of ["https:", "wss:", "https://extra.example", "wss://socket.example"]) {
   test(`public-web rejects expanded connect-src ${source}`, () => {
-    const policy = validPolicies["public-web"].replace(`${apiOrigin};`, `${apiOrigin} ${source};`);
+    const policy = validPolicies["public-web"].replace(`${websocketOrigin};`, `${websocketOrigin} ${source};`);
     const result = validate("public-web", policy);
     assert.notEqual(result.status, 0, `expanded connect-src ${source} unexpectedly passed`);
   });
 }
+
+test("public-web rejects a websocket origin that does not match its certified API", () => {
+  const result = validate("public-web", validPolicies["public-web"].replace(websocketOrigin, "wss://other.example.ts.net"));
+  assert.notEqual(result.status, 0, "unrelated websocket origin unexpectedly passed");
+});
+
+test("aviam-web rejects a missing websocket origin", () => {
+  const result = validate("aviam-web", validPolicies["aviam-web"].replace(` ${websocketOrigin}`, ""));
+  assert.notEqual(result.status, 0, "missing websocket origin unexpectedly passed");
+});
 
 test("public-web rejects a missing API origin", () => {
   const result = validate("public-web", validPolicies["public-web"].replace(` ${apiOrigin}`, ""));

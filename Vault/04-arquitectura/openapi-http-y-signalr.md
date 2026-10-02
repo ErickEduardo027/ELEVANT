@@ -32,6 +32,12 @@ tags:
 
 # OpenAPI, HTTP y SignalR
 
+> [!NOTE]
+> Esta nota histórica sigue en revisión y contiene afirmaciones antiguas.
+> Para el incremento de feed durable implementado en la rama actual, consulte
+> [Feed de cambios operativos](feed-de-cambios-operativos.md). El código y el
+> OpenAPI compilado prevalecen sobre las secciones desactualizadas de abajo.
+
 > [!WARNING]
 > La verificación integral de esta nota queda pendiente mientras avanza el plan
 > de implementación. La ruta de `SystemController` fue corregida para conservar

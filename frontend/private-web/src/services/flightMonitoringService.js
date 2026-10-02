@@ -128,10 +128,16 @@ function applyMutation(flight, field) {
   return null;
 }
 
-export function subscribeToFlightUpdates(onUpdate) {
+export function subscribeToFlightUpdates(onUpdate, stationCode = 'PUJ',
+  { onSnapshot, onError } = {}) {
   if (import.meta.env.MODE !== 'test') {
     const intervalId = setInterval(() => {
-      getFlightMonitoringSnapshot().then(snapshot => snapshot.flights.forEach(onUpdate)).catch(() => {});
+      getFlightMonitoringSnapshot(stationCode)
+        .then(snapshot => {
+          if (onSnapshot) onSnapshot(snapshot);
+          else snapshot.flights.forEach(onUpdate);
+        })
+        .catch(error => onError?.(error));
     }, 30000);
     return () => clearInterval(intervalId);
   }

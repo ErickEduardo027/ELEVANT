@@ -3,12 +3,12 @@ id: aplicaciones-public-web-portal
 title: "Public Web y portal de aerolíneas"
 type: architecture
 area: public-web
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-25"
-verified_commit: "d3ac8ee4ba814367d25764df4c8d55162fbebac7"
+last_verified: "2026-09-26"
+verified_commit: "83ce325f99fea54879649f92ae1a231637a1bc2d"
 sources:
   - AGENTS.md
   - frontend/AGENTS.md
@@ -20,12 +20,19 @@ sources:
   - frontend/public-web/src/components/portal/PortalGuard.tsx
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
+  - frontend/public-web/src/components/portal/AirlineFinancePage.tsx
+  - frontend/public-web/src/components/portal/AirlineReportsPage.tsx
+  - frontend/public-web/src/components/portal/AirlineContractPage.tsx
   - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
   - frontend/public-web/src/components/portal/PortalViews.tsx
   - frontend/public-web/src/components/portal/PortalWorkspace.tsx
   - frontend/public-web/src/lib/elevant-api.ts
   - frontend/public-web/tests/e2e/auth.spec.ts
   - frontend/public-web/tests/e2e/portal.spec.ts
+  - frontend/public-web/tests/unit/real-airline-contracts.test.tsx
+  - backend/Elevant.Api/Controllers/AirlinePortalController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs
   - packages/api-client/src/client.ts
   - packages/api-client/openapi/elevant-v1.json
 tags:
@@ -38,6 +45,13 @@ tags:
 
 # Public Web y portal de aerolíneas
 
+> El commit de verificación del frontmatter corresponde a la base anterior.
+> Los cambios de historial y detalle descritos como «esta rama de integración»
+> tienen pruebas locales, pero requieren nueva verificación integral, CI y
+> promoción antes de convertirse en estado remoto verificado.
+> La descarga financiera descrita abajo pertenece a otro tramo local posterior;
+> tampoco se ha verificado en CI ni en el VPS.
+
 Public Web combina la landing pública con el acceso de aerolíneas. En Development, la aerolínea entra desde `/login` y utiliza `/portal`; la antigua ruta separada `/dev-airline` fue retirada. El portal ya autentica y consulta un bootstrap real de la API, pero no es un portal operacional completo ni una capacidad de Production.
 
 ## Frontera y estado actual
@@ -47,9 +61,12 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Identidad | `POST /api/v1/auth/session` emite la sesión; `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
 | Contraseña temporal | El código permitido `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
-| Inicio, vuelos y perfil | Muestran nombre, estaciones, identidad y operaciones de la ventana actual contenidas en el bootstrap. Inicio y vuelos separan además una muestra visual sintética del prototipo, con indicadores y rotaciones EV etiquetados y sin enlaces de detalle. El detalle solo abre una operación real presente en la respuesta de la API. No hay consulta histórica general. |
-| Solicitudes, contratos, documentos, finanzas y reportes | Conservan tarjetas y listados visuales con registros sintéticos claramente marcados como demostración. No se presentan como datos de la aerolínea; descargas y respuestas financieras permanecen deshabilitadas. |
-| Afiliación | La experiencia de solicitud en `/login` conserva un adaptador prototípico; no emite una cuenta ni demuestra persistencia contractual en la API canónica. |
+| Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. En esta rama de integración, Vuelos consulta además `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap; servicios y evidencias aún faltan. Este cambio aún no está desplegado. |
+| Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
+| Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
+| Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted`, `Invoiced` o `Voided`) paginadas y filtradas por aerolínea en SQL. Puede releer por ID las líneas y montos snapshot de una prefactura propia; borradores y otros tenants no se exponen. Tras confirmación explícita puede aceptar una prefactura `Submitted` propia con un comando auditado e idempotente. Esta rama añade registro y consulta de disputas de líneas y de la resolución motivada por Finanzas. Una prefactura anulada queda visible solo como historial. Una prefactura `Invoiced` consulta su factura no fiscal congelada y, por otra ruta tenant-scoped, el estado persistido de un pago manual completo de prueba. Un aviso `airline_preinvoices` invalida la consulta; el sondeo de 25 segundos respalda la reconexión. No hay verificación bancaria ni documento fiscal; en el tramo local posterior, Documentos descarga un PDF no fiscal de factura y, si hay pago, de recibo. |
+| Documentos y reportes | En el tramo local, Documentos consulta facturas propias ya emitidas y pagos registrados y descarga PDF privado por la API. Reportes muestra la primera página autorizada de operaciones y prefacturas publicadas, con conteos limitados a esas filas y enlaces al historial paginado; no calcula métricas globales. El PDF es no fiscal y no verifica fondos externos. Nada de este tramo está promocionado. |
+| Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
 
@@ -59,16 +76,50 @@ El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, n
 flowchart LR
     L[Public Web /login] --> A[API: sesión y rol]
     A --> B[API: bootstrap de aerolínea]
-    B --> R[Inicio, vuelos y perfil reales]
-    B --> P[Módulos visuales de demostración]
+    B --> R[Inicio y perfil reales]
+    B --> H[API: historial de vuelos propios]
+    H --> R
+    B --> Q[API: solicitudes operativas propias]
+    Q --> R
+    B --> C[API: contratos publicados de su tenant]
+    C --> R
+    B --> F[API: prefacturas publicadas propias]
+    F --> R
+    B --> D[Documentos financieros propios por API]
+    B --> P[Reportes acotados de operaciones y prefacturas propias]
 ```
 
-La landing, la solicitud comercial y los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas de `/portal` no montan ese repositorio mock. La muestra de Inicio y Vuelos usa fixtures descartables calculados en el navegador, separados del bootstrap por un aviso persistente. Sus filtros funcionan, pero ninguna rotación sintética abre un detalle; las operaciones reales conservan sus enlaces propios. El contenido sintético de los demás módulos es una vista previa estática y deshabilitada, no un contrato de datos ni una autorización local. Las futuras consultas de contratos, documentos, finanzas, solicitudes e historial requieren endpoints OpenAPI, persistencia y pruebas de aislamiento antes de habilitar acciones.
+Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas del portal no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes carga la entidad operativa propia; un seed determinista de Development la vincula a `DEV-TAT-0002`. Finanzas muestra únicamente prefacturas publicadas propias y un vacío real si todavía no existen; al abrir una, relee las líneas inmutables con autorización por tenant. La creación de borradores es interna y no los hace visibles a la aerolínea hasta un envío auditado de Finanzas. El feed transporta solo una señal para releer por HTTP, nunca importes ni líneas. En este tramo local, Documentos relee factura y pago propios antes de ofrecer PDF privado; Reportes relee las primeras páginas de operaciones y prefacturas tras cambios, oculta instantáneamente la revisión anterior y comunica el límite de cobertura. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Otras evidencias operativas y escrituras de solicitudes siguen pendientes.
+
+En la rama de integración aún no promocionada, la aerolínea también puede
+registrar una disputa persistente e idempotente de líneas de una prefactura
+`Submitted` propia. Un endpoint **nuevo** de lectura por tenant devuelve el
+historial de objeciones, y Finanzas tiene otro endpoint de lectura por cuenta y
+estación. Los detalles v1 existentes conservan su forma para permitir una
+promoción API-primero con clientes antiguos. Las pruebas locales de API, SQL y
+clientes respaldan este cambio de rama, pero no demuestran CI, merge ni VPS.
+La rama local incorpora la resolución de Finanzas: mantener devuelve la
+prefactura a `Submitted` y anular conserva un historial consultable sin
+habilitar nuevas acciones sobre ese documento. El cliente nuevo solicita
+`includeVoided=true` para ese historial y `includeResolutions=true` para leer
+decisión y motivo; la respuesta por defecto preserva los estados y campos que
+aceptan los clientes ya desplegados. La aerolínea no escoge el resultado.
+El PDF de recibo de este tramo local se ofrece únicamente cuando existe un
+pago manual persistido. La API revalida la cuenta después de leer el objeto
+privado; un objeto faltante o alterado produce error recuperable, no datos de
+otro tenant. Es un recibo **no fiscal** del registro manual, no una prueba de
+transferencia bancaria. La migración y rutas aún no están en Development remoto.
+Esta rama ya permite
+consultar un pago manual existente por la factura propia; el endpoint devuelve
+un vacío real cuando no hay registro y no verifica fondos externos. Fuentes:
+[controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs),
+[persistencia de disputas](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePreinvoiceDisputeStore.cs)
+y [cliente compartido](../../packages/api-client/src/client.ts).
 
 ## Desarrollo y evidencia
 
 `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente compartido en el bundle y nunca puede contener secretos. Los orígenes locales deben estar admitidos por CORS en Development; Tailscale limita alcance de red pero no sustituye autenticación. El navegador no accede a SQL Server ni a proveedores externos directamente.
 
-Las pruebas del cliente API validan el código de error permitido sin exponer cuerpos crudos. Public Web prueba sesión, caducidad, roles, datos autorizados, vistas previas inactivas y 404 de `/dev-airline` con Vitest y Playwright en escritorio, tablet y móvil. Esa evidencia es de código y navegador con respuestas sintéticas; por sí sola **no demuestra** promoción ni funcionamiento de las seis cuentas reales en el VPS.
+Las pruebas del cliente API validan el código de error permitido sin exponer cuerpos crudos. Public Web prueba sesión, caducidad, roles, contrato consultable, historial de vuelos, vistas previas inactivas y 404 de `/dev-airline` con Vitest y Playwright en escritorio, tablet y móvil. Las pruebas SQL verifican paginación, contratos y operaciones propios tras vencimiento, exclusión de otra aerolínea y de borradores. La evidencia de navegador usa respuestas simuladas; por sí sola **no demuestra** promoción ni funcionamiento de las seis cuentas reales en el VPS. El historial descrito aquí pertenece a la rama de integración y requiere CI, merge y promoción antes de ser estado remoto.
 
 Fuentes principales: [README de Public Web](../../frontend/public-web/README.md), [proveedor de sesión](../../frontend/public-web/src/components/auth/AirlineSessionProvider.tsx), [vista del portal](../../frontend/public-web/src/components/portal/AirlinePortalPage.tsx), [cliente API](../../packages/api-client/src/client.ts) y [contrato OpenAPI](../../packages/api-client/openapi/elevant-v1.json).

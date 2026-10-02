@@ -1,13 +1,14 @@
 import { HomeIcon, ContractIcon, RequestIcon, ServiceIcon } from '../components/icons';
-import { BarChartIcon, MessageCircleIcon } from '../../shell/components/icons';
+import { BarChartIcon } from '../../shell/components/icons';
 
 export const CONTRACT_MODULE_IDS = {
   HOME: 'contracts-home',
   CONTRACTS: 'contracts-list',
+  DRAFTS: 'contracts-drafts',
   REQUESTS: 'contracts-requests',
   SERVICES: 'contracts-services',
+  CATALOG: 'contracts-catalog',
   REPORTS: 'contracts-reports',
-  CHAT: 'contracts-chat',
 };
 
 export const CONTRACT_MODULES = [
@@ -24,10 +25,22 @@ export const CONTRACT_MODULES = [
     description: 'Registro, consulta y actualización de contratos por aerolínea.',
   },
   {
+    id: CONTRACT_MODULE_IDS.DRAFTS,
+    label: 'Borradores',
+    icon: ContractIcon,
+    description: 'Revisión y activación de versiones contractuales.',
+  },
+  {
     id: CONTRACT_MODULE_IDS.REQUESTS,
     label: 'Solicitudes',
     icon: RequestIcon,
     description: 'Evaluación de solicitudes de servicios adicionales y afiliaciones.',
+  },
+  {
+    id: CONTRACT_MODULE_IDS.CATALOG,
+    label: 'Servicios',
+    icon: ServiceIcon,
+    description: 'Catálogo público de servicios de rampa, fotos y videos.',
   },
   {
     id: CONTRACT_MODULE_IDS.SERVICES,
@@ -40,11 +53,5 @@ export const CONTRACT_MODULES = [
     label: 'Reportes',
     icon: BarChartIcon,
     description: 'Indicadores y consultas contractuales autorizadas.',
-  },
-  {
-    id: CONTRACT_MODULE_IDS.CHAT,
-    label: 'Comunicaciones',
-    icon: MessageCircleIcon,
-    description: 'Mensajes vinculados con servicios y solicitudes.',
   },
 ];

@@ -9,4 +9,46 @@ public interface IAirlinePortalReadStore
         Guid organizationId,
         DateOnly onDate,
         CancellationToken cancellationToken = default);
+
+    Task<AirlineContractPageData?> GetContractsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlineOperationPageData?> GetOperationsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlinePortalOperationData?> GetOperationAsync(
+        Guid organizationId,
+        Guid operationId,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
+        Guid organizationId,
+        int page,
+        int limit,
+        bool includeVoided = false,
+        CancellationToken cancellationToken = default);
+
+    Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
+        Guid organizationId,
+        Guid preinvoiceId,
+        bool includeVoided = false,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
+        Guid organizationId,
+        Guid preinvoiceId,
+        bool includeVoided = false,
+        CancellationToken cancellationToken = default);
 }

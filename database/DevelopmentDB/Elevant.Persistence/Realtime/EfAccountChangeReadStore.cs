@@ -1,0 +1,164 @@
+using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Realtime;
+using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Persistence;
+using Elevant.Domain.Entities.Identity;
+using Elevant.Domain.Entities.Commercial;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+
+namespace Elevant.Persistence.Realtime;
+
+/// <summary>Rechecks the actor and live station scope on every feed page.</summary>
+internal sealed class EfAccountChangeReadStore(
+    ElevantDbContext context,
+    IActorContextResolver actors) : IAccountChangeReadStore
+{
+    public async Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (accountId == Guid.Empty || after < 0 || limit is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
+        var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        if (actor is null || actor.Roles.Count == 0 || actor.Memberships.Count == 0)
+            return null;
+
+        var accountInternalId = await context.Users.AsNoTracking()
+            .Where(account => account.PublicId == accountId)
+            .Select(account => account.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (accountInternalId <= 0)
+            return null;
+
+        var allowedStations = actor.StationScopes
+            .Select(scope => scope.StationId)
+            .ToArray();
+        var airlineOrganizationIds = actor.Memberships
+            .Where(membership => membership.Kind == MembershipKind.AirlineClient &&
+                membership.OrganizationType == OrganizationType.AirlineCustomer)
+            .Select(membership => membership.OrganizationId)
+            .ToArray();
+        var hasAirlinePortalRole = actor.Roles.Any(role =>
+            role.Code == "AIRLINE_CLIENT" && role.Portal == PortalKind.AirlinePortal);
+        var hasFinanceAccess = actor.Roles.Any(role =>
+            role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) &&
+            actor.Memberships.Any(membership =>
+                membership.Kind == MembershipKind.InternalStaff &&
+                membership.OrganizationType == OrganizationType.AviamOperator);
+        var hasInternalMembership = actor.Memberships.Any(membership =>
+            membership.Kind == MembershipKind.InternalStaff &&
+            membership.OrganizationType == OrganizationType.AviamOperator);
+        var isSuperAdmin = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "SUPERADMIN" && role.Portal == PortalKind.BackOffice);
+        var hasHumanResourcesAccess = isSuperAdmin ||
+            hasInternalMembership && actor.Roles.Any(role =>
+                role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
+        var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
+        var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
+            .Select(role => role.RoleId).ToArray();
+        var commercialGrants = hasInternalMembership ? await (
+            from role in context.Roles.AsNoTracking()
+            join grant in context.Set<RolePermissionGrant>().AsNoTracking()
+                on role.Id equals grant.RoleId
+            join permission in context.Permissions.AsNoTracking()
+                on grant.PermissionId equals permission.Id
+            where internalRoleIds.Contains(role.PublicId) && role.IsActive &&
+                (permission.Code == "commercial.catalog.read" ||
+                 permission.Code == "commercial.requests.read")
+            select permission.Code).Distinct().ToArrayAsync(cancellationToken) : [];
+        var hasCatalogAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.catalog.read");
+        var hasRequestsAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.requests.read");
+        var rows = await context.AccountChanges.AsNoTracking()
+            .Where(change => change.RecipientAccountId == accountInternalId &&
+                change.Id > after &&
+                (change.StationId == null || context.Stations.Any(station =>
+                    station.Id == change.StationId &&
+                    allowedStations.Contains(station.PublicId))) &&
+                ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts" &&
+                  change.Resource != "hr_permits" && change.Resource != "hr_absences") ||
+                    hasHumanResourcesAccess) &&
+                (change.Resource != "occ_planning" ||
+                    (hasOccPlanningAccess && change.StationId != null &&
+                     context.Stations.Any(station => station.Id == change.StationId &&
+                         station.PublicId == change.ResourceId))) &&
+                (change.Resource != "finance_approved_services" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.GroundOperations.Any(operation =>
+                         operation.PublicId == change.ResourceId &&
+                         operation.CurrentStatus == GroundOperationStatus.Approved &&
+                         context.Turnarounds.Any(turnaround =>
+                             turnaround.Id == operation.TurnaroundId &&
+                             turnaround.StationId == change.StationId)))) &&
+                (change.Resource != "finance_preinvoices" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.Preinvoices.Any(draft =>
+                         draft.PublicId == change.ResourceId &&
+                         draft.StationId == change.StationId))) &&
+                (change.Resource != "finance_tariffs" ||
+                    (hasFinanceAccess && change.StationId != null &&
+                     context.ContractVersions.Any(version =>
+                         version.PublicId == change.ResourceId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         context.Set<ContractVersionStation>().Any(coverage =>
+                             coverage.ContractVersionId == version.Id &&
+                             coverage.StationId == change.StationId)))) &&
+                (change.Resource != "airline_operations" ||
+                    (hasAirlinePortalRole && context.GroundOperations.Any(operation =>
+                        operation.PublicId == change.ResourceId &&
+                        context.Turnarounds.Any(turnaround =>
+                            turnaround.Id == operation.TurnaroundId &&
+                            context.Airlines.Any(airline =>
+                                airline.Id == turnaround.AirlineId &&
+                                context.Organizations.Any(organization =>
+                                    organization.Id == airline.OrganizationId &&
+                                    airlineOrganizationIds.Contains(organization.PublicId))))))) &&
+                (change.Resource != "airline_preinvoices" ||
+                    (hasAirlinePortalRole && context.Preinvoices.Any(preinvoice =>
+                        preinvoice.PublicId == change.ResourceId &&
+                        preinvoice.Status != PreinvoiceStatus.Draft &&
+                        preinvoice.Status != PreinvoiceStatus.Voided &&
+                        context.Airlines.Any(airline => airline.Id == preinvoice.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId)))))) &&
+                (change.Resource != "commercial_catalog" ||
+                    (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
+                        service.PublicId == change.ResourceId))) &&
+                (change.Resource != "commercial_requests" ||
+                    (hasRequestsAccess && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "account_provisioning" ||
+                    (isSuperAdmin && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "contract_draft_comments" ||
+                    (hasRequestsAccess && context.ContractVersions.Any(version =>
+                        version.PublicId == change.ResourceId))) &&
+                (change.Resource != "airline_contracts" ||
+                    (hasAirlinePortalRole &&
+                     (context.Contracts.Any(contract =>
+                        contract.PublicId == change.ResourceId &&
+                        context.Airlines.Any(airline => airline.Id == contract.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId)))) ||
+                      context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId &&
+                        request.ProvisionedAccountId == accountInternalId &&
+                        context.Airlines.Any(airline => airline.Id == request.AirlineId &&
+                            context.Organizations.Any(organization =>
+                                organization.Id == airline.OrganizationId &&
+                                airlineOrganizationIds.Contains(organization.PublicId))))))))
+            .OrderBy(change => change.Id)
+            .Take(limit + 1)
+            .Select(change => new AccountChangeData(
+                change.PublicId, change.Id, change.Resource,
+                change.ResourceId, change.OccurredAt))
+            .ToArrayAsync(cancellationToken);
+        return new AccountChangePage(rows.Take(limit).ToArray(), rows.Length > limit);
+    }
+}

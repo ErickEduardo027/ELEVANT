@@ -1,31 +1,31 @@
-import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
-import { downloadTabularReport } from '../utils/reportDownloads';
+import { getFinancePreinvoices } from './financePreinvoiceService';
 
-const EMPTY_REPORT = { kpis: { approvedServices: 0, preinvoiced: 0, reconciled: 0, differences: 0 }, byAirline: [] };
-let report = structuredClone(EMPTY_REPORT);
-let audit = [];
-const usesApi = () => import.meta.env.MODE !== 'test';
+const STATUS_KEYS = {
+  Draft: 'drafts', Submitted: 'submitted', Disputed: 'disputed',
+  Accepted: 'accepted', Invoiced: 'invoiced', Voided: 'voided',
+};
 
-async function request(path, options = {}) {
-  const session = readSession();
-  const response = await fetch(`${PROTOTYPE_API_URL}${path}`, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.token ?? ''}`, ...options.headers } });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) { handleUnauthorizedResponse(response); throw new Error(payload.error || 'No fue posible generar el reporte.'); }
-  return payload;
+function emptyCounts() {
+  return { drafts: 0, submitted: 0, disputed: 0,
+    accepted: 0, invoiced: 0, voided: 0 };
 }
 
-export async function getFinanceReport() { return usesApi() ? request('/api/finance/reports') : { ...structuredClone(report), audit: structuredClone(audit) }; }
-export async function registerFinanceReportExport(format, user = 'Usuario de Finanzas') {
-  if (usesApi()) return request('/api/finance/reports/export', { method: 'POST', body: JSON.stringify({ format }) });
-  const row = { id: `EXP-${Date.now()}`, format, user, exportedAt: new Date().toISOString(), report: structuredClone(report), fileName: `reporte.${format === 'excel' ? 'xls' : 'pdf'}` }; audit.unshift(row); return structuredClone(row);
+export async function getFinanceReport({ stationId }, { signal } = {}) {
+  const page = await getFinancePreinvoices({ stationId, page: 1, limit: 50 }, { signal });
+  const counts = emptyCounts();
+  const groups = new Map();
+  for (const item of page.preinvoices) {
+    const key = STATUS_KEYS[item.status];
+    if (key) counts[key] += 1;
+    const groupKey = `${item.airlineId}|${item.currencyCode}`;
+    if (!groups.has(groupKey)) groups.set(groupKey, {
+      airlineId: item.airlineId, airlineName: item.airlineName,
+      currencyCode: item.currencyCode, ...emptyCounts(),
+    });
+    if (key) groups.get(groupKey)[key] += 1;
+  }
+  return { counts, hasMore: page.hasMore,
+    rows: [...groups.values()].sort((a, b) =>
+      a.airlineName.localeCompare(b.airlineName) ||
+      a.currencyCode.localeCompare(b.currencyCode)) };
 }
-export function downloadFinanceReport(result) {
-  downloadTabularReport({
-    title: 'Reporte financiero ELEVANT',
-    format: result.format,
-    fileName: result.fileName,
-    rows: result.report.byAirline ?? [],
-  });
-}
-export function setFinanceReportForTests(value) { report = structuredClone(value); }
-export function resetFinanceReportsForTests() { audit = []; report = structuredClone(EMPTY_REPORT); }

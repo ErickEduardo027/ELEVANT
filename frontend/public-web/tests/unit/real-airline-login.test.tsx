@@ -6,7 +6,13 @@ import { MockSessionProvider } from "@/components/auth/MockSessionProvider";
 import { AuthExperience } from "@/components/auth/AuthExperience";
 
 const replace = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, push }) }));
+vi.mock("@/lib/airline-change-observer", () => ({
+  createPublicAirlineChangeObserver: () => ({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 
 const actor: SessionResponse["actor"] = {
   accountId: "40000000-0000-7000-8000-000000000003",
@@ -25,7 +31,38 @@ const bootstrap: AirlinePortalBootstrapResponse = {
 };
 
 afterEach(() => {
-  cleanup(); replace.mockReset(); sessionStorage.clear(); localStorage.clear(); vi.unstubAllGlobals();
+  cleanup(); replace.mockReset(); push.mockReset(); sessionStorage.clear(); localStorage.clear(); vi.unstubAllGlobals();
+});
+
+it("sends registration from the airline login to the canonical commercial request", async () => {
+  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider></MockSessionProvider>);
+
+  expect(await screen.findByRole("link", { name: "Solicita acceso aquí" }))
+    .toHaveAttribute("href", "/solicitar-acceso");
+  expect(screen.getByText("¿No tienes credenciales?")).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Acceso de aerolíneas" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "Razón social" })).not.toBeInTheDocument();
+});
+
+it("reveals only the chosen password during mandatory credential replacement", async () => {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+    status: 409, code: "password_change_required", title: "Password change required",
+  }), { status: 409, headers: { "content-type": "application/problem+json" } })));
+  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider></MockSessionProvider>);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }),
+    { target: { value: actor.email } });
+  fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Temporary!2026" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+  const newPassword = await screen.findByLabelText("Nueva contraseña");
+  const confirmation = screen.getByLabelText("Confirmar nueva contraseña");
+  fireEvent.click(screen.getByRole("button", { name: "Mostrar nueva contraseña" }));
+  expect(newPassword).toHaveAttribute("type", "text");
+  expect(confirmation).toHaveAttribute("type", "password");
 });
 
 it("uses Public Web login for the real API and never offers demo credentials", async () => {

@@ -1,8 +1,14 @@
-import { HUMAN_RESOURCES_DASHBOARD_MOCK } from '../features/human-resources/dashboard/dashboardMock';
+import { getRampProfiles } from './commercialGovernanceApi';
 
-// Adaptador stub: hoy resuelve con datos mock, mañana con una llamada REST.
-// El consumidor (useHumanResourcesDashboardData) no necesita cambiar cuando
-// esto se conecte a un endpoint real.
 export async function getHumanResourcesDashboardSnapshot() {
-  return HUMAN_RESOURCES_DASHBOARD_MOCK;
+  const catalog = await getRampProfiles();
+  const activeProfiles = catalog.profiles.filter(profile => profile.isActive);
+  return {
+    activeStaffTotal: activeProfiles.length,
+    pendingAccounts: activeProfiles.filter(profile => !profile.hasAccount).map(profile => ({
+      id: profile.id,
+      name: `${profile.firstName} ${profile.lastName}`,
+      role: profile.category,
+    })),
+  };
 }

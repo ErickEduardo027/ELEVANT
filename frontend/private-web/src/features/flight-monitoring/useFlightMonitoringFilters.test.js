@@ -53,6 +53,13 @@ describe('useFlightMonitoringFilters', () => {
     expect(result.current.filteredFlights.map(f => f.id).sort()).toEqual([1, 2]);
   });
 
+  it('uses the selected station instead of assuming PUJ', () => {
+    const flights = [...FLIGHTS, flight({ id: 4, origin: 'MIA', destination: 'SDQ' })];
+    const { result } = renderHook(() => useFlightMonitoringFilters(flights, 'SDQ'));
+    act(() => result.current.setOnlyStationRelated(true));
+    expect(result.current.filteredFlights.map(item => item.id)).toEqual([4]);
+  });
+
   it('combines a chip and the station toggle', () => {
     const { result } = renderHook(() => useFlightMonitoringFilters(FLIGHTS));
     act(() => result.current.setActiveChip('enRoute'));

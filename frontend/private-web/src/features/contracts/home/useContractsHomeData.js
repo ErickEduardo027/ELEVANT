@@ -6,7 +6,11 @@ export function useContractsHomeData(refreshToken = 0) {
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading', data: null, error: null });
+    setState(current => ({
+      status: current.data ? 'refreshing' : 'loading',
+      data: current.data,
+      error: null,
+    }));
 
     getContractsHomeSnapshot()
       .then(data => {

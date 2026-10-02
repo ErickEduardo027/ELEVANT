@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AuthVisualLayout from './AuthVisualLayout';
+import PasswordField from '../../components/PasswordField';
 
 export default function PasswordChangePage({ email, onSubmit, onCancel }) {
   const [busy, setBusy] = useState(false);
@@ -41,18 +42,9 @@ export default function PasswordChangePage({ email, onSubmit, onCancel }) {
           </p>
         </div>
         <form className="elv-form" onSubmit={submit} aria-busy={busy}>
-          <label className="elv-field" htmlFor="current-password">
-            <span className="elv-label">Contraseña temporal</span>
-            <input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required disabled={busy} className="elv-input" />
-          </label>
-          <label className="elv-field" htmlFor="new-password">
-            <span className="elv-label">Nueva contraseña</span>
-            <input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={14} maxLength={256} required disabled={busy} className="elv-input" />
-          </label>
-          <label className="elv-field" htmlFor="confirm-password">
-            <span className="elv-label">Confirmar nueva contraseña</span>
-            <input id="confirm-password" name="confirmation" type="password" autoComplete="new-password" minLength={14} maxLength={256} required disabled={busy} className="elv-input" />
-          </label>
+          <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Contraseña temporal" id="current-password" name="currentPassword" autoComplete="current-password" required disabled={busy} />
+          <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Nueva contraseña" id="new-password" name="newPassword" autoComplete="new-password" minLength={14} maxLength={256} required disabled={busy} />
+          <PasswordField fieldClassName="elv-field" labelClassName="elv-label" inputClassName="elv-input" label="Confirmar nueva contraseña" id="confirm-password" name="confirmation" autoComplete="new-password" minLength={14} maxLength={256} required disabled={busy} />
           {error && <p role="alert" className="elv-error">{error}</p>}
           <button type="submit" disabled={busy} className="elv-submit">
             {busy && <span className="elv-submit-spinner" aria-hidden="true" />}

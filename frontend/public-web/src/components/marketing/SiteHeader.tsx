@@ -65,14 +65,14 @@ export function SiteHeader({ subpage = false }: SiteHeaderProps) {
           <div className="site-navigation__actions">
             <Link
               className="button button--secondary button--small nav-login"
-              href={subpage ? "/#demo" : "/login"}
+              href={subpage ? "/solicitar-acceso" : "/login"}
               onClick={closeMenu}
             >
-              {subpage ? "Solicitar demostración" : "INICIAR SESIÓN"}
+              {subpage ? "Solicitar acceso" : "INICIAR SESIÓN"}
             </Link>
             {!subpage && (
-              <Link className="button button--small" href="#demo" onClick={closeMenu}>
-                Solicitar demostración
+              <Link className="button button--small" href="/solicitar-acceso" onClick={closeMenu}>
+                Solicitar acceso
                 <ArrowIcon />
               </Link>
             )}

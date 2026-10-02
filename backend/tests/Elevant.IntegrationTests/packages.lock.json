@@ -54,6 +54,11 @@
           "Asp.Versioning.Abstractions": "10.0.0"
         }
       },
+      "AWSSDK.Core": {
+        "type": "Transitive",
+        "resolved": "4.0.102",
+        "contentHash": "sjkYreyNPlYTnAxdnqd3MBoeTNZHXOzV9lKULS5VAn+6MJIqu87aZLlm56KhDANOBXRxwDJIW668ZlsFhaB6Zw=="
+      },
       "Azure.Core": {
         "type": "Transitive",
         "resolved": "1.47.1",
@@ -771,12 +776,14 @@
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.10, )",
-          "Microsoft.IdentityModel.JsonWebTokens": "[8.19.2, )"
+          "Microsoft.IdentityModel.JsonWebTokens": "[8.19.2, )",
+          "PDFsharp": "[6.2.4, )"
         }
       },
       "elevant.persistence": {
         "type": "Project",
         "dependencies": {
+          "AWSSDK.S3": "[4.0.102.3, )",
           "Elevant.Application": "[1.0.0, )",
           "Elevant.Domain": "[1.0.0, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.10, )",
@@ -802,6 +809,15 @@
         "contentHash": "H54UOpRoc4RmhQ4RA2lzDz43a/hAu/JN19Yyy/DNmH4XlRxhemfhifJyh9BaXNJOtGa2Dnu2xEeP4VSiTdUdAg==",
         "dependencies": {
           "Asp.Versioning.Mvc": "10.0.0"
+        }
+      },
+      "AWSSDK.S3": {
+        "type": "CentralTransitive",
+        "requested": "[4.0.102.3, )",
+        "resolved": "4.0.102.3",
+        "contentHash": "3UBPFahEW62lNqHutA94if/9YguOXswDkz+CMh8fo3qCl7PUdynwSEvE0rhHnRPok0rDkDEDpwddfk7h8Mg0gw==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102, 5.0.0)"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {
@@ -882,6 +898,16 @@
         "contentHash": "ui3fuBT4fs8kdKfBthI4NzLYIBIneEVS8UrL1JVBzAn80UiKmngBBi0BEByE7n/9c+EElcfFlCMFFTqpkBSLNA==",
         "dependencies": {
           "Microsoft.IdentityModel.Tokens": "8.19.2"
+        }
+      },
+      "PDFsharp": {
+        "type": "CentralTransitive",
+        "requested": "[6.2.4, )",
+        "resolved": "6.2.4",
+        "contentHash": "GhTr9F1uOYXHCIEOB5PXIgqn5a8WLsJL2m0eewTA0IvY1j6N4HGXHKKmEyB90/N6vrjmYamf41V9zbmdW2HY3g==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3",
+          "System.Security.Cryptography.Pkcs": "8.0.1"
         }
       },
       "Swashbuckle.AspNetCore": {

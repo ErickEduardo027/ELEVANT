@@ -24,6 +24,20 @@ describe("Next Content-Security-Policy", () => {
 
     expect(policy).toContain("script-src 'self' 'unsafe-inline' blob:");
     expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).toContain("img-src 'self' data: blob: https://api.development.elevant.test");
+    expect(policy).toContain("media-src 'self' blob: https://api.development.elevant.test");
+  });
+
+  it("allows only the matching API websocket origin for the durable change feed", () => {
+    const policy = buildContentSecurityPolicy(
+      "https://api.development.elevant.test",
+      "production",
+    );
+
+    expect(policy).toContain(
+      "connect-src 'self' https://api.development.elevant.test wss://api.development.elevant.test;",
+    );
+    expect(policy).not.toContain("connect-src 'self' wss:");
   });
 
   it("does not consume Next.js reserved NEXT_DEPLOYMENT_ID state", async () => {

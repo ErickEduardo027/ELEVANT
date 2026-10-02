@@ -5,11 +5,106 @@
  * Versioned HTTP API for the Elevant platform.
  * OpenAPI spec version: v1
  */
-export interface AirlinePortalStationResponse {
+export interface AcceptAirlinePreinvoiceRequest {
+  requestId: string;
+}
+
+export interface AcceptAirlinePreinvoiceResponse {
+  id: string;
+  status: string;
+  replayed: boolean;
+}
+
+export interface AccountChangeResponse {
+  eventId: string;
+  cursor: string;
+  resource: string;
+  resourceId: string;
+  occurredAt: string;
+}
+
+export interface AccountChangeListResponse {
+  changes: AccountChangeResponse[];
+  /** @nullable */
+  nextCursor?: string | null;
+  hasMore: boolean;
+}
+
+export interface AffiliationStationOptionResponse {
   id: string;
   code: string;
   name: string;
-  ianaTimeZone: string;
+}
+
+export interface AffiliationServiceOptionResponse {
+  id: string;
+  code: string;
+  name: string;
+  defaultBillingUnit: string;
+}
+
+export interface AffiliationOptionsResponse {
+  stations: AffiliationStationOptionResponse[];
+  services: AffiliationServiceOptionResponse[];
+}
+
+export interface AirlineContractStationResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface AirlineContractRateResponse {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface AirlineContractVersionResponse {
+  id: string;
+  versionNumber: number;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  stations: AirlineContractStationResponse[];
+  rates: AirlineContractRateResponse[];
+}
+
+export interface AirlineContractResponse {
+  id: string;
+  code: string;
+  status: string;
+  /** @nullable */
+  signedOn?: string | null;
+  /** @nullable */
+  terminatedOn?: string | null;
+  approvedVersions: AirlineContractVersionResponse[];
+}
+
+export interface AirlineContractPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  contracts: AirlineContractResponse[];
+}
+
+export type CatalogMutationFailure = typeof CatalogMutationFailure[keyof typeof CatalogMutationFailure];
+
+
+export const CatalogMutationFailure = {
+  NUMBER_0: 0,
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface AirlineEnrichmentResult {
+  changed: number;
+  failure?: CatalogMutationFailure | null;
 }
 
 export interface AirlinePortalOperationResponse {
@@ -29,6 +124,45 @@ export interface AirlinePortalOperationResponse {
   plannedEndAt?: string | null;
 }
 
+export interface AirlineOperationPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  operations: AirlinePortalOperationResponse[];
+}
+
+export interface AirlineOperationalRequestResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  serviceName: string;
+  description: string;
+  status: string;
+  requestedAt: string;
+  /** @nullable */
+  neededAt?: string | null;
+  /** @nullable */
+  operationId?: string | null;
+  /** @nullable */
+  operationCode?: string | null;
+  /** @nullable */
+  resolvedAt?: string | null;
+}
+
+export interface AirlineOperationalRequestPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  requests: AirlineOperationalRequestResponse[];
+}
+
+export interface AirlinePortalStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
 export interface AirlinePortalBootstrapResponse {
   airlineId: string;
   organizationId: string;
@@ -39,8 +173,60 @@ export interface AirlinePortalBootstrapResponse {
   currentOperations: AirlinePortalOperationResponse[];
 }
 
+export interface AirlinePreinvoiceLineResponse {
+  id: string;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface AirlinePreinvoiceDetailResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  lines: AirlinePreinvoiceLineResponse[];
+}
+
+export interface AirlinePreinvoiceResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface AirlinePreinvoicePageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  preinvoices: AirlinePreinvoiceResponse[];
+}
+
 export interface AssignOccOperationRequest {
   agentId: string;
+}
+
+export interface AuditFieldChangeData {
+  field: string;
+  /** @nullable */
+  before?: string | null;
+  /** @nullable */
+  after?: string | null;
 }
 
 export interface ChangePasswordRequest {
@@ -59,6 +245,160 @@ export interface ChangePasswordRequest {
      * @maxLength 256
      */
   newPassword: string;
+}
+
+export interface CommercialAccountResponse {
+  accountId: string;
+}
+
+export interface CommercialIdResponse {
+  id: string;
+}
+
+export interface CommercialRequestItemData {
+  serviceId: string;
+  name: string;
+  unit: string;
+}
+
+export interface CommercialRequestData {
+  id: string;
+  reference: string;
+  airline: string;
+  airlineProfileId: string;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  airlineVerified: boolean;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  representativeName: string;
+  representativeTitle: string;
+  representativeEmail: string;
+  representativePhone: string;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
+  authorityDeclared: boolean;
+  status: string;
+  submittedAt: string;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  contractId?: string | null;
+  services: CommercialRequestItemData[];
+}
+
+export interface CommercialStationData {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ContractDraftCommentData {
+  id: string;
+  author: string;
+  body: string;
+  at: string;
+  isAirline: boolean;
+}
+
+export interface ContractDraftCommentRequest {
+  body: string;
+}
+
+export interface ContractDraftRateData {
+  id: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+  isConfirmed: boolean;
+}
+
+export interface ContractDraftData {
+  id: string;
+  contractId: string;
+  contractCode: string;
+  airline: string;
+  status: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  /** @nullable */
+  terms?: string | null;
+  stations: string[];
+  rates: ContractDraftRateData[];
+  comments: ContractDraftCommentData[];
+}
+
+export interface ContractDraftOverviewItemData {
+  id: string;
+  contractCode: string;
+  airline: string;
+}
+
+export interface ContractDraftOverviewData {
+  count: number;
+  recent: ContractDraftOverviewItemData[];
+}
+
+export interface CreateGovernanceUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  roleId: string;
+  temporaryPassword: string;
+  /** @nullable */
+  rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
+export interface CreateManualTurnaroundRequest {
+  turnaroundId: string;
+  stationId: string;
+  airlineId: string;
+  standId: string;
+  operationDate: string;
+  arrivalFlightNumber: string;
+  arrivalOriginIata: string;
+  arrivalScheduledAt: string;
+  departureFlightNumber: string;
+  departureDestinationIata: string;
+  departureScheduledAt: string;
+}
+
+export interface CreatePreinvoiceDraftRequest {
+  stationId: string;
+  from: string;
+  to: string;
+  requestId: string;
+  serviceIds: string[];
+}
+
+export interface CreatePreinvoiceDraftResponse {
+  id: string;
+  replayed: boolean;
 }
 
 export interface CreateSessionRequest {
@@ -158,6 +498,142 @@ export interface DecideOccReviewResponse {
   reason?: string | null;
 }
 
+export interface DisputeAirlinePreinvoiceRequest {
+  requestId: string;
+  subject: string;
+  description: string;
+  lineIds: string[];
+}
+
+export interface DisputeAirlinePreinvoiceResponse {
+  id: string;
+  disputeId: string;
+  status: string;
+  replayed: boolean;
+}
+
+export interface FinanceApprovedServiceResponse {
+  id: string;
+  operationId: string;
+  turnaroundId: string;
+  approvedSubmissionId: string;
+  operationCode: string;
+  operationDate: string;
+  airlineId: string;
+  airlineName: string;
+  flightNumber: string;
+  /** @nullable */
+  contractCode?: string | null;
+  serviceCode: string;
+  serviceName: string;
+  executionStatus: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+  /** @nullable */
+  frozenUnitPrice?: number | null;
+  /** @nullable */
+  frozenCurrency?: string | null;
+  ready: boolean;
+  /** @nullable */
+  blockingReason?: string | null;
+  /** @nullable */
+  amount?: number | null;
+  /** @nullable */
+  preinvoiceId?: string | null;
+}
+
+export interface FinanceApprovedServicesResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  services: FinanceApprovedServiceResponse[];
+  hasMore: boolean;
+}
+
+export interface FinancePreinvoiceListItem {
+  id: string;
+  airlineId: string;
+  airlineName: string;
+  stationId: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  lineCount: number;
+  createdAt: string;
+}
+
+export interface FinancePreinvoicePageData {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  preinvoices: FinancePreinvoiceListItem[];
+}
+
+export interface FinanceReconciliationData {
+  preinvoiceId: string;
+  airlineId: string;
+  airlineName: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  preinvoiceTotal: number;
+  preinvoiceStatus: string;
+  /** @nullable */
+  invoiceId?: string | null;
+  /** @nullable */
+  invoiceNumber?: string | null;
+  /** @nullable */
+  invoiceTotal?: number | null;
+  /** @nullable */
+  issuedAt?: string | null;
+  /** @nullable */
+  paymentId?: string | null;
+  /** @nullable */
+  paymentReference?: string | null;
+  /** @nullable */
+  paymentAmount?: number | null;
+  /** @nullable */
+  paymentRecordedAt?: string | null;
+}
+
+export interface FinanceReconciliationPageData {
+  stationId: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  rows: FinanceReconciliationData[];
+}
+
+export interface FinanceTariffData {
+  id: string;
+  contractId: string;
+  contractCode: string;
+  airlineId: string;
+  airlineName: string;
+  versionNumber: number;
+  versionStatus: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface FinanceTariffPageData {
+  stationId: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  tariffs: FinanceTariffData[];
+}
+
 export interface RampIncidentResponse {
   id: string;
   incidentType: string;
@@ -217,6 +693,447 @@ export interface GetRampOperationChecklistResponse {
   checklist: RampChecklistResponse;
 }
 
+export interface GovernanceAuditData {
+  at: string;
+  action: string;
+  entityType: string;
+  /** @nullable */
+  entityId?: string | null;
+  /** @nullable */
+  reason?: string | null;
+  actor: string;
+  changes: AuditFieldChangeData[];
+}
+
+export interface GovernanceAuditPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  entries: GovernanceAuditData[];
+}
+
+export interface GovernanceRampProfileData {
+  id: string;
+  name: string;
+  employeeNumber: string;
+  stations: string[];
+  /** @nullable */
+  accountId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
+export interface GovernanceRoleData {
+  id: string;
+  code: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  portal: string;
+  isCustom: boolean;
+  isActive: boolean;
+  permissions: string[];
+  activeUsers: number;
+}
+
+export interface GovernanceUserData {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  roleId: string;
+  roleName: string;
+  portal: string;
+  organization: string;
+  mustChangePassword: boolean;
+  /** @nullable */
+  rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
+export interface GovernanceSnapshot {
+  roles: GovernanceRoleData[];
+  users: GovernanceUserData[];
+  permissionCodes: string[];
+  recentAudit: GovernanceAuditData[];
+  rampProfiles: GovernanceRampProfileData[];
+}
+
+export interface HumanResourcesAvailabilityRequestData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  startsOn: string;
+  endsOn: string;
+  type: string;
+  status: string;
+  reason: string;
+  requestedAt: string;
+  /** @nullable */
+  resolvedAt?: string | null;
+  /** @nullable */
+  resolutionNote?: string | null;
+}
+
+export interface HumanResourcesAvailabilityRequestPage {
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  requests: HumanResourcesAvailabilityRequestData[];
+}
+
+export interface HumanResourcesAvailabilityWritten {
+  id: string;
+  status: string;
+}
+
+export interface HumanResourcesPermitData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  documentType: string;
+  cycleNumber: number;
+  documentNumber: string;
+  issuedOn: string;
+  expiresOn: string;
+}
+
+export interface HumanResourcesPermitPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  permits: HumanResourcesPermitData[];
+}
+
+export interface HumanResourcesPermitRecorded {
+  id: string;
+  cycleNumber: number;
+}
+
+export interface HumanResourcesQualificationData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  equipmentTypeId: string;
+  equipmentCode: string;
+  equipmentName: string;
+  cycleNumber: number;
+  trainingDate: string;
+  obtainedOn: string;
+  expiresOn: string;
+  certifyingEntity: string;
+  instructorName: string;
+}
+
+export interface HumanResourcesQualificationEquipmentType {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface HumanResourcesQualificationPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  qualifications: HumanResourcesQualificationData[];
+}
+
+export interface HumanResourcesQualificationRecorded {
+  id: string;
+  cycleNumber: number;
+}
+
+export interface HumanResourcesShiftTerminalOption {
+  id: string;
+  code: string;
+}
+
+export interface HumanResourcesShiftStationOption {
+  id: string;
+  code: string;
+  terminals: HumanResourcesShiftTerminalOption[];
+}
+
+export interface HumanResourcesShiftAssignmentOptions {
+  rampProfileId: string;
+  workDate: string;
+  hasShift: boolean;
+  stations: HumanResourcesShiftStationOption[];
+}
+
+export interface HumanResourcesShiftData {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  stationId: string;
+  stationCode: string;
+  terminalId: string;
+  terminalCode: string;
+  /** @nullable */
+  positionId?: string | null;
+  /** @nullable */
+  positionCode?: string | null;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  block: string;
+}
+
+export interface HumanResourcesShiftPage {
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  shifts: HumanResourcesShiftData[];
+}
+
+export interface HumanResourcesShiftRecorded {
+  id: string;
+}
+
+export interface IssueFinanceInvoiceRequest {
+  preinvoiceId: string;
+  requestId: string;
+}
+
+export interface IssueFinanceInvoiceResponse {
+  id: string;
+  preinvoiceId: string;
+  number: string;
+  kind: string;
+  replayed: boolean;
+}
+
+export interface ManagedAirlineData {
+  id: string;
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  version: string;
+}
+
+export interface ManagedAirlineInput {
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  /** @nullable */
+  version?: string | null;
+}
+
+export interface ManagedContractStationData {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface ManagedContractRateData {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface ManagedContractVersionData {
+  id: string;
+  versionNumber: number;
+  status: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  /** @nullable */
+  terms?: string | null;
+  stations: ManagedContractStationData[];
+  rates: ManagedContractRateData[];
+}
+
+export interface ManagedContractData {
+  id: string;
+  code: string;
+  airline: string;
+  airlineCode: string;
+  status: string;
+  /** @nullable */
+  signedOn?: string | null;
+  /** @nullable */
+  terminatedOn?: string | null;
+  approvedVersions: ManagedContractVersionData[];
+}
+
+export interface ManagedContractPageData {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  contracts: ManagedContractData[];
+}
+
+export interface ManagedServiceData {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  billingUnit: string;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  videoUrl?: string | null;
+  displayOrder: number;
+  isPublic: boolean;
+  isActive: boolean;
+  version: string;
+}
+
+export interface ManagedServiceInput {
+  code: string;
+  name: string;
+  description: string;
+  billingUnit: string;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  videoUrl?: string | null;
+  displayOrder: number;
+  isPublic: boolean;
+  isActive: boolean;
+  /** @nullable */
+  version?: string | null;
+}
+
+export interface ManualTurnaroundAirlineResponse {
+  id: string;
+  iataCode: string;
+  name: string;
+}
+
+export interface OccStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+}
+
+export interface OccAirportResponse {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+}
+
+export interface OccTerminalResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface OccStandResponse {
+  id: string;
+  code: string;
+  terminal?: OccTerminalResponse | null;
+}
+
+export interface ManualTurnaroundOptionsResponse {
+  station: OccStationResponse;
+  date: string;
+  stationAirport: OccAirportResponse;
+  airlines: ManualTurnaroundAirlineResponse[];
+  airports: OccAirportResponse[];
+  stands: OccStandResponse[];
+}
+
+export interface ManualTurnaroundResponse {
+  turnaroundId: string;
+  operationCode: string;
+  replayed: boolean;
+}
+
+export interface MediaAssetData {
+  id: string;
+  url: string;
+  purpose: string;
+  contentType: string;
+  length: number;
+}
+
+export interface NonFiscalInvoiceLineResponse {
+  id: string;
+  lineNumber: number;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface NonFiscalInvoiceResponse {
+  id: string;
+  preinvoiceId: string;
+  airlineId: string;
+  stationId: string;
+  number: string;
+  kind: string;
+  currencyCode: string;
+  total: number;
+  issuedAt: string;
+  lines: NonFiscalInvoiceLineResponse[];
+}
+
+export interface NonFiscalPaymentResponse {
+  id: string;
+  invoiceId: string;
+  reference: string;
+  currencyCode: string;
+  amount: number;
+  recordedAt: string;
+}
+
+export interface NonFiscalPaymentLookupResponse {
+  invoiceId: string;
+  payment?: NonFiscalPaymentResponse | null;
+}
+
 export interface OccAgentOptionResponse {
   id: string;
   displayName: string;
@@ -237,13 +1154,6 @@ export interface OccAircraftResponse {
 }
 
 export interface OccAirlineResponse {
-  id: string;
-  iataCode: string;
-  icaoCode: string;
-  name: string;
-}
-
-export interface OccAirportResponse {
   id: string;
   iataCode: string;
   icaoCode: string;
@@ -328,25 +1238,6 @@ export interface OccFlightLegResponse {
   estimatedAt?: string | null;
   /** @nullable */
   actualAt?: string | null;
-}
-
-export interface OccStationResponse {
-  id: string;
-  code: string;
-  name: string;
-  ianaTimeZone: string;
-}
-
-export interface OccTerminalResponse {
-  id: string;
-  code: string;
-  name: string;
-}
-
-export interface OccStandResponse {
-  id: string;
-  code: string;
-  terminal?: OccTerminalResponse | null;
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -554,6 +1445,56 @@ export interface OperationalNotificationListResponse {
   hasMore: boolean;
 }
 
+export interface PreinvoiceDisputeResolutionResponse {
+  id: string;
+  decision: string;
+  reason: string;
+  resolvedAt: string;
+}
+
+export interface PreinvoiceDisputeResponse {
+  id: string;
+  subject: string;
+  description: string;
+  createdAt: string;
+  lineIds: string[];
+  resolution?: PreinvoiceDisputeResolutionResponse | null;
+}
+
+export interface PreinvoiceDisputeListResponse {
+  preinvoiceId: string;
+  disputes: PreinvoiceDisputeResponse[];
+}
+
+export interface PreinvoiceDraftLineResponse {
+  id: string;
+  operationServiceId: string;
+  approvedSubmissionId: string;
+  lineNumber: number;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  executedQuantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  currencyCode: string;
+  amount: number;
+}
+
+export interface PreinvoiceDraftResponse {
+  id: string;
+  airlineId: string;
+  airlineName: string;
+  stationId: string;
+  from: string;
+  to: string;
+  currencyCode: string;
+  total: number;
+  status: string;
+  lines: PreinvoiceDraftLineResponse[];
+}
+
 export interface ProblemDetails {
   /** @nullable */
   type?: string | null;
@@ -566,6 +1507,66 @@ export interface ProblemDetails {
   /** @nullable */
   instance?: string | null;
   [key: string]: unknown;
+}
+
+export interface ProgramOccShiftRequest {
+  agentId: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+}
+
+export interface ProgramOccShiftResponse {
+  turnaroundId: string;
+  shiftId: string;
+  replayed: boolean;
+}
+
+export interface ProvisionAirlineInput {
+  email: string;
+  temporaryPassword: string;
+}
+
+export interface ProvisioningTaskData {
+  requestId: string;
+  reference: string;
+  airline: string;
+  representativeName: string;
+  suggestedEmail: string;
+  contractId: string;
+  approvedAt: string;
+}
+
+export interface PublicAirlineData {
+  id: string;
+  name: string;
+  region: string;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  isVerified: boolean;
+}
+
+export interface PublicServiceData {
+  id: string;
+  name: string;
+  description: string;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  videoUrl?: string | null;
+  displayOrder: number;
+}
+
+export interface PublicCommercialCatalog {
+  services: PublicServiceData[];
+  airlines: PublicAirlineData[];
 }
 
 export interface RampOperationalPositionResponse {
@@ -774,6 +1775,89 @@ export interface RampOperationSubmissionResponse {
   agentNote?: string | null;
 }
 
+export interface RampProfileStation {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RampProfileData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employeeNumber: string;
+  category: string;
+  hireDate: string;
+  isActive: boolean;
+  stations: RampProfileStation[];
+  hasAccount: boolean;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
+export interface RampProfileCatalog {
+  profiles: RampProfileData[];
+  availableStations: RampProfileStation[];
+}
+
+export interface RecordHumanResourcesAvailabilityInput {
+  rampProfileId: string;
+  startsOn: string;
+  endsOn: string;
+  type: string;
+  reason: string;
+}
+
+export interface RecordHumanResourcesPermitInput {
+  rampProfileId: string;
+  documentType: string;
+  /** @nullable */
+  expectedCurrentId?: string | null;
+  documentNumber: string;
+  issuedOn: string;
+  expiresOn: string;
+}
+
+export interface RecordHumanResourcesQualificationInput {
+  rampProfileId: string;
+  equipmentTypeId: string;
+  /** @nullable */
+  expectedCurrentId?: string | null;
+  trainingDate: string;
+  obtainedOn: string;
+  expiresOn: string;
+  certifyingEntity: string;
+  instructorName: string;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface RecordHumanResourcesShiftInput {
+  rampProfileId: string;
+  stationId: string;
+  terminalId: string;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface RecordNonFiscalPaymentRequest {
+  invoiceId: string;
+  requestId: string;
+  reference: string;
+}
+
+export interface RecordNonFiscalPaymentResponse {
+  id: string;
+  invoiceId: string;
+  reference: string;
+  currencyCode: string;
+  amount: number;
+  replayed: boolean;
+}
+
 export interface RegisterMobileDeviceRequest {
   installationId: string;
   /**
@@ -831,6 +1915,56 @@ export interface ReportRampIncidentRequest {
   occurredAt: string;
 }
 
+export interface ResetGovernancePasswordRequest {
+  temporaryPassword: string;
+}
+
+export interface ResolveHumanResourcesAvailabilityInput {
+  decision: string;
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface ResolvePreinvoiceDisputeRequest {
+  requestId: string;
+  decision: string;
+  reason: string;
+}
+
+export interface ResolvePreinvoiceDisputeResponse {
+  id: string;
+  preinvoiceId: string;
+  status: string;
+  replayed: boolean;
+}
+
+export interface ReviewCommercialInput {
+  approve: boolean;
+  /** @nullable */
+  reason?: string | null;
+  stationIds: string[];
+}
+
+export interface SaveGovernanceRoleInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  permissionCodes: string[];
+  isActive: boolean;
+}
+
+export interface SaveRampProfileInput {
+  firstName: string;
+  lastName: string;
+  employeeNumber: string;
+  category: string;
+  hireDate: string;
+  isActive: boolean;
+  stationIds: string[];
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
 export interface SendOperationMessageRequest {
   content: string;
 }
@@ -844,6 +1978,46 @@ export interface SessionResponse {
 
 export interface SetOperationalNotificationReadRequest {
   read: boolean;
+}
+
+export interface SubmitCommercialRequestRequest {
+  requestId: string;
+  airlineProfileId: string;
+  serviceIds: string[];
+  representativeName: string;
+  representativeTitle: string;
+  representativeEmail: string;
+  representativePhone: string;
+  authorityDeclared: boolean;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
+}
+
+export interface SubmitCommercialRequestResponse {
+  reference: string;
+  replayed: boolean;
+}
+
+export interface SubmitPreinvoiceRequest {
+  requestId: string;
+}
+
+export interface SubmitPreinvoiceResponse {
+  id: string;
+  status: string;
+  replayed: boolean;
 }
 
 export interface SubmitRampOperationChecklistRequest {
@@ -886,6 +2060,159 @@ export interface TransitionRampOperationServiceRequest {
   note?: string | null;
 }
 
+export interface UpdateDraftRateInput {
+  id: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+  isConfirmed: boolean;
+}
+
+export interface UpdateContractDraftInput {
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  terms: string;
+  rates: UpdateDraftRateInput[];
+}
+
+export interface UpdateGovernanceUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  roleId: string;
+  isActive: boolean;
+  /** @nullable */
+  rampAgentId?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+}
+
+export interface VerifyAirlineInput {
+  legalName: string;
+  countryCode: string;
+  iataCode: string;
+  icaoCode: string;
+  verificationSourceUrl: string;
+  /** @nullable */
+  logoUrl?: string | null;
+}
+
+export type GetAccountChangesParams = {
+after?: string;
+limit?: number;
+};
+
+export type GetAirlinePreinvoiceDisputesParams = {
+includeResolutions?: boolean;
+};
+
+export type GetAirlinePreinvoiceParams = {
+includeVoided?: boolean;
+};
+
+export type GetAirlinePreinvoicesParams = {
+page?: number;
+limit?: number;
+includeVoided?: boolean;
+};
+
+export type GetAirlineOperationalRequestsParams = {
+page?: number;
+limit?: number;
+};
+
+export type GetAirlineOperationsParams = {
+page?: number;
+limit?: number;
+};
+
+export type GetAirlineContractsParams = {
+page?: number;
+limit?: number;
+};
+
+export type ArchiveManagedAirlineParams = {
+version?: string;
+};
+
+export type DeleteCommercialServiceParams = {
+version?: string;
+};
+
+export type UploadCommercialMediaBody = {
+  purpose?: string;
+  file?: Blob;
+};
+
+export type GetFinanceApprovedServicesParams = {
+stationId?: string;
+from?: string;
+to?: string;
+};
+
+export type ListFinancePreinvoicesParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
+export type ListFinanceReconciliationParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
+export type ListFinanceTariffsParams = {
+stationId: string;
+page?: number;
+limit?: number;
+};
+
+export type GetGovernanceAuditParams = {
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesAvailabilityRequestsParams = {
+from?: string;
+to?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesPermitsParams = {
+page?: number;
+limit?: number;
+rampProfileId?: string;
+documentType?: string;
+};
+
+export type ListHumanResourcesQualificationsParams = {
+page?: number;
+limit?: number;
+rampProfileId?: string;
+equipmentTypeId?: string;
+};
+
+export type GetHumanResourcesShiftAssignmentOptionsParams = {
+rampProfileId?: string;
+workDate?: string;
+};
+
+export type ListHumanResourcesShiftsParams = {
+from?: string;
+to?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListManagedContractsParams = {
+page?: number;
+limit?: number;
+};
+
 export type GetOccPlanningSnapshotParams = {
 stationId?: string;
 date?: string;
@@ -895,6 +2222,11 @@ export type GetOccPlanningOptionsParams = {
 turnaroundId: string;
 };
 
+export type GetManualTurnaroundOptionsParams = {
+stationId: string;
+date: string;
+};
+
 export type GetOccReviewQueueParams = {
 stationId: string;
 };
@@ -902,6 +2234,495 @@ stationId: string;
 export type GetOperationalConversationsParams = {
 stationId?: string;
 };
+
+export type GetFinancePreinvoiceDisputesParams = {
+includeResolutions?: boolean;
+};
+
+export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/changes?${stringifiedParams}` : `/api/v1/changes`
+}
+
+export const getAccountChanges = async (params?: GetAccountChangesParams, options?: RequestInit): Promise<AccountChangeListResponse> => {
+
+  const res = await fetch(getGetAccountChangesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AccountChangeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAffiliationOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/commercial/affiliation-options`
+}
+
+export const getAffiliationOptions = async ( options?: RequestInit): Promise<AffiliationOptionsResponse> => {
+
+  const res = await fetch(getGetAffiliationOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceDocumentUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/invoice/document`
+}
+
+export const getAirlineInvoiceDocument = async (preinvoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineInvoiceDocumentUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlinePaymentReceiptUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/receipt`
+}
+
+export const getAirlinePaymentReceipt = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlinePaymentReceiptUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlinePaymentByInvoiceUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/payment`
+}
+
+export const getAirlinePaymentByInvoice = async (invoiceId: string, options?: RequestInit): Promise<NonFiscalPaymentLookupResponse> => {
+
+  const res = await fetch(getGetAirlinePaymentByInvoiceUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalPaymentLookupResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceByPreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/invoice`
+}
+
+export const getAirlineInvoiceByPreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<NonFiscalInvoiceResponse> => {
+
+  const res = await fetch(getGetAirlineInvoiceByPreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoiceDisputesUrl = (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceDisputesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices/${preinvoiceId}/disputes`
+}
+
+export const getAirlinePreinvoiceDisputes = async (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceDisputesParams, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoiceDisputesUrl(preinvoiceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDisputeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDisputeAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/dispute`
+}
+
+export const disputeAirlinePreinvoice = async (preinvoiceId: string,
+    disputeAirlinePreinvoiceRequest?: DisputeAirlinePreinvoiceRequest, options?: RequestInit): Promise<DisputeAirlinePreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDisputeAirlinePreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(disputeAirlinePreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DisputeAirlinePreinvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAcceptAirlinePreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/preinvoices/${preinvoiceId}/accept`
+}
+
+export const acceptAirlinePreinvoice = async (preinvoiceId: string,
+    acceptAirlinePreinvoiceRequest?: AcceptAirlinePreinvoiceRequest, options?: RequestInit): Promise<AcceptAirlinePreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAcceptAirlinePreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(acceptAirlinePreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AcceptAirlinePreinvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoiceUrl = (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices/${preinvoiceId}?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices/${preinvoiceId}`
+}
+
+export const getAirlinePreinvoice = async (preinvoiceId: string,
+    params?: GetAirlinePreinvoiceParams, options?: RequestInit): Promise<AirlinePreinvoiceDetailResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoiceUrl(preinvoiceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePreinvoiceDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePreinvoicesUrl = (params?: GetAirlinePreinvoicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/preinvoices?${stringifiedParams}` : `/api/v1/airline/portal/preinvoices`
+}
+
+export const getAirlinePreinvoices = async (params?: GetAirlinePreinvoicesParams, options?: RequestInit): Promise<AirlinePreinvoicePageResponse> => {
+
+  const res = await fetch(getGetAirlinePreinvoicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePreinvoicePageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationalRequestsUrl = (params?: GetAirlineOperationalRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/requests?${stringifiedParams}` : `/api/v1/airline/portal/requests`
+}
+
+export const getAirlineOperationalRequests = async (params?: GetAirlineOperationalRequestsParams, options?: RequestInit): Promise<AirlineOperationalRequestPageResponse> => {
+
+  const res = await fetch(getGetAirlineOperationalRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineOperationalRequestPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}`
+}
+
+export const getAirlineOperation = async (operationId: string, options?: RequestInit): Promise<AirlinePortalOperationResponse> => {
+
+  const res = await fetch(getGetAirlineOperationUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalOperationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineOperationsUrl = (params?: GetAirlineOperationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/operations?${stringifiedParams}` : `/api/v1/airline/portal/operations`
+}
+
+export const getAirlineOperations = async (params?: GetAirlineOperationsParams, options?: RequestInit): Promise<AirlineOperationPageResponse> => {
+
+  const res = await fetch(getGetAirlineOperationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineOperationPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractsUrl = (params?: GetAirlineContractsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/contracts?${stringifiedParams}` : `/api/v1/airline/portal/contracts`
+}
+
+export const getAirlineContracts = async (params?: GetAirlineContractsParams, options?: RequestInit): Promise<AirlineContractPageResponse> => {
+
+  const res = await fetch(getGetAirlineContractsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineContractPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
 
 export const getGetAirlinePortalBootstrapUrl = () => {
 
@@ -1036,6 +2857,1856 @@ const res = await fetch(getChangePasswordUrl(),
 
 
 
+export const getListManagedAirlinesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines`
+}
+
+export const listManagedAirlines = async ( options?: RequestInit): Promise<ManagedAirlineData[]> => {
+
+  const res = await fetch(getListManagedAirlinesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateManagedAirlineUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines`
+}
+
+export const createManagedAirline = async (managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateManagedAirlineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getEnrichManagedAirlinesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/airlines/enrichment`
+}
+
+export const enrichManagedAirlines = async ( options?: RequestInit): Promise<AirlineEnrichmentResult> => {
+
+  const res = await fetch(getEnrichManagedAirlinesUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineEnrichmentResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateManagedAirlineUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/airlines/${id}`
+}
+
+export const updateManagedAirline = async (id: string,
+    managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateManagedAirlineUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getArchiveManagedAirlineUrl = (id: string,
+    params?: ArchiveManagedAirlineParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/airlines/${id}?${stringifiedParams}` : `/api/v1/governance/airlines/${id}`
+}
+
+export const archiveManagedAirline = async (id: string,
+    params?: ArchiveManagedAirlineParams, options?: RequestInit): Promise<ManagedAirlineData> => {
+
+  const res = await fetch(getArchiveManagedAirlineUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedAirlineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListManagedCommercialServicesUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/catalog/services`
+}
+
+export const listManagedCommercialServices = async ( options?: RequestInit): Promise<ManagedServiceData[]> => {
+
+  const res = await fetch(getListManagedCommercialServicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateCommercialServiceUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/catalog/services`
+}
+
+export const createCommercialService = async (managedServiceInput?: ManagedServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateCommercialServiceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedServiceInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateCommercialServiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/catalog/services/${id}`
+}
+
+export const updateCommercialService = async (id: string,
+    managedServiceInput?: ManagedServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateCommercialServiceUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedServiceInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDeleteCommercialServiceUrl = (id: string,
+    params?: DeleteCommercialServiceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/catalog/services/${id}?${stringifiedParams}` : `/api/v1/contracts/catalog/services/${id}`
+}
+
+export const deleteCommercialService = async (id: string,
+    params?: DeleteCommercialServiceParams, options?: RequestInit): Promise<ManagedServiceData> => {
+
+  const res = await fetch(getDeleteCommercialServiceUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUploadCommercialMediaUrl = () => {
+
+
+
+
+  return `/api/v1/media`
+}
+
+export const uploadCommercialMedia = async (uploadCommercialMediaBody?: UploadCommercialMediaBody, options?: RequestInit): Promise<MediaAssetData> => {
+    const formData = new FormData();
+if(uploadCommercialMediaBody?.purpose !== undefined) {
+ formData.append(`purpose`, uploadCommercialMediaBody.purpose);
+ }
+if(uploadCommercialMediaBody?.file !== undefined) {
+ formData.append(`file`, uploadCommercialMediaBody.file);
+ }
+
+  const res = await fetch(getUploadCommercialMediaUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MediaAssetData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetPublishedCommercialMediaUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/media/${id}`
+}
+
+export const getPublishedCommercialMedia = async (id: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getGetPublishedCommercialMediaUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getListCommercialProvisioningUrl = () => {
+
+
+
+
+  return `/api/v1/governance/provisioning`
+}
+
+export const listCommercialProvisioning = async ( options?: RequestInit): Promise<ProvisioningTaskData[]> => {
+
+  const res = await fetch(getListCommercialProvisioningUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ProvisioningTaskData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getProvisionCommercialAirlineUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/v1/governance/provisioning/${requestId}`
+}
+
+export const provisionCommercialAirline = async (requestId: string,
+    provisionAirlineInput?: ProvisionAirlineInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getProvisionCommercialAirlineUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(provisionAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialAccountResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListCommercialRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests`
+}
+
+export const listCommercialRequests = async ( options?: RequestInit): Promise<CommercialRequestData[]> => {
+
+  const res = await fetch(getListCommercialRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListCommercialStationsUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/stations`
+}
+
+export const listCommercialStations = async ( options?: RequestInit): Promise<CommercialStationData[]> => {
+
+  const res = await fetch(getListCommercialStationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialStationData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getVerifyCommercialAirlineUrl = (profileId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/airlines/${profileId}/verification`
+}
+
+export const verifyCommercialAirline = async (profileId: string,
+    verifyAirlineInput?: VerifyAirlineInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getVerifyCommercialAirlineUrl(profileId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDecideCommercialRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/decision`
+}
+
+export const decideCommercialRequest = async (id: string,
+    reviewCommercialInput?: ReviewCommercialInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideCommercialRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reviewCommercialInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractDraftsUrl = () => {
+
+
+
+
+  return `/api/v1/airline/contract-drafts`
+}
+
+export const getAirlineContractDrafts = async ( options?: RequestInit): Promise<ContractDraftData[]> => {
+
+  const res = await fetch(getGetAirlineContractDraftsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCommentAirlineContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/airline/contract-drafts/${versionId}/comments`
+}
+
+export const commentAirlineContractDraft = async (versionId: string,
+    contractDraftCommentRequest?: ContractDraftCommentRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCommentAirlineContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(contractDraftCommentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftsUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/drafts`
+}
+
+export const getManagedContractDrafts = async ( options?: RequestInit): Promise<ContractDraftData[]> => {
+
+  const res = await fetch(getGetManagedContractDraftsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftOverviewUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/drafts/overview`
+}
+
+export const getManagedContractDraftOverview = async ( options?: RequestInit): Promise<ContractDraftOverviewData> => {
+
+  const res = await fetch(getGetManagedContractDraftOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftOverviewData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}`
+}
+
+export const updateManagedContractDraft = async (versionId: string,
+    updateContractDraftInput?: UpdateContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateContractDraftInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getActivateManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/activate`
+}
+
+export const activateManagedContractDraft = async (versionId: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+  const res = await fetch(getActivateManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceApprovedServicesUrl = (params?: GetFinanceApprovedServicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/approved-services?${stringifiedParams}` : `/api/v1/finance/approved-services`
+}
+
+export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServicesParams, options?: RequestInit): Promise<FinanceApprovedServicesResponse> => {
+
+  const res = await fetch(getGetFinanceApprovedServicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceApprovedServicesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResolveFinancePreinvoiceDisputeUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${preinvoiceId}/resolution`
+}
+
+export const resolveFinancePreinvoiceDispute = async (preinvoiceId: string,
+    resolvePreinvoiceDisputeRequest?: ResolvePreinvoiceDisputeRequest, options?: RequestInit): Promise<ResolvePreinvoiceDisputeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResolveFinancePreinvoiceDisputeUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resolvePreinvoiceDisputeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ResolvePreinvoiceDisputeResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceDocumentUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/by-preinvoice/${preinvoiceId}/document`
+}
+
+export const getFinanceInvoiceDocument = async (preinvoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinanceInvoiceDocumentUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetFinancePaymentReceiptUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payments/by-invoice/${invoiceId}/receipt`
+}
+
+export const getFinancePaymentReceipt = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinancePaymentReceiptUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceByPreinvoiceUrl = (preinvoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/by-preinvoice/${preinvoiceId}`
+}
+
+export const getFinanceInvoiceByPreinvoice = async (preinvoiceId: string, options?: RequestInit): Promise<NonFiscalInvoiceResponse> => {
+
+  const res = await fetch(getGetFinanceInvoiceByPreinvoiceUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getIssueFinanceInvoiceUrl = () => {
+
+
+
+
+  return `/api/v1/finance/invoices`
+}
+
+export const issueFinanceInvoice = async (issueFinanceInvoiceRequest?: IssueFinanceInvoiceRequest, options?: RequestInit): Promise<IssueFinanceInvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getIssueFinanceInvoiceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(issueFinanceInvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: IssueFinanceInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordNonFiscalPaymentUrl = () => {
+
+
+
+
+  return `/api/v1/finance/payments`
+}
+
+export const recordNonFiscalPayment = async (recordNonFiscalPaymentRequest?: RecordNonFiscalPaymentRequest, options?: RequestInit): Promise<RecordNonFiscalPaymentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordNonFiscalPaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordNonFiscalPaymentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RecordNonFiscalPaymentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePaymentByInvoiceUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payments/by-invoice/${invoiceId}`
+}
+
+export const getFinancePaymentByInvoice = async (invoiceId: string, options?: RequestInit): Promise<NonFiscalPaymentLookupResponse> => {
+
+  const res = await fetch(getGetFinancePaymentByInvoiceUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NonFiscalPaymentLookupResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinancePreinvoicesUrl = (params: ListFinancePreinvoicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/preinvoices?${stringifiedParams}` : `/api/v1/finance/preinvoices`
+}
+
+export const listFinancePreinvoices = async (params: ListFinancePreinvoicesParams, options?: RequestInit): Promise<FinancePreinvoicePageData> => {
+
+  const res = await fetch(getListFinancePreinvoicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePreinvoicePageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreatePreinvoiceDraftUrl = () => {
+
+
+
+
+  return `/api/v1/finance/preinvoices`
+}
+
+export const createPreinvoiceDraft = async (createPreinvoiceDraftRequest?: CreatePreinvoiceDraftRequest, options?: RequestInit): Promise<CreatePreinvoiceDraftResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreatePreinvoiceDraftUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createPreinvoiceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceReconciliationUrl = (params: ListFinanceReconciliationParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/reconciliation?${stringifiedParams}` : `/api/v1/finance/reconciliation`
+}
+
+export const listFinanceReconciliation = async (params: ListFinanceReconciliationParams, options?: RequestInit): Promise<FinanceReconciliationPageData> => {
+
+  const res = await fetch(getListFinanceReconciliationUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceReconciliationPageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceTariffsUrl = (params: ListFinanceTariffsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/tariffs?${stringifiedParams}` : `/api/v1/finance/tariffs`
+}
+
+export const listFinanceTariffs = async (params: ListFinanceTariffsParams, options?: RequestInit): Promise<FinanceTariffPageData> => {
+
+  const res = await fetch(getListFinanceTariffsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTariffPageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetCurrentGovernancePermissionsUrl = () => {
+
+
+
+
+  return `/api/v1/governance/me/permissions`
+}
+
+export const getCurrentGovernancePermissions = async ( options?: RequestInit): Promise<string[]> => {
+
+  const res = await fetch(getGetCurrentGovernancePermissionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: string[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetGovernanceSnapshotUrl = () => {
+
+
+
+
+  return `/api/v1/governance`
+}
+
+export const getGovernanceSnapshot = async ( options?: RequestInit): Promise<GovernanceSnapshot> => {
+
+  const res = await fetch(getGetGovernanceSnapshotUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GovernanceSnapshot = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetGovernanceAuditUrl = (params?: GetGovernanceAuditParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/audit?${stringifiedParams}` : `/api/v1/governance/audit`
+}
+
+export const getGovernanceAudit = async (params?: GetGovernanceAuditParams, options?: RequestInit): Promise<GovernanceAuditPage> => {
+
+  const res = await fetch(getGetGovernanceAuditUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GovernanceAuditPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateGovernanceRoleUrl = () => {
+
+
+
+
+  return `/api/v1/governance/roles`
+}
+
+export const createGovernanceRole = async (saveGovernanceRoleInput?: SaveGovernanceRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateGovernanceRoleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveGovernanceRoleInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateGovernanceRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/roles/${id}`
+}
+
+export const updateGovernanceRole = async (id: string,
+    saveGovernanceRoleInput?: SaveGovernanceRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateGovernanceRoleUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveGovernanceRoleInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDeleteGovernanceRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/roles/${id}`
+}
+
+export const deleteGovernanceRole = async (id: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+  const res = await fetch(getDeleteGovernanceRoleUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateGovernanceUserUrl = () => {
+
+
+
+
+  return `/api/v1/governance/users`
+}
+
+export const createGovernanceUser = async (createGovernanceUserInput?: CreateGovernanceUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateGovernanceUserUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createGovernanceUserInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateGovernanceUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/users/${id}`
+}
+
+export const updateGovernanceUser = async (id: string,
+    updateGovernanceUserInput?: UpdateGovernanceUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateGovernanceUserUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateGovernanceUserInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDeleteGovernanceUserUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/users/${id}`
+}
+
+export const deleteGovernanceUser = async (id: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+  const res = await fetch(getDeleteGovernanceUserUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResetGovernanceUserPasswordUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/users/${id}/password-reset`
+}
+
+export const resetGovernanceUserPassword = async (id: string,
+    resetGovernancePasswordRequest?: ResetGovernancePasswordRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResetGovernanceUserPasswordUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resetGovernancePasswordRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesAvailabilityRequestsUrl = (params?: ListHumanResourcesAvailabilityRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/availability-requests?${stringifiedParams}` : `/api/v1/human-resources/availability-requests`
+}
+
+export const listHumanResourcesAvailabilityRequests = async (params?: ListHumanResourcesAvailabilityRequestsParams, options?: RequestInit): Promise<HumanResourcesAvailabilityRequestPage> => {
+
+  const res = await fetch(getListHumanResourcesAvailabilityRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityRequestPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesAvailabilityRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/availability-requests/${id}`
+}
+
+export const recordHumanResourcesAvailabilityRequest = async (id: string,
+    recordHumanResourcesAvailabilityInput?: RecordHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityWritten> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesAvailabilityRequestUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesAvailabilityInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResolveHumanResourcesAvailabilityRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/availability-requests/${id}/resolution`
+}
+
+export const resolveHumanResourcesAvailabilityRequest = async (id: string,
+    resolveHumanResourcesAvailabilityInput?: ResolveHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityWritten> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResolveHumanResourcesAvailabilityRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resolveHumanResourcesAvailabilityInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesPermitsUrl = (params?: ListHumanResourcesPermitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/permits?${stringifiedParams}` : `/api/v1/human-resources/permits`
+}
+
+export const listHumanResourcesPermits = async (params?: ListHumanResourcesPermitsParams, options?: RequestInit): Promise<HumanResourcesPermitPage> => {
+
+  const res = await fetch(getListHumanResourcesPermitsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesPermitPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesPermitUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/permits/${id}`
+}
+
+export const recordHumanResourcesPermit = async (id: string,
+    recordHumanResourcesPermitInput?: RecordHumanResourcesPermitInput, options?: RequestInit): Promise<HumanResourcesPermitRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesPermitUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesPermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesPermitRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationsUrl = (params?: ListHumanResourcesQualificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/qualifications?${stringifiedParams}` : `/api/v1/human-resources/qualifications`
+}
+
+export const listHumanResourcesQualifications = async (params?: ListHumanResourcesQualificationsParams, options?: RequestInit): Promise<HumanResourcesQualificationPage> => {
+
+  const res = await fetch(getListHumanResourcesQualificationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationEquipmentTypesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/qualifications/equipment-types`
+}
+
+export const listHumanResourcesQualificationEquipmentTypes = async ( options?: RequestInit): Promise<HumanResourcesQualificationEquipmentType[]> => {
+
+  const res = await fetch(getListHumanResourcesQualificationEquipmentTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationEquipmentType[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesQualificationUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/qualifications/${id}`
+}
+
+export const recordHumanResourcesQualification = async (id: string,
+    recordHumanResourcesQualificationInput?: RecordHumanResourcesQualificationInput, options?: RequestInit): Promise<HumanResourcesQualificationRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesQualificationInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesShiftAssignmentOptionsUrl = (params?: GetHumanResourcesShiftAssignmentOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/shifts/options?${stringifiedParams}` : `/api/v1/human-resources/shifts/options`
+}
+
+export const getHumanResourcesShiftAssignmentOptions = async (params?: GetHumanResourcesShiftAssignmentOptionsParams, options?: RequestInit): Promise<HumanResourcesShiftAssignmentOptions> => {
+
+  const res = await fetch(getGetHumanResourcesShiftAssignmentOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftAssignmentOptions = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesShiftsUrl = (params?: ListHumanResourcesShiftsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/shifts?${stringifiedParams}` : `/api/v1/human-resources/shifts`
+}
+
+export const listHumanResourcesShifts = async (params?: ListHumanResourcesShiftsParams, options?: RequestInit): Promise<HumanResourcesShiftPage> => {
+
+  const res = await fetch(getListHumanResourcesShiftsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordHumanResourcesShiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/shifts/${id}`
+}
+
+export const recordHumanResourcesShift = async (id: string,
+    recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordHumanResourcesShiftUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordHumanResourcesShiftInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListManagedContractsUrl = (params?: ListManagedContractsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/agreements?${stringifiedParams}` : `/api/v1/contracts/agreements`
+}
+
+export const listManagedContracts = async (params?: ListManagedContractsParams, options?: RequestInit): Promise<ManagedContractPageData> => {
+
+  const res = await fetch(getListManagedContractsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedContractPageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getRegisterMobileDeviceUrl = () => {
 
 
@@ -1144,6 +4815,119 @@ export const getOccPlanningOptions = async (params: GetOccPlanningOptionsParams,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccPlanningOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManualTurnaroundOptionsUrl = (params: GetManualTurnaroundOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/manual-options?${stringifiedParams}` : `/api/v1/occ/planning/manual-options`
+}
+
+/**
+ * @summary Returns current contract airlines and airports for manual OCC entry.
+ */
+export const getManualTurnaroundOptions = async (params: GetManualTurnaroundOptionsParams, options?: RequestInit): Promise<ManualTurnaroundOptionsResponse> => {
+
+  const res = await fetch(getGetManualTurnaroundOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManualTurnaroundOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateManualTurnaroundUrl = () => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds`
+}
+
+/**
+ * @summary Creates one contract-covered manual flight and planned operation.
+ */
+export const createManualTurnaround = async (createManualTurnaroundRequest: CreateManualTurnaroundRequest, options?: RequestInit): Promise<ManualTurnaroundResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateManualTurnaroundUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createManualTurnaroundRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManualTurnaroundResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getProgramOccShiftUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/shift`
+}
+
+/**
+ * @summary Programs one scoped agent shift before the normal OCC assignment.
+ */
+export const programOccShift = async (turnaroundId: string,
+    programOccShiftRequest: ProgramOccShiftRequest, options?: RequestInit): Promise<ProgramOccShiftResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getProgramOccShiftUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(programOccShiftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ProgramOccShiftResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -1519,6 +5303,168 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
 
 
 
+export const getGetFinancePreinvoiceDisputesUrl = (draftId: string,
+    params?: GetFinancePreinvoiceDisputesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/preinvoices/${draftId}/disputes?${stringifiedParams}` : `/api/v1/finance/preinvoices/${draftId}/disputes`
+}
+
+export const getFinancePreinvoiceDisputes = async (draftId: string,
+    params?: GetFinancePreinvoiceDisputesParams, options?: RequestInit): Promise<PreinvoiceDisputeListResponse> => {
+
+  const res = await fetch(getGetFinancePreinvoiceDisputesUrl(draftId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDisputeListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitPreinvoiceUrl = (draftId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${draftId}/submit`
+}
+
+export const submitPreinvoice = async (draftId: string,
+    submitPreinvoiceRequest?: SubmitPreinvoiceRequest, options?: RequestInit): Promise<SubmitPreinvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitPreinvoiceUrl(draftId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitPreinvoiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitPreinvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetPreinvoiceDraftUrl = (draftId: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${draftId}`
+}
+
+export const getPreinvoiceDraft = async (draftId: string, options?: RequestInit): Promise<PreinvoiceDraftResponse> => {
+
+  const res = await fetch(getGetPreinvoiceDraftUrl(draftId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetPublicCommercialCatalogUrl = () => {
+
+
+
+
+  return `/api/v1/public/commercial-catalog`
+}
+
+export const getPublicCommercialCatalog = async ( options?: RequestInit): Promise<PublicCommercialCatalog> => {
+
+  const res = await fetch(getGetPublicCommercialCatalogUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: PublicCommercialCatalog = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitCommercialRequestUrl = () => {
+
+
+
+
+  return `/api/v1/public/commercial-requests`
+}
+
+export const submitCommercialRequest = async (submitCommercialRequestRequest?: SubmitCommercialRequestRequest, options?: RequestInit): Promise<SubmitCommercialRequestResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitCommercialRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitCommercialRequestRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetRampIncidentsUrl = (operationId: string,) => {
 
 
@@ -1820,6 +5766,103 @@ const res = await fetch(getSubmitRampOperationUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampOperationSubmissionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListRampProfilesUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles`
+}
+
+export const listRampProfiles = async ( options?: RequestInit): Promise<RampProfileCatalog> => {
+
+  const res = await fetch(getListRampProfilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileCatalog = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateRampProfileUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles`
+}
+
+export const createRampProfile = async (saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateRampProfileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveRampProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateRampProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/${id}`
+}
+
+export const updateRampProfile = async (id: string,
+    saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateRampProfileUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveRampProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampProfileData = body ? JSON.parse(body) : {}
   return data
 }
 

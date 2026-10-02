@@ -11,7 +11,6 @@ import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
 import ReconciliationPage from '../reconciliation/ReconciliationPage';
 import TariffsPage from '../tariffs/TariffsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
-import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
 import { FINANCE_MODULES, FINANCE_MODULE_IDS } from './modules';
 
 const CURRENT_USER = { name: 'Usuario de Finanzas', role: 'Departamento de Finanzas' };
@@ -23,8 +22,7 @@ function stationSnapshot() {
 
 export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const [activeModuleId, setActiveModuleId] = useState(FINANCE_MODULE_IDS.HOME);
-  const [retryToken, setRetryToken] = useState(0);
-  const home = useFinanceHomeData(retryToken);
+  const home = useFinanceHomeData(activeModuleId === FINANCE_MODULE_IDS.HOME);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
@@ -41,11 +39,11 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
 
   return (
     <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
-      <Sidebar modules={FINANCE_MODULES} activeModuleId={activeModuleId} onSelectModule={handleSelectModule} badgeCounts={{ [FINANCE_MODULE_IDS.PREINVOICES]: home.data?.kpis?.draftPreinvoices ?? 0, [FINANCE_MODULE_IDS.RECONCILIATION]: home.data?.kpis?.reconciliationDifferences ?? 0 }} user={user} onLogout={onLogout} breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded} overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
+      <Sidebar modules={FINANCE_MODULES} activeModuleId={activeModuleId} onSelectModule={handleSelectModule} badgeCounts={{}} user={user} onLogout={onLogout} breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded} overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
-          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage /> : activeModule.id === FINANCE_MODULE_IDS.CHAT ? <DepartmentChatPage /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+          {activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage initialStationId={home.stationId} /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
         </main>
       </div>
     </div>

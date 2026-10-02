@@ -7,6 +7,7 @@ import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { CURRENT_USER_MOCK, HUMAN_RESOURCES_DASHBOARD_MOCK } from './mockData';
 import { HUMAN_RESOURCES_MODULE_IDS, HUMAN_RESOURCES_NAVIGATION } from './navigation';
 import useNotificationBadge from '../notifications/useNotificationBadge';
+import RampProfilesPanel from './users/RampProfilesPanel';
 
 function stationSnapshot() {
   const now = new Date().toISOString();
@@ -129,7 +130,7 @@ export default function HumanResourcesShell({ user = CURRENT_USER_MOCK, onLogout
                 </div>
               </section>
             </div>
-          ) : (
+          ) : activeModule.id === HUMAN_RESOURCES_MODULE_IDS.USERS ? <RampProfilesPanel /> : (
             <ModulePlaceholder
               icon={activeModule.icon}
               label={activeModule.label}

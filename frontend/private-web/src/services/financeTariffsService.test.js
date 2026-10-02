@@ -1,1 +1,24 @@
-import { afterEach,describe,expect,it } from 'vitest';import { getFinanceTariffs,resetFinanceTariffsForTests,scheduleTariffChange } from './financeTariffsService';afterEach(resetFinanceTariffsForTests);describe('financeTariffsService',()=>{it('preserves the current amount and schedules a future change',async()=>{await scheduleTariffChange('TAR-014-03',{amount:350,effectiveFrom:'2026-09-01'});const data=await getFinanceTariffs();expect(data.tariffs.find(x=>x.id==='TAR-014-03').amount).toBe(325);expect(data.history[0].appliesTo).toBe('future-services');});});
+import { beforeEach, expect, it, vi } from 'vitest';
+import { getFinanceTariffs } from './financeTariffsService';
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
+import { readSession } from '../features/auth/authService';
+
+vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
+vi.mock('../features/auth/authService', () => ({ readSession: vi.fn(),
+  handleUnauthorizedResponse: vi.fn() }));
+
+beforeEach(() => {
+  vi.mocked(readSession).mockReturnValue({ token: 'finance-token' });
+});
+
+it('uses the shared API client and forwards station, page and abort signal', async () => {
+  const data = { stationId: 'station-one', page: 1, limit: 20, hasMore: false,
+    tariffs: [] };
+  const list = vi.fn().mockResolvedValue(data);
+  vi.mocked(createPrivateWebApiClient).mockReturnValue({ getFinanceTariffs: list });
+  const controller = new AbortController();
+  await expect(getFinanceTariffs({ stationId: 'station-one', page: 1, limit: 20 },
+    { signal: controller.signal })).resolves.toBe(data);
+  expect(list).toHaveBeenCalledWith({ stationId: 'station-one', page: 1, limit: 20 },
+    { signal: controller.signal });
+});

@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[A-Za-z][A-Za-z0-9_]*$')]
-    [string]$Name
+    [string]$Name,
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Release'
 )
 
 Set-StrictMode -Version 2.0
@@ -37,7 +39,7 @@ try {
         --project $persistenceProject `
         --startup-project $startupProject `
         --context ElevantDbContext `
-        --configuration Release `
+        --configuration $Configuration `
         --output-dir Persistence/Migrations
 
     if ($LASTEXITCODE -ne 0) {
@@ -48,7 +50,7 @@ try {
         --project $persistenceProject `
         --startup-project $startupProject `
         --context ElevantDbContext `
-        --configuration Release
+        --configuration $Configuration
 
     if ($LASTEXITCODE -ne 0) {
         throw 'El modelo aún tiene cambios sin migración.'

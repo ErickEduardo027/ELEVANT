@@ -169,6 +169,18 @@ El seeder comprobado:
 
 Su idempotencia significa que repetirlo no duplica sus anchors conocidos. No significa que repare cualquier modificación manual ni que pueda convertir datos de Production en fixtures. Los datos existentes que coinciden con sus claves se conservan.
 
+En la rama local, un comando **separado y explícito** prepara un escenario
+sintético para una fecha local PUJ indicada por el operador. Agrega dos
+operaciones planificadas, servicios contratados y turnos de cobertura, sin
+asignar agentes ni inventar ejecución, factura o pago. Las claves dependen de
+la fecha y las filas ya trabajadas permanecen intactas. Un conflicto de turno,
+ventana de stand o vigencia contractual revierte toda la transacción; el
+marcador Production se rechaza. Este
+comando no pertenece al seed automático del CD ni acredita ejecución en VPS.
+Fuentes: [herramienta](../../database/DevelopmentDB/Elevant.DatabaseTool/Program.cs),
+[seeder de escenario](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentScenarioSeeder.cs)
+y [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs).
+
 ## Separación de ambientes
 
 | Aspecto | Development | Production |

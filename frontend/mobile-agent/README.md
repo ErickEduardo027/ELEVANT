@@ -16,9 +16,17 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
 - incidencias estructuradas con cola local por cuenta y operación, reintento
   idempotente y conciliación contra la lectura canónica de la API.
 
-El envío final de la operación, chat, evidencias y la sincronización
-general permanecen deshabilitados hasta contar con contratos canónicos. La
-aplicación no simula esas escrituras ni conserva la outbox prototípica.
+La entrega final a OCC y el chat por operación ya usan contratos canónicos e
+idempotencia. Las evidencias binarias y una outbox general permanecen
+deshabilitadas; la aplicación no convierte datos del prototipo en contratos.
+
+En esta rama de integración, la app reconcilia `GET /api/v1/changes` mientras
+está en primer plano: al volver de segundo plano y cada 25 segundos. El cursor
+se mantiene solo en memoria y se reinicia al cambiar de cuenta o revisión de
+sesión. Los cambios de mensajes y notificaciones invalidan sus pantallas,
+que vuelven a consultar los endpoints REST. La prueba de bundle Android pasó,
+pero falta verificar esta conducta en el Pixel Tablet emulado y contra el VPS.
+No hay entrega push con la app cerrada ni cliente SignalR nativo en esta fase.
 
 El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
 OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados

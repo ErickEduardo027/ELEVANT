@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Sidebar from '../../shell/components/Sidebar';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import Topbar from '../../dashboard/components/Topbar';
@@ -6,12 +6,13 @@ import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import ContractsHomePage from '../home/ContractsHomePage';
 import { useContractsHomeData } from '../home/useContractsHomeData';
-import ContractsPage from '../contracts/ContractsPage';
-import ContractRequestsPage from '../requests/ContractRequestsPage';
-import ContractServicesPage from '../services/ContractServicesPage';
-import ContractReportsPage from '../reports/ContractReportsPage';
-import DepartmentChatPage from '../../internal-chat/DepartmentChatPage';
+import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
+import CommercialIntakePage from '../requests/CommercialIntakePage';
+import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
+import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
+import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
 
@@ -24,12 +25,27 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   const [activeModuleId, setActiveModuleId] = useState(CONTRACT_MODULE_IDS.HOME);
   const [retryToken, setRetryToken] = useState(0);
   const home = useContractsHomeData(retryToken);
+  const pendingReal = home.data?.kpis?.pendingRequests ?? 0;
+  const revalidateHome = useCallback(() => setRetryToken(token => token + 1), []);
+  useCommercialRevalidation(revalidateHome);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  useEffect(() => {
+    if (import.meta.env.MODE === 'test') return undefined;
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.some(resource => ['commercial_requests',
+        'contract_draft_comments', 'airline_contracts'].includes(resource))) {
+        revalidateHome();
+      }
+    });
+    void observer.start();
+    return () => { void observer.stop(); };
+  }, [revalidateHome]);
 
   const activeModule = CONTRACT_MODULES.find(module => module.id === activeModuleId) ?? CONTRACT_MODULES[0];
 
@@ -44,7 +60,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         modules={CONTRACT_MODULES}
         activeModuleId={activeModuleId}
         onSelectModule={handleSelectModule}
-        badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: home.data?.kpis?.pendingRequests ?? 0 }}
+        badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: pendingReal }}
         user={user}
         onLogout={onLogout}
         breakpoint={sidebar.breakpoint}
@@ -59,17 +75,19 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
         <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
-            <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={() => setRetryToken(token => token + 1)} onNavigate={handleSelectModule} />
+            <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
-            <ContractsPage />
+            <ManagedAgreementsPage mode="contracts" />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
+            <ManagedDraftsPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
-            <ContractRequestsPage />
+            <CommercialIntakePage />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
+            <CommercialCatalogPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (
-            <ContractServicesPage />
+            <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
-            <ContractReportsPage />
-          ) : activeModule.id === CONTRACT_MODULE_IDS.CHAT ? (
-            <DepartmentChatPage />
+            <ManagedAgreementsPage mode="reports" />
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}

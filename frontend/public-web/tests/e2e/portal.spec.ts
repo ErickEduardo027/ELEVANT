@@ -27,7 +27,7 @@ test("shows real airline data for overview, flights, detail and profile", async 
 
 test("keeps all portal modules visible as clearly marked, read-only previews", async ({ page }) => {
   for (const [path, title] of [
-    ["solicitudes", "Solicitudes con estado visible."], ["contratos", "Contratos"], ["documentos", "Documentos"],
+    ["solicitudes", "Solicitudes con estado visible."], ["documentos", "Documentos"],
     ["finanzas", "Finanzas"], ["reportes", "Reportes"],
   ]) {
     await page.goto(`/portal/${path}`);
@@ -39,6 +39,14 @@ test("keeps all portal modules visible as clearly marked, read-only previews", a
   await expect(page.getByRole("button", { name: "Aceptar prefactura" })).toBeDisabled();
   await page.goto("/portal/documentos");
   await expect(page.getByRole("button", { name: "Descargar documento" }).first()).toBeDisabled();
+});
+
+test("shows real tenant-scoped contract history without a demo card", async ({ page }) => {
+  await page.goto("/portal/contratos");
+  await expect(page.getByRole("heading", { level: 1, name: "Contratos y tarifarios" })).toBeVisible();
+  await expect(page.getByText("DEV-CONTRACT-0001").first()).toBeVisible();
+  await expect(page.getByText("Manejo de equipaje")).toBeVisible();
+  await expect(page.getByText("DEMO-CON-001")).toHaveCount(0);
 });
 
 test("portal has no horizontal overflow or serious accessibility blockers", async ({ page }) => {

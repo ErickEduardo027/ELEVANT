@@ -27,6 +27,8 @@ tags:
 
 # Mapa de aplicaciones
 
+> El [flujo comercial y de gobernanza](flujo-comercial-y-gobernanza.md) se integró en `Development` después del commit verificado de esta nota. Las tablas siguientes son una fotografía histórica de ese commit: no describen el alcance actual del merge #114 ni prueban su despliegue en el VPS.
+
 ELEVANT es un sistema con tres clientes especializados, una API compartida y una sola base lógica por ambiente. Este mapa describe la responsabilidad y la madurez comprobable de cada frontera; una interfaz navegable no demuestra que su flujo de negocio ya tenga contrato HTTP, autorización o persistencia real.
 
 ## Leyenda de estado

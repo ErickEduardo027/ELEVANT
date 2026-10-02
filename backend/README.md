@@ -14,6 +14,17 @@ Elevant.sln              solución compartida con los proyectos de DevelopmentDB
 
 La persistencia está físicamente separada en `database/DevelopmentDB`: allí viven `Elevant.Persistence`, `Elevant.DatabaseTool`, las migraciones, Compose y las operaciones SQL. Sigue existiendo una sola API y una sola cadena de migraciones compartida por los clientes.
 
+La solicitud pública, el catálogo administrado por Contratos, la provisión manual por Superadministrador y el borrador contractual se describen en [el flujo comercial](../docs/workflows/commercial-intake-and-governance.md). Los avisos internos usan el outbox y feed existente; el hub público solo invalida el catálogo. Ningún endpoint de esta rama envía correo.
+
+Las cargas de fotos, videos y avatares usan `POST /api/v1/media` con Bearer,
+multipart y permisos por propósito. SQL conserva metadatos y claves; los bytes
+se guardan en un bucket S3 privado. `GET /api/v1/media/{id}` sirve únicamente
+medios vinculados a un servicio o aerolínea publicada, o un avatar para
+personal interno autorizado. El Compose de API exige cinco variables
+`ELEVANT_MEDIA_*`; el almacén y su backup se preparan según el
+[runbook de medios](../ops/dokploy/media-storage/README.md) antes de promover
+esta versión. El código versionado no demuestra todavía instalación en el VPS.
+
 ## Validación
 
 Desde la raíz del repositorio:
@@ -80,8 +91,84 @@ a 60 minutos y usa 15 por defecto.
   scope, estado, agente, posición, turno, permisos y contrato dentro de una
   transacción serializable; crea la asignación primaria, materializa todos los
   servicios contractuales y registra transición y auditoría de forma atómica.
-  Los tres endpoints OCC exigen `ADMIN_OCC`, portal BackOffice, membresía
-  interna AVIAM vigente y scope de estación.
+- `GET /api/v1/occ/planning/manual-options` y `POST /api/v1/occ/planning/turnarounds`
+  permiten crear una escala manual con contrato vigente, ruta completa y posición
+  sin solapamiento. El UUID de intención conserva la idempotencia del alta.
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift` programa un turno
+  local de un agente sin asignarlo automáticamente: deriva estación, terminal y
+  posición, exige cobertura de la escala y aptitud vigente, y rechaza otro turno
+  para ese día. Todos estos endpoints OCC exigen `ADMIN_OCC`, portal BackOffice,
+  membresía interna AVIAM vigente y scope de estación.
+- `GET /api/v1/human-resources/qualifications?page=&limit=` lista páginas de
+  hasta 100 ciclos de habilitación marcados como vigentes, con agente y equipo
+  reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
+  vigente. Devuelve fechas documentadas, no inventa estado de cobertura; una
+  habilitación marcada como ciclo actual puede estar vencida por fecha. Los
+  filtros opcionales `rampProfileId` y `equipmentTypeId` se exigen juntos;
+  SQL aplica el par antes de paginar para localizar el único ciclo actual
+  sin recorrer una lista global. Un par incompleto devuelve 400.
+- `GET /api/v1/human-resources/qualifications/equipment-types` devuelve los
+  equipos activos que requieren habilitación para el mismo rol interno.
+  `PUT /api/v1/human-resources/qualifications/{id}` registra el primer ciclo o
+  una renovación con UUID de intención estable y `expectedCurrentId` como
+  precondición. Una transacción serializable conserva el ciclo anterior,
+  auditoría y pista durable `hr_qualifications`; un reintento idéntico devuelve
+  el mismo ciclo y una versión anterior devuelve 409. No admite fechas de
+  obtención futuras ni archivos adjuntos. La pantalla restringida ofrece
+  captura y renovación de esos ciclos, consulta el par exacto antes de guardar
+  y conserva el mismo UUID de intención cuando la respuesta es incierta.
+  El feed vuelve a comprobar el rol y la membresía interna antes de entregar
+  pistas `hr_qualifications` o `hr_shifts`, incluso si la cuenta recibió la
+  pista antes de que se le revocara Gestión Humana.
+- `GET /api/v1/human-resources/permits?page=&limit=` lista hasta 100 ciclos
+  actuales de carnet aeroportuario o licencia de rampa, con agente, número y
+  fechas persistidos. Exige la misma membresía y rol interno vigentes que la
+  lectura de habilitaciones. `is_current` indica el ciclo registrado, no que
+  el documento no haya vencido. Los filtros opcionales `rampProfileId` y
+  `documentType` (`AirportId` o `RampDriverLicense`) deben enviarse juntos;
+  SQL los aplica antes de paginar para localizar el ciclo actual exacto. Un
+  filtro incompleto devuelve 400. `PUT /api/v1/human-resources/permits/{id}`
+  registra el primer ciclo o una renovación con UUID de intención estable y
+  `expectedCurrentId` como precondición (`null` para el primero). Conserva el
+  ciclo anterior, audita y emite la pista durable `hr_permits` en una transacción
+  serializable; un reintento idéntico devuelve el mismo ciclo y una versión
+  anterior devuelve 409. No admite fecha de emisión futura ni archivos.
+  El feed comprueba de nuevo rol y membresía interna antes de entregar esa pista.
+- `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
+  registrados de rampa en una ventana de hasta siete fechas locales, con
+  agente, estación, terminal, posición y horario. Exige Gestión Humana o
+  Superadministración interna vigente y no calcula disponibilidad.
+  `GET /api/v1/human-resources/shifts/options?rampProfileId=&workDate=` entrega
+  únicamente las estaciones y terminales activas dentro de los scopes
+  vigentes de ese agente en esa fecha, junto con `hasShift`; una selección
+  ofrecida no sustituye la revalidación del comando.
+  `PUT /api/v1/human-resources/shifts/{id}` registra un turno por agente y día con
+  UUID de intención estable: exige agente, estación y terminal activos y scopes
+  vigentes en esa fecha, asigna la posición `RAMP-AGENT`, limita la jornada
+  local a 16 horas y rechaza otra programación del mismo día. La transacción
+  serializable guarda turno, auditoría y pista durable `hr_shifts`; reintentos
+  idénticos del mismo actor no duplican registros. La programación OCC también
+  emite `hr_shifts`. La lectura OCC ya excluye de la elegibilidad a un agente
+  con un día libre o restricción `Approved` que cubra la fecha local consultada
+  o el inicio de su turno nocturno; `Pending`, `Rejected`, `Cancelled` y
+  `ShiftChange` no son ausencias.
+- `GET /api/v1/human-resources/availability-requests?from=&to=&page=&limit=`
+  devuelve solicitudes de disponibilidad que se solapan con una ventana de
+  hasta 31 fechas locales, paginadas de forma estable. Exige Gestión Humana o
+  Superadministración internas vigentes; OCC no puede leer motivos laborales.
+  `PUT /api/v1/human-resources/availability-requests/{id}` registra una
+  solicitud `Pending` con UUID de intención estable, perfil activo, tipo
+  `DayOff`, `Restriction` o `ShiftChange`, motivo y hasta 31 fechas locales.
+  Rechaza otra solicitud `Pending`/`Approved` del mismo tipo con fechas
+  solapadas para el agente. `POST /{id}/resolution` decide `Approve` o
+  `Reject` sobre una solicitud pendiente; aprobar una ausencia/restricción
+  exige que no haya una operación todavía asignada al agente en esas fechas,
+  incluida una operación del día siguiente cubierta por un turno nocturno que
+  comenzó durante la ausencia.
+  Ambas transiciones son serializables, auditadas, reintentables sólo con la
+  misma intención/actor y emiten `hr_absences` en el outbox. El feed vuelve a
+  verificar rol y membresía antes de entregar el aviso. La UI de solicitudes
+  y la invalidación OCC en vivo aún no están conectadas.
 - `GET /api/v1/ramp/operations` entrega al agente de rampa autenticado sus
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el
@@ -129,6 +216,137 @@ a 60 minutos y usa 15 por defecto.
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.
 - `/swagger/v1/swagger.json` publica el contrato HTTP en Development.
+- `GET /api/v1/commercial/affiliation-options` conserva una lectura acotada
+  de estaciones activas y servicios publicados para consumidores anteriores.
+  El nuevo recorrido usa `GET /api/v1/public/commercial-catalog` y
+  `POST /api/v1/public/commercial-requests`; la solicitud no crea credenciales.
+
+La lectura `GET /api/v1/airline/portal/contracts?page&limit` deriva una sola
+aerolínea de la membresía vigente de la cuenta, sin aceptar un identificador
+de tenant del navegador. Devuelve páginas de hasta 50 contratos con versiones
+aprobadas, estaciones y tarifas. Conserva las versiones aprobadas aunque el
+contrato venza, pero nunca expone borradores; el portal las consulta en modo
+solo lectura. No crea ni aprueba contratos.
+
+En la rama de integración de Development, la asignación OCC, el inicio y la
+entrega del agente, y la decisión OCC escriben una invalidación
+`airline_operations` por miembro vigente del portal de esa aerolínea en la
+misma transacción del cambio. El destinatario se deriva en SQL de su rol y
+membresía, no de un identificador enviado por el navegador. La pista no
+contiene contenido operativo ni usa un scope de estación del cliente: el
+portal vuelve a consultar el `bootstrap` tenant-scoped y la API revalida la
+autorización al leer el feed. Los replays idempotentes no crean otra pista.
+Esto aún no cubre servicios, facturación, documentos ni historial completo.
+
+La rama `feat/integrated-cycle-realtime` añade
+`GET /api/v1/finance/approved-services?stationId&from&to` para Finanzas. La
+cuenta debe conservar rol `FINANZAS`, membresía interna AVIAM y grant de la
+estación al consultar; el intervalo inclusivo máximo es de 31 días y la
+respuesta se limita a 200 líneas con `hasMore`. Sólo operaciones con última
+entrega aprobada por OCC aparecen. Cantidad y estado se contrastan con la
+evidencia inmutable de esa entrega y el importe utiliza precio y moneda
+congelados en `OperationService`, nunca la tarifa actual. Una línea bloqueada
+conserva una razón explícita y no tiene importe facturable. La aprobación
+escribe una invalidación `finance_approved_services` dirigida a Finanzas en
+la misma transacción; el feed revalida rol, membresía, estación y estado.
+La rama también añade `POST /api/v1/finance/preinvoices` y
+`GET /api/v1/finance/preinvoices/{draftId}`. Finanzas agrupa de 1 a 100
+servicios aprobados de una sola aerolínea, estación, moneda e intervalo,
+con una clave de solicitud estable. La API vuelve a verificar rol, grant,
+última aprobación OCC, evidencia y tarifa congelada antes de guardar una
+prefactura no fiscal con líneas inmutables. Una clave repetida con el mismo
+contenido devuelve el borrador existente; un servicio solo puede reservarse
+en una prefactura. La lectura de detalle revalida acceso y la escritura emite
+una invalidación durable `finance_preinvoices`. En esta rama,
+`POST /api/v1/finance/preinvoices/{draftId}/submit` cambia un borrador con
+líneas a `Submitted` una sola vez bajo transacción serializable. Una repetición
+del mismo actor y clave devuelve el resultado anterior; otra clave recibe
+conflicto. Auditoría e invalidaciones `finance_preinvoices` y
+`airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
+membresía, tenant y estado publicado antes de entregar la pista. La factura,
+el pago manual y el recibo no fiscal se describen más abajo; no hay impuesto
+ni conciliación bancaria. Esta rama no se ha desplegado.
+
+`GET /api/v1/finance/tariffs` ofrece una lectura paginada de tarifas de
+versiones contractuales aprobadas o reemplazadas por estación autorizada. El
+store revalida rol Finanzas, membresía interna, estación activa y grant vigente
+antes y durante la consulta. La activación contractual guarda una pista durable
+`finance_tariffs` dirigida a Finanzas de cada estación cubierta dentro del
+mismo `SaveChanges`; el feed vuelve a comprobar alcance y estado publicado al
+entregarla. No existe comando de modificación de tarifas desde Finanzas: los
+precios de servicios e importes ya ejecutados permanecen congelados. Este
+contrato está verificado localmente, no promovido al VPS.
+
+`GET /api/v1/finance/reconciliation` es una lectura paginada de prefacturas
+`Accepted` o `Invoiced`, facturas no fiscales y pagos manuales de Development.
+Requiere rol Finanzas, membresía interna, estación activa y grant vigente,
+revalidado antes de devolver filas. El orden es estable y el límite máximo es
+50. No modifica importes ni registra una conciliación bancaria; los cambios
+de factura y pago ya publican la invalidación durable `finance_preinvoices`.
+Esta ruta está probada localmente, no promovida al VPS.
+
+El portal de aerolínea puede releer una prefactura publicada y sus líneas
+inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
+deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.
+`POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/accept` acepta solo una
+prefactura `Submitted` del tenant autorizado. La transacción serializable
+revalida membresía, registra actor y clave estable en auditoría, y guarda
+avisos durables para aerolínea y Finanzas. Un reintento del mismo actor/clave
+no duplica la transición; una segunda intención recibe conflicto. La
+aceptación no emite factura ni registra pago.
+
+La rama de integración agrega `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
+Solo una aerolínea con membresía vigente puede disputar una prefactura publicada
+`Submitted` de su tenant. La petición lleva clave idempotente, asunto, descripción
+y una selección de líneas propias. SQL conserva una disputa inmutable y sus
+líneas, cambia la prefactura a `Disputed` dentro de la misma transacción
+serializable y escribe auditoría e invalidaciones para aerolínea y Finanzas.
+Las consultas nuevas `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes`
+y `GET /api/v1/finance/preinvoices/{draftId}/disputes` muestran la objeción
+solo a su tenant o estación autorizada, sin añadir campos a las respuestas de
+detalle v1 que ya consumen clientes desplegados. Un reintento idéntico no duplica
+el historial. En esta rama local, Finanzas resuelve la objeción más reciente
+mediante `POST /api/v1/finance/preinvoices/{preinvoiceId}/resolution`, con
+`requestId`, decisión `Maintain` o `Void` y motivo obligatorio. La API revalida
+rol, membresía y estación dentro de una transacción serializable. `Maintain`
+devuelve la prefactura a `Submitted` para una nueva respuesta de la aerolínea;
+`Void` la anula, conserva el historial y libera las reservas de servicios para
+una nueva prefactura. Repetir el mismo intento devuelve la resolución ya
+registrada; una intención distinta sobre la disputa cerrada entra en conflicto.
+Las lecturas autorizadas de disputas muestran decisión y motivo con
+`includeResolutions=true`; sin ese parámetro conservan el JSON v1 anterior.
+Igualmente, el portal solo incluye anulaciones publicadas en historial con
+`includeVoided=true`; sin él mantiene los estados que aceptan los clientes ya
+desplegados. El cliente generado nuevo envía esos parámetros expresamente. No hay
+ajustes parciales ni repricing; si cambia el cargo, Finanzas debe anular y
+crear un nuevo snapshot. Esta capacidad todavía no está promocionada.
+
+Una prefactura `Accepted` puede convertirse una sola vez en factura **no fiscal**
+mediante `POST /api/v1/finance/invoices`. Finanzas confirma explícitamente y
+envía un `requestId` estable; la API revalida rol, membresía y estación, congela
+número, moneda, total y líneas en `commercial.non_fiscal_invoices` y
+`commercial.non_fiscal_invoice_lines`, cambia el estado a `Invoiced` y registra
+auditoría e invalidaciones durables para Finanzas y la aerolínea en una
+transacción serializable. El mismo actor y clave obtienen el resultado anterior;
+otra intención para la misma prefactura entra en conflicto. Finanzas consulta
+`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}` y el portal consulta
+`GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`, con alcance de
+estación o tenant derivado de la sesión. En esta rama local, Finanzas puede
+registrar **un pago manual completo de prueba** con UUID de intención y
+referencia en `POST /api/v1/finance/payments`; la API revalida rol y estación,
+solo habilita la escritura cuando el destino de base declarado es Development,
+relee el total inmutable de la factura y evita duplicación con índices únicos
+y transacción serializable. Finanzas y la aerolínea consultan el pago por
+factura mediante rutas separadas y autorizadas. Es una anotación manual de
+Development, **no** verificación bancaria, cobro externo ni comprobante fiscal.
+En el siguiente tramo local, `GET` de documento de factura o recibo materializa
+un PDF no fiscal desde el snapshot inmutable, guarda los bytes en S3 privado
+y su SHA-256/longitud en `commercial.financial_documents`. Finanzas usa rutas
+de estación y la aerolínea rutas por tenant; ambas revalidan autorización
+después de leer el objeto. Un objeto ausente o alterado produce `503`, nunca
+una descarga vacía o un archivo de otro cliente. Los PDFs indican que son
+documentos de prueba sin NCF ni validez fiscal. No hay impuesto, conciliación
+ni verificación bancaria. Este tramo sigue local y sin promoción.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

@@ -25,6 +25,7 @@ Este directorio contiene plantillas revisables para preparar el VPS Development.
 | `database-cd/` | Controlador pull-based, bundle OCI v1, cache Compose, lock y estado persistente para promover la DB Development |
 | `api-cd/` | Controlador pull-based de API, gate DB, rollback de imagen/Compose y estado persistente |
 | `web-cd/` | Controlador genérico con perfiles/estados separados para AVIAM Web y Public Web, gate API exacto y rollback por aplicación |
+| `media-storage/` | Compose y configuración de ejemplo del almacén S3 privado; instalación pendiente del operador |
 
 Las fuentes Compose certificadas de SQL permanecen en
 `database/DevelopmentDB` y cada entrega incluye sus bytes exactos en el

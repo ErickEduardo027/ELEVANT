@@ -1,98 +1,123 @@
 import KpiCard from '../../components/KpiCard';
-import ProgressRing from '../../components/ProgressRing';
-import FlyAwareStatusPanel from './components/FlyAwareStatusPanel';
-import FlightStatusChart from './components/FlightStatusChart';
-import ApprovalPreviewList from './components/ApprovalPreviewList';
-import AlertsFeed from './components/AlertsFeed';
-import PositionsMapPreview from './components/PositionsMapPreview';
-import { PlaneIcon, ChecklistIcon, UsersIcon } from './components/icons';
+import { getPlanningStatusMeta } from '../planning/planningStatus';
+import { ChecklistIcon, PlaneIcon, UsersIcon } from './components/icons';
 
-export default function DashboardPage({ status, data, error, onRetry, forceState = 'default', onOpenPositionsMap = () => {} }) {
-  const isLoading = status === 'loading' || forceState === 'loading';
-  const isError = status === 'error' && forceState === 'default';
+function Panel({ title, action, children }) {
+  return <section className="rounded-2xl border border-black/5 bg-white/70 p-5 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {action}
+    </div>
+    {children}
+  </section>;
+}
 
-  const servicesPending = data?.kpis?.servicesPending ?? 0;
-  const servicesExecuted = data?.kpis?.servicesExecuted ?? 0;
-  const servicesTotal = servicesPending + servicesExecuted;
-  const servicesPercent = servicesTotal === 0 ? 0 : Math.round((servicesExecuted / servicesTotal) * 100);
+function Action({ children, onClick }) {
+  return <button type="button" onClick={onClick}
+    className="text-xs font-semibold text-accent-600 hover:underline">{children}</button>;
+}
 
-  const approvals = forceState === 'emptyApprovals' ? [] : data?.pendingApprovals ?? [];
-  const flyAware =
-    forceState === 'flyAwareError'
-      ? { status: 'error', lastSyncMinutesAgo: data?.flyAware?.lastSyncMinutesAgo ?? 0 }
-      : data?.flyAware ?? { status: 'unavailable', lastSyncMinutesAgo: null };
+export default function DashboardPage({
+  status, data, stationScopes = [], selectedStationId, onStationChange = () => {},
+  onRetry = () => {}, onOpenPlanning = () => {}, onOpenReview = () => {},
+  onOpenNotifications = () => {},
+}) {
+  const statusMessage = {
+    forbidden: 'No hay una estación OCC autorizada para consultar este panorama.',
+    unauthorized: 'La sesión expiró. Vuelva a iniciar sesión.',
+    error: 'No se pudo cargar el panorama operativo de la estación.',
+  };
 
-  if (isError) {
-    return (
-      <div
-        role="alert"
-        className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
-      >
-        <p className="text-sm font-semibold text-status-danger">
-          No se pudo cargar el panorama operativo de la estación.
+  return <div className="mx-auto max-w-[1440px] space-y-5">
+    <header className="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">OCC</p>
+        <h1 className="mt-1 text-2xl font-bold">Panorama operativo</h1>
+        <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
+          Planificación del día UTC, entregas en revisión y avisos registrados.
         </p>
-        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {error?.message ?? 'Verifique la conexión e intente nuevamente.'}
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90"
-        >
-          Reintentar
-        </button>
       </div>
-    );
-  }
+      {stationScopes.length > 0 && <label className="text-xs font-semibold">Estación
+        <select aria-label="Estación OCC" value={selectedStationId ?? ''}
+          onChange={event => onStationChange(event.target.value)}
+          className="mt-1 block rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark-card">
+          {stationScopes.map(scope => <option key={scope.stationId} value={scope.stationId}>
+            {scope.stationCode}</option>)}
+        </select>
+      </label>}
+    </header>
 
-  return (
-    <div className="mx-auto max-w-[1440px] space-y-4">
-      <p role="status" className="rounded-xl border border-signal-500/30 bg-signal-500/10 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-        Vista previa con indicadores, vuelos y alertas sintéticos. Para datos persistidos de Development, usa Planificación, Revisión, Reportes, Notificaciones o Chat.
+    {statusMessage[status] && <div role="alert"
+      className="rounded-xl border border-status-danger/30 bg-white/70 p-5 dark:bg-surface-dark-card">
+      <p className="text-sm font-semibold text-status-danger">{statusMessage[status]}</p>
+      {status === 'error' && <button type="button" onClick={onRetry}
+        className="mt-3 rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white">Reintentar</button>}
+    </div>}
+
+    {status === 'loading' && <p role="status"
+      className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">Cargando panorama operativo…</p>}
+
+    {status === 'success' && <>
+      <p className="text-xs text-text-secondary-light">
+        Estación {data.stationCode} · fecha UTC {data.date} · conteos de las consultas mostradas
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Vuelos programados hoy" value={data?.kpis?.flightsToday ?? 0} icon={PlaneIcon} loading={isLoading} />
-        <KpiCard
-          label="Servicios: pendientes vs. ejecutados"
-          icon={ChecklistIcon}
-          loading={isLoading}
-          visual={
-            <div className="flex items-center gap-3">
-              <ProgressRing percent={servicesPercent} size={56} strokeWidth={6} />
-              <div className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                <div>{servicesExecuted} ejecutados</div>
-                <div>{servicesPending} pendientes</div>
+        <KpiCard label="Escalas del día en consulta" value={data.turnarounds.length} icon={PlaneIcon} />
+        <KpiCard label="Operaciones con agente" value={data.turnarounds
+          .filter(item => item.agents.length > 0).length} icon={UsersIcon} />
+        <KpiCard label="Entregas en cola visible"
+          value={data.reviewHasMore ? `≥${data.reviews.length}` : data.reviews.length}
+          icon={ChecklistIcon} />
+        <KpiCard label="Avisos visibles sin leer" value={data.notifications
+          .filter(item => item.readAt == null).length} icon={ChecklistIcon} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+        <Panel title="Escalas registradas"
+          action={<Action onClick={onOpenPlanning}>Abrir planificación</Action>}>
+          {data.turnarounds.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">
+            {data.turnarounds.slice(0, 8).map(item => <li key={item.id}
+              className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+              <div><p className="font-semibold">{item.operationCode}</p>
+                <p className="text-xs text-text-secondary-light">{item.airline.name} · {item.arrival?.flightNumber ?? 'Sin llegada'} → {item.departure?.flightNumber ?? 'Sin salida'}</p>
               </div>
-            </div>
-          }
-        />
-        <KpiCard
-          label="Agentes en operaciones activas"
-          value={data?.kpis?.agentsActive ?? 0}
-          icon={UsersIcon}
-          loading={isLoading}
-        />
-        <KpiCard
-          label="Aprobaciones pendientes"
-          value={data?.kpis?.approvalsPending ?? 0}
-          icon={ChecklistIcon}
-          loading={isLoading}
-          tone={(data?.kpis?.approvalsPending ?? 0) > 0 ? 'signal' : 'default'}
-        />
-      </div>
-
-      <FlyAwareStatusPanel status={flyAware.status} lastSyncMinutesAgo={flyAware.lastSyncMinutesAgo} />
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
+              <span className="text-xs">{getPlanningStatusMeta(item.status).label}</span>
+            </li>)}
+          </ul> : <p className="py-6 text-center text-sm text-text-secondary-light">
+            No hay escalas registradas para esta estación y fecha UTC.
+          </p>}
+          {data.turnarounds.length > 8 && <p className="pt-3 text-xs text-text-secondary-light">
+            Se muestran las primeras 8 escalas. Abra Planificación para consultar el resto.
+          </p>}
+        </Panel>
         <div className="space-y-4">
-          <FlightStatusChart distribution={data?.flightStatusDistribution ?? []} />
-          <PositionsMapPreview onOpenMap={onOpenPositionsMap} />
-        </div>
-        <div className="space-y-4">
-          <ApprovalPreviewList approvals={approvals} onViewAll={() => {}} loading={isLoading} />
-          <AlertsFeed alerts={data?.alerts ?? []} loading={isLoading} />
+          <Panel title="Entregas pendientes de revisión"
+            action={<Action onClick={onOpenReview}>Abrir revisión</Action>}>
+            {data.reviews.length ? <ul className="space-y-3">
+              {data.reviews.slice(0, 5).map(item => <li key={item.submissionId ?? item.operationId}
+                className="rounded-lg border border-black/5 p-3 text-sm dark:border-white/5">
+                <span className="font-semibold">{item.operationCode}</span>
+                <span className="ml-2 text-text-secondary-light">{item.agentName}</span>
+              </li>)}
+            </ul> : <p className="py-4 text-sm text-text-secondary-light">No hay entregas pendientes de revisión.</p>}
+            {data.reviewHasMore && <p className="mt-3 text-xs text-text-secondary-light">
+              Hay más entregas fuera de esta consulta acotada.
+            </p>}
+          </Panel>
+          <Panel title="Avisos de la estación"
+            action={<Action onClick={onOpenNotifications}>Abrir notificaciones</Action>}>
+            {data.notifications.length ? <ul className="space-y-3">
+              {data.notifications.slice(0, 5).map(item => <li key={item.id}
+                className="rounded-lg border border-black/5 p-3 text-sm dark:border-white/5">
+                <span className="font-semibold">{item.operationCode}</span>
+                <span className="ml-2 text-text-secondary-light">{item.kind}</span>
+              </li>)}
+            </ul> : <p className="py-4 text-sm text-text-secondary-light">No hay avisos visibles de esta estación.</p>}
+            {data.notificationsHasMore && <p className="mt-3 text-xs text-text-secondary-light">
+              La cuenta tiene más avisos fuera de esta consulta acotada.
+            </p>}
+          </Panel>
         </div>
       </div>
-    </div>
-  );
+    </>}
+  </div>;
 }

@@ -3,8 +3,11 @@ using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Operations;
 using Elevant.Application.Operations.AssignOccOperation;
+using Elevant.Application.Operations.CreateManualTurnaround;
+using Elevant.Application.Operations.GetManualTurnaroundOptions;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
+using Elevant.Application.Operations.ProgramOccShift;
 using Elevant.Contracts.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +25,10 @@ namespace Elevant.Api.Controllers;
 public sealed class OccPlanningController(
     GetOccPlanningSnapshotHandler snapshotHandler,
     GetOccPlanningOptionsHandler optionsHandler,
-    AssignOccOperationHandler assignmentHandler) : ControllerBase
+    AssignOccOperationHandler assignmentHandler,
+    GetManualTurnaroundOptionsHandler manualOptionsHandler,
+    CreateManualTurnaroundHandler createManualHandler,
+    ProgramOccShiftHandler shiftHandler) : ControllerBase
 {
     /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
     [HttpGet(Name = "GetOccPlanningSnapshot")]
@@ -82,6 +88,102 @@ public sealed class OccPlanningController(
 
         SetEntityTag(result.Options!.Turnaround.ConcurrencyToken);
         return Ok(Map(result.Options));
+    }
+
+    /// <summary>Returns current contract airlines and airports for manual OCC entry.</summary>
+    [HttpGet("manual-options", Name = "GetManualTurnaroundOptions")]
+    [ProducesResponseType<ManualTurnaroundOptionsResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<ManualTurnaroundOptionsResponse>> GetManualOptions(
+        [FromQuery, BindRequired] Guid stationId,
+        [FromQuery, BindRequired] DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<ManualTurnaroundOptionsResponse>();
+
+        var result = await manualOptionsHandler.HandleAsync(
+            new GetManualTurnaroundOptionsQuery(accountId, stationId, date), cancellationToken);
+        return result.IsSuccess
+            ? Ok(Map(result.Options!))
+            : FailureResult<ManualTurnaroundOptionsResponse>(result.Failure!.Value);
+    }
+
+    /// <summary>Creates one contract-covered manual flight and planned operation.</summary>
+    [HttpPost("turnarounds", Name = "CreateManualTurnaround")]
+    [RequestSizeLimit(ApiConfiguration.ManualTurnaroundRequestBodyLimitBytes)]
+    [Consumes("application/json")]
+    [ProducesResponseType<ManualTurnaroundResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ManualTurnaroundResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<ManualTurnaroundResponse>> CreateManual(
+        [FromBody, BindRequired] CreateManualTurnaroundRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<ManualTurnaroundResponse>();
+
+        var result = await createManualHandler.HandleAsync(new CreateManualTurnaroundCommand(
+            accountId, request.TurnaroundId, request.StationId, request.AirlineId,
+            request.StandId,
+            request.OperationDate, request.ArrivalFlightNumber, request.ArrivalOriginIata,
+            request.ArrivalScheduledAt, request.DepartureFlightNumber,
+            request.DepartureDestinationIata, request.DepartureScheduledAt,
+            Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
+        if (!result.IsSuccess)
+            return FailureResult<ManualTurnaroundResponse>(result.Failure!.Value);
+
+        var response = new ManualTurnaroundResponse(result.TurnaroundId!.Value,
+            result.OperationCode!, result.Replayed);
+        return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
+            response);
+    }
+
+    /// <summary>Programs one scoped agent shift before the normal OCC assignment.</summary>
+    [HttpPost("turnarounds/{turnaroundId:guid}/shift", Name = "ProgramOccShift")]
+    [RequestSizeLimit(ApiConfiguration.OccShiftRequestBodyLimitBytes)]
+    [Consumes("application/json")]
+    [ProducesResponseType<ProgramOccShiftResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProgramOccShiftResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<ProgramOccShiftResponse>> ProgramShift(
+        [FromRoute] Guid turnaroundId,
+        [FromBody, BindRequired] ProgramOccShiftRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<ProgramOccShiftResponse>();
+
+        var result = await shiftHandler.HandleAsync(new ProgramOccShiftCommand(
+            accountId, turnaroundId, request.AgentId,
+            request.StartsAtLocal, request.EndsAtLocal,
+            Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
+        if (!result.IsSuccess)
+            return FailureResult<ProgramOccShiftResponse>(result.Failure!.Value);
+
+        return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
+            new ProgramOccShiftResponse(turnaroundId, result.ShiftId!.Value, result.Replayed));
     }
 
     /// <summary>Assigns one eligible agent and materializes all applicable contracted services.</summary>
@@ -324,6 +426,18 @@ public sealed class OccPlanningController(
             agent.EmployeeNumber,
             agent.Eligible,
             agent.EligibilityReasons)).ToArray());
+
+    private static ManualTurnaroundOptionsResponse Map(ManualTurnaroundOptionsData options) => new(
+        Map(options.Station), options.Date,
+        new OccAirportResponse(options.StationAirport.Id, options.StationAirport.IataCode,
+            options.StationAirport.IcaoCode, options.StationAirport.Name),
+        options.Airlines.Select(airline => new ManualTurnaroundAirlineResponse(
+            airline.Id, airline.IataCode, airline.Name)).ToArray(),
+        options.Airports.Select(airport => new OccAirportResponse(airport.Id,
+            airport.IataCode, airport.IcaoCode, airport.Name)).ToArray(),
+        options.Stands.Select(stand => new OccStandResponse(stand.Id, stand.Code,
+            stand.Terminal is null ? null : new OccTerminalResponse(
+                stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray());
 
     private static OccAssignmentResponse Map(OccAssignmentData assignment) => new(
         assignment.TurnaroundId,

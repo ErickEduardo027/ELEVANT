@@ -15,9 +15,20 @@ export default function HumanResourcesLayout({
   const navigation = useMemo(
     () =>
       HUMAN_RESOURCES_NAVIGATION
-        .filter(item => !dashboardReadOnlyDemo || item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD)
+        .filter(item => !dashboardReadOnlyDemo ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS)
         .map(item =>
-        item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
+        dashboardReadOnlyDemo && (item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS)
+          ? { ...item, badge: null }
+          : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
           ? {
               ...item,
               badge: unreadNotificationsCount > 0 ? { count: unreadNotificationsCount, tone: 'default' } : null,

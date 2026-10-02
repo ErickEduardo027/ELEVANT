@@ -1,5 +1,26 @@
 # Configuración de Dokploy
 
+## Cambio pendiente: medios comerciales privados
+
+La carga de fotos, videos y avatares del flujo comercial requiere un almacén S3
+privado adicional. El contrato revisable, el orden de instalación, el backup del
+par de volúmenes y la prueba de restauración están en
+[`ops/dokploy/media-storage`](../../ops/dokploy/media-storage/README.md).
+Este bloque describe una **preparación pendiente** y no afirma que Garage esté
+instalado o que los nuevos endpoints estén promocionados en el VPS.
+
+Antes de aceptar un bundle API que contenga `MediaStorage`, el operador prepara
+Garage, el bucket y la clave de alcance limitado, guarda las cinco variables
+`ELEVANT_MEDIA_*` en el Environment privado de API y actualiza el Raw API con
+las referencias exactas de `backend/compose.development.api.yml`. Después
+verifica Preview Compose y la igualdad semántica exigida por API CD. No se
+exponen puertos S3 ni credenciales al navegador. Los medios publicados se leen
+mediante `/api/v1/media/{id}` y los avatares requieren autorización.
+
+El orden de promoción continúa siendo Database Release → API → AVIAM Web y
+Public Web. No se habilita el poll API para este cambio hasta que el
+almacenamiento, el backup y una restauración de prueba estén verificados.
+
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
 privado, cómo se desplegaron DB v1, la API y las dos webs, y cómo se habilitaron
 sus carriles CD pull-based. También define los runbooks de reconstrucción y el
@@ -654,6 +675,35 @@ terminal ni PR y realiza `--dry-run` antes de reanudar la promoción. El seed
 crea cuentas ausentes, pero nunca vuelve a escribir contraseñas existentes.
 La recuperación de Gestión Humana es un comando manual separado,
 `rotate-development-human-resources`, fuera de los schedules.
+
+La entrega de gobernanza comercial añade `ELEVANT_DEV_SUPERADMIN_ACCOUNT_PASSWORD`
+al seeder de Development. Antes de publicar el commit en `Development`, el
+operador prepara una séptima contraseña distinta en el Environment root-only de
+Database Release y agrega la entrada correspondiente al Compose Raw vivo. Con
+los schedules de Database CD deshabilitados y el controlador pausado, compara
+el Compose vivo con el candidato revisado y comprueba que la única diferencia
+semántica esperada es esa variable del seeder. No pulsa **Deploy** ni ejecuta el
+seed manualmente. Tras la publicación del bundle certificado, ejecuta
+`--dry-run`, reanuda el controlador y hace un único `--poll` manual. Exige
+backup previo, migraciones, seed, verificación, backup posterior y restore-check
+en estado `succeeded/complete` antes de reactivar el schedule. Conserva el
+secreto fuera del repositorio, logs y capturas. La cuenta sintética es
+`super.admin@dev.elevant.test`; el seed no cambia su contraseña en ejecuciones
+posteriores. Después valida API, AVIAM Web y Public Web contra sus bundles
+compatibles, en ese orden.
+
+En el checkpoint observado para esta entrega, **Guardar** el Raw y el
+Environment en Dokploy conservó el contenido del editor, pero no actualizó
+`code/docker-compose.yml` ni `code/.env` antes de **Deploy**. Database CD lee esos
+archivos vivos durante su preflight. Con los schedules deshabilitados y el
+controlador pausado, el operador reabre el Raw guardado y comprueba su SHA-256
+contra `database/DevelopmentDB/compose.development.release.yml`; crea una copia
+de seguridad `root:root 0700` del Compose y el Environment vivos; sincroniza
+ambos archivos con el Raw revisado y el mismo secreto guardado en Dokploy,
+introducido por terminal privada sin eco; y comprueba el hash del Compose, la
+presencia de la clave sin imprimirla y `root:root 0600` para `.env`. La fuente
+guardada en Dokploy y los archivos vivos deben concordar antes de publicar el
+commit. Ninguno de estos pasos ejecuta **Deploy** o el seed.
 
 La credencial runtime de la API sigue siendo exclusivamente `elevant_dev_app`.
 Además de autenticación y contexto de actor, el primer slice OCC publica dos
