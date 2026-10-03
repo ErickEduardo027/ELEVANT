@@ -59,8 +59,8 @@ describe('LoginPage validation, language and theme', () => {
     expect(screen.getByLabelText('Correo electrónico')).toHaveAttribute('aria-invalid', 'true');
 
     await user.type(screen.getByLabelText('Correo electrónico'), 'persona@empresa.com');
-    await user.click(screen.getByRole('button', { name: /Idioma/ }));
-    await user.click(screen.getByRole('menuitemradio', { name: /English/ }));
+    await user.click(screen.getByRole('button', { name: 'English' }));
+    expect(screen.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
 
     expect(screen.getByRole('heading', { name: 'Welcome to ELEVANT' })).toBeInTheDocument();
     expect(screen.getByLabelText('Email address')).toHaveValue('persona@empresa.com');

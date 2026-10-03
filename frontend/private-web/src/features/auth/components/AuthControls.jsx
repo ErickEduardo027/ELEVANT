@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useOptionalTheme } from '../../shell/useTheme';
 import { SUPPORTED_LANGUAGES } from '../i18n/messages';
 import { useAuthLanguage } from '../i18n/useAuthLanguage';
@@ -41,77 +41,24 @@ function MoonIcon() {
   );
 }
 
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
-
-function LanguageMenu() {
+function LanguageSwitch() {
   const { language, setLanguage, t } = useAuthLanguage();
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
-  const buttonRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = event => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
-    };
-    const onKeyDown = event => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
-  function choose(code) {
-    setLanguage(code);
-    setOpen(false);
-    buttonRef.current?.focus();
-  }
 
   return (
-    <div className="elv-lang" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        type="button"
-        className="elv-control elv-lang-button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`${t('controls.language')}: ${t(`controls.languageOption.${language}`)}`}
-        onClick={() => setOpen(value => !value)}
-      >
-        <span>{language.toUpperCase()}</span>
-        <span className="elv-lang-chevron" data-open={open}><ChevronIcon /></span>
-      </button>
-      {open && (
-        <ul className="elv-lang-menu" role="menu" aria-label={t('controls.language')}>
-          {SUPPORTED_LANGUAGES.map(code => (
-            <li key={code} role="none">
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={code === language}
-                className="elv-lang-option"
-                onClick={() => choose(code)}
-              >
-                <span className="elv-lang-code">{code.toUpperCase()}</span>
-                {t(`controls.languageOption.${code}`)}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="elv-lang-switch" role="group" aria-label={t('controls.language')} data-language={language}>
+      <span className="elv-lang-thumb" aria-hidden="true" />
+      {SUPPORTED_LANGUAGES.map(code => (
+        <button
+          key={code}
+          type="button"
+          className="elv-lang-option"
+          aria-pressed={code === language}
+          aria-label={t(`controls.languageOption.${code}`)}
+          onClick={() => setLanguage(code)}
+        >
+          {code.toUpperCase()}
+        </button>
+      ))}
     </div>
   );
 }
@@ -126,7 +73,7 @@ export default function AuthControls() {
 
   return (
     <div className="elv-controls">
-      <LanguageMenu />
+      <LanguageSwitch />
       <span className="elv-controls-divider" aria-hidden="true" />
       <div className="elv-theme" role="group" aria-label={t('controls.theme')}>
         <button

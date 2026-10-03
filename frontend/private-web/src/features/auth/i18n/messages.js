@@ -4,8 +4,10 @@ export const DEFAULT_LANGUAGE = 'es';
 export const messages = {
   es: {
     brandAlt: 'ELEVANT',
-    taglineTop: ['ELEVANDO LA GESTIÓN', 'DE OPERACIONES', 'EN TIERRA'],
-    taglineBottom: 'PRECISIÓN EN MOVIMIENTO.',
+    showcase: {
+      caption: 'Operamos con las mejores aerolíneas',
+      airlines: 'Aerolíneas con las que operamos',
+    },
     controls: {
       language: 'Idioma',
       languageOption: { es: 'Español', en: 'English' },
@@ -15,7 +17,7 @@ export const messages = {
     },
     login: {
       welcome: 'Bienvenido a',
-      subtitle: 'Gestiona tus operaciones desde un solo lugar.',
+      subtitle: 'Elevando la gestión de operaciones en tierra.',
       email: 'Correo electrónico',
       password: 'Contraseña',
       showPassword: 'Mostrar contraseña',
@@ -60,8 +62,10 @@ export const messages = {
   },
   en: {
     brandAlt: 'ELEVANT',
-    taglineTop: ['ELEVATING THE', 'MANAGEMENT OF', 'GROUND OPERATIONS'],
-    taglineBottom: 'PRECISION IN MOTION.',
+    showcase: {
+      caption: 'We operate with the best airlines',
+      airlines: 'Airlines we operate with',
+    },
     controls: {
       language: 'Language',
       languageOption: { es: 'Español', en: 'English' },
@@ -71,7 +75,7 @@ export const messages = {
     },
     login: {
       welcome: 'Welcome to',
-      subtitle: 'Manage your operations from one place.',
+      subtitle: 'Elevating the management of ground operations.',
       email: 'Email address',
       password: 'Password',
       showPassword: 'Show password',

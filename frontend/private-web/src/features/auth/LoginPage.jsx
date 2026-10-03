@@ -43,14 +43,6 @@ function ShieldIcon() {
   );
 }
 
-function ArrowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5" />
-    </svg>
-  );
-}
-
 export default function LoginPage({ onSubmit = async () => {}, notice = '' }) {
   const { t } = useAuthLanguage();
   const [showPassword, setShowPassword] = useState(false);
@@ -122,7 +114,7 @@ export default function LoginPage({ onSubmit = async () => {}, notice = '' }) {
   const passwordInvalid = Boolean(passwordError) || credentialsInvalid;
 
   return (
-    <AuthVisualLayout>
+    <AuthVisualLayout intro>
       <section className="elv-auth-content" aria-labelledby="elv-login-title">
         <div className="elv-intro">
           <h1 id="elv-login-title" className="elv-welcome-title">
@@ -221,7 +213,6 @@ export default function LoginPage({ onSubmit = async () => {}, notice = '' }) {
           <button type="submit" disabled={busy} className="elv-submit">
             {status === 'busy' && <span className="elv-submit-spinner" aria-hidden="true" />}
             <span>{status === 'busy' ? t('login.submitting') : status === 'done' ? t('login.done') : t('login.submit')}</span>
-            {status === 'idle' && <span className="elv-submit-arrow"><ArrowIcon /></span>}
           </button>
         </form>
 
