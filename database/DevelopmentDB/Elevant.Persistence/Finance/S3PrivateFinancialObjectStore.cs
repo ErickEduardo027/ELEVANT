@@ -96,18 +96,27 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
 
     private AmazonS3Client CreateClient()
     {
-        var endpoint = configuration["MediaStorage:Endpoint"];
-        var accessKey = configuration["MediaStorage:AccessKey"];
-        var privateCredential = configuration["MediaStorage:SecretKey"];
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(accessKey) ||
-            string.IsNullOrWhiteSpace(privateCredential))
+        try
+        {
+            var endpoint = configuration["MediaStorage:Endpoint"];
+            var accessKey = configuration["MediaStorage:AccessKey"];
+            var privateCredential = configuration["MediaStorage:SecretKey"];
+            if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(accessKey) ||
+                string.IsNullOrWhiteSpace(privateCredential))
+                throw new FinancialDocumentUnavailableException(
+                    FinancialDocumentFailureStage.StorageConfiguration);
+            return new AmazonS3Client(new BasicAWSCredentials(accessKey, privateCredential),
+                new AmazonS3Config
+                {
+                    ServiceURL = endpoint, ForcePathStyle = true,
+                    AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
+                });
+        }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
             throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StorageConfiguration);
-        return new AmazonS3Client(new BasicAWSCredentials(accessKey, privateCredential),
-            new AmazonS3Config
-            {
-                ServiceURL = endpoint, ForcePathStyle = true,
-                AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
-            });
+                FinancialDocumentFailureStage.StorageConfiguration, exception);
+        }
     }
 }

@@ -4,7 +4,11 @@ namespace Elevant.Application.Finance;
 public enum FinancialDocumentFailureStage
 {
     Unknown,
+    SourceRead,
     SourceValidation,
+    MetadataRead,
+    MetadataWrite,
+    Rendering,
     RenderedContent,
     StorageConfiguration,
     StorageWrite,

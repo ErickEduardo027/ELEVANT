@@ -19,10 +19,11 @@ internal sealed class EfFinancialDocumentStore(
         NonFiscalInvoiceData invoice, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invoice);
-        var source = await context.NonFiscalInvoices.AsNoTracking()
+        var source = await ClassifyAsync(() => context.NonFiscalInvoices.AsNoTracking()
             .Where(item => item.PublicId == invoice.Id)
             .Select(item => new { item.Id, item.Number, item.CurrencyCode, item.Total })
-            .SingleOrDefaultAsync(cancellationToken);
+            .SingleOrDefaultAsync(cancellationToken),
+            FinancialDocumentFailureStage.SourceRead);
         if (source is null || source.Number != invoice.Number ||
             source.CurrencyCode != invoice.CurrencyCode || source.Total != invoice.Total)
             throw new FinancialDocumentUnavailableException(
@@ -37,14 +38,15 @@ internal sealed class EfFinancialDocumentStore(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(payment);
-        var source = await (
+        var source = await ClassifyAsync(() => (
             from item in context.NonFiscalPayments.AsNoTracking()
             join invoice in context.NonFiscalInvoices.AsNoTracking()
                 on item.InvoiceId equals invoice.Id
             where item.PublicId == payment.Id && invoice.PublicId == payment.InvoiceId
             select new { PaymentId = item.Id, item.InvoiceId, item.Reference,
                 item.CurrencyCode, item.Amount, InvoiceNumber = invoice.Number })
-            .SingleOrDefaultAsync(cancellationToken);
+            .SingleOrDefaultAsync(cancellationToken),
+            FinancialDocumentFailureStage.SourceRead);
         if (source is null || source.InvoiceNumber != invoiceNumber ||
             source.Reference != payment.Reference || source.CurrencyCode != payment.CurrencyCode ||
             source.Amount != payment.Amount)
@@ -59,18 +61,20 @@ internal sealed class EfFinancialDocumentStore(
         long invoiceId, long? paymentId, string kind, Guid sourceId,
         Func<byte[]> render, string fileName, CancellationToken cancellationToken)
     {
-        var existing = await FindAsync(invoiceId, kind, cancellationToken);
+        var existing = await ClassifyAsync(() => FindAsync(invoiceId, kind, cancellationToken),
+            FinancialDocumentFailureStage.MetadataRead);
         if (existing is not null)
             return await ReadVerifiedAsync(existing, kind, fileName, cancellationToken);
 
-        var bytes = render();
+        var bytes = Classify(render, FinancialDocumentFailureStage.Rendering);
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         if (!FinancialDocumentIntegrity.Matches(bytes, bytes.Length, hash))
             throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.RenderedContent);
         var id = Guid.CreateVersion7();
         var key = $"finance/{kind.ToLowerInvariant()}/{sourceId:N}/{id:N}.pdf";
-        await objects.PutAsync(key, bytes, cancellationToken);
+        await ClassifyAsync(() => objects.PutAsync(key, bytes, cancellationToken),
+            FinancialDocumentFailureStage.StorageWrite);
 
         var now = timeProvider.GetUtcNow();
         var row = new FinancialDocument
@@ -98,18 +102,27 @@ internal sealed class EfFinancialDocumentStore(
         {
             context.ChangeTracker.Clear();
         }
+        catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            throw new FinancialDocumentUnavailableException(
+                FinancialDocumentFailureStage.MetadataWrite, exception);
+        }
 
         // An uncertain commit or a concurrent first reader may have won the
         // unique (invoice, kind) index. Re-read before cleanup: deleting this
         // attempt's S3 key would lose the document if its first commit succeeded.
-        existing = await FindAsync(invoiceId, kind, cancellationToken)
+        existing = await ClassifyAsync(() => FindAsync(invoiceId, kind, cancellationToken),
+                FinancialDocumentFailureStage.MetadataRead)
             ?? throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.MetadataConflict);
         if (existing.ObjectKey != key)
         {
             try
             {
-                await objects.DeleteAsync(key, cancellationToken);
+                await ClassifyAsync(() => objects.DeleteAsync(key, cancellationToken),
+                    FinancialDocumentFailureStage.StorageDelete);
             }
             catch (FinancialDocumentUnavailableException)
             {
@@ -134,7 +147,8 @@ internal sealed class EfFinancialDocumentStore(
             row.Length > FinancialDocumentIntegrity.MaxBytes)
             throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.StoredContent);
-        var bytes = await objects.GetAsync(row.ObjectKey, cancellationToken);
+        var bytes = await ClassifyAsync(() => objects.GetAsync(row.ObjectKey, cancellationToken),
+            FinancialDocumentFailureStage.StorageRead);
         if (bytes is null || !FinancialDocumentIntegrity.Matches(bytes, row.Length, row.Sha256))
             throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.StoredContent);
@@ -145,4 +159,39 @@ internal sealed class EfFinancialDocumentStore(
         exception is SqlException sql && IsUniquenessConflict(sql.Number);
 
     internal static bool IsUniquenessConflict(int number) => number is 2601 or 2627;
+
+    private static T Classify<T>(Func<T> action, FinancialDocumentFailureStage stage)
+    {
+        try { return action(); }
+        catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            throw new FinancialDocumentUnavailableException(stage, exception);
+        }
+    }
+
+    private static async Task<T> ClassifyAsync<T>(Func<Task<T>> action,
+        FinancialDocumentFailureStage stage)
+    {
+        try { return await action(); }
+        catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            throw new FinancialDocumentUnavailableException(stage, exception);
+        }
+    }
+
+    private static async Task ClassifyAsync(Func<Task> action,
+        FinancialDocumentFailureStage stage)
+    {
+        try { await action(); }
+        catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            throw new FinancialDocumentUnavailableException(stage, exception);
+        }
+    }
 }
