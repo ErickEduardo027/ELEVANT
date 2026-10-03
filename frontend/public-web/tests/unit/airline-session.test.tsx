@@ -245,6 +245,7 @@ it("revokes the visible airline context on a periodic authorization failure", as
   }));
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("Demo Airlines");
+  await waitFor(() => expect(observe).toHaveBeenCalledOnce());
   revoked = true;
   window.dispatchEvent(new Event("focus"));
   await waitFor(() => expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous"));
