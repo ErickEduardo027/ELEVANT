@@ -1,43 +1,54 @@
 import './LoginPage.css';
+import AuthBackground from './components/AuthBackground';
+import AuthControls from './components/AuthControls';
+import { useAuthLanguage } from './i18n/useAuthLanguage';
 
-const navyLogo = `${import.meta.env.BASE_URL}brand/elevant-official-navy.png`;
-const lightLogo = `${import.meta.env.BASE_URL}brand/elevant-official-light.png`;
+const base = import.meta.env.BASE_URL;
+const isotypeDark = `${base}brand/elevant-isotype-dark.png`;
+const isotypeLight = `${base}brand/elevant-isotype-light.png`;
+
+function Isotype({ className }) {
+  return (
+    <>
+      <img src={isotypeLight} alt="" className={`${className} elv-logo--light`} />
+      <img src={isotypeDark} alt="" className={`${className} elv-logo--dark`} />
+    </>
+  );
+}
 
 export default function AuthVisualLayout({ children }) {
+  const { t } = useAuthLanguage();
+  const tagline = t('taglineTop');
+
   return (
     <main className="elv-shell">
-      <aside className="elv-aside" aria-label="Identidad de ELEVANT">
-        <div className="elv-aside-top">
-          <span className="elv-aside-rule" aria-hidden="true" />
-          <span>AVIAM · Acceso interno</span>
-        </div>
+      <AuthBackground />
 
-        <div className="elv-brand-stage">
-          <img
-            src={navyLogo}
-            alt="ELEVANT — Elevando la gestión de operaciones en tierra"
-            className="elv-brand-image-dark"
-          />
-        </div>
+      <header className="elv-topbar">
+        <span className="elv-brand" role="img" aria-label={t('brandAlt')}>
+          <Isotype className="elv-brand-mark" />
+        </span>
+        <AuthControls />
+      </header>
 
-        <div className="elv-aside-bottom">
-          <p>Una vista clara para coordinar cada operación en tierra.</p>
-          <span>Plataforma de operaciones AVIAM</span>
-        </div>
-      </aside>
+      <p className="elv-tagline">
+        <span className="elv-rule" aria-hidden="true" />
+        {tagline.map(line => <span key={line} className="elv-tagline-line">{line}</span>)}
+      </p>
 
-      <div className="elv-right">
-        <div className="elv-right-inner">
-          <div className="elv-mobile-brand">
-            <img
-              src={lightLogo}
-              alt="ELEVANT — Elevando la gestión de operaciones en tierra"
-            />
-          </div>
-          <div className="elv-panel">{children}</div>
-          <div className="elv-footer-meta">© 2026 ELEVANT · AVIAM</div>
+      <div className="elv-stage">
+        <div className="elv-card">
+          <span className="elv-card-mark" role="img" aria-label={t('brandAlt')}>
+            <Isotype className="elv-card-logo" />
+          </span>
+          {children}
         </div>
       </div>
+
+      <p className="elv-motto">
+        <span className="elv-rule" aria-hidden="true" />
+        {t('taglineBottom')}
+      </p>
     </main>
   );
 }

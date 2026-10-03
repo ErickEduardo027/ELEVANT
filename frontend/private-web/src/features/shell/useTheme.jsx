@@ -36,6 +36,11 @@ export function ThemeProvider({ children }) {
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
 }
 
+// Null outside a ThemeProvider; lets standalone screens (login) degrade gracefully.
+export function useOptionalTheme() {
+  return useContext(ThemeContext);
+}
+
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (!context) {

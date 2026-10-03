@@ -146,6 +146,11 @@ function readFreshFrom(storage) {
   };
 }
 
+// Machine-readable code so the UI can translate without matching message text.
+function coded(message, code) {
+  return Object.assign(new Error(message), { code });
+}
+
 function mapApiSession(response) {
   const roles = Array.isArray(response?.actor?.roles) ? response.actor.roles : [];
   const role = roles.find(candidate =>
@@ -154,7 +159,7 @@ function mapApiSession(response) {
   );
 
   if (!role) {
-    throw new Error('Esta cuenta no tiene acceso a AVIAM Web.');
+    throw coded('Esta cuenta no tiene acceso a AVIAM Web.', 'no_access');
   }
 
   return {
@@ -175,7 +180,7 @@ function createMockSession(email, password) {
   const normalizedEmail = String(email ?? '').trim().toLowerCase();
   const testUser = MOCK_USERS[normalizedEmail];
   if (!testUser || password !== MOCK_PASSWORD) {
-    throw new Error('Credenciales inválidas.');
+    throw coded('Credenciales inválidas.', 'invalid_credentials');
   }
 
   return {
@@ -243,14 +248,14 @@ export async function login({ email, password, remember = false }, injectedApiCl
 
     if (!isFreshSupportedSession(session)) {
       clearSession();
-      throw new Error(GENERIC_AUTH_ERROR);
+      throw coded(GENERIC_AUTH_ERROR, 'generic');
     }
 
     return persistSession(session, remember);
   } catch (error) {
     clearSession();
     if (error instanceof ElevantApiError && error.status === 401) {
-      throw new Error('Credenciales inválidas.');
+      throw coded('Credenciales inválidas.', 'invalid_credentials');
     }
     if (error instanceof ElevantApiError && error.status === 409) {
       throw new PasswordChangeRequiredError();
@@ -258,7 +263,7 @@ export async function login({ email, password, remember = false }, injectedApiCl
     if (error instanceof Error && error.message === 'Esta cuenta no tiene acceso a AVIAM Web.') {
       throw error;
     }
-    throw new Error(GENERIC_AUTH_ERROR);
+    throw coded(GENERIC_AUTH_ERROR, 'generic');
   }
 }
 
@@ -268,11 +273,11 @@ export async function changePassword({ email, currentPassword, newPassword }, in
     await client.changePassword({ email: String(email ?? '').trim(), currentPassword, newPassword });
   } catch (error) {
     if (error instanceof ElevantApiError && error.status === 401) {
-      throw new Error('La contraseña actual no es válida.');
+      throw coded('La contraseña actual no es válida.', 'invalid_current_password');
     }
     if (error instanceof ElevantApiError && error.status === 400) {
-      throw new Error('La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.');
+      throw coded('La nueva contraseña no cumple la política: mínimo 14 caracteres, mayúscula, minúscula, número y símbolo.', 'password_policy');
     }
-    throw new Error(GENERIC_AUTH_ERROR);
+    throw coded(GENERIC_AUTH_ERROR, 'generic');
   }
 }
