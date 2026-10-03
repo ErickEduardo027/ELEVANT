@@ -149,7 +149,7 @@ jobs:
           bash -n scripts/release/tests/test-classify-changes.sh
           shellcheck -x "${scripts[@]}"
           shellcheck scripts/release/path-ownership.sh
-          shellcheck scripts/release/classify-changes.sh
+          shellcheck -x -P scripts/release scripts/release/classify-changes.sh
           shellcheck -x scripts/release/tests/test-path-ownership.sh
           shellcheck -x scripts/release/tests/test-classify-changes.sh
           modules=(
