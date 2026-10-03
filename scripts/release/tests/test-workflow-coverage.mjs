@@ -10,12 +10,13 @@ const workflow = (name) => readFileSync(join(root, '.github', 'workflows', name)
 test('committed secret scan stays universal when heavy ops tests are path-scoped', () => {
   const scan = workflow('secret-scan.yml');
   const ops = workflow('ops-config-ci.yml');
-  assert.match(scan, /pull_request:\s*\n\s+branches:[\s\S]*?- Development/);
+  assert.match(workflow('pull-request-ci.yml'), /pull_request:\s*\n\s+branches:[\s\S]*?- Development/);
+  assert.match(scan, /workflow_call:/);
   assert.match(scan, /push:\s*\n\s+branches:[\s\S]*?- Development/);
   assert.doesNotMatch(scan, /\n\s+paths:/);
   assert.match(scan, /scripts\/repository\/check-secrets\.ps1/);
   assert.match(ops, /push:[\s\S]*?paths:[\s\S]*?ops\/dokploy\/\*\*/);
-  assert.match(ops, /pull_request:[\s\S]*?paths:[\s\S]*?ops\/dokploy\/\*\*/);
+  assert.match(ops, /workflow_call:/);
   assert.doesNotMatch(ops, /name: Scan repository for committed secrets/);
 });
 

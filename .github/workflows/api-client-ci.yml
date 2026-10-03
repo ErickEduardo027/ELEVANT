@@ -1,6 +1,7 @@
 name: API client CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -39,45 +40,6 @@ on:
       - "frontend/mobile-agent/src/config/elevant-api.ts"
       - "frontend/mobile-agent/tests/api-client.metro-smoke.ts"
       - ".github/workflows/api-client-ci.yml"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "packages/api-client/**"
-      - "backend/Elevant.Api/**"
-      - "backend/Elevant.Contracts/**"
-      - "Directory.Build.props"
-      - "Directory.Packages.props"
-      - "NuGet.config"
-      - "global.json"
-      - "frontend/private-web/.env.example"
-      - "frontend/private-web/package.json"
-      - "frontend/private-web/package-lock.json"
-      - "frontend/private-web/vite.config.js"
-      - "frontend/private-web/src/config/elevantApiClient.js"
-      - "frontend/private-web/tests/elevantApiClient.smoke.test.js"
-      - "frontend/public-web/.env.example"
-      - "frontend/public-web/package.json"
-      - "frontend/public-web/package-lock.json"
-      - "frontend/public-web/next.config.ts"
-      - "frontend/public-web/next-env.d.ts"
-      - "frontend/public-web/tsconfig.json"
-      - "frontend/public-web/vitest.config.ts"
-      - "frontend/public-web/src/lib/elevant-api.ts"
-      - "frontend/public-web/tests/unit/elevant-api-client.test.ts"
-      - "frontend/mobile-agent/.env.example"
-      - "frontend/mobile-agent/app.json"
-      - "frontend/mobile-agent/eslint.config.js"
-      - "frontend/mobile-agent/expo-env.d.ts"
-      - "frontend/mobile-agent/metro.config.js"
-      - "frontend/mobile-agent/package.json"
-      - "frontend/mobile-agent/package-lock.json"
-      - "frontend/mobile-agent/tsconfig.json"
-      - "frontend/mobile-agent/src/config/elevant-api.ts"
-      - "frontend/mobile-agent/tests/api-client.metro-smoke.ts"
-      - ".github/workflows/api-client-ci.yml"
-
 permissions:
   contents: read
 

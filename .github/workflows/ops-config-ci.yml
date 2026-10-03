@@ -1,6 +1,7 @@
 name: Operations configuration CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -17,23 +18,6 @@ on:
       - "scripts/release/**"
       - ".dockerignore"
       - ".github/workflows/ops-config-ci.yml"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "ops/dokploy/**"
-      - "database/DevelopmentDB/**"
-      - "backend/scripts/deployment/**"
-      - "backend/compose.development.api.yml"
-      - "frontend/scripts/deployment/**"
-      - "frontend/private-web/compose.development.aviam-web.yml"
-      - "frontend/public-web/compose.development.public-web.yml"
-      - "packages/api-client/openapi/**"
-      - "scripts/release/**"
-      - ".dockerignore"
-      - ".github/workflows/ops-config-ci.yml"
-
 permissions:
   contents: read
 

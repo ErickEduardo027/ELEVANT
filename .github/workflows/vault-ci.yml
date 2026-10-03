@@ -1,15 +1,11 @@
 name: Vault CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
       - Development
-  pull_request:
-    branches:
-      - main
-      - Development
-
 permissions:
   contents: read
 

@@ -7,14 +7,15 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const workflow = (name) => readFileSync(join(root, '.github', 'workflows', name), 'utf8');
 
-test('Development has one coordinator; backend and web retain PR and main validation', () => {
+test('Development has one coordinator; backend and web are reusable for PR and retain main validation', () => {
   const coordinator = workflow('development-delivery.yml');
   const backend = workflow('backend-ci.yml');
   const web = workflow('web-ci.yml');
   assert.match(coordinator, /name: Development delivery[\s\S]*?push:\s*\n\s+branches:\s*\n\s+- Development/);
   for (const called of [backend, web]) {
     assert.match(called, /workflow_call:/);
-    assert.match(called, /pull_request:[\s\S]*?branches:[\s\S]*?- Development/);
+    assert.match(called, /push:\s*\n\s+branches:\s*\n\s+- main/);
+    assert.doesNotMatch(called, /^  pull_request:/m);
     assert.doesNotMatch(called, /push:\s*\n\s+branches:\s*\n\s+- main\s*\n\s+- Development/);
   }
 });

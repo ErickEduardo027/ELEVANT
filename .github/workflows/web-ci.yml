@@ -42,37 +42,6 @@ on:
       - "backend/Elevant.Infrastructure/**"
       - "backend/scripts/deployment/**"
       - "database/DevelopmentDB/Elevant.Persistence/**"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "frontend/private-web/**"
-      - "frontend/public-web/**"
-      - "frontend/scripts/deployment/**"
-      - "frontend/tests/deployment/**"
-      - "packages/api-client/**"
-      - "ops/dokploy/web-cd/**"
-      - ".github/workflows/web-ci.yml"
-      - ".github/workflows/backend-ci.yml"
-      - ".dockerignore"
-      - "Directory.Build.props"
-      - "Directory.Packages.props"
-      - "NuGet.config"
-      - "dotnet-tools.json"
-      - "global.json"
-      - "scripts/release/**"
-      - "backend/Dockerfile"
-      - "backend/compose.development.api.yml"
-      - "backend/Elevant.sln"
-      - "backend/Elevant.Api/**"
-      - "backend/Elevant.Application/**"
-      - "backend/Elevant.Contracts/**"
-      - "backend/Elevant.Domain/**"
-      - "backend/Elevant.Infrastructure/**"
-      - "backend/scripts/deployment/**"
-      - "database/DevelopmentDB/Elevant.Persistence/**"
-
 permissions:
   contents: read
 

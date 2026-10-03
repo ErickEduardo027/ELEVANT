@@ -13,7 +13,10 @@ while IFS= read -r -d '' path; do
   case "$path" in
     backend/* | database/* | .dockerignore | Directory.Build.props | \
     Directory.Packages.props | NuGet.config | dotnet-tools.json | global.json | \
-    ops/dokploy/api-cd/* | scripts/release/* | \
+    ops/dokploy/api-cd/* | ops/dokploy/web-cd/openapi-tool.mjs | \
+    packages/api-client/openapi/* | packages/api-client/package.json | \
+    packages/api-client/scripts/check-openapi.mjs | \
+    packages/api-client/scripts/snapshot-utils.mjs | scripts/release/* | \
     .github/workflows/backend-ci.yml | .github/workflows/development-delivery.yml)
       backend_validate=true ;;
   esac
@@ -21,6 +24,8 @@ while IFS= read -r -d '' path; do
   if elevant_is_api_release_input_path "$path"; then api_release=true; fi
 
   if elevant_is_web_shared_input_path "$path" ||
+     [[ "$path" == .github/workflows/backend-ci.yml ]] ||
+     [[ "$path" == ops/dokploy/web-cd/* ]] ||
      [[ "$path" == .github/workflows/development-delivery.yml ]]; then
     aviam_validate=true
     public_validate=true
@@ -31,11 +36,33 @@ while IFS= read -r -d '' path; do
   if elevant_is_web_release_input_path public-web "$path"; then public_release=true; fi
 
   case "$path" in
-    ops/dokploy/* | database/DevelopmentDB/scripts/deployment/* | \
-    database/DevelopmentDB/compose.* | frontend/scripts/deployment/* | \
+    ops/dokploy/* | database/DevelopmentDB/* | \
+    backend/scripts/deployment/* | backend/compose.development.api.yml | \
+    frontend/scripts/deployment/* | \
+    frontend/private-web/compose.development.aviam-web.yml | \
+    frontend/public-web/compose.development.public-web.yml | \
+    packages/api-client/openapi/* | .dockerignore | \
     scripts/release/* | .github/workflows/ops-config-ci.yml)
       ops_validate=true ;;
+  esac
+  case "$path" in
     packages/api-client/* | backend/Elevant.Api/* | backend/Elevant.Contracts/* | \
+    Directory.Build.props | Directory.Packages.props | NuGet.config | global.json | \
+    frontend/private-web/.env.example | frontend/private-web/package.json | \
+    frontend/private-web/package-lock.json | frontend/private-web/vite.config.js | \
+    frontend/private-web/src/config/elevantApiClient.js | \
+    frontend/private-web/tests/elevantApiClient.smoke.test.js | \
+    frontend/public-web/.env.example | frontend/public-web/package.json | \
+    frontend/public-web/package-lock.json | frontend/public-web/next.config.ts | \
+    frontend/public-web/next-env.d.ts | frontend/public-web/tsconfig.json | \
+    frontend/public-web/vitest.config.ts | frontend/public-web/src/lib/elevant-api.ts | \
+    frontend/public-web/tests/unit/elevant-api-client.test.ts | \
+    frontend/mobile-agent/.env.example | frontend/mobile-agent/app.json | \
+    frontend/mobile-agent/eslint.config.js | frontend/mobile-agent/expo-env.d.ts | \
+    frontend/mobile-agent/metro.config.js | frontend/mobile-agent/package.json | \
+    frontend/mobile-agent/package-lock.json | frontend/mobile-agent/tsconfig.json | \
+    frontend/mobile-agent/src/config/elevant-api.ts | \
+    frontend/mobile-agent/tests/api-client.metro-smoke.ts | \
     .github/workflows/api-client-ci.yml)
       api_client_validate=true ;;
   esac

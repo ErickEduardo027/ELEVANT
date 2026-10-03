@@ -26,28 +26,6 @@ on:
       - "dotnet-tools.json"
       - "global.json"
       - ".github/workflows/backend-ci.yml"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "backend/**"
-      - "database/**"
-      - "ops/dokploy/api-cd/**"
-      - "ops/dokploy/web-cd/openapi-tool.mjs"
-      - "packages/api-client/openapi/**"
-      - "packages/api-client/package.json"
-      - "packages/api-client/scripts/check-openapi.mjs"
-      - "packages/api-client/scripts/snapshot-utils.mjs"
-      - "scripts/release/**"
-      - ".dockerignore"
-      - "Directory.Build.props"
-      - "Directory.Packages.props"
-      - "NuGet.config"
-      - "dotnet-tools.json"
-      - "global.json"
-      - ".github/workflows/backend-ci.yml"
-
 permissions:
   contents: read
 
