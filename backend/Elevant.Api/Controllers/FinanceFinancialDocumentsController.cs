@@ -15,7 +15,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/finance")]
 public sealed class FinanceFinancialDocumentsController(
-    GetFinancialDocumentHandler documents) : ControllerBase
+    GetFinancialDocumentHandler documents,
+    ILogger<FinanceFinancialDocumentsController> logger) : ControllerBase
 {
     [HttpGet("invoices/by-preinvoice/{preinvoiceId:guid}/document",
         Name = "GetFinanceInvoiceDocument")]
@@ -35,8 +36,9 @@ public sealed class FinanceFinancialDocumentsController(
             return document is null ? ProblemResult(404, "Financial document was not found.")
                 : Pdf(document);
         }
-        catch (FinancialDocumentUnavailableException)
+        catch (FinancialDocumentUnavailableException exception)
         {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
             return ProblemResult(503, "Financial document is unavailable.");
         }
     }
@@ -59,8 +61,9 @@ public sealed class FinanceFinancialDocumentsController(
             return document is null ? ProblemResult(404, "Financial document was not found.")
                 : Pdf(document);
         }
-        catch (FinancialDocumentUnavailableException)
+        catch (FinancialDocumentUnavailableException exception)
         {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
             return ProblemResult(503, "Financial document is unavailable.");
         }
     }
