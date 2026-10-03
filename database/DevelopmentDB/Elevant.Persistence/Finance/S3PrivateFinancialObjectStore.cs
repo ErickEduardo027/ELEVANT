@@ -25,11 +25,9 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
             }, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
-        catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StorageWrite, exception);
+            throw new FinancialDocumentUnavailableException(exception);
         }
     }
 
@@ -50,8 +48,7 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
                 chunk, cancellationToken)) != 0)
             {
                 if (buffer.Length + read > FinancialDocumentIntegrity.MaxBytes)
-                    throw new FinancialDocumentUnavailableException(
-                        FinancialDocumentFailureStage.StoredContent);
+                    throw new FinancialDocumentUnavailableException();
                 await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
             }
             return buffer.ToArray();
@@ -65,8 +62,7 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
         catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StorageRead, exception);
+            throw new FinancialDocumentUnavailableException(exception);
         }
     }
 
@@ -82,17 +78,14 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
             }, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
-        catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StorageDelete, exception);
+            throw new FinancialDocumentUnavailableException(exception);
         }
     }
 
     private string Bucket() => configuration["MediaStorage:Bucket"] is { Length: > 0 } bucket
-        ? bucket : throw new FinancialDocumentUnavailableException(
-            FinancialDocumentFailureStage.StorageConfiguration);
+        ? bucket : throw new FinancialDocumentUnavailableException();
 
     private AmazonS3Client CreateClient()
     {
@@ -101,8 +94,7 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
         var privateCredential = configuration["MediaStorage:SecretKey"];
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(accessKey) ||
             string.IsNullOrWhiteSpace(privateCredential))
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StorageConfiguration);
+            throw new FinancialDocumentUnavailableException();
         return new AmazonS3Client(new BasicAWSCredentials(accessKey, privateCredential),
             new AmazonS3Config
             {

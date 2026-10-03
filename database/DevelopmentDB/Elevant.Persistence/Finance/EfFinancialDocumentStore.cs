@@ -25,8 +25,7 @@ internal sealed class EfFinancialDocumentStore(
             .SingleOrDefaultAsync(cancellationToken);
         if (source is null || source.Number != invoice.Number ||
             source.CurrencyCode != invoice.CurrencyCode || source.Total != invoice.Total)
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.SourceValidation);
+            throw new FinancialDocumentUnavailableException();
         return await OpenOrCreateAsync(source.Id, null, "Invoice", invoice.Id,
             () => renderer.RenderInvoice(invoice), $"invoice-{invoice.Id:N}.pdf",
             cancellationToken);
@@ -48,8 +47,7 @@ internal sealed class EfFinancialDocumentStore(
         if (source is null || source.InvoiceNumber != invoiceNumber ||
             source.Reference != payment.Reference || source.CurrencyCode != payment.CurrencyCode ||
             source.Amount != payment.Amount)
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.SourceValidation);
+            throw new FinancialDocumentUnavailableException();
         return await OpenOrCreateAsync(source.InvoiceId, source.PaymentId, "Receipt", payment.Id,
             () => renderer.RenderReceipt(payment, invoiceNumber),
             $"receipt-{payment.Id:N}.pdf", cancellationToken);
@@ -66,8 +64,7 @@ internal sealed class EfFinancialDocumentStore(
         var bytes = render();
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         if (!FinancialDocumentIntegrity.Matches(bytes, bytes.Length, hash))
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.RenderedContent);
+            throw new FinancialDocumentUnavailableException();
         var id = Guid.CreateVersion7();
         var key = $"finance/{kind.ToLowerInvariant()}/{sourceId:N}/{id:N}.pdf";
         await objects.PutAsync(key, bytes, cancellationToken);
@@ -103,8 +100,7 @@ internal sealed class EfFinancialDocumentStore(
         // unique (invoice, kind) index. Re-read before cleanup: deleting this
         // attempt's S3 key would lose the document if its first commit succeeded.
         existing = await FindAsync(invoiceId, kind, cancellationToken)
-            ?? throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.MetadataConflict);
+            ?? throw new FinancialDocumentUnavailableException();
         if (existing.ObjectKey != key)
         {
             try
@@ -132,12 +128,10 @@ internal sealed class EfFinancialDocumentStore(
         if (!row.ObjectKey.StartsWith($"finance/{kind.ToLowerInvariant()}/",
                 StringComparison.Ordinal) || row.ContentType != "application/pdf" ||
             row.Length > FinancialDocumentIntegrity.MaxBytes)
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StoredContent);
+            throw new FinancialDocumentUnavailableException();
         var bytes = await objects.GetAsync(row.ObjectKey, cancellationToken);
         if (bytes is null || !FinancialDocumentIntegrity.Matches(bytes, row.Length, row.Sha256))
-            throw new FinancialDocumentUnavailableException(
-                FinancialDocumentFailureStage.StoredContent);
+            throw new FinancialDocumentUnavailableException();
         return new FinancialDocumentData(row.PublicId, kind, fileName, bytes, row.Sha256);
     }
 
