@@ -49,6 +49,12 @@ La clasificación distingue entradas de validación de entradas que realmente ca
 
 ## Task 4: Evidencia, documentación y cierre
 
+**Decisión durante implementación:** el estado agregado estable de PR requiere
+un coordinador `pull-request-ci.yml`; los workflows por área pasan a
+`workflow_call` para PR y conservan sus triggers de push relevantes. El
+coordinador añade un clasificador y un gate final pequeños, a cambio de evitar
+triggers PR duplicados y mantener un único check futuro de branch protection.
+
 **Files:** `Vault/07-entrega/*`, `docs/workflows/release-workflow.md`, `.github/BRANCH_PROTECTION.md`, este plan.
 
 **Consumes:** workflows finales. **Produces:** explicación de clasificación, DAG, estados requeridos, forma de medir ahorro y fallback.

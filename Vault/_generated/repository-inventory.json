@@ -1037,27 +1037,39 @@
     "workflows": [
       {
         "path": ".github/workflows/api-client-ci.yml",
-        "sha256": "da6e3336112ce8090e8cd9e96d58b0fc084f08a39c6b99aea1d191d2c18089eb"
+        "sha256": "5bdbb18b89203628328b76deb5aabf4b21d3ebf6e89205aceb13aad784338f4a"
       },
       {
         "path": ".github/workflows/backend-ci.yml",
-        "sha256": "6a6b94d452099d1cca9f7f878038253346378ed17062d588a393abb3827c7b78"
+        "sha256": "3b871ed593780807fb96957a73b1205ef8bf246d5db2686a5b87726178c6cbcf"
+      },
+      {
+        "path": ".github/workflows/development-delivery.yml",
+        "sha256": "54bafd6d445b5665a0ee5122a259cc7d5afefe96fffbda7a9ea60131290b4373"
       },
       {
         "path": ".github/workflows/mobile-ci.yml",
-        "sha256": "1ba91517bc3fb882f2667468c0589d1ae5fb6ab0212ef40a7370b0b6235d1814"
+        "sha256": "923cf24803ce570201103f853fb30cb187dcaceb30e56d365278ddf11994a6b3"
       },
       {
         "path": ".github/workflows/ops-config-ci.yml",
-        "sha256": "6a8fa1f5acca95f47656a11f0e33e10a25c2ab20b077b7bb1c8e7ed7ae5dde8a"
+        "sha256": "262a55e64f061d039158ae4ce1237c8f8b8621f73d0a59fec2d7c8b7d96eb99b"
+      },
+      {
+        "path": ".github/workflows/pull-request-ci.yml",
+        "sha256": "83352cf3bee93e341916eea090376ed2bebd4de4110a645977f0a2a4f0a5c7f3"
+      },
+      {
+        "path": ".github/workflows/secret-scan.yml",
+        "sha256": "b4ab62bf85c65cec84946f94532f1fe92b675c129af5a7c725843b675c180ff0"
       },
       {
         "path": ".github/workflows/vault-ci.yml",
-        "sha256": "e02870fafe6bc160c6bb189117c415652f04e66a26e0e549cb231c2cf3d71a3d"
+        "sha256": "f420d00bd9f00e0c18de437ecd94e794f0e12f463112fd77e11d61126a25d8d9"
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "34dd739c5700f36fab268ec675795a547f1bd437f5b69de348e3ff326e5f77d9"
+        "sha256": "6ab1966bf1306f3a415f76395566894782d94d646821e7cea2d599e23a5f533c"
       }
     ],
     "openapi": [

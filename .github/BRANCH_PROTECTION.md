@@ -14,14 +14,17 @@ push a `Development`. Consulte la
 - Requerir pull request y al menos una aprobación.
 - Invalidar aprobaciones cuando cambie el código.
 - Requerir que las conversaciones estén resueltas.
-- Requerir el check `Restore, build and test` cuando el backend esté en alcance.
+- Requerir el check estable `Final PR quality gate` de `Pull request CI`. Este
+  gate exige Backend, Web, cliente API, Mobile u operaciones según las rutas,
+  además de Vault y escaneo de secretos en todos los PR.
 - Requerir rama actualizada antes de fusionar.
 - Bloquear force-push y eliminación.
 - Restringir excepciones a administradores designados y auditables.
 
 ## `Development`
 
-- Requerir pull request y el check correspondiente al área modificada.
+- Requerir pull request y `Final PR quality gate`; los checks particulares
+  pueden omitirse por rutas sin dejar el PR desprotegido.
 - Bloquear force-push y eliminación.
 - Mantener revisión humana para migraciones, seguridad e infraestructura.
 

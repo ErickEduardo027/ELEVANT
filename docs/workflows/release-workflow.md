@@ -25,10 +25,14 @@ usan expand/contract en releases distintos.
 
 ## Entrega automática de base Development
 
-La base tiene un carril propio. En un push directo a `Development`, CI primero
-determina si cambió un artefacto que puede alterar las imágenes de operaciones,
-el bundle EF, las migraciones, el modelo, el seed o sus Compose. Los cambios
-exclusivos de API/contratos no publican una entrega DB.
+La base tiene un carril propio. En un push a `Development`, el workflow
+`Development delivery` clasifica las rutas y llama a Backend CI antes de Web
+CI cuando ambos aplican. Un cambio solo de CI o documentación no produce un
+bundle DB/API/web. La clasificación y sus guardas se prueban en
+`scripts/release/tests`; el escaneo de secretos permanece en todo PR.
+El clasificador determina si cambió un artefacto que puede alterar las imágenes
+de operaciones, el bundle EF, las migraciones, el modelo, el seed o sus Compose.
+Los cambios exclusivos de API/contratos no publican una entrega DB.
 
 Cuando el carril aplica:
 
@@ -106,7 +110,8 @@ migraciones deben ser backward-compatible. Consulte
 ## Entrega automática de las webs Development
 
 AVIAM Web y Public Web son dos carriles independientes. En un pull request se
-validan y construyen con orígenes sintéticos; en un push relevante a
+validan solo las aplicaciones afectadas, con orígenes sintéticos, mediante
+`Pull request CI` y su gate final estable; en un push relevante a
 `Development`, cada carril aplicable valida la huella del snapshot contra la
 etiqueta del bundle API compatible, usa los orígenes HTTPS de las variables de
 repositorio, certifica una imagen y publica un bundle OCI v1 independiente:
@@ -124,13 +129,16 @@ volver a extraer y comparar el payload se mueve su alias
 
 Una política de paths compartida mantiene alineados el clasificador API, los
 guards y los carriles web. Todo cambio que produzca una release API recertifica
-ambas webs. El resolver admite una API anterior solo cuando su commit pertenece
-a la misma historia y el diff hasta el checkout no contiene inputs API; de lo
-contrario espera la release nueva incluso si OpenAPI no cambió. Antes de publicar
-revalida tanto el digest seleccionado como el alias vigente. Las publicaciones
-API, AVIAM y Public se serializan en un grupo común con cola múltiple, sin
-cancelar un carril pendiente, cambiar los manifiestos v1 ni relajar el gate
-exacto del controlador.
+ambas webs. Cuando ese cambio ocurre en el mismo push, `Development delivery`
+espera la publicación API y pasa su referencia inmutable a Web CI; si se
+esperaba una referencia nueva y no se obtuvo, falla cerrado. Para un cambio
+solo web, el resolver admite la API certificada anterior únicamente si su
+commit pertenece a la misma historia y el diff hasta el checkout no contiene
+inputs API. Consulta el alias una vez, sin dejar un runner esperando su avance.
+Antes de publicar revalida tanto el digest seleccionado como el alias vigente.
+Las publicaciones API, AVIAM y Public se serializan en un grupo común con cola
+múltiple. No se cancela un carril pendiente, ni cambian los manifiestos v1 o el
+gate exacto del controlador.
 
 En el VPS, el mismo paquete `web-cd` ejecuta perfiles `aviam-web` y
 `public-web`, pero conserva configuración, estado, historia y rollback
@@ -160,6 +168,22 @@ Las webs permanecen tailnet-only, sin Domain/Funnel y sin red SQL. El rollout
 inicial es un preview técnico: una shell saludable no implica que ya existan en
 la API los endpoints de autenticación o negocio del prototipo. Consulte
 [ADR-0012](../adr/0012-pull-based-web-development-cd.md).
+
+## Medir el costo de Actions sin reducir los gates
+
+Compare al menos cinco runs posteriores a la integración con cinco anteriores
+del mismo tipo de cambio (PR solo web, PR backend, push solo web y push
+backend+web). Sume minutos facturados de **todos** los jobs Linux por run,
+incluidos clasificador, gate final, cache misses y reruns. Registre también
+duración total, jobs omitidos, conclusión y si hubo publicación. No use el
+tiempo de pared ni una sola ejecución para afirmar ahorro: paralelismo, cache
+y cambios de tamaño de suite pueden distorsionar la comparación.
+
+Si un carril requerido se omite, falla el gate final, una referencia API no
+coincide o una publicación queda bloqueada, conserve el run/commit y revise
+clasificación y guards antes de reintentar. Revierte el cambio de workflows
+mediante otro PR si el coordinador es la causa; no desactive pruebas ni mueva
+aliases manualmente para recuperar minutos.
 
 ## Carril Mobile Agent
 

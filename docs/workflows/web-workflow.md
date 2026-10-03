@@ -59,11 +59,16 @@ despliega para simular funcionalidad.
 
 ## CI y publicación
 
-En pull requests, el workflow web instala dependencias bloqueadas, ejecuta las
-validaciones de cada aplicación, construye con orígenes sintéticos seguros y
-certifica sus imágenes/runtime. No publica ni accede al VPS.
+En pull requests, `Pull request CI` selecciona las aplicaciones afectadas y
+llama a Web CI. Cada una instala dependencias bloqueadas, ejecuta sus pruebas,
+construye con orígenes sintéticos seguros y certifica imagen/runtime. El gate
+final del PR exige que todos los carriles seleccionados, Vault y el escaneo de
+secretos terminen bien; un job omitido por error no cuenta como éxito. El PR no
+publica ni accede al VPS.
 
-En un push relevante a `Development`, cada carril aplicable:
+En un push relevante a `Development`, `Development delivery` ordena Backend CI
+antes de Web CI si cambió una entrada API. Un cambio exclusivo de una web no
+reconstruye backend y selecciona solo esa aplicación. Cada carril aplicable:
 
 1. valida el descriptor contra el snapshot, resuelve un bundle API certificado
    cuya etiqueta OpenAPI tenga esa misma huella, comprueba que no haya inputs API
@@ -79,15 +84,16 @@ En un push relevante a `Development`, cada carril aplicable:
    ambos payloads y exige igualdad byte a byte;
 7. mueve al final el alias `development-certified` del bundle propio.
 
-El alias API es solo descubrimiento. Si todavía señala una release previa con
-otra huella, sin la etiqueta v1 o anterior a un cambio que produzca API, el
-resolver espera el bundle exacto nuevo; una referencia API inmutable incompatible
-falla inmediatamente. Los mismos paths API disparan la recertificación de ambas
-webs. Antes de publicar se vuelve a comparar el alias con el bundle usado en el
-build, y API/AVIAM/Public comparten una exclusión de publicación con cola
-múltiple para no sustituir carriles pendientes. Así Backend y Web CI pueden
-comenzar en paralelo sin dejar una web atada a una release API que el
-controlador exacto ya no podrá promover.
+El alias API es solo descubrimiento. Cuando el mismo push requiere API nueva,
+Backend CI entrega a Web CI la referencia inmutable del bundle publicado; si
+no llega, Web CI falla cerrado. Cuando no hay input API nuevo, el resolver
+consulta una sola vez el alias y exige una release compatible en la misma
+historia. Una referencia API inmutable incompatible falla inmediatamente. Los
+mismos paths API disparan la recertificación de ambas webs. Antes de publicar
+se vuelve a comparar el alias con el bundle usado en el build, y
+API/AVIAM/Public comparten una exclusión de publicación con cola múltiple
+para no sustituir carriles pendientes. No hay un runner esperando durante
+minutos a que aparezca un alias API nuevo.
 
 Las imágenes son `elevant-private-web` y `elevant-public-web`; los bundles son
 `elevant-aviam-web-release-manifest` y
