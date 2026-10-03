@@ -25,6 +25,7 @@ check ef-migration '{"backend_validate":true,"database_release":true,"api_releas
 check private-only '{"backend_validate":false,"aviam_validate":true,"public_validate":false,"aviam_release":true,"public_release":false}' 'frontend/private-web/src/App.jsx'
 check public-only '{"backend_validate":false,"aviam_validate":false,"public_validate":true,"aviam_release":false,"public_release":true}' 'frontend/public-web/src/app/page.tsx'
 check shared-client '{"backend_validate":false,"aviam_validate":true,"public_validate":true,"aviam_release":true,"public_release":true}' 'packages/api-client/src/index.ts'
+check client-tooling '{"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'packages/api-client/scripts/check-openapi.mjs'
 check ops-only '{"ops_validate":true,"database_release":false,"api_release":false,"aviam_release":false,"public_release":false}' 'ops/dokploy/firewall/elevant-firewall-apply'
 check tests-only '{"backend_validate":true,"database_release":false,"api_release":false,"aviam_release":false,"public_release":false}' 'database/DevelopmentDB/tests/scripts/test_manifest.py'
 check deleted-web-input '{"public_validate":true,"public_release":true}' 'frontend/public-web/src/lib/obsolete.ts'

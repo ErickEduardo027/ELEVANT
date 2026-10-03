@@ -65,7 +65,7 @@ elevant_is_web_release_input_path() {
   fi
   case "$path" in
     packages/api-client/* | frontend/scripts/deployment/*)
-      case "$path" in *.md | */tests/* | */Tests/*) return 1 ;; esac
+      case "$path" in *.md | */tests/* | */Tests/* | packages/api-client/scripts/*) return 1 ;; esac
       return 0
       ;;
   esac
