@@ -8,7 +8,7 @@ maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-03"
-verified_commit: "8897e482cbfbae7f0cfc6727e64ae86f8f9f7a41"
+verified_commit: "913fb3d5eedc7de9444eac15836d9cdd9a89706f"
 sources:
   - .github/workflows/development-delivery.yml
   - .github/workflows/backend-ci.yml
