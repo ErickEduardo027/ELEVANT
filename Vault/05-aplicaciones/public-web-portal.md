@@ -21,6 +21,7 @@ sources:
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
   - frontend/public-web/src/components/portal/AirlineFinancePage.tsx
+  - frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx
   - frontend/public-web/src/components/portal/AirlineReportsPage.tsx
   - frontend/public-web/src/components/portal/AirlineContractPage.tsx
   - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
@@ -30,6 +31,7 @@ sources:
   - frontend/public-web/tests/e2e/auth.spec.ts
   - frontend/public-web/tests/e2e/portal.spec.ts
   - frontend/public-web/tests/unit/real-airline-contracts.test.tsx
+  - frontend/public-web/tests/unit/airline-portal-page.test.tsx
   - backend/Elevant.Api/Controllers/AirlinePortalController.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs
@@ -112,6 +114,18 @@ ofrecer PDF privado. Reportes comunica el límite de cobertura de sus
 primeras páginas. Los comentarios de borrador de Contratos no activan
 unilateralmente un contrato. Otras evidencias operativas y escrituras de
 solicitudes siguen pendientes.
+
+En la rama de integración, una invalidación financiera conserva la selección de la
+prefactura en Finanzas y el panel expandido en Documentos, incluso tras
+volver de una página posterior a la primera, mientras relee factura y pago
+por las rutas autorizadas. Si la relectura falla, la vista
+retira el detalle anterior y presenta un error recuperable. Esto evita que
+un sondeo periódico cierre la confirmación o el panel de descarga; una
+descarga iniciada durante la revalidación puede requerir reintento. Tampoco
+demuestra por sí solo la disponibilidad del objeto PDF en el VPS. Fuentes:
+[vista financiera](../../frontend/public-web/src/components/portal/AirlineFinancePage.tsx),
+[Documentos](../../frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx)
+y [prueba de regresión](../../frontend/public-web/tests/unit/airline-portal-page.test.tsx).
 
 En la rama de integración aún no promocionada, la aerolínea también puede
 registrar una disputa persistente e idempotente de líneas de una prefactura

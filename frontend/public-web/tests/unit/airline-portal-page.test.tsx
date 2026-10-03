@@ -250,6 +250,58 @@ it("opens tenant-scoped invoice and receipt PDFs without a mock document", async
   }
 });
 
+it("keeps the invoice and receipt expanded across a live finance refresh", async () => {
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
+    ({ ...item, status: "Invoiced" })) };
+  const page = render(<AirlinePortalPage view="documents" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+  expect(getPreinvoiceInvoice).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a page-two invoice available after the first page refreshes", async () => {
+  const secondPage = { ...preinvoicePage, page: 2, hasMore: false,
+    preinvoices: preinvoicePage.preinvoices.map(item => ({ ...item, status: "Invoiced" })) };
+  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
+    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
+  ] };
+  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
+    .mockResolvedValueOnce(firstPage);
+  const page = render(<AirlinePortalPage view="documents" />);
+  const loadMore = await screen.findByRole("button", { name: "Cargar más" });
+  expect(screen.queryByText(/No hay facturas emitidas/)).not.toBeInTheDocument();
+  fireEvent.click(loadMore);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByText("Documento seleccionado de otra página")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+});
+
+it("removes selected financial documents when live revalidation fails", async () => {
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
+    ({ ...item, status: "Invoiced" })) };
+  const page = render(<AirlinePortalPage view="documents" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  getPreinvoices.mockRejectedValueOnce(new Error("private transport detail"));
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(/No se pudo actualizar la consulta/);
+  expect(screen.queryByRole("button", { name: "Descargar recibo PDF" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
+});
+
 it("shows only published preinvoices returned by the authorized finance API", async () => {
   render(<AirlinePortalPage view="finance" />);
   expect(await screen.findByText("USD 125.50")).toBeInTheDocument();
@@ -318,6 +370,47 @@ it("requires explicit confirmation before accepting a published preinvoice", asy
   await screen.findByText(/Aceptación registrada/);
   expect(acceptPreinvoice).toHaveBeenCalledExactlyOnceWith(
     "74000000-0000-7000-8000-000000000001");
+});
+
+it("keeps the same preinvoice acceptance confirmation open across a live finance refresh", async () => {
+  const page = render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  expect(screen.getByRole("button", { name: "Confirmar aceptación" })).toBeInTheDocument();
+
+  financeRevision = 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+  await act(async () => {});
+
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
+  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
+});
+
+it("keeps page-two acceptance available after the first page refreshes", async () => {
+  const secondPage = { ...preinvoicePage, page: 2, hasMore: false };
+  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
+    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
+  ] };
+  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
+    .mockResolvedValueOnce(firstPage);
+  const page = render(<AirlinePortalPage view="finance" />);
+  const loadMore = await screen.findByRole("button", { name: "Cargar más prefacturas" });
+  expect(screen.queryByText(/No hay prefacturas publicadas/)).not.toBeInTheDocument();
+  fireEvent.click(loadMore);
+  const secondCard = await screen.findByRole("region", {
+    name: `Prefactura ${secondPage.preinvoices[0].id}`,
+  });
+  fireEvent.click(within(secondCard).getByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+
+  expect(await screen.findByText("Detalle seleccionado de otra página")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Confirmar aceptación" }));
+  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
 });
 
 it("selects disputed lines and requires confirmation before submitting a real objection", async () => {

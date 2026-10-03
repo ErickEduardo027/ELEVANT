@@ -120,6 +120,11 @@ registró un pago manual completo, el portal relee importe y referencia por
 muestra un estado vacío real. No hay verificación bancaria ni documento
 tributario. El recibo y la factura disponibles en Documentos son de prueba y
 no fiscales; su descarga remota con un ciclo nuevo sigue pendiente de prueba.
+Las revisiones financieras en tiempo real mantienen abierta la confirmación de
+la prefactura y la selección de Documentos mientras se releen los IDs
+autorizados, incluso si el registro seleccionado venía de una página
+posterior a la primera. Un error de relectura no conserva el documento
+anterior como si fuera vigente.
 
 ## Contrato de seguridad
 
