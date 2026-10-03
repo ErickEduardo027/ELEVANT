@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
+last_verified: "2026-10-03"
+verified_commit: "8897e482cbfbae7f0cfc6727e64ae86f8f9f7a41"
 sources:
   - .github/workflows/pull-request-ci.yml
   - .github/workflows/development-delivery.yml
