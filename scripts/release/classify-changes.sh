@@ -10,6 +10,41 @@ aviam_validate=false public_validate=false aviam_release=false public_release=fa
 ops_validate=false api_client_validate=false mobile_validate=false
 
 while IFS= read -r -d '' path; do
+  # A new repository boundary must be explicitly assigned. Do not silently
+  # skip build tooling outside the known product, docs and support paths.
+  case "$path" in
+    backend/* | backend-prototipo/* | database/DevelopmentDB/* | \
+    database/ProductionDB/.gitkeep | database/README.md | database/AGENTS.md | \
+    frontend/private-web/* | frontend/public-web/* | frontend/mobile-agent/* | \
+    frontend/scripts/deployment/* | frontend/tests/deployment/* | \
+    frontend/README.md | frontend/AGENTS.md | \
+    packages/api-client/* | packages/README.md | \
+    packages/typescript-config/README.md | packages/eslint-config/README.md | \
+    ops/dokploy/* | ops/AGENTS.md | \
+    scripts/release/* | scripts/repository/* | scripts/vault/* | \
+    scripts/setup/verify-prerequisites.ps1 | scripts/README.md | \
+    docs/* | Vault/* | .obsidian/* | .github/ISSUE_TEMPLATE/* | \
+    .github/BRANCH_PROTECTION.md | .github/CODEOWNERS.template | \
+    .github/pull_request_template.md | \
+    .github/workflows/backend-ci.yml | .github/workflows/web-ci.yml | \
+    .github/workflows/api-client-ci.yml | .github/workflows/mobile-ci.yml | \
+    .github/workflows/ops-config-ci.yml | .github/workflows/vault-ci.yml | \
+    .github/workflows/secret-scan.yml | \
+    .github/workflows/development-delivery.yml | \
+    .github/workflows/pull-request-ci.yml | \
+    .dockerignore | .editorconfig | .gitattributes | .gitignore | \
+    AGENTS.md | CONTRIBUTING.md | LICENSE.md | README.md | SECURITY.md | \
+    SETUP_REPORT.md | .1GUIA-PRUEBA-COMPLETA-PROTOTIPO.md | \
+    INICIAR-PROTOTIPO.cmd | PREPARAR-PROTOTIPO.cmd | \
+    PROBAR-PROTOTIPO.cmd | RESTABLECER-DATOS-PROTOTIPO.cmd | \
+    Directory.Build.props | Directory.Packages.props | NuGet.config | \
+    dotnet-tools.json | global.json | package.json | package-lock.json | \
+    pnpm-workspace.yaml)
+      ;;
+    *)
+      printf 'Unclassified repository path; update CI ownership: %q\n' "$path" >&2
+      exit 2 ;;
+  esac
   case "$path" in
     backend/* | database/* | .dockerignore | Directory.Build.props | \
     Directory.Packages.props | NuGet.config | dotnet-tools.json | global.json | \

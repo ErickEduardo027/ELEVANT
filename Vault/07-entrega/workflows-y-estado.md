@@ -40,7 +40,7 @@ ni distribuye una APK firmada.
 | Workflow | Cuándo corre | Validación principal | Publicación automática |
 | --- | --- | --- | --- |
 | [Pull request CI](../../.github/workflows/pull-request-ci.yml) | todo PR a `main` o `Development` | clasifica rutas, llama los carriles aplicables y exige el gate final estable | ninguna |
-| [Development delivery](../../.github/workflows/development-delivery.yml) | todo push a `Development` | ordena Backend antes de Web y pasa la referencia API inmutable del mismo run | delega la publicación a los carriles aplicables |
+| [Development delivery](../../.github/workflows/development-delivery.yml) | push a `Development` con rutas de backend, DB, web o tooling de release | ordena Backend antes de Web y pasa la referencia API inmutable del mismo run | delega la publicación a los carriles aplicables |
 | [Backend CI](../../.github/workflows/backend-ci.yml) | llamado por coordinadores; push relevante a `main` | restore bloqueado, build, tests, SQL 2022, modelo/migraciones, OpenAPI, Compose e imágenes | solo push relevante a `Development`: DB y/o API según clasificación |
 | [Web clients CI and Development delivery](../../.github/workflows/web-ci.yml) | llamado por coordinadores; push relevante a `main` | clasifica aplicaciones; valida y certifica solo los perfiles afectados | solo push web-owned a `Development`: publica AVIAM y/o Public clasificado |
 | [API client CI](../../.github/workflows/api-client-ci.yml) | llamado por PR; push relevante a `main` o `Development` | compila API del commit, compara Swagger/snapshot, valida generado y consumo del cliente compartido | ninguna |
@@ -58,9 +58,9 @@ el solo hecho de abrir un PR ni por un push a `main`.
 
 ## Clasificación que evita entregas innecesarias
 
-- Backend distingue entradas **DB-owned** y **API-owned**. Un cambio exclusivo
-  de API/contratos no produce automáticamente una nueva entrega DB; una entrada
-  de Persistence puede afectar ambos carriles.
+- Backend distingue entradas **DB-owned** y **API-owned**. Algunos cambios de
+  API/contratos también son DB-owned porque el bundle EF compila el proyecto
+  de arranque. Una entrada de Persistence puede afectar ambos carriles.
 - Web distingue `aviam-web` y `public-web` para **validación y publicación**;
   cambiar una sola aplicación ya no construye la otra. El paquete API
   compartido o tooling común puede clasificar ambas.

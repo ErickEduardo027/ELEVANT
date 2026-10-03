@@ -32,7 +32,9 @@ bundle DB/API/web. La clasificación y sus guardas se prueban en
 `scripts/release/tests`; el escaneo de secretos permanece en todo PR.
 El clasificador determina si cambió un artefacto que puede alterar las imágenes
 de operaciones, el bundle EF, las migraciones, el modelo, el seed o sus Compose.
-Los cambios exclusivos de API/contratos no publican una entrega DB.
+Algunos cambios de API/contratos también producen entrega DB porque el bundle
+de migraciones compila el proyecto de arranque; la clasificación exacta vive
+en `scripts/release/path-ownership.sh`.
 
 Cuando el carril aplica:
 

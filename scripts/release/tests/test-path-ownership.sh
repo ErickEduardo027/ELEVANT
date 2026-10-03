@@ -69,6 +69,12 @@ assert_false elevant_is_api_publication_superseding_path .github/workflows/backe
 assert_false elevant_is_api_publication_superseding_path database/ProductionDB/.gitkeep
 
 assert_true elevant_is_database_release_input_path backend/Elevant.Application/Feature.cs
+assert_false elevant_is_api_build_input_path backend/scripts/deployment/guard-api-publication.sh
+assert_true elevant_is_database_release_input_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_build_input_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_publication_superseding_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_build_input_path database/DevelopmentDB/New.Runtime/Thing.cs
+assert_false elevant_is_api_build_input_path backend/New.Runtime/README.md
 assert_true elevant_is_database_release_input_path database/DevelopmentDB/Elevant.Persistence/Migrations/New.cs
 assert_false elevant_is_database_release_input_path database/DevelopmentDB/tests/scripts/test_manifest.py
 assert_false elevant_is_database_release_input_path .github/workflows/backend-ci.yml
@@ -76,6 +82,8 @@ assert_true elevant_is_api_release_input_path backend/Elevant.Api/Features/Fligh
 assert_false elevant_is_api_release_input_path .github/workflows/backend-ci.yml
 assert_true elevant_is_web_release_input_path aviam-web frontend/private-web/src/App.jsx
 assert_false elevant_is_web_release_input_path aviam-web frontend/private-web/tests/App.test.jsx
+assert_false elevant_is_web_release_input_path aviam-web frontend/scripts/deployment/guard-web-publication.sh
+assert_false elevant_is_web_release_input_path public-web frontend/scripts/deployment/resolve-api-release.sh
 assert_false elevant_is_web_release_input_path public-web frontend/private-web/src/App.jsx
 assert_true elevant_is_web_release_input_path public-web packages/api-client/src/index.ts
 

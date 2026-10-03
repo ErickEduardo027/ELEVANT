@@ -22,6 +22,8 @@ check docs-only '{"backend_validate":false,"database_release":false,"api_release
 check ci-only '{"backend_validate":true,"database_release":false,"api_release":false,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' '.github/workflows/backend-ci.yml' '.github/workflows/web-ci.yml'
 check backend-workflow '{"backend_validate":true,"aviam_validate":true,"public_validate":true,"api_release":false}' '.github/workflows/backend-ci.yml'
 check api-source '{"backend_validate":true,"database_release":true,"api_release":true,"aviam_release":true,"public_release":true}' 'backend/Elevant.Application/Operations/Service.cs'
+check new-backend-component '{"backend_validate":true,"database_release":true,"api_release":true,"aviam_release":true,"public_release":true}' 'backend/New.Runtime/Thing.cs'
+check new-database-component '{"backend_validate":true,"database_release":true,"api_release":true,"aviam_release":true,"public_release":true}' 'database/DevelopmentDB/New.Runtime/Thing.cs'
 check ef-migration '{"backend_validate":true,"database_release":true,"api_release":true,"aviam_release":true,"public_release":true}' 'database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/New.cs'
 check ef-ops '{"ops_validate":true}' 'database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/New.cs'
 check private-only '{"backend_validate":false,"aviam_validate":true,"public_validate":false,"aviam_release":true,"public_release":false}' 'frontend/private-web/src/App.jsx'
@@ -35,9 +37,20 @@ check private-seam '{"api_client_validate":true,"aviam_validate":true,"public_va
 check public-seam '{"api_client_validate":true,"public_validate":true}' 'frontend/public-web/src/lib/elevant-api.ts'
 check mobile-seam '{"api_client_validate":true,"mobile_validate":true}' 'frontend/mobile-agent/src/config/elevant-api.ts'
 check client-tooling '{"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'packages/api-client/scripts/check-openapi.mjs'
+check publication-guards '{"backend_validate":true,"api_release":false,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'backend/scripts/deployment/guard-api-publication.sh' 'frontend/scripts/deployment/guard-web-publication.sh'
 check ops-only '{"ops_validate":true,"database_release":false,"api_release":false,"aviam_release":false,"public_release":false}' 'ops/dokploy/firewall/elevant-firewall-apply'
 check tests-only '{"backend_validate":true,"database_release":false,"api_release":false,"aviam_release":false,"public_release":false}' 'database/DevelopmentDB/tests/scripts/test_manifest.py'
 check deleted-web-input '{"public_validate":true,"public_release":true}' 'frontend/public-web/src/lib/obsolete.ts'
 check renamed-both-apps '{"aviam_release":true,"public_release":true}' 'frontend/private-web/src/old.ts' 'frontend/public-web/src/new.ts'
+
+error_file="$(mktemp)"
+trap 'rm -f -- "$error_file"' EXIT
+for unknown in 'tooling/new-tool.js' '.github/workflows/unclassified.yml' 'packages/new-tool/src/index.ts'; do
+  if printf '%s\0' "$unknown" | bash "$classifier" 2> "$error_file"; then
+    echo "unknown external path unexpectedly passed classification: $unknown" >&2
+    exit 1
+  fi
+  grep -Fq "$unknown" "$error_file"
+done
 
 printf 'test-classify-changes.sh: PASS\n'
