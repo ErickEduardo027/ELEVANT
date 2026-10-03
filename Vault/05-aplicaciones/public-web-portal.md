@@ -94,7 +94,15 @@ flowchart LR
 
 Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX
 prototípica; las rutas activas no montan ese repositorio mock ni
-`PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos
+`PortalDemoPreview`. La rama de integración retira además el proveedor de
+sesión mock del layout activo; `AirlineSessionProvider` queda como único
+contexto de acceso. El login representa la verificación como pendiente antes
+de autenticar, sin una ruta inventada ni un estado autenticado ficticio. Esto
+es evidencia de código y pruebas locales, no de promoción al VPS. Fuentes:
+[layout](../../frontend/public-web/src/app/layout.tsx),
+[login](../../frontend/public-web/src/components/auth/AuthExperience.tsx) y
+[prueba](../../frontend/public-web/tests/unit/real-airline-login.test.tsx).
+Inicio muestra la ventana actual del bootstrap; Vuelos
 carga el historial propio desde SQL, incluso después de vencer un contrato
 que cubría la operación en su fecha, con vacío/error explícito. El detalle
 se autoriza por tenant y operación exacta. La rama posterior consulta

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "@fontsource-variable/geist";
 
-import { MockSessionProvider } from "@/components/auth/MockSessionProvider";
 import { AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
 
 import "./globals.css";
@@ -67,7 +66,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="es" data-scroll-behavior="smooth">
       <body>
-        <MockSessionProvider><AirlineSessionProvider>{children}</AirlineSessionProvider></MockSessionProvider>
+        <AirlineSessionProvider>{children}</AirlineSessionProvider>
       </body>
     </html>
   );

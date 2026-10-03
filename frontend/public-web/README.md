@@ -12,7 +12,11 @@ El botón naranja **Solicitar acceso** abre `/solicitar-acceso` en cuatro pasos:
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
-autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. Vuelos
+autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. El
+layout activo solo monta `AirlineSessionProvider`; el proveedor de sesión mock
+permanece en componentes prototípicos no montados y no concede acceso al portal.
+La tarjeta del login describe la verificación pendiente sin mostrar rutas ni
+estados autenticados ficticios. Vuelos
 consulta además el historial paginado de su tenant
 mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
 histórica se relee por su ID público con autorización en la API, aunque ya no

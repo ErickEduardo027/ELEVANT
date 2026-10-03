@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AirlinePortalBootstrapResponse, SessionResponse } from "@elevant/api-client";
 import { AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
-import { MockSessionProvider } from "@/components/auth/MockSessionProvider";
 import { AuthExperience } from "@/components/auth/AuthExperience";
 
 const replace = vi.fn();
@@ -35,9 +34,9 @@ afterEach(() => {
 });
 
 it("sends registration from the airline login to the canonical commercial request", async () => {
-  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
-  </AirlineSessionProvider></MockSessionProvider>);
+  </AirlineSessionProvider>);
 
   expect(await screen.findByRole("link", { name: "Solicita acceso aquí" }))
     .toHaveAttribute("href", "/solicitar-acceso");
@@ -51,9 +50,9 @@ it("reveals only the chosen password during mandatory credential replacement", a
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
     status: 409, code: "password_change_required", title: "Password change required",
   }), { status: 409, headers: { "content-type": "application/problem+json" } })));
-  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
-  </AirlineSessionProvider></MockSessionProvider>);
+  </AirlineSessionProvider>);
   fireEvent.change(await screen.findByRole("textbox", { name: "Correo corporativo" }),
     { target: { value: actor.email } });
   fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Temporary!2026" } });
@@ -77,11 +76,13 @@ it("uses Public Web login for the real API and never offers demo credentials", a
     return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   }));
 
-  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
-  </AirlineSessionProvider></MockSessionProvider>);
+  </AirlineSessionProvider>);
 
   await screen.findByRole("textbox", { name: "Correo corporativo" });
+  expect(screen.getByText("Se verifica al iniciar sesión")).toBeInTheDocument();
+  expect(screen.queryByText(/origen demo|acceso autenticado|ev \/ airline/i)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Usar credenciales de demostraci\u00f3n/i })).not.toBeInTheDocument();
   expect(screen.queryByRole("checkbox", { name: /Recordarme/i })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", { name: "Correo corporativo" }), {
@@ -106,9 +107,9 @@ it("lets an airline replace a temporary password before a fresh login", async ()
       { status: 409, headers: { "content-type": "application/problem+json" } });
   }));
 
-  render(<MockSessionProvider><AirlineSessionProvider baseUrl="https://api.example.test">
+  render(<AirlineSessionProvider baseUrl="https://api.example.test">
     <AuthExperience returnTo="/portal" />
-  </AirlineSessionProvider></MockSessionProvider>);
+  </AirlineSessionProvider>);
   await screen.findByRole("textbox", { name: "Correo corporativo" });
   fireEvent.change(screen.getByRole("textbox", { name: "Correo corporativo" }), { target: { value: actor.email } });
   fireEvent.change(screen.getByLabelText("Contraseña"), { target: { value: "Synthetic-Temporary!2026" } });
