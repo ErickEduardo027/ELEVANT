@@ -50,8 +50,7 @@ git diff --name-only --no-renames -z \
   "$SOURCE_COMMIT" "$development_tip" > "$changed_file_list"
 
 while IFS= read -r -d '' path; do
-  if elevant_is_web_shared_input_path "$path" ||
-     elevant_is_web_application_input_path "$APPLICATION" "$path"; then
+  if elevant_is_web_release_input_path "$APPLICATION" "$path"; then
     echo "A newer Development commit changes $APPLICATION release input path: $path" >&2
     echo "This older run will not move the mutable Development web alias." >&2
     exit 1

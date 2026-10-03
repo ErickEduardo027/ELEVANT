@@ -5,15 +5,14 @@
 
 elevant_is_api_build_input_path() {
   local path="${1:-}"
+  case "$path" in *.md | */tests/* | */Tests/*) return 1 ;; esac
   case "$path" in
-    .github/workflows/backend-ci.yml | \
     .dockerignore | \
     Directory.Build.props | \
     Directory.Packages.props | \
     NuGet.config | \
     dotnet-tools.json | \
     global.json | \
-    scripts/release/path-ownership.sh | \
     backend/Dockerfile | \
     backend/compose.development.api.yml | \
     backend/Elevant.sln | \
@@ -23,7 +22,6 @@ elevant_is_api_build_input_path() {
     backend/Elevant.Domain/* | \
     backend/Elevant.Infrastructure/* | \
     backend/scripts/deployment/* | \
-    ops/dokploy/web-cd/openapi-tool.mjs | \
     packages/api-client/openapi/elevant-v1.json | \
     database/DevelopmentDB/Elevant.Persistence/*)
       return 0
@@ -34,19 +32,56 @@ elevant_is_api_build_input_path() {
   esac
 }
 
-elevant_is_api_publication_superseding_path() {
+elevant_is_database_release_input_path() {
   local path="${1:-}"
-  if elevant_is_api_build_input_path "$path"; then
+  case "$path" in
+    .dockerignore | Directory.Build.props | Directory.Packages.props | \
+    NuGet.config | dotnet-tools.json | global.json | \
+    backend/Elevant.sln | backend/Elevant.Api/* | \
+    backend/Elevant.Application/* | backend/Elevant.Contracts/* | \
+    backend/Elevant.Domain/* | backend/Elevant.Infrastructure/* | \
+    database/DevelopmentDB/*)
+      case "$path" in
+        *.md | */tests/* | */Tests/* | */.gitkeep) return 1 ;;
+      esac
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+elevant_is_api_release_input_path() {
+  elevant_is_api_build_input_path "${1:-}" || return 1
+  case "${1:-}" in
+    *.md | */tests/* | */Tests/*) return 1 ;;
+  esac
+  return 0
+}
+
+elevant_is_web_release_input_path() {
+  local application="${1:-}" path="${2:-}"
+  if elevant_is_api_release_input_path "$path"; then
     return 0
   fi
   case "$path" in
-    database/DevelopmentDB/*)
+    packages/api-client/* | frontend/scripts/deployment/*)
+      case "$path" in *.md | */tests/* | */Tests/*) return 1 ;; esac
       return 0
       ;;
-    *)
-      return 1
-      ;;
   esac
+  if elevant_is_web_application_input_path "$application" "$path"; then
+    case "$path" in *.md | */tests/* | */Tests/*) return 1 ;; esac
+    return 0
+  fi
+  return 1
+}
+
+elevant_is_api_publication_superseding_path() {
+  local path="${1:-}"
+  if elevant_is_api_release_input_path "$path"; then
+    return 0
+  fi
+  elevant_is_database_release_input_path "$path"
 }
 
 elevant_is_web_shared_input_path() {
@@ -56,6 +91,7 @@ elevant_is_web_shared_input_path() {
   fi
   case "$path" in
     .github/workflows/web-ci.yml | \
+    ops/dokploy/web-cd/openapi-tool.mjs | \
     frontend/scripts/deployment/* | \
     frontend/tests/deployment/* | \
     packages/api-client/*)
