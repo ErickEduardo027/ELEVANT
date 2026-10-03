@@ -16,7 +16,7 @@ Garage `2.3+` admite `--single-node`; esta topología Development tiene factor d
 
 ## Verificación de la entrega
 
-Promover en orden Database Release y API mediante los controladores existentes. Confirmar migraciones, API healthy, POST multipart de una imagen de prueba con credencial autorizada, GET de ese medio vinculado y rechazo de un identificador no vinculado. Probar el flujo en Public Web, Private Web y el poll no-op posterior. Si falta Garage o su configuración, mantener el candidato API pendiente; no reemplazar la imagen sana por una que no pueda guardar medios.
+Promover en orden Database Release y API mediante los controladores existentes. Confirmar migraciones, API healthy, POST multipart de una imagen de servicio sintética con credencial autorizada, vincularla al servicio y comprobar GET del nuevo medio y rechazo de un identificador no vinculado. En el ciclo financiero de prueba, abrir la factura no fiscal y el pago propio y comprobar que ambos PDF se descargan con HTTP 200 y firma `%PDF-`; ambos objetos deben quedar en el bucket privado. Probar el flujo en Public Web, Private Web y el poll no-op posterior. Si falta Garage o su configuración, mantener el candidato API pendiente; no reemplazar la imagen sana por una que no pueda guardar medios o documentos.
 
 No se publica el puerto S3 `3900`, RPC `3901`, SQL ni Dokploy en Internet. Los navegadores solo leen medios por el endpoint autorizado `/api/v1/media/{id}`.
 
