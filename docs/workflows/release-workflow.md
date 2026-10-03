@@ -164,9 +164,9 @@ conservan adquisición no bloqueante. El primer despliegue, la instalación,
 adopción y habilitación de jobs siguen siendo acciones manuales con evidencia
 por cada aplicación.
 
-Las webs permanecen tailnet-only, sin Domain/Funnel y sin red SQL. El rollout
-inicial es un preview técnico: una shell saludable no implica que ya existan en
-la API los endpoints de autenticación o negocio del prototipo. Consulte
+Las webs permanecen tailnet-only, sin Domain/Funnel y sin red SQL. Una shell
+saludable solo prueba el runtime; autenticación, autorización y ciclo de negocio
+requieren pruebas funcionales contra la API y la base exactas. Consulte
 [ADR-0012](../adr/0012-pull-based-web-development-cd.md).
 
 ## Medir el costo de Actions sin reducir los gates
@@ -187,14 +187,13 @@ aliases manualmente para recuperar minutos.
 
 ## Carril Mobile Agent
 
-Mobile Agent es hoy una app Expo ejecutable con flujos de negocio todavía
-acoplados al backend prototipo. `.github/workflows/mobile-ci.yml` aporta CI de
+Mobile Agent es una app Expo ejecutable. `.github/workflows/mobile-ci.yml` aporta CI de
 fuente independiente: instala el lockfile, ejecuta lint y tipos, y empaqueta
 tanto el cliente OpenAPI compartido como la aplicación Android con Metro. Ese
 workflow no usa secretos, no firma, no publica y no distribuye una APK.
 
-La integración funcional con la API .NET y una APK Development firmada y
-distribuida continúan siendo objetivos separados. La tablet de Development
+Una APK Development firmada y distribuida continúa siendo un objetivo separado.
+La tablet de Development
 deberá alcanzar la misma API por HTTPS/Tailscale; la APK tendrá su propio canal
 y no será un servicio Dokploy. Véase el
 [diseño diferido](../../Vault/07-entrega/mobile-apk-ci-cd.md).

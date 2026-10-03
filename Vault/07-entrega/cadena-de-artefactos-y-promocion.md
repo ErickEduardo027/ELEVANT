@@ -7,8 +7,8 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "f533cf2b20c1ded9b68fb10d6edcf2d622551ac4"
+last_verified: "2026-10-03"
+verified_commit: "ab301fd003b85e20594a5b9d75afcf2491d68959"
 sources:
   - .github/workflows/development-delivery.yml
   - .github/workflows/backend-ci.yml
@@ -140,9 +140,8 @@ No adivina que una API más reciente sea compatible. Un candidato web para una
 API distinta se difiere sin consumir el intento; una nueva certificación web
 puede fijar la API vigente.
 
-Las webs son previews técnicos independientes: una shell/health saludable no
-prueba que la API ya tenga los endpoints de autenticación y negocio de los
-prototipos. Ninguna web entra a la red SQL ni mueve el otro perfil.
+Una shell/health saludable no prueba por sí sola un ciclo de negocio completo
+ni su autorización. Ninguna web entra a la red SQL ni mueve el otro perfil.
 
 En el PR de integración #118, el certifier de AVIAM verifica que el bundle
 incluya el dashboard HR conectado y excluya el antiguo banner permanente de

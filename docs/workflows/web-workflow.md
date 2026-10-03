@@ -51,10 +51,8 @@ repositorio conservan placeholders; no contienen nombres de tailnet vivos. El
 build certificado de Development rechaza un origen `localhost`, credenciales,
 query/fragment o una ruta adicional.
 
-Mientras algunos adaptadores todavía usan el contrato prototipo, su URL de
-compatibilidad se fija al mismo `ELEVANT_DEV_API_ORIGIN`. Por eso una operación
-aún no implementada falla de forma visible en la API real en lugar de intentar
-alcanzar `localhost` en el equipo del usuario. `backend-prototipo` nunca se
+Las peticiones remotas usan `ELEVANT_DEV_API_ORIGIN`; la certificación del build
+rechaza referencias a `localhost` incrustadas. `backend-prototipo` nunca se
 despliega para simular funcionalidad.
 
 ## CI y publicación
@@ -124,13 +122,12 @@ checkpoints manuales del operador. Versionar este flujo no modifica el VPS. Una
 promoción fallida vuelve al último par imagen/Compose sano; un fallo del
 rollback pausa solo el perfil afectado.
 
-## Alcance funcional actual
+## Alcance de la certificación
 
-El primer rollout publica previews técnicos para que el equipo desarrolle y
-valide integración remota. Health y las shells pueden estar operativos aunque
-la API todavía no implemente autenticación o endpoints de negocio usados por
-las pantallas prototipo. Una UI visible no demuestra que ese flujo sea
-funcional, autorizado o listo para Production.
+Health, shells e imágenes certificadas no prueban por sí solas un ciclo de
+negocio completo ni autorización correcta. Esos resultados exigen pruebas
+funcionales de las sesiones y endpoints contra la API y base del mismo entorno;
+ningún check de CI declara por sí solo disponibilidad para Production.
 
 Mobile Agent no participa de este despliegue: se ejecuta en emulador/tablet,
 consume la misma API por HTTPS/Tailscale y se distribuye por APK/EAS cuando
