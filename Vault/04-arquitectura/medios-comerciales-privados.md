@@ -13,6 +13,8 @@ sources:
   - backend/Elevant.Api/Controllers/CommercialMediaController.cs
   - backend/Elevant.Application/Abstractions/Commercial/ICommercialMediaStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialMediaStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/S3PrivateFinancialObjectStore.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/S3PrivateFinancialObjectStoreTests.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927195557_CommercialMediaAssets.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20260927204956_PersonAvatarMedia.cs
   - frontend/private-web/src/features/contracts/catalog/CommercialCatalogPage.jsx
@@ -44,6 +46,15 @@ nuevo se puede vincular durante seis días; un proceso horario elimina objetos
 que pasen siete días sin vincularse a un registro. La separación evita una
 carrera entre vinculación y limpieza. El proceso necesita permiso de borrado
 en el bucket.
+
+Los dos adaptadores que escriben en este bucket —medios comerciales y PDF
+financieros no fiscales— usan PUT firmado con contenido de longitud conocida,
+sin el checksum opcional ni el encuadre `aws-chunked` que el SDK añade por
+defecto. La API conserva el SHA-256 y la longitud de los PDF en SQL y los
+verifica al leer; no se habilitan cargas arbitrarias. Las pruebas de
+integración ejercitan PUT/GET de los formatos permitidos con un servidor S3
+que rechaza ese encuadre. Esto comprueba el contrato del código, no por sí
+solo la promoción ni el bucket vivo de Development.
 
 Los siete servicios de Development incluyen fotos específicas en las dos
 webs. El catálogo histórico AVIAM tiene 51 entradas, de las cuales cuatro

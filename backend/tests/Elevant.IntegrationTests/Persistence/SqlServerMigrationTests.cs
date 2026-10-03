@@ -1530,6 +1530,70 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task CommercialServiceImageUploadUsesGarageCompatiblePutAndCanBeRead()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var server = await GarageCompatibleS3Server.StartAsync(cancellationToken);
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                    ["MediaStorage:Endpoint"] = server.Endpoint,
+                    ["MediaStorage:AccessKey"] = "synthetic-access",
+                    ["MediaStorage:SecretKey"] = "synthetic-secret",
+                    ["MediaStorage:Bucket"] = "synthetic-bucket",
+                    ["MediaStorage:Region"] = "garage",
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var media = scope.ServiceProvider.GetRequiredService<ICommercialMediaStore>();
+        var actor = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var formats = new (string Purpose, string ContentType, byte[] Content)[]
+        {
+            ("service-image", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+            ("service-image", "image/jpeg", [0xff, 0xd8, 0xff]),
+            ("service-image", "image/webp", "RIFF0000WEBP"u8.ToArray()),
+            ("service-video", "video/mp4", [0, 0, 0, 12, 102, 116, 121, 112, 0, 0, 0, 0]),
+            ("service-video", "video/webm", [0x1a, 0x45, 0xdf, 0xa3]),
+            ("airline-logo", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+            ("avatar", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+        };
+        foreach (var format in formats)
+        {
+            using var input = new MemoryStream(format.Content);
+            var uploaded = await media.UploadAsync(actor, format.Purpose,
+                format.ContentType, input, input.Length, cancellationToken);
+
+            Assert.NotNull(uploaded);
+            Assert.Equal(format.Content, server.LastUploadedContent);
+            Assert.Equal($"/synthetic-bucket/{format.Purpose}/{uploaded.Id:N}",
+                server.LastUploadedPath);
+            await using var output = await media.OpenAsync($"{format.Purpose}/{uploaded.Id:N}",
+                cancellationToken: cancellationToken);
+            using var buffer = new MemoryStream();
+            await output.CopyToAsync(buffer, cancellationToken);
+            Assert.Equal(format.Content, buffer.ToArray());
+        }
+    }
+
+    [Fact]
     public async Task MediaLinksExpireBeforeCleanupButExistingPrivateLinksRemainReadable()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
