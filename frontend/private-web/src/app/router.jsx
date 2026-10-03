@@ -49,7 +49,7 @@ function LoginRoute() {
     onSubmit={async credentials => {
       await changePassword(credentials);
       setActivationEmail(null);
-      setNotice('Contraseña actualizada. Inicia sesión con tu nueva contraseña.');
+      setNotice('password_updated');
     }}
   />;
   return <LoginPage notice={notice} onSubmit={async credentials => {
