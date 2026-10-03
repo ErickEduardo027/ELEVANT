@@ -25,6 +25,14 @@ personal interno autorizado. El Compose de API exige cinco variables
 [runbook de medios](../ops/dokploy/media-storage/README.md) antes de promover
 esta versión. El código versionado no demuestra todavía instalación en el VPS.
 
+Las descargas privadas de factura y recibo no fiscal conservan una respuesta
+HTTP 503 genérica si no se puede verificar o publicar el PDF. La API emite el
+evento de diagnóstico `FinancialDocumentUnavailable` (`1801`) con solo la
+etapa estable (`Stage`) y el nombre del tipo de error interno (`Cause`). No
+registra identificadores, claves de objeto, bytes, credenciales ni mensajes
+del proveedor. Este evento clasifica el fallo; no demuestra que la descarga
+remota funcione ni sustituye una prueba end-to-end después de promocionar.
+
 ## Validación
 
 Desde la raíz del repositorio:

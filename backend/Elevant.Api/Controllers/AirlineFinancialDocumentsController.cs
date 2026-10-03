@@ -16,7 +16,8 @@ namespace Elevant.Api.Controllers;
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/airline/portal")]
 public sealed class AirlineFinancialDocumentsController(
-    GetFinancialDocumentHandler documents) : ControllerBase
+    GetFinancialDocumentHandler documents,
+    ILogger<AirlineFinancialDocumentsController> logger) : ControllerBase
 {
     [HttpGet("preinvoices/{preinvoiceId:guid}/invoice/document",
         Name = "GetAirlineInvoiceDocument")]
@@ -36,8 +37,9 @@ public sealed class AirlineFinancialDocumentsController(
                 cancellationToken);
             return result.IsSuccess ? Pdf(result.Document!) : AirlineProblem(result.Failure!.Value);
         }
-        catch (FinancialDocumentUnavailableException)
+        catch (FinancialDocumentUnavailableException exception)
         {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
             return ProblemResult(503, "Financial document is unavailable.");
         }
     }
@@ -59,8 +61,9 @@ public sealed class AirlineFinancialDocumentsController(
                 cancellationToken);
             return result.IsSuccess ? Pdf(result.Document!) : AirlineProblem(result.Failure!.Value);
         }
-        catch (FinancialDocumentUnavailableException)
+        catch (FinancialDocumentUnavailableException exception)
         {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
             return ProblemResult(503, "Financial document is unavailable.");
         }
     }

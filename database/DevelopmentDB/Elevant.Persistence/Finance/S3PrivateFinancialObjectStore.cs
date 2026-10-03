@@ -25,9 +25,11 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
             }, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(exception);
+            throw new FinancialDocumentUnavailableException(
+                FinancialDocumentFailureStage.StorageWrite, exception);
         }
     }
 
@@ -48,7 +50,8 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
                 chunk, cancellationToken)) != 0)
             {
                 if (buffer.Length + read > FinancialDocumentIntegrity.MaxBytes)
-                    throw new FinancialDocumentUnavailableException();
+                    throw new FinancialDocumentUnavailableException(
+                        FinancialDocumentFailureStage.StoredContent);
                 await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
             }
             return buffer.ToArray();
@@ -62,7 +65,8 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
         catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(exception);
+            throw new FinancialDocumentUnavailableException(
+                FinancialDocumentFailureStage.StorageRead, exception);
         }
     }
 
@@ -78,28 +82,41 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
             }, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
+        catch (FinancialDocumentUnavailableException) { throw; }
         catch (Exception exception)
         {
-            throw new FinancialDocumentUnavailableException(exception);
+            throw new FinancialDocumentUnavailableException(
+                FinancialDocumentFailureStage.StorageDelete, exception);
         }
     }
 
     private string Bucket() => configuration["MediaStorage:Bucket"] is { Length: > 0 } bucket
-        ? bucket : throw new FinancialDocumentUnavailableException();
+        ? bucket : throw new FinancialDocumentUnavailableException(
+            FinancialDocumentFailureStage.StorageConfiguration);
 
     private AmazonS3Client CreateClient()
     {
-        var endpoint = configuration["MediaStorage:Endpoint"];
-        var accessKey = configuration["MediaStorage:AccessKey"];
-        var privateCredential = configuration["MediaStorage:SecretKey"];
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(accessKey) ||
-            string.IsNullOrWhiteSpace(privateCredential))
-            throw new FinancialDocumentUnavailableException();
-        return new AmazonS3Client(new BasicAWSCredentials(accessKey, privateCredential),
-            new AmazonS3Config
-            {
-                ServiceURL = endpoint, ForcePathStyle = true,
-                AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
-            });
+        try
+        {
+            var endpoint = configuration["MediaStorage:Endpoint"];
+            var accessKey = configuration["MediaStorage:AccessKey"];
+            var privateCredential = configuration["MediaStorage:SecretKey"];
+            if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(accessKey) ||
+                string.IsNullOrWhiteSpace(privateCredential))
+                throw new FinancialDocumentUnavailableException(
+                    FinancialDocumentFailureStage.StorageConfiguration);
+            return new AmazonS3Client(new BasicAWSCredentials(accessKey, privateCredential),
+                new AmazonS3Config
+                {
+                    ServiceURL = endpoint, ForcePathStyle = true,
+                    AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
+                });
+        }
+        catch (FinancialDocumentUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            throw new FinancialDocumentUnavailableException(
+                FinancialDocumentFailureStage.StorageConfiguration, exception);
+        }
     }
 }
