@@ -2628,6 +2628,158 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task AirlineApprovedEvidenceUsesImmutableSnapshotAndHidesOtherTenants()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var approvedAt = new DateTimeOffset(2026, 8, 18, 15, 0, 0, TimeSpan.Zero);
+        Guid operationId;
+        var otherOrganizationId = Guid.NewGuid();
+        await using (var update = CreateContext(database.ConnectionString))
+        {
+            var otherOrganization = new Organization
+            {
+                PublicId = otherOrganizationId, Code = "QA-OTHER-AIR",
+                LegalName = "OTHER SYNTHETIC AIRLINE", DisplayName = "Other Airline",
+                Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Organizations.Add(otherOrganization);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherAirline = new Airline
+            {
+                PublicId = Guid.NewGuid(), OrganizationId = otherOrganization.Id,
+                IataCode = "QA", IcaoCode = "QAT", Name = "Other Airline", IsActive = true,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Airlines.Add(otherAirline);
+            await update.SaveChangesAsync(cancellationToken);
+
+            var turnaround = await update.Turnarounds.SingleAsync(item =>
+                item.OperationCode == "DEV-TAT-0001", cancellationToken);
+            var otherContract = new Contract
+            {
+                PublicId = Guid.NewGuid(), AirlineId = otherAirline.Id,
+                ContractCode = "QA-OTHER-CONTRACT", Status = ContractStatus.Active,
+                SignedOn = new DateOnly(2026, 1, 1),
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Contracts.Add(otherContract);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherVersion = new ContractVersion
+            {
+                PublicId = Guid.NewGuid(), ContractId = otherContract.Id,
+                VersionNumber = 1, Status = ContractVersionStatus.Approved,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                ValidTo = new DateOnly(2026, 12, 31), CurrencyCode = "USD",
+                ApprovedAt = approvedAt, CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.ContractVersions.Add(otherVersion);
+            await update.SaveChangesAsync(cancellationToken);
+            update.Set<ContractVersionStation>().Add(new ContractVersionStation
+            {
+                ContractVersionId = otherVersion.Id, StationId = turnaround.StationId,
+            });
+            await update.SaveChangesAsync(cancellationToken);
+            var operation = await update.GroundOperations.SingleAsync(item =>
+                item.TurnaroundId == turnaround.Id, cancellationToken);
+            operationId = operation.PublicId;
+            operation.CurrentStatus = GroundOperationStatus.Approved;
+            operation.ActualStartAt = approvedAt.AddHours(-2);
+            operation.ActualEndAt = approvedAt.AddMinutes(-10);
+            var checklist = await update.OperationChecklists
+                .Where(item => item.GroundOperationId == operation.Id)
+                .OrderByDescending(item => item.RevisionNumber)
+                .FirstAsync(cancellationToken);
+            var agent = await update.RampAgents.SingleAsync(item =>
+                item.EmployeeNumber == "DEV-RA-001", cancellationToken);
+            var reviewer = await update.Users.SingleAsync(item =>
+                item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000001"),
+                cancellationToken);
+            var service = await update.OperationServices
+                .Where(item => item.GroundOperationId == operation.Id)
+                .OrderBy(item => item.LineNumber)
+                .FirstAsync(cancellationToken);
+            var snapshot = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                version = 1,
+                services = new[] { new
+                {
+                    id = service.PublicId, code = "BAGGAGE", name = "Baggage handling",
+                    status = "Completed", contractedQuantity = 1m,
+                    executedQuantity = 1m, unit = "operation",
+                } },
+                incidents = new[] { new
+                {
+                    id = Guid.NewGuid(), type = "Internal", severity = "Low",
+                    status = "Closed", description = "Confidential internal note",
+                    occurredAt = approvedAt.AddMinutes(-30),
+                } },
+            });
+            var submission = new OperationSubmission
+            {
+                PublicId = Guid.NewGuid(), GroundOperationId = operation.Id,
+                OperationChecklistId = checklist.Id, RevisionNumber = 1,
+                Status = SubmissionStatus.Approved,
+                SubmittedByRampAgentId = agent.Id, SubmittedAt = approvedAt.AddMinutes(-5),
+                AgentNote = "Internal agent note", EvidenceJson = snapshot,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.OperationSubmissions.Add(submission);
+            await update.SaveChangesAsync(cancellationToken);
+            update.ReviewDecisions.Add(new ReviewDecision
+            {
+                PublicId = Guid.NewGuid(), OperationSubmissionId = submission.Id,
+                ReviewerAccountId = reviewer.Id, Outcome = ReviewOutcome.Approved,
+                DecidedAt = approvedAt, Reason = "Internal reviewer note",
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            });
+            await update.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+        var organizationId = Guid.Parse("10000000-0000-7000-8000-000000000002");
+        var evidence = await store.GetApprovedOperationEvidenceAsync(
+            organizationId, operationId, cancellationToken);
+
+        Assert.NotNull(evidence);
+        Assert.True(evidence.Available);
+        Assert.Equal(approvedAt, evidence.ApprovedAt);
+        Assert.Equal(1, evidence.IncidentCount);
+        Assert.Equal("BAGGAGE", Assert.Single(evidence.Services).Code);
+        Assert.Equal(1m, Assert.Single(evidence.Services).ExecutedQuantity);
+        Assert.Null(await store.GetApprovedOperationEvidenceAsync(
+            otherOrganizationId, operationId, cancellationToken));
+        Assert.Null(await store.GetApprovedOperationEvidenceAsync(
+            organizationId, Guid.NewGuid(), cancellationToken));
+        var planned = await store.GetApprovedOperationEvidenceAsync(
+            organizationId, Guid.Parse("70000000-0000-7000-8000-000000000016"),
+            cancellationToken);
+        Assert.NotNull(planned);
+        Assert.False(planned.Available);
+        Assert.Empty(planned.Services);
+    }
+
+    [Fact]
     public async Task AirlinePreinvoiceReadExcludesDraftsAndOtherTenantsButKeepsPublishedHistory()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -192,6 +192,42 @@ describe("airline operation history client", () => {
     await expect(client.getAirlineOperation("not-a-guid")).rejects.toBeInstanceOf(TypeError);
     expect(requests).toHaveLength(1);
   });
+
+  it("accepts only sanitized approved evidence for the exact operation", async () => {
+    const operationId = bootstrap.currentOperations[0]!.id!;
+    const evidence = {
+      operationId, available: true, approvedAt: "2026-08-18T15:00:00Z",
+      actualStartAt: "2026-08-18T13:00:00Z",
+      actualEndAt: "2026-08-18T14:50:00Z", incidentCount: 0,
+      services: [{ id: crypto.randomUUID(), code: "BAGGAGE", name: "Baggage handling",
+        status: "Completed", contractedQuantity: 1, executedQuantity: 1,
+        billingUnit: "operation" }],
+    };
+    const urls: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "airline-token",
+      fetch: async (url) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify(evidence),
+          { headers: { "content-type": "application/json" } });
+      },
+    });
+
+    await expect(client.getAirlineApprovedOperationEvidence(operationId)).resolves.toEqual(evidence);
+    expect(urls).toEqual([
+      `https://api.example.test/api/v1/airline/portal/operations/${operationId}/approved-evidence`,
+    ]);
+    await expect(client.getAirlineApprovedOperationEvidence("not-a-guid"))
+      .rejects.toBeInstanceOf(TypeError);
+    expect(urls).toHaveLength(1);
+
+    const leaking = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...evidence, agentNote: "private" }),
+        { headers: { "content-type": "application/json" } }),
+    });
+    await expect(leaking.getAirlineApprovedOperationEvidence(operationId))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
 });
 
 describe("airline operational requests client", () => {

@@ -48,6 +48,29 @@ export interface AffiliationOptionsResponse {
   services: AffiliationServiceOptionResponse[];
 }
 
+export interface AirlineApprovedServiceResponse {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+}
+
+export interface AirlineApprovedOperationEvidenceResponse {
+  operationId: string;
+  available: boolean;
+  /** @nullable */
+  approvedAt?: string | null;
+  /** @nullable */
+  actualStartAt?: string | null;
+  /** @nullable */
+  actualEndAt?: string | null;
+  incidentCount: number;
+  services: AirlineApprovedServiceResponse[];
+}
+
 export interface AirlineContractStationResponse {
   id: string;
   code: string;
@@ -2649,6 +2672,34 @@ export const getAirlineOperation = async (operationId: string, options?: Request
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalOperationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineApprovedOperationEvidenceUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}/approved-evidence`
+}
+
+export const getAirlineApprovedOperationEvidence = async (operationId: string, options?: RequestInit): Promise<AirlineApprovedOperationEvidenceResponse> => {
+
+  const res = await fetch(getGetAirlineApprovedOperationEvidenceUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineApprovedOperationEvidenceResponse = body ? JSON.parse(body) : {}
   return data
 }
 

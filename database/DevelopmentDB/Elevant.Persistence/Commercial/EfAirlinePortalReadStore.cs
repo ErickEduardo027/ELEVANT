@@ -4,6 +4,7 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Operations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Commercial;
@@ -251,6 +252,72 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
             legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Arrival)?.FlightNumber,
             legs.FirstOrDefault(leg => leg.Direction == FlightDirection.Departure)?.FlightNumber,
             row.PlannedStartAt, row.PlannedEndAt);
+    }
+
+    public async Task<AirlineApprovedOperationEvidenceData?> GetApprovedOperationEvidenceAsync(
+        Guid organizationId, Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || operationId == Guid.Empty) return null;
+        var authorized = await (
+            from organization in context.Organizations.AsNoTracking()
+            join airline in context.Airlines.AsNoTracking()
+                on organization.Id equals airline.OrganizationId
+            join turnaround in context.Turnarounds.AsNoTracking()
+                on airline.Id equals turnaround.AirlineId
+            join operation in context.GroundOperations.AsNoTracking()
+                on turnaround.Id equals operation.TurnaroundId
+            where organization.PublicId == organizationId &&
+                  organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive &&
+                  operation.PublicId == operationId &&
+                  (from contract in context.Contracts.AsNoTracking()
+                   join version in context.ContractVersions.AsNoTracking()
+                       on contract.Id equals version.ContractId
+                   join link in context.Set<ContractVersionStation>().AsNoTracking()
+                       on version.Id equals link.ContractVersionId
+                   where contract.AirlineId == airline.Id &&
+                         link.StationId == turnaround.StationId &&
+                         (version.Status == ContractVersionStatus.Approved ||
+                          version.Status == ContractVersionStatus.Superseded) &&
+                         version.ValidFrom <= turnaround.OperationDate &&
+                         (version.ValidTo == null || version.ValidTo >= turnaround.OperationDate)
+                   select contract.Id).Any()
+            select new
+            {
+                operation.Id,
+                operation.CurrentStatus,
+                operation.ActualStartAt,
+                operation.ActualEndAt,
+            }).SingleOrDefaultAsync(cancellationToken);
+        if (authorized is null) return null;
+
+        AirlineApprovedOperationEvidenceData Unavailable() => new(
+            operationId, false, null, null, null, 0, []);
+        if (authorized.CurrentStatus != GroundOperationStatus.Approved)
+            return Unavailable();
+
+        var approval = await (
+            from submission in context.OperationSubmissions.AsNoTracking()
+            join decision in context.ReviewDecisions.AsNoTracking()
+                on submission.Id equals decision.OperationSubmissionId
+            where submission.GroundOperationId == authorized.Id &&
+                  submission.Status == SubmissionStatus.Approved &&
+                  decision.Outcome == ReviewOutcome.Approved
+            orderby submission.RevisionNumber descending
+            select new { submission.EvidenceJson, decision.DecidedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (approval?.EvidenceJson is null) return Unavailable();
+
+        var snapshot = OperationSubmissionEvidence.Parse(approval.EvidenceJson);
+        return new AirlineApprovedOperationEvidenceData(
+            operationId, true, approval.DecidedAt,
+            authorized.ActualStartAt, authorized.ActualEndAt,
+            snapshot.Incidents.Length,
+            snapshot.Services.Select(service => new AirlineApprovedServiceData(
+                service.Id, service.Code, service.Name, service.Status,
+                service.ContractedQuantity, service.ExecutedQuantity,
+                service.Unit)).ToArray());
     }
 
     public async Task<AirlineOperationPageData?> GetOperationsAsync(

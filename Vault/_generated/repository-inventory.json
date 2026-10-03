@@ -761,7 +761,17 @@
         "title": "Seguridad y límites de acceso",
         "type": "index",
         "area": "security",
-        "status": "verified",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/10-seguridad/registro-signalr-sin-tokens.md",
+        "id": "seguridad-registro-signalr-sin-tokens",
+        "title": "Registro del transporte SignalR en los clientes web",
+        "type": "capability",
+        "area": "security",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -1053,13 +1063,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "c67e5c552e53e3a9d61e86afce21d682c6bddf703d09f8320e15c9f2175a525c",
+        "sha256": "4039a8eda64588215b7c5846c6b2550cd6fe637c9250b62131e763612ecbebb9",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "1e58f1ac7c52988fb15a7068b2be4551aadc7916b9446ee36c30a9b10370f4d3",
+        "sha256": "48fc770ccf1653d343e87ac8fb1e213a6de9cc72b293313710c789bd6722d300",
         "title": null,
         "version": null
       }

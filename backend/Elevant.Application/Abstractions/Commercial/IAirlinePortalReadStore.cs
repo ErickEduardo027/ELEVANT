@@ -27,6 +27,11 @@ public interface IAirlinePortalReadStore
         Guid operationId,
         CancellationToken cancellationToken = default);
 
+    Task<AirlineApprovedOperationEvidenceData?> GetApprovedOperationEvidenceAsync(
+        Guid organizationId,
+        Guid operationId,
+        CancellationToken cancellationToken = default);
+
     Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
         Guid organizationId,
         int page,

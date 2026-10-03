@@ -105,13 +105,13 @@ function CredentialPanel() {
 
         <div className={styles.routeCard}>
           <div className={styles.routeCardTop}>
-            <span>Credencial de ruta</span>
-            <strong>EV / AIRLINE</strong>
+            <span>Verificación de acceso</span>
+            <strong>API / Development</strong>
           </div>
           <div className={styles.routeCodes}>
             <div>
-              <strong>MIA</strong>
-              <span>Origen demo</span>
+              <strong>01</strong>
+              <span>Cuenta</span>
             </div>
             <div className={styles.routeLine} aria-hidden="true">
               <i />
@@ -119,14 +119,14 @@ function CredentialPanel() {
               <i />
             </div>
             <div>
-              <strong>PUJ</strong>
-              <span>Estación piloto</span>
+              <strong>02</strong>
+              <span>Aerolínea y estaciones</span>
             </div>
           </div>
           <div className={styles.routeCardBottom}>
             <span>Estado</span>
             <strong>
-              <i aria-hidden="true" /> Acceso autenticado
+              <i aria-hidden="true" /> Se verifica al iniciar sesión
             </strong>
           </div>
         </div>

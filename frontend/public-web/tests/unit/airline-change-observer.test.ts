@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createAirlineChangeObserver } from "@/lib/airline-change-observer";
+import { HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
+import { createAirlineChangeObserver, createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
 const eventId = "10000000-0000-0000-0000-000000000001";
 const change = (cursor: string) => ({ eventId, cursor, resource: "airline_operations",
@@ -19,6 +20,27 @@ function fixture() {
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+it("does not write a bearer-token WebSocket URL to the browser console", () => {
+  const originalBuild = HubConnectionBuilder.prototype.build;
+  let connection: ReturnType<HubConnectionBuilder["build"]> | undefined;
+  vi.spyOn(HubConnectionBuilder.prototype, "build").mockImplementation(function (this: HubConnectionBuilder) {
+    connection = originalBuild.call(this);
+    return connection;
+  });
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+  createPublicAirlineChangeObserver({
+    baseUrl: "https://api.test",
+    getAccessToken: () => "secret-canary",
+    onChanges: () => {},
+  });
+
+  const logger = (connection as unknown as { connection: { _logger: { log(level: number, message: string): void } } })
+    .connection._logger;
+  logger.log(LogLevel.Information, "WebSocket connected to wss://api.test/hubs/operations?access_token=secret-canary.");
+  expect(info).not.toHaveBeenCalled();
+});
 
 it("drains authorized pages and resumes from the last cursor on a socket hint", async () => {
   const f = fixture();

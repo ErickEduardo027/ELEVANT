@@ -12,20 +12,32 @@ El botón naranja **Solicitar acceso** abre `/solicitar-acceso` en cuatro pasos:
 
 `/login` y `/portal` usan la sesión real de la API de Development. La API
 determina la aerolínea y devuelve las estaciones y operaciones actuales
-autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. En la
-rama de integración, Vuelos consulta además el historial paginado de su tenant
+autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. El
+layout activo solo monta `AirlineSessionProvider`; el proveedor de sesión mock
+permanece en componentes prototípicos no montados y no concede acceso al portal.
+La tarjeta del login describe la verificación pendiente sin mostrar rutas ni
+estados autenticados ficticios. Vuelos
+consulta además el historial paginado de su tenant
 mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
 histórica se relee por su ID público con autorización en la API, aunque ya no
-figure en la ventana actual del bootstrap; servicios y evidencias aún faltan.
+figure en la ventana actual del bootstrap. Esta rama añade
+`GET /api/v1/airline/portal/operations/{operationId}/approved-evidence`:
+solo devuelve el snapshot de servicios de la última entrega aprobada por OCC,
+tiempos reales y el conteo de incidencias de esa entrega. No expone notas,
+identidades de agentes ni descripciones internas. Antes de la aprobación
+muestra un estado vacío real; una operación de otro tenant responde 404.
+Si esa lectura falla temporalmente, el vuelo autorizado permanece visible y
+la evidencia ofrece su propio reintento.
+La nueva ruta aún no forma parte de la API promovida en Development.
 La ruta separada `/dev-airline` fue retirada. Inicio y vuelos ya no montan la
 secuencia sintética del prototipo. Contratos consulta versiones aprobadas reales,
 incluyendo historial vencido, con cobertura y tarifas de la aerolínea
-autenticada. En la rama de integración, Solicitudes consulta registros
+autenticada. Solicitudes consulta registros
 operativos reales, paginados y propios de la aerolínea; crear y cancelar siguen
 deshabilitados. Finanzas consulta prefacturas publicadas de su tenant mediante
 `GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y abre
 líneas, disputas, factura no fiscal y estado del pago manual por ID propio.
-En esta rama local, Documentos deja atrás el listado de ejemplo: consulta
+Documentos deja atrás el listado de ejemplo: consulta
 prefacturas `Invoiced` del tenant, relee factura y pago y descarga PDFs
 privados desde la API con la sesión vigente. Un vacío real indica que aún no
 hay facturas emitidas en las páginas cargadas; `404`, error recuperable y
@@ -34,9 +46,10 @@ autorizada de operaciones y prefacturas publicadas, muestra solo conteos de
 registros cargados y enlaza a los historiales paginados; no presenta porcentajes
 de puntualidad, cumplimiento ni facturación total sin un contrato agregado.
 Las descargas no son comprobantes fiscales
-ni acreditan una transferencia bancaria. El cambio no está desplegado.
+ni acreditan una transferencia bancaria. La release #118 está promovida en
+Development; todavía falta aceptar en remoto un ciclo nuevo hasta el recibo.
 
-En la rama de integración, la sesión del portal revalida identidad y
+La sesión del portal revalida identidad y
 `bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
 `ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
 cuenta, vuelve a consultar el `bootstrap` cuando aparece
@@ -44,7 +57,11 @@ cuenta, vuelve a consultar el `bootstrap` cuando aparece
 El socket nunca entrega importes ni líneas del tenant; si falla,
 el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
 un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
-la sesión visible. Falta medir latencia real en navegador y VPS.
+la sesión visible. La corrección pendiente de esta rama desactiva los logs
+internos del transporte SignalR en el navegador, porque un WebSocket autenticado
+puede incluir el JWT en la URL registrada a nivel informativo; esto no desactiva
+la reconciliación HTTP ni el sondeo de respaldo. Esta corrección no forma parte
+de la imagen #118 ya promovida. Falta medir latencia real en navegador y VPS.
 
 ## Ejecutar y validar
 
@@ -78,16 +95,16 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/solicitar-acceso`: solicitud comercial en cuatro pasos; no crea usuario ni acepta contraseña.
 - `/login`: sesión real de aerolínea y cambio de contraseña temporal. El acceso heredado a `/login?mode=register` redirige a `/solicitar-acceso`; no existe un alta paralela con contraseña elegida por el solicitante.
 - `/portal`: alcance y operaciones actuales del bootstrap autorizado, sin rotaciones ficticias.
-- `/portal/vuelos`: historial real paginado de operaciones propias en la rama de integración; `/portal/vuelos/[operationId]` relee el detalle propio desde la API sin depender de la ventana del bootstrap.
+- `/portal/vuelos`: historial real paginado de operaciones propias; `/portal/vuelos/[operationId]` relee el detalle propio desde la API sin depender de la ventana del bootstrap.
 - `/portal/perfil`: identidad y estaciones de la sesión real.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. En esta rama se añade la presentación de disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Documentos ofrece el recibo no fiscal de prueba cuando existe ese pago.
+- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. Presenta disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Documentos ofrece el recibo no fiscal de prueba cuando existe ese pago.
 - `/portal/documentos`: consulta y descarga autorizada de facturas y recibos no fiscales de prueba; un vacío no se rellena con fixtures.
 - `/portal/reportes`: resumen de solo lectura de la primera página de operaciones y prefacturas propias, con estados vacíos/errores y enlaces a los historiales completos; no exporta ni afirma métricas globales.
 - `/dev-airline`: retirada; responde 404.
 
-En esta rama aún no promocionada, `/portal/finanzas` también permite seleccionar
+`/portal/finanzas` también permite seleccionar
 líneas de una prefactura `Submitted`, escribir el motivo y confirmar una disputa
 persistida por `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
 La respuesta se relee desde la API; el mismo intento usa la misma clave si la
@@ -105,7 +122,13 @@ muestra número, fecha, líneas y total emitidos sin inventar saldos. Si Finanza
 registró un pago manual completo, el portal relee importe y referencia por
 `GET /api/v1/airline/portal/invoices/{invoiceId}/payment`; si aún no lo hay,
 muestra un estado vacío real. No hay verificación bancaria ni documento
-tributario descargable y este tramo no está promocionado.
+tributario. El recibo y la factura disponibles en Documentos son de prueba y
+no fiscales; su descarga remota con un ciclo nuevo sigue pendiente de prueba.
+Las revisiones financieras en tiempo real mantienen abierta la confirmación de
+la prefactura y la selección de Documentos mientras se releen los IDs
+autorizados, incluso si el registro seleccionado venía de una página
+posterior a la primera. Un error de relectura no conserva el documento
+anterior como si fuera vigente.
 
 ## Contrato de seguridad
 
@@ -115,7 +138,7 @@ Las escrituras previstas se limitan a capacidades expresas, como solicitudes de 
 
 ## Datos de demostración
 
-Las rutas activas de Inicio, Vuelos, Solicitudes, Finanzas, Documentos y Reportes no muestran tarjetas de negocio inventadas. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Los historiales de esta rama están verificados localmente con SQL e integración HTTP, pero no se han promocionado al VPS ni probado allí en navegador.
+Las rutas activas de Inicio, Vuelos, Solicitudes, Finanzas, Documentos y Reportes no muestran tarjetas de negocio inventadas. El formulario comercial envía solicitudes a la API de Development y muestra una referencia solo después de confirmar su recepción; no crea una cuenta ni permite elegir contraseña. La sesión de aerolínea conserva únicamente el JWT y su vencimiento en `sessionStorage` de la pestaña; revalida identidad y contexto con la API al recargar, y lo elimina al cerrar sesión, vencer o perder autorización. No existe opción «Recordarme». Tras la promoción de #118, las ocho rutas del portal autenticado se recorrieron en navegador contra el VPS sin 404/405/5xx observados; eso no sustituye la prueba de escritura y descarga de un ciclo nuevo.
 
 ## Criterio de promoción en Development
 
@@ -133,7 +156,7 @@ Un tag mutable o un redeploy manual no constituye una identidad de release. El c
 
 Development usa una imagen Node no-root con salida Next `standalone`, construida y certificada en CI y desplegada aparte de AVIAM Web y API. El artefacto incorpora un `deploymentId` igual al commit, referencia una API certificada exacta y expone `/health` sin consultar la API ni SQL Server. El Compose revisado publica `127.0.0.1:18082` y conecta únicamente la red externa `elevant-dev-public-web-runtime`; Tailscale Serve es el único proxy HTTPS previsto y Funnel debe permanecer desactivado.
 
-Esta publicación sigue siendo un **preview privado de Development**, no un portal operacional completo: autenticación, tenant, operaciones actuales y contratos usan el contrato OpenAPI. El historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes pertenecen todavía a esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
+Esta publicación sigue siendo un **preview privado de Development**, no un portal de Production. La release #118 ya incluye historial de vuelos, solicitudes, prefacturas publicadas, documentos financieros y el resumen acotado de Reportes; la lectura nueva de evidencias aprobadas sigue en esta rama sin promocionar. La imagen no incluye ni contacta `backend-prototipo`, no se conecta a SQL y no contiene secretos. El sitio público de Production necesitará un dominio público real y un plan aprobado por separado.
 
 El Dockerfile se construye desde la raíz del monorepo porque consume `packages/api-client`:
 

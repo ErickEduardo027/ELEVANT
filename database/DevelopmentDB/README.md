@@ -14,9 +14,9 @@ scripts/                          migraciones, SQL, contenedores y manifiesto CD
 tests/scripts/                    pruebas del tooling y fixture de certificación
 ```
 
-`ElevantDevelopmentDb` es la única base desplegada actualmente. Sus migraciones son la historia canónica del esquema. El seed es sintético, determinista e idempotente; nunca se ejecuta fuera de Development. En la rama de integración incorpora una solicitud operativa de prueba vinculada a `DEV-TAT-0002`, distinta de la solicitud comercial de acceso. Esa fila no se ha promocionado al VPS.
+`ElevantDevelopmentDb` es la única base desplegada actualmente. Sus migraciones son la historia canónica del esquema. El seed es sintético, determinista e idempotente; nunca se ejecuta fuera de Development. Incluye una solicitud operativa de prueba vinculada a `DEV-TAT-0002`, distinta de la solicitud comercial de acceso. Verifique las filas en la base de destino; no infiera su presencia solo del código.
 
-La rama de integración incorpora además el comando **manual y separado**
+El comando **manual y separado**
 `Elevant.DatabaseTool seed-development-scenario`. Requiere la conexión del
 login seeder y el marcador Development habituales, más
 `ELEVANT_DEV_SCENARIO_DATE=YYYY-MM-DD` con la fecha local PUJ elegida por el
@@ -27,8 +27,10 @@ OCC y Mobile Agent deben ejecutar ese circuito real. IDs y códigos dependen
 de la fecha; repetirlo no duplica ni reinicia operaciones trabajadas. Un turno
 incompatible, ventana de stand solapada, contrato fuera de vigencia o anclas
 faltantes detienen la
-transacción sin cambios parciales. No corre durante la promoción automática,
-no admite Production y aún no se ha ejecutado en el VPS.
+transacción sin cambios parciales. No corre durante la promoción automática ni
+admite Production; cada ejecución requiere un checkpoint del operador y una
+verificación posterior en la API o SQL de Development. No se deben repetir
+comandos de migración ni seed base para generar esta operación.
 
 Las migraciones `CommercialRepresentativeDetails` y `ContractRateConfirmation` agregan campos opcionales a solicitudes comerciales y una marca nullable de confirmación de tarifa. `NULL` conserva el significado de legado; los borradores nuevos empiezan sin confirmación y no pueden activarse hasta confirmar cada tarifa. Ninguna migración actualiza datos de negocio. El seed inserta las fichas iniciales de la lista histórica AVIAM con procedencia y verificaciones IATA disponibles; en bases existentes, el superadministrador usa la acción autorizada **Completar fichas AVIAM** para enriquecer sólo fixtures intactos. El diagnóstico `verify-development.sql` mantiene la lista exacta de IDs EF; una prueba compara esa lista con los archivos de migración antes de la certificación de contenedores.
 
@@ -78,8 +80,9 @@ La migración `AccountChangeFeed` de esta rama añade `infra.account_changes`
 y concede a `elevant_app_role` permisos de objeto limitados para
 escribir/procesar el outbox y leer/insertar pistas del feed.
 `provision-development.sql` reproduce esos grants en una reprovisión y
-`verify-development.sql` comprueba sus límites efectivos. Esta migración
-no está desplegada hasta completar la certificación y la promoción controlada.
+`verify-development.sql` comprueba sus límites efectivos. Compruebe el
+`sourceCommit` aceptado por el controlador de base antes de atribuir esta
+migración a una instalación concreta.
 
 La migración aditiva `PreinvoiceDraft` de la rama de integración crea
 `commercial.preinvoices` y `commercial.preinvoice_lines`. Cada línea guarda
@@ -88,13 +91,13 @@ aprobada por OCC que la justifica. Índices únicos sobre `request_id` y
 `operation_service_id` impiden solicitudes duplicadas y reservar dos veces
 un servicio. Todas las FKs usan `NO ACTION`; la migración no carga datos de
 negocio. Se prueba una base limpia y la actualización de una base con
-operaciones previas. No se ha aplicado al VPS.
+operaciones previas.
 
 La migración aditiva `PreinvoiceDisputes` agrega
 `commercial.preinvoice_disputes` y `commercial.preinvoice_dispute_lines`
 después de `PersonAvatarMedia`. Guarda una objeción y sus líneas sin sobrescribir
 el snapshot monetario de la prefactura. `request_id` es único, las FKs son
-`NO ACTION` y no hay datos de negocio en la migración. No se ha promocionado.
+`NO ACTION` y no hay datos de negocio en la migración.
 
 La migración aditiva `NonFiscalInvoices` crea
 `commercial.non_fiscal_invoices` y `commercial.non_fiscal_invoice_lines`.
@@ -103,7 +106,7 @@ Conserva un snapshot independiente de las líneas aceptadas y un número único
 para la misma prefactura, reutilizar la clave de solicitud o duplicar una línea
 de origen. Las FKs son `NO ACTION` y la migración no contiene datos de negocio.
 Es una factura de prueba **no fiscal**, sin impuesto ni cobro externo.
-Esta migración sigue en la rama local, sin promoción al VPS.
+Su presencia en un entorno se verifica con el estado de promoción de la base.
 
 La migración aditiva `NonFiscalPayments` agrega
 `commercial.non_fiscal_payments` después de `NonFiscalInvoices`. Conserva
@@ -111,7 +114,7 @@ referencia, actor, clave idempotente, moneda e importe total de la factura
 no fiscal. Los índices únicos de factura, clave y referencia evitan dobles
 registros; las FKs son `NO ACTION`, no contiene DML ni simula liquidación
 bancaria. Las pruebas SQL comprueban concurrencia, replay, alcance y lectura
-tenant-scoped. Esta migración permanece en la rama local sin promoción.
+tenant-scoped.
 
 La migración `ResolvePreinvoiceDisputes` añade el historial inmutable
 `commercial.preinvoice_dispute_resolutions` y `released_at` a las líneas de
@@ -125,7 +128,7 @@ no contiene datos de negocio. Tras re-reservar un servicio, un downgrade al
 no se debe forzar la reversión ni borrar las líneas liberadas. `released_at`
 usa `datetimeoffset(3)`. El `Down` rechaza explícitamente la reversión si ya
 existe una resolución o línea liberada, antes de eliminar tablas o columnas;
-la recuperación de datos requiere el procedimiento de backup verificado. Sigue local.
+la recuperación de datos requiere el procedimiento de backup verificado.
 
 La migración aditiva `FinancialDocuments` crea
 `commercial.financial_documents`: metadatos inmutables de un PDF de factura
@@ -136,7 +139,8 @@ almacén S3 privado, nunca a medios comerciales públicos. La API verifica
 hash y tamaño antes de entregarlos y falla cerrado si faltan o difieren.
 El `Down` rechaza la eliminación de metadatos existentes. No contiene DML,
 impuestos, NCF ni comprobación bancaria. La prueba local de migración cubre
-concurrencia y bytes alterados; este cambio aún no está promocionado al VPS.
+concurrencia y bytes alterados. Su disponibilidad remota depende de la
+promoción certificada de la base y de la API, además del almacén privado.
 
 Desde cualquier directorio:
 

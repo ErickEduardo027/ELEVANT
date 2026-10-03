@@ -973,6 +973,72 @@
         ]
       }
     },
+    "/api/v1/airline/portal/operations/{operationId}/approved-evidence": {
+      "get": {
+        "tags": [
+          "AirlinePortal"
+        ],
+        "operationId": "GetAirlineApprovedOperationEvidence",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineApprovedOperationEvidenceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/operations": {
       "get": {
         "tags": [
@@ -8614,6 +8680,89 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineApprovedOperationEvidenceResponse": {
+        "required": [
+          "available",
+          "incidentCount",
+          "operationId",
+          "services"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "incidentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineApprovedServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineApprovedServiceResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "contractedQuantity",
+          "executedQuantity",
+          "id",
+          "name",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
             "type": "string"
           }
         },

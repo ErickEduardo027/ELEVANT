@@ -84,10 +84,13 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
 
   const openDetail = useCallback(async (id: string) => {
     const request = ++detailGeneration.current;
+    const changedSelection = selectedPreinvoice.current !== id;
     selectedPreinvoice.current = id;
-    setAcceptance({ id: null, status: "idle" });
-    setDispute({ id: null, requestId: "", status: "idle",
-      lineIds: [], subject: "", description: "" });
+    if (changedSelection) {
+      setAcceptance({ id: null, status: "idle" });
+      setDispute({ id: null, requestId: "", status: "idle",
+        lineIds: [], subject: "", description: "" });
+    }
     setDetail({ id, status: "loading", value: null });
     try {
       const [preinvoice, disputeList] = await Promise.all([
@@ -167,7 +170,12 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     finally { if (request === generation.current) setLoading(false); }
   }, [getPreinvoices, loading, pages]);
 
-  const preinvoices = pages.flatMap(page => page.preinvoices);
+  const loadedPreinvoices = pages.flatMap(page => page.preinvoices);
+  const selectionOffPage = detail && !loadedPreinvoices.some(item => item.id === detail.id);
+  const selectedFromAnotherPage = detail?.status === "ready" && detail.value &&
+    !loadedPreinvoices.some(item => item.id === detail.id) ? detail.value : null;
+  const preinvoices = selectedFromAnotherPage
+    ? [...loadedPreinvoices, selectedFromAnotherPage] : loadedPreinvoices;
   return <div className={styles.page}>
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Cuenta financiera · {airlineName}</span>
@@ -185,18 +193,26 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
     {dispute.status === "conflict" &&
       <p role="alert">La prefactura cambió antes de registrar la disputa. Revisa el estado actualizado.</p>}
     <div className={styles.metrics} aria-label="Estado de las prefacturas cargadas">
-      <div><span>Prefacturas cargadas</span><strong>{preinvoices.length}</strong></div>
-      <div><span>Pendientes de respuesta</span><strong>{preinvoices.filter(item => item.status === "Submitted").length}</strong></div>
-      <div><span>En disputa</span><strong>{preinvoices.filter(item => item.status === "Disputed").length}</strong></div>
-      <div><span>Aceptadas</span><strong>{preinvoices.filter(item => item.status === "Accepted").length}</strong></div>
+      <div><span>Prefacturas cargadas</span><strong>{loadedPreinvoices.length}</strong></div>
+      <div><span>Pendientes de respuesta</span><strong>{loadedPreinvoices.filter(item => item.status === "Submitted").length}</strong></div>
+      <div><span>En disputa</span><strong>{loadedPreinvoices.filter(item => item.status === "Disputed").length}</strong></div>
+      <div><span>Aceptadas</span><strong>{loadedPreinvoices.filter(item => item.status === "Accepted").length}</strong></div>
     </div>
     {loading && pages.length === 0 && <p role="status">Cargando prefacturas autorizadas…</p>}
     {error && <div role="alert"><p>No se pudo actualizar la consulta financiera.</p>
       {pages.length === 0 && <button type="button" onClick={() => {
         setLoading(true); setError(false); setRetryKey(current => current + 1);
       }}>Reintentar</button>}</div>}
+    {selectionOffPage && detail.status === "loading" &&
+      <p role="status">Revalidando la prefactura seleccionada.</p>}
+    {selectionOffPage && detail.status === "missing" &&
+      <p role="alert">La prefactura seleccionada ya no está disponible para esta cuenta.</p>}
+    {selectionOffPage && detail.status === "error" &&
+      <p role="alert">No se pudo revalidar la prefactura seleccionada. Inténtalo de nuevo.</p>}
     {preinvoices.map(item => <section className={styles.panel} key={item.id}
       aria-label={`Prefactura ${item.id}`}>
+      {selectedFromAnotherPage?.id === item.id &&
+        <span className={styles.kicker}>Detalle seleccionado de otra página</span>}
       <span className={styles.kicker}>Prefactura · {item.id}</span>
       <div className={styles.requestCardHeading}>
         <h2>{amount(item.currencyCode, item.total)}</h2>
@@ -314,7 +330,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
           </div>}
         </div>}
     </section>)}
-    {!loading && !error && preinvoices.length === 0 &&
+    {!loading && !error && preinvoices.length === 0 && !pages.at(-1)?.hasMore &&
       <p className={styles.empty}>No hay prefacturas publicadas para esta aerolínea.</p>}
     {pages.at(-1)?.hasMore && <button className={styles.loadMore} type="button"
       disabled={loading} onClick={() => void loadMore()}>
