@@ -22,6 +22,7 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
             {
                 BucketName = Bucket(), Key = key, InputStream = stream,
                 ContentType = "application/pdf",
+                UseChunkEncoding = false,
             }, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
@@ -110,6 +111,7 @@ internal sealed class S3PrivateFinancialObjectStore(IConfiguration configuration
                 {
                     ServiceURL = endpoint, ForcePathStyle = true,
                     AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
+                    RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
                 });
         }
         catch (FinancialDocumentUnavailableException) { throw; }
