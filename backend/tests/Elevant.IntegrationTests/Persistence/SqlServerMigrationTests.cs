@@ -8172,6 +8172,26 @@ public sealed class SqlServerMigrationTests
             Guid.NewGuid(), Guid.NewGuid(), $"NF-{invoiceId:N}", "USD", 125.50m, now, []);
         var paymentData = new NonFiscalPaymentData(paymentId, invoiceId,
             "SYNTHETIC-PAY-001", "USD", 125.50m, now);
+        await using (var failingContext = CreateContext(database.ConnectionString))
+        {
+            var renderingFailure = new EfFinancialDocumentStore(failingContext,
+                new InMemoryFinancialObjects(), new ThrowingFinancialPdfRenderer(),
+                TimeProvider.System);
+            var failure = await Assert.ThrowsAsync<FinancialDocumentUnavailableException>(() =>
+                renderingFailure.OpenInvoiceAsync(invoiceData, cancellationToken));
+            Assert.Equal(FinancialDocumentFailureStage.Rendering, failure.Stage);
+            Assert.IsType<InvalidOperationException>(failure.InnerException);
+        }
+        await using (var failingContext = CreateContext(database.ConnectionString))
+        {
+            var storageFailure = new EfFinancialDocumentStore(failingContext,
+                new InMemoryFinancialObjects(failPuts: true),
+                new SyntheticFinancialPdfRenderer(), TimeProvider.System);
+            var failure = await Assert.ThrowsAsync<FinancialDocumentUnavailableException>(() =>
+                storageFailure.OpenInvoiceAsync(invoiceData, cancellationToken));
+            Assert.Equal(FinancialDocumentFailureStage.StorageWrite, failure.Stage);
+            Assert.IsType<InvalidOperationException>(failure.InnerException);
+        }
         var objects = new InMemoryFinancialObjects(holdFirstTwoPuts: true);
         var renderer = new SyntheticFinancialPdfRenderer();
         await using var firstContext = CreateContext(database.ConnectionString);
@@ -8205,7 +8225,8 @@ public sealed class SqlServerMigrationTests
         Assert.Equal(2, await inspection.FinancialDocuments.CountAsync(cancellationToken));
     }
 
-    private sealed class InMemoryFinancialObjects(bool holdFirstTwoPuts = false)
+    private sealed class InMemoryFinancialObjects(bool holdFirstTwoPuts = false,
+        bool failPuts = false)
         : IPrivateFinancialObjectStore
     {
         private readonly ConcurrentDictionary<string, byte[]> _objects = new();
@@ -8218,6 +8239,7 @@ public sealed class SqlServerMigrationTests
         public async Task PutAsync(string key, byte[] content,
             CancellationToken cancellationToken = default)
         {
+            if (failPuts) throw new InvalidOperationException("Synthetic object-store failure.");
             _objects[key] = content;
             var count = Interlocked.Increment(ref putCount);
             if (holdFirstTwoPuts && count <= 2)
@@ -8248,6 +8270,15 @@ public sealed class SqlServerMigrationTests
         public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber) =>
             System.Text.Encoding.UTF8.GetBytes(
                 $"%PDF-1.7\nReceipt {payment.Reference} {invoiceNumber}\n%%EOF");
+    }
+
+    private sealed class ThrowingFinancialPdfRenderer : IFinancialDocumentPdfRenderer
+    {
+        public byte[] RenderInvoice(NonFiscalInvoiceData invoice) =>
+            throw new InvalidOperationException("Synthetic renderer failure.");
+
+        public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber) =>
+            throw new InvalidOperationException("Synthetic renderer failure.");
     }
 
     private static ServiceProvider CreateAuthenticationProvider(
