@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
@@ -21,11 +22,7 @@ internal sealed class EfHumanResourcesShiftWriteStore(
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code is "GESTION_HUMANA" or "SUPERADMIN") != true ||
-            !actor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff))
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor))
             return HumanResourcesShiftWriteResult.Failed(
                 HumanResourcesShiftWriteFailure.Forbidden);
         if (shiftId == Guid.Empty || input is null || !Valid(input))
