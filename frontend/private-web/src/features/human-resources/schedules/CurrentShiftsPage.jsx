@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getHumanResourcesShifts } from '../../../services/humanResourcesShiftsReadService';
 import { addDays, formatWeekRangeLabel, getWeekStart, toDateKey } from './mappers';
-import ShiftRecordForm from './ShiftRecordForm';
 import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
 
 const PAGE_LIMIT = 20;
@@ -14,8 +13,6 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
   const [requestsAuthorized, setRequestsAuthorized] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [notice, setNotice] = useState('');
   const requestVersion = useRef(0);
   const from = toDateKey(weekStart);
   const to = toDateKey(addDays(weekStart, 6));
@@ -34,8 +31,6 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
       .catch(error => {
         if (controller.signal.aborted || version !== requestVersion.current ||
             error?.name === 'AbortError') return;
-        setFormOpen(false);
-        setNotice('');
         if (error?.status === 401 || error?.status === 403)
           setRequestsAuthorized(false);
         setState({ status: error?.status === 401 ? 'unauthorized' :
@@ -64,8 +59,6 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   }, []);
 
   const goToWeek = delta => {
-    setFormOpen(false);
-    setNotice('');
     setWeekStart(current => addDays(current, delta));
     setPage(1);
   };
@@ -76,15 +69,10 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana</p>
         <h1 className="mt-1 text-2xl font-bold">Turnos de rampa</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          Turnos registrados para agentes de rampa. Cada fecha y hora corresponde a la estación indicada.
+          OCC programa los turnos de rampa. Gestión Humana los consulta y gestiona solicitudes de disponibilidad.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {state.status === 'success' && !formOpen && <button type="button"
-          onClick={() => { setNotice(''); setFormOpen(true); }}
-          className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
-          Nuevo turno
-        </button>}
         <button type="button" onClick={() => setRevision(value => value + 1)}
           className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm font-semibold dark:bg-surface-dark-card">
           Actualizar turnos
@@ -92,27 +80,11 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
       </div>
     </header>
 
-    {notice && <p role="status" className="rounded-xl bg-status-success/10 p-4 text-sm">{notice}</p>}
-    {formOpen && <ShiftRecordForm initialWorkDate={from} canWrite={state.status === 'success'}
-      onClose={() => setFormOpen(false)}
-      onRecorded={() => {
-        setFormOpen(false);
-        setNotice('Turno registrado. Actualizamos la semana seleccionada.');
-        setPage(1);
-        setRevision(value => value + 1);
-      }}
-      onDenied={status => {
-        requestVersion.current += 1;
-        setFormOpen(false);
-        setNotice('');
-        setState({ status: status === 401 ? 'unauthorized' : 'forbidden', data: null });
-      }} />}
-
     <nav aria-label="Semanas de turnos" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 p-4 dark:bg-surface-dark-card">
       <button type="button" onClick={() => goToWeek(-7)} className="rounded-lg border px-3 py-2 text-sm">Semana anterior</button>
       <span className="font-semibold">{formatWeekRangeLabel(weekStart)}</span>
       <button type="button" onClick={() => goToWeek(7)} className="rounded-lg border px-3 py-2 text-sm">Semana siguiente</button>
-      <button type="button" onClick={() => { setFormOpen(false); setNotice(''); setWeekStart(getWeekStart(new Date())); setPage(1); }}
+      <button type="button" onClick={() => { setWeekStart(getWeekStart(new Date())); setPage(1); }}
         className="rounded-lg border px-3 py-2 text-sm">Semana actual</button>
     </nav>
 
@@ -162,8 +134,6 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
       onDenied={status => {
         requestVersion.current += 1;
         setRequestsAuthorized(false);
-        setFormOpen(false);
-        setNotice('');
         setState({ status: status === 401 ? 'unauthorized' : 'forbidden', data: null });
       }} />}
   </div>;
