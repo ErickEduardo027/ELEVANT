@@ -61,6 +61,12 @@ de asignación; no exponen nombre, documento ni identificador de agente.
 La edición o desactivación de un perfil de rampa emite la misma pista para la
 unión de sus estaciones anteriores y solicitadas, de modo que la retirada de
 scope también invalide a OCC sin filtrar la identidad del agente.
+El perfil de rampa ahora reutiliza `hr.ramp_agent_terminal_scopes` y
+`hr.ramp_agents.supervisor_agent_id` para terminales y supervisor; son columnas
+y tablas existentes, por lo que no hay migración nueva. Una edición de Gestión
+Humana puede cerrar alcances de terminal o estación y revocar grants de cuenta
+que perdieron respaldo, pero nunca crea grants de cuenta adicionales. La
+concesión inicial corresponde a Superadministración mediante gobernanza.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
 Las solicitudes de disponibilidad usan la tabla existente

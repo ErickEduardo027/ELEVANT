@@ -24,22 +24,38 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         var stations = await context.Stations.AsNoTracking().Where(item => item.IsActive)
             .OrderBy(item => item.Code).Select(item => new RampProfileStation(
                 item.PublicId, item.Code, item.Name)).ToArrayAsync(cancellationToken);
+        var activeTerminals = await (from terminal in context.Terminals.AsNoTracking()
+            join station in context.Stations.AsNoTracking()
+                on terminal.StationId equals station.Id
+            where terminal.IsActive && station.IsActive
+            orderby station.Code, terminal.Code
+            select new { terminal.Id, Data = new RampProfileTerminal(terminal.PublicId,
+                station.PublicId, terminal.Code, terminal.Name) })
+            .ToArrayAsync(cancellationToken);
         var profiles = await context.RampAgents.AsNoTracking()
             .OrderBy(item => item.EmployeeNumber).ToArrayAsync(cancellationToken);
         var personIds = profiles.Select(item => item.PersonId).ToArray();
         var persons = await context.Persons.AsNoTracking().Where(item => personIds.Contains(item.Id))
             .ToDictionaryAsync(item => item.Id, cancellationToken);
         var accounts = await context.Users.AsNoTracking().Where(item => personIds.Contains(item.PersonId))
-            .Select(item => item.PersonId).ToArrayAsync(cancellationToken);
+            .ToDictionaryAsync(item => item.PersonId, item => item.Status, cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var scopes = await context.Set<RampAgentStationScope>().AsNoTracking()
             .Where(item => item.ValidFrom <= today && (item.ValidTo == null || item.ValidTo >= today))
             .ToArrayAsync(cancellationToken);
+        var terminalScopes = await context.Set<RampAgentTerminalScope>().AsNoTracking()
+            .Where(item => item.ValidFrom <= today && (item.ValidTo == null || item.ValidTo >= today))
+            .ToArrayAsync(cancellationToken);
         var stationsById = await context.Stations.AsNoTracking()
             .ToDictionaryAsync(item => item.Id, cancellationToken);
+        var terminalsById = activeTerminals.ToDictionary(item => item.Id, item => item.Data);
+        var profilesById = profiles.ToDictionary(item => item.Id, item => item.PublicId);
         return new RampProfileCatalog(profiles.Select(profile =>
-            Map(profile, persons[profile.PersonId], scopes, stationsById, accounts.Contains(profile.PersonId)))
-            .ToArray(), stations);
+            Map(profile, persons[profile.PersonId], scopes, stationsById,
+                terminalScopes, terminalsById, profilesById,
+                accounts.ContainsKey(profile.PersonId),
+                accounts.TryGetValue(profile.PersonId, out var status) ? status : null))
+            .ToArray(), stations, activeTerminals.Select(item => item.Data).ToArray());
     }
 
     public async Task<RampProfileResult> SaveAsync(Guid actorId, Guid? profileId,
@@ -54,10 +70,28 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             .ToArrayAsync(cancellationToken);
         if (requestedStations.Length != input.StationIds.Count)
             return RampProfileResult.Failed(RampProfileFailure.Invalid);
+        var requestedStationKeys = requestedStations.Select(item => item.Id).ToHashSet();
+        var requestedTerminals = input.TerminalIds is null ? null :
+            await context.Terminals.AsNoTracking().Where(item =>
+                input.TerminalIds.Contains(item.PublicId) && item.IsActive &&
+                requestedStationKeys.Contains(item.StationId))
+                .ToArrayAsync(cancellationToken);
+        if (requestedTerminals is not null && requestedTerminals.Length != input.TerminalIds!.Count)
+            return RampProfileResult.Failed(RampProfileFailure.Invalid);
         var profile = profileId is null ? null : await context.RampAgents.SingleOrDefaultAsync(
             item => item.PublicId == profileId, cancellationToken);
         if (profileId is not null && profile is null)
             return RampProfileResult.Failed(RampProfileFailure.NotFound);
+        RampAgent? supervisor = null;
+        if (input.Supervisor is { Id: Guid supervisorId })
+        {
+            if (supervisorId == profileId)
+                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            supervisor = await context.RampAgents.AsNoTracking().SingleOrDefaultAsync(
+                item => item.PublicId == supervisorId && item.IsActive, cancellationToken);
+            if (supervisor is null)
+                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+        }
         if (input.AvatarMediaUrl is not null)
         {
             if (!input.AvatarMediaUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal) ||
@@ -87,6 +121,9 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             {
                 await using var transaction = await context.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable, cancellationToken);
+                if (profile is not null && supervisor is not null && input.Supervisor is not null &&
+                    await WouldCreateSupervisorCycleAsync(profile.Id, supervisor.Id, cancellationToken))
+                    return RampProfileResult.Failed(RampProfileFailure.Invalid);
                 Person person;
                 if (profile is null)
                 {
@@ -112,6 +149,8 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 profile.EmployeeNumber = input.EmployeeNumber.Trim();
                 profile.Category = input.Category.Trim();
                 profile.HireDate = input.HireDate;
+                if (input.Supervisor is not null)
+                    profile.SupervisorAgentId = supervisor?.Id;
                 profile.IsActive = input.IsActive;
                 profile.UpdatedAt = now;
                 await context.SaveChangesAsync(cancellationToken);
@@ -133,6 +172,32 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                     context.Set<RampAgentStationScope>().Add(new RampAgentStationScope
                     { RampAgentId = profile.Id, StationId = stationId, ValidFrom = today });
 
+                var oldTerminalScopes = await context.Set<RampAgentTerminalScope>()
+                    .Where(item => item.RampAgentId == profile.Id && item.ValidTo == null)
+                    .ToArrayAsync(cancellationToken);
+                var eligibleTerminals = await context.Terminals.AsNoTracking()
+                    .Where(item => item.IsActive && wantedIds.Contains(item.StationId))
+                    .ToArrayAsync(cancellationToken);
+                var eligibleTerminalIds = eligibleTerminals.Select(item => item.Id).ToHashSet();
+                HashSet<long> wantedTerminalIds = input.IsActive
+                    ? (requestedTerminals is null
+                        ? oldTerminalScopes.Select(item => item.TerminalId)
+                        : requestedTerminals.Select(item => item.Id))
+                        .Where(eligibleTerminalIds.Contains).ToHashSet()
+                    : [];
+                foreach (var terminalScope in oldTerminalScopes.Where(item =>
+                    !wantedTerminalIds.Contains(item.TerminalId)))
+                {
+                    if (terminalScope.ValidFrom >= today)
+                        context.Set<RampAgentTerminalScope>().Remove(terminalScope);
+                    else
+                        terminalScope.ValidTo = today.AddDays(-1);
+                }
+                foreach (var terminalId in wantedTerminalIds.Except(
+                    oldTerminalScopes.Select(item => item.TerminalId)))
+                    context.Set<RampAgentTerminalScope>().Add(new RampAgentTerminalScope
+                    { RampAgentId = profile.Id, TerminalId = terminalId, ValidFrom = today });
+
                 var account = await context.Users.SingleOrDefaultAsync(item =>
                     item.PersonId == person.Id, cancellationToken);
                 if (account is not null)
@@ -142,9 +207,6 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                         .ToArrayAsync(cancellationToken);
                     foreach (var scope in accountScopes.Where(item => !wantedIds.Contains(item.StationId)))
                         scope.RevokedAt = now;
-                    foreach (var stationId in wantedIds.Except(accountScopes.Select(item => item.StationId)))
-                        context.AccountStationScopes.Add(new AccountStationScope
-                        { AccountId = account.Id, StationId = stationId, GrantedAt = now });
                     if (!input.IsActive)
                         account.Status = AccountLifecycleStatus.Disabled;
                 }
@@ -175,7 +237,18 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                     profile.Category, profile.HireDate, profile.IsActive,
                     input.IsActive ? requestedStations.Select(item => new RampProfileStation(
                         item.PublicId, item.Code, item.Name)).ToArray() : [], account is not null,
-                    person.AvatarMediaUrl));
+                    person.AvatarMediaUrl,
+                    eligibleTerminals.Where(item => wantedTerminalIds.Contains(item.Id))
+                        .Select(item => new RampProfileTerminal(item.PublicId,
+                            requestedStations.Single(station => station.Id == item.StationId).PublicId,
+                            item.Code, item.Name)).ToArray(),
+                    profile.SupervisorAgentId is long supervisorKey
+                        ? await context.RampAgents.AsNoTracking()
+                            .Where(item => item.Id == supervisorKey)
+                            .Select(item => (Guid?)item.PublicId)
+                            .SingleOrDefaultAsync(cancellationToken)
+                        : null,
+                    account?.Status.ToString()));
             });
         }
         catch (DbUpdateException exception) when (
@@ -194,6 +267,22 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 membership.Kind == MembershipKind.InternalStaff);
     }
 
+    private async Task<bool> WouldCreateSupervisorCycleAsync(long profileId, long supervisorId,
+        CancellationToken cancellationToken)
+    {
+        var visited = new HashSet<long>();
+        long? currentId = supervisorId;
+        while (currentId is long ancestorId)
+        {
+            if (ancestorId == profileId || !visited.Add(ancestorId)) return true;
+            currentId = await context.RampAgents.AsNoTracking()
+                .Where(item => item.Id == ancestorId)
+                .Select(item => item.SupervisorAgentId)
+                .SingleAsync(cancellationToken);
+        }
+        return false;
+    }
+
     private static bool Valid(SaveRampProfileInput input) =>
         !string.IsNullOrWhiteSpace(input.FirstName) && input.FirstName.Trim().Length is >= 2 and <= 100 &&
         !string.IsNullOrWhiteSpace(input.LastName) && input.LastName.Trim().Length is >= 2 and <= 100 &&
@@ -202,15 +291,30 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         input.HireDate != default && input.HireDate <= DateOnly.FromDateTime(DateTime.UtcNow) &&
         input.StationIds is { Count: > 0 and <= 20 } &&
         input.StationIds.All(id => id != Guid.Empty) &&
-        input.StationIds.Distinct().Count() == input.StationIds.Count;
+        input.StationIds.Distinct().Count() == input.StationIds.Count &&
+        (input.TerminalIds is null || input.TerminalIds.Count <= 40 &&
+            input.TerminalIds.All(id => id != Guid.Empty) &&
+            input.TerminalIds.Distinct().Count() == input.TerminalIds.Count) &&
+        input.Supervisor?.Id != Guid.Empty;
 
     private static RampProfileData Map(RampAgent profile, Person person,
         IReadOnlyList<RampAgentStationScope> scopes,
         Dictionary<long, Elevant.Domain.Entities.Reference.Station> stations,
-        bool hasAccount) => new(profile.PublicId, person.FirstName, person.LastName,
+        IReadOnlyList<RampAgentTerminalScope> terminalScopes,
+        Dictionary<long, RampProfileTerminal> terminals,
+        Dictionary<long, Guid> profiles,
+        bool hasAccount, AccountLifecycleStatus? accountStatus) =>
+        new(profile.PublicId, person.FirstName, person.LastName,
             profile.EmployeeNumber, profile.Category, profile.HireDate, profile.IsActive,
             scopes.Where(item => item.RampAgentId == profile.Id && stations.ContainsKey(item.StationId))
                 .Select(item => stations[item.StationId]).Select(item =>
                     new RampProfileStation(item.PublicId, item.Code, item.Name)).ToArray(), hasAccount,
-            person.AvatarMediaUrl);
+            person.AvatarMediaUrl,
+            terminalScopes.Where(item => item.RampAgentId == profile.Id &&
+                terminals.ContainsKey(item.TerminalId))
+                .Select(item => terminals[item.TerminalId]).ToArray(),
+            profile.SupervisorAgentId is long supervisorId &&
+                profiles.TryGetValue(supervisorId, out var supervisorPublicId)
+                ? supervisorPublicId : null,
+            accountStatus?.ToString());
 }

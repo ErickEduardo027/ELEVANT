@@ -142,6 +142,15 @@ a 60 minutos y usa 15 por defecto.
   serializable; un reintento idéntico devuelve el mismo ciclo y una versión
   anterior devuelve 409. No admite fecha de emisión futura ni archivos.
   El feed comprueba de nuevo rol y membresía interna antes de entregar esa pista.
+- `GET /api/v1/human-resources/ramp-profiles` entrega perfiles y catálogos de
+  estaciones y terminales activas. `POST` y `PUT` guardan perfil, terminales
+  de sus estaciones y supervisor activo (sin autorreferencia ni ciclos). Omitir
+  `terminalIds` o `supervisor` en una actualización conserva el valor anterior;
+  enviar `[]` o `{ "id": null }` lo limpia respectivamente. La respuesta distingue
+  perfil sin cuenta, cuenta activa, pendiente o deshabilitada. Gestión Humana
+  puede retirar alcances de una cuenta ya vinculada, pero no conceder nuevos
+  grants de estación: la aprobación y vinculación siguen siendo exclusivas de
+  Superadministración. No se envía correo de invitación desde este endpoint.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o

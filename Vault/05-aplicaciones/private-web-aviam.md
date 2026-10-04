@@ -130,6 +130,16 @@ incluye el UUID de estación, no la identidad del agente. Fuentes:
 [panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs).
 
+En la siguiente rama local, el perfil admite terminales pertenecientes a sus
+estaciones y un supervisor activo sin ciclos de supervisión mediante campos
+aditivos de la API. La respuesta diferencia el estado de la cuenta IAM; este
+no prueba por sí solo que la cuenta tenga acceso móvil efectivo. Una
+edición de Gestión Humana puede reducir alcances y revocar grants existentes,
+pero no ampliar grants de la cuenta móvil; esa decisión sigue siendo de
+Superadministración. El panel no afirma que haya enviado una invitación. La
+ruta conservada es [el controlador de perfiles](../../backend/Elevant.Api/Controllers/RampProfilesController.cs)
+y la selección se comprueba en [su prueba de interfaz](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.test.jsx).
+
 La API de esta rama agrega una lectura paginada de los ciclos actuales de
 habilitación de rampa para Gestión Humana y Superadministración internas. La
 ruta restringida consulta esa API en páginas de 20, calcula vigencia por

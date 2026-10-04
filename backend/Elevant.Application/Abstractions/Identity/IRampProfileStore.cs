@@ -1,14 +1,21 @@
 namespace Elevant.Application.Abstractions.Identity;
 
 public sealed record RampProfileStation(Guid Id, string Code, string Name);
+public sealed record RampProfileTerminal(Guid Id, Guid StationId, string Code, string Name);
 public sealed record RampProfileData(Guid Id, string FirstName, string LastName,
     string EmployeeNumber, string Category, DateOnly HireDate, bool IsActive,
-    IReadOnlyList<RampProfileStation> Stations, bool HasAccount, string? AvatarMediaUrl = null);
+    IReadOnlyList<RampProfileStation> Stations, bool HasAccount, string? AvatarMediaUrl = null,
+    IReadOnlyList<RampProfileTerminal>? Terminals = null, Guid? SupervisorProfileId = null,
+    string? AccountStatus = null);
 public sealed record RampProfileCatalog(IReadOnlyList<RampProfileData> Profiles,
-    IReadOnlyList<RampProfileStation> AvailableStations);
+    IReadOnlyList<RampProfileStation> AvailableStations,
+    IReadOnlyList<RampProfileTerminal>? AvailableTerminals = null);
+public sealed record RampProfileSupervisorSelection(Guid? Id);
 public sealed record SaveRampProfileInput(string FirstName, string LastName,
     string EmployeeNumber, string Category, DateOnly HireDate, bool IsActive,
-    IReadOnlyList<Guid> StationIds, string? AvatarMediaUrl = null);
+    IReadOnlyList<Guid> StationIds, string? AvatarMediaUrl = null,
+    IReadOnlyList<Guid>? TerminalIds = null,
+    RampProfileSupervisorSelection? Supervisor = null);
 public enum RampProfileFailure { Forbidden, Invalid, NotFound, Conflict }
 public sealed record RampProfileResult(RampProfileData? Profile, RampProfileFailure? Failure)
 {
