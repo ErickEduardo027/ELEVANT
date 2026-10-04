@@ -87,8 +87,10 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         {
             if (supervisorId == profileId)
                 return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            var existingSupervisorId = profile?.SupervisorAgentId;
             supervisor = await context.RampAgents.AsNoTracking().SingleOrDefaultAsync(
-                item => item.PublicId == supervisorId && item.IsActive, cancellationToken);
+                item => item.PublicId == supervisorId &&
+                    (item.IsActive || item.Id == existingSupervisorId), cancellationToken);
             if (supervisor is null)
                 return RampProfileResult.Failed(RampProfileFailure.Invalid);
         }
@@ -179,11 +181,18 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                     .Where(item => item.IsActive && wantedIds.Contains(item.StationId))
                     .ToArrayAsync(cancellationToken);
                 var eligibleTerminalIds = eligibleTerminals.Select(item => item.Id).ToHashSet();
+                var retainedTerminalIds = input.TerminalIds is null
+                    ? await context.Terminals.AsNoTracking()
+                        .Where(item => wantedIds.Contains(item.StationId))
+                        .Select(item => item.Id).ToHashSetAsync(cancellationToken)
+                    : null;
                 HashSet<long> wantedTerminalIds = input.IsActive
                     ? (requestedTerminals is null
                         ? oldTerminalScopes.Select(item => item.TerminalId)
                         : requestedTerminals.Select(item => item.Id))
-                        .Where(eligibleTerminalIds.Contains).ToHashSet()
+                        .Where(item => requestedTerminals is null
+                            ? retainedTerminalIds!.Contains(item)
+                            : eligibleTerminalIds.Contains(item)).ToHashSet()
                     : [];
                 foreach (var terminalScope in oldTerminalScopes.Where(item =>
                     !wantedTerminalIds.Contains(item.TerminalId)))

@@ -97,6 +97,9 @@ export default function RampProfilesPanel() {
     } catch { setError('No fue posible guardar el perfil. Comprueba la conexión y vuelve a intentarlo.'); }
     finally { setBusy(false); }
   }
+  const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
+  const inactiveCurrentSupervisor = catalog?.profiles.find(profile =>
+    profile.id === persistedSupervisorId && profile.id === form.supervisorProfileId && !profile.isActive);
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <header><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">Gestión Humana / Personal</p>
       <h1 className="mt-1 text-2xl font-bold">Perfiles de agentes de rampa</h1>
@@ -143,6 +146,9 @@ export default function RampProfilesPanel() {
           <select value={form.supervisorProfileId} onChange={event => setForm(current => ({ ...current,
             supervisorProfileId: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark">
             <option value="">Sin supervisor</option>
+            {inactiveCurrentSupervisor && <option value={inactiveCurrentSupervisor.id}>
+              {inactiveCurrentSupervisor.firstName} {inactiveCurrentSupervisor.lastName} · {inactiveCurrentSupervisor.employeeNumber} · Inactiva (relación existente)
+            </option>}
             {catalog?.profiles.filter(profile => profile.isActive && profile.id !== editingId).map(profile =>
               <option key={profile.id} value={profile.id}>{profile.firstName} {profile.lastName} · {profile.employeeNumber}</option>)}
           </select>

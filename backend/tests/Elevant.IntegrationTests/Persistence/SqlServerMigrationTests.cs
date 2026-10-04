@@ -1825,6 +1825,112 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task RampProfileEditWithOmittedTerminalsPreservesTemporarilyInactiveScope()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
+            cancellationToken);
+        var terminal = await context.Terminals.SingleAsync(item =>
+            item.StationId == station.Id && item.IsActive, cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-TERMINAL",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]) with
+        {
+            TerminalIds = [terminal.PublicId],
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        terminal.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent", TerminalIds = null }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        var agentId = await context.RampAgents.Where(item => item.PublicId == created.Profile.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.True(await context.Set<RampAgentTerminalScope>().AsNoTracking().AnyAsync(item =>
+            item.RampAgentId == agentId && item.TerminalId == terminal.Id && item.ValidTo == null,
+            cancellationToken));
+        terminal.IsActive = true;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Contains((await profiles.ListAsync(humanResourcesId, cancellationToken))!.Profiles,
+            item => item.Id == created.Profile.Id &&
+                item.Terminals!.Any(link => link.Id == terminal.PublicId));
+    }
+
+    [Fact]
+    public async Task RampProfileEditPreservesItsExistingInactiveSupervisor()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var supervisor = Assert.Single((await profiles.ListAsync(humanResourcesId,
+            cancellationToken))!.Profiles, item => item.EmployeeNumber == "DEV-RA-001");
+        var stationId = await context.Stations.Where(item => item.Code == "PUJ")
+            .Select(item => item.PublicId).SingleAsync(cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-SUPERVISOR",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [stationId]) with
+        {
+            Supervisor = new RampProfileSupervisorSelection(supervisor.Id),
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        var supervisorRow = await context.RampAgents.SingleAsync(item =>
+            item.PublicId == supervisor.Id, cancellationToken);
+        supervisorRow.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent" }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        Assert.Equal("Lead ramp agent", edited.Profile!.Category);
+        Assert.Equal(supervisor.Id, edited.Profile.SupervisorProfileId);
+    }
+
+    [Fact]
     public async Task ContractsApprovalRequiresVerifiedAirlineAndCreatesDraftWithProvisioningHint()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

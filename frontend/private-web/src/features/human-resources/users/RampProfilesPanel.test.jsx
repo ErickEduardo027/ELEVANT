@@ -106,6 +106,31 @@ it('loads persisted terminal and supervisor and clears both on deactivation', as
     expect.objectContaining({ isActive: false, terminalIds: [], supervisor: { id: null } })));
 });
 
+it('shows an inactive linked supervisor and keeps that relationship on an unrelated edit', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [
+    { id: 'supervisor-1', firstName: 'Ana', lastName: 'Pérez', employeeNumber: 'RA-1',
+      category: 'Supervisora', hireDate: '2025-01-01', stations: [], terminals: [],
+      isActive: false, hasAccount: true, accountStatus: 'Disabled' },
+    { id: 'agent-1', firstName: 'Lucia', lastName: 'Ramos', employeeNumber: 'RA-2',
+      category: 'Agente', hireDate: '2025-04-01',
+      stations: [{ id: 'station-1', code: 'PUJ' }], terminals: [],
+      supervisorProfileId: 'supervisor-1', isActive: true, hasAccount: true,
+      accountStatus: 'Active' },
+  ], availableStations: [{ id: 'station-1', code: 'PUJ', name: 'Punta Cana' }] });
+  saveRampProfile.mockResolvedValue({ id: 'agent-1' });
+  render(<RampProfilesPanel />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getAllByRole('button', { name: 'Editar' })[1]);
+  const supervisor = screen.getByRole('combobox', { name: 'Supervisor' });
+  expect(supervisor).toHaveValue('supervisor-1');
+  expect(screen.getByRole('option', { name: /Ana Pérez.*inactiva/i })).toBeInTheDocument();
+  await userEvent.clear(screen.getByRole('textbox', { name: 'Categoría' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Categoría' }), 'Agente líder');
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  await waitFor(() => expect(saveRampProfile).toHaveBeenCalledWith('agent-1',
+    expect.objectContaining({ category: 'Agente líder', supervisor: { id: 'supervisor-1' } })));
+});
+
 it('hides a previously visible profile after an authorized revalidation fails', async () => {
   getRampProfiles.mockResolvedValueOnce({ profiles: [{ id: 'old-profile', firstName: 'Old', lastName: 'Agent',
     employeeNumber: 'RA-OLD', category: 'Rampa', hireDate: '2026-01-01', stations: [], isActive: true, hasAccount: true }],
