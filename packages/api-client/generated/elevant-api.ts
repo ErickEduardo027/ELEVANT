@@ -4719,6 +4719,9 @@ export const getRecordHumanResourcesShiftUrl = (id: string,) => {
   return `/api/v1/human-resources/shifts/${id}`
 }
 
+/**
+ * @deprecated
+ */
 export const recordHumanResourcesShift = async (id: string,
     recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
 

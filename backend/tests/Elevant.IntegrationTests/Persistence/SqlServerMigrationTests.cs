@@ -938,24 +938,24 @@ public sealed class SqlServerMigrationTests
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(occId, Guid.NewGuid(), input,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Invalid,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { EndsAtLocal = new TimeOnly(4, 0) }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { TerminalId = Guid.NewGuid() }, cancellationToken)).Failure);
-            var saved = await store.RecordAsync(hrId, id, input, cancellationToken);
+            var saved = await store.RecordAsync(occId, id, input, cancellationToken);
             Assert.Null(saved.Failure);
             Assert.Equal(id, saved.Shift!.Id);
-            Assert.Equal(saved.Shift, (await store.RecordAsync(hrId, id, input,
+            Assert.Equal(saved.Shift, (await store.RecordAsync(occId, id, input,
                 cancellationToken)).Shift);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, id, input with
+                (await store.RecordAsync(occId, id, input with
                 { Notes = "Different" }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                (await store.RecordAsync(occId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
         }
         var concurrentId = Guid.NewGuid();
@@ -965,7 +965,7 @@ public sealed class SqlServerMigrationTests
             await using var scope = provider.CreateAsyncScope();
             return await scope.ServiceProvider
                 .GetRequiredService<IHumanResourcesShiftWriteStore>()
-                .RecordAsync(hrId, concurrentId, concurrentInput, cancellationToken);
+                .RecordAsync(occId, concurrentId, concurrentInput, cancellationToken);
         }
         var concurrentResults = await Task.WhenAll(ConcurrentRecordAsync(), ConcurrentRecordAsync());
         Assert.All(concurrentResults, result =>
@@ -991,9 +991,11 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(2, await context.OutboxMessages.AsNoTracking()
                 .CountAsync(message => message.PayloadJson.Contains(
                     "\"resource\":\"occ_planning\""), cancellationToken));
-            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+            var occKey = await context.Users.Where(user => user.PublicId == occId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
-            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+            var stationKey = await context.Stations.Where(station => station.PublicId == stationId)
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "ADMIN_OCC")
                 .Select(role => role.Id).SingleAsync(cancellationToken);
             var agentKey = await context.RampAgents.Where(agent => agent.PublicId == agentId)
                 .Select(agent => agent.Id).SingleAsync(cancellationToken);
@@ -1005,17 +1007,43 @@ public sealed class SqlServerMigrationTests
             {
                 var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
                 Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                    (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
                     { WorkDate = date.AddDays(2) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { StationId = Guid.NewGuid() }, cancellationToken)).Failure);
             }
-            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+            var shiftCount = await context.ShiftAssignments.CountAsync(cancellationToken);
+            var auditCount = await context.AuditEntries.CountAsync(cancellationToken);
+            var outboxCount = await context.OutboxMessages.CountAsync(cancellationToken);
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt == null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)DateTimeOffset.UtcNow), cancellationToken));
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { WorkDate = date.AddDays(3) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, id, input, cancellationToken)).Failure);
+            }
+            Assert.Equal(shiftCount, await context.ShiftAssignments.CountAsync(cancellationToken));
+            Assert.Equal(auditCount, await context.AuditEntries.CountAsync(cancellationToken));
+            Assert.Equal(outboxCount, await context.OutboxMessages.CountAsync(cancellationToken));
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt != null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)null), cancellationToken));
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == occKey &&
                 link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
         }
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { WorkDate = date.AddDays(1) }, cancellationToken)).Failure);
         }
     }

@@ -55,6 +55,7 @@ public sealed class HumanResourcesShiftsController(
     }
 
     [HttpPut("{id:guid}", Name = "RecordHumanResourcesShift")]
+    [Obsolete("Transitional OCC-only shift write; migrate to OCC scheduling when available.")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<HumanResourcesShiftRecorded>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

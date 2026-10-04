@@ -111,7 +111,7 @@ para turnos, habilitaciones o cobertura. El modo restringido solo expone
 dashboard, perfiles, habilitaciones, permisos y turnos conectados a la API; mantiene ocultas las rutas
 profundas aún no integradas. Recibir una señal de cambio, recuperar
 foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
-un despliegue al VPS. Las escrituras de habilitaciones, permisos y turnos se
+un despliegue al VPS. Las escrituras de habilitaciones y permisos se
 describen más abajo y aún requieren validación de navegador y dispositivo. Fuentes:
 [servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
 [vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
@@ -130,7 +130,7 @@ incluye el UUID de estación, no la identidad del agente. Fuentes:
 [panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs).
 
-En la siguiente rama local, el perfil admite terminales pertenecientes a sus
+En esta rama local, el perfil admite terminales pertenecientes a sus
 estaciones y un supervisor activo sin ciclos de supervisión mediante campos
 aditivos de la API. La respuesta diferencia el estado de la cuenta IAM; este
 no prueba por sí solo que la cuenta tenga acceso móvil efectivo. Una
@@ -175,15 +175,15 @@ y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHum
 
 La ruta restringida de horarios lee turnos reales por semana local y páginas
 de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
-inferir disponibilidad. Gestión Humana puede registrar un turno nuevo después
-de consultar los scopes de estación y terminal vigentes para el agente/día. Una
-programación OCC emite las señales durables `hr_shifts` y `occ_planning`; la vista revalida también
-por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
-falla la lectura. La API ya permite registrar un turno mediante
-`PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
-horas, scopes de agente vigentes en estación y terminal, auditoría y señales
-`hr_shifts` y `occ_planning`. El formulario conserva el UUID de una intención incierta y
-reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
+inferir disponibilidad. En esta rama de trabajo Gestión Humana ya no ofrece
+«Nuevo turno»: OCC es el único rol autorizado para registrar turnos. El
+`PUT /api/v1/human-resources/shifts/{id}` sigue disponible de forma transitoria
+para OCC, con UUID estable, jornada máxima de 16 horas, scopes de agente
+vigentes en estación y terminal, auditoría y señales `hr_shifts` y
+`occ_planning`. La vista GH revalida por pista durable, foco, reconexión y
+sondeo de 25 segundos, y oculta datos anteriores si falla la lectura. El
+calendario OCC y los patrones de turnos aún no están implementados en esta
+rama; este cambio no acredita promoción al VPS.
 Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
 para la fecha local consultada o el día de inicio de un turno nocturno. Las
 solicitudes pendientes y de cambio de turno no son una ausencia. La API ya
@@ -205,7 +205,7 @@ solicitud laboral. Planificación OCC invalida snapshot y opciones de asignació
 ante esa pista, foco, reconexión o sondeo visible de 25 segundos. Una pista
 perdida no reemplaza la comprobación final de elegibilidad y ETag en la API.
 La misma pista de estación se confirma al registrar o renovar un carnet o una
-habilitación, y al programar un turno desde Gestión Humana u OCC; ninguna pista
+habilitación, y al programar un turno desde OCC; ninguna pista
 incluye datos personales del agente.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),

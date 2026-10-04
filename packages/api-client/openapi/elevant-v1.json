@@ -5074,6 +5074,7 @@
             }
           }
         },
+        "deprecated": true,
         "security": [
           {
             "Bearer": []
