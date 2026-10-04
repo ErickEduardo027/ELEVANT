@@ -12,7 +12,7 @@ Status: implementation plan for a separate Development feature branch. This is a
 
 GH can select active terminals belonging to the profile's stations and an active supervisor profile, and see both when reopening the profile. New clients submit the selected terminal IDs; an omitted terminal field preserves existing terminal scopes on update for compatibility. An explicit empty list clears them. A nested optional supervisor selection distinguishes omitted (preserve) from `{ "id": null }` (clear). A supervisor cannot be the same profile or introduce a cycle in the supervision chain. On create, omitted fields mean no terminals and no supervisor so old clients keep working; the new UI requires at least one terminal for an active profile.
 
-GH can narrow or deactivate a profile. This revokes account station grants that are no longer backed by the profile; it never adds account grants. Only Superadministration can create or expand an account's grant. The UI says “perfil guardado; acceso pendiente de aprobación” rather than implying account creation or an email invitation.
+GH can narrow or deactivate a profile. This revokes account station grants that are no longer backed by the profile; it never adds account grants. Only Superadministration can create or expand an account's grant. The UI shows “sin cuenta vinculada” until an account exists, rather than implying a request was created or an email invitation was sent.
 
 ## Tasks (RED → GREEN)
 

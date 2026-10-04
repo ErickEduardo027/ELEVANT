@@ -9,9 +9,9 @@ const blank = () => ({ firstName: '', lastName: '', employeeNumber: '', category
   supervisorProfileId: '', avatarMediaUrl: null });
 
 function accountStatusLabel(profile) {
-  if (!profile.hasAccount) return 'Acceso pendiente de aprobación';
+  if (!profile.hasAccount) return 'Sin cuenta vinculada; Superadministración puede crearla';
   if (profile.accountStatus === 'Active') return 'Cuenta IAM activa; acceso móvil según permisos';
-  if (['Disabled', 'Blocked'].includes(profile.accountStatus)) return 'Cuenta revocada';
+  if (['Disabled', 'Blocked'].includes(profile.accountStatus)) return 'Cuenta IAM deshabilitada';
   if (['PendingActivation', 'InvitationSent'].includes(profile.accountStatus))
     return 'Cuenta pendiente de activación';
   return 'Cuenta vinculada; estado no disponible';

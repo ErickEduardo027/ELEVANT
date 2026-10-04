@@ -75,8 +75,8 @@ it('labels IAM lifecycle without implying effective mobile access', async () => 
   render(<RampProfilesPanel />);
   await screen.findByText('Lucia Rampa');
   expect(screen.getByText(/Cuenta IAM activa; acceso móvil según permisos/)).toBeInTheDocument();
-  expect(screen.getByText(/Cuenta revocada/)).toBeInTheDocument();
-  expect(screen.getByText(/Acceso pendiente de aprobación/)).toBeInTheDocument();
+  expect(screen.getByText(/Cuenta IAM deshabilitada/)).toBeInTheDocument();
+  expect(screen.getByText(/Sin cuenta vinculada/)).toBeInTheDocument();
 });
 
 it('loads persisted terminal and supervisor and clears both on deactivation', async () => {
