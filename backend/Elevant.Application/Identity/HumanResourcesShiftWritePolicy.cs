@@ -11,4 +11,8 @@ public static class HumanResourcesShiftWritePolicy
         actor.Memberships.Any(membership =>
             membership.OrganizationType == OrganizationType.AviamOperator &&
             membership.Kind == MembershipKind.InternalStaff);
+
+    public static bool CanRecord(ActorContext? actor, Guid stationId) =>
+        stationId != Guid.Empty && CanRecord(actor) &&
+        actor!.StationScopes.Any(scope => scope.StationId == stationId);
 }

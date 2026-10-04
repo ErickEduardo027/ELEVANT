@@ -152,7 +152,7 @@ a 60 minutos y usa 15 por defecto.
   ofrecida no sustituye la revalidación del comando.
   `PUT /api/v1/human-resources/shifts/{id}` registra un turno por agente y día con
   UUID de intención estable. Durante la transición al calendario OCC, solo
-  `ADMIN_OCC` con membresía interna puede usar este `PUT`; Gestión Humana y
+  `ADMIN_OCC` con membresía interna y concesión vigente de la estación puede usar este `PUT`; Gestión Humana y
   Superadministración conservan la lectura, pero no la escritura. El comando
   exige agente, estación y terminal activos y scopes
   vigentes en esa fecha, asigna la posición `RAMP-AGENT`, limita la jornada
