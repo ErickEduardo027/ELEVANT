@@ -5074,6 +5074,7 @@
             }
           }
         },
+        "deprecated": true,
         "security": [
           {
             "Bearer": []
@@ -14766,6 +14767,13 @@
             "items": {
               "$ref": "#/components/schemas/RampProfileStation"
             }
+          },
+          "availableTerminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileTerminal"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -14819,6 +14827,22 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileTerminal"
+            },
+            "nullable": true
+          },
+          "supervisorProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "accountStatus": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -14832,6 +14856,43 @@
         "type": "object",
         "properties": {
           "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileSupervisorSelection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileTerminal": {
+        "required": [
+          "code",
+          "id",
+          "name",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
             "type": "string",
             "format": "uuid"
           },
@@ -15494,6 +15555,22 @@
           },
           "avatarMediaUrl": {
             "type": "string",
+            "nullable": true
+          },
+          "terminalIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
+          },
+          "supervisor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampProfileSupervisorSelection"
+              }
+            ],
             "nullable": true
           }
         },

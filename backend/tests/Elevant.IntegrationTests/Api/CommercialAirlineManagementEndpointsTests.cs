@@ -48,5 +48,15 @@ public sealed class CommercialAirlineManagementEndpointsTests(ElevantApiFactory 
             .TryGetProperty("post", out _));
         Assert.True(routes.GetProperty("/api/v1/human-resources/ramp-profiles/{id}")
             .TryGetProperty("put", out _));
+        var schemas = json.RootElement.GetProperty("components").GetProperty("schemas");
+        var input = schemas.GetProperty("SaveRampProfileInput").GetProperty("properties");
+        Assert.True(input.TryGetProperty("terminalIds", out _));
+        Assert.True(input.TryGetProperty("supervisor", out _));
+        var profile = schemas.GetProperty("RampProfileData").GetProperty("properties");
+        Assert.True(profile.TryGetProperty("terminals", out _));
+        Assert.True(profile.TryGetProperty("supervisorProfileId", out _));
+        Assert.True(profile.TryGetProperty("accountStatus", out _));
+        Assert.True(schemas.GetProperty("RampProfileCatalog").GetProperty("properties")
+            .TryGetProperty("availableTerminals", out _));
     }
 }

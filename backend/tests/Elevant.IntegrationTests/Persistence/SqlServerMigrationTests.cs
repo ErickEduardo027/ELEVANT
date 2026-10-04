@@ -938,24 +938,24 @@ public sealed class SqlServerMigrationTests
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(occId, Guid.NewGuid(), input,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Invalid,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { EndsAtLocal = new TimeOnly(4, 0) }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { TerminalId = Guid.NewGuid() }, cancellationToken)).Failure);
-            var saved = await store.RecordAsync(hrId, id, input, cancellationToken);
+            var saved = await store.RecordAsync(occId, id, input, cancellationToken);
             Assert.Null(saved.Failure);
             Assert.Equal(id, saved.Shift!.Id);
-            Assert.Equal(saved.Shift, (await store.RecordAsync(hrId, id, input,
+            Assert.Equal(saved.Shift, (await store.RecordAsync(occId, id, input,
                 cancellationToken)).Shift);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, id, input with
+                (await store.RecordAsync(occId, id, input with
                 { Notes = "Different" }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                (await store.RecordAsync(occId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
         }
         var concurrentId = Guid.NewGuid();
@@ -965,7 +965,7 @@ public sealed class SqlServerMigrationTests
             await using var scope = provider.CreateAsyncScope();
             return await scope.ServiceProvider
                 .GetRequiredService<IHumanResourcesShiftWriteStore>()
-                .RecordAsync(hrId, concurrentId, concurrentInput, cancellationToken);
+                .RecordAsync(occId, concurrentId, concurrentInput, cancellationToken);
         }
         var concurrentResults = await Task.WhenAll(ConcurrentRecordAsync(), ConcurrentRecordAsync());
         Assert.All(concurrentResults, result =>
@@ -991,9 +991,11 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(2, await context.OutboxMessages.AsNoTracking()
                 .CountAsync(message => message.PayloadJson.Contains(
                     "\"resource\":\"occ_planning\""), cancellationToken));
-            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+            var occKey = await context.Users.Where(user => user.PublicId == occId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
-            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+            var stationKey = await context.Stations.Where(station => station.PublicId == stationId)
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "ADMIN_OCC")
                 .Select(role => role.Id).SingleAsync(cancellationToken);
             var agentKey = await context.RampAgents.Where(agent => agent.PublicId == agentId)
                 .Select(agent => agent.Id).SingleAsync(cancellationToken);
@@ -1005,17 +1007,43 @@ public sealed class SqlServerMigrationTests
             {
                 var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
                 Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                    (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
                     { WorkDate = date.AddDays(2) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { StationId = Guid.NewGuid() }, cancellationToken)).Failure);
             }
-            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+            var shiftCount = await context.ShiftAssignments.CountAsync(cancellationToken);
+            var auditCount = await context.AuditEntries.CountAsync(cancellationToken);
+            var outboxCount = await context.OutboxMessages.CountAsync(cancellationToken);
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt == null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)DateTimeOffset.UtcNow), cancellationToken));
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { WorkDate = date.AddDays(3) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, id, input, cancellationToken)).Failure);
+            }
+            Assert.Equal(shiftCount, await context.ShiftAssignments.CountAsync(cancellationToken));
+            Assert.Equal(auditCount, await context.AuditEntries.CountAsync(cancellationToken));
+            Assert.Equal(outboxCount, await context.OutboxMessages.CountAsync(cancellationToken));
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt != null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)null), cancellationToken));
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == occKey &&
                 link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
         }
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { WorkDate = date.AddDays(1) }, cancellationToken)).Failure);
         }
     }
@@ -1797,6 +1825,112 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task RampProfileEditWithOmittedTerminalsPreservesTemporarilyInactiveScope()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
+            cancellationToken);
+        var terminal = await context.Terminals.SingleAsync(item =>
+            item.StationId == station.Id && item.IsActive, cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-TERMINAL",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]) with
+        {
+            TerminalIds = [terminal.PublicId],
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        terminal.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent", TerminalIds = null }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        var agentId = await context.RampAgents.Where(item => item.PublicId == created.Profile.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.True(await context.Set<RampAgentTerminalScope>().AsNoTracking().AnyAsync(item =>
+            item.RampAgentId == agentId && item.TerminalId == terminal.Id && item.ValidTo == null,
+            cancellationToken));
+        terminal.IsActive = true;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Contains((await profiles.ListAsync(humanResourcesId, cancellationToken))!.Profiles,
+            item => item.Id == created.Profile.Id &&
+                item.Terminals!.Any(link => link.Id == terminal.PublicId));
+    }
+
+    [Fact]
+    public async Task RampProfileEditPreservesItsExistingInactiveSupervisor()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var supervisor = Assert.Single((await profiles.ListAsync(humanResourcesId,
+            cancellationToken))!.Profiles, item => item.EmployeeNumber == "DEV-RA-001");
+        var stationId = await context.Stations.Where(item => item.Code == "PUJ")
+            .Select(item => item.PublicId).SingleAsync(cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-SUPERVISOR",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [stationId]) with
+        {
+            Supervisor = new RampProfileSupervisorSelection(supervisor.Id),
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        var supervisorRow = await context.RampAgents.SingleAsync(item =>
+            item.PublicId == supervisor.Id, cancellationToken);
+        supervisorRow.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent" }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        Assert.Equal("Lead ramp agent", edited.Profile!.Category);
+        Assert.Equal(supervisor.Id, edited.Profile.SupervisorProfileId);
+    }
+
+    [Fact]
     public async Task ContractsApprovalRequiresVerifiedAirlineAndCreatesDraftWithProvisioningHint()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -2044,15 +2178,47 @@ public sealed class SqlServerMigrationTests
         Assert.DoesNotContain(snapshot.RampProfiles, profile => profile.AccountId is null);
         var humanResourcesAccountId = Guid.Parse("40000000-0000-7000-8000-000000000004");
         var rampProfiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var supervisorProfile = Assert.Single((await rampProfiles.ListAsync(
+            humanResourcesAccountId, cancellationToken))!.Profiles,
+            item => item.EmployeeNumber == "DEV-RA-001");
+        var terminalId = Guid.Parse("20000000-0000-7000-8000-000000000004");
         var profileInput = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-RA-2",
-            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.Id]);
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.Id]) with
+        {
+            TerminalIds = [terminalId],
+            Supervisor = new RampProfileSupervisorSelection(supervisorProfile.Id),
+        };
         Assert.Null(await rampProfiles.ListAsync(contractsAccountId, cancellationToken));
         var savedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId, null,
             profileInput, cancellationToken);
         Assert.Null(savedProfile.Failure);
         var newRampProfileId = savedProfile.Profile!.Id;
+        Assert.Null(savedProfile.Profile.AccountStatus);
+        Assert.Contains(savedProfile.Profile.Terminals!, item => item.Id == terminalId);
+        Assert.Equal(supervisorProfile.Id, savedProfile.Profile.SupervisorProfileId);
         Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId, cancellationToken))!.Profiles,
-            profile => profile.Id == newRampProfileId && profile.Stations.Single().Id == station.Id);
+            profile => profile.Id == newRampProfileId && profile.Stations.Single().Id == station.Id &&
+                profile.Terminals!.Single().Id == terminalId &&
+                profile.SupervisorProfileId == supervisorProfile.Id);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.AvailableTerminals!, item =>
+            item.Id == terminalId && item.StationId == station.Id);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, supervisorProfile.Id, profileInput with
+            {
+                FirstName = supervisorProfile.FirstName,
+                LastName = supervisorProfile.LastName,
+                EmployeeNumber = supervisorProfile.EmployeeNumber,
+                Category = supervisorProfile.Category,
+                HireDate = supervisorProfile.HireDate,
+                Supervisor = new RampProfileSupervisorSelection(newRampProfileId),
+            }, cancellationToken)).Failure);
+        var legacyProfileUpdate = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with { TerminalIds = null, Supervisor = null },
+            cancellationToken);
+        Assert.Null(legacyProfileUpdate.Failure);
+        Assert.Contains(legacyProfileUpdate.Profile!.Terminals!, item => item.Id == terminalId);
+        Assert.Equal(supervisorProfile.Id, legacyProfileUpdate.Profile.SupervisorProfileId);
         Assert.Equal(GovernanceFailure.Invalid,
             (await governance.CreateUserAsync(superAdminId,
                 new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
@@ -2063,14 +2229,55 @@ public sealed class SqlServerMigrationTests
         Assert.True(rampAccount.IsSuccess, rampAccount.Failure?.ToString());
         Assert.Contains((await governance.GetAsync(superAdminId, cancellationToken))!.RampProfiles,
             profile => profile.Id == newRampProfileId && profile.AccountId == rampAccount.Id);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.Profiles, profile =>
+            profile.Id == newRampProfileId && profile.AccountStatus == "Active");
         var rampActor = await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
             .ResolveAsync(rampAccount.Id!.Value, cancellationToken);
         Assert.NotNull(rampActor);
         Assert.True(RampOperationsAccess.IsAuthorized(rampActor));
+        var spareAirportId = await context.Airports.Where(item => item.IataCode == "MIA")
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var extraStation = new Station
+        {
+            PublicId = Guid.CreateVersion7(), AirportId = spareAirportId,
+            Code = "MIA", Name = "Synthetic second station",
+            IanaTimeZone = "America/New_York", IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        context.Stations.Add(extraStation);
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, newRampProfileId, profileInput with
+            { StationIds = [extraStation.PublicId] }, cancellationToken)).Failure);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, newRampProfileId, profileInput with
+            { Supervisor = new RampProfileSupervisorSelection(newRampProfileId) },
+            cancellationToken)).Failure);
+        var expandedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with
+            { StationIds = [station.Id, extraStation.PublicId] }, cancellationToken);
+        Assert.Null(expandedProfile.Failure);
+        Assert.Contains(expandedProfile.Profile!.Stations, item => item.Id == extraStation.PublicId);
+        var rampAccountKey = await context.Users.Where(item => item.PublicId == rampAccount.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.False(await context.AccountStationScopes.AnyAsync(item =>
+            item.AccountId == rampAccountKey && item.StationId == extraStation.Id &&
+            item.RevokedAt == null, cancellationToken));
+        var clearedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with
+            { TerminalIds = [], Supervisor = new RampProfileSupervisorSelection(null) },
+            cancellationToken);
+        Assert.Null(clearedProfile.Failure);
+        Assert.Empty(clearedProfile.Profile!.Terminals!);
+        Assert.Null(clearedProfile.Profile.SupervisorProfileId);
         Assert.Null((await rampProfiles.SaveAsync(contractsAccountId, newRampProfileId,
             profileInput with { IsActive = false }, cancellationToken)).Profile);
         Assert.NotNull((await rampProfiles.SaveAsync(humanResourcesAccountId, newRampProfileId,
             profileInput with { IsActive = false }, cancellationToken)).Profile);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.Profiles, profile =>
+            profile.Id == newRampProfileId && profile.AccountStatus == "Disabled");
         Assert.Null(await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
             .ResolveAsync(rampAccount.Id.Value, cancellationToken));
         var catalogCreatorRole = await governance.CreateRoleAsync(superAdminId,

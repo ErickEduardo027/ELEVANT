@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
@@ -21,16 +22,15 @@ internal sealed class EfHumanResourcesShiftWriteStore(
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code is "GESTION_HUMANA" or "SUPERADMIN") != true ||
-            !actor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff))
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor))
             return HumanResourcesShiftWriteResult.Failed(
                 HumanResourcesShiftWriteFailure.Forbidden);
         if (shiftId == Guid.Empty || input is null || !Valid(input))
             return HumanResourcesShiftWriteResult.Failed(
                 HumanResourcesShiftWriteFailure.Invalid);
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor, input.StationId))
+            return HumanResourcesShiftWriteResult.Failed(
+                HumanResourcesShiftWriteFailure.Forbidden);
 
         var actorDatabaseId = await context.Users.AsNoTracking()
             .Where(user => user.PublicId == actorId).Select(user => user.Id)
@@ -44,6 +44,11 @@ internal sealed class EfHumanResourcesShiftWriteStore(
                 context.ChangeTracker.Clear();
                 await using var transaction = await context.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable, cancellationToken);
+
+                if (!await HasActiveStationGrantAsync(actorDatabaseId, input.StationId,
+                    now, cancellationToken))
+                    return HumanResourcesShiftWriteResult.Failed(
+                        HumanResourcesShiftWriteFailure.Forbidden);
 
                 var existingById = await context.ShiftAssignments.AsNoTracking()
                     .SingleOrDefaultAsync(shift => shift.PublicId == shiftId,
@@ -133,6 +138,10 @@ internal sealed class EfHumanResourcesShiftWriteStore(
             exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             context.ChangeTracker.Clear();
+            if (!await HasActiveStationGrantAsync(actorDatabaseId, input.StationId,
+                clock.GetUtcNow(), cancellationToken))
+                return HumanResourcesShiftWriteResult.Failed(
+                    HumanResourcesShiftWriteFailure.Forbidden);
             var existing = await context.ShiftAssignments.AsNoTracking()
                 .SingleOrDefaultAsync(shift => shift.PublicId == shiftId,
                     cancellationToken);
@@ -148,6 +157,14 @@ internal sealed class EfHumanResourcesShiftWriteStore(
                 HumanResourcesShiftWriteFailure.Conflict);
         }
     }
+
+    private Task<bool> HasActiveStationGrantAsync(long actorDatabaseId, Guid stationId,
+        DateTimeOffset now, CancellationToken cancellationToken) =>
+        (from grant in context.AccountStationScopes.AsNoTracking()
+         join station in context.Stations.AsNoTracking() on grant.StationId equals station.Id
+         where grant.AccountId == actorDatabaseId && station.PublicId == stationId &&
+               station.IsActive && grant.GrantedAt <= now && grant.RevokedAt == null
+         select grant.Id).AnyAsync(cancellationToken);
 
     private async Task<HumanResourcesShiftWriteResult> ReplayAsync(
         ShiftAssignment existing, long actorDatabaseId,

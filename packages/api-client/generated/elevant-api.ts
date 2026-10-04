@@ -1804,6 +1804,13 @@ export interface RampProfileStation {
   name: string;
 }
 
+export interface RampProfileTerminal {
+  id: string;
+  stationId: string;
+  code: string;
+  name: string;
+}
+
 export interface RampProfileData {
   id: string;
   firstName: string;
@@ -1816,11 +1823,24 @@ export interface RampProfileData {
   hasAccount: boolean;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  terminals?: RampProfileTerminal[] | null;
+  /** @nullable */
+  supervisorProfileId?: string | null;
+  /** @nullable */
+  accountStatus?: string | null;
 }
 
 export interface RampProfileCatalog {
   profiles: RampProfileData[];
   availableStations: RampProfileStation[];
+  /** @nullable */
+  availableTerminals?: RampProfileTerminal[] | null;
+}
+
+export interface RampProfileSupervisorSelection {
+  /** @nullable */
+  id?: string | null;
 }
 
 export interface RecordHumanResourcesAvailabilityInput {
@@ -1986,6 +2006,9 @@ export interface SaveRampProfileInput {
   stationIds: string[];
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  terminalIds?: string[] | null;
+  supervisor?: RampProfileSupervisorSelection | null;
 }
 
 export interface SendOperationMessageRequest {
@@ -4696,6 +4719,9 @@ export const getRecordHumanResourcesShiftUrl = (id: string,) => {
   return `/api/v1/human-resources/shifts/${id}`
 }
 
+/**
+ * @deprecated
+ */
 export const recordHumanResourcesShift = async (id: string,
     recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
 

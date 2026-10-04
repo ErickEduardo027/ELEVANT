@@ -55,12 +55,18 @@ El registro de habilitaciones de Gestión Humana reutiliza `hr.qualification_cyc
 y sus índices únicos existentes: crea un ciclo nuevo, deja el anterior como
 histórico y exige el UUID del ciclo observado en una transacción serializable.
 La auditoría y la pista `hr_qualifications` se confirman en esa misma transacción.
-Los cambios de habilitaciones, carnets y turnos (de Gestión Humana u OCC)
+Los cambios de habilitaciones y carnets (de Gestión Humana), y de turnos (de OCC),
 escriben además una pista `occ_planning` por estación para invalidar opciones
 de asignación; no exponen nombre, documento ni identificador de agente.
 La edición o desactivación de un perfil de rampa emite la misma pista para la
 unión de sus estaciones anteriores y solicitadas, de modo que la retirada de
 scope también invalide a OCC sin filtrar la identidad del agente.
+El perfil de rampa ahora reutiliza `hr.ramp_agent_terminal_scopes` y
+`hr.ramp_agents.supervisor_agent_id` para terminales y supervisor; son columnas
+y tablas existentes, por lo que no hay migración nueva. Una edición de Gestión
+Humana puede cerrar alcances de terminal o estación y revocar grants de cuenta
+que perdieron respaldo, pero nunca crea grants de cuenta adicionales. La
+concesión inicial corresponde a Superadministración mediante gobernanza.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
 Las solicitudes de disponibilidad usan la tabla existente

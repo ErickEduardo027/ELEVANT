@@ -16,6 +16,7 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
     : IClassFixture<ElevantApiFactory>
 {
     private static readonly Guid AccountId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+    private static readonly Guid OccAccountId = Guid.Parse("40000000-0000-7000-8000-000000000001");
 
     [Fact]
     public async Task ShiftReadRequiresAuthenticationAndIsPublishedInOpenApi()
@@ -52,6 +53,7 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             TestContext.Current.CancellationToken));
         var endpoint = json.RootElement.GetProperty("paths")
             .GetProperty("/api/v1/human-resources/shifts/{id}").GetProperty("put");
+        Assert.True(endpoint.GetProperty("deprecated").GetBoolean());
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
     }
@@ -123,12 +125,12 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
                 services.AddSingleton<IHumanResourcesShiftWriteStore>(stub);
             }));
         using var client = application.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token(OccAccountId));
         using var first = await client.PutAsJsonAsync(
             $"/api/v1/human-resources/shifts/{id:D}", input,
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        Assert.Equal((AccountId, id, input), stub.Request);
+        Assert.Equal((OccAccountId, id, input), stub.Request);
         using var json = JsonDocument.Parse(await first.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken));
         Assert.Equal(id, json.RootElement.GetProperty("id").GetGuid());
@@ -138,6 +140,29 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             $"/api/v1/human-resources/shifts/{id:D}", input,
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task ShiftRecordingMapsForbiddenWithoutPublishingAResult()
+    {
+        var stub = new WriteStub { Forbidden = true };
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesShiftWriteStore>();
+                services.AddSingleton<IHumanResourcesShiftWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        var input = new RecordHumanResourcesShiftInput(Guid.NewGuid(), Guid.NewGuid(),
+            Guid.NewGuid(), new DateOnly(2026, 10, 1), new TimeOnly(6, 0),
+            new TimeOnly(14, 0), null);
+        using var response = await client.PutAsJsonAsync(
+            $"/api/v1/human-resources/shifts/{Guid.NewGuid():D}", input,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(stub.Request);
     }
 
     [Fact]
@@ -203,7 +228,7 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    private static string Token()
+    private static string Token(Guid? accountId = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
@@ -219,7 +244,8 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
                 SecurityAlgorithms.HmacSha256),
             Subject = new System.Security.Claims.ClaimsIdentity(
             [
-                new System.Security.Claims.Claim(JwtRegisteredClaimNames.Sub, AccountId.ToString("D")),
+                new System.Security.Claims.Claim(JwtRegisteredClaimNames.Sub,
+                    (accountId ?? AccountId).ToString("D")),
                 new System.Security.Claims.Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
                 new System.Security.Claims.Claim(
                     Elevant.Infrastructure.Authentication.SessionSecurityVersion.ClaimType,
@@ -258,14 +284,17 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         public (Guid ActorId, Guid ShiftId, RecordHumanResourcesShiftInput Input)? Request
         { get; private set; }
         public bool Conflict { get; set; }
+        public bool Forbidden { get; set; }
 
         public Task<HumanResourcesShiftWriteResult> RecordAsync(Guid actorId, Guid shiftId,
             RecordHumanResourcesShiftInput input, CancellationToken cancellationToken = default)
         {
             Request = (actorId, shiftId, input);
-            return Task.FromResult(Conflict
-                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
-                : HumanResourcesShiftWriteResult.Success(shiftId));
+            return Task.FromResult(Forbidden
+                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Forbidden)
+                : Conflict
+                    ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
+                    : HumanResourcesShiftWriteResult.Success(shiftId));
         }
     }
 }
