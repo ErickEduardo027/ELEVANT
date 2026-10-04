@@ -12,7 +12,7 @@ const SNAPSHOT = {
 
 let exportsLog = [];
 
-const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+const usesPrototypeApi = () => process.env.NODE_ENV !== 'test';
 
 async function contractReportApi(path, options = {}) {
   const session = readSession();

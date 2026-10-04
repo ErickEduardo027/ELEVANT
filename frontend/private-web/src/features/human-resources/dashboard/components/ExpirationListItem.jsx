@@ -1,10 +1,10 @@
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import DashboardListRow from './DashboardListRow';
 import StatusBadge from '../../../../components/StatusBadge';
 import { TONE_HEX } from '../../../../components/toneColors';
 
 export default function ExpirationListItem({ expiration, actionsEnabled = true }) {
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <DashboardListRow
@@ -13,7 +13,7 @@ export default function ExpirationListItem({ expiration, actionsEnabled = true }
       subtitle={expiration.itemLabel}
       meta={expiration.dueLabel}
       badge={<StatusBadge tone={expiration.statusTone} label={expiration.statusLabel} />}
-      action={actionsEnabled ? { label: 'Ver', onClick: () => navigate(expiration.modulePath) } : undefined}
+      action={actionsEnabled ? { label: 'Ver', onClick: () => router.push(expiration.modulePath) } : undefined}
     />
   );
 }

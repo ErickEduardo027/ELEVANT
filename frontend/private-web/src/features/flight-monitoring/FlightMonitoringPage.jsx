@@ -29,7 +29,7 @@ function MonitoringMapArea({
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
   // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
-  const useGoogle = stationCode === 'PUJ' && Boolean(import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+  const useGoogle = stationCode === 'PUJ' && Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
   const BaseMap = useGoogle ? GoogleFlightMap : FlightMap;
   return (
     <div className="relative min-h-[420px] flex-1">

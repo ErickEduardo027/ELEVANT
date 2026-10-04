@@ -315,7 +315,7 @@ function cloneRecords() {
   return JSON.parse(JSON.stringify(OPERATIONAL_RECORDS));
 }
 
-const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+const usesPrototypeApi = () => process.env.NODE_ENV !== 'test';
 
 async function baseRecords() {
   if (!usesPrototypeApi()) return cloneRecords();
@@ -466,6 +466,6 @@ export async function exportReport({ reportId, format }) {
     fileName: `${reportId}-${stationDateKey(new Date())}.${format === 'excel' ? 'xls' : 'pdf'}`,
     generatedAt: new Date().toISOString(),
   };
-  if (import.meta.env.MODE !== 'test') downloadTabularReport({ title: `Reporte operacional ${reportId}`, format, fileName: result.fileName, rows });
+  if (process.env.NODE_ENV !== 'test') downloadTabularReport({ title: `Reporte operacional ${reportId}`, format, fileName: result.fileName, rows });
   return result;
 }

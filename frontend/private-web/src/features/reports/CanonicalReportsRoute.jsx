@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import Link from '../../components/AppLink';
 import { OccQueueState, OccStationPicker } from '../admin-occ/OccQueueState';
 import { useOccReviewQueue } from '../admin-occ/useOccReviewQueue';
 

@@ -8,8 +8,8 @@ import { CrosshairIcon, RotateCcwIcon } from './icons';
 
 const DEMO_STYLE_URL = 'https://demotiles.maplibre.org/style.json';
 const STYLE_URLS = {
-  light: import.meta.env.VITE_FLIGHT_MAP_STYLE_LIGHT || DEMO_STYLE_URL,
-  dark: import.meta.env.VITE_FLIGHT_MAP_STYLE_DARK || DEMO_STYLE_URL,
+  light: process.env.NEXT_PUBLIC_FLIGHT_MAP_STYLE_LIGHT || DEMO_STYLE_URL,
+  dark: process.env.NEXT_PUBLIC_FLIGHT_MAP_STYLE_DARK || DEMO_STYLE_URL,
 };
 const INITIAL_ZOOM = 6;
 const CENTER_ZOOM = 9;

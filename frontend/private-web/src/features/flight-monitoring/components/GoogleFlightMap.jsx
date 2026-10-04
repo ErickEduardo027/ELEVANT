@@ -38,7 +38,7 @@ export default function GoogleFlightMap({ flights, selectedFlightId, onSelectFli
     let overlay = null;
     const timeout = window.setTimeout(() => { if (!disposed) setError(true); }, 12000);
     setError(false);
-    loadGoogleMap(import.meta.env.VITE_GOOGLE_MAPS_API_KEY).then(maps => {
+    loadGoogleMap(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY).then(maps => {
       if (disposed) return;
       mapsRef.current = maps;
       map = new maps.Map(containerRef.current, {

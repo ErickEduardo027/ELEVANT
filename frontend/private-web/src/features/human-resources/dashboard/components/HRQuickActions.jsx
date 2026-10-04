@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_MODULE_IDS } from '../../navigation';
 
 const QUICK_ACTION_IDS = [
@@ -12,7 +12,7 @@ const QUICK_ACTION_IDS = [
 // Reutiliza la configuración de navegación de Gestión Humana (misma fuente
 // que el Sidebar) para no duplicar labels, íconos ni rutas.
 export default function HRQuickActions() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const items = QUICK_ACTION_IDS.map(id => HUMAN_RESOURCES_NAVIGATION.find(item => item.id === id)).filter(Boolean);
 
   return (
@@ -23,7 +23,7 @@ export default function HRQuickActions() {
           <button
             key={item.id}
             type="button"
-            onClick={() => navigate(item.path)}
+            onClick={() => router.push(item.path)}
             className="flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-sm text-ink-900 transition-colors hover:bg-black/5 dark:border-white/10 dark:text-text-primary-dark dark:hover:bg-white/5"
           >
             <item.icon className="h-4 w-4 text-accent-600" />

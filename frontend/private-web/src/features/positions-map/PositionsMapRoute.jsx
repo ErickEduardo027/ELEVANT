@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../auth/AuthContext';
 import PositionsMapPage from './PositionsMapPage';
 import { usePositionsMapData } from './usePositionsMapData';
@@ -41,7 +41,7 @@ export default function PositionsMapRoute() {
       void observer.stop();
     };
   }, [session?.accountId]);
-  const navigate = useNavigate();
+  const router = useRouter();
 
   useEffect(() => {
     if (stationScopes.some(scope => scope.stationId === stationId)) return;
@@ -73,7 +73,7 @@ export default function PositionsMapRoute() {
           if (moduleId === 'flight-monitoring' && selected?.stationId) {
             const query = new URLSearchParams({ stationId: selected.stationId,
               flightId: String(resourceId) });
-            navigate(`/admin-occ/flight-monitoring?${query}`);
+            router.push(`/admin-occ/flight-monitoring?${query}`);
           }
         }}
       />

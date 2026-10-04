@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
+import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 import {
   decideOccReview, loadOccReviewDetail, loadOccReviewQueue,
   loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
@@ -94,9 +95,9 @@ function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
         if (!controller.signal.aborted) setHistory({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (!controller.signal.aborted) setHistory({ status: 'error', data: null, error });
+        if (!controller.signal.aborted && !isAbortError(error)) setHistory({ status: 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [operationId, retryVersion]);
 
   useEffect(() => {
@@ -111,9 +112,9 @@ function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
         if (!controller.signal.aborted) setSelected({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (!controller.signal.aborted) setSelected({ status: 'error', data: null, error });
+        if (!controller.signal.aborted && !isAbortError(error)) setSelected({ status: 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [operationId, selectedId]);
 
   return <section aria-label="Historial de entregas" className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
@@ -162,9 +163,9 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
         if (!controller.signal.aborted) setQueue({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (!controller.signal.aborted) setQueue({ status: 'error', data: null, error });
+        if (!controller.signal.aborted && !isAbortError(error)) setQueue({ status: 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, refreshVersion]);
 
   useEffect(() => {
@@ -181,9 +182,9 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
         if (!controller.signal.aborted) setDetail({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (!controller.signal.aborted) setDetail({ status: 'error', data: null, error });
+        if (!controller.signal.aborted && !isAbortError(error)) setDetail({ status: 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [selectedId, refreshVersion]);
 
   async function confirmDecision() {

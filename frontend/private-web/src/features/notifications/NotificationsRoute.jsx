@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import NotificationsPage from './NotificationsPage';
 import { useNotificationsData } from './useNotificationsData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
@@ -14,7 +14,7 @@ export default function NotificationsRoute() {
   const [retryToken, setRetryToken] = useState(0);
   const { forceState } = useAdminOccPreview();
   const notifications = useNotificationsData('PUJ', retryToken);
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <NotificationsPage
@@ -28,9 +28,9 @@ export default function NotificationsRoute() {
       onMarkManyAsUnread={notifications.markManyAsUnread}
       onMarkAllAsRead={notifications.markAllAsRead}
       onNavigateToResource={(moduleId, resourceId) => {
-        if (moduleId === 'flight-monitoring') navigate(`/admin-occ/flight-monitoring?flightId=${resourceId}`);
-        if (moduleId === 'approvals') navigate(`/admin-occ/review?operationId=${resourceId}`);
-        if (moduleId === 'reports') navigate('/admin-occ/reports');
+        if (moduleId === 'flight-monitoring') router.push(`/admin-occ/flight-monitoring?flightId=${resourceId}`);
+        if (moduleId === 'approvals') router.push(`/admin-occ/review?operationId=${resourceId}`);
+        if (moduleId === 'reports') router.push('/admin-occ/reports');
       }}
       forceState={forceState}
     />

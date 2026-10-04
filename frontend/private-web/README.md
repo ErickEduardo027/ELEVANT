@@ -12,26 +12,32 @@ de servicios se incluyen como recursos estáticos. Las confirmaciones de
 retirada, archivo y descarte se presentan dentro de la aplicación. La carga
 remota exige preparar el [almacén privado](../../ops/dokploy/media-storage/README.md).
 
-Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente actual usa Vite 6, React 18, React Router y Tailwind.
+Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router con exportación estática, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
 
 ## Ejecutar y validar
 
 Desde `frontend/private-web`:
 
+Si `.env.local` todavía contiene `VITE_ELEVANT_API_URL`, cambia únicamente el nombre de la clave a `NEXT_PUBLIC_ELEVANT_API_URL`; conserva sin cambios todo lo que aparece después de `=`. El wrapper sigue aceptando el nombre anterior temporalmente, pero las configuraciones locales nuevas deben usar el nombre de Next.js.
+
 ```powershell
 npm ci
 npm test
 npm run test:delivery
-$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
-$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
-$env:VITE_HR_DEMO_MODE = "dashboard-read-only"
+npm run lint
+npm run typecheck
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
 npm run dev
 npm run build
 ```
 
-Vite sirve localmente en `http://localhost:5173`. Abre ese origen exacto, no `http://127.0.0.1:5173`: la política CORS de Development autoriza `localhost` y rechaza el origen alternativo. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
+Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/espacio-de-trabajo`. Las URL históricas `dashboard.html`, `contracts.html` y `finance.html` se redirigen a sus rutas App Router equivalentes en Nginx.
 
-Las variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. Las tres primeras son obligatorias; la clave de Google Maps es opcional y visible en el navegador cuando se configura. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development.
+Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development; Google Maps es opcional y su clave queda visible en el navegador. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
+
+Los despliegues existentes pueden seguir pasando temporalmente `VITE_ELEVANT_API_URL`, `VITE_PROTOTYPE_API_URL` y `VITE_HR_DEMO_MODE` como argumentos de build: el wrapper de ejecución/Docker los traduce a `NEXT_PUBLIC_*`. Para entornos nuevos, renombra esas variables a `NEXT_PUBLIC_*`; no se modifican automáticamente archivos `.env.local` existentes.
 
 En esta rama local, el dashboard de Gestión Humana deriva el total de agentes activos y perfiles sin cuenta vinculada de `GET /api/v1/human-resources/ramp-profiles`; ya no muestra las cifras sintéticas de turnos, habilitaciones o cobertura. Revalida al recibir un cambio durable, al recuperar foco/conexión y cada 25 segundos. **Agentes de rampa** sigue usando perfiles y estaciones reales del API. **Habilitaciones y certificaciones** consulta `GET /api/v1/human-resources/qualifications` en páginas de 20, obtiene un ciclo puntual por agente y equipo, y permite registrar o renovar mediante `PUT /api/v1/human-resources/qualifications/{id}`. Conserva la clave de intención para un reintento incierto y relee el ciclo al recibir 409; no inventa adjuntos.
 
@@ -54,7 +60,7 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. `VITE_GOOGLE_MAPS_API_KEY` es
+de API al origen HTTPS privado de Development. `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` es
 opcional: cuando está presente, el mapa de posiciones y el de vuelos usan Maps
 JavaScript API; sin ella mantienen MapLibre. La clave del navegador es visible
 para quien carga la página: restríngela en Google Cloud por los orígenes web

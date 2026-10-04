@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getFinanceReconciliation } from '../../../services/reconciliationService';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
 const filters = [
   ['all', 'Todas'],
@@ -44,11 +45,11 @@ export default function ReconciliationPage({ initialStationId }) {
         if (!controller.signal.aborted) setState({ status: 'success', data });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error', data: null });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, page, revision]);
 
   useEffect(() => {

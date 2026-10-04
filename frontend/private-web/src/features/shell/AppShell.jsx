@@ -1,4 +1,4 @@
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import { useResponsiveSidebar } from './useResponsiveSidebar';
@@ -15,9 +15,10 @@ export default function AppShell({
   notificationsEnabled = true,
   notificationsSource = 'legacy',
   profileActionsEnabled = true,
+  children,
 }) {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const pathname = usePathname();
+  const router = useRouter();
   const sidebar = useResponsiveSidebar();
   const { theme, toggleTheme } = useTheme();
   const notification = navigation.find(item => item.id === 'notifications');
@@ -28,9 +29,9 @@ export default function AppShell({
     <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
       <Sidebar navigation={navigation} user={user} onLogout={onLogout} profileActionsEnabled={profileActionsEnabled} breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded} overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar roleLabel={roleLabel} station={station} notificationsCount={notifications.count} notificationsEnabled={notificationsEnabled} profileActionsEnabled={profileActionsEnabled} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={() => notificationsPath ? navigate(notificationsPath) : notifications.refresh()} onLogout={onLogout} />
-        <main key={location.pathname} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
-          <Outlet />
+        <Topbar roleLabel={roleLabel} station={station} notificationsCount={notifications.count} notificationsEnabled={notificationsEnabled} profileActionsEnabled={profileActionsEnabled} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onOpenNotifications={() => notificationsPath ? router.push(notificationsPath) : notifications.refresh()} onLogout={onLogout} />
+        <main key={pathname} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
+          {children}
         </main>
       </div>
     </div>

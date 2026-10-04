@@ -1,7 +1,7 @@
 import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
 // Adaptador del chat OCC. En pruebas conserva el store mock; en ejecución usa el backend persistente.
-const usesPrototypeApi = () => import.meta.env.MODE !== 'test';
+const usesPrototypeApi = () => process.env.NODE_ENV !== 'test';
 
 async function prototypeRequest(path, options = {}) {
   const session = readSession();

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../../../tests/MemoryRouter.jsx';
 import CurrentReportsPage from './CurrentReportsPage';
 import { getHumanResourcesQualifications } from '../../../services/humanResourcesQualificationsReadService';
 import { getHumanResourcesPermits } from '../../../services/humanResourcesPermitsReadService';

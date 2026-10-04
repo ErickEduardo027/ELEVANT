@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import Link from '../../../components/AppLink';
 import { useState } from 'react';
 import KpiCard from '../../../components/KpiCard';
 import Badge from '../../../components/Badge';

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import { getPreinvoiceDraft, getFinancePreinvoiceDisputes } from '../../../services/approvedServicesService';
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
@@ -94,12 +95,12 @@ export default function PreinvoicesPage({ initialStationId }) {
       .then(result => {
         if (!controller.signal.aborted) setState({ status: 'success', result });
       }).catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error', result: null });
       });
     if (reopenId) void openDetail(reopenId, { preserveAttempts: true });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, page, revision]);
 
   async function openDetail(id, { preserveAttempts = false } = {}) {

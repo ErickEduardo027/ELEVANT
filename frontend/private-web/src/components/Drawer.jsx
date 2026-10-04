@@ -20,7 +20,7 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
       />
       <aside
         ref={dialogRef}
-        inert={!open ? '' : undefined}
+        inert={!open}
         role="dialog"
         aria-modal="true"
         aria-label={title}

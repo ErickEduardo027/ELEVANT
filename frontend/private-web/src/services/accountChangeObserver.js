@@ -88,7 +88,7 @@ export function createAccountChangeObserver({ api, createHubConnection, onChange
 }
 
 export function createPrivateWebAccountChangeObserver(onChanges) {
-  const baseUrl = import.meta.env.VITE_ELEVANT_API_URL?.replace(/\/$/, '');
+  const baseUrl = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, '');
   const api = createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
   return createAccountChangeObserver({ api, onChanges,
     createHubConnection: path => new HubConnectionBuilder()

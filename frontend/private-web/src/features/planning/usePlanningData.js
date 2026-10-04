@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getPlanningSnapshot } from '../../services/planningService';
 import { mapOccPlanningSnapshot } from './planningMappers';
+import { abortForEffectCleanup } from '../../lib/abort';
 
 const INITIAL_STATE = { status: 'loading', data: null, error: null };
 const IDLE_STATE = { status: 'idle', data: null, error: null };
@@ -73,7 +74,7 @@ export function usePlanningData({ stationId, date, refreshToken = 0, enabled = t
         });
       });
 
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, date, refreshToken, enabled]);
 
   return state;

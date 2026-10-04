@@ -13,9 +13,9 @@ import { createElevantApiClient } from '@elevant/api-client';
  * @param {PrivateWebApiClientOptions} [options]
  */
 export function createPrivateWebApiClient(options = {}) {
-  const baseUrl = options.baseUrl ?? import.meta.env.VITE_ELEVANT_API_URL;
+  const baseUrl = options.baseUrl ?? process.env.NEXT_PUBLIC_ELEVANT_API_URL;
   if (typeof baseUrl !== 'string' || baseUrl.trim().length === 0) {
-    throw new Error('VITE_ELEVANT_API_URL is required to create the ELEVANT API client.');
+    throw new Error('NEXT_PUBLIC_ELEVANT_API_URL is required to create the ELEVANT API client.');
   }
 
   return createElevantApiClient({

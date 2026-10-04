@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../../../tests/MemoryRouter.jsx';
 import DashboardPage from './DashboardPage';
 import { getHumanResourcesDashboardSnapshot } from '../../../services/humanResourcesDashboardService';
 

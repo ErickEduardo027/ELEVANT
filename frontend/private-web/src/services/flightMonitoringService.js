@@ -56,7 +56,7 @@ function buildFlight(template, dateISO) {
 }
 
 export async function getFlightMonitoringSnapshot(stationCode = 'PUJ') {
-  if (import.meta.env.MODE !== 'test') {
+  if (process.env.NODE_ENV !== 'test') {
     const stationScope = readSession()?.stationScopes?.find(scope => scope.stationCode === stationCode);
     if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
     const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
@@ -130,7 +130,7 @@ function applyMutation(flight, field) {
 
 export function subscribeToFlightUpdates(onUpdate, stationCode = 'PUJ',
   { onSnapshot, onError } = {}) {
-  if (import.meta.env.MODE !== 'test') {
+  if (process.env.NODE_ENV !== 'test') {
     const intervalId = setInterval(() => {
       getFlightMonitoringSnapshot(stationCode)
         .then(snapshot => {

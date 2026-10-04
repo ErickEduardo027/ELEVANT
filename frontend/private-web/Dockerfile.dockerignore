@@ -4,13 +4,14 @@
 !frontend/private-web/
 !frontend/private-web/package.json
 !frontend/private-web/package-lock.json
-!frontend/private-web/vite.config.js
+!frontend/private-web/next.config.mjs
+!frontend/private-web/jsconfig.json
+!frontend/private-web/tsconfig.json
+!frontend/private-web/eslint.config.mjs
 !frontend/private-web/postcss.config.js
 !frontend/private-web/tailwind.config.js
-!frontend/private-web/index.html
-!frontend/private-web/dashboard.html
-!frontend/private-web/contracts.html
-!frontend/private-web/finance.html
+!frontend/private-web/app/
+!frontend/private-web/app/**
 !frontend/private-web/src/
 !frontend/private-web/src/**
 !frontend/private-web/public/
@@ -19,6 +20,9 @@
 !frontend/private-web/nginx/**
 !frontend/private-web/scripts/
 !frontend/private-web/scripts/validate-development-env.mjs
+!frontend/private-web/scripts/run-next.mjs
+!frontend/private-web/scripts/finalize-static-export.mjs
+!frontend/private-web/scripts/verify-maplibre-worker.mjs
 
 !packages/
 !packages/api-client/

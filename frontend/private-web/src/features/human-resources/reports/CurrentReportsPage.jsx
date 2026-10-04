@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
+import Link from '../../../components/AppLink';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getHumanResourcesQualifications } from '../../../services/humanResourcesQualificationsReadService';
 import { getHumanResourcesPermits } from '../../../services/humanResourcesPermitsReadService';
@@ -60,11 +61,11 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
       if (!controller.signal.aborted) setState({ status: 'success',
         data: { qualifications, permits, shifts } });
     }).catch(error => {
-      if (controller.signal.aborted || error?.name === 'AbortError') return;
+      if (controller.signal.aborted || isAbortError(error)) return;
       setState({ status: error?.status === 401 ? 'unauthorized' :
         error?.status === 403 ? 'forbidden' : 'error', data: null });
     });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [from, to, revision]);
 
   useEffect(() => {

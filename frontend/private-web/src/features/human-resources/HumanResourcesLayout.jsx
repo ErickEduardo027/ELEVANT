@@ -9,6 +9,7 @@ export default function HumanResourcesLayout({
   user = CURRENT_USER_MOCK,
   onLogout,
   dashboardReadOnlyDemo = HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO,
+  children,
 }) {
   const unreadNotificationsCount = useUnreadNotificationsCount({ enabled: !dashboardReadOnlyDemo });
 
@@ -47,6 +48,6 @@ export default function HumanResourcesLayout({
       notificationsPath={dashboardReadOnlyDemo ? undefined : `${HUMAN_RESOURCES_BASE_PATH}/notifications`}
       notificationsEnabled={!dashboardReadOnlyDemo}
       profileActionsEnabled={!dashboardReadOnlyDemo}
-    />
+    >{children}</AppShell>
   );
 }

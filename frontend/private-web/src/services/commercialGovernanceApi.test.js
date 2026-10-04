@@ -7,7 +7,7 @@ vi.mock('../features/auth/authService', () => ({
 
 beforeEach(() => {
   vi.resetModules();
-  vi.stubEnv('VITE_ELEVANT_API_URL', 'https://api.example.test');
+  vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.example.test');
   readSession.mockReturnValue({ token: 'hr-token' });
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.clearAllMocks(); });

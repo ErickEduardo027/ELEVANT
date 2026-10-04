@@ -6,7 +6,7 @@ export const AUTH_STORAGE_KEY = 'elevant-auth-session';
 export const AUTH_EXPIRED_EVENT = 'elevant-auth-expired';
 export const MOCK_PASSWORD = 'Elevant2026!';
 export const PROTOTYPE_API_URL = String(
-  import.meta.env.VITE_PROTOTYPE_API_URL || 'http://localhost:4310'
+  process.env.NEXT_PUBLIC_PROTOTYPE_API_URL || ''
 ).replace(/\/$/, '');
 
 const SUPPORTED_BACK_OFFICE_ROLES = new Set(Object.values(ROLE_KEYS));
@@ -22,7 +22,7 @@ export class PasswordChangeRequiredError extends Error {
   }
 }
 
-const MOCK_USERS = import.meta.env.MODE === 'test'
+const MOCK_USERS = process.env.NODE_ENV === 'test'
   ? {
       'admin@elevant.test': {
         email: 'admin@elevant.test',
@@ -234,7 +234,7 @@ export function logout() {
 }
 
 export async function login({ email, password, remember = false }, injectedApiClient = null) {
-  if (import.meta.env.MODE === 'test' && !injectedApiClient) {
+  if (process.env.NODE_ENV === 'test' && !injectedApiClient) {
     return persistSession(createMockSession(email, password), remember);
   }
 

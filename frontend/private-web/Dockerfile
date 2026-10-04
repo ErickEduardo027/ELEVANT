@@ -13,9 +13,9 @@ COPY frontend/private-web/ ./
 ARG VITE_ELEVANT_API_URL
 ARG VITE_PROTOTYPE_API_URL
 ARG VITE_HR_DEMO_MODE
-ENV VITE_ELEVANT_API_URL=${VITE_ELEVANT_API_URL} \
-    VITE_PROTOTYPE_API_URL=${VITE_PROTOTYPE_API_URL} \
-    VITE_HR_DEMO_MODE=${VITE_HR_DEMO_MODE}
+ENV NEXT_PUBLIC_ELEVANT_API_URL=${VITE_ELEVANT_API_URL} \
+    NEXT_PUBLIC_PROTOTYPE_API_URL=${VITE_PROTOTYPE_API_URL} \
+    NEXT_PUBLIC_HR_DEMO_MODE=${VITE_HR_DEMO_MODE}
 
 RUN npm run build
 
@@ -43,7 +43,7 @@ LABEL org.opencontainers.image.title="ELEVANT AVIAM Web" \
       io.elevant.web.api-origin=${VITE_ELEVANT_API_URL} \
       io.elevant.web.hr-demo-mode=${VITE_HR_DEMO_MODE}
 
-COPY --from=build --chown=101:101 /workspace/frontend/private-web/dist/ /usr/share/nginx/html/
+COPY --from=build --chown=101:101 /workspace/frontend/private-web/out/ /usr/share/nginx/html/
 COPY --chown=101:101 frontend/private-web/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --chown=101:101 frontend/private-web/nginx/security-headers.conf /etc/nginx/snippets/elevant-security-headers.conf
 RUN case "${VITE_ELEVANT_API_URL}" in https://*) ;; *) exit 1 ;; esac \
@@ -52,7 +52,14 @@ RUN case "${VITE_ELEVANT_API_URL}" in https://*) ;; *) exit 1 ;; esac \
       /etc/nginx/snippets/elevant-security-headers.conf \
     && sed -i "s|__ELEVANT_WS_ORIGIN__|${api_ws_origin}|g" \
       /etc/nginx/snippets/elevant-security-headers.conf \
+    && script_hashes="$(cat /usr/share/nginx/html/.csp-script-hashes)" \
+    && test -n "$script_hashes" \
+    && sed -i "s|__NEXT_INLINE_SCRIPT_HASHES__|${script_hashes}|g" \
+      /etc/nginx/snippets/elevant-security-headers.conf \
+    && rm /usr/share/nginx/html/.csp-script-hashes \
     && ! grep -Eq '__ELEVANT_(API|WS)_ORIGIN__' \
+      /etc/nginx/snippets/elevant-security-headers.conf \
+    && ! grep -q '__NEXT_INLINE_SCRIPT_HASHES__' \
       /etc/nginx/snippets/elevant-security-headers.conf
 
 EXPOSE 8080

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getFinanceHomeSnapshot } from '../../../services/financeHomeService';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
 function lastThirtyDays() {
   const to = new Date();
@@ -34,11 +35,11 @@ export function useFinanceHomeData(enabled = true) {
           setState({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setState({ status: error?.status === 403 || error?.status === 404
           ? 'forbidden' : 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [enabled, stationId, revision]);
 
   useEffect(() => {

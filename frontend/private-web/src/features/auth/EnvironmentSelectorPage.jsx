@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { ROLES, resolveHomeRouteForRole } from './roleRouting';
 
 const ENVIRONMENTS = [
@@ -15,7 +15,7 @@ const ENVIRONMENTS = [
 // haya, esta pantalla se retira y LoginPage navega directo con
 // resolveHomeRouteForRole(role) del usuario real.
 export default function EnvironmentSelectorPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-light p-6 dark:bg-surface-dark">
@@ -31,7 +31,7 @@ export default function EnvironmentSelectorPage() {
                 key={env.role}
                 type="button"
                 disabled={!path}
-                onClick={() => path && navigate(path)}
+                onClick={() => path && router.push(path)}
                 className="rounded-2xl border border-black/10 bg-white/70 p-4 text-left text-sm font-medium text-text-primary-light backdrop-blur-md hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark dark:hover:bg-white/5"
               >
                 {env.label}

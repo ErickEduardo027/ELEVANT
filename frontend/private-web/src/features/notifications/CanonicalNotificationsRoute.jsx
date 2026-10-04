@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import Link from '../../components/AppLink';
 import { useAuth } from '../auth/AuthContext';
 import { loadOperationalNotifications, setOperationalNotificationRead } from '../../services/operationalCommunicationService';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -37,17 +38,19 @@ export default function CanonicalNotificationsRoute() {
 
   useEffect(() => {
     const controller = new AbortController();
+    let latestRequest = 0;
     const load = async () => {
+      const requestId = ++latestRequest;
       try {
         const data = await loadOperationalNotifications({ signal: controller.signal });
-        if (!controller.signal.aborted) setState({ status: 'success', items: data.notifications, hasMore: data.hasMore });
-      } catch {
-        if (!controller.signal.aborted) setState(previous => ({ ...previous, status: 'error' }));
+        if (!controller.signal.aborted && requestId === latestRequest) setState({ status: 'success', items: data.notifications, hasMore: data.hasMore });
+      } catch (error) {
+        if (!controller.signal.aborted && !isAbortError(error) && requestId === latestRequest) setState(previous => ({ ...previous, status: 'error' }));
       }
     };
     void load();
     const timer = window.setInterval(load, 20_000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => { abortForEffectCleanup(controller); window.clearInterval(timer); };
   }, [revision]);
 
   const toggleRead = async item => {

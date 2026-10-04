@@ -4,6 +4,7 @@ import { PreInvoiceIcon, ReconciliationIcon, AlertIcon } from '../components/ico
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getFinanceReport } from '../../../services/financeReportsService';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
 export default function FinanceReportsPage({ initialStationId }) {
   const session = useMemo(() => readSession(), []);
@@ -30,11 +31,11 @@ export default function FinanceReportsPage({ initialStationId }) {
         if (!controller.signal.aborted) setState({ status: 'success', data });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setState({ status: error?.status === 403 || error?.status === 404
           ? 'forbidden' : 'error', data: null });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, revision]);
 
   useEffect(() => {

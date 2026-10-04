@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useAppSearchParams as useSearchParams } from '../../../hooks/useAppSearchParams';
 import { useQualificationsData } from './useQualificationsData';
 import { useQualificationFilters } from './useQualificationFilters';
 import { useDisclosure } from '../../../hooks/useDisclosure';

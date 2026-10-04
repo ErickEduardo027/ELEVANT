@@ -179,6 +179,6 @@ export async function exportReport({ reportId, format }) {
     fileName: `${reportId}-${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xls' : 'pdf'}`,
     generatedAt: new Date().toISOString(),
   };
-  if (import.meta.env.MODE !== 'test') downloadTabularReport({ title: `Reporte de Gestión Humana ${reportId}`, format, fileName: result.fileName, rows });
+  if (process.env.NODE_ENV !== 'test') downloadTabularReport({ title: `Reporte de Gestión Humana ${reportId}`, format, fileName: result.fileName, rows });
   return result;
 }
