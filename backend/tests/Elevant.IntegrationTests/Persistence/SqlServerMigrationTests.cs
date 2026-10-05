@@ -43,6 +43,147 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task OccClosureRequiresContractsDecisionAndCanBeReopenedWithAReason()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!789"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var closures = scope.ServiceProvider.GetRequiredService<IServiceClosureStore>();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>();
+        var management = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var service = await context.ServiceDefinitions.AsNoTracking()
+            .SingleAsync(item => item.Code == "RAMP-AC", cancellationToken);
+        var requestId = Guid.CreateVersion7();
+        var reason = "El equipo de aire acondicionado no está disponible.";
+
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.RequestAsync(
+            contractsId, requestId, service.PublicId, reason, cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.RequestAsync(
+            occId, requestId, service.PublicId, "muy corto", cancellationToken)).Failure);
+        var pending = await closures.RequestAsync(occId, requestId, service.PublicId,
+            reason, cancellationToken);
+        Assert.Equal("Pending", pending.Request!.Status);
+        Assert.Equal(pending.Request, (await closures.RequestAsync(occId, requestId,
+            service.PublicId, reason, cancellationToken)).Request);
+        Assert.Equal(ServiceClosureFailure.Conflict, (await closures.RequestAsync(occId,
+            Guid.CreateVersion7(), service.PublicId, reason, cancellationToken)).Failure);
+        Assert.Contains((await closures.ListAsync(occId, null, 1, 25, cancellationToken))!.Items,
+            item => item.Id == requestId);
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
+            requestId, true, null, pending.Request.Version, cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.DecideAsync(contractsId,
+            requestId, false, "corto", pending.Request.Version, cancellationToken)).Failure);
+
+        var denied = await closures.DecideAsync(contractsId, requestId, false,
+            "La contingencia se resolverá hoy.", pending.Request.Version, cancellationToken);
+        Assert.Equal("Denied", denied.Request!.Status);
+        Assert.Contains((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+
+        var approvedRequestId = Guid.CreateVersion7();
+        var second = (await closures.RequestAsync(occId, approvedRequestId,
+            service.PublicId, reason, cancellationToken)).Request!;
+        var occRole = await context.Roles.SingleAsync(item => item.NormalizedName == "ADMIN_OCC",
+            cancellationToken);
+        var decidePermission = await context.Permissions.SingleAsync(item =>
+            item.Code == "commercial.service_closures.decide", cancellationToken);
+        context.Set<RolePermissionGrant>().Add(new RolePermissionGrant
+        {
+            RoleId = occRole.Id, PermissionId = decidePermission.Id,
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
+            approvedRequestId, true, null, second.Version, cancellationToken)).Failure);
+        var approved = await closures.DecideAsync(contractsId, approvedRequestId,
+            true, null, second.Version, cancellationToken);
+        Assert.Equal("Approved", approved.Request!.Status);
+        Assert.False(approved.Request.IsCurrentlyPublic);
+        Assert.DoesNotContain((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+        Assert.True((await context.ServiceDefinitions.AsNoTracking().SingleAsync(
+            item => item.PublicId == service.PublicId, cancellationToken)).IsActive);
+        Assert.Equal(ServiceClosureFailure.Conflict, (await closures.DecideAsync(contractsId,
+            approvedRequestId, false, "La clausura ya se aprobó.", second.Version,
+            cancellationToken)).Failure);
+        Assert.Equal(approved.Request, (await closures.RequestAsync(occId, approvedRequestId,
+            service.PublicId, reason, cancellationToken)).Request);
+        Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
+            contractsId, service.PublicId,
+            new ManagedServiceInput(service.Code, service.Name, service.Description!,
+                service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
+                service.DisplayOrder, true, true, approved.Request.ServiceVersion),
+            cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.ReopenAsync(contractsId,
+            service.PublicId, "corto", approved.Request.ServiceVersion, cancellationToken)).Failure);
+        var reopened = await closures.ReopenAsync(contractsId, service.PublicId,
+            "El equipo se reparó y ya está disponible.", approved.Request.ServiceVersion,
+            cancellationToken);
+        Assert.True(reopened.Request!.IsCurrentlyPublic);
+        Assert.NotNull(reopened.Request.ReopenedAt);
+        Assert.Contains((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+        var closureHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "service_closures" &&
+                item.ResourceId == approvedRequestId).ToArray();
+        Assert.NotEmpty(closureHints);
+        var catalogHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId).ToArray();
+        Assert.NotEmpty(catalogHints);
+
+        var edited = await management.SaveAsync(contractsId, service.PublicId,
+            new ManagedServiceInput(service.Code, service.Name,
+                "Descripcion actualizada para OCC.", service.DefaultBillingUnit,
+                service.ImageUrl, service.VideoUrl, service.DisplayOrder, true, true,
+                reopened.Request.ServiceVersion), cancellationToken);
+        Assert.NotNull(edited.Service);
+        var occKey = await context.Users.Where(item => item.PublicId == occId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var occCatalogHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId &&
+                item.RecipientAccountId == occKey).ToArray();
+        Assert.NotEmpty(occCatalogHints);
+        await scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>()
+            .DispatchPendingAsync(100, cancellationToken);
+        var occFeed = await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+            .ReadAsync(occId, 0, 100, cancellationToken);
+        Assert.Contains(Assert.IsType<AccountChangePage>(occFeed).Changes,
+            item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId);
+    }
+
+    [Fact]
     public async Task RampMobileAccessRequestIsIdempotentAndRequiresAnExplicitDecision()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -1984,10 +2125,17 @@ public sealed class SqlServerMigrationTests
             "Boca Chica", "Passport", "AB123456");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
+        Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Failure);
         var submitted = await handler.HandleAsync(command, cancellationToken);
         Assert.True(submitted.IsSuccess);
         Assert.False(submitted.Replayed);
         Assert.True((await handler.HandleAsync(command, cancellationToken)).Replayed);
+        Assert.Equal(submitted.Reference,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Reference);
+        Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
+            (await handler.LookupReceiptAsync(command with { RepresentativeTitle = "Director" },
+                cancellationToken)).Failure);
         Assert.Equal(CommercialSubmissionFailure.Conflict,
             (await handler.HandleAsync(command with { RepresentativeTitle = "Director" }, cancellationToken)).Failure);
 
@@ -2005,6 +2153,8 @@ public sealed class SqlServerMigrationTests
             item => item.PublicId == catalog.Services[0].Id, cancellationToken);
         hiddenService.IsPublic = false;
         await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(submitted.Reference,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Reference);
         Assert.DoesNotContain((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
             .GetPublicAsync(cancellationToken)).Services, item => item.Id == hiddenService.PublicId);
         var hiddenRequest = command with { RequestId = Guid.NewGuid() };

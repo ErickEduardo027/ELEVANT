@@ -7792,6 +7792,69 @@
         }
       }
     },
+    "/api/v1/public/commercial-requests/receipt": {
+      "post": {
+        "tags": [
+          "PublicCommercialRequests"
+        ],
+        "operationId": "LookupCommercialRequestReceipt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitCommercialRequestRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitCommercialRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ramp/operations/{operationId}/incidents": {
       "get": {
         "tags": [
@@ -9173,6 +9236,246 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures": {
+      "get": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "ListServiceClosures",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosurePage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "CreateServiceClosure",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures/{id}/decision": {
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "DecideServiceClosure",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures/services/{id}/reopen": {
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "ReopenService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
                 }
               }
             }
@@ -10806,6 +11109,28 @@
         },
         "additionalProperties": false
       },
+      "CreateServiceClosureRequest": {
+        "required": [
+          "reason",
+          "requestId",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateSessionRequest": {
         "required": [
           "email",
@@ -10899,6 +11224,26 @@
           "reason": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecideServiceClosureRequest": {
+        "required": [
+          "approve",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -16264,6 +16609,22 @@
         },
         "additionalProperties": false
       },
+      "ReopenServiceRequest": {
+        "required": [
+          "reason",
+          "serviceVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "serviceVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ReportRampIncidentRequest": {
         "required": [
           "description",
@@ -16517,6 +16878,113 @@
         "properties": {
           "content": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceClosureData": {
+        "required": [
+          "id",
+          "isCurrentlyPublic",
+          "reason",
+          "requestedAt",
+          "requestedBy",
+          "serviceId",
+          "serviceName",
+          "serviceVersion",
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reopenedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reopenReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "isCurrentlyPublic": {
+            "type": "boolean"
+          },
+          "serviceVersion": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceClosurePage": {
+        "required": [
+          "hasMore",
+          "items",
+          "pendingCount",
+          "pendingServiceIds"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceClosureData"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingServiceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         },
         "additionalProperties": false
@@ -17192,6 +17660,9 @@
     },
     {
       "name": "RampProfiles"
+    },
+    {
+      "name": "ServiceClosures"
     },
     {
       "name": "System"

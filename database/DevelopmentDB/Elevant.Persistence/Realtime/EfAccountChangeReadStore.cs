@@ -74,12 +74,15 @@ internal sealed class EfAccountChangeReadStore(
                 on grant.PermissionId equals permission.Id
             where internalRoleIds.Contains(role.PublicId) && role.IsActive &&
                 (permission.Code == "commercial.catalog.read" ||
-                 permission.Code == "commercial.requests.read")
+                 permission.Code == "commercial.requests.read" ||
+                 permission.Code == "commercial.service_closures.read")
             select permission.Code).Distinct().ToArrayAsync(cancellationToken) : [];
         var hasCatalogAccess = isSuperAdmin ||
             commercialGrants.Contains("commercial.catalog.read");
         var hasRequestsAccess = isSuperAdmin ||
             commercialGrants.Contains("commercial.requests.read");
+        var hasClosureAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.service_closures.read");
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -164,10 +167,13 @@ internal sealed class EfAccountChangeReadStore(
                                 organization.Id == airline.OrganizationId &&
                                 airlineOrganizationIds.Contains(organization.PublicId)))))) &&
                 (change.Resource != "commercial_catalog" ||
-                    (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
+                    ((hasCatalogAccess || hasClosureAccess) && context.ServiceDefinitions.Any(service =>
                         service.PublicId == change.ResourceId))) &&
                 (change.Resource != "commercial_requests" ||
                     (hasRequestsAccess && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "service_closures" ||
+                    (hasClosureAccess && context.ServiceClosureRequests.Any(request =>
                         request.PublicId == change.ResourceId))) &&
                 (change.Resource != "account_provisioning" ||
                     (isSuperAdmin && context.ServiceRequests.Any(request =>

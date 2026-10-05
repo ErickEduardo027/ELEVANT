@@ -21,6 +21,7 @@ public enum CommercialSubmissionFailure
     AirlineUnavailable,
     ServiceUnavailable,
     Conflict,
+    ReceiptNotFound,
 }
 
 public sealed record CommercialSubmissionResult(
@@ -41,7 +42,30 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
-        if (command.RequestId == Guid.Empty || command.AirlineProfileId == Guid.Empty ||
+        if (!IsValid(command))
+            return Task.FromResult(CommercialSubmissionResult.Failed(
+                CommercialSubmissionFailure.InvalidRequest));
+
+        return store.SubmitAsync(command, cancellationToken);
+    }
+
+    public async Task<CommercialSubmissionResult> LookupReceiptAsync(
+        SubmitCommercialRequestCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsValid(command))
+            return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.InvalidRequest);
+        var reference = await store.LookupReceiptAsync(command, cancellationToken);
+        return reference is null
+            ? CommercialSubmissionResult.Failed(CommercialSubmissionFailure.ReceiptNotFound)
+            : CommercialSubmissionResult.Success(reference, true);
+    }
+
+    private static bool IsValid(SubmitCommercialRequestCommand command) =>
+        command.RequestId != Guid.Empty && command.AirlineProfileId != Guid.Empty &&
+        !(
             command.ServiceIds is null or { Count: < 1 or > 20 } ||
             command.ServiceIds.Any(id => id == Guid.Empty) ||
             command.ServiceIds.Distinct().Count() != command.ServiceIds.Count ||
@@ -58,12 +82,7 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
             !OptionalText(command.RepresentativeProvince, 80) ||
             !OptionalText(command.RepresentativeMunicipality, 80) ||
             !ValidDocument(command.RepresentativeDocumentType,
-                command.RepresentativeDocumentNumber))
-            return Task.FromResult(CommercialSubmissionResult.Failed(
-                CommercialSubmissionFailure.InvalidRequest));
-
-        return store.SubmitAsync(command, cancellationToken);
-    }
+                command.RepresentativeDocumentNumber));
 
     private static bool ValidText(string? value, int maxLength) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= maxLength;

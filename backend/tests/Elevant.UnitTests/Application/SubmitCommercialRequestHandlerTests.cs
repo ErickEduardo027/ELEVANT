@@ -46,6 +46,23 @@ public sealed class SubmitCommercialRequestHandlerTests
         Assert.Equal("REQ-2026-0001", result.Reference);
     }
 
+    [Fact]
+    public async Task ReceiptLookupDoesNotSubmitAndRequiresValidOriginalPayload()
+    {
+        var store = new RecordingStore();
+        var handler = new SubmitCommercialRequestHandler(store);
+        var command = ValidCommand();
+
+        Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
+            (await handler.LookupReceiptAsync(command, TestContext.Current.CancellationToken)).Failure);
+        Assert.Null(store.Written);
+        Assert.Equal(command, store.LookedUp);
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest,
+            (await handler.LookupReceiptAsync(command with { AuthorityDeclared = false },
+                TestContext.Current.CancellationToken)).Failure);
+        Assert.Equal(command, store.LookedUp);
+    }
+
     [Theory]
     [InlineData("Passport", null)]
     [InlineData(null, "AB123456")]
@@ -94,12 +111,20 @@ public sealed class SubmitCommercialRequestHandlerTests
     private sealed class RecordingStore : ICommercialIntakeStore
     {
         public SubmitCommercialRequestCommand? Written { get; private set; }
+        public SubmitCommercialRequestCommand? LookedUp { get; private set; }
 
         public Task<CommercialSubmissionResult> SubmitAsync(
             SubmitCommercialRequestCommand command, CancellationToken cancellationToken = default)
         {
             Written = command;
             return Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0001", false));
+        }
+
+        public Task<string?> LookupReceiptAsync(SubmitCommercialRequestCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            LookedUp = command;
+            return Task.FromResult<string?>(null);
         }
     }
 }

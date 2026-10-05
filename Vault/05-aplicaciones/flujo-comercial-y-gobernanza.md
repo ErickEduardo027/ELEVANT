@@ -47,6 +47,11 @@ tags:
 
 # Solicitud comercial y gobernanza
 
+La [clausura comercial de servicios](clausura-comercial-servicios.md) documenta
+la solicitud de OCC, decisión de Contratos y efecto sobre el carrusel público
+en la rama local. La sección siguiente conserva el estado verificado del flujo
+de alta anterior.
+
 Esta capacidad está integrada en `Development` por el merge #114. Esta evidencia de repositorio no demuestra que la versión esté desplegada ni aceptada operativamente en el VPS. El [recorrido detallado](../../docs/workflows/commercial-intake-and-governance.md) explica las decisiones, contratos HTTP y límites de los datos iniciales.
 
 ```mermaid

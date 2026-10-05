@@ -6,10 +6,12 @@ import { usePrivateMediaUrl } from '../../../hooks/usePrivateMediaUrl';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { deleteManagedService, getManagedServices, saveManagedService, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
+import ServiceClosurePanel from './ServiceClosurePanel';
 
 const empty = { code: '', name: '', description: '', billingUnit: 'operación', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
 
-export default function CommercialCatalogPage({ canCreate = true, canEdit = true, canRetire = true }) {
+export default function CommercialCatalogPage({ canCreate = true, canEdit = true,
+  canRetire = true, canSeeClosures = true }) {
   const [services, setServices] = useState([]);
   const [editing, setEditing] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -23,6 +25,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [section, setSection] = useState('catalog');
   const dirty = image !== null || video !== null || JSON.stringify(form) !== JSON.stringify(initial);
 
   const reload = useCallback(async () => {
@@ -73,6 +76,8 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   }
   const change = (key, value) => setForm(current => ({ ...current, [key]: value }));
   return <div className="mx-auto max-w-[1440px] space-y-5">
+    <nav aria-label="Secciones de servicios" className="flex gap-2"><button type="button" onClick={() => setSection('catalog')} aria-current={section === 'catalog' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Catálogo</button>{canSeeClosures && <button type="button" onClick={() => setSection('closures')} aria-current={section === 'closures' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Solicitudes de clausura</button>}</nav>
+    {canSeeClosures && section === 'closures' ? <ServiceClosurePanel mode="contracts" /> : <>
     <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Oferta</p><h1 className="mt-1 text-2xl font-bold">Servicios</h1><p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Edite los servicios que ve la aerolínea al solicitar acceso. Las solicitudes conservan su selección histórica.</p></div>{canCreate && <button type="button" onClick={() => open()} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Crear servicio</button>}</header>
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && !drawerOpen && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
@@ -96,6 +101,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     </Drawer>
     <ConfirmDialog open={pendingClose} title="Descartar cambios" description="Los cambios de este servicio no se guardarán." confirmLabel="Descartar" onClose={() => setPendingClose(false)} onConfirm={discard} />
     <ConfirmDialog open={Boolean(pendingRetire)} title="Retirar servicio" description={`¿Retirar ${pendingRetire?.name ?? ''} del catálogo público? Los contratos existentes conservarán su referencia.`} confirmLabel="Retirar" onClose={() => setPendingRetire(null)} onConfirm={retire} />
+    </>}
   </div>;
 }
 

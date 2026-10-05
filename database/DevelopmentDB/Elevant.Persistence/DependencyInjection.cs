@@ -82,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
         services.AddScoped<CommercialPermissionGuard>();
         services.AddScoped<ICommercialCatalogManagementStore, EfCommercialCatalogManagementStore>();
+        services.AddScoped<IServiceClosureStore, EfServiceClosureStore>();
         services.AddScoped<ICommercialAirlineManagementStore, EfCommercialAirlineManagementStore>();
         services.AddScoped<ICommercialMediaStore>(provider => new EfCommercialMediaStore(
             provider.GetRequiredService<ElevantDbContext>(),

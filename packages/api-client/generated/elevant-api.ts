@@ -457,6 +457,12 @@ export interface CreatePreinvoiceDraftResponse {
   replayed: boolean;
 }
 
+export interface CreateServiceClosureRequest {
+  requestId: string;
+  serviceId: string;
+  reason: string;
+}
+
 export interface CreateSessionRequest {
   /**
      * @minLength 1
@@ -552,6 +558,13 @@ export interface DecideOccReviewResponse {
   decidedAt: string;
   /** @nullable */
   reason?: string | null;
+}
+
+export interface DecideServiceClosureRequest {
+  approve: boolean;
+  /** @nullable */
+  reason?: string | null;
+  version: string;
 }
 
 export interface DisputeAirlinePreinvoiceRequest {
@@ -2001,6 +2014,11 @@ export interface RejectRampMobileAccessInput {
   expectedVersion: string;
 }
 
+export interface ReopenServiceRequest {
+  reason: string;
+  serviceVersion: string;
+}
+
 export interface ReportRampIncidentRequest {
   /**
      * @minLength 1
@@ -2085,6 +2103,36 @@ export interface SaveRampProfileInput {
 
 export interface SendOperationMessageRequest {
   content: string;
+}
+
+export interface ServiceClosureData {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  reason: string;
+  status: string;
+  requestedBy: string;
+  requestedAt: string;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  decidedBy?: string | null;
+  /** @nullable */
+  decidedAt?: string | null;
+  /** @nullable */
+  reopenedAt?: string | null;
+  /** @nullable */
+  reopenReason?: string | null;
+  isCurrentlyPublic: boolean;
+  serviceVersion: string;
+  version: string;
+}
+
+export interface ServiceClosurePage {
+  items: ServiceClosureData[];
+  hasMore: boolean;
+  pendingCount: number;
+  pendingServiceIds: string[];
 }
 
 export interface SessionResponse {
@@ -2355,6 +2403,12 @@ stationId?: string;
 
 export type GetFinancePreinvoiceDisputesParams = {
 includeResolutions?: boolean;
+};
+
+export type ListServiceClosuresParams = {
+status?: string;
+page?: number;
+limit?: number;
 };
 
 export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
@@ -5790,6 +5844,40 @@ const res = await fetch(getSubmitCommercialRequestUrl(),
 
 
 
+export const getLookupCommercialRequestReceiptUrl = () => {
+
+
+
+
+  return `/api/v1/public/commercial-requests/receipt`
+}
+
+export const lookupCommercialRequestReceipt = async (submitCommercialRequestRequest?: SubmitCommercialRequestRequest, options?: RequestInit): Promise<SubmitCommercialRequestResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLookupCommercialRequestReceiptUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitCommercialRequestRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetRampIncidentsUrl = (operationId: string,) => {
 
 
@@ -6251,6 +6339,145 @@ const res = await fetch(getRequestRampMobileAccessUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListServiceClosuresUrl = (params?: ListServiceClosuresParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/service-closures?${stringifiedParams}` : `/api/v1/service-closures`
+}
+
+export const listServiceClosures = async (params?: ListServiceClosuresParams, options?: RequestInit): Promise<ServiceClosurePage> => {
+
+  const res = await fetch(getListServiceClosuresUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosurePage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateServiceClosureUrl = () => {
+
+
+
+
+  return `/api/v1/service-closures`
+}
+
+export const createServiceClosure = async (createServiceClosureRequest?: CreateServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateServiceClosureUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createServiceClosureRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDecideServiceClosureUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/service-closures/${id}/decision`
+}
+
+export const decideServiceClosure = async (id: string,
+    decideServiceClosureRequest?: DecideServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideServiceClosureUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(decideServiceClosureRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenServiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/service-closures/services/${id}/reopen`
+}
+
+export const reopenService = async (id: string,
+    reopenServiceRequest?: ReopenServiceRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenServiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenServiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
   return data
 }
 
