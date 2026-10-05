@@ -1,133 +1,154 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import CurrentReportsPage from './CurrentReportsPage';
-import { getHumanResourcesQualifications } from '../../../services/humanResourcesQualificationsReadService';
-import { getHumanResourcesPermits } from '../../../services/humanResourcesPermitsReadService';
-import { getHumanResourcesShifts } from '../../../services/humanResourcesShiftsReadService';
+import { getHumanResourcesReport, exportHumanResourcesReport } from
+  '../../../services/humanResourcesVerifiedReportsService';
 
 const observerFactory = vi.hoisted(() => vi.fn());
-
-vi.mock('../../../services/humanResourcesQualificationsReadService', () => ({
-  getHumanResourcesQualifications: vi.fn(),
-}));
-vi.mock('../../../services/humanResourcesPermitsReadService', () => ({
-  getHumanResourcesPermits: vi.fn(),
-}));
-vi.mock('../../../services/humanResourcesShiftsReadService', () => ({
-  getHumanResourcesShifts: vi.fn(),
+const auth = vi.hoisted(() => ({ session: null }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ session: auth.session }) }));
+vi.mock('../../../services/humanResourcesVerifiedReportsService', () => ({
+  getHumanResourcesReport: vi.fn(), exportHumanResourcesReport: vi.fn(),
 }));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: observerFactory,
 }));
 
-const initialDate = new Date(2026, 8, 28, 12);
-const qualification = { id: 'qual-1', agentName: 'Riley Ramp', employeeNumber: 'DEV-RA-001',
-  equipmentName: 'GPU', obtainedOn: '2026-01-01', expiresOn: '2026-10-05' };
-const permit = { id: 'permit-1', agentName: 'Ana Rivas', employeeNumber: 'DEV-RA-002',
-  documentType: 'AirportId', issuedOn: '2026-01-01', expiresOn: '2026-09-29' };
-const shift = { id: 'shift-1', agentName: 'Riley Ramp', workDate: '2026-09-28',
-  stationCode: 'PUJ', terminalCode: 'A', startsAtLocal: '06:00:00', endsAtLocal: '14:00:00' };
+const stationId = '20000000-0000-7000-8000-000000000003';
+const row = { id: '50000000-0000-7000-8000-000000000001',
+  agentName: 'Agente de prueba', employeeNumber: 'DEV-001',
+  kind: 'Qualification', code: 'GPU', expiresOn: '2026-10-20' };
+const page = { stationId, from: '2026-10-01', to: '2026-10-30',
+  page: 1, limit: 20, hasMore: true, asOf: '2026-10-05T12:00:00Z', rows: [row] };
 
 beforeEach(() => {
-  observerFactory.mockReset();
-  observerFactory.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined) });
-  getHumanResourcesQualifications.mockReset().mockResolvedValue({ qualifications: [qualification], hasMore: false });
-  getHumanResourcesPermits.mockReset().mockResolvedValue({ permits: [permit], hasMore: false });
-  getHumanResourcesShifts.mockReset().mockResolvedValue({ shifts: [shift], hasMore: false });
+  auth.session = { token: 'session-one', stationScopes: [{ stationId, stationCode: 'PUJ' }] };
+  observerFactory.mockReset().mockReturnValue({
+    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  });
+  getHumanResourcesReport.mockReset().mockResolvedValue(page);
+  exportHumanResourcesReport.mockReset().mockResolvedValue(new Blob(['%PDF-1.7\n'],
+    { type: 'application/pdf' }));
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 function renderReport() {
-  return render(<MemoryRouter><CurrentReportsPage initialDate={initialDate} /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[
+    '/gestion-humana/reports?from=2026-10-01&to=2026-10-30',
+  ]}><CurrentReportsPage initialDate={new Date(2026, 9, 5, 12)} /></MemoryRouter>);
 }
 
-it('reports only authorized API records, with source limits and no prototype export', async () => {
+it('shows a station-scoped page without inventing a global total and follows pagination', async () => {
+  getHumanResourcesReport.mockImplementation(async (_, query) =>
+    query.page === 1 ? page : { ...page, page: 2, hasMore: false,
+      rows: [{ ...row, id: '50000000-0000-7000-8000-000000000002',
+        agentName: 'Segundo agente' }] });
   renderReport();
-  expect(await screen.findByText('Ana Rivas')).toBeInTheDocument();
-  expect(screen.getAllByText('Riley Ramp').length).toBeGreaterThan(0);
-  expect(screen.getByText(/Carnet aeroportuario/)).toBeInTheDocument();
-  expect(screen.getByText(/GPU/)).toBeInTheDocument();
-  expect(screen.getByText(/primeros 100 registros por fuente/i)).toBeInTheDocument();
-  expect(screen.queryByText(/historial completo/i)).not.toBeInTheDocument();
-  expect(getHumanResourcesQualifications).toHaveBeenCalledWith({ page: 1, limit: 100 }, expect.anything());
-  expect(getHumanResourcesPermits).toHaveBeenCalledWith({ page: 1, limit: 100 }, expect.anything());
-  expect(getHumanResourcesShifts).toHaveBeenCalledWith({ from: '2026-09-28', to: '2026-10-04', page: 1, limit: 100 }, expect.anything());
-  expect(screen.queryByRole('button', { name: /Exportar|Descargar/i })).not.toBeInTheDocument();
-  expect(screen.queryByText(/datos sintéticos|demo/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Estación autorizada')).toHaveValue(stationId);
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
+  expect(screen.getByText(/1 fila en esta página/)).toBeInTheDocument();
+  expect(screen.queryByText(/total global/i)).not.toBeInTheDocument();
+  expect(getHumanResourcesReport).toHaveBeenCalledWith('expirations',
+    expect.objectContaining({ stationId, page: 1, limit: 20 }), expect.anything());
+  fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }));
+  expect(await screen.findByText('Segundo agente')).toBeInTheDocument();
+  expect(screen.queryByText('Agente de prueba')).not.toBeInTheDocument();
 });
 
-it('uses an honest empty state and flags an incomplete source page', async () => {
-  getHumanResourcesQualifications.mockResolvedValue({ qualifications: [], hasMore: true });
-  getHumanResourcesPermits.mockResolvedValue({ permits: [], hasMore: false });
-  getHumanResourcesShifts.mockResolvedValue({ shifts: [], hasMore: false });
+it('switches among all four server report kinds and shows an honest empty state', async () => {
+  getHumanResourcesReport.mockResolvedValue({ ...page, hasMore: false, rows: [] });
   renderReport();
-  expect(await screen.findByText(/No hay vigencias registradas en las páginas consultadas/)).toBeInTheDocument();
-  expect(screen.getByText(/Hay más habilitaciones fuera de esta muestra/)).toBeInTheDocument();
-  expect(screen.getByText(/No hay turnos registrados en la semana seleccionada/)).toBeInTheDocument();
+  expect(await screen.findByText(/No hay filas para estos filtros/)).toBeInTheDocument();
+  for (const kind of ['account-movements', 'staff-distribution',
+    'qualification-coverage']) {
+    fireEvent.change(screen.getByLabelText('Tipo de reporte'), { target: { value: kind } });
+    await waitFor(() => expect(getHumanResourcesReport).toHaveBeenCalledWith(kind,
+      expect.objectContaining({ stationId }), expect.anything()));
+  }
 });
 
-it('hides stale personnel after a failed revalidation and does not expose server text', async () => {
-  getHumanResourcesPermits.mockResolvedValueOnce({ permits: [permit], hasMore: false })
-    .mockRejectedValueOnce(new Error('internal SQL trace'));
+it('applies expiration filters to both the page and the full export', async () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:filtered-report');
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   renderReport();
-  expect(await screen.findByText('Ana Rivas')).toBeInTheDocument();
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Clase de documento'),
+    { target: { value: 'Qualification' } });
+  fireEvent.change(screen.getByLabelText('Vigencia'),
+    { target: { value: 'Current' } });
+  await waitFor(() => expect(getHumanResourcesReport).toHaveBeenCalledWith(
+    'expirations', expect.objectContaining({ documentKind: 'Qualification',
+      validity: 'Current' }), expect.anything()));
+  fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+  await waitFor(() => expect(exportHumanResourcesReport).toHaveBeenCalledWith(
+    'expirations', expect.objectContaining({ stationId,
+      documentKind: 'Qualification', validity: 'Current' }), 'pdf'));
+});
+
+it('removes private rows on a revoked role and never renders server exception text', async () => {
+  getHumanResourcesReport.mockResolvedValueOnce(page).mockRejectedValueOnce(
+    Object.assign(new Error('private SQL trace'), { status: 403 }));
+  renderReport();
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
   await act(async () => window.dispatchEvent(new Event('focus')));
-  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el reporte');
-  expect(screen.queryByText('Ana Rivas')).not.toBeInTheDocument();
-  expect(screen.queryByText('internal SQL trace')).not.toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('No tienes acceso');
+  expect(screen.queryByText('Agente de prueba')).not.toBeInTheDocument();
+  expect(screen.queryByText('private SQL trace')).not.toBeInTheDocument();
 });
 
-it.each([[401, /La sesión expiró/], [403, /No tienes acceso/]])(
-  'shows a safe authorization state for HTTP %s', async (status, message) => {
-    getHumanResourcesPermits.mockRejectedValue({ status, detail: 'internal SQL trace' });
-    renderReport();
-    expect(await screen.findByRole('alert')).toHaveTextContent(message);
-    expect(screen.queryByText('internal SQL trace')).not.toBeInTheDocument();
-    expect(screen.queryByText('Ana Rivas')).not.toBeInTheDocument();
-  },
-);
-
-it('refreshes when a durable qualification hint arrives', async () => {
+it('does not restore old rows when an earlier request completes after a filter change', async () => {
+  let resolveEarlier;
+  getHumanResourcesReport.mockImplementationOnce(() => new Promise(resolve => {
+    resolveEarlier = resolve;
+  })).mockResolvedValueOnce({ ...page, rows: [], hasMore: false });
   renderReport();
-  expect(await screen.findByText(/GPU/)).toBeInTheDocument();
-  getHumanResourcesQualifications.mockResolvedValue({ qualifications: [{ ...qualification,
-    id: 'qual-2', equipmentName: 'Escalera' }], hasMore: false });
-  await act(async () => observerFactory.mock.calls[0][0](['hr_qualifications']));
-  expect(await screen.findByText(/Escalera/)).toBeInTheDocument();
-  expect(screen.queryByText(/GPU/)).not.toBeInTheDocument();
+  await waitFor(() => expect(resolveEarlier).toBeTypeOf('function'));
+  fireEvent.change(screen.getByLabelText('Tipo de reporte'),
+    { target: { value: 'account-movements' } });
+  expect(await screen.findByText(/No hay filas para estos filtros/)).toBeInTheDocument();
+  await act(async () => resolveEarlier(page));
+  expect(screen.queryByText('Agente de prueba')).not.toBeInTheDocument();
 });
 
-it('labels future-effective current cycles as not yet started', async () => {
-  getHumanResourcesQualifications.mockResolvedValue({ qualifications: [{ ...qualification,
-    obtainedOn: '2026-10-01' }], hasMore: false });
-  getHumanResourcesPermits.mockResolvedValue({ permits: [{ ...permit,
-    issuedOn: '2026-10-01' }], hasMore: false });
+it('exports a complete server PDF and explains the 5 000-row limit', async () => {
+  const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report');
+  const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   renderReport();
-  expect(await screen.findAllByText(/Aún no inicia/)).toHaveLength(2);
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+  await waitFor(() => expect(exportHumanResourcesReport).toHaveBeenCalledWith(
+    'expirations', { stationId, from: '2026-10-01', to: '2026-10-30' },
+    'pdf'));
+  await waitFor(() => expect(click).toHaveBeenCalled());
+  expect(objectUrl).toHaveBeenCalled();
+  expect(revoke).not.toHaveBeenCalled();
+  await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:report'),
+    { timeout: 1_500 });
+
+  exportHumanResourcesReport.mockRejectedValueOnce(
+    Object.assign(new Error('internal'), { status: 422 }));
+  fireEvent.click(screen.getByRole('button', { name: 'Descargar XLSX' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Acota el intervalo');
 });
 
-it('follows the current week after midnight on Monday but preserves a manually selected week', async () => {
-  vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date(2026, 8, 27, 23, 59));
-  render(<MemoryRouter><CurrentReportsPage initialDate={new Date()} /></MemoryRouter>);
-  expect(await screen.findByText('Ana Rivas')).toBeInTheDocument();
-  expect(getHumanResourcesShifts).toHaveBeenCalledWith(
-    { from: '2026-09-21', to: '2026-09-27', page: 1, limit: 100 }, expect.anything());
-
-  vi.setSystemTime(new Date(2026, 8, 28, 0, 1));
-  await act(async () => window.dispatchEvent(new Event('focus')));
-  expect(getHumanResourcesShifts).toHaveBeenCalledWith(
-    { from: '2026-09-28', to: '2026-10-04', page: 1, limit: 100 }, expect.anything());
-
-  await act(async () => screen.getByRole('button', { name: 'Semana anterior' }).click());
-  expect(getHumanResourcesShifts).toHaveBeenCalledWith(
-    { from: '2026-09-21', to: '2026-09-27', page: 1, limit: 100 }, expect.anything());
-  const callsBeforeFocus = getHumanResourcesShifts.mock.calls.length;
-  vi.setSystemTime(new Date(2026, 9, 5, 0, 1));
-  await act(async () => window.dispatchEvent(new Event('focus')));
-  expect(getHumanResourcesShifts.mock.calls).toHaveLength(callsBeforeFocus + 1);
-  expect(getHumanResourcesShifts.mock.lastCall[0]).toEqual(
-    { from: '2026-09-21', to: '2026-09-27', page: 1, limit: 100 });
+it('re-enables exports when the session changes during an older download', async () => {
+  let finishOldDownload;
+  exportHumanResourcesReport.mockImplementationOnce(() => new Promise(resolve => {
+    finishOldDownload = resolve;
+  }));
+  const view = renderReport();
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+  expect(screen.getByRole('button', { name: 'Descargar XLSX' })).toBeDisabled();
+  auth.session = { ...auth.session, token: 'session-two' };
+  view.rerender(<MemoryRouter initialEntries={[
+    '/gestion-humana/reports?from=2026-10-01&to=2026-10-30',
+  ]}><CurrentReportsPage initialDate={new Date(2026, 9, 5, 12)} /></MemoryRouter>);
+  await waitFor(() => expect(getHumanResourcesReport).toHaveBeenCalledTimes(2));
+  await act(async () => finishOldDownload(new Blob(['old session'],
+    { type: 'application/pdf' })));
+  expect(screen.getByRole('button', { name: 'Descargar XLSX' })).toBeEnabled();
 });

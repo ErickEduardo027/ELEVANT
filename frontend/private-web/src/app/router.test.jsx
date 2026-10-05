@@ -6,6 +6,13 @@ import { HUMAN_RESOURCES_NAVIGATION } from '../features/human-resources/navigati
 import { getHumanResourcesQualifications } from '../services/humanResourcesQualificationsReadService';
 import { getHumanResourcesPermits } from '../services/humanResourcesPermitsReadService';
 import { getHumanResourcesShifts } from '../services/humanResourcesShiftsReadService';
+import { getHumanResourcesReport } from '../services/humanResourcesVerifiedReportsService';
+
+vi.mock('../features/auth/AuthContext', () => ({
+  useAuth: () => ({ session: { token: 'router-test', stationScopes: [{
+    stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ',
+  }] } }),
+}));
 
 vi.mock('../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({
@@ -20,6 +27,9 @@ vi.mock('../services/humanResourcesPermitsReadService', () => ({
 }));
 vi.mock('../services/humanResourcesShiftsReadService', () => ({
   getHumanResourcesShifts: vi.fn(),
+}));
+vi.mock('../services/humanResourcesVerifiedReportsService', () => ({
+  getHumanResourcesReport: vi.fn(), exportHumanResourcesReport: vi.fn(),
 }));
 
 describe('HR routes with operational ramp profiles', () => {
@@ -103,9 +113,8 @@ describe('HR routes with operational ramp profiles', () => {
   });
 
   it('mounts the real read-only personnel report instead of the prototype', async () => {
-    getHumanResourcesQualifications.mockResolvedValue({ qualifications: [], hasMore: false });
-    getHumanResourcesPermits.mockResolvedValue({ permits: [], hasMore: false });
-    getHumanResourcesShifts.mockResolvedValue({ shifts: [], hasMore: false });
+    getHumanResourcesReport.mockResolvedValue({ rows: [], hasMore: false,
+      asOf: '2026-10-05T12:00:00Z' });
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />,
         children: createHumanResourcesChildren(true) }],
@@ -115,9 +124,11 @@ describe('HR routes with operational ramp profiles', () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByText('Reportes de personal')).toBeInTheDocument();
-    expect(await screen.findByText(/No hay vigencias registradas/)).toBeInTheDocument();
+    expect(await screen.findByText(/No hay filas para estos filtros/)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/gestion-humana/reports');
-    expect(getHumanResourcesQualifications).toHaveBeenCalledWith(
-      { page: 1, limit: 100 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(getHumanResourcesReport).toHaveBeenCalledWith('expirations',
+      expect.objectContaining({ stationId: '20000000-0000-7000-8000-000000000003',
+        page: 1, limit: 20 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });

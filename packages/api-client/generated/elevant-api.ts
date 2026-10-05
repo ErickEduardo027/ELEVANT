@@ -855,6 +855,31 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HumanResourcesAccountMovementResponse {
+  id: string;
+  accountId: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  kind: string;
+  occurredAt: string;
+}
+
+export interface HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesAccountMovementResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
+}
+
 export interface HumanResourcesAttendanceRowResponse {
   operationId: string;
   assignmentId: string;
@@ -909,6 +934,31 @@ export interface HumanResourcesAvailabilityWritten {
   status: string;
 }
 
+export interface HumanResourcesExpirationResponse {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  kind: string;
+  code: string;
+  expiresOn: string;
+}
+
+export interface HumanResourcesExpirationResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesExpirationResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
+}
+
 export interface HumanResourcesPermitData {
   id: string;
   rampProfileId: string;
@@ -931,6 +981,29 @@ export interface HumanResourcesPermitPage {
 export interface HumanResourcesPermitRecorded {
   id: string;
   cycleNumber: number;
+}
+
+export interface HumanResourcesQualificationCoverageResponse {
+  equipmentTypeId: string;
+  equipmentCode: string;
+  equipmentName: string;
+  eligibleAgents: number;
+  qualifiedAgents: number;
+}
+
+export interface HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesQualificationCoverageResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
 }
 
 export interface HumanResourcesQualificationData {
@@ -1015,6 +1088,35 @@ export interface HumanResourcesShiftPage {
 
 export interface HumanResourcesShiftRecorded {
   id: string;
+}
+
+export interface HumanResourcesStaffDistributionResponse {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  terminalId: string;
+  terminalCode: string;
+  /** @nullable */
+  positionCode?: string | null;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+}
+
+export interface HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesStaffDistributionResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
 }
 
 export interface IssueFinanceInvoiceRequest {
@@ -2424,6 +2526,49 @@ page?: number;
 limit?: number;
 rampProfileId?: string;
 equipmentTypeId?: string;
+};
+
+export type ListHumanResourcesExpirationsParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+documentKind?: string;
+validity?: string;
+};
+
+export type ListHumanResourcesAccountMovementsParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesStaffDistributionParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesQualificationCoverageParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportHumanResourcesReportParams = {
+stationId: string;
+from: string;
+to: string;
+format: string;
+documentKind?: string;
+validity?: string;
 };
 
 export type GetHumanResourcesShiftAssignmentOptionsParams = {
@@ -5087,6 +5232,182 @@ const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesQualificationRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesExpirationsUrl = (params: ListHumanResourcesExpirationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/expirations?${stringifiedParams}` : `/api/v1/human-resources/reports/expirations`
+}
+
+export const listHumanResourcesExpirations = async (params: ListHumanResourcesExpirationsParams, options?: RequestInit): Promise<HumanResourcesExpirationResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesExpirationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesExpirationResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesAccountMovementsUrl = (params: ListHumanResourcesAccountMovementsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/account-movements?${stringifiedParams}` : `/api/v1/human-resources/reports/account-movements`
+}
+
+export const listHumanResourcesAccountMovements = async (params: ListHumanResourcesAccountMovementsParams, options?: RequestInit): Promise<HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesAccountMovementsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesStaffDistributionUrl = (params: ListHumanResourcesStaffDistributionParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/staff-distribution?${stringifiedParams}` : `/api/v1/human-resources/reports/staff-distribution`
+}
+
+export const listHumanResourcesStaffDistribution = async (params: ListHumanResourcesStaffDistributionParams, options?: RequestInit): Promise<HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesStaffDistributionUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationCoverageUrl = (params: ListHumanResourcesQualificationCoverageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/qualification-coverage?${stringifiedParams}` : `/api/v1/human-resources/reports/qualification-coverage`
+}
+
+export const listHumanResourcesQualificationCoverage = async (params: ListHumanResourcesQualificationCoverageParams, options?: RequestInit): Promise<HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesQualificationCoverageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getExportHumanResourcesReportUrl = (kind: string,
+    params: ExportHumanResourcesReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/${kind}/export?${stringifiedParams}` : `/api/v1/human-resources/reports/${kind}/export`
+}
+
+export const exportHumanResourcesReport = async (kind: string,
+    params: ExportHumanResourcesReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportHumanResourcesReportUrl(kind,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

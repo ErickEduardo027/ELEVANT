@@ -251,15 +251,26 @@ usan [persistencia transaccional](../../database/DevelopmentDB/Elevant.Persisten
 Su [panel activo](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx)
 usa el [cliente versionado](../../frontend/private-web/src/services/humanResourcesAvailabilityService.js).
 
-La ruta restringida de Reportes de personal combina las primeras 100
-habilitaciones y permisos actuales con los primeros 100 turnos de la semana
-local mediante las tres lecturas autorizadas. Es una muestra, no un total
-histórico: permite abrir los módulos paginados, anuncia cuando una fuente tiene
-más páginas, oculta la muestra anterior ante un error y no ofrece exportaciones
-prototípicas. Revalida con señales durables, foco, reconexión y sondeo de 25
-segundos. Es código del worktree local; aún faltan CI, navegador y promoción al
-VPS. Fuentes: [vista de reportes](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
-y [router](../../frontend/private-web/src/app/router.jsx).
+En este worktree posterior a la fotografía verificada de la nota, la ruta
+restringida de **Reportes de personal** consulta cuatro informes de API por
+estación: vigencias, movimientos de cuenta atribuibles por auditoría,
+distribución de turnos y cobertura de habilitaciones. Una página de hasta 20
+filas no se presenta como total global. Vigencias filtra habilitaciones o
+permisos y vigencia evaluada por fecha local de la estación; el mismo filtro
+se usa en la descarga. PDF y XLSX los genera la API a partir
+de un snapshot completo limitado a 5 000 filas; cada exportación vuelve a
+comprobar el rol G.H. y la concesión de estación y deja auditoría sin filas
+privadas. Los movimientos sin estación verificable no se atribuyen
+retroactivamente; los comandos de gobierno nuevos etiquetan altas, bajas y
+cambios de estado de cuentas de rampa con las estaciones verificadas al
+ejecutarlos. La vista retira la información anterior si se pierde acceso,
+y relee por señal durable, foco, reconexión y sondeo visible de 25 segundos.
+No hay todavía evidencia de CI, navegador ni promoción de estos reportes al
+VPS. Fuentes locales: [API](../../backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs),
+[consulta EF](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesReportStore.cs),
+[cliente compartido](../../packages/api-client/src/client.ts),
+[vista](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
+y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVerifiedReportsService.js).
 
 ### Contratos y Finanzas
 

@@ -70,6 +70,11 @@ import {
   getSaveOccAttendanceDraftUrl,
   getSaveRampAttendanceDraftUrl,
   getGetHumanResourcesAttendanceUrl,
+  getListHumanResourcesExpirationsUrl,
+  getListHumanResourcesAccountMovementsUrl,
+  getListHumanResourcesStaffDistributionUrl,
+  getListHumanResourcesQualificationCoverageUrl,
+  getExportHumanResourcesReportUrl,
   getValidateHumanResourcesAttendanceUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
@@ -160,6 +165,10 @@ import {
   type AttendanceValidationWriteResponse,
   type ValidateAttendanceRequest,
   type GetHumanResourcesAttendanceParams,
+  type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
+  type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
+  type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
+  type HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type GetManualTurnaroundOptionsParams,
@@ -238,6 +247,19 @@ export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "meth
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesReportKind = "expirations" | "account-movements" |
+  "staff-distribution" | "qualification-coverage";
+export type HumanResourcesReportQuery = {
+    stationId: string; from: string; to: string; page?: number; limit?: number;
+    documentKind?: "Qualification" | "Permit";
+    validity?: "Current" | "Expired";
+};
+export type HumanResourcesReportPage =
+  HumanResourcesExpirationResponseHumanResourcesReportPageResponse |
+  HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse |
+  HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse |
+  HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -661,6 +683,12 @@ export interface ElevantApiClient {
     query: GetHumanResourcesAttendanceParams,
     options?: GetHumanResourcesAttendanceOptions,
   ): Promise<HumanResourcesAttendancePageResponse>;
+  getHumanResourcesReport(kind: HumanResourcesReportKind,
+    query: HumanResourcesReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<HumanResourcesReportPage>;
+  exportHumanResourcesReport(kind: HumanResourcesReportKind,
+    query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
   validateHumanResourcesAttendance(
     assignmentId: string,
     stationId: string,
@@ -3592,6 +3620,74 @@ function validatedHumanResourcesAttendanceQuery(
   return query;
 }
 
+function validatedHumanResourcesReportQuery(
+  kind: HumanResourcesReportKind, query: HumanResourcesReportQuery,
+): HumanResourcesReportQuery {
+  if (!["expirations", "account-movements", "staff-distribution",
+    "qualification-coverage"].includes(kind) || !isRecord(query) ||
+      !hasOnlyKeys(query, ["stationId", "from", "to", "page", "limit",
+        "documentKind", "validity"]) ||
+    !isUuid(query.stationId) || !isDateOnly(query.from) ||
+    !isDateOnly(query.to) || query.from > query.to ||
+    (Date.parse(`${query.to}T00:00:00Z`) -
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+    (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) ||
+        query.limit < 1 || query.limit > 100)) ||
+      (kind !== "expirations" &&
+        (query.documentKind !== undefined || query.validity !== undefined)) ||
+      (query.documentKind !== undefined &&
+        !["Qualification", "Permit"].includes(query.documentKind)) ||
+      (query.validity !== undefined &&
+        !["Current", "Expired"].includes(query.validity)))
+    throw new TypeError("Human Resources report query is invalid.");
+  return query;
+}
+
+function isHumanResourcesReportPage(value: unknown, kind: HumanResourcesReportKind,
+  query: HumanResourcesReportQuery): value is HumanResourcesReportPage {
+    if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "from", "to",
+      "page", "limit", "hasMore", "asOf", "rows", "documentKind",
+      "validity"]) ||
+      value.stationId !== query.stationId || value.from !== query.from ||
+      value.to !== query.to || value.page !== (query.page ?? 1) ||
+      value.limit !== (query.limit ?? 20) ||
+      (value.documentKind ?? null) !== (query.documentKind ?? null) ||
+      (value.validity ?? null) !== (query.validity ?? null) ||
+    typeof value.hasMore !== "boolean" || !isDateTimeOffset(value.asOf) ||
+    !Array.isArray(value.rows) || value.rows.length > value.limit ||
+    (value.hasMore && value.rows.length !== value.limit)) return false;
+  return value.rows.every(row => {
+    if (!isRecord(row)) return false;
+    if (kind === "expirations") return hasOnlyKeys(row, ["id", "rampProfileId",
+      "agentName", "employeeNumber", "kind", "code", "expiresOn"]) &&
+      isUuid(row.id) && isUuid(row.rampProfileId) &&
+      isNonEmptyString(row.agentName) && isNonEmptyString(row.employeeNumber) &&
+      isNonEmptyString(row.kind) && isNonEmptyString(row.code) &&
+      isDateOnly(row.expiresOn);
+    if (kind === "account-movements") return hasOnlyKeys(row, ["id", "accountId",
+      "rampProfileId", "agentName", "employeeNumber", "kind", "occurredAt"]) &&
+      isUuid(row.id) && isUuid(row.accountId) && isUuid(row.rampProfileId) &&
+      isNonEmptyString(row.agentName) && isNonEmptyString(row.employeeNumber) &&
+      isNonEmptyString(row.kind) && isDateTimeOffset(row.occurredAt);
+    if (kind === "staff-distribution") return hasOnlyKeys(row, ["id",
+      "rampProfileId", "agentName", "employeeNumber", "terminalId",
+      "terminalCode", "positionCode", "workDate", "startsAtLocal",
+      "endsAtLocal"]) && isUuid(row.id) && isUuid(row.rampProfileId) &&
+      isUuid(row.terminalId) && isNonEmptyString(row.agentName) &&
+      isNonEmptyString(row.employeeNumber) && isNonEmptyString(row.terminalCode) &&
+      (row.positionCode === null || row.positionCode === undefined ||
+        typeof row.positionCode === "string") && isDateOnly(row.workDate) &&
+      typeof row.startsAtLocal === "string" && typeof row.endsAtLocal === "string";
+    return hasOnlyKeys(row, ["equipmentTypeId", "equipmentCode",
+      "equipmentName", "eligibleAgents", "qualifiedAgents"]) &&
+      isUuid(row.equipmentTypeId) && isNonEmptyString(row.equipmentCode) &&
+      isNonEmptyString(row.equipmentName) && isInt32(row.eligibleAgents) &&
+      row.eligibleAgents >= 0 && isInt32(row.qualifiedAgents) &&
+      row.qualifiedAgents >= 0 && row.qualifiedAgents <= row.eligibleAgents;
+  });
+}
+
 function validatedAttendanceValidationRequest(
   request: ValidateAttendanceRequest,
 ): ValidateAttendanceRequest {
@@ -3751,6 +3847,31 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         ![37, 80, 68, 70, 45].every((value, index) => header[index] === value))
       throw malformedResponse(response.status);
     return new Blob([bytes], { type: "application/pdf" });
+  };
+
+  const executeReportDocument = async (path: string, format: "pdf" | "xlsx",
+    init: ElevantRequestInit = {}): Promise<Blob> => {
+    const response = await send(path, { ...init, method: "GET" }, true);
+    const mime = format === "pdf" ? "application/pdf" :
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== mime)
+      throw malformedResponse(response.status);
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength && Number(declaredLength) > 16_777_216)
+      throw malformedResponse(response.status);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw malformedResponse(response.status);
+    }
+    const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
+    const signature = format === "pdf" ? [37, 80, 68, 70, 45] : [80, 75];
+    if (bytes.byteLength < 8 || bytes.byteLength > 16_777_216 ||
+      !signature.every((value, index) => header[index] === value))
+      throw malformedResponse(response.status);
+    return new Blob([bytes], { type: mime });
   };
 
   const executeOccAssignment = async (
@@ -4859,6 +4980,33 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isHumanResourcesAttendancePage(result.data, scope))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async getHumanResourcesReport(kind: HumanResourcesReportKind,
+      query: HumanResourcesReportQuery, options?: GetHumanResourcesReportOptions,
+    ) {
+      const scope = validatedHumanResourcesReportQuery(kind, query);
+      const url = kind === "expirations" ? getListHumanResourcesExpirationsUrl(scope) :
+        kind === "account-movements" ? getListHumanResourcesAccountMovementsUrl(scope) :
+        kind === "staff-distribution" ? getListHumanResourcesStaffDistributionUrl(scope) :
+        getListHumanResourcesQualificationCoverageUrl(scope);
+      const result = await execute(url, { ...options, method: "GET" }, true);
+      if (!isHumanResourcesReportPage(result.data, kind, scope))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    exportHumanResourcesReport(kind: HumanResourcesReportKind,
+      query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
+      options?: GetHumanResourcesReportOptions,
+    ) {
+      const scope = validatedHumanResourcesReportQuery(kind, query);
+      if (scope.page !== undefined || scope.limit !== undefined ||
+        (format !== "pdf" && format !== "xlsx"))
+        throw new TypeError("Human Resources export query is invalid.");
+      return executeReportDocument(getExportHumanResourcesReportUrl(kind,
+          { stationId: scope.stationId, from: scope.from, to: scope.to, format,
+            ...(scope.documentKind && { documentKind: scope.documentKind }),
+            ...(scope.validity && { validity: scope.validity }) }),
+      format, options);
     },
     async validateHumanResourcesAttendance(
       assignmentId: string, stationId: string,

@@ -1,7 +1,6 @@
 using System.Globalization;
 using PdfSharp;
 using PdfSharp.Drawing;
-using PdfSharp.Fonts;
 using PdfSharp.Pdf;
 using Elevant.Application.Finance;
 using Elevant.Application.Abstractions.Finance;
@@ -13,16 +12,14 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
 {
     private const double Margin = 46;
     private const double RowHeight = 23;
-    private const string Typeface = "Elevant Noto Sans";
+    private const string Typeface = ElevantPdfFontResolver.Typeface;
     private static readonly XColor Navy = XColor.FromArgb(8, 27, 58);
     private static readonly XColor Blue = XColor.FromArgb(18, 84, 190);
     private static readonly XColor Muted = XColor.FromArgb(87, 102, 122);
 
     static FinancialDocumentPdfRenderer()
     {
-        if (GlobalFontSettings.FontResolver is not null)
-            throw new InvalidOperationException("The financial PDF font resolver must be configured before other PDF fonts.");
-        GlobalFontSettings.FontResolver = new BundledFontResolver();
+        ElevantPdfFontResolver.EnsureRegistered();
     }
 
     public byte[] RenderInvoice(NonFiscalInvoiceData invoice)
@@ -155,24 +152,4 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
     private static string Money(decimal amount) =>
         amount.ToString("#,##0.00##", CultureInfo.InvariantCulture);
 
-    private sealed class BundledFontResolver : IFontResolver
-    {
-        private const string FaceName = "elevant-noto-sans-regular";
-        private static readonly Lazy<byte[]> FontBytes = new(() =>
-        {
-            var assembly = typeof(FinancialDocumentPdfRenderer).Assembly;
-            var resource = assembly.GetManifestResourceNames().Single(name =>
-                name.EndsWith("NotoSans-Regular.ttf", StringComparison.Ordinal));
-            using var stream = assembly.GetManifestResourceStream(resource)!;
-            using var buffer = new MemoryStream();
-            stream.CopyTo(buffer);
-            return buffer.ToArray();
-        });
-
-        public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic) =>
-            familyName == Typeface ? new FontResolverInfo(FaceName) : null;
-
-        public byte[]? GetFont(string faceName) =>
-            faceName == FaceName ? FontBytes.Value : null;
-    }
 }

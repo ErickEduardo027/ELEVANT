@@ -34,6 +34,16 @@ OpenAPI es la frontera cliente/servidor. Public Web nunca confía un tenant
 enviado por el navegador y AVIAM Web nunca obtiene privilegios por navegación
 o estado local.
 
+El artefacto temporal de la imagen certificada se nombra por
+aplicación y `run_id`, sin `run_attempt`: si GitHub reintenta únicamente el job
+de publicación, descarga la certificación ya producida en ese mismo run. Si se
+repite el build, `upload-artifact` reemplaza el artefacto del run antes de la
+publicación. SHA-256, identidad de imagen, configuración, commit y dependencia
+exacta de API se vuelven a verificar antes de publicar. El bundle OCI final
+conserva identidad inmutable y número de intento; este ajuste no cambia el
+controlador del VPS. Un reintento no garantiza promoción si el alias API fue
+reemplazado por una entrega más reciente.
+
 ## Configuración de build Development
 
 Los valores `VITE_*` y `NEXT_PUBLIC_*` se incorporan durante build, son

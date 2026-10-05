@@ -1,5 +1,25 @@
 # Backend de ELEVANT
 
+## Reportes verificables de Gestión Humana (rama local)
+
+`GET /api/v1/human-resources/reports/{kind}` consulta vigencias, movimientos de
+cuenta con auditoría de estación verificable, distribución de turnos y cobertura
+de habilitaciones. Requiere rol `GESTION_HUMANA`, membresía interna AVIAM y
+concesión vigente de la estación; acepta hasta 30 fechas y páginas de 1 a 100.
+Vigencias admite `documentKind=Qualification|Permit` y
+`validity=Current|Expired`; la vigencia se evalúa con la fecha local de la
+estación y la página devuelve los filtros efectivos.
+`GET .../{kind}/export?format=pdf|xlsx` vuelve a autorizar, lee un snapshot
+coherente de hasta 5 000 filas, registra auditoría sin filas privadas y sirve
+un archivo con cabeceras `no-store` y `nosniff`. Un conjunto mayor devuelve
+422 sin archivo. Las filas de la página no son un total global ni la fuente
+de la exportación. No se atribuyen eventos de cuenta históricos sin estación
+verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
+bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
+en el momento del evento; los eventos anteriores no se atribuyen de forma
+retroactiva ni se reconstruyen desde concesiones actuales.
+Código local: no acredita despliegue al VPS.
+
 ## Revisión de asistencia (rama local)
 
 `GET /api/v1/human-resources/attendance` lista por estación autorizada, intervalo

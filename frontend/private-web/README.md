@@ -15,7 +15,11 @@ invalidan la vista, pero la API REST sigue siendo la autoridad. No hay horas
 extra automáticas ni captura biométrica. Aún falta aceptación de tres sesiones
 contra Development después de promocionar DB, API y web.
 
-**Reportes de personal** está disponible en el modo restringido de Gestión Humana. Combina las primeras 100 habilitaciones, permisos y turnos de la semana local leídos de sus tres endpoints autorizados; muestra una muestra, no totales globales, y permite abrir cada módulo paginado. Oculta los datos anteriores si una fuente falla y se revalida con cambios durables, foco, reconexión y sondeo de 25 segundos. No ofrece exportación ni estadísticas históricas ficticias. El adaptador prototípico de `/api/hr/reports/*` ya no está montado en la ruta. Tras #118, la ruta y las otras cinco rutas HR visibles se recorrieron en navegador contra el VPS sin 404/405/5xx observados; las escrituras de un ciclo nuevo siguen pendientes de aceptación remota.
+**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas), no de la tabla visible. La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
+
+El informe de vigencias también filtra habilitaciones o permisos y estado de
+vigencia calculado con la fecha local de la estación. PDF y XLSX conservan
+exactamente esos filtros, no solo las filas de la página visible.
 
 ## Medios del flujo comercial
 
