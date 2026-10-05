@@ -122,6 +122,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
         services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
         services.AddScoped<IAttendanceDraftStore, EfAttendanceDraftStore>();
+        services.AddScoped<IAttendanceValidationStore, EfAttendanceValidationStore>();
         services.AddScoped<IRampOperationSubmissionStore, EfRampOperationSubmissionStore>();
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();

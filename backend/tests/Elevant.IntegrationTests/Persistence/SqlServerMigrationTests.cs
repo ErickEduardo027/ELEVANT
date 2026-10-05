@@ -1101,6 +1101,7 @@ public sealed class SqlServerMigrationTests
         await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
         await using (var seeder = CreateContext(connection))
             await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
         await using var provider = new ServiceCollection().AddLogging()
             .AddSingleton<TimeProvider>(TimeProvider.System)
             .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
@@ -9037,6 +9038,223 @@ public sealed class SqlServerMigrationTests
             .UseSqlServer(connection, ElevantSqlServerOptions.Configure)
             .Options;
         return new ElevantDbContext(options);
+    }
+
+    [Fact]
+    public async Task AttendanceValidationPreservesBothDraftsAndRejectsStaleDecisions()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using (var secondStation = CreateContext(database.ConnectionString))
+        {
+            var now = new DateTimeOffset(2026, 10, 2, 15, 0, 0, TimeSpan.Zero);
+            var airport = new Airport
+            {
+                PublicId = Guid.Parse("20000000-0000-7000-8000-000000000098"),
+                IataCode = "TST", IcaoCode = "MTST", Name = "Synthetic test airport",
+                City = "Test", CountryCode = "DO", CreatedAt = now, UpdatedAt = now,
+            };
+            secondStation.Airports.Add(airport);
+            await secondStation.SaveChangesAsync(cancellationToken);
+            secondStation.Stations.Add(new Station
+            {
+                PublicId = Guid.Parse("20000000-0000-7000-8000-000000000099"),
+                AirportId = airport.Id, Code = "TST", Name = "Synthetic test station",
+                IanaTimeZone = "America/Santo_Domingo", IsActive = true,
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await secondStation.SaveChangesAsync(cancellationToken);
+        }
+
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var assignmentId = Guid.Parse("70000000-0000-7000-8000-000000000006");
+        var installationId = Guid.CreateVersion7();
+        var start = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
+        Guid stationId;
+        Guid otherStationId;
+        DateOnly operationDate;
+        await using (var metadata = CreateContext(database.ConnectionString))
+        {
+            var operation = await metadata.GroundOperations.SingleAsync(item =>
+                item.PublicId == operationId, cancellationToken);
+            var turnaround = await metadata.Turnarounds.SingleAsync(item =>
+                item.Id == operation.TurnaroundId, cancellationToken);
+            stationId = await metadata.Stations.Where(item => item.Id == turnaround.StationId)
+                .Select(item => item.PublicId).SingleAsync(cancellationToken);
+            otherStationId = await metadata.Stations.Where(item => item.Code == "TST")
+                .Select(item => item.PublicId).SingleAsync(cancellationToken);
+            operationDate = turnaround.OperationDate;
+            var otherStationInternalId = await metadata.Stations
+                .Where(item => item.PublicId == otherStationId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var otherTurnaround = new Turnaround
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000097"),
+                OperationCode = "TST-TAT-0001", AirlineId = turnaround.AirlineId,
+                StationId = otherStationInternalId, OperationDate = operationDate,
+                CurrentStatus = TurnaroundStatus.Scheduled,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = start, UpdatedAt = start,
+            };
+            metadata.Turnarounds.Add(otherTurnaround);
+            await metadata.SaveChangesAsync(cancellationToken);
+            var otherOperation = new GroundOperation
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000098"),
+                TurnaroundId = otherTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                CreatedAt = start, UpdatedAt = start,
+            };
+            metadata.GroundOperations.Add(otherOperation);
+            await metadata.SaveChangesAsync(cancellationToken);
+            var existingAssignment = await metadata.OperationAgentAssignments
+                .SingleAsync(item => item.PublicId == assignmentId, cancellationToken);
+            metadata.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000099"),
+                GroundOperationId = otherOperation.Id,
+                RampAgentId = existingAssignment.RampAgentId,
+                AssignmentRole = "RampAgent", AssignedAt = start,
+                CreatedAt = start, UpdatedAt = start,
+            });
+            await metadata.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance validation tablet", "Android 16"), cancellationToken);
+            Assert.True(registration.IsSuccess);
+        }
+
+        async Task<AttendanceDraftWriteResult> SaveDraftAsync(Guid actor,
+            AttendanceDraftLane lane, int expectedRevision,
+            DateTimeOffset observedStart, DateTimeOffset observedEnd, Guid key)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .SaveAsync(new AttendanceDraftWriteRequest(actor, operationId, assignmentId,
+                    lane, expectedRevision, observedStart, observedEnd, "Observación manual",
+                    key, lane == AttendanceDraftLane.RampAgent ? installationId : null,
+                    "attendance-validation-test"), cancellationToken);
+        }
+
+        async Task<HumanResourcesAttendancePage?> ListAsync(Guid actor, Guid station)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceValidationStore>()
+                .ListAsync(actor, station, operationDate, operationDate, 1, 20,
+                    cancellationToken);
+        }
+
+        async Task<AttendanceValidationResult> ValidateAsync(
+            AttendanceValidationCommand command)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceValidationStore>()
+                .ValidateAsync(command, cancellationToken);
+        }
+
+        Assert.True((await SaveDraftAsync(occId, AttendanceDraftLane.Occ, 0,
+            start, start.AddHours(2), Guid.CreateVersion7())).IsSuccess);
+        Assert.True((await SaveDraftAsync(agentId, AttendanceDraftLane.RampAgent, 0,
+            start.AddMinutes(5), start.AddHours(2).AddMinutes(10), Guid.CreateVersion7())).IsSuccess);
+        Assert.Null(await ListAsync(contractsId, stationId));
+        Assert.Empty((await ListAsync(humanResourcesId, otherStationId))!.Items);
+        Assert.DoesNotContain((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.OperationCode == "TST-TAT-0001");
+        var pending = Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId);
+        Assert.Equal(1, pending.Occ!.Revision);
+        Assert.Equal(1, pending.RampAgent!.Revision);
+        Assert.Null(pending.LatestDecision);
+
+        var key = Guid.CreateVersion7();
+        var command = new AttendanceValidationCommand(humanResourcesId,
+            stationId, assignmentId, 1, 1, "Occ", "RampAgent",
+            "Diferencia revisada", key, "attendance-validation-test");
+        Assert.Equal(AttendanceValidationFailure.Forbidden,
+            (await ValidateAsync(command with { ActorAccountId = contractsId })).Failure);
+        Assert.Equal(AttendanceValidationFailure.NotFound,
+            (await ValidateAsync(command with { StationId = otherStationId })).Failure);
+        var approved = await ValidateAsync(command);
+        Assert.Null(approved.Failure);
+        Assert.Equal(start, approved.Decision!.StartAt);
+        Assert.Equal(start.AddHours(2).AddMinutes(10), approved.Decision.EndAt);
+        Assert.Equal(1, approved.Decision.OccRevision);
+        Assert.Equal(1, approved.Decision.RampAgentRevision);
+        var replay = await ValidateAsync(command);
+        Assert.True(replay.Replayed);
+        Assert.Equal(approved.Decision.Id, replay.Decision!.Id);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { Reason = "Cambiado" })).Failure);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { IdempotencyKey = Guid.CreateVersion7() })).Failure);
+        Assert.True(Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId).IsDecisionCurrent);
+
+        Assert.True((await SaveDraftAsync(occId, AttendanceDraftLane.Occ, 1,
+            start.AddMinutes(1), start.AddHours(2), Guid.CreateVersion7())).IsSuccess);
+        var stale = Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId);
+        Assert.False(stale.IsDecisionCurrent);
+        Assert.Equal(approved.Decision.Id, stale.LatestDecision!.Id);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { IdempotencyKey = Guid.CreateVersion7() })).Failure);
+        var secondRevision = command with
+        {
+            ExpectedOccRevision = 2,
+            IdempotencyKey = Guid.CreateVersion7(),
+        };
+        var competing = await Task.WhenAll(
+            ValidateAsync(secondRevision),
+            ValidateAsync(secondRevision with { IdempotencyKey = Guid.CreateVersion7() }));
+        Assert.Single(competing, item => item.Failure is null);
+        Assert.Single(competing, item => item.Failure == AttendanceValidationFailure.Conflict);
+        Assert.Equal(2, competing.Single(item => item.Failure is null).Decision!.OccRevision);
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(2, await verify.OperationAttendanceValidations.CountAsync(cancellationToken));
+        Assert.Equal(3, await verify.OperationAttendanceContributionRevisions.CountAsync(cancellationToken));
+        Assert.Equal(2, await verify.AuditEntries.CountAsync(item =>
+            item.Action == "hr.attendance.validated", cancellationToken));
+        var airlineOrganizationId = await (
+            from operation in verify.GroundOperations.AsNoTracking()
+            join turnaround in verify.Turnarounds.AsNoTracking()
+                on operation.TurnaroundId equals turnaround.Id
+            join airline in verify.Airlines.AsNoTracking()
+                on turnaround.AirlineId equals airline.Id
+            where operation.PublicId == operationId
+            select airline.OrganizationId).SingleAsync(cancellationToken);
+        var validationAudits = await verify.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "hr.attendance.validated")
+            .ToArrayAsync(cancellationToken);
+        Assert.All(validationAudits, audit =>
+        {
+            Assert.Equal(airlineOrganizationId, audit.OrganizationId);
+            Assert.DoesNotContain("Diferencia revisada", audit.MetadataJson ?? string.Empty);
+        });
+        Assert.True(await verify.OutboxMessages.AnyAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_validation"), cancellationToken));
     }
 
     [Fact]
