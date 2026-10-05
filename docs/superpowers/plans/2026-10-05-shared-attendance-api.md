@@ -43,7 +43,7 @@
 - Test: `backend/tests/Elevant.UnitTests/Application/AttendanceDraftPolicyTests.cs`
 
 **Interfaces:**
-- Produces `AttendanceDraftLane { Occ, RampAgent }`, `AttendanceDraftContributionData`, `AttendanceDraftSnapshotData`, `AttendanceDraftWriteRequest`, `AttendanceDraftWriteResult`, `AttendanceDraftFailure`, and `IAttendanceDraftStore.GetAsync/SaveAsync` for Tasks 2–3. `GetAsync(Guid actorAccountId, Guid operationId, Guid assignmentId, CancellationToken)` returns snapshot/failure. `SaveAsync(AttendanceDraftWriteRequest request, CancellationToken)` returns contribution/replayed/failure. The write request includes actor, operation, assignment, lane, expected revision, observations, note, idempotency UUID, nullable installation UUID, and request trace ID.
+- Produces `AttendanceDraftLane { Occ, RampAgent }`, `AttendanceDraftContributionData`, `AttendanceDraftSnapshotData`, `AttendanceDraftWriteRequest`, `AttendanceDraftWriteResult`, `AttendanceDraftFailure`, and `IAttendanceDraftStore.GetAsync/SaveAsync` for Tasks 2–3. `GetAsync(Guid actorAccountId, Guid operationId, Guid assignmentId, Guid? installationId, CancellationToken)` returns snapshot/failure; the nullable installation ID is required for ramp-agent reads so a revoked device cannot keep reading with a valid bearer token. `SaveAsync(AttendanceDraftWriteRequest request, CancellationToken)` returns contribution/replayed/failure. The write request includes actor, operation, assignment, lane, expected revision, observations, note, idempotency UUID, nullable installation UUID, and request trace ID.
 
 - [ ] **Step 1: Write policy tests.** Pin `expectedRevision >= 0`, a nonempty observation, trimmed note length ≤ 2000, chronological instants, and distinct lanes. Example:
 

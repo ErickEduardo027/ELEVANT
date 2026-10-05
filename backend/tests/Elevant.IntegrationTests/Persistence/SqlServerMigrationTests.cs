@@ -9039,6 +9039,178 @@ public sealed class SqlServerMigrationTests
         return new ElevantDbContext(options);
     }
 
+    [Fact]
+    public async Task AttendanceDraftKeepsOccAndAgentRevisionsSeparateAndRetrySafe()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var assignmentId = Guid.Parse("70000000-0000-7000-8000-000000000006");
+        var installationId = Guid.CreateVersion7();
+        var occKey = Guid.CreateVersion7();
+        var agentKey = Guid.CreateVersion7();
+        var startedAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance SQL test tablet", "Android 16"), cancellationToken);
+            Assert.True(registration.IsSuccess);
+        }
+
+        async Task<AttendanceDraftReadResult> ReadAsync(Guid actor, Guid? device)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .GetAsync(actor, operationId, assignmentId, device, cancellationToken);
+        }
+
+        async Task<AttendanceDraftWriteResult> SaveAsync(Guid actor, AttendanceDraftLane lane,
+            int revision, DateTimeOffset? start, string? note, Guid key, Guid? device)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .SaveAsync(new AttendanceDraftWriteRequest(actor, operationId, assignmentId,
+                    lane, revision, start, null, note, key, device, "attendance-sql-test"),
+                    cancellationToken);
+        }
+
+        var empty = await ReadAsync(occId, null);
+        Assert.True(empty.IsSuccess);
+        Assert.Null(empty.Snapshot!.Occ);
+        Assert.Null(empty.Snapshot.RampAgent);
+        Assert.Equal(AttendanceDraftFailure.Forbidden, (await ReadAsync(agentId, null)).Failure);
+
+        var concurrent = await Task.WhenAll(
+            SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Equipo listo", occKey, null),
+            SaveAsync(agentId, AttendanceDraftLane.RampAgent, 0,
+                startedAt.AddMinutes(2), "Rampa lista", agentKey, installationId));
+        var occ = concurrent[0];
+        Assert.True(occ.IsSuccess);
+        Assert.Equal(1, occ.Contribution!.Revision);
+        var agent = concurrent[1];
+        Assert.True(agent.IsSuccess);
+        Assert.Equal(1, agent.Contribution!.Revision);
+        var both = await ReadAsync(agentId, installationId);
+        Assert.True(both.IsSuccess);
+        Assert.Equal("Equipo listo", both.Snapshot!.Occ!.IncidentNote);
+        Assert.Equal("Rampa lista", both.Snapshot.RampAgent!.IncidentNote);
+
+        var replay = await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+            startedAt, "Equipo listo", occKey, null);
+        Assert.True(replay.IsSuccess);
+        Assert.True(replay.Replayed);
+        Assert.Equal(occ.Contribution, replay.Contribution);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Cambiado", occKey, null)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, " Equipo listo ", occKey, null)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Nueva revisión", Guid.CreateVersion7(), null)).Failure);
+
+        var second = await SaveAsync(occId, AttendanceDraftLane.Occ, 1,
+            startedAt.AddMinutes(1), "Equipo revisado", Guid.CreateVersion7(), null);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(2, second.Contribution!.Revision);
+        var firstAfterSecond = await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+            startedAt, "Equipo listo", occKey, null);
+        Assert.True(firstAfterSecond.Replayed);
+        Assert.Equal(1, firstAfterSecond.Contribution!.Revision);
+
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(3, await verify.OperationAttendanceContributionRevisions.CountAsync(cancellationToken));
+        Assert.Equal(3, await verify.AuditEntries.CountAsync(item =>
+            item.Action == "ops.attendance_draft.saved", cancellationToken));
+        Assert.True(await verify.OutboxMessages.CountAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_draft"), cancellationToken) >= 2);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var dispatch = scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>();
+            await dispatch.DispatchPendingAsync(100, cancellationToken);
+        }
+        async Task<AccountChangePage?> FeedAsync(Guid actor)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+                .ReadAsync(actor, 0, 100, cancellationToken);
+        }
+        Assert.Contains((await FeedAsync(occId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.DoesNotContain((await FeedAsync(Guid.Parse(
+            "40000000-0000-7000-8000-000000000003")))!.Changes,
+            item => item.Resource == "attendance_draft");
+
+        var outboxBeforeRevocation = await verify.OutboxMessages.CountAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_draft"), cancellationToken);
+        await using (var revokeDevice = CreateContext(database.ConnectionString))
+        {
+            await revokeDevice.MobileDevices.Where(item => item.InstallationId == installationId)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.RevokedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        }
+        Assert.Equal(AttendanceDraftFailure.Forbidden,
+            (await ReadAsync(agentId, installationId)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Forbidden,
+            (await SaveAsync(agentId, AttendanceDraftLane.RampAgent, 1,
+                startedAt.AddMinutes(4), "Sin dispositivo", Guid.CreateVersion7(),
+                installationId)).Failure);
+        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_draft");
+
+        await using (var release = CreateContext(database.ConnectionString))
+            await release.OperationAgentAssignments.Where(item => item.PublicId == assignmentId)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.ReleasedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        Assert.Equal(AttendanceDraftFailure.NotFound,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 2,
+                startedAt.AddMinutes(5), "Después de liberar", Guid.CreateVersion7(),
+                null)).Failure);
+        Assert.Equal(outboxBeforeRevocation,
+            await verify.OutboxMessages.CountAsync(item =>
+                item.EventType == "account.changed.v1" &&
+                item.PayloadJson.Contains("attendance_draft"), cancellationToken));
+
+        await using (var revokeStation = CreateContext(database.ConnectionString))
+        {
+            var occInternalId = await revokeStation.Users.Where(item => item.PublicId == occId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            await revokeStation.AccountStationScopes.Where(item =>
+                item.AccountId == occInternalId && item.RevokedAt == null)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.RevokedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        }
+        Assert.Equal(AttendanceDraftFailure.NotFound, (await ReadAsync(occId, null)).Failure);
+        Assert.DoesNotContain((await FeedAsync(occId))!.Changes,
+            item => item.Resource == "attendance_draft");
+    }
+
     private static string? ResolveMasterConnection()
     {
         var configured = Environment.GetEnvironmentVariable(MasterConnectionEnvironmentVariable);

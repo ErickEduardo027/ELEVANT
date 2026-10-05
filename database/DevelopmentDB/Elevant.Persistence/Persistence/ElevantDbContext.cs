@@ -106,6 +106,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OperationAgentAssignment> OperationAgentAssignments => Set<OperationAgentAssignment>();
 
+    public DbSet<OperationAttendanceContributionRevision> OperationAttendanceContributionRevisions => Set<OperationAttendanceContributionRevision>();
+
     public DbSet<OperationEquipmentAssignment> OperationEquipmentAssignments => Set<OperationEquipmentAssignment>();
 
     public DbSet<OperationService> OperationServices => Set<OperationService>();

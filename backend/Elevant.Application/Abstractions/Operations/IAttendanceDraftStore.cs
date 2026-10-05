@@ -8,6 +8,7 @@ public interface IAttendanceDraftStore
         Guid actorAccountId,
         Guid operationId,
         Guid assignmentId,
+        Guid? installationId,
         CancellationToken cancellationToken = default);
 
     Task<AttendanceDraftWriteResult> SaveAsync(

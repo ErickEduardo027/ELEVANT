@@ -92,6 +92,7 @@ Desktop.ini
 
 .fake
 .worktrees/
+.superpowers/
 
 # Backend local del prototipo
 backend-prototipo/data/runtime.json

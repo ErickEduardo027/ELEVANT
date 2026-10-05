@@ -4,6 +4,8 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Integration;
+using Elevant.Domain.Entities.Workforce;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
@@ -56,6 +58,8 @@ internal sealed class EfAccountChangeReadStore(
                 role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
         var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
+        var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
         var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
             .Select(role => role.RoleId).ToArray();
         var commercialGrants = hasInternalMembership ? await (
@@ -85,6 +89,33 @@ internal sealed class EfAccountChangeReadStore(
                     (hasOccPlanningAccess && change.StationId != null &&
                      context.Stations.Any(station => station.Id == change.StationId &&
                          station.PublicId == change.ResourceId))) &&
+                (change.Resource != "attendance_draft" ||
+                    (change.StationId != null &&
+                     context.GroundOperations.Any(operation =>
+                         operation.PublicId == change.ResourceId &&
+                         context.Turnarounds.Any(turnaround =>
+                             turnaround.Id == operation.TurnaroundId &&
+                             turnaround.StationId == change.StationId &&
+                             context.OperationAgentAssignments.Any(assignment =>
+                                 assignment.GroundOperationId == operation.Id &&
+                                 (hasOccPlanningAccess || hasHumanResourcesAccess ||
+                                  hasRampAccess && assignment.ReleasedAt == null &&
+                                  context.Users.Any(user => user.Id == accountInternalId &&
+                                      context.RampAgents.Any(agent =>
+                                          agent.PersonId == user.PersonId && agent.IsActive &&
+                                          agent.Id == assignment.RampAgentId &&
+                                          context.Set<RampAgentStationScope>().Any(scope =>
+                                              scope.RampAgentId == agent.Id &&
+                                              scope.StationId == turnaround.StationId &&
+                                              scope.ValidFrom <= turnaround.OperationDate &&
+                                              (scope.ValidTo == null ||
+                                               scope.ValidTo >= turnaround.OperationDate)) &&
+                                          context.Set<MobileDeviceAccountBinding>().Any(binding =>
+                                              binding.AccountId == accountInternalId &&
+                                              binding.UnboundAt == null &&
+                                              context.MobileDevices.Any(device =>
+                                                  device.Id == binding.MobileDeviceId &&
+                                                  device.RevokedAt == null)))))))))) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>

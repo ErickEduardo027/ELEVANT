@@ -3439,6 +3439,117 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AuthorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("author_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("IncidentNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("incident_note");
+
+                    b.Property<Guid?>("InstallationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("installation_id");
+
+                    b.Property<string>("Lane")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("lane");
+
+                    b.Property<DateTimeOffset?>("ObservedEndAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("observed_end_at");
+
+                    b.Property<DateTimeOffset?>("ObservedStartAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("observed_start_at");
+
+                    b.Property<long>("OperationAgentAssignmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("operation_agent_assignment_id");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_sha256");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("revision_number");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("AuthorAccountId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OperationAgentAssignmentId", "Lane", "RevisionNumber")
+                        .IsUnique();
+
+                    b.ToTable("operation_attendance_contribution_revisions", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_contribution_chronology", "[observed_start_at] IS NULL OR [observed_end_at] IS NULL OR [observed_end_at] >= [observed_start_at]");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_lane", "[lane] IN ('Occ', 'RampAgent')");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_observation", "[observed_start_at] IS NOT NULL OR [observed_end_at] IS NOT NULL OR [incident_note] IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_revision_positive", "[revision_number] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationChecklist", b =>
                 {
                     b.Property<long>("Id")
@@ -7013,6 +7124,21 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()
                         .HasForeignKey("RampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationAgentAssignment", null)
+                        .WithMany()
+                        .HasForeignKey("OperationAgentAssignmentId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

@@ -161,6 +161,30 @@ internal static class OperationsConfiguration
             AddReference<ApplicationUser, OperationAgentAssignment>(builder, assignment => assignment.AssignedByAccountId);
         });
 
+        modelBuilder.Entity<OperationAttendanceContributionRevision>(builder =>
+        {
+            builder.ToTable("operation_attendance_contribution_revisions", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_attendance_contribution_revision_positive", "[revision_number] > 0");
+                table.HasCheckConstraint("ck_attendance_contribution_lane", "[lane] IN ('Occ', 'RampAgent')");
+                table.HasCheckConstraint("ck_attendance_contribution_observation", "[observed_start_at] IS NOT NULL OR [observed_end_at] IS NOT NULL OR [incident_note] IS NOT NULL");
+                table.HasCheckConstraint("ck_attendance_contribution_chronology", "[observed_start_at] IS NULL OR [observed_end_at] IS NULL OR [observed_end_at] >= [observed_start_at]");
+            });
+            builder.Property(item => item.Lane).HasMaxLength(16).IsRequired();
+            builder.Property(item => item.PayloadSha256).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.IncidentNote).HasMaxLength(2000);
+            builder.Property(item => item.ObservedStartAt).HasPrecision(3);
+            builder.Property(item => item.ObservedEndAt).HasPrecision(3);
+            builder.Property(item => item.RecordedAt).HasPrecision(3);
+            builder.HasIndex(item => new { item.OperationAgentAssignmentId, item.Lane,
+                item.RevisionNumber }).IsUnique();
+            builder.HasIndex(item => new { item.AuthorAccountId, item.IdempotencyKey }).IsUnique();
+            AddReference<OperationAgentAssignment, OperationAttendanceContributionRevision>(builder,
+                item => item.OperationAgentAssignmentId);
+            AddReference<ApplicationUser, OperationAttendanceContributionRevision>(builder,
+                item => item.AuthorAccountId);
+        });
+
         modelBuilder.Entity<OperationEquipmentAssignment>(builder =>
         {
             builder.ToTable("operation_equipment_assignments", "ops", table =>
