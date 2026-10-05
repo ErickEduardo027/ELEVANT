@@ -25,7 +25,7 @@ internal sealed class EfAttendanceValidationStore(
         int page, int limit, CancellationToken cancellationToken = default)
     {
         if (actorAccountId == Guid.Empty || stationId == Guid.Empty || startDate == default ||
-            endDate < startDate || endDate.DayNumber - startDate.DayNumber > 30 || page < 1 ||
+            endDate < startDate || endDate.DayNumber - startDate.DayNumber >= 30 || page < 1 ||
             limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(startDate));
 
@@ -62,25 +62,63 @@ internal sealed class EfAttendanceValidationStore(
             }).Skip((page - 1) * limit).Take(limit + 1)
             .ToArrayAsync(cancellationToken);
 
-        var result = new List<HumanResourcesAttendanceRow>();
-        foreach (var row in rows.Take(limit))
+        var pageRows = rows.Take(limit).ToArray();
+        if (pageRows.Length == 0)
+            return new HumanResourcesAttendancePage(stationId, startDate, endDate,
+                page, limit, rows.Length > limit, []);
+
+        var assignmentIds = pageRows.Select(row => row.AssignmentId).ToArray();
+        var latestContributions = await context.OperationAttendanceContributionRevisions
+            .AsNoTracking()
+            .Where(item => assignmentIds.Contains(item.OperationAgentAssignmentId))
+            .GroupBy(item => new { item.OperationAgentAssignmentId, item.Lane })
+            .Select(group => group.OrderByDescending(item => item.RevisionNumber).First())
+            .ToArrayAsync(cancellationToken);
+        var contributionsByAssignment = latestContributions.ToDictionary(
+            item => (item.OperationAgentAssignmentId, item.Lane));
+        var latestDecisions = await context.OperationAttendanceValidations.AsNoTracking()
+            .Where(item => assignmentIds.Contains(item.OperationAgentAssignmentId))
+            .GroupBy(item => item.OperationAgentAssignmentId)
+            .Select(group => group.OrderByDescending(item => item.ValidatedAt)
+                .ThenByDescending(item => item.Id).First())
+            .ToArrayAsync(cancellationToken);
+        var decisionsByAssignment = latestDecisions.ToDictionary(
+            item => item.OperationAgentAssignmentId);
+        var accountIds = latestContributions.Select(item => item.AuthorAccountId)
+            .Concat(latestDecisions.Select(item => item.ValidatedByAccountId))
+            .Distinct().ToArray();
+        var accountPublicIds = await context.Users.AsNoTracking()
+            .Where(item => accountIds.Contains(item.Id))
+            .Select(item => new { item.Id, item.PublicId })
+            .ToDictionaryAsync(item => item.Id, item => item.PublicId, cancellationToken);
+        var referencedRevisionIds = latestDecisions
+            .SelectMany(item => new[] { item.OccContributionRevisionId,
+                item.RampAgentContributionRevisionId }).Distinct().ToArray();
+        var revisionNumbers = await context.OperationAttendanceContributionRevisions
+            .AsNoTracking().Where(item => referencedRevisionIds.Contains(item.Id))
+            .Select(item => new { item.Id, item.RevisionNumber })
+            .ToDictionaryAsync(item => item.Id, item => item.RevisionNumber,
+                cancellationToken);
+
+        var result = new List<HumanResourcesAttendanceRow>(pageRows.Length);
+        foreach (var row in pageRows)
         {
-            var occ = await LatestAsync(row.AssignmentId, AttendanceDraftLane.Occ,
-                cancellationToken);
-            var ramp = await LatestAsync(row.AssignmentId, AttendanceDraftLane.RampAgent,
-                cancellationToken);
-            var decision = await context.OperationAttendanceValidations.AsNoTracking()
-                .Where(item => item.OperationAgentAssignmentId == row.AssignmentId)
-                .OrderByDescending(item => item.ValidatedAt)
-                .ThenByDescending(item => item.Id)
-                .FirstOrDefaultAsync(cancellationToken);
+            contributionsByAssignment.TryGetValue((row.AssignmentId,
+                nameof(AttendanceDraftLane.Occ)), out var occ);
+            contributionsByAssignment.TryGetValue((row.AssignmentId,
+                nameof(AttendanceDraftLane.RampAgent)), out var ramp);
+            decisionsByAssignment.TryGetValue(row.AssignmentId, out var decision);
             result.Add(new HumanResourcesAttendanceRow(row.OperationId,
                 row.AssignmentPublicId, stationId, row.OperationDate,
                 row.OperationCode, $"{row.FirstName} {row.LastName}",
-                occ is null ? null : await ToContributionAsync(occ, cancellationToken),
-                ramp is null ? null : await ToContributionAsync(ramp, cancellationToken),
-                decision is null ? null : await ToDecisionAsync(decision, row.AssignmentPublicId,
-                    cancellationToken),
+                occ is null ? null : ToContribution(occ,
+                    accountPublicIds[occ.AuthorAccountId]),
+                ramp is null ? null : ToContribution(ramp,
+                    accountPublicIds[ramp.AuthorAccountId]),
+                decision is null ? null : ToDecision(decision, row.AssignmentPublicId,
+                    accountPublicIds[decision.ValidatedByAccountId],
+                    revisionNumbers[decision.OccContributionRevisionId],
+                    revisionNumbers[decision.RampAgentContributionRevisionId]),
                 decision is not null && occ is not null && ramp is not null &&
                 decision.OccContributionRevisionId == occ.Id &&
                 decision.RampAgentContributionRevisionId == ramp.Id));
@@ -311,15 +349,6 @@ internal sealed class EfAttendanceValidationStore(
                 item.Lane == lane.ToString())
             .OrderByDescending(item => item.RevisionNumber)
             .FirstOrDefaultAsync(cancellationToken);
-
-    private async Task<AttendanceDraftContributionData> ToContributionAsync(
-        OperationAttendanceContributionRevision row, CancellationToken cancellationToken)
-    {
-        var authorId = await context.Users.AsNoTracking()
-            .Where(item => item.Id == row.AuthorAccountId)
-            .Select(item => item.PublicId).SingleAsync(cancellationToken);
-        return ToContribution(row, authorId);
-    }
 
     private static AttendanceDraftContributionData ToContribution(
         OperationAttendanceContributionRevision row, Guid authorId) =>

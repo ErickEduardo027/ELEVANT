@@ -31,9 +31,9 @@ function requiresReason(row) {
     !sameInstant(row?.occ?.observedEndAt, row?.rampAgent?.observedEndAt);
 }
 
-function canValidate(row, selected, writing) {
+function canValidate(row, selected, writing, pendingAttempt) {
   if (!row?.occ || !row?.rampAgent || row.isDecisionCurrent || !selected || writing ||
-      selected.needsReconfirm || selected.unknownAttempt) return false;
+      selected.needsReconfirm || pendingAttempt) return false;
   const start = laneTime(row, selected.startSource, 'observedStartAt');
   const end = laneTime(row, selected.endSource, 'observedEndAt');
   return Boolean(start && end && Date.parse(end) >= Date.parse(start) &&
@@ -82,13 +82,19 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
   const [state, setState] = useState({ status: 'loading', data: null, queryKey: null,
     refreshing: false });
   const [selected, setSelected] = useState(null);
+  const [pendingAttempt, setPendingAttempt] = useState(null);
+  const [accessDenial, setAccessDenial] = useState(null);
   const [writing, setWriting] = useState(false);
   const [message, setMessage] = useState('');
   const requestVersion = useRef(0);
-  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  const accessKey = `${stationId}|${session?.token ?? ''}`;
+  const refresh = useCallback(() => {
+    setAccessDenial(null);
+    setRevision(value => value + 1);
+  }, []);
   const rangeValid = range.from && range.to && range.from <= range.to &&
     (Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) /
-      86_400_000 <= 30;
+      86_400_000 < 30;
 
   useEffect(() => {
     if (stationScopes.some(scope => scope.stationId === stationId)) return;
@@ -98,6 +104,11 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
   }, [stationId, stationScopes]);
 
   useEffect(() => {
+    if (accessDenial?.key === accessKey) {
+      setState({ status: accessDenial.status, data: null, queryKey: null,
+        refreshing: false });
+      return undefined;
+    }
     if (!stationId || !stationScopes.some(scope => scope.stationId === stationId)) {
       setState({ status: 'empty-scope', data: null, queryKey: null, refreshing: false });
       return undefined;
@@ -135,11 +146,16 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 ? 'forbidden' : 'error',
         data: null, queryKey, refreshing: false });
-        if (error?.status === 401 || error?.status === 403) setSelected(null);
+        if (error?.status === 401 || error?.status === 403) {
+          setAccessDenial({ key: accessKey,
+            status: error.status === 401 ? 'unauthorized' : 'forbidden' });
+          setSelected(null);
+          setPendingAttempt(null);
+        }
       });
     return () => controller.abort();
   }, [stationId, stationScopes, range.from, range.to, rangeValid,
-    page, revision, session?.token]);
+    page, revision, session?.token, accessDenial, accessKey]);
 
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
@@ -161,56 +177,66 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
 
   const activeRow = state.data?.items.find(item => item.assignmentId === selected?.assignmentId);
   const updateRange = (field, value) => {
+    if (writing || pendingAttempt) return;
     setRange(current => ({ ...current, [field]: value }));
     setPage(1); setSelected(null); setMessage('');
   };
   const openReview = row => {
+    if (writing || pendingAttempt) return;
     setSelected({ assignmentId: row.assignmentId,
       startSource: row.occ?.observedStartAt ? 'Occ' : 'RampAgent',
       endSource: row.occ?.observedEndAt ? 'Occ' : 'RampAgent',
       reason: '', ackOccRevision: row.occ?.revision ?? null,
       ackRampRevision: row.rampAgent?.revision ?? null,
-      needsReconfirm: false, conflictRefreshPending: false, unknownAttempt: null });
+      needsReconfirm: false, conflictRefreshPending: false });
     setMessage('');
   };
   const confirmCurrent = () => {
-    if (!activeRow || !selected || selected.conflictRefreshPending) return;
+    if (!activeRow || !selected || selected.conflictRefreshPending || pendingAttempt) return;
     setSelected(current => ({ ...current,
       ackOccRevision: activeRow.occ?.revision ?? null,
       ackRampRevision: activeRow.rampAgent?.revision ?? null,
-      needsReconfirm: false, unknownAttempt: null }));
+      needsReconfirm: false }));
     setMessage('');
   };
   const submit = async () => {
-    if (!selected || (!selected.unknownAttempt && !canValidate(activeRow, selected, writing))) return;
-    const attempt = selected.unknownAttempt ?? {
+    if (writing || (!pendingAttempt && !canValidate(activeRow, selected, writing,
+      pendingAttempt))) return;
+    const attempt = pendingAttempt ?? {
       key: crypto.randomUUID(),
+      assignmentId: selected.assignmentId,
+      stationId,
       body: { expectedOccRevision: activeRow.occ.revision,
         expectedRampAgentRevision: activeRow.rampAgent.revision,
         startSource: selected.startSource, endSource: selected.endSource,
         reason: selected.reason.trim() || null },
     };
-    setSelected(current => ({ ...current, unknownAttempt: attempt }));
+    setPendingAttempt(attempt);
     setWriting(true); setMessage('');
     try {
-      await validateHumanResourcesAttendance(selected.assignmentId, stationId,
+      await validateHumanResourcesAttendance(attempt.assignmentId, attempt.stationId,
         attempt.body, attempt.key);
+      setPendingAttempt(null);
       setSelected(null);
       setMessage('Validación registrada. Actualizando el estado de la asignación.');
       refresh();
     } catch (error) {
       if (error?.code === 'stale-revision') {
-        setSelected(current => current ? { ...current, unknownAttempt: null,
+        setPendingAttempt(null);
+        setSelected(current => current ? { ...current,
           needsReconfirm: true, conflictRefreshPending: true } : null);
         setMessage('Los aportes cambiaron. Revisa las versiones actuales y confirma tu elección.');
         refresh();
       } else if (error?.code === 'unknown-outcome') {
         setMessage('No se confirmó el resultado. Reintenta la misma validación sin cambiar la elección.');
       } else if (error?.code === 'unauthorized' || error?.code === 'forbidden') {
+        ++requestVersion.current;
+        setAccessDenial({ key: accessKey, status: error.code });
         setState({ status: error.code, data: null, queryKey: null, refreshing: false });
+        setPendingAttempt(null);
         setSelected(null);
       } else {
-        setSelected(current => current ? { ...current, unknownAttempt: null } : null);
+        setPendingAttempt(null);
         setMessage('No se pudo validar la asistencia. Revisa los datos e inténtalo de nuevo.');
       }
     } finally { setWriting(false); }
@@ -235,6 +261,7 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
     <section aria-label="Filtros de asistencia" className={`${CARD_CLASS} grid gap-3 md:grid-cols-3`}>
       <label className="space-y-1 text-xs font-semibold">Estación
         <select aria-label="Estación" className={FIELD_CLASS} value={stationId}
+          disabled={writing || Boolean(pendingAttempt)}
           onChange={event => { setStationId(event.target.value); setSelected(null);
             setPage(1); setMessage(''); }}>
           {stationScopes.length === 0 && <option value="">Sin estación autorizada</option>}
@@ -244,10 +271,12 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
       </label>
       <label className="space-y-1 text-xs font-semibold">Desde
         <input className={FIELD_CLASS} type="date" value={range.from}
+          disabled={writing || Boolean(pendingAttempt)}
           onChange={event => updateRange('from', event.target.value)} />
       </label>
       <label className="space-y-1 text-xs font-semibold">Hasta
         <input className={FIELD_CLASS} type="date" value={range.to}
+          disabled={writing || Boolean(pendingAttempt)}
           onChange={event => updateRange('to', event.target.value)} />
       </label>
     </section>
@@ -283,6 +312,7 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
               <span className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold dark:border-white/20">
                 {statusFor(row)}</span>
               <button type="button" onClick={() => openReview(row)}
+                disabled={writing || Boolean(pendingAttempt)}
                 className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2">
                 Revisar {row.operationCode}</button>
             </div>
@@ -304,14 +334,14 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm font-semibold">Inicio validado
                 <select className={FIELD_CLASS} value={selected.startSource}
-                  disabled={writing || Boolean(selected.unknownAttempt)}
+                  disabled={writing || Boolean(pendingAttempt)}
                   onChange={event => setSelected(current => ({ ...current, startSource: event.target.value }))}>
                   <option value="Occ">OCC</option><option value="RampAgent">Agente</option>
                 </select>
               </label>
               <label className="space-y-1 text-sm font-semibold">Fin validado
                 <select className={FIELD_CLASS} value={selected.endSource}
-                  disabled={writing || Boolean(selected.unknownAttempt)}
+                  disabled={writing || Boolean(pendingAttempt)}
                   onChange={event => setSelected(current => ({ ...current, endSource: event.target.value }))}>
                   <option value="Occ">OCC</option><option value="RampAgent">Agente</option>
                 </select>
@@ -322,7 +352,7 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
             </p>
             <label className="block space-y-1 text-sm font-semibold">Justificación
               <textarea className={FIELD_CLASS} rows={3} maxLength={1000} value={selected.reason}
-                disabled={writing || Boolean(selected.unknownAttempt)}
+                disabled={writing || Boolean(pendingAttempt)}
                 onChange={event => setSelected(current => ({ ...current, reason: event.target.value }))} />
             </label>
             {requiresReason(row) && <p className="text-xs text-signal-600">Las horas de los dos aportes difieren: explica por qué eliges estos hitos.</p>}
@@ -333,20 +363,29 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
                 Confirmar versiones actuales</button>
             </div>}
             <button type="button" onClick={submit}
-              disabled={!selected.unknownAttempt && !canValidate(row, selected, writing) || writing}
+              disabled={writing || (!pendingAttempt && !canValidate(row, selected, writing,
+                pendingAttempt))}
               className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 disabled:opacity-50">
-              {selected.unknownAttempt ? 'Reintentar misma validación' : 'Validar asistencia'}</button>
+              {pendingAttempt ? 'Reintentar misma validación' : 'Validar asistencia'}</button>
           </section>}
         </article>)}
       </div>
       <div className="flex items-center justify-between text-sm">
-        <button type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)}
+        <button type="button" disabled={page === 1 || writing || Boolean(pendingAttempt)} onClick={() => setPage(value => value - 1)}
           className="rounded-lg border px-3 py-2 disabled:opacity-50">Página anterior</button>
         <span>Página {page}</span>
-        <button type="button" disabled={!state.data.hasMore} onClick={() => setPage(value => value + 1)}
+        <button type="button" disabled={!state.data.hasMore || writing || Boolean(pendingAttempt)} onClick={() => setPage(value => value + 1)}
           className="rounded-lg border px-3 py-2 disabled:opacity-50">Página siguiente</button>
       </div>
     </>}
+    {pendingAttempt && !activeRow &&
+      !['forbidden', 'unauthorized'].includes(state.status) &&
+      <div className={CARD_CLASS}>
+        <p role="status" className="text-sm">El resultado sigue sin confirmarse. Reintenta exactamente el mismo envío.</p>
+        <button type="button" onClick={submit} disabled={writing}
+          className="mt-3 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          Reintentar misma validación</button>
+      </div>}
     {message && <p role="alert" className={`${CARD_CLASS} text-sm`}>{message}</p>}
   </main>;
 }

@@ -48,7 +48,11 @@ registra auditoría y emite `attendance_validation`. La
 [pantalla de G.H.](../../frontend/private-web/src/features/human-resources/attendance/AttendanceReviewPage.jsx)
 compara ambos carriles, evita duplicar una decisión vigente y reconsulta REST
 ante aviso, foco, reconexión y sondeo visible. Un 409 exige releer y reconfirmar;
-una respuesta incierta conserva UUID y cuerpo. Este tramo está probado en código
+una respuesta incierta conserva UUID y cuerpo aunque la fila desaparezca durante
+una relectura; mientras se resuelve, bloquea el cambio de filtros o página. Una
+denegación de autorización retira la evidencia y descarta lecturas en vuelo;
+una reconsulta posterior puede recuperarla solo tras otra respuesta autorizada.
+Este tramo está probado en código
 local, no acredita su promoción ni la aceptación de tres sesiones en el VPS.
 Siguen fuera el cálculo/evidencia de horas extra, exportaciones, firmas y el
 checklist de puente.

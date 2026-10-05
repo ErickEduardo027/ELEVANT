@@ -49,6 +49,7 @@ public sealed class HumanResourcesAttendanceEndpointsTests(ElevantApiFactory fac
 
     [Theory]
     [InlineData("from=2026-10-01&to=2026-11-01")]
+    [InlineData("from=2026-10-01&to=2026-10-31")]
     [InlineData("from=2026-10-05&to=2026-10-01")]
     [InlineData("from=2026-10-01&to=2026-10-05&page=0")]
     [InlineData("from=2026-10-01&to=2026-10-05&limit=101")]

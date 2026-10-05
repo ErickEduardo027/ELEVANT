@@ -39,7 +39,7 @@ public sealed class HumanResourcesAttendanceController(IAttendanceValidationStor
         if (!TryGetAccountId(out var accountId))
             return UnauthorizedResult<HumanResourcesAttendancePageResponse>();
         if (stationId == Guid.Empty || startDate == default || endDate < startDate ||
-            endDate.DayNumber - startDate.DayNumber > 30 || page < 1 ||
+            endDate.DayNumber - startDate.DayNumber >= 30 || page < 1 ||
             limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             return ProblemResult<HumanResourcesAttendancePageResponse>(400,
                 "The attendance query is invalid.");

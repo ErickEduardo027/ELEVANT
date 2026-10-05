@@ -45,6 +45,18 @@ function response(body: unknown) {
 }
 
 describe("G.H. attendance validation API client", () => {
+  it("rejects a 31-date inclusive interval before making a request", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "current-token",
+      fetch: async () => { calls += 1; return response(page); },
+    });
+    await expect(client.getHumanResourcesAttendance({
+      stationId, from: "2026-10-01", to: "2026-10-31",
+    })).rejects.toThrow(TypeError);
+    expect(calls).toBe(0);
+  });
   it("reads a bounded station/date page with a fresh token", async () => {
     let url = "";
     let authorization = "";

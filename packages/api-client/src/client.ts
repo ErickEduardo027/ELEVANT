@@ -3584,7 +3584,7 @@ function validatedHumanResourcesAttendanceQuery(
   ]) || !isUuid(query.stationId) || !isDateOnly(query.from) ||
     !isDateOnly(query.to) || query.from > query.to ||
     (Date.parse(`${query.to}T00:00:00Z`) -
-      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 > 30 ||
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
     (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
     (query.limit !== undefined && (!isInt32(query.limit) ||
       query.limit < 1 || query.limit > 100)))

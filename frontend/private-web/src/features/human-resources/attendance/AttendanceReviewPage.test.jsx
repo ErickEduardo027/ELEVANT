@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AttendanceReviewPage from './AttendanceReviewPage';
 import { getHumanResourcesAttendance, validateHumanResourcesAttendance } from
@@ -146,4 +146,58 @@ it('ignores a late page from another station', async () => {
   expect(await screen.findByText(/No hay asignaciones/i)).toBeInTheDocument();
   await act(async () => { resolveOld(page); });
   expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
+});
+
+it('rejects a 31-date inclusive range before requesting evidence', async () => {
+  getHumanResourcesAttendance.mockResolvedValue(page);
+  render(<AttendanceReviewPage initialDate={initialDate} />);
+  await screen.findByText('Riley Ramp');
+  fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-10-01' } });
+  fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-10-31' } });
+  expect(await screen.findByRole('alert')).toHaveTextContent(/hasta 30/i);
+  expect(getHumanResourcesAttendance).not.toHaveBeenCalledWith(
+    expect.objectContaining({ from: '2026-10-01', to: '2026-10-31' }),
+    expect.anything());
+});
+
+it('never restores protected evidence when a pending GET resolves after validation is forbidden', async () => {
+  let resolvePending;
+  getHumanResourcesAttendance.mockResolvedValueOnce(page)
+    .mockImplementationOnce(() => new Promise(resolve => { resolvePending = resolve; }))
+    .mockResolvedValueOnce(page);
+  validateHumanResourcesAttendance.mockRejectedValueOnce({ code: 'forbidden', status: 403 });
+  render(<AttendanceReviewPage initialDate={initialDate} />);
+  await screen.findByText('Riley Ramp');
+  await userEvent.click(screen.getByRole('button', { name: /Revisar EV 311/i }));
+  await userEvent.type(screen.getByRole('textbox', { name: /Justificaci/i }), 'Revisado');
+  await act(async () => { observerCallbacks[0](['attendance_draft']); });
+  await waitFor(() => expect(getHumanResourcesAttendance).toHaveBeenCalledTimes(2));
+  await userEvent.click(screen.getByRole('button', { name: 'Validar asistencia' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/No tienes acceso/i);
+  await act(async () => { resolvePending(page); });
+  expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
+  await act(async () => { observerCallbacks[0](['attendance_validation']); });
+  expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
+  expect(getHumanResourcesAttendance).toHaveBeenCalledTimes(3);
+});
+
+it('retains one exact retry after an unknown outcome across a page refresh', async () => {
+  getHumanResourcesAttendance.mockResolvedValueOnce(page)
+    .mockResolvedValueOnce({ ...page, items: [] })
+    .mockResolvedValue({ ...page, items: [] });
+  validateHumanResourcesAttendance.mockRejectedValueOnce({ code: 'unknown-outcome' })
+    .mockResolvedValueOnce({ decision: { id: crypto.randomUUID() }, replayed: true });
+  render(<AttendanceReviewPage initialDate={initialDate} />);
+  await screen.findByText('Riley Ramp');
+  await userEvent.click(screen.getByRole('button', { name: /Revisar EV 311/i }));
+  await userEvent.type(screen.getByRole('textbox', { name: /Justificaci/i }), 'Revisado');
+  await userEvent.click(screen.getByRole('button', { name: 'Validar asistencia' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/No se confirm/i);
+  const first = validateHumanResourcesAttendance.mock.calls[0];
+  await act(async () => { observerCallbacks[0](['attendance_validation']); });
+  expect(await screen.findByText(/No hay asignaciones/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Estaci/i)).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: /Reintentar misma validaci/i }));
+  await waitFor(() => expect(validateHumanResourcesAttendance).toHaveBeenCalledTimes(2));
+  expect(validateHumanResourcesAttendance.mock.calls[1]).toEqual(first);
 });
