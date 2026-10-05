@@ -40,7 +40,7 @@ using Microsoft.Extensions.Options;
 
 namespace Elevant.IntegrationTests.Persistence;
 
-public sealed class SqlServerMigrationTests
+public sealed partial class SqlServerMigrationTests
 {
     [Fact]
     public async Task OccClosureRequiresContractsDecisionAndCanBeReopenedWithAReason()
