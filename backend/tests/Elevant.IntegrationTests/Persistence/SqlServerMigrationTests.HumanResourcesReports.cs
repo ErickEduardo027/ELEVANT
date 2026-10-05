@@ -154,6 +154,15 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(2, remainder.Page.Rows.Count);
         Assert.Equal(102, firstHundred.Page.Rows.Concat(remainder.Page.Rows)
             .Select(item => item.Id).Distinct().Count());
+        var snapshot = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.Expirations, from, to, 5000, cancellationToken);
+        Assert.Null(snapshot.Failure);
+        Assert.Equal(102, snapshot.Snapshot!.Rows.Count);
+        Assert.Equal(102, snapshot.Snapshot.RowCount);
+        var overLimit = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.Expirations, from, to, 100, cancellationToken);
+        Assert.Equal(HumanResourcesReportFailure.TooLarge, overLimit.Failure);
+        Assert.Null(overLimit.Snapshot);
 
         var hrInternalId = await context.Users.Where(item => item.PublicId == hrId)
             .Select(item => item.Id).SingleAsync(cancellationToken);

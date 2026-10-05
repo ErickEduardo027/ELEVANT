@@ -1,3 +1,5 @@
+using System.Data;
+using System.Globalization;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Workforce;
@@ -12,6 +14,132 @@ internal sealed class EfHumanResourcesReportStore(
     ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
     : IHumanResourcesReportStore
 {
+    public async Task<HumanResourcesReportSnapshotResult> ReadSnapshotAsync(
+        Guid actorId, Guid stationId, HumanResourcesReportKind kind,
+        DateOnly startDate, DateOnly endDate, int maxRows,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(kind) || maxRows is < 1 or > 5000 ||
+            !HumanResourcesReportPolicy.ValidRange(startDate, endDate))
+            throw new ArgumentOutOfRangeException(nameof(maxRows));
+
+        var strategy = context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable, cancellationToken);
+            var asOf = timeProvider.GetUtcNow();
+            var rows = new List<IReadOnlyList<HumanResourcesReportCell>>();
+            IReadOnlyList<string> columns = kind switch
+            {
+                HumanResourcesReportKind.Expirations =>
+                    ["Agente", "Empleado", "Clase", "Documento", "Vence"],
+                HumanResourcesReportKind.AccountMovements =>
+                    ["Fecha UTC", "Agente", "Empleado", "Movimiento"],
+                HumanResourcesReportKind.StaffDistribution =>
+                    ["Fecha", "Agente", "Empleado", "Terminal", "Puesto", "Inicio", "Fin"],
+                HumanResourcesReportKind.QualificationCoverage =>
+                    ["Equipo", "Nombre", "Elegibles", "Habilitados"],
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            var page = 1;
+            while (true)
+            {
+                HumanResourcesReportFailure? failure;
+                bool hasMore;
+                IReadOnlyList<HumanResourcesReportCell>[] pageRows;
+                switch (kind)
+                {
+                    case HumanResourcesReportKind.Expirations:
+                    {
+                        var result = await ListExpirationsAsync(actorId, stationId,
+                            startDate, endDate, page, 100, cancellationToken);
+                        failure = result.Failure;
+                        hasMore = result.Page?.HasMore ?? false;
+                        pageRows = result.Page?.Rows.Select(item =>
+                            (IReadOnlyList<HumanResourcesReportCell>)[
+                                new(item.AgentName, HumanResourcesReportCellType.Text),
+                                new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
+                                new(item.Kind, HumanResourcesReportCellType.Text),
+                                new(item.Code, HumanResourcesReportCellType.Text),
+                                new(item.ExpiresOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Date),
+                            ]).ToArray() ?? [];
+                        break;
+                    }
+                    case HumanResourcesReportKind.AccountMovements:
+                    {
+                        var result = await ListAccountMovementsAsync(actorId, stationId,
+                            startDate, endDate, page, 100, cancellationToken);
+                        failure = result.Failure;
+                        hasMore = result.Page?.HasMore ?? false;
+                        pageRows = result.Page?.Rows.Select(item =>
+                            (IReadOnlyList<HumanResourcesReportCell>)[
+                                new(item.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.DateTime),
+                                new(item.AgentName, HumanResourcesReportCellType.Text),
+                                new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
+                                new(item.Kind, HumanResourcesReportCellType.Text),
+                            ]).ToArray() ?? [];
+                        break;
+                    }
+                    case HumanResourcesReportKind.StaffDistribution:
+                    {
+                        var result = await ListStaffDistributionAsync(actorId, stationId,
+                            startDate, endDate, page, 100, cancellationToken);
+                        failure = result.Failure;
+                        hasMore = result.Page?.HasMore ?? false;
+                        pageRows = result.Page?.Rows.Select(item =>
+                            (IReadOnlyList<HumanResourcesReportCell>)[
+                                new(item.WorkDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Date),
+                                new(item.AgentName, HumanResourcesReportCellType.Text),
+                                new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
+                                new(item.TerminalCode, HumanResourcesReportCellType.Text),
+                                new(item.PositionCode ?? string.Empty, HumanResourcesReportCellType.Text),
+                                new(item.StartsAtLocal.ToString("HH:mm", CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Text),
+                                new(item.EndsAtLocal.ToString("HH:mm", CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Text),
+                            ]).ToArray() ?? [];
+                        break;
+                    }
+                    case HumanResourcesReportKind.QualificationCoverage:
+                    {
+                        var result = await ListQualificationCoverageAsync(actorId, stationId,
+                            endDate, page, 100, cancellationToken);
+                        failure = result.Failure;
+                        hasMore = result.Page?.HasMore ?? false;
+                        pageRows = result.Page?.Rows.Select(item =>
+                            (IReadOnlyList<HumanResourcesReportCell>)[
+                                new(item.EquipmentCode, HumanResourcesReportCellType.Text),
+                                new(item.EquipmentName, HumanResourcesReportCellType.Text),
+                                new(item.EligibleAgents.ToString(CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Number),
+                                new(item.QualifiedAgents.ToString(CultureInfo.InvariantCulture),
+                                    HumanResourcesReportCellType.Number),
+                            ]).ToArray() ?? [];
+                        break;
+                    }
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(kind));
+                }
+                if (failure is not null) return new HumanResourcesReportSnapshotResult(null, failure);
+                if (rows.Count + pageRows.Length > maxRows)
+                    return new HumanResourcesReportSnapshotResult(null,
+                        HumanResourcesReportFailure.TooLarge);
+                rows.AddRange(pageRows);
+                if (!hasMore) break;
+                page++;
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return new HumanResourcesReportSnapshotResult(
+                new HumanResourcesReportSnapshot(kind, stationId, startDate,
+                    endDate, asOf, columns, rows), null);
+        });
+    }
+
     public async Task<HumanResourcesReportReadResult<HumanResourcesExpirationRow>>
         ListExpirationsAsync(Guid actorId, Guid stationId, DateOnly startDate, DateOnly endDate,
             int page, int limit, CancellationToken cancellationToken = default)

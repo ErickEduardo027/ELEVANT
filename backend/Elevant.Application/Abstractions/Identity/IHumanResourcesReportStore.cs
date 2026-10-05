@@ -4,6 +4,47 @@ public enum HumanResourcesReportFailure
 {
     ForbiddenRole,
     ForbiddenStation,
+    TooLarge,
+}
+
+public enum HumanResourcesReportKind
+{
+    Expirations,
+    AccountMovements,
+    StaffDistribution,
+    QualificationCoverage,
+}
+
+public enum HumanResourcesReportCellType
+{
+    Text,
+    Number,
+    Date,
+    DateTime,
+}
+
+public sealed record HumanResourcesReportCell(
+    string Value, HumanResourcesReportCellType Type);
+
+public sealed record HumanResourcesReportSnapshot(
+    HumanResourcesReportKind Kind, Guid StationId, DateOnly From, DateOnly To,
+    DateTimeOffset AsOf, IReadOnlyList<string> Columns,
+    IReadOnlyList<IReadOnlyList<HumanResourcesReportCell>> Rows)
+{
+    public int RowCount => Rows.Count;
+}
+
+public sealed record HumanResourcesReportSnapshotResult(
+    HumanResourcesReportSnapshot? Snapshot, HumanResourcesReportFailure? Failure);
+
+public interface IHumanResourcesReportPdfRenderer
+{
+    byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode);
+}
+
+public interface IHumanResourcesReportXlsxRenderer
+{
+    byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode);
 }
 
 public sealed record HumanResourcesExpirationRow(
@@ -51,4 +92,9 @@ public interface IHumanResourcesReportStore
         ListAccountMovementsAsync(Guid actorId, Guid stationId,
             DateOnly startDate, DateOnly endDate, int page, int limit,
             CancellationToken cancellationToken = default);
+
+    Task<HumanResourcesReportSnapshotResult> ReadSnapshotAsync(
+        Guid actorId, Guid stationId, HumanResourcesReportKind kind,
+        DateOnly startDate, DateOnly endDate, int maxRows,
+        CancellationToken cancellationToken = default);
 }
