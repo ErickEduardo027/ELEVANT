@@ -25,14 +25,20 @@ beforeEach(() => {
 
 describe('OccShiftPanel', () => {
   it('copies an overnight choice, marks next day, and sends the local clocks unchanged', async () => {
-    render(<OccShiftPanel flight={flight} optionsState={shiftOnlyOptions} />);
+    const overnightFlight = createPlanningFlight({
+      assignedAgents: [], agents: [], hasAssignmentGap: true,
+      operationCode: 'MAN-NIGHT',
+      operation: { ...flight.operation, plannedStartAt: '2026-08-19T23:15:00-04:00',
+        plannedEndAt: '2026-08-20T07:30:00-04:00' },
+    });
+    render(<OccShiftPanel flight={overnightFlight} optionsState={shiftOnlyOptions} />);
     await userEvent.selectOptions(screen.getByLabelText('Agente para turno'), 'agent-1');
     await userEvent.selectOptions(screen.getByLabelText('Horario precargado'), 'night-2300');
     expect(screen.getByLabelText('Inicio del turno local')).toHaveValue('23:00');
     expect(screen.getByLabelText('Fin del turno local')).toHaveValue('08:00');
     expect(screen.getByText(/fin al día siguiente/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Programar turno' }));
-    await waitFor(() => expect(programPlanningShift).toHaveBeenCalledWith(flight.turnaroundId,
+    await waitFor(() => expect(programPlanningShift).toHaveBeenCalledWith(overnightFlight.turnaroundId,
       { agentId: 'agent-1', startsAtLocal: '23:00:00', endsAtLocal: '08:00:00' },
       expect.objectContaining({ signal: expect.any(AbortSignal) })));
   });
@@ -41,6 +47,7 @@ describe('OccShiftPanel', () => {
     render(<OccShiftPanel flight={flight} optionsState={shiftOnlyOptions} />);
     await userEvent.selectOptions(screen.getByLabelText('Horario precargado'), 'morning-0700');
     await userEvent.clear(screen.getByLabelText('Fin del turno local'));
+    expect(screen.queryByText(/fin al día siguiente/i)).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Fin del turno local'), '16:30');
     expect(screen.getByLabelText('Horario precargado')).toHaveValue('');
     expect(screen.getByLabelText('Fin del turno local')).toHaveValue('16:30');

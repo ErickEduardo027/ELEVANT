@@ -110,7 +110,7 @@ export default function OccShiftPanel({ flight, optionsState, onProgrammed }) {
             className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-surface-dark-card" />
         </label>
       </div>
-      {startsAtLocal > endsAtLocal && <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">Fin al día siguiente, hora local de la estación.</p>}
+      {startsAtLocal && endsAtLocal && startsAtLocal > endsAtLocal && <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">Fin al día siguiente, hora local de la estación.</p>}
       {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
       <button type="submit" disabled={status === 'submitting' || !agentId || !startsAtLocal || !endsAtLocal}
         className="rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
