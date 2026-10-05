@@ -13,6 +13,7 @@ import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
+import { getServiceClosures } from '../../../services/commercialGovernanceApi';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
 
@@ -24,10 +25,17 @@ function stationSnapshot() {
 export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   const [activeModuleId, setActiveModuleId] = useState(CONTRACT_MODULE_IDS.HOME);
   const [retryToken, setRetryToken] = useState(0);
+  const [pendingClosures, setPendingClosures] = useState(0);
   const home = useContractsHomeData(retryToken);
   const pendingReal = home.data?.kpis?.pendingRequests ?? 0;
   const revalidateHome = useCallback(() => setRetryToken(token => token + 1), []);
   useCommercialRevalidation(revalidateHome);
+  const revalidateClosures = useCallback(async () => {
+    try { setPendingClosures((await getServiceClosures('Pending', 1)).pendingCount); }
+    catch { /* The inbox will retry on focus, feed or polling. */ }
+  }, []);
+  useEffect(() => { void revalidateClosures(); }, [revalidateClosures]);
+  useCommercialRevalidation(revalidateClosures);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
 
@@ -42,10 +50,11 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         'contract_draft_comments', 'airline_contracts'].includes(resource))) {
         revalidateHome();
       }
+      if (resources.includes('service_closures')) void revalidateClosures();
     });
     void observer.start();
     return () => { void observer.stop(); };
-  }, [revalidateHome]);
+  }, [revalidateHome, revalidateClosures]);
 
   const activeModule = CONTRACT_MODULES.find(module => module.id === activeModuleId) ?? CONTRACT_MODULES[0];
 
@@ -60,7 +69,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         modules={CONTRACT_MODULES}
         activeModuleId={activeModuleId}
         onSelectModule={handleSelectModule}
-        badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: pendingReal }}
+        badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: pendingReal,
+          [CONTRACT_MODULE_IDS.CATALOG]: pendingClosures }}
         user={user}
         onLogout={onLogout}
         breakpoint={sidebar.breakpoint}

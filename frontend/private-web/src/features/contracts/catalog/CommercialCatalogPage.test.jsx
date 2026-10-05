@@ -40,3 +40,10 @@ it('edits a service in a right drawer and uploads its selected image before savi
     imageUrl: '/api/v1/media/00000000-0000-0000-0000-000000000001',
   }));
 });
+
+it('keeps closure decisions out of a custom catalog-only workspace', async () => {
+  getManagedServices.mockResolvedValue([]);
+  render(<CommercialCatalogPage canSeeClosures={false} />);
+  await waitFor(() => expect(getManagedServices).toHaveBeenCalled());
+  expect(screen.queryByRole('button', { name: 'Solicitudes de clausura' })).not.toBeInTheDocument();
+});

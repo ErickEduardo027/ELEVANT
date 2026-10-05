@@ -3,7 +3,8 @@
 import Image from "next/image";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import { ElevantApiError, type PublicCommercialCatalog } from "@elevant/api-client";
+import { ElevantApiError, type PublicCommercialCatalog,
+  type SubmitCommercialRequestRequest } from "@elevant/api-client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
@@ -31,29 +32,78 @@ const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/
 
 export function AccessRequestWizard() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const catalogRef = useRef<Catalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
+  const selectedRef = useRef<string[]>([]);
+  const [withdrawnNotice, setWithdrawnNotice] = useState("");
+  const [requiresServiceReview, setRequiresServiceReview] = useState(false);
   const [airlineId, setAirlineId] = useState("");
   const [representative, setRepresentative] = useState(emptyRepresentative);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [catalogError, setCatalogError] = useState("");
   const [reference, setReference] = useState("");
+  const [hasPendingSubmission, setHasPendingSubmission] = useState(false);
   const requestId = useRef<string | null>(null);
+  const pendingSubmission = useRef<SubmitCommercialRequestRequest | null>(null);
+  const submissionInFlight = useRef(false);
+  const reconcileAfterSubmit = useRef(false);
+  const reconciling = useRef(false);
   const carousel = useRef<HTMLDivElement>(null);
   const airline = catalog?.airlines.find((item) => item.id === airlineId);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { catalogRef.current = catalog; }, [catalog]);
+
+  const reconcilePending = useCallback(async () => {
+    const payload = pendingSubmission.current;
+    if (!payload || reconciling.current || submissionInFlight.current) return;
+    reconciling.current = true;
+    setBusy(true); setError("");
+    try {
+      const receipt = await createPublicWebApiClient().lookupCommercialRequestReceipt(payload);
+      pendingSubmission.current = null;
+      setHasPendingSubmission(false);
+      setReference(receipt.reference);
+    } catch (failure) {
+      if (failure instanceof ElevantApiError && [404, 409].includes(failure.status)) {
+        pendingSubmission.current = null;
+        setHasPendingSubmission(false);
+        requestId.current = null;
+        setStep(1);
+        setRequiresServiceReview(true);
+        setError("El envío anterior no se recibió. Revise los servicios y confirme de nuevo.");
+      } else {
+        setError("No se pudo verificar el envío anterior. Reintente la verificación sin cambiar sus datos.");
+      }
+    } finally {
+      reconciling.current = false;
+      setBusy(false);
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     if (!apiOrigin) { setCatalogError("El catálogo comercial aún no está configurado."); setLoading(false); return; }
     try {
       const data = await createPublicWebApiClient().getPublicCommercialCatalog({ cache: "no-store" });
       setCatalog(data);
-      setSelected((current) => {
-        const retained = current.filter((id) => data.services.some((service) => service.id === id));
-        if (retained.length !== current.length) requestId.current = null;
-        return retained;
-      });
+      const retained = selectedRef.current.filter((id) => data.services.some((service) => service.id === id));
+      if (retained.length !== selectedRef.current.length) {
+        const removed = selectedRef.current.filter((id) => !retained.includes(id));
+        const names = removed.map((id) => catalogRef.current?.services.find((service) => service.id === id)?.name ?? id);
+        setSelected(retained);
+        selectedRef.current = retained;
+        if (!pendingSubmission.current) requestId.current = null;
+        setStep(1);
+        setRequiresServiceReview(true);
+        setError("");
+        setWithdrawnNotice(`Dejó de estar disponible: ${names.join(", ")}. Revise la oferta y confirme de nuevo su selección antes de continuar.`);
+        if (pendingSubmission.current) {
+          if (submissionInFlight.current) reconcileAfterSubmit.current = true;
+          else void reconcilePending();
+        }
+      }
       setAirlineId((current) => {
         if (!current || data.airlines.some((item) => item.id === current)) return current;
         requestId.current = null;
@@ -64,7 +114,7 @@ export function AccessRequestWizard() {
       setCatalogError("No se pudo consultar el catálogo. Revise su conexión y reintente.");
     }
     finally { setLoading(false); }
-  }, []);
+  }, [reconcilePending]);
 
   useEffect(() => {
     const scheduled = window.setTimeout(() => { void reload(); }, 0);
@@ -94,7 +144,14 @@ export function AccessRequestWizard() {
     setError("");
   };
   const next = () => {
+    if (pendingSubmission.current) {
+      setError("Verifique primero si el envío anterior fue recibido."); return;
+    }
     if (step === 1 && selected.length === 0) { setError("Seleccione al menos un servicio para continuar."); return; }
+    if (step === 1 && requiresServiceReview) {
+      setRequiresServiceReview(false);
+      setWithdrawnNotice("");
+    }
     if (step === 2 && !airlineId) { setError("Seleccione la aerolínea que representa."); return; }
     if (step === 3) {
       const form = document.getElementById("access-representative") as HTMLFormElement | null;
@@ -117,33 +174,55 @@ export function AccessRequestWizard() {
     setError(""); setStep((current) => Math.min(4, current + 1));
   };
   const submit = async () => {
-    if (!apiOrigin || !airline || !selected.length) return;
+    if (pendingSubmission.current) { await reconcilePending(); return; }
+    if (!apiOrigin || !airline || !selected.length || requiresServiceReview ||
+      selected.some((id) => !catalog?.services.some((service) => service.id === id))) {
+      setError("Revise los servicios disponibles antes de enviar la solicitud.");
+      setStep(1);
+      return;
+    }
     setBusy(true); setError("");
     requestId.current ??= crypto.randomUUID();
+    const payload: SubmitCommercialRequestRequest = {
+      requestId: requestId.current, airlineProfileId: airlineId,
+      serviceIds: selected, representativeName: representative.name.trim(),
+      representativeTitle: representative.title.trim(), representativeEmail: representative.email.trim(),
+      representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared,
+      representativeNationalityCode: representative.nationalityCode || null,
+      representativeAddress: representative.address.trim() || null,
+      representativeCountry: representative.country.trim() || null,
+      representativeProvince: representative.province.trim() || null,
+      representativeMunicipality: representative.municipality.trim() || null,
+      representativeDocumentType: representative.documentType || null,
+      representativeDocumentNumber: representative.documentNumber.trim() || null,
+    };
+    pendingSubmission.current = payload;
+    setHasPendingSubmission(true);
+    submissionInFlight.current = true;
     try {
-      const result = await createPublicWebApiClient().submitCommercialRequest({
-        requestId: requestId.current, airlineProfileId: airlineId,
-        serviceIds: selected, representativeName: representative.name.trim(),
-        representativeTitle: representative.title.trim(), representativeEmail: representative.email.trim(),
-        representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared,
-        representativeNationalityCode: representative.nationalityCode || null,
-        representativeAddress: representative.address.trim() || null,
-        representativeCountry: representative.country.trim() || null,
-        representativeProvince: representative.province.trim() || null,
-        representativeMunicipality: representative.municipality.trim() || null,
-        representativeDocumentType: representative.documentType || null,
-        representativeDocumentNumber: representative.documentNumber.trim() || null,
-      });
+      const result = await createPublicWebApiClient().submitCommercialRequest(payload);
+      pendingSubmission.current = null;
+      setHasPendingSubmission(false);
       setReference(result.reference);
     } catch (failure) {
-      if (failure instanceof ElevantApiError && [404, 409].includes(failure.status))
+      if (failure instanceof ElevantApiError && [404, 409].includes(failure.status)) {
+        pendingSubmission.current = null;
+        setHasPendingSubmission(false);
+        requestId.current = null;
         setError("El catálogo cambió o la solicitud fue modificada. Revise los datos y vuelva a enviarla.");
-      else if (failure instanceof ElevantApiError && failure.status === 429)
+        await reload();
+      } else if (failure instanceof ElevantApiError && failure.status === 429)
         setError("Demasiados intentos. Espere un momento antes de reintentar.");
       else
         setError("No se pudo confirmar la recepción. Revise la conexión y reintente sin modificar los datos.");
     }
-    finally { setBusy(false); }
+    finally {
+      submissionInFlight.current = false;
+      setBusy(false);
+      const needsReconciliation = reconcileAfterSubmit.current;
+      reconcileAfterSubmit.current = false;
+      if (needsReconciliation && pendingSubmission.current) void reconcilePending();
+    }
   };
 
   if (reference) return <section className="access-complete" role="status">
@@ -171,6 +250,9 @@ export function AccessRequestWizard() {
 
     <section className="access-panel" aria-live="polite">
       <div className="access-panel__top"><span>PASO 0{step} / 04</span><span>ACCESO COMERCIAL</span></div>
+      {withdrawnNotice && <p className="access-error" role="alert">{withdrawnNotice}</p>}
+      {step === 1 && hasPendingSubmission && <button type="button" className="access-back"
+        disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
         <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione uno o varios servicios de rampa.</span></div>
         <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => carousel.current?.scrollBy({ left: -390, behavior: "smooth" })}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => carousel.current?.scrollBy({ left: 390, behavior: "smooth" })}>→</button></div></div>

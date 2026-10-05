@@ -84,6 +84,21 @@ export const decideCommercialRequest = (id, values) => commercialApi(`/contracts
   method: 'POST', body: JSON.stringify(values),
 });
 export const getManagedServices = () => commercialApi('/contracts/catalog/services');
+export const getPublishedCommercialServices = () => createPrivateWebApiClient()
+  .getPublicCommercialCatalog({ cache: 'no-store' });
+export const getServiceClosures = (status = null, page = 1) => commercialApi(
+  `/service-closures?page=${page}&limit=25${status ? `&status=${encodeURIComponent(status)}` : ''}`);
+export const requestServiceClosure = (requestId, serviceId, reason) => commercialApi('/service-closures', {
+  method: 'POST', body: JSON.stringify({ requestId, serviceId, reason }),
+});
+export const decideServiceClosure = (id, approve, reason, version) => commercialApi(
+  `/service-closures/${id}/decision`, {
+    method: 'POST', body: JSON.stringify({ approve, reason, version }),
+  });
+export const reopenService = (serviceId, reason, serviceVersion) => commercialApi(
+  `/service-closures/services/${serviceId}/reopen`, {
+    method: 'POST', body: JSON.stringify({ reason, serviceVersion }),
+  });
 export async function getManagedContracts(page = 1) {
   try {
     return await createPrivateWebApiClient({

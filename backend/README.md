@@ -442,3 +442,11 @@ El flujo local es `SQL -> provisioner -> migrator -> seeder-development -> API`.
 Los siguientes endpoints de negocio deben conservar el patrón de vertical slices
 y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF
 directamente.
+
+La rama de clausura comercial agrega `GET/POST /api/v1/service-closures`, decisión
+por solicitud y republicación por servicio. La API exige membresía AVIAM
+interna y grants separados; `IServiceClosureStore` concentra la transacción
+que conserva expediente, auditoría, pistas internas y visibilidad pública. La
+respuesta del hub público es una invalidación posterior al commit. El
+[recorrido comercial](../docs/workflows/commercial-intake-and-governance.md#clausura-comercial-solicitada-por-occ-rama-de-implementación)
+detalla el efecto sobre nuevas solicitudes, sin atribuirle un despliegue.

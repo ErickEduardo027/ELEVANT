@@ -426,6 +426,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/05-aplicaciones/clausura-comercial-servicios.md",
+        "id": "aplicaciones-clausura-comercial-servicios",
+        "title": "Clausura comercial de servicios",
+        "type": "capability",
+        "area": "applications",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/developmentdb-compartida.md",
         "id": "aplicaciones-developmentdb-compartida",
         "title": "DevelopmentDB como dependencia compartida",
@@ -1095,13 +1105,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "acc7d40bbdf7cce1a5675c108bbee19680284cae23686fe2608ccafc10241df8",
+        "sha256": "97478d07a6d0d1f292da7f0827df62384e2ecf6c5c72fcfc9fa77dd451db13ee",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "c2f2ed53796c7e08803c892ec9433b276b39b8965f29307a651e8d2c55cc50fa",
+        "sha256": "254d8560c60d5711c80b00d15b5f07dc6ada956f04518a40db65410b9aa0faaf",
         "title": null,
         "version": null
       }
@@ -1268,6 +1278,12 @@
         "name": "OperationAttendanceContributionRevisions",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005133619_OperationAttendanceContributionRevisions.cs",
         "sha256": "fdb56923ee7cf079b06670bf345d4d98554c473e8a2054dfa33b243d980cc20c"
+      },
+      {
+        "id": "20261005153623",
+        "name": "AddServiceClosureRequests",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005153623_AddServiceClosureRequests.cs",
+        "sha256": "5c485081dcdccbceac887a81012245112284e3f714f18d59ff2545a320041300"
       }
     ],
     "manifestContracts": [

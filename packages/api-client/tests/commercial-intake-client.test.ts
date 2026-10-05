@@ -79,6 +79,24 @@ describe("canonical public commercial intake client", () => {
     expect(calls).toEqual([{ body: request, auth: null }, { body: request, auth: null }]);
   });
 
+  it("looks up an existing receipt without repeating the submission", async () => {
+    const calls: Array<{ url: string; body: unknown; auth: string | null }> = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "must-not-be-used",
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)),
+          auth: new Headers(init?.headers).get("authorization") });
+        return new Response(JSON.stringify({ reference: "REQ-SYNTHETIC-001", replayed: true }),
+          { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    await expect(client.lookupCommercialRequestReceipt(request)).resolves.toEqual({
+      reference: "REQ-SYNTHETIC-001", replayed: true,
+    });
+    expect(calls).toEqual([{ url: "https://api.example.test/api/v1/public/commercial-requests/receipt",
+      body: request, auth: null }]);
+  });
+
   it("accepts optional representative identity and address without sending credentials", async () => {
     let sent: unknown;
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",

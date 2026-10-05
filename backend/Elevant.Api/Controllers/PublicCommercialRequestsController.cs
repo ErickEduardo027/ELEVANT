@@ -59,4 +59,37 @@ public sealed class PublicCommercialRequestsController(
         return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
             response);
     }
+
+    [HttpPost("receipt", Name = "LookupCommercialRequestReceipt")]
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(16384)]
+    [Consumes("application/json")]
+    [ProducesResponseType<SubmitCommercialRequestResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<ActionResult<SubmitCommercialRequestResponse>> LookupReceipt(
+        [FromBody] SubmitCommercialRequestRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.LookupReceiptAsync(new SubmitCommercialRequestCommand(
+            request.RequestId, request.AirlineProfileId, request.ServiceIds,
+            request.RepresentativeName, request.RepresentativeTitle,
+            request.RepresentativeEmail, request.RepresentativePhone,
+            request.AuthorityDeclared, request.RepresentativeNationalityCode,
+            request.RepresentativeAddress, request.RepresentativeCountry,
+            request.RepresentativeProvince, request.RepresentativeMunicipality,
+            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber),
+            cancellationToken);
+        if (result.IsSuccess)
+            return Ok(new SubmitCommercialRequestResponse(result.Reference!, true));
+        var status = result.Failure == CommercialSubmissionFailure.InvalidRequest ? 400 : 404;
+        return new ObjectResult(new ProblemDetails
+        {
+            Status = status,
+            Title = status == 400 ? "Invalid commercial application." : "Receipt not found.",
+            Instance = HttpContext.Request.Path,
+        }) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+    }
 }

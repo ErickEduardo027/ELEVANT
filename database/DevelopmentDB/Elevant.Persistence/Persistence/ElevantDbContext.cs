@@ -69,6 +69,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
 
+    public DbSet<ServiceClosureRequest> ServiceClosureRequests => Set<ServiceClosureRequest>();
+
     public DbSet<CommercialAirlineProfile> CommercialAirlineProfiles => Set<CommercialAirlineProfile>();
 
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
