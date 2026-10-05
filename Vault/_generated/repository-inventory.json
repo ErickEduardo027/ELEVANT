@@ -446,6 +446,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/05-aplicaciones/occ-turnos-vuelo.md",
+        "id": "aplicaciones-occ-turnos-vuelo",
+        "title": "Opciones OCC de turno por vuelo",
+        "type": "capability",
+        "area": "private-web",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/private-web-aviam.md",
         "id": "aplicaciones-private-web-aviam",
         "title": "Private Web / AVIAM",
