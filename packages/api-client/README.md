@@ -1,5 +1,33 @@
 # Cliente API compartido
 
+## Asistencia compartida OCC y agente
+
+`getOperationAttendanceDraft(operationId, assignmentId, { installationId? })`
+relee las dos contribuciones manuales de asistencia de la asignación: OCC y
+agente de rampa. OCC y Gestión Humana solo leen con alcance interno y de
+estación vigente; el agente asignado también debe presentar su instalación
+activa. `saveOccAttendanceDraft` y `saveRampAttendanceDraft` anexan una nueva
+revisión únicamente al carril del actor autenticado. Cada escritura exige
+`expectedRevision` e `Idempotency-Key` UUID; la ruta móvil exige además la
+instalación. Una revisión desactualizada o reutilizar la clave con otro
+contenido devuelve 409: se debe releer antes de crear otra intención.
+
+```ts
+const draft = await api.getOperationAttendanceDraft(operationId, assignmentId);
+const intentionId = crypto.randomUUID(); // conservar para reintentos de esta intención
+const receipt = await api.saveOccAttendanceDraft(operationId, assignmentId, {
+  expectedRevision: draft.occ?.revision ?? 0,
+  observedStartAt: "2026-10-02T12:00:00.000Z",
+  observedEndAt: null,
+  incidentNote: null,
+}, intentionId); // Idempotency-Key de esta intención
+```
+
+El backend persiste las dos observaciones con auditoría y pistas durables de
+cambio. Esta incorporación del contrato **no** conecta todavía las pantallas
+OCC, móvil o G.H., ni implementa firma, validación de G.H., nómina u horas
+extra. Tampoco acredita promoción de esta rama al VPS.
+
 El snapshot OpenAPI incluye `GetAffiliationOptions` como lectura anónima
 acotada de estaciones activas y servicios publicados, sin precios. El flujo
 público actual usa `GetPublicCommercialCatalog` y `SubmitCommercialRequest`

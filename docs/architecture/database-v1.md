@@ -45,6 +45,11 @@ misma secuencia ordenada de migraciones, pero no recibirá fixtures sintéticos.
 
 ## Cadena de migraciones v1
 
+> La tabla de diez migraciones que sigue es una fotografía histórica de v1,
+> no un inventario completo de las migraciones posteriores del repositorio.
+> Las afirmaciones de despliegue en esta sección corresponden a su momento
+> original; la promoción de una migración nueva requiere evidencia propia.
+
 La migración 11, `AccountChangeFeed`, se prepara en esta rama y no está
 desplegada todavía. Agrega `infra.account_changes`: una pista sin contenido
 por cuenta y evento del outbox. Su identidad `bigint` ordena los commits de
@@ -69,6 +74,24 @@ sin `DELETE` ni permisos amplios sobre el esquema `infra`.
 | 10 | `V1_10_DevelopmentCredentialActivation` | marca de cambio obligatorio de contraseña y recuperación manual de Gestión Humana |
 
 EF Core conserva un único historial en `infra.__EFMigrationsHistory`. `infra.database_instances` se crea antes de EF y se excluye de migraciones para que la herramienta pueda verificar el destino antes de modificar el esquema.
+
+### Extensión aditiva de asistencia compartida
+
+La migración posterior `20261005133619_OperationAttendanceContributionRevisions`
+agrega `ops.operation_attendance_contribution_revisions` para una revisión
+inmutable por asignación, carril (`Occ` o `RampAgent`) y número. Conserva autor,
+instalación móvil cuando aplica, clave idempotente, hash de la intención,
+instantes observados, nota de incidente y momento de registro. Tiene índices
+únicos para `(assignment, lane, revision)` y `(author, idempotency_key)`, además
+de restricciones de carril, revisión positiva y cronología. Sus claves foráneas
+son `NO ACTION`; la migración no inserta datos de negocio.
+
+El almacén SQL revalida el acceso vigente y serializa las escrituras por
+asignación. En la misma transacción agrega revisión, auditoría y avisos de
+outbox con recurso `attendance_draft`. El feed revalida el acceso al leerlos;
+una pista no transporta la nota ni sustituye la relectura autorizada. Este
+esquema y su contrato están probados localmente en esta rama: esta nota no
+afirma su despliegue en Development ni que exista ya una interfaz de captura.
 
 ## Política de ambientes y datos
 

@@ -416,6 +416,16 @@
         "evidence": "unknown"
       },
       {
+        "path": "Vault/05-aplicaciones/asistencia-compartida-occ-agente.md",
+        "id": "aplicaciones-asistencia-compartida-occ-agente",
+        "title": "Asistencia compartida OCC y agente",
+        "type": "capability",
+        "area": "applications",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/developmentdb-compartida.md",
         "id": "aplicaciones-developmentdb-compartida",
         "title": "DevelopmentDB como dependencia compartida",
@@ -1085,13 +1095,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "d11d0512e20da8859bd3dd929e81cb13c9bc2633f91b3db9027724ef0c637881",
+        "sha256": "3e262e48148aad4f297508a826fcccae3ea409dc127a39b30e0026f8b63bad45",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "5f56c139e3d5fa855deed1655057c69be5e36041f00bab747230b743df240214",
+        "sha256": "703f1ecece2fd83f3fcf41230f8909d394c401cfcf73b255d16827b51cfe18f2",
         "title": null,
         "version": null
       }
@@ -1252,6 +1262,12 @@
         "name": "AddRampMobileAccessRequests",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261004210714_AddRampMobileAccessRequests.cs",
         "sha256": "96db452656110acc39586dc142a8cfdba28173b44a1cc1b79b70ea1c3f093fbe"
+      },
+      {
+        "id": "20261005133619",
+        "name": "OperationAttendanceContributionRevisions",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005133619_OperationAttendanceContributionRevisions.cs",
+        "sha256": "fdb56923ee7cf079b06670bf345d4d98554c473e8a2054dfa33b243d980cc20c"
       }
     ],
     "manifestContracts": [
