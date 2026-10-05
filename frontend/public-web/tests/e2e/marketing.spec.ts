@@ -87,15 +87,21 @@ test.describe("landing pública", () => {
     await page.getByRole("combobox", { name: "Seleccione una aerolínea" }).selectOption(airlineId);
     await page.getByRole("button", { name: /Continuar/i }).click();
     await page.getByRole("textbox", { name: "Nombre completo" }).fill("Ana Synthetic");
-    await page.getByRole("textbox", { name: "Cargo" }).fill("Gerente de operaciones");
+    await page.getByRole("combobox", { name: "Cargo" }).selectOption("Gerente de operaciones");
     await page.getByRole("textbox", { name: "Correo corporativo" }).fill("ana@synthetic.example.test");
     await page.getByRole("textbox", { name: "Teléfono" }).fill("+1 809 555 0100");
+    await page.getByRole("combobox", { name: "País" }).selectOption("DO");
+    await page.getByRole("combobox", { name: "Provincia / Estado / Región" }).selectOption("25");
+    await page.getByRole("combobox", { name: "Municipio / Ciudad" }).selectOption("Santiago de los Caballeros");
     await page.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }).check();
+    await page.getByRole("button", { name: /Continuar/i }).click();
     await page.getByRole("button", { name: /Enviar solicitud/i }).click();
     await expect(page.getByRole("status")).toContainText("REQ-SYNTHETIC-001");
     expect(submissions).toHaveLength(1);
     expect(submissions[0]).toMatchObject({ airlineProfileId: airlineId, serviceIds: [serviceId],
-      representativeEmail: "ana@synthetic.example.test", authorityDeclared: true });
+      representativeEmail: "ana@synthetic.example.test", authorityDeclared: true,
+      representativeTitle: "Gerente de operaciones", representativeCountry: "República Dominicana",
+      representativeProvince: "Santiago", representativeMunicipality: "Santiago de los Caballeros" });
     expect(submissions[0]).not.toHaveProperty("password");
   });
 

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const hubEvents = vi.hoisted(() => ({ catalogChanged: null as (() => void) | null }));
 
@@ -29,23 +29,121 @@ afterEach(() => {
   cleanup(); hubEvents.catalogChanged = null; vi.unstubAllGlobals(); vi.unstubAllEnvs();
 });
 
-async function fillApplication() {
+const field = (name: string) => screen.getByRole("combobox", { name });
+const choose = (name: string, value: string) => fireEvent.change(field(name), { target: { value } });
+
+async function openRepresentativeStep() {
   fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
-  fireEvent.change(screen.getByRole("combobox", { name: /Seleccione una aerolínea/i }),
-    { target: { value: airlineId } });
+  choose("Seleccione una aerolínea", airlineId);
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+}
+
+async function chooseDominicanLocation() {
+  choose("País", "DO");
+  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled());
+  choose("Provincia / Estado / Región", "25");
+  choose("Municipio / Ciudad", "Santiago de los Caballeros");
+}
+
+async function fillApplication() {
+  await openRepresentativeStep();
   fireEvent.change(screen.getByRole("textbox", { name: "Nombre completo" }),
     { target: { value: "Alex Test" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Cargo" }),
-    { target: { value: "Operations Manager" } });
+  choose("Cargo", "Gerente de operaciones");
   fireEvent.change(screen.getByRole("textbox", { name: "Correo corporativo" }),
     { target: { value: "alex@synthetic.example.test" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Teléfono" }),
     { target: { value: "+1 809 555 0100" } });
+  await chooseDominicanLocation();
   fireEvent.click(screen.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }));
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
 }
+
+function stubCatalogOnly(extra?: (url: string) => Response | undefined) {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith("commercial-catalog"))
+      return new Response(JSON.stringify(catalog), { headers: { "content-type": "application/json" } });
+    const response = extra?.(String(url));
+    if (response) return response;
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+}
+
+it("does not show representative errors before the user interacts", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+  expect(screen.queryByText("Ingrese su nombre completo.")).not.toBeInTheDocument();
+  expect(field("Provincia / Estado / Región")).toBeDisabled();
+  expect(field("Municipio / Ciudad")).toBeDisabled();
+
+  fireEvent.change(screen.getByRole("textbox", { name: "Correo corporativo" }), { target: { value: "usuario@" } });
+  fireEvent.blur(screen.getByRole("textbox", { name: "Correo corporativo" }));
+  expect(screen.getByText("Ingrese un correo electrónico válido.")).toBeInTheDocument();
+  expect(screen.queryByText("Ingrese su nombre completo.")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText(/PASO 03 \/ 04/i)).toBeInTheDocument();
+  expect(screen.getByText("Ingrese su nombre completo.")).toBeInTheDocument();
+  expect(screen.getByText("Seleccione su cargo.")).toBeInTheDocument();
+  expect(screen.getByText("Seleccione su país.")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Nombre completo" })).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: "Nombre completo" })).toHaveAttribute("aria-invalid", "true");
+});
+
+it("asks for a custom title only while Otro is selected", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+  expect(screen.queryByRole("textbox", { name: "Especifique su cargo" })).not.toBeInTheDocument();
+
+  choose("Cargo", "Otro");
+  const custom = screen.getByRole("textbox", { name: "Especifique su cargo" });
+  fireEvent.blur(custom);
+  expect(screen.getByText("Escriba su cargo.")).toBeInTheDocument();
+  fireEvent.change(custom, { target: { value: "Jefe de escala" } });
+  expect(screen.queryByText("Escriba su cargo.")).not.toBeInTheDocument();
+
+  choose("Cargo", "Gerente de estación");
+  expect(screen.queryByRole("textbox", { name: "Especifique su cargo" })).not.toBeInTheDocument();
+  choose("Cargo", "Otro");
+  expect(screen.getByRole("textbox", { name: "Especifique su cargo" })).toHaveValue("");
+});
+
+it("keeps country, division and municipality consistent", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly((url) => url.endsWith("/geo/US.json") ? new Response(JSON.stringify({ divisions: [
+    { code: "FL", name: "Florida", cities: ["Miami", "Orlando"] },
+  ] }), { headers: { "content-type": "application/json" } }) : undefined);
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+
+  await chooseDominicanLocation();
+  const provinces = within(field("Provincia / Estado / Región")).getAllByRole("option");
+  expect(provinces).toHaveLength(33);
+  expect(field("Municipio / Ciudad")).toHaveValue("Santiago de los Caballeros");
+
+  choose("Provincia / Estado / Región", "01");
+  expect(field("Municipio / Ciudad")).toHaveValue("");
+  expect(within(field("Municipio / Ciudad")).getAllByRole("option").map((option) => option.textContent))
+    .toEqual(["Seleccione una opción", "Santo Domingo de Guzmán"]);
+
+  choose("País", "US");
+  expect(field("Provincia / Estado / Región")).toHaveValue("");
+  expect(field("Municipio / Ciudad")).toHaveValue("");
+  expect(field("Municipio / Ciudad")).toBeDisabled();
+  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled());
+  choose("Provincia / Estado / Región", "FL");
+  expect(field("Municipio / Ciudad")).toBeEnabled();
+  choose("Municipio / Ciudad", "Miami");
+  expect(field("Municipio / Ciudad")).toHaveValue("Miami");
+});
 
 it("shows a full confirmation step before sending the application", async () => {
   vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
@@ -127,6 +225,12 @@ it("verifies an uncertain submission without creating another request or trustin
   expect(lookups).toEqual([posts[0], posts[0]]);
   expect(posts[0].serviceIds).toEqual([serviceId]);
   expect(posts[0].airlineProfileId).toBe(airlineId);
+  expect(posts[0]).toMatchObject({
+    representativeTitle: "Gerente de operaciones",
+    representativeCountry: "República Dominicana",
+    representativeProvince: "Santiago",
+    representativeMunicipality: "Santiago de los Caballeros",
+  });
 });
 
 it("keeps a completed application usable after a transient catalog refresh failure", async () => {
