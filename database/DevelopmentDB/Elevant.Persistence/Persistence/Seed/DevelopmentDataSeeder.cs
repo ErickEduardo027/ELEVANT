@@ -335,6 +335,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             "commercial.catalog.create", "commercial.catalog.edit", "commercial.catalog.full",
             "commercial.requests.read", "commercial.requests.write",
             "commercial.requests.edit", "commercial.requests.full",
+            "commercial.service_closures.read", "commercial.service_closures.request",
+            "commercial.service_closures.decide", "commercial.service_closures.reopen",
             "iam.users.read", "iam.users.write", "iam.roles.read", "iam.roles.write",
             "iam.settings.read", "iam.settings.write",
         };
@@ -350,8 +352,12 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                     Description = "Acceso del módulo de gobernanza comercial.",
                 }, cancellationToken);
             await EnsureRolePermissionAsync(superAdminRole.Id, permission.Id, cancellationToken);
-            if (code.StartsWith("commercial.", StringComparison.Ordinal))
+            if (code.StartsWith("commercial.", StringComparison.Ordinal) &&
+                code != "commercial.service_closures.request")
                 await EnsureRolePermissionAsync(contractsRole.Id, permission.Id, cancellationToken);
+            if (code is "commercial.service_closures.read" or
+                "commercial.service_closures.request")
+                await EnsureRolePermissionAsync(adminRole.Id, permission.Id, cancellationToken);
         }
 
         var adminAccount = await SeedAccountAsync(adminPerson, accountPasswords.AdminOcc, "40000000-0000-7000-8000-000000000001", cancellationToken);

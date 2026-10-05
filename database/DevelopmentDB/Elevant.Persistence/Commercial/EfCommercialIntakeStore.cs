@@ -15,6 +15,17 @@ namespace Elevant.Persistence.Commercial;
 
 internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : ICommercialIntakeStore
 {
+    public async Task<string?> LookupReceiptAsync(SubmitCommercialRequestCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var hash = ComputeHash(command);
+        var previous = await context.ServiceRequests.AsNoTracking()
+            .Where(request => request.PublicId == command.RequestId)
+            .Select(request => new { request.RequestCode, request.SubmissionHash })
+            .SingleOrDefaultAsync(cancellationToken);
+        return previous?.SubmissionHash == hash ? previous.RequestCode : null;
+    }
+
     public async Task<CommercialSubmissionResult> SubmitAsync(
         SubmitCommercialRequestCommand command, CancellationToken cancellationToken = default)
     {

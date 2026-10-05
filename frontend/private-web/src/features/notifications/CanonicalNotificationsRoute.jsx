@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { loadOperationalNotifications, setOperationalNotificationRead } from '../../services/operationalCommunicationService';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import ServiceClosurePanel from '../contracts/catalog/ServiceClosurePanel';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,6 +26,7 @@ export default function CanonicalNotificationsRoute() {
   const [revision, setRevision] = useState(0);
   const [busyId, setBusyId] = useState(null);
   const [writeError, setWriteError] = useState('');
+  const [section, setSection] = useState('notices');
 
   useEffect(() => {
     if (!UUID.test(session?.accountId ?? '')) return undefined;
@@ -70,6 +72,11 @@ export default function CanonicalNotificationsRoute() {
       <div><h1 className="text-xl font-semibold">Notificaciones operativas</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Avisos persistentes de entregas, decisiones y mensajes de tus operaciones autorizadas.</p></div>
       <button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-11 rounded-lg border border-accent-600 px-4 text-sm font-semibold text-accent-600">Actualizar</button>
     </header>
+    <nav aria-label="Secciones de notificaciones" className="flex gap-2">
+      <button type="button" onClick={() => setSection('notices')} aria-current={section === 'notices' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Avisos</button>
+      <button type="button" onClick={() => setSection('services')} aria-current={section === 'services' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Servicios</button>
+    </nav>
+    {section === 'services' ? <ServiceClosurePanel mode="occ" /> : <>
     {state.status === 'loading' && <p role="status">Cargando notificaciones…</p>}
     {state.status === 'error' && <div role="alert" className="rounded-xl border border-status-danger/30 bg-white p-4"><p>No fue posible cargar las notificaciones.</p><button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-11 text-accent-600">Reintentar</button></div>}
     {state.status === 'success' && <>
@@ -81,6 +88,7 @@ export default function CanonicalNotificationsRoute() {
           <div className="flex flex-wrap gap-2"><Link className="inline-flex min-h-11 items-center rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white" to={item.kind === 'agent_message' || item.kind === 'occ_message' ? `/admin-occ/chat?operationId=${item.operationId}` : `/admin-occ/review?operationId=${item.operationId}`}>Abrir</Link><button type="button" disabled={busyId === item.id} onClick={() => void toggleRead(item)} className="min-h-11 rounded-lg border border-accent-600 px-4 text-sm font-semibold text-accent-600 disabled:opacity-50">{item.readAt ? 'Marcar no leída' : 'Marcar leída'}</button></div>
         </li>)}</ul>}
       {state.hasMore && <p className="text-xs">Se muestran los 100 avisos más recientes; existe más historial.</p>}
+    </>}
     </>}
   </main>;
 }

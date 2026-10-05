@@ -13,6 +13,7 @@ import {
   getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
+  getLookupCommercialRequestReceiptUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -405,6 +406,10 @@ export interface ElevantApiClient {
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
   submitCommercialRequest(
+    request: SubmitCommercialRequestRequest,
+    options?: SubmitCommercialRequestOptions,
+  ): Promise<SubmitCommercialRequestResponse>;
+  lookupCommercialRequestReceipt(
     request: SubmitCommercialRequestRequest,
     options?: SubmitCommercialRequestOptions,
   ): Promise<SubmitCommercialRequestResponse>;
@@ -4029,6 +4034,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "POST", headers, body: JSON.stringify(body) });
       if (!isCommercialRequestReceipt(result.data) ||
         result.status !== (result.data.replayed ? 200 : 201))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async lookupCommercialRequestReceipt(
+      request: SubmitCommercialRequestRequest,
+      options?: SubmitCommercialRequestOptions,
+    ) {
+      const body = validatedCommercialRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getLookupCommercialRequestReceiptUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) });
+      if (!isCommercialRequestReceipt(result.data) || result.status !== 200 ||
+          result.data.replayed !== true)
         throw malformedResponse(result.status);
       return result.data;
     },

@@ -8,6 +8,15 @@ aditivas para el [flujo comercial](../workflows/commercial-intake-and-governance
 El seed sintético de Development es un paso separado; las migraciones no
 insertan servicios, aerolíneas ni cuentas.
 
+`AddServiceClosureRequests` agrega `commercial.service_closure_requests` de forma
+aditiva: expediente, actor solicitante y decisor, motivos, instantes, UUID,
+`rowversion` e índice único filtrado para una sola petición pendiente por
+servicio. Las cuatro FKs son `NO ACTION`; los checks SQL exigen coherencia de
+decisión y reapertura. No cambia tablas contractuales ni inserta datos. El seed
+de Development crea únicamente las definiciones y grants de permisos OCC y
+Contratos ausentes. La API compatible debe publicarse después de aplicar la
+migración; una imagen anterior tolera la tabla adicional.
+
 `CommercialMediaAssets` agrega metadatos y claves de objetos en
 `commercial.media_assets` con FK al actor que subió el archivo.
 `PersonAvatarMedia` agrega una referencia nullable en `iam.persons`.

@@ -23,6 +23,15 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
+La clausura comercial usa `GET/POST /api/v1/service-closures`,
+`POST /api/v1/service-closures/{id}/decision` y
+`POST /api/v1/service-closures/services/{id}/reopen`. Las respuestas exponen
+UUID y versiones opacas de expediente/servicio, nunca claves SQL. Cada comando
+revalida membresía interna y permiso; `400` indica entrada inválida, `403`
+permiso ausente, `404` recurso inexistente y `409` conflicto de versión o
+estado. El catálogo público conserva su contrato y omite servicios aprobados
+para clausura. Esta incorporación pertenece a la rama local hasta su merge.
+
 Además de creación y consulta de sesión, el contrato publica tres operaciones
 de negocio autenticadas para OCC:
 

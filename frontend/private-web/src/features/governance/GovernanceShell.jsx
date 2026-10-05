@@ -254,9 +254,13 @@ function RolesPanel({ snapshot, run }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [levels, setLevels] = useState({});
-  const modules = useMemo(() => snapshot.permissionCodes.filter(code => code.startsWith('commercial.') && code.endsWith('.read')).map(code => code.slice(0, -5)), [snapshot.permissionCodes]);
+  const [closureGrants, setClosureGrants] = useState([]);
+  const closureActions = ['read', 'request', 'decide', 'reopen'];
+  const modules = useMemo(() => snapshot.permissionCodes.filter(code => code.startsWith('commercial.') &&
+    code.endsWith('.read') && !code.startsWith('commercial.service_closures.')).map(code => code.slice(0, -5)), [snapshot.permissionCodes]);
   function edit(role) {
     setEditing(role.id); setName(role.name); setDescription(role.description ?? '');
+    setClosureGrants(role.permissions.filter(code => code.startsWith('commercial.service_closures.')));
     setLevels(Object.fromEntries(modules.map(module => [module,
       role.permissions.includes(`${module}.write`) || role.permissions.includes(`${module}.full`) ? 'full' :
         role.permissions.includes(`${module}.edit`) ? 'edit' :
@@ -265,7 +269,7 @@ function RolesPanel({ snapshot, run }) {
   }
   async function save(event) {
     event.preventDefault();
-    const permissionCodes = modules.flatMap(module => {
+    const permissionCodes = [...modules.flatMap(module => {
       const level = levels[module];
       if (level === 'none' || !level) return [];
       if (level === 'read') return [`${module}.read`];
@@ -273,10 +277,13 @@ function RolesPanel({ snapshot, run }) {
         .filter(action => snapshot.permissionCodes.includes(`${module}.${action}`))
         .map(action => `${module}.${action}`)];
       return [`${module}.read`, `${module}.${level}`];
-    });
+    }), ...closureGrants];
+    if (closureGrants.some(code => code !== 'commercial.service_closures.read') &&
+      !permissionCodes.includes('commercial.service_closures.read'))
+      permissionCodes.push('commercial.service_closures.read');
     const values = { name, description, permissionCodes, isActive: true };
     const saved = await run(() => editing ? updateRole(editing, values) : createRole(values), editing ? 'Rol actualizado.' : 'Rol creado.');
-    if (saved) { setEditing(null); setName(''); setDescription(''); setLevels({}); }
+    if (saved) { setEditing(null); setName(''); setDescription(''); setLevels({}); setClosureGrants([]); }
   }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Roles del sistema</h2><div className="mt-4 space-y-2">{snapshot.roles.map(role =>
@@ -286,7 +293,13 @@ function RolesPanel({ snapshot, run }) {
       <label className="mt-4 block text-xs font-semibold">Descripción<input maxLength={500} value={description} onChange={event => setDescription(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
       <h3 className="mt-5 text-sm font-semibold">Permisos por módulo</h3><div className="mt-2 space-y-2">{modules.map(module =>
         <label key={module} className="flex items-center justify-between gap-2 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><span>{module === 'commercial.catalog' ? 'Servicios' : 'Solicitudes y borradores'}</span><select value={levels[module] ?? 'none'} onChange={event => setLevels(current => ({ ...current, [module]: event.target.value }))} className="rounded border bg-white p-1 dark:bg-surface-dark"><option value="none">Sin acceso</option><option value="read">Ver</option>{snapshot.permissionCodes.includes(`${module}.create`) && <option value="create">Ver y crear</option>}<option value="edit">Ver y editar</option><option value="full">Acceso completo</option></select></label>)}</div>
-      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar rol</button>{editing && <button type="button" onClick={() => { setEditing(null); setName(''); setDescription(''); setLevels({}); }}>Cancelar</button>}</div>
+      <fieldset className="mt-5 space-y-2"><legend className="text-sm font-semibold">Clausura de servicios</legend>{closureActions.map(action => {
+        const code = `commercial.service_closures.${action}`;
+        if (!snapshot.permissionCodes.includes(code)) return null;
+        const label = { read: 'Ver historial', request: 'Solicitar clausura (OCC)', decide: 'Aprobar o denegar (Contratos)', reopen: 'Republicar (Contratos)' }[action];
+        return <label key={code} className="flex items-center gap-3 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><input type="checkbox" checked={closureGrants.includes(code)} onChange={event => setClosureGrants(current => event.target.checked ? [...current, code] : current.filter(item => item !== code))} />{label}</label>;
+      })}</fieldset>
+      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar rol</button>{editing && <button type="button" onClick={() => { setEditing(null); setName(''); setDescription(''); setLevels({}); setClosureGrants([]); }}>Cancelar</button>}</div>
     </form>
     <ConfirmDialog open={Boolean(pendingDeactivate)} title="Desactivar rol" description={`¿Desactivar el rol ${pendingDeactivate?.name ?? ''}?`} confirmLabel="Desactivar" onClose={() => setPendingDeactivate(null)} onConfirm={async () => { const role = pendingDeactivate; setPendingDeactivate(null); await run(() => deactivateRole(role.id), 'Rol desactivado.'); }} />
   </div>;
