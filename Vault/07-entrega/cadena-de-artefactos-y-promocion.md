@@ -48,6 +48,17 @@ tag mutable. GitHub Actions construye y certifica fuera del VPS; el controlador
 privado consulta GHCR y decide si el candidato puede sustituir la última
 baseline saludable. No hay webhook de GitHub que despliegue dentro de Dokploy.
 
+El workflow web actualizado usa aplicación y `run_id` como nombre estable
+para el artefacto intermedio. Permite
+reintentar solo la publicación sin buscar un artefacto de un intento de build
+que nunca ocurrió; un build repetido reemplaza ese intermedio antes de
+publicar. La publicación sigue comprobando hash, identidad de imagen, commit,
+configuración y manifiesto API exacto. El bundle OCI aceptado mantiene digest
+inmutable y procedencia por intento. El cambio de workflow por sí solo no
+acredita ninguna promoción al VPS. Fuente:
+[workflow web](../../.github/workflows/web-ci.yml) y
+[prueba de reintento](../../frontend/tests/deployment/test_web_ci_artifacts.py).
+
 ```mermaid
 flowchart TB
     Merge[Push relevante a Development] --> Test[Checks del commit]

@@ -1099,19 +1099,19 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "59ffc581ede3cf6cb2d91cb6ea9332c0739fb56b514c9a9a1be715a59863ce01"
+        "sha256": "52a22315a47a77fb8ebe3e2e4facdb5ae7dd384bc03f76166236b54d1239e691"
       }
     ],
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "d699cbc6d1c0f8f0d703a8dc558eaec0cd7d4046ecd048b839bd77852f802793",
+        "sha256": "4bd19c240c0e4914c7076743a2c410271d856d94ded84adac1035aa47da29ea8",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "bd371122b79570f8558de364f05b989517386d1c7c09d9046a0e96fbe3685da8",
+        "sha256": "3cda78de75842afe0cfbb3f15e9b65ff176c1bdb2179c0b19dd58b685ce80eb7",
         "title": null,
         "version": null
       }
