@@ -13,7 +13,8 @@ namespace Elevant.Api.Controllers;
 [Authorize]
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/human-resources/ramp-profiles")]
-public sealed class RampProfilesController(IRampProfileStore store) : ControllerBase
+public sealed class RampProfilesController(IRampProfileStore store,
+    IRampMobileAccessRequestStore accessRequests) : ControllerBase
 {
     [HttpGet(Name = "ListRampProfiles")]
     [ProducesResponseType<RampProfileCatalog>(StatusCodes.Status200OK, "application/json")]
@@ -44,6 +45,41 @@ public sealed class RampProfilesController(IRampProfileStore store) : Controller
         return Result(await store.SaveAsync(actorId, id, input, cancellationToken), 200);
     }
 
+    [HttpGet("access-requests", Name = "ListHumanResourcesMobileAccessRequests")]
+    [ProducesResponseType<RampMobileAccessRequestData[]>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> ListAccessRequests(CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var rows = await accessRequests.ListForHumanResourcesAsync(actorId, cancellationToken);
+        return rows is null ? Forbid() : Ok(rows);
+    }
+
+    [HttpPost("{id:guid}/access-requests", Name = "RequestRampMobileAccess")]
+    [RequestSizeLimit(16384)]
+    [ProducesResponseType<RampMobileAccessRequestData>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> RequestAccess(Guid id, [FromBody] RampMobileAccessIntent input,
+        CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        return AccessRequestResult(await accessRequests.RequestAsync(actorId, id,
+            input.RequestId, cancellationToken), 201);
+    }
+
+    private IActionResult AccessRequestResult(MobileAccessRequestResult result, int successStatus) =>
+        result.Failure switch
+        {
+            null => StatusCode(successStatus, result.Request),
+            MobileAccessRequestFailure.Forbidden => Forbid(),
+            MobileAccessRequestFailure.Invalid => Problem(statusCode: 400, title: "Invalid mobile access request."),
+            MobileAccessRequestFailure.NotFound => Problem(statusCode: 404, title: "Ramp profile not found."),
+            MobileAccessRequestFailure.Conflict => Problem(statusCode: 409, title: "Mobile access request conflicts with current state."),
+            _ => throw new InvalidOperationException(),
+        };
+
     private IActionResult Result(RampProfileResult result, int successStatus) => result.Failure switch
     {
         null => StatusCode(successStatus, result.Profile),
@@ -58,3 +94,5 @@ public sealed class RampProfilesController(IRampProfileStore store) : Controller
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 }
+
+public sealed record RampMobileAccessIntent(Guid RequestId);

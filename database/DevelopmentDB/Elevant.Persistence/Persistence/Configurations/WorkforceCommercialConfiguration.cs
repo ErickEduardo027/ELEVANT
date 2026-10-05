@@ -35,6 +35,29 @@ internal static class WorkforceCommercialConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
+        modelBuilder.Entity<RampMobileAccessRequest>(builder =>
+        {
+            builder.ToTable("ramp_mobile_access_requests", "hr", table =>
+                table.HasCheckConstraint("ck_ramp_mobile_access_request_decision",
+                    "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [created_account_id] IS NULL) OR " +
+                    "([status] = N'Rejected' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NULL) OR " +
+                    "([status] = N'Fulfilled' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NOT NULL)"));
+            builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(item => item.RequestedAt).HasPrecision(3);
+            builder.Property(item => item.DecidedAt).HasPrecision(3);
+            builder.Property(item => item.DecisionReason).HasMaxLength(500);
+            builder.HasIndex(item => item.RampAgentId).HasFilter("[status] = N'Pending'").IsUnique();
+            builder.HasIndex(item => item.PublicId).IsUnique();
+            builder.HasOne<RampAgent>().WithMany().HasForeignKey(item => item.RampAgentId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.RequestedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.DecidedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<RampAgentStationScope>(builder =>
         {
             builder.ToTable("ramp_agent_station_scopes", "hr", table =>

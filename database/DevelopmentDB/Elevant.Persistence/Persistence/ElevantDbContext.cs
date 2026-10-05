@@ -55,6 +55,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<RampAgent> RampAgents => Set<RampAgent>();
 
+    public DbSet<RampMobileAccessRequest> RampMobileAccessRequests => Set<RampMobileAccessRequest>();
+
     public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
 
     public DbSet<AirportPermitCycle> AirportPermitCycles => Set<AirportPermitCycle>();

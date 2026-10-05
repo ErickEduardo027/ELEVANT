@@ -151,6 +151,23 @@ a 60 minutos y usa 15 por defecto.
   puede retirar alcances de una cuenta ya vinculada, pero no conceder nuevos
   grants de estación: la aprobación y vinculación siguen siendo exclusivas de
   Superadministración. No se envía correo de invitación desde este endpoint.
+- `GET /api/v1/human-resources/ramp-profiles/access-requests` y
+  `POST /api/v1/human-resources/ramp-profiles/{id}/access-requests` permiten a
+  Gestión Humana consultar y solicitar acceso móvil con UUID de intención. La
+  API exige perfil activo, sin cuenta y con estación vigente; un reintento
+  idéntico no duplica la solicitud. `GET /api/v1/governance/ramp-mobile-access-requests`
+  y `POST /api/v1/governance/ramp-mobile-access-requests/{id}/reject` son de
+  Superadministración. El rechazo requiere `expectedVersion`; la creación de
+  `RAMP_AGENT` acepta `accessRequestId`, `accessRequestVersion`,
+  `expectedRampProfileVersion` y `expectedStationCodes`. Cuando se usa una
+  solicitud, una versión o alcance obsoleto devuelve 409 y cuenta, grants,
+  decisión y auditoría se confirman en una transacción. Repetir exactamente la
+  aprobación devuelve la misma cuenta mientras la contraseña temporal y los
+  datos de cuenta no hayan cambiado; después se consulta la solicitud
+  `Fulfilled` en vez de repetir el POST. Cambiar correo o contraseña en el
+  reintento no los reemplaza. Una solicitud pendiente impide saltar a la creación
+  genérica de cuenta de rampa. No se devuelve ni almacena la contraseña en la
+  solicitud, y tampoco se envía invitación automática.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
   registrados de rampa en una ventana de hasta siete fechas locales, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o

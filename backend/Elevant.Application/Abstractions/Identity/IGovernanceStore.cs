@@ -9,7 +9,8 @@ public sealed record GovernanceUserData(Guid Id, string Name, string Email,
     string? AvatarMediaUrl = null);
 public sealed record GovernanceRampProfileData(Guid Id, string Name,
     string EmployeeNumber, IReadOnlyList<string> Stations, Guid? AccountId,
-    string? AvatarMediaUrl = null);
+    string? AvatarMediaUrl = null, string? FirstName = null, string? LastName = null,
+    string? Version = null);
 public sealed record AuditFieldChangeData(string Field, string? Before, string? After);
 public sealed record GovernanceAuditData(DateTimeOffset At, string Action,
     string EntityType, Guid? EntityId, string? Reason,
@@ -26,7 +27,9 @@ public sealed record SaveGovernanceRoleInput(string Name, string? Description,
     IReadOnlyList<string> PermissionCodes, bool IsActive);
 public sealed record CreateGovernanceUserInput(string FirstName, string LastName,
     string Email, Guid RoleId, string TemporaryPassword, Guid? RampAgentId = null,
-    string? AvatarMediaUrl = null);
+    string? AvatarMediaUrl = null, Guid? AccessRequestId = null,
+    string? AccessRequestVersion = null, string? ExpectedRampProfileVersion = null,
+    IReadOnlyList<string>? ExpectedStationCodes = null);
 public sealed record UpdateGovernanceUserInput(string FirstName, string LastName,
     string Email, Guid RoleId, bool IsActive, Guid? RampAgentId = null,
     string? AvatarMediaUrl = null);

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../shell/components/Sidebar';
 import Topbar from '../dashboard/components/Topbar';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
+import RampMobileAccessInbox from './RampMobileAccessInbox';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
@@ -13,6 +14,7 @@ import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
 import {
   getGovernance, getProvisioning, provisionAirline,
+  listGovernanceRampMobileAccessRequests, rejectRampMobileAccessRequest,
   getGovernanceAudit,
   createRole, updateRole, deactivateRole, createUser, updateUser,
   deactivateUser, resetUserPassword,
@@ -32,47 +34,69 @@ export default function GovernanceShell({ user, onLogout }) {
   const [moduleId, setModuleId] = useState('home');
   const [snapshot, setSnapshot] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [rampRequests, setRampRequests] = useState([]);
   const [airlines, setAirlines] = useState([]);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const refreshVersion = useRef(0);
   const sidebar = useResponsiveSidebar();
   const { theme, toggleTheme } = usePreviewControls();
 
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     try {
-      const [nextSnapshot, nextTasks, nextAirlines] = await Promise.all([getGovernance(), getProvisioning(), getManagedAirlines()]);
+      const [nextSnapshot, nextTasks, nextAirlines, nextRampRequests] = await Promise.all([
+        getGovernance(), getProvisioning(), getManagedAirlines(),
+        listGovernanceRampMobileAccessRequests(),
+      ]);
+      if (version !== refreshVersion.current) return;
       setSnapshot(nextSnapshot);
       setTasks(nextTasks);
       setAirlines(nextAirlines);
+      setRampRequests(nextRampRequests);
       setStatus('ready');
       setError('');
     } catch (failure) {
+      if (version !== refreshVersion.current) return;
+      setSnapshot(null);
+      setTasks([]);
+      setAirlines([]);
+      setRampRequests([]);
       setStatus('error');
       setError(failure.message);
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { refreshVersion.current += 1; };
+  }, [refresh]);
   useCommercialRevalidation(refresh);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['account_provisioning', 'commercial_requests', 'airline_contracts', 'commercial_airlines', 'ramp_profiles'].includes(resource))) void refresh();
+      if (resources.some(resource => ['account_provisioning', 'commercial_requests', 'airline_contracts', 'commercial_airlines', 'ramp_profiles', 'ramp_mobile_access_requests'].includes(resource))) void refresh();
     });
     void observer.start();
     return () => { void observer.stop(); };
   }, [refresh]);
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
 
-  async function run(action, successMessage) {
+  async function run(action, successMessage, mobileAccessDecision = false) {
     setError(''); setNotice('');
     try { await action(); setNotice(successMessage); await refresh(); return true; }
-    catch (failure) { setError(failure.message); return false; }
+    catch (failure) {
+      if (failure.status === 409 && mobileAccessDecision) await refresh();
+      setError(failure.status === 409 && mobileAccessDecision
+        ? 'La solicitud o el perfil cambiaron. Revise la bandeja actualizada antes de decidir.'
+        : failure.message);
+      return false;
+    }
   }
   const active = modules.find(module => module.id === moduleId) ?? modules[0];
   return <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
     <Sidebar modules={modules} activeModuleId={moduleId} onSelectModule={id => { setModuleId(id); sidebar.closeOverlay(); }}
-      badgeCounts={{ home: tasks.length }} user={user} onLogout={onLogout}
+      badgeCounts={{ home: tasks.length + rampRequests.filter(item => item.status === 'Pending').length }} user={user} onLogout={onLogout}
       breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded}
       overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
     <div className="flex min-w-0 flex-1 flex-col">
@@ -89,7 +113,8 @@ export default function GovernanceShell({ user, onLogout }) {
           {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
           {error && <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</div>}
           {status === 'loading' ? <div className="rounded-xl bg-white p-8 dark:bg-surface-dark-card">Cargando gobernanza…</div> : null}
-          {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks} run={run} />}
+          {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks}
+            rampRequests={rampRequests} run={run} />}
           {status === 'ready' && moduleId === 'users' && <GovernanceUsers snapshot={snapshot} run={run} />}
           {status === 'ready' && moduleId === 'airlines' && <AirlinesPanel airlines={airlines}
             onSave={(id, values) => run(() => saveManagedAirline(id, values), 'Aerolínea guardada.')}
@@ -102,7 +127,7 @@ export default function GovernanceShell({ user, onLogout }) {
   </div>;
 }
 
-function GovernanceHome({ snapshot, tasks, run }) {
+function GovernanceHome({ snapshot, tasks, rampRequests, run }) {
   const activeUsers = snapshot.users.filter(item => item.status === 'Active').length;
   const customRoles = snapshot.roles.filter(item => item.isCustom && item.isActive).length;
   return <>
@@ -120,6 +145,12 @@ function GovernanceHome({ snapshot, tasks, run }) {
         <ProvisioningCard key={task.requestId} task={task} run={run} />)}</div> :
         <p className="mt-6 rounded-xl bg-black/[.035] p-5 text-sm dark:bg-white/[.04]">No hay cuentas pendientes de crear.</p>}
     </section>
+    <RampMobileAccessInbox requests={rampRequests} profiles={snapshot.rampProfiles ?? []}
+      roleId={snapshot.roles.find(role => role.code === 'RAMP_AGENT' && role.isActive)?.id}
+      onApprove={values => run(() => createUser(values),
+        'Cuenta móvil creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.', true)}
+      onReject={(id, reason, version) => run(() => rejectRampMobileAccessRequest(id, reason, version),
+        'Solicitud móvil rechazada. Gestión Humana verá el motivo.', true)} />
   </>;
 }
 
@@ -165,7 +196,7 @@ function UsersPanel({ snapshot, run }) {
   const [avatar, setAvatar] = useState(null);
   const roles = snapshot.roles.filter(role => role.isActive &&
     (editing ? role.portal === snapshot.users.find(user => user.id === editing)?.portal :
-      role.portal === 'BackOffice' || role.code === 'RAMP_AGENT'));
+      role.portal === 'BackOffice'));
   const selectedRole = roles.find(role => role.id === form.roleId);
   const rampProfiles = snapshot.rampProfiles ?? [];
   function edit(user) {

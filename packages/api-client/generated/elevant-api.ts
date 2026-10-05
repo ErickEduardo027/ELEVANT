@@ -395,6 +395,14 @@ export interface CreateGovernanceUserInput {
   rampAgentId?: string | null;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessRequestId?: string | null;
+  /** @nullable */
+  accessRequestVersion?: string | null;
+  /** @nullable */
+  expectedRampProfileVersion?: string | null;
+  /** @nullable */
+  expectedStationCodes?: string[] | null;
 }
 
 export interface CreateManualTurnaroundRequest {
@@ -744,6 +752,12 @@ export interface GovernanceRampProfileData {
   accountId?: string | null;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface GovernanceRoleData {
@@ -1757,6 +1771,24 @@ export interface RampIncidentReceiptResponse {
   reportedAt: string;
 }
 
+export interface RampMobileAccessIntent {
+  requestId: string;
+}
+
+export interface RampMobileAccessRequestData {
+  id: string;
+  rampProfileId: string;
+  status: string;
+  requestedAt: string;
+  /** @nullable */
+  decidedAt?: string | null;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  accountId?: string | null;
+  version: string;
+}
+
 export interface RampOperationCorrectionResponse {
   receiptId: string;
   operationId: string;
@@ -1937,6 +1969,11 @@ export interface RegisterMobileDeviceResponse {
      */
   appVersion: string;
   lastSeenAt: string;
+}
+
+export interface RejectRampMobileAccessInput {
+  reason: string;
+  expectedVersion: string;
 }
 
 export interface ReportRampIncidentRequest {
@@ -4261,10 +4298,73 @@ const res = await fetch(getCreateGovernanceUserUrl(),
   }
 )
 
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListGovernanceRampMobileAccessRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/governance/ramp-mobile-access-requests`
+}
+
+export const listGovernanceRampMobileAccessRequests = async ( options?: RequestInit): Promise<RampMobileAccessRequestData[]> => {
+
+  const res = await fetch(getListGovernanceRampMobileAccessRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  const data: RampMobileAccessRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRejectRampMobileAccessRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/ramp-mobile-access-requests/${id}/reject`
+}
+
+export const rejectRampMobileAccessRequest = async (id: string,
+    rejectRampMobileAccessInput?: RejectRampMobileAccessInput, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRejectRampMobileAccessRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rejectRampMobileAccessInput)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -5940,6 +6040,69 @@ const res = await fetch(getUpdateRampProfileUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampProfileData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesMobileAccessRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/access-requests`
+}
+
+export const listHumanResourcesMobileAccessRequests = async ( options?: RequestInit): Promise<RampMobileAccessRequestData[]> => {
+
+  const res = await fetch(getListHumanResourcesMobileAccessRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRequestRampMobileAccessUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/${id}/access-requests`
+}
+
+export const requestRampMobileAccess = async (id: string,
+    rampMobileAccessIntent?: RampMobileAccessIntent, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRequestRampMobileAccessUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rampMobileAccessIntent)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
