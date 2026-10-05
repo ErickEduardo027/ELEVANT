@@ -34,6 +34,14 @@ export async function commercialApi(path, options = {}) {
 export const getGovernance = () => commercialApi('/governance');
 export const getGovernanceAudit = (page = 1) => commercialApi(`/governance/audit?page=${page}&limit=25`);
 export const getRampProfiles = () => commercialApi('/human-resources/ramp-profiles');
+export const listRampMobileAccessRequests = () => commercialApi('/human-resources/ramp-profiles/access-requests');
+export const requestRampMobileAccess = (profileId, requestId) => commercialApi(`/human-resources/ramp-profiles/${profileId}/access-requests`, {
+  method: 'POST', body: JSON.stringify({ requestId }),
+});
+export const listGovernanceRampMobileAccessRequests = () => commercialApi('/governance/ramp-mobile-access-requests');
+export const rejectRampMobileAccessRequest = (id, reason, expectedVersion) => commercialApi(`/governance/ramp-mobile-access-requests/${id}/reject`, {
+  method: 'POST', body: JSON.stringify({ reason, expectedVersion }),
+});
 export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
 });

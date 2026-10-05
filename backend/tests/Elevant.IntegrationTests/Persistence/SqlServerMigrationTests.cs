@@ -43,6 +43,241 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class SqlServerMigrationTests
 {
     [Fact]
+    public async Task RampMobileAccessRequestIsIdempotentAndRequiresAnExplicitDecision()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+        {
+            await migration.Database.MigrateAsync(cancellationToken);
+            Assert.False(migration.Database.HasPendingModelChanges());
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!789"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var requests = scope.ServiceProvider.GetRequiredService<IRampMobileAccessRequestStore>();
+        var governance = scope.ServiceProvider.GetRequiredService<IGovernanceStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var humanResourcesRole = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.Roles, item => item.Code == "GESTION_HUMANA");
+        var secondHumanResources = await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Ana", "Prueba", "ana-hr@example.test",
+                humanResourcesRole.Id, "Synthetic-Hr!5678"), cancellationToken);
+        Assert.True(secondHumanResources.IsSuccess);
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
+            cancellationToken);
+        var profileInput = new SaveRampProfileInput("Lucia", "Ramos",
+            "SYNTHETIC-MOBILE-REQ", "Ramp agent",
+            DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]);
+        var profile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput, cancellationToken)).Profile!;
+        Assert.DoesNotContain((await requests.ListForHumanResourcesAsync(humanResourcesId,
+            cancellationToken))!, item => item.RampProfileId == profile.Id);
+        var requestId = Guid.CreateVersion7();
+        Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RequestAsync(
+            contractsId, profile.Id, requestId, cancellationToken)).Failure);
+        var pending = await requests.RequestAsync(humanResourcesId, profile.Id,
+            requestId, cancellationToken);
+        Assert.Null(pending.Failure);
+        Assert.Equal("Pending", pending.Request!.Status);
+        Assert.Equal(pending.Request, (await requests.RequestAsync(humanResourcesId,
+            profile.Id, requestId, cancellationToken)).Request);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RequestAsync(
+            humanResourcesId, profile.Id, Guid.CreateVersion7(), cancellationToken)).Failure);
+        Assert.Null(await requests.ListForGovernanceAsync(contractsId, cancellationToken));
+        Assert.Contains((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == requestId && item.Status == "Pending");
+        Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RejectAsync(
+            contractsId, requestId, "No procede", pending.Request.Version, cancellationToken)).Failure);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
+            superAdminId, requestId, "No procede", "stale-request-version", cancellationToken)).Failure);
+        var rejected = await requests.RejectAsync(superAdminId, requestId,
+            "Datos por revisar", pending.Request.Version, cancellationToken);
+        Assert.Equal("Rejected", rejected.Request!.Status);
+        Assert.Equal("Datos por revisar", rejected.Request.DecisionReason);
+        Assert.NotNull(rejected.Request.DecidedAt);
+        Assert.Equal(rejected.Request, (await requests.RejectAsync(superAdminId,
+            requestId, "Datos por revisar", pending.Request.Version, cancellationToken)).Request);
+        var renewedId = Guid.CreateVersion7();
+        var renewed = (await requests.RequestAsync(humanResourcesId,
+            profile.Id, renewedId, cancellationToken)).Request!;
+        Assert.Equal("Pending", renewed.Status);
+
+        var rampRole = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.Roles, item => item.Code == "RAMP_AGENT");
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos", "bypass-mobile@example.test",
+                rampRole.Id, "Synthetic-Ramp!5678", profile.Id), cancellationToken)).Failure);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput with { IsActive = false }, cancellationToken)).Failure);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos", "inactive-mobile@example.test",
+                rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+                AccessRequestId: renewedId, AccessRequestVersion: renewed.Version,
+                ExpectedRampProfileVersion: "stale-profile-version",
+                ExpectedStationCodes: ["PUJ"]), cancellationToken)).Failure);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput, cancellationToken)).Failure);
+        var reviewedProfile = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == profile.Id);
+        var reviewedRequest = Assert.Single((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == renewedId);
+        var extraAirport = await context.Airports.SingleAsync(item => item.IataCode == "MIA",
+            cancellationToken);
+        var extraStation = new Station
+        {
+            PublicId = Guid.CreateVersion7(), AirportId = extraAirport.Id,
+            Code = "MIA", Name = "Synthetic test station",
+            IanaTimeZone = "America/Santo_Domingo", IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        context.Stations.Add(extraStation);
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput with { StationIds = [station.PublicId, extraStation.PublicId] },
+            cancellationToken)).Failure);
+        var staleApproval = new CreateGovernanceUserInput("Lucia", "Ramos",
+            "lucia-mobile@example.test", rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+            AccessRequestId: renewedId, AccessRequestVersion: reviewedRequest.Version,
+            ExpectedRampProfileVersion: reviewedProfile.Version,
+            ExpectedStationCodes: reviewedProfile.Stations);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            staleApproval, cancellationToken)).Failure);
+        reviewedProfile = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == profile.Id);
+        var approval = new CreateGovernanceUserInput("Lucia", "Ramos", "lucia-mobile@example.test",
+            rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+            AccessRequestId: renewedId, AccessRequestVersion: reviewedRequest.Version,
+            ExpectedRampProfileVersion: reviewedProfile.Version,
+            ExpectedStationCodes: reviewedProfile.Stations);
+        var created = await governance.CreateUserAsync(superAdminId,
+            approval, cancellationToken);
+        Assert.True(created.IsSuccess, created.Failure?.ToString());
+        Assert.Equal(created.Id, (await governance.CreateUserAsync(superAdminId,
+            approval, cancellationToken)).Id);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            approval with { TemporaryPassword = "Different-Ramp!5678" }, cancellationToken)).Failure);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
+            superAdminId, renewedId, "Too late", reviewedRequest.Version,
+            cancellationToken)).Failure);
+        Assert.Contains((await requests.ListForHumanResourcesAsync(humanResourcesId,
+            cancellationToken))!, item => item.Id == renewedId &&
+                item.Status == "Fulfilled" && item.AccountId == created.Id);
+        var requesterKey = await context.Users.Where(item => item.PublicId == humanResourcesId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var approverKey = await context.Users.Where(item => item.PublicId == superAdminId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var secondHumanResourcesKey = await context.Users.Where(item =>
+            item.PublicId == secondHumanResources.Id).Select(item => item.Id)
+            .SingleAsync(cancellationToken);
+        var hints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "ramp_mobile_access_requests" &&
+                item.ResourceId == renewedId).ToArray();
+        Assert.Contains(hints, item => item.RecipientAccountId == requesterKey);
+        Assert.Contains(hints, item => item.RecipientAccountId == approverKey);
+        Assert.Contains(hints, item => item.RecipientAccountId == secondHumanResourcesKey);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            approval with { Email = "other-mobile@example.test" }, cancellationToken)).Failure);
+
+        var racingProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with { EmployeeNumber = "SYNTHETIC-MOBILE-RACE" },
+            cancellationToken)).Profile!;
+        var racingId = Guid.CreateVersion7();
+        var racingRequest = (await requests.RequestAsync(humanResourcesId,
+            racingProfile.Id, racingId, cancellationToken)).Request!;
+        var racingReview = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == racingProfile.Id);
+        var racingApproval = approval with
+        {
+            Email = "lucia-race@example.test", RampAgentId = racingProfile.Id,
+            AccessRequestId = racingId, AccessRequestVersion = racingRequest.Version,
+            ExpectedRampProfileVersion = racingReview.Version,
+            ExpectedStationCodes = racingReview.Stations,
+        };
+        await using var approvalScope = provider.CreateAsyncScope();
+        await using var rejectionScope = provider.CreateAsyncScope();
+        var approveTask = approvalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, racingApproval, cancellationToken);
+        var rejectTask = rejectionScope.ServiceProvider.GetRequiredService<IRampMobileAccessRequestStore>()
+            .RejectAsync(superAdminId, racingId, "Race rejected", racingRequest.Version,
+                cancellationToken);
+        await Task.WhenAll(approveTask, rejectTask);
+        var approvalOutcome = await approveTask;
+        var rejectionOutcome = await rejectTask;
+        Assert.Equal(1, new[] { approvalOutcome.IsSuccess,
+            rejectionOutcome.Failure is null }.Count(success => success));
+        var raceState = Assert.Single((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == racingId);
+        Assert.Equal(approvalOutcome.IsSuccess ? "Fulfilled" : "Rejected", raceState.Status);
+
+        var duplicateProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with { EmployeeNumber = "SYNTHETIC-MOBILE-DOUBLE" },
+            cancellationToken)).Profile!;
+        var duplicateId = Guid.CreateVersion7();
+        var duplicateRequest = (await requests.RequestAsync(humanResourcesId,
+            duplicateProfile.Id, duplicateId, cancellationToken)).Request!;
+        var duplicateReview = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == duplicateProfile.Id);
+        var duplicateApproval = approval with
+        {
+            Email = "lucia-double@example.test", RampAgentId = duplicateProfile.Id,
+            AccessRequestId = duplicateId, AccessRequestVersion = duplicateRequest.Version,
+            ExpectedRampProfileVersion = duplicateReview.Version,
+            ExpectedStationCodes = duplicateReview.Stations,
+        };
+        await using var firstApprovalScope = provider.CreateAsyncScope();
+        await using var secondApprovalScope = provider.CreateAsyncScope();
+        var firstApproval = firstApprovalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, duplicateApproval, cancellationToken);
+        var secondApproval = secondApprovalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, duplicateApproval, cancellationToken);
+        await Task.WhenAll(firstApproval, secondApproval);
+        Assert.True((await firstApproval).IsSuccess);
+        Assert.Equal((await firstApproval).Id, (await secondApproval).Id);
+        Assert.Single(await context.Users.AsNoTracking().Where(item =>
+            item.NormalizedEmail == "LUCIA-DOUBLE@EXAMPLE.TEST")
+            .ToArrayAsync(cancellationToken));
+
+        var inactiveStationProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with
+            {
+                EmployeeNumber = "SYN-MOBILE-INACTIVE-STATION",
+                StationIds = [extraStation.PublicId],
+            }, cancellationToken)).Profile!;
+        var stationToDeactivate = await context.Stations.SingleAsync(item =>
+            item.PublicId == extraStation.PublicId, cancellationToken);
+        stationToDeactivate.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos",
+                "inactive-station-mobile@example.test", rampRole.Id,
+                "Synthetic-Ramp!5678", inactiveStationProfile.Id), cancellationToken)).Failure);
+    }
+
+    [Fact]
     public async Task ExplicitDevelopmentScenarioSeedsLocalDatesAndPreservesWorkedOperations()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

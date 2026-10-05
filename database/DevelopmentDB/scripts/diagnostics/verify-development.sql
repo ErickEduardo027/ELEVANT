@@ -72,7 +72,8 @@ VALUES
     (N'20260928163437_NonFiscalInvoices'),
     (N'20260928170918_NonFiscalPayments'),
     (N'20260928174712_ResolvePreinvoiceDisputes'),
-    (N'20260928185354_FinancialDocuments');
+    (N'20260928185354_FinancialDocuments'),
+    (N'20261004210714_AddRampMobileAccessRequests');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

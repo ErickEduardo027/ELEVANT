@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { getRampProfiles, saveRampProfile, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
+import { getRampProfiles, listRampMobileAccessRequests, requestRampMobileAccess,
+  saveRampProfile, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
 import FileDropField from '../../../components/FileDropField';
 import PrivateMediaImage from '../../../components/PrivateMediaImage';
 
@@ -19,6 +20,7 @@ function accountStatusLabel(profile) {
 
 export default function RampProfilesPanel() {
   const [catalog, setCatalog] = useState(null);
+  const [accessRequests, setAccessRequests] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
@@ -26,16 +28,24 @@ export default function RampProfilesPanel() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const requestVersion = useRef(0);
+  const pendingIntents = useRef(new Map());
   const refresh = useCallback(async () => {
     const request = ++requestVersion.current;
     try {
-      const nextCatalog = await getRampProfiles();
+      const [nextCatalog, nextRequests] = await Promise.all([
+        getRampProfiles(), listRampMobileAccessRequests(),
+      ]);
       if (request !== requestVersion.current) return;
       setCatalog(nextCatalog);
+      setAccessRequests(nextRequests);
+      for (const profileId of pendingIntents.current.keys())
+        if (nextRequests.some(item => item.rampProfileId === profileId &&
+          item.id === pendingIntents.current.get(profileId))) pendingIntents.current.delete(profileId);
       setError('');
     } catch {
       if (request !== requestVersion.current) return;
       setCatalog(null);
+      setAccessRequests(null);
       setError('No fue posible actualizar los perfiles. Comprueba la conexión y vuelve a intentarlo.');
     }
   }, []);
@@ -45,7 +55,7 @@ export default function RampProfilesPanel() {
   }, [refresh]);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('ramp_profiles')) void refresh();
+      if (resources.some(resource => ['ramp_profiles', 'ramp_mobile_access_requests'].includes(resource))) void refresh();
     });
     void observer.start().catch(() => {});
     window.addEventListener('focus', refresh);
@@ -97,6 +107,30 @@ export default function RampProfilesPanel() {
     } catch { setError('No fue posible guardar el perfil. Comprueba la conexión y vuelve a intentarlo.'); }
     finally { setBusy(false); }
   }
+  async function requestAccess(profile) {
+    setError(''); setNotice(''); setBusy(true);
+    const requestId = pendingIntents.current.get(profile.id) ?? globalThis.crypto.randomUUID();
+    pendingIntents.current.set(profile.id, requestId);
+    try {
+      await requestRampMobileAccess(profile.id, requestId);
+      setNotice(`Solicitud de acceso móvil enviada para ${profile.firstName} ${profile.lastName}. Superadministración decidirá y entregará las credenciales manualmente.`);
+      await refresh();
+    } catch {
+      await refresh();
+      setError('No fue posible enviar la solicitud. Vuelva a intentarlo; se conservará la misma intención.');
+    } finally { setBusy(false); }
+  }
+  function latestRequest(profileId) {
+    return accessRequests?.find(item => item.rampProfileId === profileId);
+  }
+  function requestLabel(profile) {
+    const status = latestRequest(profile.id)?.status;
+    if (!status) return profile.hasAccount ? 'Cuenta vinculada sin solicitud registrada' : 'Sin solicitud de acceso';
+    if (status === 'Pending') return 'Acceso móvil solicitado; pendiente de Superadministración';
+    if (status === 'Rejected') return 'Solicitud de acceso rechazada';
+    if (status === 'Fulfilled') return 'Solicitud de acceso satisfecha';
+    return 'Estado de solicitud no disponible';
+  }
   const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
   const inactiveCurrentSupervisor = catalog?.profiles.find(profile =>
     profile.id === persistedSupervisorId && profile.id === form.supervisorProfileId && !profile.isActive);
@@ -112,8 +146,8 @@ export default function RampProfilesPanel() {
         {!catalog ? !error && <p className="mt-4 text-sm">Cargando perfiles…</p> : catalog.profiles.length === 0 ? <p className="mt-4 text-sm">Aún no hay perfiles.</p> :
           <ul className="mt-4 divide-y divide-black/5 dark:divide-white/5">{catalog.profiles.map(profile =>
             <li key={profile.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-              <div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-accent-600/10 text-xs font-bold text-accent-600"><PrivateMediaImage url={profile.avatarMediaUrl} alt={`Foto de ${profile.firstName} ${profile.lastName}`} className="h-12 w-12 object-cover" />{!profile.avatarMediaUrl && profile.firstName.slice(0, 1)}</div><div><strong>{profile.firstName} {profile.lastName}</strong><p className="text-xs text-text-secondary-light">{profile.employeeNumber} · {profile.category} · {profile.stations.map(station => station.code).join(', ') || 'Sin estación activa'}</p><p className="text-xs">{profile.isActive ? 'Activo' : 'Inactivo'} · {accountStatusLabel(profile)}</p></div></div>
-              <button type="button" onClick={() => edit(profile)} className="text-xs font-semibold text-accent-600">Editar</button>
+              <div className="flex items-center gap-3"><div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-accent-600/10 text-xs font-bold text-accent-600"><PrivateMediaImage url={profile.avatarMediaUrl} alt={`Foto de ${profile.firstName} ${profile.lastName}`} className="h-12 w-12 object-cover" />{!profile.avatarMediaUrl && profile.firstName.slice(0, 1)}</div><div><strong>{profile.firstName} {profile.lastName}</strong><p className="text-xs text-text-secondary-light">{profile.employeeNumber} · {profile.category} · {profile.stations.map(station => station.code).join(', ') || 'Sin estación activa'}</p><p className="text-xs">{profile.isActive ? 'Activo' : 'Inactivo'} · {accountStatusLabel(profile)}</p><p className="text-xs text-text-secondary-light">{requestLabel(profile)}</p>{latestRequest(profile.id)?.status === 'Rejected' && <p className="text-xs text-status-danger">Motivo: {latestRequest(profile.id).decisionReason}</p>}</div></div>
+              <div className="flex gap-3"><button type="button" onClick={() => edit(profile)} className="text-xs font-semibold text-accent-600">Editar</button>{profile.isActive && !profile.hasAccount && profile.stations.length > 0 && latestRequest(profile.id)?.status !== 'Pending' && <button type="button" disabled={busy} onClick={() => requestAccess(profile)} aria-label={`Solicitar acceso móvil para ${profile.firstName} ${profile.lastName}`} className="text-xs font-semibold text-accent-600 disabled:opacity-50">Solicitar acceso móvil</button>}</div>
             </li>)}</ul>}
       </section>
       <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">

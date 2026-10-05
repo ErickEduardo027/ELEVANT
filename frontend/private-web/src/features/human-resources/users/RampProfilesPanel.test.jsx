@@ -2,16 +2,39 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import RampProfilesPanel from './RampProfilesPanel';
-import { getRampProfiles, saveRampProfile } from '../../../services/commercialGovernanceApi';
+import { getRampProfiles, saveRampProfile, listRampMobileAccessRequests,
+  requestRampMobileAccess } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
   getRampProfiles: vi.fn(), saveRampProfile: vi.fn(),
+  listRampMobileAccessRequests: vi.fn().mockResolvedValue([]),
+  requestRampMobileAccess: vi.fn(),
 }));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
 }));
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
+
+it('distinguishes no request from pending and retries an uncertain request with the same intent', async () => {
+  const profile = { id: 'profile-1', firstName: 'Lucia', lastName: 'Ramos',
+    employeeNumber: 'RA-100', category: 'Rampa', hireDate: '2026-01-01',
+    stations: [{ id: 'station-1', code: 'PUJ' }], isActive: true, hasAccount: false };
+  getRampProfiles.mockResolvedValue({ profiles: [profile], availableStations: [] });
+  listRampMobileAccessRequests.mockResolvedValue([]);
+  requestRampMobileAccess.mockRejectedValueOnce(new Error('network'))
+    .mockResolvedValueOnce({ id: 'request-1', rampProfileId: 'profile-1', status: 'Pending' });
+  render(<RampProfilesPanel />);
+  await screen.findByText('Lucia Ramos');
+  expect(screen.getByText('Sin solicitud de acceso')).toBeInTheDocument();
+  const requestButton = screen.getByRole('button', { name: 'Solicitar acceso móvil para Lucia Ramos' });
+  await userEvent.click(requestButton);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/No fue posible enviar la solicitud/);
+  await userEvent.click(requestButton);
+  await waitFor(() => expect(requestRampMobileAccess).toHaveBeenCalledTimes(2));
+  expect(requestRampMobileAccess.mock.calls[0][1]).toBe(requestRampMobileAccess.mock.calls[1][1]);
+  expect(requestRampMobileAccess.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/i);
+});
 
 it('creates an operational profile and hands account creation to Superadministración', async () => {
   getRampProfiles.mockResolvedValue({ profiles: [], availableStations: [

@@ -69,6 +69,18 @@ que perdieron respaldo, pero nunca crea grants de cuenta adicionales. La
 concesión inicial corresponde a Superadministración mediante gobernanza.
 No introduce una migración ni modifica los datos existentes al desplegarse.
 
+La migración aditiva `AddRampMobileAccessRequests` agrega
+`hr.ramp_mobile_access_requests`, sin DML de negocio ni credenciales. Un índice
+único filtrado permite a lo sumo una solicitud `Pending` por perfil; el UUID
+público hace idempotente el reintento. La fila conserva solicitante, decisión,
+motivo y cuenta vinculada sin copiar correo ni contraseña. Aprobación y cuenta
+se escriben juntas; las pistas `ramp_mobile_access_requests` se confirman en
+el mismo commit para los destinatarios internos autorizados de G.H. y
+Superadministración. `rowversion` en solicitud y perfil, más la comparación de
+estaciones revisadas, impiden aprobar un alcance cambiado sin revisión nueva.
+El orden de una futura promoción controlada es DB → API →
+AVIAM Web; esta migración local no prueba despliegue remoto.
+
 Las solicitudes de disponibilidad usan la tabla existente
 `hr.availability_requests`: alta pendiente y decisión se confirman en
 transacciones serializables con auditoría y pistas `hr_absences` en el outbox.

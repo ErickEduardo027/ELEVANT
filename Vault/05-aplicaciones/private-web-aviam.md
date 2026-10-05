@@ -102,6 +102,20 @@ En esta rama, una revalidación de planificación para la misma estación y fech
 
 ### Gestión Humana
 
+En la rama local de solicitudes de acceso móvil, **Agentes de rampa** separa
+perfil laboral, petición y cuenta efectiva. G.H. envía un UUID de intención
+para un perfil elegible; Superadministración ve pendientes en Inicio y decide
+con rechazo motivado o creación de cuenta `RAMP_AGENT`. SQL conserva la
+solicitud y la decisión, mientras que IAM sigue siendo autoridad de acceso y
+estaciones. La bandeja envía versiones de solicitud y perfil y el conjunto de
+estaciones revisado; un 409 la refresca antes de decidir. Los avisos durables
+invalidan ambas vistas. No hay invitación por
+correo ni evidencia de promoción de esta rama al VPS. Fuentes:
+[contrato de acceso](../../backend/Elevant.Application/Abstractions/Identity/IRampMobileAccessRequestStore.cs),
+[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampMobileAccessRequestStore.cs),
+[vista de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
+y [bandeja](../../frontend/private-web/src/features/governance/RampMobileAccessInbox.jsx).
+
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
 En el worktree local posterior a esta fotografía, el dashboard consulta los
