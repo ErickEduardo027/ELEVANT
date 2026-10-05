@@ -52,6 +52,11 @@ integración y no demuestra todavía un despliegue remoto. El servidor filtra
 las pistas de habilitaciones y turnos cuando la cuenta ya no conserva Gestión
 Humana o Superadministración internas.
 
+Para las pistas `attendance_draft` de un agente, Mobile Agent pasa
+`getAccountChanges(parameters, { installationId })` con la instalación actual.
+La API revalida el vínculo de **esa** instalación en cada página; una tablet
+revocada no recibe esas pistas aunque la cuenta tenga otra tablet activa.
+
 `getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
 para la única aerolínea derivada en la API de la sesión. El cliente valida
 estructura, paginación, versiones publicadas, estaciones y tarifas; no acepta

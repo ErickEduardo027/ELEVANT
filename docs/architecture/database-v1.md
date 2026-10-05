@@ -89,8 +89,10 @@ son `NO ACTION`; la migración no inserta datos de negocio.
 El almacén SQL revalida el acceso vigente y serializa las escrituras por
 asignación. En la misma transacción agrega revisión, auditoría y avisos de
 outbox con recurso `attendance_draft`. El feed revalida el acceso al leerlos;
-una pista no transporta la nota ni sustituye la relectura autorizada. Este
-esquema y su contrato están probados localmente en esta rama: esta nota no
+una pista no transporta la nota ni sustituye la relectura autorizada. Para
+el agente, el filtro exige la instalación concreta de la consulta, incluso si
+la misma cuenta tiene otra instalación activa. El esquema y su contrato están
+probados localmente en esta rama: esta nota no
 afirma su despliegue en Development ni que exista ya una interfaz de captura.
 
 ## Política de ambientes y datos
