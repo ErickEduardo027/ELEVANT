@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-25"
-verified_commit: "c37a6028cdd5f4e269358cf0e97c5190ef89d5d5"
+last_verified: "2026-10-04"
+verified_commit: "76abdf66f33602b52e7f434cb95779e11ba52688"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
@@ -17,7 +17,11 @@ sources:
   - frontend/private-web/src/features/auth/authService.js
   - frontend/private-web/src/features/admin-occ/navigation.js
   - frontend/private-web/src/features/human-resources/navigation.js
+  - frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx
   - frontend/private-web/src/config/elevantApiClient.js
+  - packages/api-client/src/client.ts
+  - backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftReadStore.cs
   - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
@@ -187,17 +191,21 @@ pendiente. Fuentes:
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitWriteStore.cs).
 
-La ruta restringida de horarios lee turnos reales por semana local y páginas
-de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
-inferir disponibilidad. En esta rama de trabajo Gestión Humana ya no ofrece
+La ruta restringida de horarios lee turnos reales por semana local, ventana
+de 15 días o mes calendario, siempre en páginas de 20. No presenta una página
+como total del período. Muestra agente, estación, terminal, posición y horas registradas, sin
+inferir disponibilidad. Gestión Humana ya no ofrece
 «Nuevo turno»: OCC es el único rol autorizado para registrar turnos. El
 `PUT /api/v1/human-resources/shifts/{id}` sigue disponible de forma transitoria
 para OCC, con UUID estable, jornada máxima de 16 horas, scopes de agente
 vigentes en estación y terminal, auditoría y señales `hr_shifts` y
 `occ_planning`. La vista GH revalida por pista durable, foco, reconexión y
 sondeo de 25 segundos, y oculta datos anteriores si falla la lectura. El
-calendario OCC y los patrones de turnos aún no están implementados en esta
-rama; este cambio no acredita promoción al VPS.
+calendario OCC y los patrones de turnos aún no están implementados. El código
+del repositorio por sí solo no acredita promoción al VPS.
+Las solicitudes de disponibilidad permanecen en la semana que contiene la
+fecha seleccionada incluso cuando la lectura de turnos cubre 15 días o un mes;
+la interfaz indica esa diferencia de alcance.
 Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
 para la fecha local consultada o el día de inicio de un turno nocturno. Las
 solicitudes pendientes y de cambio de turno no son una ausencia. La API ya
