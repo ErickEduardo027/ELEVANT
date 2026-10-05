@@ -33,13 +33,17 @@ describe('Next.js authentication boundary', () => {
   it('preserves the test login storage choice and redirects using the session home path', async () => {
     render(<AuthProvider><LoginRoute /></AuthProvider>);
 
-    fireEvent.change(screen.getByLabelText(/correo electrónico/i), {
+    const emailInput = await screen.findByLabelText(/correo electrónico/i);
+    const passwordInput = await screen.findByLabelText(/^contraseña$/i, { selector: 'input' });
+    const submitButton = await screen.findByRole('button', { name: /iniciar sesión/i });
+
+    fireEvent.change(emailInput, {
       target: { value: 'admin@elevant.test' },
     });
-    fireEvent.change(screen.getByLabelText(/^contraseña$/i, { selector: 'input' }), {
+    fireEvent.change(passwordInput, {
       target: { value: 'Elevant2026!' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /iniciar sesión/i }));
+    fireEvent.click(submitButton);
 
     await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/admin-occ'));
     expect(window.sessionStorage.getItem('elevant-auth-session')).not.toBeNull();
