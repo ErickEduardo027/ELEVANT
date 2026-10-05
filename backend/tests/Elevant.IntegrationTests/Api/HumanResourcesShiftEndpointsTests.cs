@@ -195,10 +195,19 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             "/api/v1/human-resources/shifts?from=2026-10-01&to=2026-11-01",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooWide.StatusCode);
+        using var reversed = await client.GetAsync(
+            "/api/v1/human-resources/shifts?from=2026-10-31&to=2026-10-01",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, reversed.StatusCode);
+        using var invalidPage = await client.GetAsync(
+            "/api/v1/human-resources/shifts?from=2026-10-01&to=2026-10-31&page=0",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidPage.StatusCode);
         using var tooLarge = await client.GetAsync(
             "/api/v1/human-resources/shifts?from=2026-08-17&to=2026-08-23&limit=101",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooLarge.StatusCode);
+        Assert.Null(stub.Request);
         using var response = await client.GetAsync(
             "/api/v1/human-resources/shifts?from=2026-08-17&to=2026-08-23&page=2&limit=1",
             TestContext.Current.CancellationToken);
