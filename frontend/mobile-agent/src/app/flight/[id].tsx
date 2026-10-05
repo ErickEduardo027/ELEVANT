@@ -18,6 +18,7 @@ import {
   View,
 } from 'react-native';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
+import { AttendanceDraftCard } from '../../components/attendance-draft-card';
 import {
   RampServiceExecutionCard,
   type ServiceExecutionNotice,
@@ -66,6 +67,7 @@ type StartNotice = Readonly<{
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [operation, setOperation] = useState<RampAssignedOperationResponse | null>(null);
+  const [focused, setFocused] = useState(false);
   const [state, setState] = useState<DetailState>('loading');
   const [cached, setCached] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -196,8 +198,10 @@ export default function OperationDetailScreen() {
   }, [id]);
 
   useFocusEffect(useCallback(() => {
+    setFocused(true);
     void load();
     return () => {
+      setFocused(false);
       requestRef.current?.abort();
       startRequestRef.current?.abort();
       serviceRequestRef.current?.abort();
@@ -666,6 +670,15 @@ export default function OperationDetailScreen() {
         starting={starting}
         timeZone={timeZone}
       />
+
+      {operation.operation.id && assignment.id && (
+        <AttendanceDraftCard
+          key={`${operation.operation.id}:${assignment.id}`}
+          operationId={operation.operation.id}
+          assignmentId={assignment.id}
+          active={focused}
+        />
+      )}
 
       {(operation.review?.status === 'Returned' || correctionPending) && (
         <View style={styles.handoffCard}>
