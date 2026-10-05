@@ -51,4 +51,18 @@ describe('useAttendanceDraft', () => {
     expect(signal.aborted).toBe(true);
     expect(stop).toHaveBeenCalledOnce();
   });
+
+  it('drops the former session snapshot after a cancelled refresh', async () => {
+    mocks.read.mockResolvedValueOnce({ ...snapshot,
+      occ: { revision: 1, incidentNote: 'Dato anterior' } })
+      .mockRejectedValueOnce({ code: 'cancelled', recoverable: false });
+    const view = renderHook(() => useAttendanceDraft({ operationId, assignmentId, enabled: true }));
+    await waitFor(() => expect(view.result.current.snapshot?.occ?.incidentNote).toBe('Dato anterior'));
+    await act(async () => { await view.result.current.reload(); });
+    expect(view.result.current.status).toBe('error');
+    expect(view.result.current.snapshot).toBeNull();
+    await act(async () => { await view.result.current.save({ incidentNote: 'No reenviar' }); });
+    expect(mocks.save).not.toHaveBeenCalled();
+    view.unmount();
+  });
 });

@@ -72,6 +72,8 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
   const identityRef = useRef(identity);
   const readRef = useRef<AbortController | null>(null);
   const dirtyRef = useRef(false);
+  const snapshotRef = useRef<AttendanceDraftSnapshotResponse | null>(null);
+  const conflictRef = useRef(false);
   const storageReadyRef = useRef(false);
   const pendingRef = useRef<PendingAttendanceDraft | null>(null);
   const [snapshot, setSnapshot] = useState<AttendanceDraftSnapshotResponse | null>(null);
@@ -81,6 +83,7 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
   const [storageReady, setStorageReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
+  const [conflictReady, setConflictReady] = useState(false);
   const [notice, setNotice] = useState('');
   const [validation, setValidation] = useState('');
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'zona del dispositivo';
@@ -97,6 +100,27 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     setNotice('No se pudo verificar la observación pendiente. No se enviará otro comando.');
   };
 
+  const invalidateView = useCallback((code: MobileServiceError['code']) => {
+    snapshotRef.current = null;
+    conflictRef.current = false;
+    dirtyRef.current = false;
+    storageReadyRef.current = false;
+    pendingRef.current = null;
+    setPending(null);
+    setSnapshot(null);
+    setForm(emptyForm);
+    setConflict(false);
+    setConflictReady(false);
+    setStorageReady(false);
+    setStatus('error');
+    setNotice('La sesión o el acceso cambió. Abre de nuevo la operación.');
+    if (code === 'unauthenticated' || code === 'session_expired') {
+      resetToLogin('session_expired');
+    } else if (code === 'forbidden') {
+      resetToLogin('access_revoked');
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     if (!active || !storageReadyRef.current || identityRef.current !== identity) return;
     readRef.current?.abort();
@@ -106,21 +130,31 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       const canonical = await readRampAttendanceDraft(operationId, assignmentId,
         { signal: request.signal });
       if (request.signal.aborted || identityRef.current !== identity) return;
+      const previousRevision = snapshotRef.current?.rampAgent?.revision ?? 0;
+      const currentRevision = canonical.rampAgent?.revision ?? 0;
+      if (snapshotRef.current && dirtyRef.current && !pendingRef.current &&
+        previousRevision !== currentRevision && !conflictRef.current) {
+        conflictRef.current = true;
+        setConflict(true);
+        setConflictReady(true);
+      } else if (conflictRef.current) {
+        setConflictReady(true);
+      }
+      snapshotRef.current = canonical;
       setSnapshot(canonical);
       setStatus('ready');
       if (!dirtyRef.current && !pendingRef.current) setForm(formFrom(canonical.rampAgent));
     } catch (error) {
       if (request.signal.aborted || identityRef.current !== identity) return;
       if (error instanceof MobileServiceError &&
-        (error.code === 'unauthenticated' || error.code === 'session_expired')) {
-        resetToLogin('session_expired');
-      } else if (error instanceof MobileServiceError && error.code === 'forbidden') {
-        resetToLogin('access_revoked');
+        ['cancelled', 'unauthenticated', 'session_expired', 'forbidden'].includes(error.code)) {
+        invalidateView(error.code);
+        return;
       }
       setStatus(current => current === 'ready' ? current : 'error');
       setNotice('No se pudo actualizar la observación. Intenta de nuevo al reconectar.');
     }
-  }, [active, assignmentId, identity, operationId]);
+  }, [active, assignmentId, identity, operationId, invalidateView]);
 
   useEffect(() => {
     identityRef.current = identity;
@@ -128,10 +162,13 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
     dirtyRef.current = false;
     storageReadyRef.current = false;
     pendingRef.current = null;
+    snapshotRef.current = null;
+    conflictRef.current = false;
     setSnapshot(null);
     setForm(emptyForm);
     setPending(null);
     setConflict(false);
+    setConflictReady(false);
     setValidation('');
     setNotice('');
     setStatus('loading');
@@ -214,13 +251,22 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
       if (identityRef.current !== writingIdentity) return;
       updatePending(null);
       dirtyRef.current = false;
+      conflictRef.current = false;
       setConflict(false);
+      setConflictReady(false);
       setNotice('Guardado y confirmado por ELEVANT.');
       await reload();
     } catch (error) {
       if (identityRef.current !== writingIdentity) return;
+      if (error instanceof MobileServiceError &&
+        ['cancelled', 'unauthenticated', 'session_expired', 'forbidden'].includes(error.code)) {
+        invalidateView(error.code);
+        return;
+      }
       if (error instanceof MobileServiceError && error.code === 'conflict') {
+        conflictRef.current = true;
         setConflict(true);
+        setConflictReady(false);
         try { updatePending(await readPendingAttendanceDraft(operationId, assignmentId)); }
         catch { failPendingStore(); return; }
         setNotice('Conflicto: revisa tu observación frente a la versión actual.');
@@ -232,25 +278,23 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
         updatePending(stored);
         setNotice(stored ? 'Pendiente de confirmar. Reintenta el mismo envío al reconectar.' :
           'No se pudo guardar. Actualiza la operación antes de intentar otra vez.');
-        if (error instanceof MobileServiceError &&
-          (error.code === 'unauthenticated' || error.code === 'session_expired')) {
-          resetToLogin('session_expired');
-        } else if (error instanceof MobileServiceError && error.code === 'forbidden') {
-          resetToLogin('access_revoked');
-        }
       }
     } finally { if (identityRef.current === writingIdentity) setBusy(false); }
   };
 
   const resolveConflict = async (keepAttempt: boolean) => {
-    if (!pending || !snapshot || busy) return;
+    if (!conflictReady || !snapshot || busy) return;
     setBusy(true);
     try {
-      const cleared = await clearPendingAttendanceDraft(
-        operationId, assignmentId, pending.idempotencyKey);
-      if (!cleared || identityRef.current !== identity) return;
-      updatePending(null);
+      if (pending) {
+        const cleared = await clearPendingAttendanceDraft(
+          operationId, assignmentId, pending.idempotencyKey);
+        if (!cleared || identityRef.current !== identity) return;
+        updatePending(null);
+      }
+      conflictRef.current = false;
       setConflict(false);
+      setConflictReady(false);
       if (!keepAttempt) {
         setForm(formFrom(snapshot.rampAgent));
         dirtyRef.current = false;
@@ -277,13 +321,22 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
         <Text>Inicio: {displayInstant(snapshot.occ?.observedStartAt)}</Text>
         <Text>Fin: {displayInstant(snapshot.occ?.observedEndAt)}</Text>
         <Text>{snapshot.occ?.incidentNote || 'Sin nota de OCC'}</Text>
+        <Text>Guardado: {displayInstant(snapshot.occ?.recordedAt)}</Text>
         <Text>Revisión {snapshot.occ?.revision ?? 0}</Text>
       </View>
       <View style={styles.lane}>
         <Text style={styles.laneTitle}>Tu observación</Text>
         {conflict && <View accessibilityRole="alert" style={styles.conflict}>
           <Text>Conflicto con la revisión actual del agente.</Text>
-          <Text>Versión actual: {snapshot.rampAgent?.incidentNote ?? 'Sin nota'}</Text>
+          {!conflictReady && <Text>Actualiza la versión guardada antes de decidir.</Text>}
+          {conflictReady && <>
+            <Text>Inicio guardado: {displayInstant(snapshot.rampAgent?.observedStartAt)}</Text>
+            <Text>Fin guardado: {displayInstant(snapshot.rampAgent?.observedEndAt)}</Text>
+            <Text>Versión actual: {snapshot.rampAgent?.incidentNote ?? 'Sin nota'}</Text>
+            <Text>Guardado: {displayInstant(snapshot.rampAgent?.recordedAt)}</Text>
+          </>}
+          <Text>Inicio de tu intento: {form.start || 'Sin registrar'}</Text>
+          <Text>Fin de tu intento: {form.end || 'Sin registrar'}</Text>
           <Text>Tu intento: {form.note || 'Sin nota'}</Text>
         </View>}
         {pending && !conflict && <Text style={styles.pending}>Pendiente de confirmar</Text>}
@@ -305,9 +358,9 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
           style={[styles.input, styles.note]} value={form.note} />
         {validation ? <Text accessibilityLiveRegion="polite" style={styles.validation}>{validation}</Text> : null}
         {conflict ? <View style={styles.actions}>
-          <PrimaryButton title="Usar revisión actual y conservar mi intento" disabled={busy || !pending}
+          <PrimaryButton title="Usar revisión actual y conservar mi intento" disabled={busy || !conflictReady}
             onPress={() => void resolveConflict(true)} secondary />
-          <PrimaryButton title="Descartar mi intento" disabled={busy || !pending}
+          <PrimaryButton title="Descartar mi intento" disabled={busy || !conflictReady}
             onPress={() => void resolveConflict(false)} secondary />
         </View> : <PrimaryButton title={pending ? 'Reintentar confirmación' : 'Guardar observación'}
           disabled={busy || !storageReady || status !== 'ready'} onPress={() => void save()} />}

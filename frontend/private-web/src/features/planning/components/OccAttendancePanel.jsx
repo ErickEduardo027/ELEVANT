@@ -18,7 +18,7 @@ function formatRecorded(instant) {
 }
 
 export default function OccAttendancePanel({ operationId, assignmentId, displayName }) {
-  const { status, snapshot, attempted, conflict, pending, error,
+  const { status, snapshot, attempted, conflict, conflictReady, pending, error,
     save, reload, retryPending } = useAttendanceDraft({ operationId, assignmentId,
     enabled: Boolean(operationId && assignmentId) });
   const [fields, setFields] = useState(EMPTY_FIELDS);
@@ -55,10 +55,13 @@ export default function OccAttendancePanel({ operationId, assignmentId, displayN
 
   async function submit(event) {
     event.preventDefault();
+    if (status !== 'ready' || (conflict && !conflictReady)) return;
     const start = fields.start ? new Date(fields.start) : null;
     const end = fields.end ? new Date(fields.end) : null;
     if ((start && !Number.isFinite(start.getTime())) ||
       (end && !Number.isFinite(end.getTime())) ||
+      (start && localInputValue(start.toISOString()) !== fields.start) ||
+      (end && localInputValue(end.toISOString()) !== fields.end) ||
       (start && end && end < start)) {
       setValidation('Revisa las horas: la salida no puede ser anterior a la entrada.');
       return;
@@ -111,10 +114,17 @@ export default function OccAttendancePanel({ operationId, assignmentId, displayN
         </div> : <p className="mt-1 text-xs">Aún no hay aporte del agente.</p>}
       </div>
       <form onSubmit={submit} className="space-y-3">
-        <p className="text-xs">Versión guardada: {snapshot?.occ?.revision ?? 0}</p>
+        <p className="text-xs">{conflict && !conflictReady ? 'Versión anterior' : 'Versión guardada'}: {snapshot?.occ?.revision ?? 0}</p>
         {(conflict || editingConflict) && <div role="alert" className="rounded-lg border border-amber-400 p-2 text-xs">
           El aporte de OCC cambió. Tu intento sigue aquí; compara la versión guardada y decide si deseas guardar otra vez.
-          <p>Nota guardada: {snapshot?.occ?.incidentNote || 'Sin nota'}</p>
+          {conflict && !conflictReady ? <p>Actualiza la versión guardada antes de decidir.</p> : <>
+            <p>Entrada guardada: {formatRecorded(snapshot?.occ?.observedStartAt)}</p>
+            <p>Salida guardada: {formatRecorded(snapshot?.occ?.observedEndAt)}</p>
+            <p>Nota guardada: {snapshot?.occ?.incidentNote || 'Sin nota'}</p>
+          </>}
+          <p>Entrada de tu intento: {fields.start || 'Sin registrar'}</p>
+          <p>Salida de tu intento: {fields.end || 'Sin registrar'}</p>
+          <p>Nota de tu intento: {fields.note || 'Sin nota'}</p>
         </div>}
         {pending && <p role="status" className="text-xs">Pendiente de confirmar. Reintenta la misma intención antes de editar.</p>}
         {error && !conflict && !pending && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{error.message}</p>}
@@ -139,7 +149,7 @@ export default function OccAttendancePanel({ operationId, assignmentId, displayN
         <div className="flex flex-wrap gap-2">
           {pending ? <button type="button" onClick={() => void retryPending()} disabled={saving}
             className="min-h-11 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white focus-visible:ring-2">
-            Reintentar misma intención</button> : <button type="submit" disabled={saving || !snapshot}
+            Reintentar misma intención</button> : <button type="submit" disabled={saving || !snapshot || status !== 'ready' || (conflict && !conflictReady)}
             className="min-h-11 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white focus-visible:ring-2 disabled:opacity-50">
             {conflict || editingConflict ? 'Guardar con versión actual' : 'Guardar observación OCC'}</button>}
           <button type="button" onClick={() => void reload()} className="min-h-11 rounded-lg border border-slate-300 px-3 text-xs focus-visible:ring-2">Actualizar aportes</button>

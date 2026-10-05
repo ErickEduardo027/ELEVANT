@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +80,58 @@ describe('OccAttendancePanel', () => {
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
     expect(mocks.save.mock.calls[1][2].expectedRevision).toBe(2);
     expect(mocks.save.mock.calls[1][3]).not.toBe(mocks.save.mock.calls[0][3]);
+  });
+
+  it('does not save against an old revision when the post-409 refresh fails', async () => {
+    const user = userEvent.setup();
+    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, contribution(1, 'Inicial')))
+      .mockRejectedValueOnce({ code: 'request-failed', recoverable: true })
+      .mockResolvedValueOnce(snapshot(assignmentId, contribution(2, 'Versión remota')));
+    mocks.save.mockRejectedValueOnce({ status: 409, code: 'stale-revision', recoverable: true });
+    render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
+    const note = await screen.findByRole('textbox', { name: 'Nota de OCC' });
+    await user.clear(note);
+    await user.type(note, 'Mi intento');
+    await user.click(screen.getByRole('button', { name: 'Guardar observación OCC' }));
+    const choice = await screen.findByRole('button', { name: 'Guardar con versión actual' });
+    expect(choice).toBeDisabled();
+    expect(mocks.save).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Actualizar aportes' }));
+    await waitFor(() => expect(choice).toBeEnabled());
+    await user.click(choice);
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    expect(mocks.save.mock.calls[1][2].expectedRevision).toBe(2);
+  });
+
+  it('compares canonical and attempted hours on a time-only conflict', async () => {
+    const user = userEvent.setup();
+    const earlier = { ...contribution(1, 'Misma nota'), observedStartAt: '2026-10-05T10:00:00Z' };
+    const later = { ...contribution(2, 'Misma nota'), observedStartAt: '2026-10-05T11:00:00Z' };
+    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, earlier))
+      .mockResolvedValueOnce(snapshot(assignmentId, later));
+    render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
+    const start = await screen.findByLabelText('Entrada observada');
+    fireEvent.change(start, { target: { value: '2026-10-05T12:00' } });
+    mocks.observer.mock.results[0].value.callback(['attendance_draft']);
+    expect(await screen.findByText(/Entrada guardada:/)).toBeInTheDocument();
+    expect(screen.getByText(/Entrada de tu intento:/)).toHaveTextContent('2026-10-05T12:00');
+    expect(start).toHaveValue('2026-10-05T12:00');
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects a local time that disappears in a daylight-saving gap', async () => {
+    const priorZone = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      expect(new Date('2026-03-08T02:30').getHours()).toBe(3);
+      const user = userEvent.setup();
+      render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
+      const start = await screen.findByLabelText('Entrada observada');
+      fireEvent.change(start, { target: { value: '2026-03-08T02:30' } });
+      await user.click(screen.getByRole('button', { name: 'Guardar observación OCC' }));
+      expect(screen.getByText(/Revisa las horas/)).toBeInTheDocument();
+      expect(mocks.save).not.toHaveBeenCalled();
+    } finally { process.env.TZ = priorZone; }
   });
 
   it('does not silently replace an unsaved OCC edit after a remote revision arrives', async () => {

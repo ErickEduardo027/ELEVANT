@@ -119,6 +119,15 @@ test.each([401, 403])('does not resend after HTTP %s and rejects only original s
   expect(mockClearPending).not.toHaveBeenCalled();
 });
 
+test.each([401, 403])('does not reject a replacement session when an old request returns HTTP %s', async status => {
+  mockApi.getOperationAttendanceDraft.mockRejectedValueOnce(
+    new ElevantApiError({ kind: 'http', status }));
+  mockRejectSession.mockResolvedValueOnce(false);
+  await expect(readRampAttendanceDraft(operationId, assignmentId))
+    .rejects.toMatchObject({ code: 'cancelled' });
+  expect(mockRejectSession).toHaveBeenCalledWith(sessionId);
+});
+
 test('requires explicit resolution before replacing a different pending body', async () => {
   mockReadPending.mockResolvedValueOnce({ idempotencyKey: key, request });
   await expect(saveRampAttendanceDraft(operationId, assignmentId,

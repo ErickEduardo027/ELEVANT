@@ -12,7 +12,16 @@ class AttendanceDraftServiceError extends Error {
   }
 }
 
-function safeError(error, writing) {
+function cancelledIfSessionChanged(token) {
+  return readSession()?.token === token ? null : new AttendanceDraftServiceError(
+    'La sesión cambió. Actualiza esta vista antes de continuar.',
+    { code: 'cancelled', recoverable: false }
+  );
+}
+
+function safeError(error, writing, token) {
+  const cancelled = cancelledIfSessionChanged(token);
+  if (cancelled) return cancelled;
   if (error?.name === 'AbortError' && !writing) return error;
   const status = error instanceof ElevantApiError ? error.status : null;
   if (status === 401) {
@@ -43,26 +52,34 @@ function safeError(error, writing) {
   );
 }
 
-function client() {
-  return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
+function client(token) {
+  return createPrivateWebApiClient({ getAccessToken: () => token });
 }
 
 export async function readAttendanceDraft(operationId, assignmentId, { signal } = {}) {
+  const token = readSession()?.token;
   try {
-    return await client().getOperationAttendanceDraft(operationId, assignmentId, { signal });
+    const result = await client(token).getOperationAttendanceDraft(operationId, assignmentId, { signal });
+    const cancelled = cancelledIfSessionChanged(token);
+    if (cancelled) throw cancelled;
+    return result;
   } catch (error) {
-    throw safeError(error, false);
+    throw safeError(error, false, token);
   }
 }
 
 export async function saveOccAttendanceDraft(
   operationId, assignmentId, request, key, { signal } = {}
 ) {
+  const token = readSession()?.token;
   try {
-    return await client().saveOccAttendanceDraft(
+    const result = await client(token).saveOccAttendanceDraft(
       operationId, assignmentId, request, key, { signal }
     );
+    const cancelled = cancelledIfSessionChanged(token);
+    if (cancelled) throw cancelled;
+    return result;
   } catch (error) {
-    throw safeError(error, true);
+    throw safeError(error, true, token);
   }
 }

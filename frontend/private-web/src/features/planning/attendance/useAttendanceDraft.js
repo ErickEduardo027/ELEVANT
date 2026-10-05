@@ -8,7 +8,7 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
   const contextKey = `${operationId ?? ''}|${assignmentId ?? ''}|${enabled}`;
   const [state, setState] = useState({
     key: contextKey, status: 'idle', snapshot: null, error: null,
-    attempted: null, conflict: false, pending: false,
+    attempted: null, conflict: false, conflictReady: false, pending: false,
   });
   const generationRef = useRef(0);
   const abortRef = useRef(null);
@@ -22,21 +22,29 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
     abortRef.current = controller;
     if (initial) setState(current => ({ ...current, key: contextKey,
       status: 'loading', snapshot: null, error: null,
-      attempted: null, conflict: false, pending: false }));
+      attempted: null, conflict: false, conflictReady: false, pending: false }));
     try {
       const snapshot = await readAttendanceDraft(operationId, assignmentId,
         { signal: controller.signal });
       if (generation === generationRef.current && !controller.signal.aborted) {
         setState(current => ({ ...current, key: contextKey, status: 'ready',
-          snapshot, error: null }));
+          snapshot, error: null,
+          conflictReady: current.conflict
+            ? (snapshot.occ?.revision ?? 0) > (current.attempted?.expectedRevision ?? 0)
+            : current.conflictReady }));
       }
       return snapshot;
     } catch (error) {
       if (generation === generationRef.current && !controller.signal.aborted &&
         error?.name !== 'AbortError') {
+        if (error?.code === 'cancelled') pendingRef.current = null;
         setState(current => ({ ...current, key: contextKey,
           status: error?.code === 'forbidden' || error?.code === 'unauthorized'
-            ? error.code : 'error', error }));
+            ? error.code : 'error', error,
+          ...(error?.code === 'cancelled' ? {
+            snapshot: null, attempted: null, pending: false,
+            conflict: false, conflictReady: false,
+          } : {}) }));
       }
       return null;
     }
@@ -80,16 +88,24 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
       pendingRef.current = null;
       setState(current => ({ ...current, key: contextKey, status: 'ready',
         snapshot: current.snapshot ? { ...current.snapshot, occ: receipt.contribution } : null,
-        attempted: null, conflict: false, pending: false, error: null }));
+        attempted: null, conflict: false, conflictReady: false, pending: false, error: null }));
       void reload();
       return receipt;
     } catch (error) {
       if (intent !== pendingRef.current) return null;
+      if (error?.code === 'cancelled') {
+        pendingRef.current = null;
+        setState(current => ({ ...current, key: contextKey, status: 'error',
+          snapshot: null, attempted: null, conflict: false,
+          conflictReady: false, pending: false, error }));
+        return null;
+      }
       const unknown = error?.code === 'unknown-outcome';
       if (!unknown) pendingRef.current = null;
       setState(current => ({ ...current, key: contextKey,
         attempted: intent.request,
         conflict: error?.code === 'stale-revision',
+        conflictReady: false,
         pending: unknown,
         error,
       }));
@@ -101,7 +117,8 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
   const save = useCallback(async (fields) => {
     if (pendingRef.current) return null;
     const current = state.key === contextKey ? state : null;
-    if (!current?.snapshot) return null;
+    if (!current?.snapshot || current.status !== 'ready' ||
+      (current.conflict && !current.conflictReady)) return null;
     const intent = {
       key: crypto.randomUUID(),
       request: { expectedRevision: current.snapshot.occ?.revision ?? 0,
@@ -111,7 +128,7 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
     };
     pendingRef.current = intent;
     setState(previous => ({ ...previous, key: contextKey, pending: false,
-      conflict: false, error: null, attempted: intent.request }));
+      conflict: false, conflictReady: false, error: null, attempted: intent.request }));
     return send(intent);
   }, [state, contextKey, send]);
 
@@ -120,7 +137,7 @@ export function useAttendanceDraft({ operationId, assignmentId, enabled = true }
 
   const visible = state.key === contextKey ? state : {
     key: contextKey, status: 'loading', snapshot: null, error: null,
-    attempted: null, conflict: false, pending: false,
+    attempted: null, conflict: false, conflictReady: false, pending: false,
   };
   return { ...visible, save, reload, retryPending };
 }

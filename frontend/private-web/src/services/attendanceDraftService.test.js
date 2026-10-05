@@ -114,4 +114,27 @@ describe('attendanceDraftService', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(aborted));
     await expect(readAttendanceDraft(operationId, assignmentId)).rejects.toBe(aborted);
   });
+
+  it.each(['read', 'write'])('does not expire a replacement session after an old %s gets 401', async action => {
+    let resolveFetch;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { resolveFetch = resolve; })));
+    const call = action === 'read'
+      ? readAttendanceDraft(operationId, assignmentId)
+      : saveOccAttendanceDraft(operationId, assignmentId, request, key);
+    await vi.waitFor(() => expect(resolveFetch).toBeTypeOf('function'));
+    auth.readSession.mockReturnValue({ token: 'replacement-token' });
+    resolveFetch(jsonResponse({ status: 401 }, 401));
+    await expect(call).rejects.toMatchObject({ code: 'cancelled' });
+    expect(auth.handleUnauthorizedResponse).not.toHaveBeenCalled();
+  });
+
+  it('does not return a stale successful read under a replacement session', async () => {
+    let resolveFetch;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { resolveFetch = resolve; })));
+    const call = readAttendanceDraft(operationId, assignmentId);
+    await vi.waitFor(() => expect(resolveFetch).toBeTypeOf('function'));
+    auth.readSession.mockReturnValue({ token: 'replacement-token' });
+    resolveFetch(jsonResponse(snapshot));
+    await expect(call).rejects.toMatchObject({ code: 'cancelled' });
+  });
 });

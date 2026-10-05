@@ -32,7 +32,11 @@ async function sameIdentity(context: MobileSessionRequestContext) {
 async function normalizeFailure(error: unknown, context: MobileSessionRequestContext) {
   const normalized = asMobileServiceError(error);
   if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-    try { await rejectMobileSessionRequest(context.sessionId); }
+    try {
+      if (!(await rejectMobileSessionRequest(context.sessionId))) {
+        return new MobileServiceError('cancelled');
+      }
+    }
     catch { /* Never replace the original authorization failure. */ }
   }
   return normalized;

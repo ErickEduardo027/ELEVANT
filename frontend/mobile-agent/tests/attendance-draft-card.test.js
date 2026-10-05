@@ -171,6 +171,60 @@ test('re-reads the canonical snapshot on a durable hint without overwriting unsa
     .props.value).toBe('Mi nota sin guardar');
 });
 
+test('requires a choice when the agent lane changes before an unsaved local edit is sent', async () => {
+  mockRead.mockResolvedValueOnce(snapshot(contribution(1, 'Inicial')))
+    .mockResolvedValueOnce(snapshot(contribution(2, 'Nueva versión')));
+  await render();
+  const note = tree.root.findAll(node => node.props.accessibilityLabel === 'Nota del agente')[0];
+  await renderer.act(async () => note.props.onChangeText('Mi edición'));
+  const listener = mockSubscribe.mock.calls[0][0];
+  await renderer.act(async () => listener(['attendance_draft']));
+  expect(textContent()).toContain('Nueva versión');
+  expect(note.props.value).toBe('Mi edición');
+  expect(textContent()).toContain('Conflicto');
+  expect(mockSave).not.toHaveBeenCalled();
+  await renderer.act(async () => press('Usar revisión actual y conservar mi intento'));
+  expect(mockClearPending).not.toHaveBeenCalled();
+  await renderer.act(async () => press('Guardar observación'));
+  expect(mockSave.mock.calls[0][2]).toMatchObject({ expectedRevision: 2, incidentNote: 'Mi edición' });
+});
+
+test('does not resolve a 409 against an old snapshot when canonical reload fails', async () => {
+  const pending = { idempotencyKey: key,
+    request: { expectedRevision: 1, observedStartAt: null, observedEndAt: null,
+      incidentNote: 'Mi versión' } };
+  mockRead.mockResolvedValueOnce(snapshot(contribution(1, 'Inicial')))
+    .mockRejectedValueOnce(new MobileServiceError('network_unavailable'))
+    .mockResolvedValueOnce(snapshot(contribution(2, 'Nueva versión')));
+  mockSave.mockRejectedValueOnce(new MobileServiceError('conflict', { status: 409 }));
+  mockReadPending.mockResolvedValueOnce(null).mockResolvedValue(pending);
+  await render();
+  const note = tree.root.findAll(node => node.props.accessibilityLabel === 'Nota del agente')[0];
+  await renderer.act(async () => note.props.onChangeText('Mi versión'));
+  await renderer.act(async () => press('Guardar observación'));
+  const choice = tree.root.findAll(node => node.props.accessibilityLabel ===
+    'Usar revisión actual y conservar mi intento')[0];
+  expect(choice.props.disabled).toBe(true);
+  await renderer.act(async () => press('Usar revisión actual y conservar mi intento'));
+  expect(mockClearPending).not.toHaveBeenCalled();
+  await renderer.act(async () => press('Actualizar observaciones'));
+  expect(choice.props.disabled).toBe(false);
+});
+
+test('compares attempted and canonical hours even when the notes are unchanged', async () => {
+  mockRead.mockResolvedValueOnce(snapshot({ ...contribution(1, 'Igual'),
+    observedStartAt: '2026-10-05T10:00:00Z' }))
+    .mockResolvedValueOnce(snapshot({ ...contribution(2, 'Igual'),
+      observedStartAt: '2026-10-05T11:00:00Z' }));
+  await render();
+  const start = tree.root.findAll(node => node.props.accessibilityLabel === 'Inicio observado')[0];
+  await renderer.act(async () => start.props.onChangeText('2026-10-05 12:00'));
+  const listener = mockSubscribe.mock.calls[0][0];
+  await renderer.act(async () => listener(['attendance_draft']));
+  expect(textContent()).toContain('Inicio guardado:');
+  expect(textContent()).toMatch(/Inicio de tu intento:\s+2026-10-05 12:00/);
+});
+
 test('never replays a displayed pending command after its session scope disappears', async () => {
   const pending = { idempotencyKey: key,
     request: { expectedRevision: 0, observedStartAt: null, observedEndAt: null,
@@ -181,4 +235,28 @@ test('never replays a displayed pending command after its session scope disappea
   await renderer.act(async () => press('Reintentar confirmación'));
   expect(mockSave).not.toHaveBeenCalled();
   expect(textContent()).toContain('sesión');
+});
+
+test('removes the former session snapshot if a refresh is cancelled by a session switch', async () => {
+  mockRead.mockResolvedValueOnce(snapshot(contribution(1, 'Dato anterior')))
+    .mockRejectedValueOnce(new MobileServiceError('cancelled'));
+  await render();
+  expect(tree.root.findAll(node => node.props.accessibilityLabel === 'Nota del agente')[0]
+    .props.value).toBe('Dato anterior');
+  const listener = mockSubscribe.mock.calls[0][0];
+  await renderer.act(async () => listener(['attendance_draft']));
+  expect(tree.root.findAllByType('TextInput')).toHaveLength(0);
+  expect(textContent()).toContain('Observaciones no disponibles');
+  expect(mockSave).not.toHaveBeenCalled();
+});
+
+test('removes the former session snapshot if a write is cancelled by a session switch', async () => {
+  mockRead.mockResolvedValue(snapshot(contribution(1, 'Dato anterior')));
+  mockSave.mockRejectedValueOnce(new MobileServiceError('cancelled'));
+  await render();
+  const note = tree.root.findAll(node => node.props.accessibilityLabel === 'Nota del agente')[0];
+  await renderer.act(async () => note.props.onChangeText('Intento previo'));
+  await renderer.act(async () => press('Guardar observación'));
+  expect(tree.root.findAllByType('TextInput')).toHaveLength(0);
+  expect(textContent()).toContain('Observaciones no disponibles');
 });
