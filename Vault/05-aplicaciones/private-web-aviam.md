@@ -7,13 +7,17 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-25"
-verified_commit: "c37a6028cdd5f4e269358cf0e97c5190ef89d5d5"
+last_verified: "2026-10-05"
+verified_commit: "f0b4b99d457fe4a8b4f114270591734b779b9633"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
   - frontend/private-web/package.json
-  - frontend/private-web/src/app/router.jsx
+  - frontend/private-web/next.config.mjs
+  - frontend/private-web/app/layout.jsx
+  - frontend/private-web/app/auth-boundary.jsx
+  - frontend/private-web/src/features/auth/roleRouting.js
+  - frontend/private-web/src/features/human-resources/HRModulePage.jsx
   - frontend/private-web/src/features/auth/authService.js
   - frontend/private-web/src/features/admin-occ/navigation.js
   - frontend/private-web/src/features/human-resources/navigation.js
@@ -30,6 +34,7 @@ tags:
   - private-web
   - aviam
   - react
+  - nextjs
   - prototipo
 ---
 
@@ -50,9 +55,9 @@ Private Web es la aplicación interna de AVIAM para OCC, administración y depar
 
 ## Stack actual
 
-- Vite 6 y JavaScript/JSX como aplicación SPA.
-- React 18 y React DOM 18.
-- React Router 6 para rutas principales seleccionadas por el rol de la sesión; la API impone la autorización real.
+- Next.js 16 App Router con exportación estática (`output: 'export'`) y JavaScript/JSX.
+- React 19 y React DOM 19.
+- Rutas basadas en el sistema de archivos bajo `app/`, con guards de cliente según el rol de la sesión; la API impone la autorización real.
 - Tailwind CSS 3 y tokens CSS para presentación.
 - MapLibre GL para vistas cartográficas.
 - `@elevant/api-client` como dependencia local del monorepo.
@@ -64,13 +69,16 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 | Ruta | Responsabilidad observada |
 | --- | --- |
-| `src/app/router.jsx` | Router principal, redirects, guards de navegación y composición por rol. |
+| `app/**/page.jsx`, `app/**/layout.jsx` | Rutas y layouts de Next.js App Router; Gestión Humana resuelve sus módulos con `app/gestion-humana/[module]/page.jsx`. |
+| `app/auth-boundary.jsx` | `ProtectedRole` y `LoginRoute`: espera de sesión, redirección a login y al home del rol. |
+| `src/features/auth/roleRouting.js` | Rutas canónicas, home por rol y normalización de entradas históricas. |
+| `src/app/RoleLayout.jsx` | Shell de navegación compartido por los layouts de rol. |
 | `src/features/` | Interfaces y comportamiento por área: auth, OCC, planificación, monitoreo, posiciones, revisión, reportes, notificaciones, chat, contratos, finanzas y Gestión Humana. |
 | `src/services/` | Adaptadores de datos heredados y snapshots de prueba; no deben dictar el contrato futuro. |
 | `src/config/elevantApiClient.js` | Fábrica aislada para el cliente OpenAPI compartido. |
 | `src/components/`, `src/hooks/`, `src/lib/`, `src/styles/` | UI reutilizable, comportamiento transversal, utilidades y tokens. |
 | `tests/` y pruebas junto a features | Configuración transversal, smoke del cliente compartido y pruebas unitarias/de componentes. |
-| `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales. |
+| `dashboard.html`, `contracts.html`, `finance.html` | URL históricas redirigidas con 308 por Nginx (`nginx/default.conf`) a las rutas App Router. |
 
 ## Rutas y recorridos observados
 
@@ -78,7 +86,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 - `/login` autentica contra la API de Development; las credenciales mock solo existen en pruebas automatizadas.
 - El rol de la sesión redirige a `/admin-occ`, `/gestion-humana`, `/contratos` o `/finanzas`.
-- Los guards del router organizan la navegación, pero no sustituyen la autorización del servidor.
+- `ProtectedRole` (`app/auth-boundary.jsx`) y `roleRouting.js` organizan la navegación, pero no sustituyen la autorización del servidor.
 
 ### OCC / Administración
 
@@ -212,7 +220,7 @@ más páginas, oculta la muestra anterior ante un error y no ofrece exportacione
 prototípicas. Revalida con señales durables, foco, reconexión y sondeo de 25
 segundos. Es código del worktree local; aún faltan CI, navegador y promoción al
 VPS. Fuentes: [vista de reportes](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
-y [router](../../frontend/private-web/src/app/router.jsx).
+y [selector de módulos](../../frontend/private-web/src/features/human-resources/HRModulePage.jsx).
 
 ### Contratos y Finanzas
 
@@ -300,18 +308,18 @@ Desde `frontend/private-web`:
 npm ci
 npm test
 npm run test:delivery
-$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
-$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
 npm run dev
 npm run build
 ```
 
-`npm run preview` permite revisar el build local. Vite usa el puerto local documentado por el README del cliente; verifica allí cualquier cambio vigente en vez de copiar comandos antiguos del monorepo.
+Next sirve localmente en `http://localhost:3000`; `npm run preview` sirve la exportación estática generada por el build. `scripts/run-next.mjs` acepta temporalmente los nombres `VITE_*` heredados y los traduce a `NEXT_PUBLIC_*`. Verifica en el README del cliente cualquier cambio vigente en vez de copiar comandos antiguos del monorepo.
 
 ## Pruebas que posee
 
 - pruebas Vitest de páginas, componentes, hooks, mappers y servicios;
-- pruebas del router, autenticación y manejo de sesión expirada;
+- pruebas de guards de ruta (`app/auth-boundary.test.jsx`, `app/protected-role.test.jsx`), autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración.
 
@@ -319,9 +327,10 @@ La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negoci
 
 ## Configuración segura
 
-- `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido.
-- `VITE_PROTOTYPE_API_URL` conserva temporalmente adaptadores heredados.
-- Todo `VITE_*` es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
+- `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido.
+- `NEXT_PUBLIC_PROTOTYPE_API_URL` conserva temporalmente adaptadores heredados.
+- Los nombres `VITE_*` equivalentes solo se aceptan temporalmente como alias de migración.
+- Todo `NEXT_PUBLIC_*` (y su alias `VITE_*`) es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
 - La configuración certificada exige orígenes HTTPS válidos y que ambas variables representen el mismo origen.
 - Un filtro, rol en memoria, ruta protegida o menú oculto nunca reemplaza la autorización de la API.
 
@@ -343,7 +352,8 @@ Cada feature debe consumir un endpoint versionado a través de un adaptador remo
 ## Fuentes y relaciones
 
 - [README del cliente](../../frontend/private-web/README.md)
-- [Router actual](../../frontend/private-web/src/app/router.jsx)
+- [Guards de ruta App Router](../../frontend/private-web/app/auth-boundary.jsx)
+- [Rutas por rol](../../frontend/private-web/src/features/auth/roleRouting.js)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)
 - [Mapa de aplicaciones](README.md)
