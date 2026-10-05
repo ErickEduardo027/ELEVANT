@@ -4596,6 +4596,238 @@
         ]
       }
     },
+    "/api/v1/human-resources/attendance": {
+      "get": {
+        "tags": [
+          "HumanResourcesAttendance"
+        ],
+        "summary": "Lists the station's assignment evidence for an operation-date interval.",
+        "operationId": "GetHumanResourcesAttendance",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAttendancePageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/attendance/{assignmentId}/validation": {
+      "put": {
+        "tags": [
+          "HumanResourcesAttendance"
+        ],
+        "summary": "Appends an immutable, revision-bound G.H. validation decision.",
+        "operationId": "ValidateHumanResourcesAttendance",
+        "parameters": [
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ValidateAttendanceRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceValidationWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/human-resources/availability-requests": {
       "get": {
         "tags": [
@@ -10195,6 +10427,86 @@
         },
         "additionalProperties": false
       },
+      "AttendanceValidationDecisionResponse": {
+        "required": [
+          "assignmentId",
+          "endAt",
+          "endSource",
+          "id",
+          "occRevision",
+          "rampAgentRevision",
+          "startAt",
+          "startSource",
+          "validatedAt",
+          "validatedByAccountId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rampAgentRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startSource": {
+            "type": "string"
+          },
+          "endSource": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "validatedByAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "validatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceValidationWriteResponse": {
+        "required": [
+          "decision",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "decision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceValidationDecisionResponse"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AuditFieldChangeData": {
         "required": [
           "field"
@@ -11718,6 +12030,114 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesAttendancePageResponse": {
+        "required": [
+          "from",
+          "hasMore",
+          "items",
+          "limit",
+          "page",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesAttendanceRowResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesAttendanceRowResponse": {
+        "required": [
+          "agentName",
+          "assignmentId",
+          "isDecisionCurrent",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "occ": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "rampAgent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "latestDecision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceValidationDecisionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "isDecisionCurrent": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -17027,6 +17447,36 @@
         },
         "additionalProperties": false
       },
+      "ValidateAttendanceRequest": {
+        "required": [
+          "endSource",
+          "expectedOccRevision",
+          "expectedRampAgentRevision",
+          "startSource"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedOccRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expectedRampAgentRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startSource": {
+            "type": "string"
+          },
+          "endSource": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "VerifyAirlineInput": {
         "required": [
           "countryCode",
@@ -17135,6 +17585,9 @@
     },
     {
       "name": "Governance"
+    },
+    {
+      "name": "HumanResourcesAttendance"
     },
     {
       "name": "HumanResourcesAvailabilityRequests"
