@@ -47,4 +47,19 @@ describe("account change feed client", () => {
     answer = { changes: [change], nextCursor: "different", hasMore: false };
     await expect(api.getAccountChanges()).rejects.toMatchObject({ kind: "malformed-response" });
   });
+
+  it("protects the mobile installation header from caller header overrides", async () => {
+    let headers = new Headers();
+    const api = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "token", fetch: async (_input, init) => {
+        headers = new Headers(init?.headers);
+        return json({ changes: [], nextCursor: null, hasMore: false });
+      } });
+    const installationId = "81000000-0000-7000-8000-000000000041";
+    await api.getAccountChanges(undefined, { installationId,
+      headers: { "X-Elevant-Installation-Id": "forged" } });
+    expect(headers.get("x-elevant-installation-id")).toBe(installationId);
+    await expect(api.getAccountChanges(undefined, { installationId: "invalid" }))
+      .rejects.toThrow(TypeError);
+  });
 });

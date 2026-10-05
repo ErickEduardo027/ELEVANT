@@ -249,19 +249,19 @@ export interface AttendanceDraftContributionResponse {
   authorAccountId: string;
   recordedAt: string;
   /** @nullable */
-  observedStartAt?: string | null;
+  observedStartAt: string | null;
   /** @nullable */
-  observedEndAt?: string | null;
+  observedEndAt: string | null;
   /** @nullable */
-  incidentNote?: string | null;
+  incidentNote: string | null;
 }
 
 export interface AttendanceDraftSnapshotResponse {
   operationId: string;
   assignmentId: string;
   stationId: string;
-  occ?: AttendanceDraftContributionResponse | null;
-  rampAgent?: AttendanceDraftContributionResponse | null;
+  occ: AttendanceDraftContributionResponse | null;
+  rampAgent: AttendanceDraftContributionResponse | null;
 }
 
 export interface AttendanceDraftWriteResponse {

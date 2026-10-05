@@ -279,7 +279,9 @@ export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "m
 export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method"> & {
+  installationId?: string;
+};
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -3458,12 +3460,13 @@ function validatedAttendanceDraftRequest(
   const start = request.observedStartAt ?? null;
   const end = request.observedEndAt ?? null;
   const note = request.incidentNote ?? null;
+  const normalizedNote = typeof note === "string" ? note.trim() : null;
   if ((start !== null && !isDateTimeOffset(start)) ||
     (end !== null && !isDateTimeOffset(end)) ||
     (note !== null && (typeof note !== "string" ||
-      note.trim().length < 1 || note.trim().length > 2_000 ||
+      normalizedNote!.length > 2_000 ||
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(note))) ||
-    (start === null && end === null && note === null) ||
+    (start === null && end === null && !normalizedNote) ||
     (start !== null && end !== null && Date.parse(end) < Date.parse(start))) {
     throw new TypeError("Attendance draft request is invalid.");
   }
@@ -3656,8 +3659,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("Change feed cursor is invalid.");
       if (!Number.isInteger(limit) || limit < 1 || limit > 100)
         throw new TypeError("Change feed limit must be an integer from 1 to 100.");
+      const { installationId, ...requestOptions } = options ?? {};
+      const headers = headersFrom(requestOptions.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      if (installationId !== undefined) {
+        headers.set("x-elevant-installation-id",
+          validatedUuid(installationId, "installationId"));
+      }
       const result = await execute(getGetAccountChangesUrl(parameters),
-        { ...options, method: "GET" }, true);
+        { ...requestOptions, method: "GET", headers }, true);
       if (!isAccountChangeListResponse(result.data, after, limit))
         throw malformedResponse(result.status);
       return result.data;

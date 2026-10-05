@@ -28,6 +28,14 @@
               "format": "int32",
               "default": 50
             }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -10089,6 +10097,9 @@
       "AttendanceDraftContributionResponse": {
         "required": [
           "authorAccountId",
+          "incidentNote",
+          "observedEndAt",
+          "observedStartAt",
           "recordedAt",
           "revision"
         ],
@@ -10126,7 +10137,9 @@
       "AttendanceDraftSnapshotResponse": {
         "required": [
           "assignmentId",
+          "occ",
           "operationId",
+          "rampAgent",
           "stationId"
         ],
         "type": "object",

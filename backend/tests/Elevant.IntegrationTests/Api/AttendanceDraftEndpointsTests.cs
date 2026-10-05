@@ -144,6 +144,27 @@ public sealed class AttendanceDraftEndpointsTests(ElevantApiFactory factory)
         Assert.Null(state.LastWrite);
     }
 
+    [Fact]
+    public async Task OpenApiRequiresExplicitNullableDraftFields()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/swagger/v1/swagger.json",
+            TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        var document = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        var schemas = document.GetProperty("components").GetProperty("schemas");
+        var contributionRequired = schemas.GetProperty("AttendanceDraftContributionResponse")
+            .GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray();
+        Assert.Contains("observedStartAt", contributionRequired);
+        Assert.Contains("observedEndAt", contributionRequired);
+        Assert.Contains("incidentNote", contributionRequired);
+        var snapshotRequired = schemas.GetProperty("AttendanceDraftSnapshotResponse")
+            .GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray();
+        Assert.Contains("occ", snapshotRequired);
+        Assert.Contains("rampAgent", snapshotRequired);
+    }
+
     private WebApplicationFactory<Program> CreateApplication(StubStore state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {

@@ -121,4 +121,17 @@ describe("shared attendance draft API client", () => {
       assignmentId, request, key))
       .rejects.toMatchObject({ kind: "malformed-response", status: 200 });
   });
+
+  it("accepts an empty optional note when an observed instant is present", async () => {
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "fresh-token",
+      fetch: async () => response({ contribution: {
+        ...contribution, incidentNote: null,
+      }, replayed: false }),
+    });
+    await expect(client.saveOccAttendanceDraft(operationId, assignmentId,
+      { ...request, incidentNote: "  " }, key))
+      .resolves.toMatchObject({ contribution: { incidentNote: null } });
+  });
 });

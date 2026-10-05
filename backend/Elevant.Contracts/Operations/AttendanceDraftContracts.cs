@@ -19,16 +19,16 @@ public sealed record AttendanceDraftContributionResponse(
     int Revision,
     Guid AuthorAccountId,
     DateTimeOffset RecordedAt,
-    DateTimeOffset? ObservedStartAt,
-    DateTimeOffset? ObservedEndAt,
-    string? IncidentNote);
+    [property: JsonRequired] DateTimeOffset? ObservedStartAt,
+    [property: JsonRequired] DateTimeOffset? ObservedEndAt,
+    [property: JsonRequired] string? IncidentNote);
 
 public sealed record AttendanceDraftSnapshotResponse(
     Guid OperationId,
     Guid AssignmentId,
     Guid StationId,
-    AttendanceDraftContributionResponse? Occ,
-    AttendanceDraftContributionResponse? RampAgent);
+    [property: JsonRequired] AttendanceDraftContributionResponse? Occ,
+    [property: JsonRequired] AttendanceDraftContributionResponse? RampAgent);
 
 public sealed record AttendanceDraftWriteResponse(
     AttendanceDraftContributionResponse Contribution,

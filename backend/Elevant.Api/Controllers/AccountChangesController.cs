@@ -28,6 +28,7 @@ public sealed class AccountChangesController(
     public async Task<ActionResult<AccountChangeListResponse>> Get(
         [FromQuery] string? after,
         [FromQuery] int limit = 50,
+        [FromHeader(Name = "X-Elevant-Installation-Id")] Guid? installationId = null,
         CancellationToken cancellationToken = default)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId) ||
@@ -46,7 +47,8 @@ public sealed class AccountChangesController(
              !cursors.TryDecode(after ?? string.Empty, accountId, out sequence)))
             return ProblemResult(400, "The change feed cursor is invalid.");
 
-        var page = await store.ReadAsync(accountId, sequence, limit, cancellationToken);
+        var page = await store.ReadAsync(accountId, sequence, limit, installationId,
+            cancellationToken);
         if (page is null)
             return ProblemResult(403, "The change feed is forbidden.");
 

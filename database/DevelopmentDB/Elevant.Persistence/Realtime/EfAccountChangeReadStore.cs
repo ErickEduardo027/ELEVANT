@@ -16,8 +16,12 @@ internal sealed class EfAccountChangeReadStore(
     ElevantDbContext context,
     IActorContextResolver actors) : IAccountChangeReadStore
 {
+    public Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
+        CancellationToken cancellationToken = default) =>
+        ReadAsync(accountId, after, limit, null, cancellationToken);
+
     public async Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
-        CancellationToken cancellationToken = default)
+        Guid? installationId, CancellationToken cancellationToken = default)
     {
         if (accountId == Guid.Empty || after < 0 || limit is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(limit));
@@ -110,11 +114,13 @@ internal sealed class EfAccountChangeReadStore(
                                               scope.ValidFrom <= turnaround.OperationDate &&
                                               (scope.ValidTo == null ||
                                                scope.ValidTo >= turnaround.OperationDate)) &&
+                                          installationId != null &&
                                           context.Set<MobileDeviceAccountBinding>().Any(binding =>
                                               binding.AccountId == accountInternalId &&
                                               binding.UnboundAt == null &&
                                               context.MobileDevices.Any(device =>
                                                   device.Id == binding.MobileDeviceId &&
+                                                  device.InstallationId == installationId &&
                                                   device.RevokedAt == null)))))))))) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&

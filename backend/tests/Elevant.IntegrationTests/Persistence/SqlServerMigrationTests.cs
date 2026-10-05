@@ -9060,6 +9060,7 @@ public sealed class SqlServerMigrationTests
         var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
         var assignmentId = Guid.Parse("70000000-0000-7000-8000-000000000006");
         var installationId = Guid.CreateVersion7();
+        var secondInstallationId = Guid.CreateVersion7();
         var occKey = Guid.CreateVersion7();
         var agentKey = Guid.CreateVersion7();
         var startedAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
@@ -9074,6 +9075,12 @@ public sealed class SqlServerMigrationTests
                     agentId, installationId, MobilePlatform.Android,
                     "1.2.3", "Attendance SQL test tablet", "Android 16"), cancellationToken);
             Assert.True(registration.IsSuccess);
+            var secondRegistration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, secondInstallationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance SQL test second tablet", "Android 16"), cancellationToken);
+            Assert.True(secondRegistration.IsSuccess);
         }
 
         async Task<AttendanceDraftReadResult> ReadAsync(Guid actor, Guid? device)
@@ -9169,16 +9176,20 @@ public sealed class SqlServerMigrationTests
             var dispatch = scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>();
             await dispatch.DispatchPendingAsync(100, cancellationToken);
         }
-        async Task<AccountChangePage?> FeedAsync(Guid actor)
+        async Task<AccountChangePage?> FeedAsync(Guid actor, Guid? device = null)
         {
             await using var scope = provider.CreateAsyncScope();
             return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
-                .ReadAsync(actor, 0, 100, cancellationToken);
+                .ReadAsync(actor, 0, 100, device, cancellationToken);
         }
         Assert.Contains((await FeedAsync(occId))!.Changes,
             item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
-        Assert.Contains((await FeedAsync(agentId))!.Changes,
+        Assert.Contains((await FeedAsync(agentId, installationId))!.Changes,
             item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId, secondInstallationId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_draft");
         Assert.DoesNotContain((await FeedAsync(Guid.Parse(
             "40000000-0000-7000-8000-000000000003")))!.Changes,
             item => item.Resource == "attendance_draft");
@@ -9198,8 +9209,10 @@ public sealed class SqlServerMigrationTests
             (await SaveAsync(agentId, AttendanceDraftLane.RampAgent, 1,
                 startedAt.AddMinutes(4), "Sin dispositivo", Guid.CreateVersion7(),
                 installationId)).Failure);
-        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+        Assert.DoesNotContain((await FeedAsync(agentId, installationId))!.Changes,
             item => item.Resource == "attendance_draft");
+        Assert.Contains((await FeedAsync(agentId, secondInstallationId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
 
         await using (var release = CreateContext(database.ConnectionString))
             await release.OperationAgentAssignments.Where(item => item.PublicId == assignmentId)
