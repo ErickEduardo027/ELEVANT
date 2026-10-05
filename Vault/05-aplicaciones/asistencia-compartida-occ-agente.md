@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-05"
-verified_commit: "87cb3ec2df6d88796e56eb93d428e6bb316b55c7"
+verified_commit: "d37e1cd90350a1310a6e5c2109919388cd1ccfb1"
 sources:
   - backend/Elevant.Api/Controllers/AccountChangesController.cs
   - backend/Elevant.Api/Controllers/AttendanceDraftController.cs
@@ -60,6 +60,12 @@ Un `409` mantiene el intento junto a la revisión actual y exige una decisión
 explícita; una respuesta de escritura incierta conserva clave y cuerpo para un
 reintento deliberado. La tablet vincula ese comando a sesión, cuenta, operación
 y asignación, y lo elimina al salir de la sesión. No afirma captura biométrica.
+Si cambia la revisión del carril propio durante una edición, ambos clientes
+conservan el intento y muestran horas y nota frente a la versión canónica.
+Después de un `409` no permiten basar otra escritura en el snapshot anterior:
+exigen una lectura exitosa y una decisión explícita. Respuestas tardías de una
+sesión reemplazada no borran la sesión nueva ni mantienen visible el aporte
+anterior; OCC además rechaza horas locales inexistentes por salto horario.
 
 La migración es aditiva y sin datos de negocio. Esta nota verifica código de
 la rama en el commit indicado, no una promoción al VPS ni una prueba de
