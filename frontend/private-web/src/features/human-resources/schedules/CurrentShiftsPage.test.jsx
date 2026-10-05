@@ -65,6 +65,62 @@ it('reads the selected station-local week and navigates without prototype writes
     expect.objectContaining({ signal: expect.any(AbortSignal) }));
 });
 
+it('reads a fifteen-day window and keeps absence requests on the anchor week', async () => {
+  getHumanResourcesShifts.mockImplementation(async query => ({
+    ...query, hasMore: false, shifts: [shift],
+  }));
+  render(<CurrentShiftsPage initialDate={initialDate} />);
+  expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: '15 días' }));
+
+  await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
+    { from: '2026-08-18', to: '2026-09-01', page: 1, limit: 20 },
+    expect.objectContaining({ signal: expect.any(AbortSignal) })));
+  expect(screen.getByText(/Ausencias y solicitudes · semana del/)).toBeInTheDocument();
+  expect(getHumanResourcesAvailabilityRequests).toHaveBeenCalledWith(
+    { from: '2026-08-17', to: '2026-08-23', page: 1, limit: 20 },
+    expect.objectContaining({ signal: expect.any(AbortSignal) }));
+});
+
+it('reads the full month, navigates to the next month, and resets pagination on mode change', async () => {
+  getHumanResourcesShifts.mockImplementation(async query => ({
+    ...query, hasMore: true, shifts: [shift],
+  }));
+  render(<CurrentShiftsPage initialDate={initialDate} />);
+  expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
+    { from: '2026-08-17', to: '2026-08-23', page: 2, limit: 20 },
+    expect.anything()));
+
+  await userEvent.click(screen.getByRole('button', { name: 'Mes' }));
+  await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
+    { from: '2026-08-01', to: '2026-08-31', page: 1, limit: 20 },
+    expect.anything()));
+  await userEvent.click(screen.getByRole('button', { name: 'Período siguiente' }));
+  await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
+    { from: '2026-09-01', to: '2026-09-30', page: 1, limit: 20 },
+    expect.anything()));
+});
+
+it('does not repaint an old week after switching to an empty month', async () => {
+  let resolveWeek;
+  getHumanResourcesShifts.mockImplementation(query => query.from === '2026-08-17'
+    ? new Promise(resolve => { resolveWeek = resolve; })
+    : Promise.resolve({ ...query, hasMore: false, shifts: [] }));
+  render(<CurrentShiftsPage initialDate={initialDate} />);
+  await waitFor(() => expect(resolveWeek).toBeTypeOf('function'));
+  await userEvent.click(screen.getByRole('button', { name: 'Mes' }));
+  expect(await screen.findByText(/No hay turnos registrados/)).toBeInTheDocument();
+
+  await act(async () => resolveWeek({ from: '2026-08-17', to: '2026-08-23',
+    page: 1, limit: 20, hasMore: false, shifts: [shift] }));
+
+  expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
+  expect(screen.getByText(/No hay turnos registrados/)).toBeInTheDocument();
+});
+
 it('hides the previous week and private exception after failed revalidation', async () => {
   getHumanResourcesShifts
     .mockResolvedValueOnce({ from: '2026-08-17', to: '2026-08-23',

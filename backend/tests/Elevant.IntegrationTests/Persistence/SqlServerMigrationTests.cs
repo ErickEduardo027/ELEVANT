@@ -608,7 +608,7 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
-    public async Task HumanResourcesShiftsReadBoundedWeekForLiveInternalRole()
+    public async Task HumanResourcesShiftsReadBoundedMonthForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var masterConnection = ResolveMasterConnection();
@@ -668,6 +668,15 @@ public sealed class SqlServerMigrationTests
             Assert.NotNull(second);
             Assert.False(second.HasMore);
             Assert.Equal(new DateOnly(2026, 8, 19), Assert.Single(second.Shifts).WorkDate);
+            var month = await store.ListAsync(hrId, new DateOnly(2026, 8, 1),
+                new DateOnly(2026, 8, 31), 1, 20, cancellationToken);
+            Assert.NotNull(month);
+            Assert.Equal(2, month.Shifts.Count);
+            Assert.Equal(new DateOnly(2026, 8, 1), month.From);
+            Assert.Equal(new DateOnly(2026, 8, 31), month.To);
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ListAsync(
+                hrId, new DateOnly(2026, 8, 1), new DateOnly(2026, 9, 1),
+                1, 20, cancellationToken));
             Assert.Empty((await store.ListAsync(hrId, monday.AddDays(7),
                 sunday.AddDays(7), 1, 20, cancellationToken))!.Shifts);
             Assert.Null(await store.ListAsync(occId, monday, sunday, 1, 20,

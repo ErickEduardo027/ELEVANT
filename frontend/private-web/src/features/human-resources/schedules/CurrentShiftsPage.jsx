@@ -1,21 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getHumanResourcesShifts } from '../../../services/humanResourcesShiftsReadService';
-import { addDays, formatWeekRangeLabel, getWeekStart, toDateKey } from './mappers';
+import { addDays, getWeekStart, toDateKey } from './mappers';
+import { getRosterRange, shiftRosterAnchor } from './rosterRange';
 import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
 
 const PAGE_LIMIT = 20;
 const BLOCK_LABELS = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
+const VIEWS = [
+  { mode: 'week', label: 'Semana' },
+  { mode: 'fortnight', label: '15 días' },
+  { mode: 'month', label: 'Mes' },
+];
 
 export default function CurrentShiftsPage({ initialDate = new Date() }) {
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(initialDate));
+  const [anchor, setAnchor] = useState(() => initialDate);
+  const [mode, setMode] = useState('week');
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
   const [requestsAuthorized, setRequestsAuthorized] = useState(false);
   const requestVersion = useRef(0);
-  const from = toDateKey(weekStart);
-  const to = toDateKey(addDays(weekStart, 6));
+  const { from, to, label } = getRosterRange(mode, anchor);
+  const anchorWeek = getWeekStart(anchor);
+  const weekFrom = toDateKey(anchorWeek);
+  const weekTo = toDateKey(addDays(anchorWeek, 6));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,8 +67,8 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     };
   }, []);
 
-  const goToWeek = delta => {
-    setWeekStart(current => addDays(current, delta));
+  const goToPeriod = direction => {
+    setAnchor(current => shiftRosterAnchor(mode, current, direction));
     setPage(1);
   };
 
@@ -80,12 +89,21 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
       </div>
     </header>
 
-    <nav aria-label="Semanas de turnos" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 p-4 dark:bg-surface-dark-card">
-      <button type="button" onClick={() => goToWeek(-7)} className="rounded-lg border px-3 py-2 text-sm">Semana anterior</button>
-      <span className="font-semibold">{formatWeekRangeLabel(weekStart)}</span>
-      <button type="button" onClick={() => goToWeek(7)} className="rounded-lg border px-3 py-2 text-sm">Semana siguiente</button>
-      <button type="button" onClick={() => { setWeekStart(getWeekStart(new Date())); setPage(1); }}
-        className="rounded-lg border px-3 py-2 text-sm">Semana actual</button>
+    <nav aria-label="Períodos de turnos" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/70 p-4 dark:bg-surface-dark-card">
+      <div role="group" aria-label="Vista de turnos" className="flex flex-wrap gap-1">
+        {VIEWS.map(view => <button key={view.mode} type="button" aria-pressed={mode === view.mode}
+          onClick={() => { setMode(view.mode); setPage(1); }}
+          className={`rounded-lg border px-3 py-2 text-sm ${mode === view.mode
+            ? 'border-accent-600 bg-accent-600 text-white' : ''}`}>{view.label}</button>)}
+      </div>
+      <button type="button" onClick={() => goToPeriod(-1)} className="rounded-lg border px-3 py-2 text-sm">
+        {mode === 'week' ? 'Semana anterior' : 'Período anterior'}</button>
+      <span className="font-semibold" aria-live="polite">{label}</span>
+      <button type="button" onClick={() => goToPeriod(1)} className="rounded-lg border px-3 py-2 text-sm">
+        {mode === 'week' ? 'Semana siguiente' : 'Período siguiente'}</button>
+      <button type="button" onClick={() => { setAnchor(new Date()); setPage(1); }}
+        className="rounded-lg border px-3 py-2 text-sm">
+        {mode === 'week' ? 'Semana actual' : 'Período actual'}</button>
     </nav>
 
     {state.status === 'loading' && <p role="status"
@@ -120,7 +138,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
             </tr>)}
           </tbody>
         </table>
-      </section> : <p className="rounded-xl border p-8 text-center">No hay turnos registrados en esta semana y página.</p>}
+      </section> : <p className="rounded-xl border p-8 text-center">No hay turnos registrados en este período y página.</p>}
       <nav aria-label="Páginas de turnos" className="flex items-center justify-between text-sm">
         <button type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)}
           className="rounded-lg border px-3 py-2 disabled:opacity-40">Página anterior</button>
@@ -129,8 +147,11 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
           className="rounded-lg border px-3 py-2 disabled:opacity-40">Siguiente página</button>
       </nav>
     </>}
-    {requestsAuthorized && <AvailabilityRequestsPanel key={`${from}-${to}`}
-      from={from} to={to} revision={revision}
+    {requestsAuthorized && mode !== 'week' && <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
+      Ausencias y solicitudes · semana del {weekFrom} al {weekTo}. Esta sección conserva su consulta semanal.
+    </p>}
+    {requestsAuthorized && <AvailabilityRequestsPanel key={`${weekFrom}-${weekTo}`}
+      from={weekFrom} to={weekTo} revision={revision}
       onDenied={status => {
         requestVersion.current += 1;
         setRequestsAuthorized(false);

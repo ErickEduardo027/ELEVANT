@@ -169,7 +169,7 @@ a 60 minutos y usa 15 por defecto.
   genérica de cuenta de rampa. No se devuelve ni almacena la contraseña en la
   solicitud, y tampoco se envía invitación automática.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
-  registrados de rampa en una ventana de hasta siete fechas locales, con
+  registrados de rampa en una ventana de hasta 31 fechas locales inclusivas, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o
   Superadministración interna vigente y no calcula disponibilidad.
   `GET /api/v1/human-resources/shifts/options?rampProfileId=&workDate=` entrega
