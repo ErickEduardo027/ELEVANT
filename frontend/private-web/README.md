@@ -85,6 +85,18 @@ El alta manual verifica nuevamente en la API el scope OCC, contrato único aprob
 
 El formulario OCC de cobertura de rampa ofrece seis horarios precargados por vuelo y permite editar inicio y fin antes de confirmar. No guarda plantillas globales: la API valida la cobertura local, la elegibilidad y los conflictos. Fuera de las escalas manuales todavía no existe un editor general del calendario OCC.
 
+En esta rama, el detalle de una operación con agente asignado muestra un panel
+de **asistencia observada**. OCC puede guardar su propio inicio, fin y nota
+manuales; ve el aporte del agente en solo lectura. El panel consulta la API
+compartida por operación y asignación, y relee ante `attendance_draft`, foco,
+reconexión y cada 25 segundos mientras está visible. Un `409` conserva los
+campos intentados junto a la nueva revisión para decisión explícita. Tras un
+PUT de resultado incierto, el reintento reutiliza el UUID y el mismo cuerpo.
+La hora editada se interpreta en la zona del dispositivo indicada en el panel,
+no como fichaje biométrico ni como hora de estación. La API revalida rol y
+estación; ocultar o mostrar el panel no concede permisos. Esta interfaz aún
+requiere aceptación de dos sesiones contra Development tras la promoción.
+
 Una ausencia o restricción aprobada para un agente con alcance en la estación
 emite `occ_planning` sin detalles laborales. Registrar un turno, carnet o
 habilitación de rampa también la emite sin datos personales. Planificación reconsulta la
