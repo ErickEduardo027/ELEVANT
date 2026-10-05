@@ -1,7 +1,9 @@
 using System.Data;
 using System.Globalization;
+using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
+using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
@@ -14,13 +16,71 @@ internal sealed class EfHumanResourcesReportStore(
     ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
     : IHumanResourcesReportStore
 {
+    public async Task<HumanResourcesReportFailure?> RecordExportAsync(
+        Guid actorId, Guid stationId, HumanResourcesReportKind kind,
+        DateOnly startDate, DateOnly endDate, string format, int rowCount,
+        string? documentKind = null, string? validity = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (actorId == Guid.Empty || stationId == Guid.Empty || !Enum.IsDefined(kind) ||
+            !HumanResourcesReportPolicy.ValidRange(startDate, endDate) ||
+            !HumanResourcesReportPolicy.ValidExpirationFilters(kind, documentKind, validity) ||
+            format is not ("pdf" or "xlsx") || rowCount is < 0 or > 5000)
+            throw new ArgumentException("The export audit is invalid.");
+
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (actor is null ||
+            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
+                role.Code == "GESTION_HUMANA") ||
+            !actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff))
+            return HumanResourcesReportFailure.ForbiddenRole;
+        if (!actor.StationScopes.Any(scope => scope.StationId == stationId))
+            return HumanResourcesReportFailure.ForbiddenStation;
+
+        var stationInternalId = await context.Stations.AsNoTracking()
+            .Where(station => station.PublicId == stationId && station.IsActive)
+            .Select(station => (long?)station.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (stationInternalId is null)
+            return HumanResourcesReportFailure.ForbiddenStation;
+        var actorInternalId = await context.Users.AsNoTracking()
+            .Where(user => user.PublicId == actorId)
+            .Select(user => user.Id)
+            .SingleAsync(cancellationToken);
+
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(),
+            OccurredAt = timeProvider.GetUtcNow(),
+            ActorType = AuditActorType.Account,
+            ActorAccountId = actorInternalId,
+            Action = "human-resources.report.exported",
+            EntityType = "hr.reports",
+            StationId = stationInternalId,
+            Source = AuditSource.Api,
+            CorrelationId = Guid.CreateVersion7(),
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                Kind = kind.ToString(), From = startDate, To = endDate,
+                Format = format, RowCount = rowCount,
+                DocumentKind = documentKind, Validity = validity,
+            }),
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        return null;
+    }
+
     public async Task<HumanResourcesReportSnapshotResult> ReadSnapshotAsync(
         Guid actorId, Guid stationId, HumanResourcesReportKind kind,
         DateOnly startDate, DateOnly endDate, int maxRows,
+        string? documentKind = null, string? validity = null,
         CancellationToken cancellationToken = default)
     {
         if (!Enum.IsDefined(kind) || maxRows is < 1 or > 5000 ||
-            !HumanResourcesReportPolicy.ValidRange(startDate, endDate))
+            !HumanResourcesReportPolicy.ValidRange(startDate, endDate) ||
+            !HumanResourcesReportPolicy.ValidExpirationFilters(kind, documentKind, validity))
             throw new ArgumentOutOfRangeException(nameof(maxRows));
 
         var strategy = context.Database.CreateExecutionStrategy();
@@ -52,8 +112,9 @@ internal sealed class EfHumanResourcesReportStore(
                 {
                     case HumanResourcesReportKind.Expirations:
                     {
-                        var result = await ListExpirationsAsync(actorId, stationId,
-                            startDate, endDate, page, 100, cancellationToken);
+                        var result = await ListExpirationsAtAsync(actorId, stationId,
+                            startDate, endDate, page, 100, documentKind, validity,
+                            asOf, cancellationToken);
                         failure = result.Failure;
                         hasMore = result.Page?.HasMore ?? false;
                         pageRows = result.Page?.Rows.Select(item =>
@@ -107,7 +168,7 @@ internal sealed class EfHumanResourcesReportStore(
                     case HumanResourcesReportKind.QualificationCoverage:
                     {
                         var result = await ListQualificationCoverageAsync(actorId, stationId,
-                            endDate, page, 100, cancellationToken);
+                            startDate, endDate, page, 100, cancellationToken);
                         failure = result.Failure;
                         hasMore = result.Page?.HasMore ?? false;
                         pageRows = result.Page?.Rows.Select(item =>
@@ -133,19 +194,39 @@ internal sealed class EfHumanResourcesReportStore(
                 page++;
             }
 
+            var stationCode = await context.Stations.AsNoTracking()
+                .Where(item => item.PublicId == stationId && item.IsActive)
+                .Select(item => item.Code)
+                .SingleAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new HumanResourcesReportSnapshotResult(
                 new HumanResourcesReportSnapshot(kind, stationId, startDate,
-                    endDate, asOf, columns, rows), null);
+                    endDate, asOf, columns, rows)
+                {
+                    StationCode = stationCode,
+                    DocumentKind = documentKind,
+                    Validity = validity,
+                }, null);
         });
     }
 
-    public async Task<HumanResourcesReportReadResult<HumanResourcesExpirationRow>>
+    public Task<HumanResourcesReportReadResult<HumanResourcesExpirationRow>>
         ListExpirationsAsync(Guid actorId, Guid stationId, DateOnly startDate, DateOnly endDate,
-            int page, int limit, CancellationToken cancellationToken = default)
+            int page, int limit, string? documentKind = null, string? validity = null,
+            CancellationToken cancellationToken = default) =>
+        ListExpirationsAtAsync(actorId, stationId, startDate, endDate, page, limit,
+            documentKind, validity, timeProvider.GetUtcNow(), cancellationToken);
+
+    private async Task<HumanResourcesReportReadResult<HumanResourcesExpirationRow>>
+        ListExpirationsAtAsync(Guid actorId, Guid stationId,
+            DateOnly startDate, DateOnly endDate, int page, int limit,
+            string? documentKind, string? validity, DateTimeOffset asOf,
+            CancellationToken cancellationToken)
     {
         if (actorId == Guid.Empty || stationId == Guid.Empty ||
             !HumanResourcesReportPolicy.ValidRange(startDate, endDate) ||
+            !HumanResourcesReportPolicy.ValidExpirationFilters(
+                HumanResourcesReportKind.Expirations, documentKind, validity) ||
             page < 1 || limit is < 1 or > 100 ||
             (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(startDate));
@@ -168,7 +249,6 @@ internal sealed class EfHumanResourcesReportStore(
         if (station is null)
             return new(null, HumanResourcesReportFailure.ForbiddenStation);
 
-        var asOf = timeProvider.GetUtcNow();
         var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(
             asOf, TimeZoneInfo.FindSystemTimeZoneById(station.IanaTimeZone)).DateTime);
 
@@ -223,7 +303,14 @@ internal sealed class EfHumanResourcesReportStore(
                 permit.ExpiresOn,
                 SortId = permit.Id,
             };
-        var rows = await qualifications.Concat(permits).Distinct()
+        var filtered = qualifications.Concat(permits).Distinct();
+        if (documentKind is not null)
+            filtered = filtered.Where(item => item.Kind == documentKind);
+        if (validity == "Current")
+            filtered = filtered.Where(item => item.ExpiresOn >= localToday);
+        else if (validity == "Expired")
+            filtered = filtered.Where(item => item.ExpiresOn < localToday);
+        var rows = await filtered
             .OrderBy(item => item.ExpiresOn).ThenBy(item => item.Kind)
             .ThenBy(item => item.SortId)
             .Skip((page - 1) * limit).Take(limit + 1)
@@ -308,10 +395,11 @@ internal sealed class EfHumanResourcesReportStore(
 
     public async Task<HumanResourcesReportReadResult<HumanResourcesQualificationCoverageRow>>
         ListQualificationCoverageAsync(Guid actorId, Guid stationId,
-            DateOnly reportDate, int page, int limit,
+            DateOnly startDate, DateOnly reportDate, int page, int limit,
             CancellationToken cancellationToken = default)
     {
-        if (actorId == Guid.Empty || stationId == Guid.Empty || reportDate == default ||
+        if (actorId == Guid.Empty || stationId == Guid.Empty ||
+            !HumanResourcesReportPolicy.ValidRange(startDate, reportDate) ||
             page < 1 || limit is < 1 or > 100 ||
             (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(reportDate));
@@ -358,7 +446,7 @@ internal sealed class EfHumanResourcesReportStore(
             .ToArrayAsync(cancellationToken);
 
         return new(new HumanResourcesReportPage<HumanResourcesQualificationCoverageRow>(
-            stationId, reportDate, reportDate, page, limit, rows.Length > limit,
+            stationId, startDate, reportDate, page, limit, rows.Length > limit,
             timeProvider.GetUtcNow(), rows.Take(limit).Select(item =>
                 new HumanResourcesQualificationCoverageRow(item.EquipmentTypeId,
                     item.EquipmentCode, item.EquipmentName,

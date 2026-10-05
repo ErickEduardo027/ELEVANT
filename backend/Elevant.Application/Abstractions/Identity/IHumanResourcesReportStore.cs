@@ -32,6 +32,9 @@ public sealed record HumanResourcesReportSnapshot(
     IReadOnlyList<IReadOnlyList<HumanResourcesReportCell>> Rows)
 {
     public int RowCount => Rows.Count;
+    public string StationCode { get; init; } = string.Empty;
+    public string? DocumentKind { get; init; }
+    public string? Validity { get; init; }
 }
 
 public sealed record HumanResourcesReportSnapshotResult(
@@ -76,7 +79,8 @@ public interface IHumanResourcesReportStore
 {
     Task<HumanResourcesReportReadResult<HumanResourcesExpirationRow>> ListExpirationsAsync(
         Guid actorId, Guid stationId, DateOnly startDate, DateOnly endDate,
-        int page, int limit, CancellationToken cancellationToken = default);
+        int page, int limit, string? documentKind = null, string? validity = null,
+        CancellationToken cancellationToken = default);
 
     Task<HumanResourcesReportReadResult<HumanResourcesStaffDistributionRow>>
         ListStaffDistributionAsync(Guid actorId, Guid stationId,
@@ -85,7 +89,7 @@ public interface IHumanResourcesReportStore
 
     Task<HumanResourcesReportReadResult<HumanResourcesQualificationCoverageRow>>
         ListQualificationCoverageAsync(Guid actorId, Guid stationId,
-            DateOnly reportDate, int page, int limit,
+            DateOnly startDate, DateOnly reportDate, int page, int limit,
             CancellationToken cancellationToken = default);
 
     Task<HumanResourcesReportReadResult<HumanResourcesAccountMovementRow>>
@@ -96,5 +100,12 @@ public interface IHumanResourcesReportStore
     Task<HumanResourcesReportSnapshotResult> ReadSnapshotAsync(
         Guid actorId, Guid stationId, HumanResourcesReportKind kind,
         DateOnly startDate, DateOnly endDate, int maxRows,
+        string? documentKind = null, string? validity = null,
+        CancellationToken cancellationToken = default);
+
+    Task<HumanResourcesReportFailure?> RecordExportAsync(
+        Guid actorId, Guid stationId, HumanResourcesReportKind kind,
+        DateOnly startDate, DateOnly endDate, string format, int rowCount,
+        string? documentKind = null, string? validity = null,
         CancellationToken cancellationToken = default);
 }

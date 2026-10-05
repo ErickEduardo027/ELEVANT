@@ -23,6 +23,19 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
+En esta rama local, las cuatro lecturas de reportes de Gestión Humana usan
+`GET /api/v1/human-resources/reports/{kind}` con rutas concretas para
+`expirations`, `account-movements`, `staff-distribution` y
+`qualification-coverage`. Cada página publica `stationId`, `from`, `to`,
+`page`, `limit`, `hasMore`, `asOf` y filas tipadas. Vigencias admite
+`documentKind=Qualification|Permit` y `validity=Current|Expired`, devueltos
+como filtros efectivos; la misma selección se aplica a la exportación.
+`GET .../{kind}/export`
+declara respuesta binaria PDF u OpenXML según `format`; el cliente generado
+comprueba firma y tipo antes de ofrecer la descarga. El servidor aplica
+autorización viva por rol y estación, 400/401/403/404/422 y `no-store`;
+OpenAPI no convierte por sí solo estas rutas en una promoción al VPS.
+
 La clausura comercial usa `GET/POST /api/v1/service-closures`,
 `POST /api/v1/service-closures/{id}/decision` y
 `POST /api/v1/service-closures/services/{id}/reopen`. Las respuestas exponen

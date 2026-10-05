@@ -2622,6 +2622,58 @@ public sealed partial class SqlServerMigrationTests
             new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
                 rampRole.Id, "Synthetic-Ramp!5678", newRampProfileId), cancellationToken);
         Assert.True(rampAccount.IsSuccess, rampAccount.Failure?.ToString());
+        var rampCreationAudit = Assert.Single(await context.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "governance.user.created" &&
+                item.EntityPublicId == rampAccount.Id)
+            .ToArrayAsync(cancellationToken));
+        Assert.Equal(await context.Stations.Where(item => item.PublicId == station.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken),
+            rampCreationAudit.StationId);
+        Assert.True((await governance.DeleteUserAsync(superAdminId, rampAccount.Id!.Value,
+            cancellationToken)).IsSuccess);
+        Assert.True((await governance.DeleteUserAsync(superAdminId, rampAccount.Id.Value,
+            cancellationToken)).IsSuccess);
+        Assert.Equal(1, await context.AuditEntries.AsNoTracking().CountAsync(item =>
+            item.Action == "governance.user.deactivated" &&
+            item.EntityPublicId == rampAccount.Id, cancellationToken));
+        Assert.True((await governance.UpdateUserAsync(superAdminId, rampAccount.Id.Value,
+            new UpdateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
+                rampRole.Id, true, newRampProfileId), cancellationToken)).IsSuccess);
+        var movementAudits = await context.AuditEntries.AsNoTracking()
+            .Where(item => (item.Action == "governance.user.deactivated" ||
+                item.Action == "governance.user.updated") &&
+                item.EntityPublicId == rampAccount.Id)
+            .OrderBy(item => item.OccurredAt).ToArrayAsync(cancellationToken);
+        Assert.Equal(2, movementAudits.Length);
+        Assert.All(movementAudits, item => Assert.Equal(rampCreationAudit.StationId,
+            item.StationId));
+        var reportDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var movementReport = await scope.ServiceProvider
+            .GetRequiredService<IHumanResourcesReportStore>()
+            .ListAccountMovementsAsync(humanResourcesAccountId, station.Id,
+                reportDate.AddDays(-1), reportDate.AddDays(1), 1, 20,
+                cancellationToken);
+        Assert.Null(movementReport.Failure);
+        Assert.Equal(["Created", "Deactivated", "Reactivated"],
+            movementReport.Page!.Rows.Where(item => item.AccountId == rampAccount.Id)
+                .Select(item => item.Kind).ToArray());
+        await context.Database.ExecuteSqlRawAsync(
+            """CREATE TRIGGER audit.tr_hr_movement_failure ON audit.audit_entries AFTER INSERT AS BEGIN IF EXISTS (SELECT 1 FROM inserted WHERE action = 'governance.user.deactivated') THROW 51000, 'Synthetic audit rejection', 1; END""",
+            cancellationToken);
+        try
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => governance.DeleteUserAsync(
+                superAdminId, rampAccount.Id.Value, cancellationToken));
+        }
+        finally
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "DROP TRIGGER audit.tr_hr_movement_failure", cancellationToken);
+        }
+        Assert.Equal(AccountLifecycleStatus.Active, await context.Users.AsNoTracking()
+            .Where(item => item.PublicId == rampAccount.Id)
+            .Select(item => item.Status).SingleAsync(cancellationToken));
+        context.ChangeTracker.Clear();
         Assert.Contains((await governance.GetAsync(superAdminId, cancellationToken))!.RampProfiles,
             profile => profile.Id == newRampProfileId && profile.AccountId == rampAccount.Id);
         Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,

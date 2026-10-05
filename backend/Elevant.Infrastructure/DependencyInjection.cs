@@ -1,6 +1,8 @@
 using Elevant.Infrastructure.Authentication;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Infrastructure.Finance;
+using Elevant.Application.Abstractions.Identity;
+using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,8 @@ public static class DependencyInjection
         services.AddFlightAwareShell(configuration);
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
+        services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
+        services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
     }

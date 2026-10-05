@@ -1,6 +1,6 @@
 # Reportes verificables de Gestión Humana: diseño
 
-Estado: propuesta de subproyecto del [plan operativo de G.H.](2026-10-04-human-resources-operational-interviews-design.md). Aprobación conversacional del enfoque: 5 de octubre de 2026. Este documento requiere revisión antes de crear un plan de implementación. No describe funcionalidad desplegada.
+Estado: diseño aprobado conversacionalmente el 5 de octubre de 2026 para el [plan operativo de G.H.](2026-10-04-human-resources-operational-interviews-design.md). Su [plan de implementación](../plans/2026-10-05-hr-reports.md) está en ejecución; no describe funcionalidad desplegada.
 
 ## Propósito y alcance
 

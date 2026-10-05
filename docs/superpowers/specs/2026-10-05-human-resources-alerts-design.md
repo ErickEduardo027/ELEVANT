@@ -1,6 +1,6 @@
 # Alertas y avisos verificables de Gestión Humana: diseño
 
-Estado: propuesta dentro del [diseño operativo de G.H.](2026-10-04-human-resources-operational-interviews-design.md). Requiere revisión antes del plan de implementación. No describe capacidad desplegada.
+Estado: diseño aprobado conversacionalmente el 5 de octubre de 2026 dentro del [diseño operativo de G.H.](2026-10-04-human-resources-operational-interviews-design.md). Requiere implementación y pruebas; no describe capacidad desplegada.
 
 ## Contexto y límites
 

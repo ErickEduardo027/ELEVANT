@@ -442,8 +442,9 @@ internal sealed class EfGovernanceStore(
                         context.AccountStationScopes.Add(new AccountStationScope
                         { AccountId = user.Id, StationId = stationId, GrantedAt = DateTimeOffset.UtcNow });
                 }
-                await AuditAsync(actorId, "governance.user.created", "iam.accounts",
-                    user.PublicId, null, cancellationToken,
+                await AuditAccountMovementAsync(actorId, "governance.user.created",
+                    user.PublicId, approvedStationIds, DateTimeOffset.UtcNow,
+                    cancellationToken,
                     new("user.role", null, role.NormalizedName),
                     new("user.status", null, user.Status.ToString()));
                 if (accessRequest is not null)
@@ -605,8 +606,11 @@ internal sealed class EfGovernanceStore(
             context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
             { UserId = user.Id, RoleId = role.Id });
             await userManager.UpdateSecurityStampAsync(user);
-            await AuditAsync(actorId, "governance.user.updated", "iam.accounts",
-                user.PublicId, null, cancellationToken,
+            var auditAt = DateTimeOffset.UtcNow;
+            var stationIds = await VerifiedAccountMovementStationIdsAsync(user,
+                auditAt, cancellationToken);
+            await AuditAccountMovementAsync(actorId, "governance.user.updated",
+                user.PublicId, stationIds, auditAt, cancellationToken,
                 new("user.role", previousRole, role.NormalizedName),
                 new("user.status", previousStatus, user.Status.ToString()));
             await context.SaveChangesAsync(cancellationToken);
@@ -621,26 +625,39 @@ internal sealed class EfGovernanceStore(
         if (!await IsSuperAdminAsync(actorId, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         if (actorId == userId) return GovernanceResult.Failed(GovernanceFailure.Protected);
-        var user = await context.Users.SingleOrDefaultAsync(item => item.PublicId == userId,
-            cancellationToken);
-        if (user is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
-        var superAdminRoleId = await context.Roles.Where(item =>
-            item.NormalizedName == "SUPERADMIN").Select(item => item.Id)
-            .SingleAsync(cancellationToken);
-        if (await context.Set<IdentityUserRole<long>>().AnyAsync(link =>
-            link.UserId == user.Id && link.RoleId == superAdminRoleId,
-            cancellationToken) &&
-            await ActiveRoleUserCountAsync(superAdminRoleId, cancellationToken) <= 1)
-            return GovernanceResult.Failed(GovernanceFailure.Protected);
-        var previousStatus = user.Status.ToString();
-        user.Status = AccountLifecycleStatus.Disabled;
-        user.UpdatedAt = DateTimeOffset.UtcNow;
-        await userManager.UpdateSecurityStampAsync(user);
-        await AuditAsync(actorId, "governance.user.deactivated", "iam.accounts",
-            user.PublicId, null, cancellationToken,
-            new AuditFieldChangeData("user.status", previousStatus, user.Status.ToString()));
-        await context.SaveChangesAsync(cancellationToken);
-        return GovernanceResult.Success(user.PublicId);
+        var strategy = context.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            context.ChangeTracker.Clear();
+            await using var transaction = await context.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable, cancellationToken);
+            var user = await context.Users.SingleOrDefaultAsync(item =>
+                item.PublicId == userId, cancellationToken);
+            if (user is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            var superAdminRoleId = await context.Roles.Where(item =>
+                item.NormalizedName == "SUPERADMIN").Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            if (await context.Set<IdentityUserRole<long>>().AnyAsync(link =>
+                link.UserId == user.Id && link.RoleId == superAdminRoleId,
+                cancellationToken) &&
+                await ActiveRoleUserCountAsync(superAdminRoleId, cancellationToken) <= 1)
+                return GovernanceResult.Failed(GovernanceFailure.Protected);
+            if (user.Status == AccountLifecycleStatus.Disabled)
+                return GovernanceResult.Success(user.PublicId);
+            var previousStatus = user.Status.ToString();
+            user.Status = AccountLifecycleStatus.Disabled;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await userManager.UpdateSecurityStampAsync(user);
+            var auditAt = DateTimeOffset.UtcNow;
+            var stationIds = await VerifiedAccountMovementStationIdsAsync(user,
+                auditAt, cancellationToken);
+            await AuditAccountMovementAsync(actorId, "governance.user.deactivated",
+                user.PublicId, stationIds, auditAt, cancellationToken,
+                new AuditFieldChangeData("user.status", previousStatus, user.Status.ToString()));
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return GovernanceResult.Success(user.PublicId);
+        });
     }
 
     private async Task<GovernanceResult> ResetPasswordCoreAsync(Guid actorId,
@@ -710,26 +727,74 @@ internal sealed class EfGovernanceStore(
             await userManager.UpdateSecurityStampAsync(user);
     }
 
-    private async Task AuditAsync(Guid actorId, string action, string entityType,
+    private async Task<long[]> VerifiedAccountMovementStationIdsAsync(
+        ApplicationUser account, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        var candidates = await (
+            from grant in context.AccountStationScopes.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking()
+                on account.PersonId equals agent.PersonId
+            join scope in context.Set<RampAgentStationScope>().AsNoTracking()
+                on agent.Id equals scope.RampAgentId
+            join station in context.Stations.AsNoTracking()
+                on scope.StationId equals station.Id
+            where grant.AccountId == account.Id &&
+                grant.StationId == station.Id && grant.RevokedAt == null &&
+                grant.GrantedAt <= at && agent.IsActive && station.IsActive
+            select new
+            {
+                station.Id, station.IanaTimeZone, scope.ValidFrom, scope.ValidTo,
+            }).ToArrayAsync(cancellationToken);
+        return candidates.Where(item =>
+        {
+            var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at,
+                TimeZoneInfo.FindSystemTimeZoneById(item.IanaTimeZone)).DateTime);
+            return item.ValidFrom <= localDate &&
+                (item.ValidTo is null || item.ValidTo >= localDate);
+        }).Select(item => item.Id).Distinct().Order().ToArray();
+    }
+
+    private Task AuditAsync(Guid actorId, string action, string entityType,
         Guid entityId, string? reason, CancellationToken cancellationToken,
+        params AuditFieldChangeData[] changes) =>
+        AddAuditAsync(actorId, action, entityType, entityId, reason,
+            [null], DateTimeOffset.UtcNow, cancellationToken, changes);
+
+    private Task AuditAccountMovementAsync(Guid actorId, string action,
+        Guid accountId, long[] verifiedStationIds,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken,
+        params AuditFieldChangeData[] changes) =>
+        AddAuditAsync(actorId, action, "iam.accounts", accountId, null,
+            verifiedStationIds.Length == 0 ? [null] :
+                verifiedStationIds.Select(id => (long?)id).ToArray(),
+            occurredAt, cancellationToken, changes);
+
+    private async Task AddAuditAsync(Guid actorId, string action, string entityType,
+        Guid entityId, string? reason, IReadOnlyCollection<long?> stationIds,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken,
         params AuditFieldChangeData[] changes)
     {
         var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
-        context.AuditEntries.Add(new AuditEntry
+        var correlationId = Guid.CreateVersion7();
+        foreach (var stationId in stationIds)
         {
-            PublicId = Guid.CreateVersion7(),
-            OccurredAt = DateTimeOffset.UtcNow,
-            ActorType = AuditActorType.Account,
-            ActorAccountId = actorDatabaseId,
-            Action = action,
-            EntityType = entityType,
-            EntityPublicId = entityId,
-            Source = AuditSource.Api,
-            CorrelationId = Guid.CreateVersion7(),
-            Reason = reason,
-            MetadataJson = SafeAuditChanges.Serialize(changes),
-        });
+            context.AuditEntries.Add(new AuditEntry
+            {
+                PublicId = Guid.CreateVersion7(),
+                OccurredAt = occurredAt,
+                ActorType = AuditActorType.Account,
+                ActorAccountId = actorDatabaseId,
+                Action = action,
+                EntityType = entityType,
+                EntityPublicId = entityId,
+                StationId = stationId,
+                Source = AuditSource.Api,
+                CorrelationId = correlationId,
+                Reason = reason,
+                MetadataJson = SafeAuditChanges.Serialize(changes),
+            });
+        }
     }
 
     private static bool ValidName(string? value) =>

@@ -34,7 +34,7 @@
 - `backend/Elevant.Contracts/Identity/HumanResourcesReportContracts.cs`: página tipada de cada informe, filtros y metadatos `AsOf`.
 - `backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs`: cuatro rutas GET concretas y exportación por `kind`, mapeo de 400/401/403/404/422.
 - `backend/Elevant.Infrastructure/Identity/HumanResourcesReportPdfRenderer.cs` y `HumanResourcesReportXlsxRenderer.cs`: bytes desde snapshot materializado; font resolver PDF compartido con el renderizador financiero.
-- `frontend/private-web/src/services/humanResourcesReportsService.js` y `features/human-resources/reports/CurrentReportsPage.jsx`: transporte y vista autenticada.
+- `frontend/private-web/src/services/humanResourcesVerifiedReportsService.js` y `features/human-resources/reports/CurrentReportsPage.jsx`: transporte nuevo y vista autenticada. El servicio heredado `humanResourcesReportsService.js` queda intacto para las pantallas prototípicas que aún lo importan.
 
 ### Task 1: Lecturas autorizadas y snapshot
 

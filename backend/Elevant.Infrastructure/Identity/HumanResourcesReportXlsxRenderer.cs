@@ -33,6 +33,8 @@ public sealed class HumanResourcesReportXlsxRenderer : IHumanResourcesReportXlsx
             Append(data, ["ELEVANT · GESTIÓN HUMANA"]);
             Append(data, [$"Estación: {stationCode}"]);
             Append(data, [$"Periodo: {snapshot.From:yyyy-MM-dd} – {snapshot.To:yyyy-MM-dd}"]);
+            if (snapshot.Kind == HumanResourcesReportKind.Expirations)
+                Append(data, [$"Clase: {snapshot.DocumentKind ?? "Todas"}; Vigencia: {snapshot.Validity ?? "Todas"}"]);
             Append(data, [$"Generado: {snapshot.AsOf.ToUniversalTime():O}"]);
             Append(data, [$"Filas: {snapshot.RowCount}"]);
             Append(data, snapshot.Columns);

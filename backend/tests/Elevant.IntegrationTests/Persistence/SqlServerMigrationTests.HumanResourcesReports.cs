@@ -34,8 +34,9 @@ public sealed partial class SqlServerMigrationTests
                 InitialPasswords.Contracts, InitialPasswords.Finance,
                 "Synthetic-SuperAdmin!234"), cancellationToken);
 
+        var clock = new SteppingReportTimeProvider();
         await using var provider = new ServiceCollection().AddLogging()
-            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddSingleton<TimeProvider>(clock)
             .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?>
                 { ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString }).Build())
@@ -51,16 +52,28 @@ public sealed partial class SqlServerMigrationTests
         var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
 
         var own = await store.ListExpirationsAsync(hrId, stationId, from, to,
-            1, 20, cancellationToken);
+            1, 20, cancellationToken: cancellationToken);
         Assert.Null(own.Failure);
         Assert.Equal(3, own.Page!.Rows.Count);
         Assert.All(own.Page.Rows, row => Assert.Equal(new DateOnly(2099, 12, 31), row.ExpiresOn));
+        var qualifications = await store.ListExpirationsAsync(hrId, stationId,
+            from, to, 1, 20, "Qualification", cancellationToken: cancellationToken);
+        Assert.Equal(own.Page.Rows.Count(row => row.Kind == "Qualification"),
+            qualifications.Page!.Rows.Count);
+        Assert.All(qualifications.Page.Rows, row => Assert.Equal("Qualification", row.Kind));
+        var permits = await store.ListExpirationsAsync(hrId, stationId,
+            from, to, 1, 20, "Permit", cancellationToken: cancellationToken);
+        Assert.Equal(own.Page.Rows.Count(row => row.Kind == "Permit"),
+            permits.Page!.Rows.Count);
+        var expired = await store.ListExpirationsAsync(hrId, stationId,
+            from, to, 1, 20, validity: "Expired", cancellationToken: cancellationToken);
+        Assert.Empty(expired.Page!.Rows);
 
         var wrongStation = await store.ListExpirationsAsync(hrId, Guid.NewGuid(),
-            from, to, 1, 20, cancellationToken);
+            from, to, 1, 20, cancellationToken: cancellationToken);
         Assert.Equal(HumanResourcesReportFailure.ForbiddenStation, wrongStation.Failure);
         var wrongRole = await store.ListExpirationsAsync(occId, stationId,
-            from, to, 1, 20, cancellationToken);
+            from, to, 1, 20, cancellationToken: cancellationToken);
         Assert.Equal(HumanResourcesReportFailure.ForbiddenRole, wrongRole.Failure);
 
         var shifts = await store.ListStaffDistributionAsync(hrId, stationId,
@@ -77,8 +90,11 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(new DateOnly(2026, 8, 19), Assert.Single(secondShift.Page.Rows).WorkDate);
 
         var coverage = await store.ListQualificationCoverageAsync(hrId, stationId,
-            new DateOnly(2026, 10, 5), 1, 20, cancellationToken);
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 5),
+            1, 20, cancellationToken);
         Assert.Null(coverage.Failure);
+        Assert.Equal(new DateOnly(2026, 10, 1), coverage.Page!.From);
+        Assert.Equal(new DateOnly(2026, 10, 5), coverage.Page.To);
         var gpu = Assert.Single(coverage.Page!.Rows);
         Assert.Equal("GPU", gpu.EquipmentCode);
         Assert.Equal(1, gpu.EligibleAgents);
@@ -145,9 +161,9 @@ public sealed partial class SqlServerMigrationTests
             }));
         await context.SaveChangesAsync(cancellationToken);
         var firstHundred = await store.ListExpirationsAsync(hrId, stationId,
-            from, to, 1, 100, cancellationToken);
+            from, to, 1, 100, cancellationToken: cancellationToken);
         var remainder = await store.ListExpirationsAsync(hrId, stationId,
-            from, to, 2, 100, cancellationToken);
+            from, to, 2, 100, cancellationToken: cancellationToken);
         Assert.True(firstHundred.Page!.HasMore);
         Assert.Equal(100, firstHundred.Page.Rows.Count);
         Assert.False(remainder.Page!.HasMore);
@@ -155,14 +171,51 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(102, firstHundred.Page.Rows.Concat(remainder.Page.Rows)
             .Select(item => item.Id).Distinct().Count());
         var snapshot = await store.ReadSnapshotAsync(hrId, stationId,
-            HumanResourcesReportKind.Expirations, from, to, 5000, cancellationToken);
+            HumanResourcesReportKind.Expirations, from, to, 5000,
+            cancellationToken: cancellationToken);
         Assert.Null(snapshot.Failure);
         Assert.Equal(102, snapshot.Snapshot!.Rows.Count);
         Assert.Equal(102, snapshot.Snapshot.RowCount);
+        Assert.Equal("PUJ", snapshot.Snapshot.StationCode);
+        var filteredSnapshot = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.Expirations, from, to, 5000,
+            "Qualification", "Current", cancellationToken);
+        Assert.Null(filteredSnapshot.Failure);
+        Assert.Equal(equipmentTypes.Length + qualifications.Page.Rows.Count,
+            filteredSnapshot.Snapshot!.RowCount);
+        Assert.Equal("Qualification", filteredSnapshot.Snapshot.DocumentKind);
+        Assert.Equal("Current", filteredSnapshot.Snapshot.Validity);
+        var stationZone = await context.Stations.Where(item => item.PublicId == stationId)
+            .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken);
+        var beforeMidnight = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(
+            new DateTime(2099, 12, 31, 23, 59, 0, DateTimeKind.Unspecified),
+            TimeZoneInfo.FindSystemTimeZoneById(stationZone)), TimeSpan.Zero);
+        clock.Step(beforeMidnight, beforeMidnight.AddMinutes(2));
+        var midnightSnapshot = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.Expirations, from, to, 5000,
+            validity: "Current", cancellationToken: cancellationToken);
+        Assert.Null(midnightSnapshot.Failure);
+        Assert.Equal(102, midnightSnapshot.Snapshot!.RowCount);
         var overLimit = await store.ReadSnapshotAsync(hrId, stationId,
-            HumanResourcesReportKind.Expirations, from, to, 100, cancellationToken);
+            HumanResourcesReportKind.Expirations, from, to, 100,
+            cancellationToken: cancellationToken);
         Assert.Equal(HumanResourcesReportFailure.TooLarge, overLimit.Failure);
         Assert.Null(overLimit.Snapshot);
+
+        Assert.Null(await store.RecordExportAsync(hrId, stationId,
+            HumanResourcesReportKind.Expirations, from, to, "pdf",
+            filteredSnapshot.Snapshot.RowCount, "Qualification", "Current",
+            cancellationToken: cancellationToken));
+        var exportAudit = await context.AuditEntries.AsNoTracking().SingleAsync(item =>
+            item.Action == "human-resources.report.exported", cancellationToken);
+        Assert.Equal(stationInternalId, exportAudit.StationId);
+        Assert.Contains($"\"RowCount\":{filteredSnapshot.Snapshot.RowCount}",
+            exportAudit.MetadataJson, StringComparison.Ordinal);
+        Assert.Contains("\"DocumentKind\":\"Qualification\"", exportAudit.MetadataJson,
+            StringComparison.Ordinal);
+        Assert.Contains("\"Validity\":\"Current\"", exportAudit.MetadataJson,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Agente", exportAudit.MetadataJson, StringComparison.Ordinal);
 
         var hrInternalId = await context.Users.Where(item => item.PublicId == hrId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
@@ -172,7 +225,29 @@ public sealed partial class SqlServerMigrationTests
             item.UserId == hrInternalId && item.RoleId == hrRoleId)
             .ExecuteDeleteAsync(cancellationToken);
         var revoked = await store.ListExpirationsAsync(hrId, stationId,
-            from, to, 1, 20, cancellationToken);
+            from, to, 1, 20, cancellationToken: cancellationToken);
         Assert.Equal(HumanResourcesReportFailure.ForbiddenRole, revoked.Failure);
+        Assert.Equal(HumanResourcesReportFailure.ForbiddenRole,
+            await store.RecordExportAsync(hrId, stationId,
+                HumanResourcesReportKind.Expirations, from, to, "pdf", 102,
+                cancellationToken: cancellationToken));
+    }
+
+    private sealed class SteppingReportTimeProvider : TimeProvider
+    {
+        private DateTimeOffset? first;
+        private DateTimeOffset? later;
+        private int calls;
+
+        public void Step(DateTimeOffset before, DateTimeOffset after)
+        {
+            first = before;
+            later = after;
+            calls = 0;
+        }
+
+        public override DateTimeOffset GetUtcNow() => first is null
+            ? TimeProvider.System.GetUtcNow()
+            : Interlocked.Increment(ref calls) == 1 ? first.Value : later!.Value;
     }
 }
