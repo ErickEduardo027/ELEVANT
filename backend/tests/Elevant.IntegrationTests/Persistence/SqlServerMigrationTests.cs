@@ -9143,6 +9143,23 @@ public sealed class SqlServerMigrationTests
         Assert.Equal(3, await verify.OperationAttendanceContributionRevisions.CountAsync(cancellationToken));
         Assert.Equal(3, await verify.AuditEntries.CountAsync(item =>
             item.Action == "ops.attendance_draft.saved", cancellationToken));
+        var auditRows = await verify.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "ops.attendance_draft.saved")
+            .ToArrayAsync(cancellationToken);
+        var occInternalIdForAudit = await verify.Users.Where(item => item.PublicId == occId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var agentInternalIdForAudit = await verify.Users.Where(item => item.PublicId == agentId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.Equal(2, auditRows.Count(item => item.ActorAccountId == occInternalIdForAudit &&
+            item.Source == AuditSource.Api));
+        Assert.Single(auditRows, item => item.ActorAccountId == agentInternalIdForAudit &&
+            item.Source == AuditSource.MobileSync);
+        Assert.All(auditRows, item =>
+        {
+            Assert.NotEqual(default, item.OccurredAt);
+            Assert.DoesNotContain("Equipo listo", item.MetadataJson ?? string.Empty);
+            Assert.DoesNotContain("Rampa lista", item.MetadataJson ?? string.Empty);
+        });
         Assert.True(await verify.OutboxMessages.CountAsync(item =>
             item.EventType == "account.changed.v1" &&
             item.PayloadJson.Contains("attendance_draft"), cancellationToken) >= 2);

@@ -244,6 +244,31 @@ export interface AssignOccOperationRequest {
   agentId: string;
 }
 
+export interface AttendanceDraftContributionResponse {
+  revision: number;
+  authorAccountId: string;
+  recordedAt: string;
+  /** @nullable */
+  observedStartAt?: string | null;
+  /** @nullable */
+  observedEndAt?: string | null;
+  /** @nullable */
+  incidentNote?: string | null;
+}
+
+export interface AttendanceDraftSnapshotResponse {
+  operationId: string;
+  assignmentId: string;
+  stationId: string;
+  occ?: AttendanceDraftContributionResponse | null;
+  rampAgent?: AttendanceDraftContributionResponse | null;
+}
+
+export interface AttendanceDraftWriteResponse {
+  contribution: AttendanceDraftContributionResponse;
+  replayed: boolean;
+}
+
 export interface AuditFieldChangeData {
   field: string;
   /** @nullable */
@@ -2025,6 +2050,16 @@ export interface ReviewCommercialInput {
   stationIds: string[];
 }
 
+export interface SaveAttendanceDraftRequest {
+  expectedRevision: number;
+  /** @nullable */
+  observedStartAt?: string | null;
+  /** @nullable */
+  observedEndAt?: string | null;
+  /** @nullable */
+  incidentNote?: string | null;
+}
+
 export interface SaveGovernanceRoleInput {
   name: string;
   /** @nullable */
@@ -2858,6 +2893,119 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOperationAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft`
+}
+
+/**
+ * @summary Returns the current revision in each lane, rechecking live access.
+ */
+export const getOperationAttendanceDraft = async (operationId: string,
+    assignmentId: string, options?: RequestInit): Promise<AttendanceDraftSnapshotResponse> => {
+
+  const res = await fetch(getGetOperationAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftSnapshotResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSaveOccAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft/occ`
+}
+
+/**
+ * @summary Appends only the current OCC user's lane revision.
+ */
+export const saveOccAttendanceDraft = async (operationId: string,
+    assignmentId: string,
+    saveAttendanceDraftRequest: SaveAttendanceDraftRequest, options?: RequestInit): Promise<AttendanceDraftWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSaveOccAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAttendanceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftWriteResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSaveRampAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft/ramp-agent`
+}
+
+/**
+ * @summary Appends only the active assigned agent's lane revision.
+ */
+export const saveRampAttendanceDraft = async (operationId: string,
+    assignmentId: string,
+    saveAttendanceDraftRequest: SaveAttendanceDraftRequest, options?: RequestInit): Promise<AttendanceDraftWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSaveRampAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAttendanceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftWriteResponse = body ? JSON.parse(body) : {}
   return data
 }
 

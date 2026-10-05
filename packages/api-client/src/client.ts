@@ -65,6 +65,9 @@ import {
   getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
+  getGetOperationAttendanceDraftUrl,
+  getSaveOccAttendanceDraftUrl,
+  getSaveRampAttendanceDraftUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
@@ -144,6 +147,10 @@ import {
   type CurrentSessionResponse,
   type GetRampOperationChecklistResponse,
   type GetRampIncidentsResponse,
+  type AttendanceDraftContributionResponse,
+  type AttendanceDraftSnapshotResponse,
+  type AttendanceDraftWriteResponse,
+  type SaveAttendanceDraftRequest,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type GetManualTurnaroundOptionsParams,
@@ -295,6 +302,10 @@ export type GetRampOperationChecklistOptions = Omit<
   "body" | "method"
 >;
 export type GetRampIncidentsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetOperationAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "method"> & {
+  readonly installationId?: string;
+};
+export type SaveAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -609,6 +620,26 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetRampIncidentsOptions,
   ): Promise<GetRampIncidentsResponse>;
+  getOperationAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    options?: GetOperationAttendanceDraftOptions,
+  ): Promise<AttendanceDraftSnapshotResponse>;
+  saveOccAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    request: SaveAttendanceDraftRequest,
+    idempotencyKey: string,
+    options?: SaveAttendanceDraftOptions,
+  ): Promise<AttendanceDraftWriteResponse>;
+  saveRampAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    request: SaveAttendanceDraftRequest,
+    idempotencyKey: string,
+    installationId: string,
+    options?: SaveAttendanceDraftOptions,
+  ): Promise<AttendanceDraftWriteResponse>;
   reportRampIncident(
     operationId: string,
     request: ReportRampIncidentRequest,
@@ -1622,6 +1653,64 @@ function isGetRampIncidentsResponse(
   ) return false;
   const ids = value.incidents.map(item => item.id.toLowerCase());
   return new Set(ids).size === ids.length;
+}
+
+function isAttendanceContribution(
+  value: unknown,
+): value is AttendanceDraftContributionResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "revision", "authorAccountId", "recordedAt",
+    "observedStartAt", "observedEndAt", "incidentNote",
+  ]) || !["revision", "authorAccountId", "recordedAt",
+    "observedStartAt", "observedEndAt", "incidentNote"]
+    .every(key => Object.hasOwn(value, key))) return false;
+  if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 1 ||
+    !isUuid(value.authorAccountId) || !isDateTimeOffset(value.recordedAt) ||
+    (value.observedStartAt !== null && !isDateTimeOffset(value.observedStartAt)) ||
+    (value.observedEndAt !== null && !isDateTimeOffset(value.observedEndAt)) ||
+    (value.incidentNote !== null &&
+      (typeof value.incidentNote !== "string" ||
+        value.incidentNote.trim() !== value.incidentNote ||
+        value.incidentNote.length < 1 || value.incidentNote.length > 2_000))) return false;
+  return (value.observedStartAt !== null || value.observedEndAt !== null ||
+      value.incidentNote !== null) &&
+    (value.observedStartAt === null || value.observedEndAt === null ||
+      Date.parse(value.observedEndAt as string) >= Date.parse(value.observedStartAt as string));
+}
+
+function isAttendanceSnapshot(
+  value: unknown, operationId: string, assignmentId: string,
+): value is AttendanceDraftSnapshotResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "assignmentId", "stationId", "occ", "rampAgent"]) &&
+    ["operationId", "assignmentId", "stationId", "occ", "rampAgent"]
+      .every(key => Object.hasOwn(value, key)) &&
+    isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isUuid(value.assignmentId) && value.assignmentId.toLowerCase() === assignmentId &&
+    isUuid(value.stationId) &&
+    (value.occ === null || isAttendanceContribution(value.occ)) &&
+    (value.rampAgent === null || isAttendanceContribution(value.rampAgent));
+}
+
+function isAttendanceWriteResult(
+  value: unknown, request: SaveAttendanceDraftRequest,
+): value is AttendanceDraftWriteResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["contribution", "replayed"]) &&
+    isAttendanceContribution(value.contribution) &&
+    value.contribution.revision === request.expectedRevision + 1 &&
+    (request.observedStartAt == null
+      ? value.contribution.observedStartAt === null
+      : value.contribution.observedStartAt !== null &&
+        Date.parse(value.contribution.observedStartAt as string) ===
+          Date.parse(request.observedStartAt)) &&
+    (request.observedEndAt == null
+      ? value.contribution.observedEndAt === null
+      : value.contribution.observedEndAt !== null &&
+        Date.parse(value.contribution.observedEndAt as string) ===
+          Date.parse(request.observedEndAt)) &&
+    value.contribution.incidentNote === (request.incidentNote?.trim() || null) &&
+    typeof value.replayed === "boolean";
 }
 
 function isRampIncidentReceiptResponse(
@@ -3357,6 +3446,30 @@ function validatedIncidentReportRequest(
   };
 }
 
+function validatedAttendanceDraftRequest(
+  request: SaveAttendanceDraftRequest,
+): SaveAttendanceDraftRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, [
+    "expectedRevision", "observedStartAt", "observedEndAt", "incidentNote",
+  ]) || !Number.isSafeInteger(request.expectedRevision) ||
+    (request.expectedRevision as number) < 0) {
+    throw new TypeError("Attendance draft request is invalid.");
+  }
+  const start = request.observedStartAt ?? null;
+  const end = request.observedEndAt ?? null;
+  const note = request.incidentNote ?? null;
+  if ((start !== null && !isDateTimeOffset(start)) ||
+    (end !== null && !isDateTimeOffset(end)) ||
+    (note !== null && (typeof note !== "string" ||
+      note.trim().length < 1 || note.trim().length > 2_000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(note))) ||
+    (start === null && end === null && note === null) ||
+    (start !== null && end !== null && Date.parse(end) < Date.parse(start))) {
+    throw new TypeError("Attendance draft request is invalid.");
+  }
+  return request;
+}
+
 function validatedRampOperationSubmissionRequest(
   request: SubmitRampOperationRequest,
 ): SubmitRampOperationRequest {
@@ -4503,6 +4616,74 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         true,
       );
       if (!isGetRampIncidentsResponse(result.data, operation)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getOperationAttendanceDraft(
+      operationId: string,
+      assignmentId: string,
+      options?: GetOperationAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const { installationId, ...requestOptions } = options ?? {};
+      const headers = headersFrom(requestOptions.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      if (installationId !== undefined) {
+        headers.set("x-elevant-installation-id",
+          validatedUuid(installationId, "installationId"));
+      }
+      const result = await execute(
+        getGetOperationAttendanceDraftUrl(operation, assignment),
+        { ...requestOptions, method: "GET", headers }, true,
+      );
+      if (!isAttendanceSnapshot(result.data, operation, assignment)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async saveOccAttendanceDraft(
+      operationId: string, assignmentId: string,
+      request: SaveAttendanceDraftRequest, idempotencyKey: string,
+      options?: SaveAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const draft = validatedAttendanceDraftRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(
+        getSaveOccAttendanceDraftUrl(operation, assignment),
+        { ...options, method: "PUT", headers, body: JSON.stringify(draft) }, true,
+      );
+      if (!isAttendanceWriteResult(result.data, draft)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async saveRampAttendanceDraft(
+      operationId: string, assignmentId: string,
+      request: SaveAttendanceDraftRequest, idempotencyKey: string,
+      installationId: string, options?: SaveAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const draft = validatedAttendanceDraftRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const installation = validatedUuid(installationId, "installationId");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      headers.set("x-elevant-installation-id", installation);
+      const result = await execute(
+        getSaveRampAttendanceDraftUrl(operation, assignment),
+        { ...options, method: "PUT", headers, body: JSON.stringify(draft) }, true,
+      );
+      if (!isAttendanceWriteResult(result.data, draft)) {
         throw malformedResponse(result.status);
       }
       return result.data;
