@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { XIcon } from './icons';
 import StatusBadge from '../../../components/StatusBadge';
 import { getPlanningStatusMeta } from '../planningStatus';
@@ -6,6 +6,7 @@ import { isInitialAssignmentCandidate } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
 import OccShiftPanel from './OccShiftPanel';
+import OccAttendancePanel from './OccAttendancePanel';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -66,6 +67,7 @@ export default function PlanningDrawer({
   const returnFocusRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const isSubmittingRef = useRef(false);
+  const [selectedAttendanceAssignmentId, setSelectedAttendanceAssignmentId] = useState('');
   const isSubmitting = assignmentState.status === 'submitting';
 
   useEffect(() => {
@@ -135,6 +137,10 @@ export default function PlanningDrawer({
   const meta = getPlanningStatusMeta(flight.status);
   const timeZone = flight.station?.ianaTimeZone;
   const isInitialAssignmentAvailable = isInitialAssignmentCandidate(flight);
+  const attendanceAgents = (flight.assignedAgents ?? []).filter(agent => agent.assignmentId);
+  const attendanceAgent = attendanceAgents.find(
+    agent => agent.assignmentId === selectedAttendanceAssignmentId
+  ) ?? attendanceAgents[0];
 
   return (
     <>
@@ -193,6 +199,25 @@ export default function PlanningDrawer({
               {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span></li>}
             </ResourceList>
           </Section>
+
+          {flight.operation?.id && attendanceAgent && <Section title="Asistencia compartida">
+            <label className="block text-xs">Agente para asistencia
+              <select value={attendanceAgent.assignmentId}
+                onChange={event => setSelectedAttendanceAssignmentId(event.target.value)}
+                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm focus-visible:ring-2 focus-visible:ring-accent-600 dark:border-slate-700 dark:bg-surface-dark-card">
+                {attendanceAgents.map(agent => <option key={agent.assignmentId}
+                  value={agent.assignmentId}>{agent.displayName} · {agent.employeeNumber}</option>)}
+              </select>
+            </label>
+            <div className="mt-3">
+              <OccAttendancePanel
+                key={`${flight.operation.id}|${attendanceAgent.assignmentId}`}
+                operationId={flight.operation.id}
+                assignmentId={attendanceAgent.assignmentId}
+                displayName={attendanceAgent.displayName}
+              />
+            </div>
+          </Section>}
 
           <Section title="Equipos asignados">
             <ResourceList items={flight.assignedEquipment ?? []} emptyLabel="Sin equipos asignados.">

@@ -1,12 +1,22 @@
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PlanningDrawer from './PlanningDrawer';
 import {
   createPlanningFlight,
   OPTIONS_STATE_SUCCESS,
+  STATION_ID,
 } from '../testing/planningFixtures';
+
+const attendance = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn() }));
+vi.mock('../../../services/attendanceDraftService', () => ({
+  readAttendanceDraft: attendance.read,
+  saveOccAttendanceDraft: attendance.save,
+}));
+vi.mock('../../../services/accountChangeObserver', () => ({
+  createPrivateWebAccountChangeObserver: () => ({ start: async () => {}, stop: async () => {} }),
+}));
 
 const ASSIGNED_FLIGHT = createPlanningFlight();
 const FLIGHT = createPlanningFlight({
@@ -17,6 +27,11 @@ const FLIGHT = createPlanningFlight({
     agentsAssigned: false,
   },
   hasAssignmentGap: true,
+});
+
+beforeEach(() => {
+  attendance.read.mockReset();
+  attendance.read.mockImplementation(() => new Promise(() => {}));
 });
 
 function renderDrawer(overrides = {}) {
@@ -52,6 +67,30 @@ function DrawerHarness() {
 }
 
 describe('PlanningDrawer', () => {
+  it('scopes attendance to the selected assignment and hides it without an operation', async () => {
+    attendance.read.mockImplementation(async (operationId, assignmentId) => ({
+      operationId, assignmentId, stationId: STATION_ID, occ: null, rampAgent: null,
+    }));
+    const second = { ...ASSIGNED_FLIGHT.assignedAgents[0], assignmentId: 'assignment-agent-2',
+      displayName: 'Morgan Ramp', employeeNumber: 'DEV-RA-002' };
+    const flight = createPlanningFlight({
+      assignedAgents: [...ASSIGNED_FLIGHT.assignedAgents, second],
+    });
+    const view = renderDrawer({ flight });
+    expect(await screen.findByRole('heading', { name: 'Asistencia de Riley Ramp' })).toBeInTheDocument();
+    expect(attendance.read).toHaveBeenCalledWith(flight.operation.id,
+      ASSIGNED_FLIGHT.assignedAgents[0].assignmentId, expect.anything());
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Agente para asistencia' }),
+      second.assignmentId);
+    expect(await screen.findByRole('heading', { name: 'Asistencia de Morgan Ramp' })).toBeInTheDocument();
+    await waitFor(() => expect(attendance.read).toHaveBeenCalledWith(flight.operation.id,
+      second.assignmentId, expect.anything()));
+
+    view.rerender(<PlanningDrawer flight={{ ...flight, operation: null }}
+      onClose={() => {}} optionsState={OPTIONS_STATE_SUCCESS} onRetryOptions={() => {}} />);
+    expect(screen.queryByRole('heading', { name: /Asistencia de/ })).not.toBeInTheDocument();
+  });
+
   it('renders nothing when no turnaround is selected', () => {
     const { container } = render(<PlanningDrawer flight={null} onClose={() => {}} />);
 
@@ -179,7 +218,7 @@ describe('PlanningDrawer', () => {
     renderDrawer({ flight: ASSIGNED_FLIGHT });
 
     expect(screen.getByRole('button', { name: 'Asignar operación' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('ya tiene un agente activo');
+    expect(within(optionsSection()).getByRole('status')).toHaveTextContent('ya tiene un agente activo');
 
     for (const label of ['Editar planificación', 'Crear Work Order']) {
       const button = screen.getByRole('button', { name: label });
