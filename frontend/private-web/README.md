@@ -1,5 +1,20 @@
 # ELEVANT AVIAM Web
 
+## Revisión de asistencia de Gestión Humana (rama local)
+
+La ruta `/gestion-humana/attendance` consulta una página de asignaciones por
+estación autorizada y fechas locales. Presenta por separado los aportes
+inmutables de OCC y agente, con autor, revisión, horas observadas y nota.
+G.H. elige de qué aporte tomar inicio y fin; una discrepancia exige motivo.
+La validación conserva ambas revisiones y muestra si sigue vigente. Ante 409,
+relee el estado sin perder el motivo y exige confirmar las versiones nuevas;
+un resultado incierto solo se reintenta con el mismo UUID y cuerpo. Ante 401/403
+retira los datos anteriores. El feed `attendance_draft` y
+`attendance_validation`, foco, reconexión y sondeo visible de 25 segundos
+invalidan la vista, pero la API REST sigue siendo la autoridad. No hay horas
+extra automáticas ni captura biométrica. Aún falta aceptación de tres sesiones
+contra Development después de promocionar DB, API y web.
+
 **Reportes de personal** está disponible en el modo restringido de Gestión Humana. Combina las primeras 100 habilitaciones, permisos y turnos de la semana local leídos de sus tres endpoints autorizados; muestra una muestra, no totales globales, y permite abrir cada módulo paginado. Oculta los datos anteriores si una fuente falla y se revalida con cambios durables, foco, reconexión y sondeo de 25 segundos. No ofrece exportación ni estadísticas históricas ficticias. El adaptador prototípico de `/api/hr/reports/*` ya no está montado en la ruta. Tras #118, la ruta y las otras cinco rutas HR visibles se recorrieron en navegador contra el VPS sin 404/405/5xx observados; las escrituras de un ciclo nuevo siguen pendientes de aceptación remota.
 
 ## Medios del flujo comercial

@@ -96,7 +96,8 @@ internal sealed class EfAccountChangeReadStore(
                     (hasOccPlanningAccess && change.StationId != null &&
                      context.Stations.Any(station => station.Id == change.StationId &&
                          station.PublicId == change.ResourceId))) &&
-                (change.Resource != "attendance_draft" ||
+                ((change.Resource != "attendance_draft" &&
+                  change.Resource != "attendance_validation") ||
                     (change.StationId != null &&
                      context.GroundOperations.Any(operation =>
                          operation.PublicId == change.ResourceId &&

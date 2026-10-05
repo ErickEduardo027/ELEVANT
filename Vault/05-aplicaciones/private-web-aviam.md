@@ -39,6 +39,17 @@ tags:
 
 # Private Web / AVIAM
 
+## Revisión de asistencia en la rama local posterior
+
+La ruta `/gestion-humana/attendance` consume el
+[cliente OpenAPI](../../packages/api-client/src/client.ts) para comparar los
+aportes de OCC y del agente por estación. La
+[vista](../../frontend/private-web/src/features/human-resources/attendance/AttendanceReviewPage.jsx)
+permite que G.H. elija los dos hitos y justifique discrepancias; solo la API
+autoriza y guarda la decisión. Revalida por pistas durables, foco, reconexión y
+sondeo visible; una lectura 401/403 retira el snapshot previo. La ruta y sus
+pruebas locales no constituyen evidencia de despliegue en Development.
+
 Private Web es la aplicación interna de AVIAM para OCC, administración y departamentos operativos. Su acceso usa la sesión real de la API de Development y algunas rutas OCC consumen contratos canónicos. Las pantallas prototípicas, objetos locales y rutas heredadas restantes no son autoridad de permisos, persistencia ni contrato HTTP.
 
 ## Ficha de frontera

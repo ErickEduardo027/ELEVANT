@@ -34,6 +34,25 @@ tags:
 
 # Asistencia compartida OCC y agente
 
+## Decisión de G.H. en la rama local posterior
+
+El [contrato de validación](../../backend/Elevant.Api/Controllers/HumanResourcesAttendanceController.cs)
+añade una consulta paginada por estación y fecha local y una decisión inmutable
+de G.H. para cada par de revisiones actuales. La
+[política](../../backend/Elevant.Application/Operations/AttendanceValidationPolicy.cs)
+elige inicio y fin únicamente de los aportes OCC/agente; si las horas difieren,
+exige justificación. La
+[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfAttendanceValidationStore.cs)
+vuelve a comprobar cuenta, rol y estación dentro de una transacción serializable,
+registra auditoría y emite `attendance_validation`. La
+[pantalla de G.H.](../../frontend/private-web/src/features/human-resources/attendance/AttendanceReviewPage.jsx)
+compara ambos carriles, evita duplicar una decisión vigente y reconsulta REST
+ante aviso, foco, reconexión y sondeo visible. Un 409 exige releer y reconfirmar;
+una respuesta incierta conserva UUID y cuerpo. Este tramo está probado en código
+local, no acredita su promoción ni la aceptación de tres sesiones en el VPS.
+Siguen fuera el cálculo/evidencia de horas extra, exportaciones, firmas y el
+checklist de puente.
+
 El contrato API local permite consultar las observaciones manuales de una
 asignación de operación y anexar revisiones separadas para OCC y el agente de
 rampa asignado. Cada carril conserva su autor, momento de registro, instantes
@@ -69,6 +88,7 @@ anterior; OCC además rechaza horas locales inexistentes por salto horario.
 
 La migración es aditiva y sin datos de negocio. Esta nota verifica código de
 la rama en el commit indicado, no una promoción al VPS ni una prueba de
-navegador/tablet. Firma dibujada, validación G.H.,
-cálculo de horas extra y reglas de nómina continúan pendientes según la
+navegador/tablet. La validación G.H. se documenta arriba como código local
+posterior a este commit verificado; firma dibujada, cálculo de horas extra y
+reglas de nómina continúan pendientes según la
 [especificación operativa](../../docs/superpowers/specs/2026-10-04-human-resources-operational-interviews-design.md).

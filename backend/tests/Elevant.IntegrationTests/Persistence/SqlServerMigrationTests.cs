@@ -9405,6 +9405,43 @@ public sealed class SqlServerMigrationTests
         Assert.True(await verify.OutboxMessages.AnyAsync(item =>
             item.EventType == "account.changed.v1" &&
             item.PayloadJson.Contains("attendance_validation"), cancellationToken));
+        await using (var scope = provider.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>()
+                .DispatchPendingAsync(100, cancellationToken);
+        async Task<AccountChangePage?> FeedAsync(Guid actor, Guid? device = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+                .ReadAsync(actor, 0, 100, device, cancellationToken);
+        }
+        Assert.Contains((await FeedAsync(humanResourcesId))!.Changes,
+            item => item.Resource == "attendance_validation" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId, installationId))!.Changes,
+            item => item.Resource == "attendance_validation" && item.ResourceId == operationId);
+        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_validation");
+        await using (var revokeRole = CreateContext(database.ConnectionString))
+        {
+            var accountId = await revokeRole.Users.Where(item =>
+                item.PublicId == humanResourcesId).Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var roleId = await revokeRole.Roles.Where(item =>
+                item.NormalizedName == "GESTION_HUMANA").Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var contractsRoleId = await revokeRole.Roles.Where(item =>
+                item.NormalizedName == "CONTRATOS").Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            revokeRole.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
+            {
+                UserId = accountId, RoleId = contractsRoleId,
+            });
+            await revokeRole.SaveChangesAsync(cancellationToken);
+            await revokeRole.Set<IdentityUserRole<long>>().Where(item =>
+                item.UserId == accountId && item.RoleId == roleId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        Assert.DoesNotContain((await FeedAsync(humanResourcesId))!.Changes,
+            item => item.Resource == "attendance_validation");
     }
 
     [Fact]
