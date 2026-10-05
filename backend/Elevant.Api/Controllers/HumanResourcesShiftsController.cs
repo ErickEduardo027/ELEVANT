@@ -44,7 +44,7 @@ public sealed class HumanResourcesShiftsController(
         [FromQuery] int limit = 50, CancellationToken cancellationToken = default)
     {
         if (from is null || to is null || from > to ||
-            to.Value.DayNumber - from.Value.DayNumber > 6 ||
+            to.Value.DayNumber - from.Value.DayNumber > 30 ||
             page < 1 || limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             return Problem(statusCode: 400, title: "Invalid shift range or paging parameters.");
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||

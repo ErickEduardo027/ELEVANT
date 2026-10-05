@@ -68,7 +68,7 @@ internal sealed class EfHumanResourcesShiftReadStore(
         CancellationToken cancellationToken = default)
     {
         if (actorId == Guid.Empty || startDate > endDate ||
-            endDate.DayNumber - startDate.DayNumber > 6 ||
+            endDate.DayNumber - startDate.DayNumber > 30 ||
             page < 1 || limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(startDate));
 
