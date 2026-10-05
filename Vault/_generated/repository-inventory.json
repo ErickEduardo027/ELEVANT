@@ -1105,13 +1105,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "97478d07a6d0d1f292da7f0827df62384e2ecf6c5c72fcfc9fa77dd451db13ee",
+        "sha256": "d699cbc6d1c0f8f0d703a8dc558eaec0cd7d4046ecd048b839bd77852f802793",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "254d8560c60d5711c80b00d15b5f07dc6ada956f04518a40db65410b9aa0faaf",
+        "sha256": "bd371122b79570f8558de364f05b989517386d1c7c09d9046a0e96fbe3685da8",
         "title": null,
         "version": null
       }
@@ -1284,6 +1284,12 @@
         "name": "AddServiceClosureRequests",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005153623_AddServiceClosureRequests.cs",
         "sha256": "5c485081dcdccbceac887a81012245112284e3f714f18d59ff2545a320041300"
+      },
+      {
+        "id": "20261005164319",
+        "name": "OperationAttendanceValidation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005164319_OperationAttendanceValidation.cs",
+        "sha256": "283aec6b0b0d0e24d9201cfa79c27c643995b365dc9814e6e192deb2ce3e9790"
       }
     ],
     "manifestContracts": [

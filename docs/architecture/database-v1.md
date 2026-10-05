@@ -1,5 +1,18 @@
 # Base de datos ELEVANT v1
 
+## Validación aditiva de asistencia en la rama local
+
+La migración `20261005164319_OperationAttendanceValidation`, posterior a la
+clausura comercial de #128, añade
+`ops.operation_attendance_validations`. Cada fila guarda la asignación, las dos
+revisiones consultadas, los instantes elegidos por carril, el motivo cuando
+corresponde, validador, UUID idempotente y hash del cuerpo. Los índices únicos
+impiden dos decisiones para el mismo par de revisiones o reutilizar una
+intención del actor; las FK son `NO ACTION` y no hay datos de negocio en la
+migración. Un aporte posterior no reescribe la decisión: la lectura la presenta
+como no vigente. El SQL de verificación exige las migraciones de #128 y G.H.;
+la presencia del esquema local no prueba promoción al VPS.
+
 Estado del esquema: implementado y versionado en `Development`; la cadena v1
 fue aceptada mediante la operación controlada de Development. Esto no significa
 que las capacidades de negocio representadas por todas sus tablas ya tengan

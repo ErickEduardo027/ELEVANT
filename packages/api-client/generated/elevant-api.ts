@@ -269,6 +269,26 @@ export interface AttendanceDraftWriteResponse {
   replayed: boolean;
 }
 
+export interface AttendanceValidationDecisionResponse {
+  id: string;
+  assignmentId: string;
+  occRevision: number;
+  rampAgentRevision: number;
+  startSource: string;
+  endSource: string;
+  startAt: string;
+  endAt: string;
+  /** @nullable */
+  reason?: string | null;
+  validatedByAccountId: string;
+  validatedAt: string;
+}
+
+export interface AttendanceValidationWriteResponse {
+  decision: AttendanceValidationDecisionResponse;
+  replayed: boolean;
+}
+
 export interface AuditFieldChangeData {
   field: string;
   /** @nullable */
@@ -833,6 +853,29 @@ export interface GovernanceSnapshot {
   permissionCodes: string[];
   recentAudit: GovernanceAuditData[];
   rampProfiles: GovernanceRampProfileData[];
+}
+
+export interface HumanResourcesAttendanceRowResponse {
+  operationId: string;
+  assignmentId: string;
+  stationId: string;
+  operationDate: string;
+  operationCode: string;
+  agentName: string;
+  occ?: AttendanceDraftContributionResponse | null;
+  rampAgent?: AttendanceDraftContributionResponse | null;
+  latestDecision?: AttendanceValidationDecisionResponse | null;
+  isDecisionCurrent: boolean;
+}
+
+export interface HumanResourcesAttendancePageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  items: HumanResourcesAttendanceRowResponse[];
 }
 
 export interface HumanResourcesAvailabilityRequestData {
@@ -2255,6 +2298,15 @@ export interface UpdateGovernanceUserInput {
   avatarMediaUrl?: string | null;
 }
 
+export interface ValidateAttendanceRequest {
+  expectedOccRevision: number;
+  expectedRampAgentRevision: number;
+  startSource: string;
+  endSource: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface VerifyAirlineInput {
   legalName: string;
   countryCode: string;
@@ -2339,6 +2391,18 @@ limit?: number;
 export type GetGovernanceAuditParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetHumanResourcesAttendanceParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ValidateHumanResourcesAttendanceParams = {
+stationId: string;
 };
 
 export type ListHumanResourcesAvailabilityRequestsParams = {
@@ -4665,6 +4729,91 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesAttendanceUrl = (params: GetHumanResourcesAttendanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/attendance?${stringifiedParams}` : `/api/v1/human-resources/attendance`
+}
+
+/**
+ * @summary Lists the station's assignment evidence for an operation-date interval.
+ */
+export const getHumanResourcesAttendance = async (params: GetHumanResourcesAttendanceParams, options?: RequestInit): Promise<HumanResourcesAttendancePageResponse> => {
+
+  const res = await fetch(getGetHumanResourcesAttendanceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAttendancePageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getValidateHumanResourcesAttendanceUrl = (assignmentId: string,
+    params: ValidateHumanResourcesAttendanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/attendance/${assignmentId}/validation?${stringifiedParams}` : `/api/v1/human-resources/attendance/${assignmentId}/validation`
+}
+
+/**
+ * @summary Appends an immutable, revision-bound G.H. validation decision.
+ */
+export const validateHumanResourcesAttendance = async (assignmentId: string,
+    validateAttendanceRequest: ValidateAttendanceRequest,
+    params: ValidateHumanResourcesAttendanceParams, options?: RequestInit): Promise<AttendanceValidationWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getValidateHumanResourcesAttendanceUrl(assignmentId,params),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(validateAttendanceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceValidationWriteResponse = body ? JSON.parse(body) : {}
   return data
 }
 

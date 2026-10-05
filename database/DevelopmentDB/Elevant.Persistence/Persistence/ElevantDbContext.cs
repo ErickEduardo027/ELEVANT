@@ -110,6 +110,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OperationAttendanceContributionRevision> OperationAttendanceContributionRevisions => Set<OperationAttendanceContributionRevision>();
 
+    public DbSet<OperationAttendanceValidation> OperationAttendanceValidations => Set<OperationAttendanceValidation>();
+
     public DbSet<OperationEquipmentAssignment> OperationEquipmentAssignments => Set<OperationEquipmentAssignment>();
 
     public DbSet<OperationService> OperationServices => Set<OperationService>();

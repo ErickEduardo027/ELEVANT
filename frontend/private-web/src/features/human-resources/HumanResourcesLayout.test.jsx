@@ -27,7 +27,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
   it('exposes connected HR reads without a synthetic qualification badge', () => {
     render(<HumanResourcesLayout dashboardReadOnlyDemo />);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'reports']);
+    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports']);
     expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'permits').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'schedules').badge).toBeNull();
@@ -47,6 +47,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       'certifications',
       'permits',
       'schedules',
+      'attendance',
       'reports',
       'audit',
       'notifications',

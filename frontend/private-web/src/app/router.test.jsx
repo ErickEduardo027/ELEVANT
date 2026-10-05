@@ -25,7 +25,7 @@ vi.mock('../services/humanResourcesShiftsReadService', () => ({
 describe('HR routes with operational ramp profiles', () => {
   it('keeps live ramp profiles and current qualifications while redirecting unavailable deep routes', async () => {
     const children = createHumanResourcesChildren(true);
-    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'reports', '*']);
+    expect(children.map(route => route.path)).toEqual(['dashboard', 'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', '*']);
 
     const router = createMemoryRouter(
       [{ path: '/gestion-humana', element: <Outlet />, children }],

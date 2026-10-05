@@ -16,6 +16,7 @@ import CurrentShiftsPage from '../features/human-resources/schedules/CurrentShif
 import PermitsPage from '../features/human-resources/permits/PermitsPage';
 import SchedulesPage from '../features/human-resources/schedules/SchedulesPage';
 import CurrentReportsPage from '../features/human-resources/reports/CurrentReportsPage';
+import AttendanceReviewPage from '../features/human-resources/attendance/AttendanceReviewPage';
 import AuditRoute from '../features/human-resources/audit/AuditRoute';
 import HumanResourcesNotificationsRoute from '../features/human-resources/notifications/NotificationsRoute';
 import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_MODULE_IDS } from '../features/human-resources/navigation';
@@ -93,6 +94,7 @@ export function createHumanResourcesChildren(
             ? dashboardReadOnlyDemo ? <CurrentPermitsPage /> : <PermitsPage />
             : item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES
               ? dashboardReadOnlyDemo ? <CurrentShiftsPage /> : <SchedulesPage />
+              : item.id === HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE ? <AttendanceReviewPage />
               : item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ? <CurrentReportsPage />
                 : item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ? <AuditRoute />
                   : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ? <HumanResourcesNotificationsRoute />
@@ -107,6 +109,7 @@ export function createHumanResourcesChildren(
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS),
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.PERMITS),
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES),
+    routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE),
     routes.find(route => route.path === HUMAN_RESOURCES_MODULE_IDS.REPORTS),
     {
       path: '*',

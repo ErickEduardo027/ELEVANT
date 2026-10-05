@@ -69,6 +69,8 @@ import {
   getGetOperationAttendanceDraftUrl,
   getSaveOccAttendanceDraftUrl,
   getSaveRampAttendanceDraftUrl,
+  getGetHumanResourcesAttendanceUrl,
+  getValidateHumanResourcesAttendanceUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
@@ -152,6 +154,12 @@ import {
   type AttendanceDraftSnapshotResponse,
   type AttendanceDraftWriteResponse,
   type SaveAttendanceDraftRequest,
+  type HumanResourcesAttendancePageResponse,
+  type HumanResourcesAttendanceRowResponse,
+  type AttendanceValidationDecisionResponse,
+  type AttendanceValidationWriteResponse,
+  type ValidateAttendanceRequest,
+  type GetHumanResourcesAttendanceParams,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type GetManualTurnaroundOptionsParams,
@@ -309,6 +317,8 @@ export type GetOperationAttendanceDraftOptions = Omit<ElevantRequestInit, "body"
   readonly installationId?: string;
 };
 export type SaveAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ValidateHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -647,6 +657,17 @@ export interface ElevantApiClient {
     installationId: string,
     options?: SaveAttendanceDraftOptions,
   ): Promise<AttendanceDraftWriteResponse>;
+  getHumanResourcesAttendance(
+    query: GetHumanResourcesAttendanceParams,
+    options?: GetHumanResourcesAttendanceOptions,
+  ): Promise<HumanResourcesAttendancePageResponse>;
+  validateHumanResourcesAttendance(
+    assignmentId: string,
+    stationId: string,
+    request: ValidateAttendanceRequest,
+    idempotencyKey: string,
+    options?: ValidateHumanResourcesAttendanceOptions,
+  ): Promise<AttendanceValidationWriteResponse>;
   reportRampIncident(
     operationId: string,
     request: ReportRampIncidentRequest,
@@ -1718,6 +1739,83 @@ function isAttendanceWriteResult(
           Date.parse(request.observedEndAt)) &&
     value.contribution.incidentNote === (request.incidentNote?.trim() || null) &&
     typeof value.replayed === "boolean";
+}
+
+function isAttendanceValidationDecision(
+  value: unknown, assignmentId: string,
+): value is AttendanceValidationDecisionResponse {
+  return isRecord(value) && hasOnlyKeys(value, [
+    "id", "assignmentId", "occRevision", "rampAgentRevision",
+    "startSource", "endSource", "startAt", "endAt", "reason",
+    "validatedByAccountId", "validatedAt",
+  ]) &&
+    isUuid(value.id) && value.assignmentId === assignmentId &&
+    isInt32(value.occRevision) && value.occRevision > 0 &&
+    isInt32(value.rampAgentRevision) && value.rampAgentRevision > 0 &&
+    ["Occ", "RampAgent"].includes(value.startSource as string) &&
+    ["Occ", "RampAgent"].includes(value.endSource as string) &&
+    isDateTimeOffset(value.startAt) && isDateTimeOffset(value.endAt) &&
+    Date.parse(value.endAt) >= Date.parse(value.startAt) &&
+    (value.reason == null || (typeof value.reason === "string" &&
+      value.reason.trim() === value.reason && value.reason.length > 0 &&
+      value.reason.length <= 1_000)) &&
+    isUuid(value.validatedByAccountId) && isDateTimeOffset(value.validatedAt);
+}
+
+function isHumanResourcesAttendanceRow(
+  value: unknown, stationId: string, from: string, to: string,
+): value is HumanResourcesAttendanceRowResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "operationId", "assignmentId", "stationId", "operationDate",
+    "operationCode", "agentName", "occ", "rampAgent",
+    "latestDecision", "isDecisionCurrent",
+  ]) || !isUuid(value.operationId) || !isUuid(value.assignmentId) ||
+    value.stationId !== stationId || !isDateOnly(value.operationDate) ||
+    value.operationDate < from || value.operationDate > to ||
+    !isNonEmptyString(value.operationCode) || !isNonEmptyString(value.agentName) ||
+    (value.occ !== null && !isAttendanceContribution(value.occ)) ||
+    (value.rampAgent !== null && !isAttendanceContribution(value.rampAgent)) ||
+    (value.latestDecision !== null &&
+      !isAttendanceValidationDecision(value.latestDecision, value.assignmentId)) ||
+    typeof value.isDecisionCurrent !== "boolean") return false;
+  if (!value.isDecisionCurrent) return true;
+  return isRecord(value.latestDecision) && isRecord(value.occ) &&
+    isRecord(value.rampAgent) &&
+    value.latestDecision.occRevision === value.occ.revision &&
+    value.latestDecision.rampAgentRevision === value.rampAgent.revision;
+}
+
+function isHumanResourcesAttendancePage(
+  value: unknown, query: GetHumanResourcesAttendanceParams,
+): value is HumanResourcesAttendancePageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "stationId", "from", "to", "page", "limit", "hasMore", "items",
+  ]) || value.stationId !== query.stationId || value.from !== query.from ||
+    value.to !== query.to || value.page !== (query.page ?? 1) ||
+    value.limit !== (query.limit ?? 20) ||
+    typeof value.hasMore !== "boolean" || !Array.isArray(value.items) ||
+    value.items.length > value.limit ||
+    (value.hasMore && value.items.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.items.every(item => {
+    if (!isHumanResourcesAttendanceRow(item, query.stationId,
+      query.from, query.to) || ids.has(item.assignmentId)) return false;
+    ids.add(item.assignmentId);
+    return true;
+  });
+}
+
+function isAttendanceValidationWriteResult(
+  value: unknown, assignmentId: string, request: ValidateAttendanceRequest,
+): value is AttendanceValidationWriteResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["decision", "replayed"]) &&
+    typeof value.replayed === "boolean" &&
+    isAttendanceValidationDecision(value.decision, assignmentId) &&
+    value.decision.occRevision === request.expectedOccRevision &&
+    value.decision.rampAgentRevision === request.expectedRampAgentRevision &&
+    value.decision.startSource === request.startSource &&
+    value.decision.endSource === request.endSource &&
+    value.decision.reason === (request.reason?.trim() || null);
 }
 
 function isRampIncidentReceiptResponse(
@@ -3478,6 +3576,40 @@ function validatedAttendanceDraftRequest(
   return request;
 }
 
+function validatedHumanResourcesAttendanceQuery(
+  query: GetHumanResourcesAttendanceParams,
+): GetHumanResourcesAttendanceParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, [
+    "stationId", "from", "to", "page", "limit",
+  ]) || !isUuid(query.stationId) || !isDateOnly(query.from) ||
+    !isDateOnly(query.to) || query.from > query.to ||
+    (Date.parse(`${query.to}T00:00:00Z`) -
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+    (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+    (query.limit !== undefined && (!isInt32(query.limit) ||
+      query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources attendance query is invalid.");
+  return query;
+}
+
+function validatedAttendanceValidationRequest(
+  request: ValidateAttendanceRequest,
+): ValidateAttendanceRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, [
+    "expectedOccRevision", "expectedRampAgentRevision",
+    "startSource", "endSource", "reason",
+  ]) || !isInt32(request.expectedOccRevision) ||
+    request.expectedOccRevision < 1 || !isInt32(request.expectedRampAgentRevision) ||
+    request.expectedRampAgentRevision < 1 ||
+    !["Occ", "RampAgent"].includes(request.startSource as string) ||
+    !["Occ", "RampAgent"].includes(request.endSource as string) ||
+    (request.reason != null && (typeof request.reason !== "string" ||
+      request.reason.length > 1_000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.reason))))
+    throw new TypeError("Attendance validation request is invalid.");
+  return request;
+}
+
 function validatedRampOperationSubmissionRequest(
   request: SubmitRampOperationRequest,
 ): SubmitRampOperationRequest {
@@ -4715,6 +4847,36 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAttendanceWriteResult(result.data, draft)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getHumanResourcesAttendance(
+      query: GetHumanResourcesAttendanceParams,
+      options?: GetHumanResourcesAttendanceOptions,
+    ) {
+      const scope = validatedHumanResourcesAttendanceQuery(query);
+      const result = await execute(getGetHumanResourcesAttendanceUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesAttendancePage(result.data, scope))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async validateHumanResourcesAttendance(
+      assignmentId: string, stationId: string,
+      request: ValidateAttendanceRequest, idempotencyKey: string,
+      options?: ValidateHumanResourcesAttendanceOptions,
+    ) {
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const station = validatedUuid(stationId, "stationId");
+      const body = validatedAttendanceValidationRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(getValidateHumanResourcesAttendanceUrl(
+        assignment, { stationId: station }),
+      { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (!isAttendanceValidationWriteResult(result.data, assignment, body))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async reportRampIncident(

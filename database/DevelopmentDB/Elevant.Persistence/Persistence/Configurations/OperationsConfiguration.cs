@@ -185,6 +185,40 @@ internal static class OperationsConfiguration
                 item => item.AuthorAccountId);
         });
 
+        modelBuilder.Entity<OperationAttendanceValidation>(builder =>
+        {
+            builder.ToTable("operation_attendance_validations", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_attendance_validation_sources",
+                    "[start_source] IN ('Occ', 'RampAgent') AND [end_source] IN ('Occ', 'RampAgent')");
+                table.HasCheckConstraint("ck_attendance_validation_chronology",
+                    "[end_at] >= [start_at]");
+            });
+            builder.Property(item => item.StartSource).HasMaxLength(16).IsRequired();
+            builder.Property(item => item.EndSource).HasMaxLength(16).IsRequired();
+            builder.Property(item => item.Reason).HasMaxLength(1000);
+            builder.Property(item => item.PayloadSha256).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.StartAt).HasPrecision(3);
+            builder.Property(item => item.EndAt).HasPrecision(3);
+            builder.Property(item => item.ValidatedAt).HasPrecision(3);
+            builder.HasIndex(item => new
+            {
+                item.OperationAgentAssignmentId,
+                item.OccContributionRevisionId,
+                item.RampAgentContributionRevisionId,
+            }).IsUnique();
+            builder.HasIndex(item => new { item.ValidatedByAccountId,
+                item.IdempotencyKey }).IsUnique();
+            AddReference<OperationAgentAssignment, OperationAttendanceValidation>(builder,
+                item => item.OperationAgentAssignmentId);
+            AddReference<OperationAttendanceContributionRevision, OperationAttendanceValidation>(
+                builder, item => item.OccContributionRevisionId);
+            AddReference<OperationAttendanceContributionRevision, OperationAttendanceValidation>(
+                builder, item => item.RampAgentContributionRevisionId);
+            AddReference<ApplicationUser, OperationAttendanceValidation>(builder,
+                item => item.ValidatedByAccountId);
+        });
+
         modelBuilder.Entity<OperationEquipmentAssignment>(builder =>
         {
             builder.ToTable("operation_equipment_assignments", "ops", table =>

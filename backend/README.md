@@ -1,5 +1,19 @@
 # Backend de ELEVANT
 
+## Revisión de asistencia (rama local)
+
+`GET /api/v1/human-resources/attendance` lista por estación autorizada, intervalo
+local de hasta 30 días y página las asignaciones con las últimas revisiones de
+OCC y agente. `PUT /api/v1/human-resources/attendance/{assignmentId}/validation`
+elige el origen de inicio y fin (`Occ` o `RampAgent`) y exige las dos revisiones
+esperadas y `Idempotency-Key` UUID. Si las horas difieren, exige justificación.
+Solo G.H. con membresía interna y alcance vigente puede validar. Una decisión
+es inmutable; un aporte posterior la marca como no vigente sin borrar el
+historial. El servidor responde 409 ante revisión vencida o decisión concurrente,
+y repite el resultado de un PUT idéntico con la misma clave. La transacción
+guarda auditoría y aviso durable `attendance_validation`; el cliente relee por
+REST. Este código no acredita todavía promoción al VPS.
+
 Backend compartido por AVIAM Private Web, Public Web y Mobile Agent. La solución .NET 10 queda deliberadamente plana para que Visual Studio muestre directamente los proyectos productivos:
 
 ```text
