@@ -22,6 +22,7 @@ const RAMP_CORRECTION_COMMAND_PREFIX =
   'elevant:mobile:ramp-correction-command:v1:';
 const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
 const OPERATION_CHAT_COMMAND_PREFIX = 'elevant:mobile:operation-chat-command:v1:';
+const ATTENDANCE_DRAFT_PENDING_PREFIX = 'elevant:mobile:attendance-draft-pending:v1:';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
 
@@ -279,7 +280,8 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
       key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_CORRECTION_COMMAND_PREFIX) ||
       key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX) ||
-      key.startsWith(OPERATION_CHAT_COMMAND_PREFIX),
+      key.startsWith(OPERATION_CHAT_COMMAND_PREFIX) ||
+      key.startsWith(ATTENDANCE_DRAFT_PENDING_PREFIX),
   );
 }
 

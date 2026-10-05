@@ -126,6 +126,17 @@ test('keeps one account-scoped chat command stable across retries and purges it 
   expect([...mockAsyncData.keys()].some(key => key.startsWith('elevant:mobile:operation-chat-command:v1:'))).toBe(false);
 });
 
+test('purges pending attendance observations on logout', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const key = `elevant:mobile:attendance-draft-pending:v1:${sessionId}:${ACCOUNT_A}:${OPERATION_A}:${CHECKLIST_A}`;
+  mockAsyncData.set(key, JSON.stringify({ schemaVersion: 1,
+    idempotencyKey: '82000000-0000-4000-8000-000000000001',
+    request: { expectedRevision: 0, incidentNote: 'Observación privada' },
+  }));
+  await clearStoredMobileSession();
+  expect(mockAsyncData.has(key)).toBe(false);
+});
+
 test('prevents an old request from repopulating cache after account change', async () => {
   const oldSessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const oldCacheKey = assignedOperationsCacheKey(ACCOUNT_A);
