@@ -74,6 +74,7 @@ import {
   getListHumanResourcesAccountMovementsUrl,
   getListHumanResourcesStaffDistributionUrl,
   getListHumanResourcesQualificationCoverageUrl,
+  getListHumanResourcesScheduleWarningsUrl,
   getExportHumanResourcesReportUrl,
   getValidateHumanResourcesAttendanceUrl,
   getGetRampAssignedOperationsUrl,
@@ -127,6 +128,8 @@ import {
   type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
+  type HumanResourcesScheduleWarningPageResponse,
+  type ListHumanResourcesScheduleWarningsParams,
   type HumanResourcesAvailabilityRequestPage,
   type HumanResourcesAvailabilityWritten,
   type RecordHumanResourcesAvailabilityInput,
@@ -260,6 +263,10 @@ export type HumanResourcesReportPage =
   HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse |
   HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse |
   HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse;
+export type HumanResourcesScheduleWarningsQuery =
+  Required<Pick<ListHumanResourcesScheduleWarningsParams,
+    "stationId" | "from" | "to">> &
+  Pick<ListHumanResourcesScheduleWarningsParams, "page" | "limit">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -276,6 +283,8 @@ export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "b
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesScheduleWarningsOptions =
+  Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesAvailabilityRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ResolveHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -472,6 +481,10 @@ export interface ElevantApiClient {
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
   ): Promise<HumanResourcesShiftPage>;
+  getHumanResourcesScheduleWarnings(
+    query: HumanResourcesScheduleWarningsQuery,
+    options?: GetHumanResourcesScheduleWarningsOptions,
+  ): Promise<HumanResourcesScheduleWarningPageResponse>;
   getHumanResourcesAvailabilityRequests(
     query: HumanResourcesAvailabilityQuery,
     options?: GetHumanResourcesAvailabilityRequestsOptions,
@@ -3644,6 +3657,81 @@ function validatedHumanResourcesReportQuery(
   return query;
 }
 
+function validatedHumanResourcesScheduleWarningsQuery(
+  query: HumanResourcesScheduleWarningsQuery,
+): HumanResourcesScheduleWarningsQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query,
+      ["stationId", "from", "to", "page", "limit"]) ||
+      !isUuid(query.stationId) || !isDateOnly(query.from) ||
+      !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) -
+        Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) ||
+        query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources schedule warning query is invalid.");
+  return query;
+}
+
+function isHumanResourcesScheduleWarningPage(value: unknown,
+  query: HumanResourcesScheduleWarningsQuery,
+): value is HumanResourcesScheduleWarningPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "from", "to",
+      "page", "limit", "hasMore", "asOf", "ruleVersion", "ruleEffectiveOn",
+      "warnings"]) || value.stationId !== query.stationId ||
+      value.from !== query.from || value.to !== query.to ||
+      value.page !== (query.page ?? 1) ||
+      value.limit !== (query.limit ?? 20) ||
+      typeof value.hasMore !== "boolean" || !isDateTimeOffset(value.asOf) ||
+      !isNonEmptyString(value.ruleVersion) ||
+      !isDateOnly(value.ruleEffectiveOn) ||
+      !Array.isArray(value.warnings) || value.warnings.length > value.limit ||
+      (value.hasMore && value.warnings.length !== value.limit)) return false;
+  const keys = new Set<string>();
+  return value.warnings.every(warning => {
+    if (!isRecord(warning) || !hasOnlyKeys(warning, [
+      "anchorShiftId", "rampProfileId", "agentName", "employeeNumber",
+      "workDate", "kind", "evidence", "hasRestrictedEvidence",
+      "measuredMinutes", "thresholdMinutes", "ruleVersion",
+      "ruleEffectiveOn", "reason",
+    ]) || !isUuid(warning.anchorShiftId) ||
+      !isUuid(warning.rampProfileId) ||
+      !isNonEmptyString(warning.agentName) ||
+      !isNonEmptyString(warning.employeeNumber) ||
+      !isDateOnly(warning.workDate) || warning.workDate < query.from ||
+      warning.workDate > query.to ||
+      !["Overlap", "ShortRest", "SevenDayLoad", "Unevaluable"]
+        .includes(String(warning.kind)) ||
+      !Array.isArray(warning.evidence) ||
+      typeof warning.hasRestrictedEvidence !== "boolean" ||
+      (warning.measuredMinutes != null &&
+        (!isInt32(warning.measuredMinutes) || warning.measuredMinutes < 0)) ||
+      (warning.thresholdMinutes != null &&
+        (!isInt32(warning.thresholdMinutes) || warning.thresholdMinutes < 0)) ||
+      (warning.hasRestrictedEvidence && warning.measuredMinutes != null) ||
+      (warning.kind === "Unevaluable" &&
+        (warning.measuredMinutes != null || !isNonEmptyString(warning.reason))) ||
+      (warning.reason != null && !isNonEmptyString(warning.reason)) ||
+      warning.ruleVersion !== value.ruleVersion ||
+      warning.ruleEffectiveOn !== value.ruleEffectiveOn) return false;
+    const key = `${warning.anchorShiftId}:${warning.kind}`;
+    if (keys.has(key)) return false;
+    keys.add(key);
+    const evidenceIds = new Set<string>();
+    return warning.evidence.every(evidence => {
+      if (!isRecord(evidence) || !hasOnlyKeys(evidence,
+          ["shiftId", "stationId", "stationCode", "startsAt", "endsAt"]) ||
+        !isUuid(evidence.shiftId) || evidenceIds.has(evidence.shiftId) ||
+        !isUuid(evidence.stationId) || !isNonEmptyString(evidence.stationCode) ||
+        !isDateTimeOffset(evidence.startsAt) ||
+        !isDateTimeOffset(evidence.endsAt) ||
+        Date.parse(evidence.startsAt) >= Date.parse(evidence.endsAt)) return false;
+      evidenceIds.add(evidence.shiftId);
+      return true;
+    });
+  });
+}
+
 function isHumanResourcesReportPage(value: unknown, kind: HumanResourcesReportKind,
   query: HumanResourcesReportQuery): value is HumanResourcesReportPage {
     if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "from", "to",
@@ -4305,6 +4393,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.from !== scope.from || result.data.to !== scope.to ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesScheduleWarnings(
+      query: HumanResourcesScheduleWarningsQuery,
+      options?: GetHumanResourcesScheduleWarningsOptions,
+    ) {
+      const scope = validatedHumanResourcesScheduleWarningsQuery(query);
+      const result = await execute(getListHumanResourcesScheduleWarningsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesScheduleWarningPage(result.data, scope))
         throw malformedResponse(result.status);
       return result.data;
     },

@@ -6029,6 +6029,115 @@
         ]
       }
     },
+    "/api/v1/human-resources/schedule-warnings": {
+      "get": {
+        "tags": [
+          "HumanResourcesScheduleWarnings"
+        ],
+        "operationId": "ListHumanResourcesScheduleWarnings",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesScheduleWarningPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/human-resources/shifts/options": {
       "get": {
         "tags": [
@@ -13550,6 +13659,165 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesScheduleWarningEvidenceResponse": {
+        "required": [
+          "endsAt",
+          "shiftId",
+          "startsAt",
+          "stationCode",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesScheduleWarningPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "ruleEffectiveOn",
+          "ruleVersion",
+          "stationId",
+          "to",
+          "warnings"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ruleVersion": {
+            "type": "string"
+          },
+          "ruleEffectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesScheduleWarningResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesScheduleWarningResponse": {
+        "required": [
+          "agentName",
+          "anchorShiftId",
+          "employeeNumber",
+          "evidence",
+          "hasRestrictedEvidence",
+          "kind",
+          "rampProfileId",
+          "ruleEffectiveOn",
+          "ruleVersion",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "anchorShiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesScheduleWarningEvidenceResponse"
+            }
+          },
+          "hasRestrictedEvidence": {
+            "type": "boolean"
+          },
+          "measuredMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "thresholdMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ruleVersion": {
+            "type": "string"
+          },
+          "ruleEffectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesShiftAssignmentOptions": {
         "required": [
           "hasShift",
@@ -18893,6 +19161,9 @@
     },
     {
       "name": "HumanResourcesReports"
+    },
+    {
+      "name": "HumanResourcesScheduleWarnings"
     },
     {
       "name": "HumanResourcesShifts"
