@@ -1,5 +1,21 @@
 # Backend de ELEVANT
 
+## Alertas preliminares de programación de G.H. (rama local)
+
+`GET /api/v1/human-resources/schedule-warnings?stationId=&from=&to=&page=&limit=`
+devuelve avisos de planificación para turnos confirmados de una estación
+autorizada, no decisiones legales o de nómina. Exige sesión vigente con rol
+`GESTION_HUMANA`, membresía AVIAM interna y concesión activa de la estación;
+400/401/403/404 distinguen entrada, autenticación, rol y estación no
+disponible. La ventana máxima es de 30 fechas inclusivas y la paginación es
+estable. La regla versionada usa descanso menor de 12 horas y duración
+programada superior a 48 horas en siete fechas locales; los horarios
+ambiguos o inexistentes por DST quedan «no evaluables». Turnos de otra
+estación pueden influir sin revelar identificadores, códigos ni tiempos de
+estaciones no concedidas. Se proyecta `HasRestrictedEvidence` y se omite la
+medición cuando el contexto está restringido. La respuesta es de solo
+lectura, sin caché; no crea tablas ni modifica la asignación OCC.
+
 ## Reportes verificables de Gestión Humana (rama local)
 
 `GET /api/v1/human-resources/reports/{kind}` consulta vigencias, movimientos de
@@ -18,6 +34,9 @@ verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
 bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
 en el momento del evento; los eventos anteriores no se atribuyen de forma
 retroactiva ni se reconstruyen desde concesiones actuales.
+Para esa atribución, las fechas de vigencia del perfil de rampa se evalúan
+con la fecha UTC del evento, la misma convención usada al crearlas. Esto
+evita perder la estación entre la medianoche UTC y la local.
 Código local: no acredita despliegue al VPS.
 
 ## Revisión de asistencia (rama local)

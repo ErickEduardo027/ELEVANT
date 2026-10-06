@@ -1040,6 +1040,46 @@ export interface HumanResourcesQualificationRecorded {
   cycleNumber: number;
 }
 
+export interface HumanResourcesScheduleWarningEvidenceResponse {
+  shiftId: string;
+  stationId: string;
+  stationCode: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface HumanResourcesScheduleWarningResponse {
+  anchorShiftId: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  workDate: string;
+  kind: string;
+  evidence: HumanResourcesScheduleWarningEvidenceResponse[];
+  hasRestrictedEvidence: boolean;
+  /** @nullable */
+  measuredMinutes?: number | null;
+  /** @nullable */
+  thresholdMinutes?: number | null;
+  ruleVersion: string;
+  ruleEffectiveOn: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface HumanResourcesScheduleWarningPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  ruleVersion: string;
+  ruleEffectiveOn: string;
+  warnings: HumanResourcesScheduleWarningResponse[];
+}
+
 export interface HumanResourcesShiftTerminalOption {
   id: string;
   code: string;
@@ -2569,6 +2609,14 @@ to: string;
 format: string;
 documentKind?: string;
 validity?: string;
+};
+
+export type ListHumanResourcesScheduleWarningsParams = {
+stationId?: string;
+from?: string;
+to?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetHumanResourcesShiftAssignmentOptionsParams = {
@@ -5408,6 +5456,41 @@ export const exportHumanResourcesReport = async (kind: string,
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getListHumanResourcesScheduleWarningsUrl = (params?: ListHumanResourcesScheduleWarningsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/schedule-warnings?${stringifiedParams}` : `/api/v1/human-resources/schedule-warnings`
+}
+
+export const listHumanResourcesScheduleWarnings = async (params?: ListHumanResourcesScheduleWarningsParams, options?: RequestInit): Promise<HumanResourcesScheduleWarningPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesScheduleWarningsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesScheduleWarningPageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CurrentShiftsPage from './CurrentShiftsPage';
 import { getHumanResourcesShifts, recordHumanResourcesShift } from '../../../services/humanResourcesShiftsReadService';
 import { getHumanResourcesAvailabilityRequests } from
   '../../../services/humanResourcesAvailabilityService';
+import { getHumanResourcesScheduleWarnings } from
+  '../../../services/humanResourcesScheduleWarningsService';
 
 vi.mock('../../../services/humanResourcesShiftsReadService', () => ({
   getHumanResourcesShifts: vi.fn(),
@@ -15,6 +17,13 @@ vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
   recordHumanResourcesAvailabilityRequest: vi.fn(),
   resolveHumanResourcesAvailabilityRequest: vi.fn(),
 }));
+vi.mock('../../../services/humanResourcesScheduleWarningsService', () => ({
+  getHumanResourcesScheduleWarnings: vi.fn(),
+}));
+const session = vi.hoisted(() => ({ token: 'test-token', stationScopes: [
+  { stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ' },
+] }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ session }) }));
 const observerCallbacks = vi.hoisted(() => []);
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: callback => {
@@ -39,8 +48,92 @@ const initialDate = new Date(2026, 7, 18, 12);
 beforeEach(() => {
   getHumanResourcesAvailabilityRequests.mockImplementation(async query =>
     ({ ...query, hasMore: false, requests: [] }));
+  getHumanResourcesScheduleWarnings.mockImplementation(async query => ({
+    ...query, hasMore: false, asOf: '2026-08-18T12:00:00Z',
+    ruleVersion: 'dev-2026-10-05', ruleEffectiveOn: '2026-10-05', warnings: [],
+  }));
 });
-afterEach(() => { cleanup(); vi.resetAllMocks(); observerCallbacks.length = 0; });
+afterEach(() => { cleanup(); vi.resetAllMocks(); observerCallbacks.length = 0; session.token = 'test-token'; });
+
+it('removes a former account roster before its pending read completes', async () => {
+  let resolveOld;
+  getHumanResourcesShifts.mockImplementationOnce(() => new Promise(resolve => {
+    resolveOld = resolve;
+  })).mockResolvedValue({ from: '2026-08-17', to: '2026-08-23',
+    page: 1, limit: 20, hasMore: false, shifts: [] });
+  const view = render(<CurrentShiftsPage initialDate={initialDate} />);
+  await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+  session.token = 'next-account';
+  view.rerender(<CurrentShiftsPage initialDate={initialDate} />);
+  expect(await screen.findByText(/No hay turnos registrados/)).toBeInTheDocument();
+  await act(async () => resolveOld({ from: '2026-08-17', to: '2026-08-23',
+    page: 1, limit: 20, hasMore: false, shifts: [shift] }));
+  expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
+});
+
+it('preserves warning station, dates and page across roster refresh channels', async () => {
+  let poll;
+  const interval = vi.spyOn(window, 'setInterval').mockImplementation((callback, delay) => {
+    if (delay === 25_000) poll = callback;
+    return 77;
+  });
+  const clear = vi.spyOn(window, 'clearInterval').mockImplementation(() => {});
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  session.stationScopes = [
+    { stationId: shift.stationId, stationCode: 'PUJ' },
+    { stationId: '20000000-0000-7000-8000-000000000099', stationCode: 'SDQ' },
+  ];
+  getHumanResourcesShifts.mockImplementation(async query => ({
+    ...query, hasMore: false, shifts: [shift],
+  }));
+  getHumanResourcesScheduleWarnings.mockImplementation(async query => ({
+    ...query, hasMore: query.page === 1, asOf: '2026-08-18T12:00:00Z',
+    ruleVersion: 'dev-2026-10-05', ruleEffectiveOn: '2026-10-05', warnings: [],
+  }));
+  try {
+    render(<CurrentShiftsPage initialDate={initialDate} />);
+    expect(await screen.findByRole('heading', { name: 'Alertas de programación' }))
+      .toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Estación de alertas'),
+      '20000000-0000-7000-8000-000000000099');
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-08-31' } });
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-08-31' } });
+    await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
+      { stationId: '20000000-0000-7000-8000-000000000099', from: '2026-08-31',
+        to: '2026-08-31', page: 1, limit: 20 }, expect.anything()));
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Páginas de alertas' }))
+      .getByRole('button', { name: 'Siguiente página' }));
+    await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
+      { stationId: '20000000-0000-7000-8000-000000000099', from: '2026-08-31',
+        to: '2026-08-31', page: 2, limit: 20 }, expect.anything()));
+
+    const assertSelection = () => {
+      expect(screen.getByLabelText('Estación de alertas')).toHaveValue(
+        '20000000-0000-7000-8000-000000000099');
+      expect(screen.getByLabelText('Desde')).toHaveValue('2026-08-31');
+      expect(screen.getByLabelText('Hasta')).toHaveValue('2026-08-31');
+      expect(within(screen.getByRole('navigation', { name: 'Páginas de alertas' }))
+        .getByText('Página 2')).toBeInTheDocument();
+    };
+    await userEvent.click(screen.getByRole('button', { name: 'Actualizar turnos' }));
+    await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledTimes(2));
+    assertSelection();
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledTimes(3));
+    assertSelection();
+    await act(async () => window.dispatchEvent(new Event('online')));
+    await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledTimes(4));
+    assertSelection();
+    await act(async () => poll());
+    await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledTimes(5));
+    assertSelection();
+  } finally {
+    interval.mockRestore();
+    clear.mockRestore();
+    visibility.mockRestore();
+    session.stationScopes = [{ stationId: shift.stationId, stationCode: 'PUJ' }];
+  }
+});
 
 it('reads the selected station-local week and navigates without prototype writes', async () => {
   getHumanResourcesShifts
@@ -89,7 +182,8 @@ it('reads the full month, navigates to the next month, and resets pagination on 
   }));
   render(<CurrentShiftsPage initialDate={initialDate} />);
   expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Páginas de turnos' }))
+    .getByRole('button', { name: 'Siguiente página' }));
   await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
     { from: '2026-08-17', to: '2026-08-23', page: 2, limit: 20 },
     expect.anything()));

@@ -743,15 +743,11 @@ internal sealed class EfGovernanceStore(
                 grant.GrantedAt <= at && agent.IsActive && station.IsActive
             select new
             {
-                station.Id, station.IanaTimeZone, scope.ValidFrom, scope.ValidTo,
+                station.Id, scope.ValidFrom, scope.ValidTo,
             }).ToArrayAsync(cancellationToken);
-        return candidates.Where(item =>
-        {
-            var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at,
-                TimeZoneInfo.FindSystemTimeZoneById(item.IanaTimeZone)).DateTime);
-            return item.ValidFrom <= localDate &&
-                (item.ValidTo is null || item.ValidTo >= localDate);
-        }).Select(item => item.Id).Distinct().Order().ToArray();
+        return candidates.Where(item => RampScopeValidity.IsCurrent(
+                item.ValidFrom, item.ValidTo, at))
+            .Select(item => item.Id).Distinct().Order().ToArray();
     }
 
     private Task AuditAsync(Guid actorId, string action, string entityType,

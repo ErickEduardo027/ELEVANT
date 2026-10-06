@@ -2,11 +2,19 @@ import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 
 export async function getHumanResourcesShifts(query, { signal } = {}) {
+  const token = readSession()?.token;
+  const staleSessionError = () => {
+    const error = new Error('The session changed during the request.');
+    error.name = 'AbortError';
+    return error;
+  };
   try {
-    return await createPrivateWebApiClient({
-      getAccessToken: () => readSession()?.token,
-    }).getHumanResourcesShifts(query, { signal });
+    const page = await createPrivateWebApiClient({ getAccessToken: () => token })
+      .getHumanResourcesShifts(query, { signal });
+    if (readSession()?.token !== token) throw staleSessionError();
+    return page;
   } catch (error) {
+    if (readSession()?.token !== token) throw staleSessionError();
     if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
     throw error;
   }

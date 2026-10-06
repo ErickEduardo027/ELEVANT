@@ -1,5 +1,21 @@
 # ELEVANT AVIAM Web
 
+## Alertas preliminares de turnos (rama local)
+
+En **Gestión Humana → Turnos de rampa**, el panel «Alertas de programación»
+consulta `GET /api/v1/human-resources/schedule-warnings` por estación
+autorizada y hasta 30 fechas locales inclusivas. Pagina de 20 en 20 y muestra
+superposición, descanso corto, carga programada de siete días o un intervalo
+no evaluable. La API calcula las reglas y devuelve evidencia visible, fecha,
+versión y hora de consulta; la web no deduce cumplimiento legal, horas
+trabajadas ni pago. Si otra estación influye en el cálculo sin estar concedida
+al usuario, solo se muestra «Evidencia restringida», nunca sus datos. El
+selector de estación, la revalidación y el cambio de sesión retiran de
+inmediato las filas antiguas. La vista mensual de 31 días inicia con 30 para
+respetar el contrato; el día restante se consulta cambiando las fechas. Esta
+ruta de lectura aún requiere CI, promoción y aceptación en Development antes
+de considerarse disponible en el VPS.
+
 ## Revisión de asistencia de Gestión Humana (rama local)
 
 La ruta `/gestion-humana/attendance` consulta una página de asignaciones por

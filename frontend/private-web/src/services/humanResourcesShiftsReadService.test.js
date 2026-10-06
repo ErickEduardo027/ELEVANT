@@ -21,6 +21,20 @@ it('forwards a monthly shift read with the current session and cancellation', as
   expect(read).toHaveBeenCalledWith(query, { signal });
 });
 
+it('does not reveal a late former-session roster or expire the new session', async () => {
+  let token = 'former-session';
+  let rejectRead;
+  readSession.mockImplementation(() => ({ token }));
+  createPrivateWebApiClient.mockReturnValue({ getHumanResourcesShifts: () =>
+    new Promise((_, reject) => { rejectRead = reject; }) });
+  const request = getHumanResourcesShifts({ from: '2026-10-01', to: '2026-10-07',
+    page: 1, limit: 20 });
+  token = 'new-session';
+  rejectRead({ status: 401 });
+  await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  expect(handleUnauthorizedResponse).not.toHaveBeenCalled();
+});
+
 it('reads one agent/date options with the current session and cancellation', async () => {
   readSession.mockReturnValue({ token: 'hr-token' });
   const query = { rampProfileId: '50000000-0000-7000-8000-000000000001',
