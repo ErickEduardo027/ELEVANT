@@ -9,10 +9,12 @@ import { deleteManagedService, getManagedServices, saveManagedService, uploadCom
 import ServiceClosurePanel from './ServiceClosurePanel';
 
 const empty = { code: '', name: '', description: '', billingUnit: 'operación', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
+const PAGE_SIZE = 10;
 
 export default function CommercialCatalogPage({ canCreate = true, canEdit = true,
   canRetire = true, canSeeClosures = true }) {
   const [services, setServices] = useState([]);
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState(empty);
@@ -28,8 +30,18 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   const [section, setSection] = useState('catalog');
   const dirty = image !== null || video !== null || JSON.stringify(form) !== JSON.stringify(initial);
 
-  const reload = useCallback(async () => {
-    try { setServices(await getManagedServices()); setStatus('ready'); setError(''); }
+  const reload = useCallback(async (focusId = null) => {
+    try {
+      const updated = await getManagedServices();
+      setServices(updated);
+      setPage(current => {
+        const focusIndex = typeof focusId === 'string'
+          ? updated.findIndex(service => service.id === focusId) : -1;
+        if (focusIndex >= 0) return Math.floor(focusIndex / PAGE_SIZE) + 1;
+        return Math.min(current, Math.max(1, Math.ceil(updated.length / PAGE_SIZE)));
+      });
+      setStatus('ready'); setError('');
+    }
     catch (failure) { setStatus('error'); setError(failure.message); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
@@ -63,9 +75,9 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       const values = { ...form };
       if (image) values.imageUrl = (await uploadCommercialMedia('service-image', image)).url;
       if (video) values.videoUrl = (await uploadCommercialMedia('service-video', video)).url;
-      await saveManagedService(editing, values);
+      const saved = await saveManagedService(editing, values);
       setNotice(editing ? 'Servicio actualizado. El catálogo público se refrescará.' : 'Servicio publicado en el catálogo.');
-      setDrawerOpen(false); setImage(null); setVideo(null); await reload();
+      setDrawerOpen(false); setImage(null); setVideo(null); await reload(saved?.id ?? editing);
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
@@ -75,6 +87,10 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     catch (failure) { setError(failure.message); }
   }
   const change = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  const pageCount = Math.max(1, Math.ceil(services.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const visibleServices = services.slice(pageStart, pageStart + PAGE_SIZE);
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <nav aria-label="Secciones de servicios" className="flex gap-2"><button type="button" onClick={() => setSection('catalog')} aria-current={section === 'catalog' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Catálogo</button>{canSeeClosures && <button type="button" onClick={() => setSection('closures')} aria-current={section === 'closures' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Solicitudes de clausura</button>}</nav>
     {canSeeClosures && section === 'closures' ? <ServiceClosurePanel mode="contracts" /> : <>
@@ -82,11 +98,16 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && !drawerOpen && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/5 dark:bg-surface-dark-card">
-      <div className="flex items-center justify-between"><h2 className="font-bold">Catálogo AVIAM</h2><button type="button" onClick={reload} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
-      {status === 'loading' ? <p className="mt-5 text-sm">Cargando servicios…</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{services.map(service => <article key={service.id} className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
+      <div className="flex items-center justify-between"><h2 className="font-bold">Catálogo AVIAM</h2><button type="button" onClick={() => void reload()} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
+      {status === 'loading' ? <p className="mt-5 text-sm">Cargando servicios…</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{visibleServices.map(service => <article key={service.id} className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
         <ServiceCardImage url={service.imageUrl} />
         <div className="p-4"><div className="flex justify-between gap-2"><strong className="text-sm">{service.name}</strong><span className={`text-[11px] ${service.isActive && service.isPublic ? 'text-status-success' : 'text-text-secondary-light'}`}>{service.isActive && service.isPublic ? 'Público' : 'Oculto'}</span></div><p className="mt-1 min-h-14 text-xs leading-relaxed text-text-secondary-light">{service.description}</p><p className="mt-2 font-mono text-[10px] text-text-secondary-light">{service.code} · orden {service.displayOrder}</p>{(canEdit || canRetire) && <div className="mt-3 flex gap-3">{canEdit && <button type="button" onClick={() => open(service)} className="text-xs font-semibold text-accent-600">Editar</button>}{canRetire && <button type="button" onClick={() => setPendingRetire(service)} className="text-xs font-semibold text-status-danger">Retirar</button>}</div>}</div>
       </article>)}</div>}
+      {status === 'ready' && services.length === 0 && <p className="mt-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">No hay servicios en el catálogo.</p>}
+      {status === 'ready' && <nav aria-label="Paginación de servicios" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4 text-sm dark:border-white/10">
+        <p className="text-text-secondary-light dark:text-text-secondary-dark">Mostrando {services.length ? pageStart + 1 : 0}–{Math.min(pageStart + PAGE_SIZE, services.length)} de {services.length} servicios</p>
+        <div className="flex items-center gap-3"><button type="button" disabled={currentPage === 1} onClick={() => setPage(current => current - 1)} className="min-h-10 rounded-lg border border-black/10 px-3 font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10">Anterior</button><span>Página {currentPage} de {pageCount}</span><button type="button" disabled={currentPage === pageCount} onClick={() => setPage(current => current + 1)} className="min-h-10 rounded-lg border border-black/10 px-3 font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10">Siguiente</button></div>
+      </nav>}
     </section>
     <Drawer open={drawerOpen} onClose={close} title={editing ? 'Editar servicio' : 'Nuevo servicio'} description="Gestión contractual / Catálogo AVIAM" widthClassName="lg:w-[560px]" footer={<div className="flex items-center justify-between gap-3"><button type="button" onClick={close} className="text-sm font-semibold text-accent-600">Volver atrás</button><button type="submit" form="commercial-service-form" disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Guardando…' : 'Guardar servicio'}</button></div>}>
       <form id="commercial-service-form" onSubmit={save} className="space-y-4">
