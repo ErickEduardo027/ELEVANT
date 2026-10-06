@@ -2,6 +2,7 @@ import '../src/styles/tokens.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './globals.css';
 import { Suspense } from 'react';
+import { connection } from 'next/server';
 import Providers from './providers';
 
 export const metadata = {
@@ -10,7 +11,8 @@ export const metadata = {
   icons: { icon: '/brand/elevant-logo.png' },
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  await connection();
   return (
     <html lang="es">
       <body>

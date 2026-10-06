@@ -29,8 +29,28 @@ it("reads a bounded HR shift week with a fresh token", async () => {
   expect(urls).toEqual([
     "https://api.example.test/api/v1/human-resources/shifts?from=2026-08-17&to=2026-08-23&page=2&limit=1",
   ]);
-  await expect(client.getHumanResourcesShifts({ from: "2026-08-17", to: "2026-08-24" }))
+  await expect(client.getHumanResourcesShifts({ from: "2026-10-01", to: "2026-11-01" }))
     .rejects.toBeInstanceOf(TypeError);
+});
+
+it("sends a full calendar month through the real client without exposing a wider range", async () => {
+  const urls: string[] = [];
+  const page: HumanResourcesShiftPage = { from: "2026-10-01", to: "2026-10-31",
+    page: 1, limit: 20, hasMore: false, shifts: [{ ...shift, workDate: "2026-10-15" }] };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    getAccessToken: () => "hr-token",
+    fetch: async (url) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify(page),
+        { headers: { "content-type": "application/json" } });
+    },
+  });
+
+  await expect(client.getHumanResourcesShifts({ from: "2026-10-01",
+    to: "2026-10-31", page: 1, limit: 20 })).resolves.toEqual(page);
+  expect(urls).toEqual([
+    "https://api.example.test/api/v1/human-resources/shifts?from=2026-10-01&to=2026-10-31&page=1&limit=20",
+  ]);
 });
 
 it("rejects malformed shift rows, foreign weeks and mismatched pages", async () => {

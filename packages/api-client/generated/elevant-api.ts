@@ -48,6 +48,29 @@ export interface AffiliationOptionsResponse {
   services: AffiliationServiceOptionResponse[];
 }
 
+export interface AirlineApprovedServiceResponse {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  contractedQuantity: number;
+  executedQuantity: number;
+  billingUnit: string;
+}
+
+export interface AirlineApprovedOperationEvidenceResponse {
+  operationId: string;
+  available: boolean;
+  /** @nullable */
+  approvedAt?: string | null;
+  /** @nullable */
+  actualStartAt?: string | null;
+  /** @nullable */
+  actualEndAt?: string | null;
+  incidentCount: number;
+  services: AirlineApprovedServiceResponse[];
+}
+
 export interface AirlineContractStationResponse {
   id: string;
   code: string;
@@ -221,6 +244,51 @@ export interface AssignOccOperationRequest {
   agentId: string;
 }
 
+export interface AttendanceDraftContributionResponse {
+  revision: number;
+  authorAccountId: string;
+  recordedAt: string;
+  /** @nullable */
+  observedStartAt: string | null;
+  /** @nullable */
+  observedEndAt: string | null;
+  /** @nullable */
+  incidentNote: string | null;
+}
+
+export interface AttendanceDraftSnapshotResponse {
+  operationId: string;
+  assignmentId: string;
+  stationId: string;
+  occ: AttendanceDraftContributionResponse | null;
+  rampAgent: AttendanceDraftContributionResponse | null;
+}
+
+export interface AttendanceDraftWriteResponse {
+  contribution: AttendanceDraftContributionResponse;
+  replayed: boolean;
+}
+
+export interface AttendanceValidationDecisionResponse {
+  id: string;
+  assignmentId: string;
+  occRevision: number;
+  rampAgentRevision: number;
+  startSource: string;
+  endSource: string;
+  startAt: string;
+  endAt: string;
+  /** @nullable */
+  reason?: string | null;
+  validatedByAccountId: string;
+  validatedAt: string;
+}
+
+export interface AttendanceValidationWriteResponse {
+  decision: AttendanceValidationDecisionResponse;
+  replayed: boolean;
+}
+
 export interface AuditFieldChangeData {
   field: string;
   /** @nullable */
@@ -372,6 +440,14 @@ export interface CreateGovernanceUserInput {
   rampAgentId?: string | null;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessRequestId?: string | null;
+  /** @nullable */
+  accessRequestVersion?: string | null;
+  /** @nullable */
+  expectedRampProfileVersion?: string | null;
+  /** @nullable */
+  expectedStationCodes?: string[] | null;
 }
 
 export interface CreateManualTurnaroundRequest {
@@ -399,6 +475,12 @@ export interface CreatePreinvoiceDraftRequest {
 export interface CreatePreinvoiceDraftResponse {
   id: string;
   replayed: boolean;
+}
+
+export interface CreateServiceClosureRequest {
+  requestId: string;
+  serviceId: string;
+  reason: string;
 }
 
 export interface CreateSessionRequest {
@@ -496,6 +578,13 @@ export interface DecideOccReviewResponse {
   decidedAt: string;
   /** @nullable */
   reason?: string | null;
+}
+
+export interface DecideServiceClosureRequest {
+  approve: boolean;
+  /** @nullable */
+  reason?: string | null;
+  version: string;
 }
 
 export interface DisputeAirlinePreinvoiceRequest {
@@ -721,6 +810,12 @@ export interface GovernanceRampProfileData {
   accountId?: string | null;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface GovernanceRoleData {
@@ -760,6 +855,54 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HumanResourcesAccountMovementResponse {
+  id: string;
+  accountId: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  kind: string;
+  occurredAt: string;
+}
+
+export interface HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesAccountMovementResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
+}
+
+export interface HumanResourcesAttendanceRowResponse {
+  operationId: string;
+  assignmentId: string;
+  stationId: string;
+  operationDate: string;
+  operationCode: string;
+  agentName: string;
+  occ?: AttendanceDraftContributionResponse | null;
+  rampAgent?: AttendanceDraftContributionResponse | null;
+  latestDecision?: AttendanceValidationDecisionResponse | null;
+  isDecisionCurrent: boolean;
+}
+
+export interface HumanResourcesAttendancePageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  items: HumanResourcesAttendanceRowResponse[];
+}
+
 export interface HumanResourcesAvailabilityRequestData {
   id: string;
   rampProfileId: string;
@@ -791,6 +934,31 @@ export interface HumanResourcesAvailabilityWritten {
   status: string;
 }
 
+export interface HumanResourcesExpirationResponse {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  kind: string;
+  code: string;
+  expiresOn: string;
+}
+
+export interface HumanResourcesExpirationResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesExpirationResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
+}
+
 export interface HumanResourcesPermitData {
   id: string;
   rampProfileId: string;
@@ -813,6 +981,29 @@ export interface HumanResourcesPermitPage {
 export interface HumanResourcesPermitRecorded {
   id: string;
   cycleNumber: number;
+}
+
+export interface HumanResourcesQualificationCoverageResponse {
+  equipmentTypeId: string;
+  equipmentCode: string;
+  equipmentName: string;
+  eligibleAgents: number;
+  qualifiedAgents: number;
+}
+
+export interface HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesQualificationCoverageResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
 }
 
 export interface HumanResourcesQualificationData {
@@ -847,6 +1038,46 @@ export interface HumanResourcesQualificationPage {
 export interface HumanResourcesQualificationRecorded {
   id: string;
   cycleNumber: number;
+}
+
+export interface HumanResourcesScheduleWarningEvidenceResponse {
+  shiftId: string;
+  stationId: string;
+  stationCode: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface HumanResourcesScheduleWarningResponse {
+  anchorShiftId: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  workDate: string;
+  kind: string;
+  evidence: HumanResourcesScheduleWarningEvidenceResponse[];
+  hasRestrictedEvidence: boolean;
+  /** @nullable */
+  measuredMinutes?: number | null;
+  /** @nullable */
+  thresholdMinutes?: number | null;
+  ruleVersion: string;
+  ruleEffectiveOn: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface HumanResourcesScheduleWarningPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  ruleVersion: string;
+  ruleEffectiveOn: string;
+  warnings: HumanResourcesScheduleWarningResponse[];
 }
 
 export interface HumanResourcesShiftTerminalOption {
@@ -897,6 +1128,35 @@ export interface HumanResourcesShiftPage {
 
 export interface HumanResourcesShiftRecorded {
   id: string;
+}
+
+export interface HumanResourcesStaffDistributionResponse {
+  id: string;
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  terminalId: string;
+  terminalCode: string;
+  /** @nullable */
+  positionCode?: string | null;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+}
+
+export interface HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse {
+  stationId: string;
+  from: string;
+  to: string;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  asOf: string;
+  rows: HumanResourcesStaffDistributionResponse[];
+  /** @nullable */
+  documentKind?: string | null;
+  /** @nullable */
+  validity?: string | null;
 }
 
 export interface IssueFinanceInvoiceRequest {
@@ -1734,6 +1994,24 @@ export interface RampIncidentReceiptResponse {
   reportedAt: string;
 }
 
+export interface RampMobileAccessIntent {
+  requestId: string;
+}
+
+export interface RampMobileAccessRequestData {
+  id: string;
+  rampProfileId: string;
+  status: string;
+  requestedAt: string;
+  /** @nullable */
+  decidedAt?: string | null;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  accountId?: string | null;
+  version: string;
+}
+
 export interface RampOperationCorrectionResponse {
   receiptId: string;
   operationId: string;
@@ -1781,6 +2059,13 @@ export interface RampProfileStation {
   name: string;
 }
 
+export interface RampProfileTerminal {
+  id: string;
+  stationId: string;
+  code: string;
+  name: string;
+}
+
 export interface RampProfileData {
   id: string;
   firstName: string;
@@ -1793,11 +2078,24 @@ export interface RampProfileData {
   hasAccount: boolean;
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  terminals?: RampProfileTerminal[] | null;
+  /** @nullable */
+  supervisorProfileId?: string | null;
+  /** @nullable */
+  accountStatus?: string | null;
 }
 
 export interface RampProfileCatalog {
   profiles: RampProfileData[];
   availableStations: RampProfileStation[];
+  /** @nullable */
+  availableTerminals?: RampProfileTerminal[] | null;
+}
+
+export interface RampProfileSupervisorSelection {
+  /** @nullable */
+  id?: string | null;
 }
 
 export interface RecordHumanResourcesAvailabilityInput {
@@ -1896,6 +2194,16 @@ export interface RegisterMobileDeviceResponse {
   lastSeenAt: string;
 }
 
+export interface RejectRampMobileAccessInput {
+  reason: string;
+  expectedVersion: string;
+}
+
+export interface ReopenServiceRequest {
+  reason: string;
+  serviceVersion: string;
+}
+
 export interface ReportRampIncidentRequest {
   /**
      * @minLength 1
@@ -1945,6 +2253,16 @@ export interface ReviewCommercialInput {
   stationIds: string[];
 }
 
+export interface SaveAttendanceDraftRequest {
+  expectedRevision: number;
+  /** @nullable */
+  observedStartAt?: string | null;
+  /** @nullable */
+  observedEndAt?: string | null;
+  /** @nullable */
+  incidentNote?: string | null;
+}
+
 export interface SaveGovernanceRoleInput {
   name: string;
   /** @nullable */
@@ -1963,10 +2281,43 @@ export interface SaveRampProfileInput {
   stationIds: string[];
   /** @nullable */
   avatarMediaUrl?: string | null;
+  /** @nullable */
+  terminalIds?: string[] | null;
+  supervisor?: RampProfileSupervisorSelection | null;
 }
 
 export interface SendOperationMessageRequest {
   content: string;
+}
+
+export interface ServiceClosureData {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  reason: string;
+  status: string;
+  requestedBy: string;
+  requestedAt: string;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  decidedBy?: string | null;
+  /** @nullable */
+  decidedAt?: string | null;
+  /** @nullable */
+  reopenedAt?: string | null;
+  /** @nullable */
+  reopenReason?: string | null;
+  isCurrentlyPublic: boolean;
+  serviceVersion: string;
+  version: string;
+}
+
+export interface ServiceClosurePage {
+  items: ServiceClosureData[];
+  hasMore: boolean;
+  pendingCount: number;
+  pendingServiceIds: string[];
 }
 
 export interface SessionResponse {
@@ -2089,6 +2440,15 @@ export interface UpdateGovernanceUserInput {
   avatarMediaUrl?: string | null;
 }
 
+export interface ValidateAttendanceRequest {
+  expectedOccRevision: number;
+  expectedRampAgentRevision: number;
+  startSource: string;
+  endSource: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface VerifyAirlineInput {
   legalName: string;
   countryCode: string;
@@ -2175,6 +2535,18 @@ page?: number;
 limit?: number;
 };
 
+export type GetHumanResourcesAttendanceParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ValidateHumanResourcesAttendanceParams = {
+stationId: string;
+};
+
 export type ListHumanResourcesAvailabilityRequestsParams = {
 from?: string;
 to?: string;
@@ -2194,6 +2566,57 @@ page?: number;
 limit?: number;
 rampProfileId?: string;
 equipmentTypeId?: string;
+};
+
+export type ListHumanResourcesExpirationsParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+documentKind?: string;
+validity?: string;
+};
+
+export type ListHumanResourcesAccountMovementsParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesStaffDistributionParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ListHumanResourcesQualificationCoverageParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportHumanResourcesReportParams = {
+stationId: string;
+from: string;
+to: string;
+format: string;
+documentKind?: string;
+validity?: string;
+};
+
+export type ListHumanResourcesScheduleWarningsParams = {
+stationId?: string;
+from?: string;
+to?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetHumanResourcesShiftAssignmentOptionsParams = {
@@ -2237,6 +2660,12 @@ stationId?: string;
 
 export type GetFinancePreinvoiceDisputesParams = {
 includeResolutions?: boolean;
+};
+
+export type ListServiceClosuresParams = {
+status?: string;
+page?: number;
+limit?: number;
 };
 
 export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
@@ -2654,6 +3083,34 @@ export const getAirlineOperation = async (operationId: string, options?: Request
 
 
 
+export const getGetAirlineApprovedOperationEvidenceUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}/approved-evidence`
+}
+
+export const getAirlineApprovedOperationEvidence = async (operationId: string, options?: RequestInit): Promise<AirlineApprovedOperationEvidenceResponse> => {
+
+  const res = await fetch(getGetAirlineApprovedOperationEvidenceUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineApprovedOperationEvidenceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetAirlineOperationsUrl = (params?: GetAirlineOperationsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2747,6 +3204,119 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOperationAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft`
+}
+
+/**
+ * @summary Returns the current revision in each lane, rechecking live access.
+ */
+export const getOperationAttendanceDraft = async (operationId: string,
+    assignmentId: string, options?: RequestInit): Promise<AttendanceDraftSnapshotResponse> => {
+
+  const res = await fetch(getGetOperationAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftSnapshotResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSaveOccAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft/occ`
+}
+
+/**
+ * @summary Appends only the current OCC user's lane revision.
+ */
+export const saveOccAttendanceDraft = async (operationId: string,
+    assignmentId: string,
+    saveAttendanceDraftRequest: SaveAttendanceDraftRequest, options?: RequestInit): Promise<AttendanceDraftWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSaveOccAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAttendanceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftWriteResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSaveRampAttendanceDraftUrl = (operationId: string,
+    assignmentId: string,) => {
+
+
+
+
+  return `/api/v1/operations/${operationId}/assignments/${assignmentId}/attendance-draft/ramp-agent`
+}
+
+/**
+ * @summary Appends only the active assigned agent's lane revision.
+ */
+export const saveRampAttendanceDraft = async (operationId: string,
+    assignmentId: string,
+    saveAttendanceDraftRequest: SaveAttendanceDraftRequest, options?: RequestInit): Promise<AttendanceDraftWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSaveRampAttendanceDraftUrl(operationId,assignmentId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAttendanceDraftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceDraftWriteResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -4187,10 +4757,73 @@ const res = await fetch(getCreateGovernanceUserUrl(),
   }
 )
 
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListGovernanceRampMobileAccessRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/governance/ramp-mobile-access-requests`
+}
+
+export const listGovernanceRampMobileAccessRequests = async ( options?: RequestInit): Promise<RampMobileAccessRequestData[]> => {
+
+  const res = await fetch(getListGovernanceRampMobileAccessRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  const data: RampMobileAccessRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRejectRampMobileAccessRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/ramp-mobile-access-requests/${id}/reject`
+}
+
+export const rejectRampMobileAccessRequest = async (id: string,
+    rejectRampMobileAccessInput?: RejectRampMobileAccessInput, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRejectRampMobileAccessRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rejectRampMobileAccessInput)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -4289,6 +4922,91 @@ const res = await fetch(getResetGovernanceUserPasswordUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesAttendanceUrl = (params: GetHumanResourcesAttendanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/attendance?${stringifiedParams}` : `/api/v1/human-resources/attendance`
+}
+
+/**
+ * @summary Lists the station's assignment evidence for an operation-date interval.
+ */
+export const getHumanResourcesAttendance = async (params: GetHumanResourcesAttendanceParams, options?: RequestInit): Promise<HumanResourcesAttendancePageResponse> => {
+
+  const res = await fetch(getGetHumanResourcesAttendanceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAttendancePageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getValidateHumanResourcesAttendanceUrl = (assignmentId: string,
+    params: ValidateHumanResourcesAttendanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/attendance/${assignmentId}/validation?${stringifiedParams}` : `/api/v1/human-resources/attendance/${assignmentId}/validation`
+}
+
+/**
+ * @summary Appends an immutable, revision-bound G.H. validation decision.
+ */
+export const validateHumanResourcesAttendance = async (assignmentId: string,
+    validateAttendanceRequest: ValidateAttendanceRequest,
+    params: ValidateHumanResourcesAttendanceParams, options?: RequestInit): Promise<AttendanceValidationWriteResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getValidateHumanResourcesAttendanceUrl(assignmentId,params),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(validateAttendanceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AttendanceValidationWriteResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -4567,6 +5285,217 @@ const res = await fetch(getRecordHumanResourcesQualificationUrl(id),
 
 
 
+export const getListHumanResourcesExpirationsUrl = (params: ListHumanResourcesExpirationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/expirations?${stringifiedParams}` : `/api/v1/human-resources/reports/expirations`
+}
+
+export const listHumanResourcesExpirations = async (params: ListHumanResourcesExpirationsParams, options?: RequestInit): Promise<HumanResourcesExpirationResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesExpirationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesExpirationResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesAccountMovementsUrl = (params: ListHumanResourcesAccountMovementsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/account-movements?${stringifiedParams}` : `/api/v1/human-resources/reports/account-movements`
+}
+
+export const listHumanResourcesAccountMovements = async (params: ListHumanResourcesAccountMovementsParams, options?: RequestInit): Promise<HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesAccountMovementsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesStaffDistributionUrl = (params: ListHumanResourcesStaffDistributionParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/staff-distribution?${stringifiedParams}` : `/api/v1/human-resources/reports/staff-distribution`
+}
+
+export const listHumanResourcesStaffDistribution = async (params: ListHumanResourcesStaffDistributionParams, options?: RequestInit): Promise<HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesStaffDistributionUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesQualificationCoverageUrl = (params: ListHumanResourcesQualificationCoverageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/qualification-coverage?${stringifiedParams}` : `/api/v1/human-resources/reports/qualification-coverage`
+}
+
+export const listHumanResourcesQualificationCoverage = async (params: ListHumanResourcesQualificationCoverageParams, options?: RequestInit): Promise<HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesQualificationCoverageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getExportHumanResourcesReportUrl = (kind: string,
+    params: ExportHumanResourcesReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/reports/${kind}/export?${stringifiedParams}` : `/api/v1/human-resources/reports/${kind}/export`
+}
+
+export const exportHumanResourcesReport = async (kind: string,
+    params: ExportHumanResourcesReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportHumanResourcesReportUrl(kind,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getListHumanResourcesScheduleWarningsUrl = (params?: ListHumanResourcesScheduleWarningsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/schedule-warnings?${stringifiedParams}` : `/api/v1/human-resources/schedule-warnings`
+}
+
+export const listHumanResourcesScheduleWarnings = async (params?: ListHumanResourcesScheduleWarningsParams, options?: RequestInit): Promise<HumanResourcesScheduleWarningPageResponse> => {
+
+  const res = await fetch(getListHumanResourcesScheduleWarningsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesScheduleWarningPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetHumanResourcesShiftAssignmentOptionsUrl = (params?: GetHumanResourcesShiftAssignmentOptionsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -4645,6 +5574,9 @@ export const getRecordHumanResourcesShiftUrl = (id: string,) => {
   return `/api/v1/human-resources/shifts/${id}`
 }
 
+/**
+ * @deprecated
+ */
 export const recordHumanResourcesShift = async (id: string,
     recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
 
@@ -5465,6 +6397,40 @@ const res = await fetch(getSubmitCommercialRequestUrl(),
 
 
 
+export const getLookupCommercialRequestReceiptUrl = () => {
+
+
+
+
+  return `/api/v1/public/commercial-requests/receipt`
+}
+
+export const lookupCommercialRequestReceipt = async (submitCommercialRequestRequest?: SubmitCommercialRequestRequest, options?: RequestInit): Promise<SubmitCommercialRequestResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLookupCommercialRequestReceiptUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitCommercialRequestRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetRampIncidentsUrl = (operationId: string,) => {
 
 
@@ -5863,6 +6829,208 @@ const res = await fetch(getUpdateRampProfileUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampProfileData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesMobileAccessRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/access-requests`
+}
+
+export const listHumanResourcesMobileAccessRequests = async ( options?: RequestInit): Promise<RampMobileAccessRequestData[]> => {
+
+  const res = await fetch(getListHumanResourcesMobileAccessRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRequestRampMobileAccessUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/${id}/access-requests`
+}
+
+export const requestRampMobileAccess = async (id: string,
+    rampMobileAccessIntent?: RampMobileAccessIntent, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRequestRampMobileAccessUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rampMobileAccessIntent)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListServiceClosuresUrl = (params?: ListServiceClosuresParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/service-closures?${stringifiedParams}` : `/api/v1/service-closures`
+}
+
+export const listServiceClosures = async (params?: ListServiceClosuresParams, options?: RequestInit): Promise<ServiceClosurePage> => {
+
+  const res = await fetch(getListServiceClosuresUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosurePage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateServiceClosureUrl = () => {
+
+
+
+
+  return `/api/v1/service-closures`
+}
+
+export const createServiceClosure = async (createServiceClosureRequest?: CreateServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateServiceClosureUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createServiceClosureRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDecideServiceClosureUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/service-closures/${id}/decision`
+}
+
+export const decideServiceClosure = async (id: string,
+    decideServiceClosureRequest?: DecideServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideServiceClosureUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(decideServiceClosureRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenServiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/service-closures/services/${id}/reopen`
+}
+
+export const reopenService = async (id: string,
+    reopenServiceRequest?: ReopenServiceRequest, options?: RequestInit): Promise<ServiceClosureData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenServiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenServiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ServiceClosureData = body ? JSON.parse(body) : {}
   return data
 }
 

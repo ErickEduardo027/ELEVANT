@@ -103,6 +103,7 @@ internal sealed class EfCommercialMediaStore(
         await client.PutObjectAsync(new PutObjectRequest
         {
             BucketName = Bucket(), Key = key, InputStream = buffer, ContentType = contentType,
+            UseChunkEncoding = false,
         }, cancellationToken);
         return new MediaAssetData(id, $"/api/v1/media/{id}", purpose, contentType, length);
     }
@@ -221,6 +222,7 @@ internal sealed class EfCommercialMediaStore(
             ServiceURL = endpoint,
             ForcePathStyle = true,
             AuthenticationRegion = configuration["MediaStorage:Region"] ?? "garage",
+            RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
         });
     }
 

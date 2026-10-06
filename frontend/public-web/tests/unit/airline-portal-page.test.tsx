@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { ElevantApiError, type AirlineOperationPageResponse,
+import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
+  type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type NonFiscalPaymentLookupResponse, type PreinvoiceDisputeListResponse,
   type SessionActorResponse } from "@elevant/api-client";
@@ -33,6 +34,13 @@ const getOperation = vi.fn(async (id: string) => {
   if (detailOperation?.id === id) return detailOperation;
   throw new ElevantApiError({ kind: "http", status: 404 });
 });
+const emptyEvidence: AirlineApprovedOperationEvidenceResponse = {
+  operationId: bootstrap.currentOperations[0].id!, available: false,
+  approvedAt: null, actualStartAt: null, actualEndAt: null,
+  incidentCount: 0, services: [],
+};
+let approvedEvidence = emptyEvidence;
+const getApprovedEvidence = vi.fn(async () => approvedEvidence);
 const initialRequestPage: AirlineOperationalRequestPageResponse = {
   page: 1, limit: 20, hasMore: false,
   requests: [{ id: "73000000-0000-7000-8000-000000000001",
@@ -83,12 +91,13 @@ const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
-}; detailOperation = bootstrap.currentOperations[0]; getOperations.mockClear(); getOperation.mockClear();
+}; detailOperation = bootstrap.currentOperations[0]; approvedEvidence = emptyEvidence;
+  getOperations.mockClear(); getOperation.mockClear(); getApprovedEvidence.mockClear();
   requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
   preinvoicePage = initialPreinvoicePage;
   getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
@@ -152,6 +161,54 @@ it("loads an authorized historical operation detail outside the bootstrap", asyn
   expect(getOperation).toHaveBeenCalledWith(detailOperation.id);
 });
 
+it("shows only the approved service snapshot in the airline operation detail", async () => {
+  detailOperation = { ...bootstrap.currentOperations[0], status: "Approved" };
+  approvedEvidence = {
+    operationId: bootstrap.currentOperations[0].id!, available: true,
+    approvedAt: "2026-09-25T16:00:00Z",
+    actualStartAt: "2026-09-25T13:00:00Z",
+    actualEndAt: "2026-09-25T15:45:00Z", incidentCount: 1,
+    services: [{ id: "30000000-0000-7000-8000-000000000007", code: "BAGGAGE",
+      name: "Baggage handling", status: "Completed",
+      contractedQuantity: 1, executedQuantity: 1, billingUnit: "operation" }],
+  };
+  render(<AirlinePortalPage view="flightDetail" operationId={approvedEvidence.operationId} />);
+  expect(await screen.findByText("Baggage handling")).toBeInTheDocument();
+  expect(screen.getByText(/Aprobada por OCC/)).toBeInTheDocument();
+  expect(screen.getByText(/1 incidencia registrada/)).toBeInTheDocument();
+  expect(getApprovedEvidence).toHaveBeenCalledWith(approvedEvidence.operationId);
+  expect(screen.queryByText(/nota interna/i)).not.toBeInTheDocument();
+});
+
+it("keeps an authorized unapproved operation visible without inventing evidence", async () => {
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(screen.getByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
+});
+
+it("does not show an old approved snapshot beside a newer unapproved status", async () => {
+  approvedEvidence = { ...emptyEvidence, available: true,
+    approvedAt: "2026-09-25T16:00:00Z",
+    services: [{ id: "30000000-0000-7000-8000-000000000007", code: "BAGGAGE",
+      name: "Baggage handling", status: "Completed",
+      contractedQuantity: 1, executedQuantity: 1, billingUnit: "operation" }] };
+  render(<AirlinePortalPage view="flightDetail" operationId={approvedEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(await screen.findByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
+});
+
+it("keeps the flight detail readable when only approved evidence fails", async () => {
+  getApprovedEvidence.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 503 }));
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent(/evidencia aprobada/i);
+  fireEvent.click(screen.getByRole("button", { name: "Reintentar evidencia" }));
+  expect(await screen.findByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
+  expect(getApprovedEvidence).toHaveBeenCalledTimes(2);
+});
+
 it("does not invent details for an operation outside the authorized tenant", async () => {
   render(<AirlinePortalPage view="flightDetail" operationId="not-authorized" />);
   expect(await screen.findByText(/no está disponible en la consulta autorizada/i)).toBeInTheDocument();
@@ -191,6 +248,58 @@ it("opens tenant-scoped invoice and receipt PDFs without a mock document", async
     Reflect.deleteProperty(URL, "createObjectURL");
     Reflect.deleteProperty(URL, "revokeObjectURL");
   }
+});
+
+it("keeps the invoice and receipt expanded across a live finance refresh", async () => {
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
+    ({ ...item, status: "Invoiced" })) };
+  const page = render(<AirlinePortalPage view="documents" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+  expect(getPreinvoiceInvoice).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a page-two invoice available after the first page refreshes", async () => {
+  const secondPage = { ...preinvoicePage, page: 2, hasMore: false,
+    preinvoices: preinvoicePage.preinvoices.map(item => ({ ...item, status: "Invoiced" })) };
+  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
+    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
+  ] };
+  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
+    .mockResolvedValueOnce(firstPage);
+  const page = render(<AirlinePortalPage view="documents" />);
+  const loadMore = await screen.findByRole("button", { name: "Cargar más" });
+  expect(screen.queryByText(/No hay facturas emitidas/)).not.toBeInTheDocument();
+  fireEvent.click(loadMore);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByText("Documento seleccionado de otra página")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+});
+
+it("removes selected financial documents when live revalidation fails", async () => {
+  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
+    ({ ...item, status: "Invoiced" })) };
+  const page = render(<AirlinePortalPage view="documents" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
+  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
+
+  getPreinvoices.mockRejectedValueOnce(new Error("private transport detail"));
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="documents" />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(/No se pudo actualizar la consulta/);
+  expect(screen.queryByRole("button", { name: "Descargar recibo PDF" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
 });
 
 it("shows only published preinvoices returned by the authorized finance API", async () => {
@@ -261,6 +370,47 @@ it("requires explicit confirmation before accepting a published preinvoice", asy
   await screen.findByText(/Aceptación registrada/);
   expect(acceptPreinvoice).toHaveBeenCalledExactlyOnceWith(
     "74000000-0000-7000-8000-000000000001");
+});
+
+it("keeps the same preinvoice acceptance confirmation open across a live finance refresh", async () => {
+  const page = render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+  expect(screen.getByRole("button", { name: "Confirmar aceptación" })).toBeInTheDocument();
+
+  financeRevision = 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+  await act(async () => {});
+
+  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
+  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
+});
+
+it("keeps page-two acceptance available after the first page refreshes", async () => {
+  const secondPage = { ...preinvoicePage, page: 2, hasMore: false };
+  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
+    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
+  ] };
+  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
+    .mockResolvedValueOnce(firstPage);
+  const page = render(<AirlinePortalPage view="finance" />);
+  const loadMore = await screen.findByRole("button", { name: "Cargar más prefacturas" });
+  expect(screen.queryByText(/No hay prefacturas publicadas/)).not.toBeInTheDocument();
+  fireEvent.click(loadMore);
+  const secondCard = await screen.findByRole("region", {
+    name: `Prefactura ${secondPage.preinvoices[0].id}`,
+  });
+  fireEvent.click(within(secondCard).getByRole("button", { name: /Ver l.*neas de prefactura/i }));
+  await screen.findByText("Ground power");
+  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
+
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="finance" />);
+
+  expect(await screen.findByText("Detalle seleccionado de otra página")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Confirmar aceptación" }));
+  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
 });
 
 it("selects disputed lines and requires confirmation before submitting a real objection", async () => {

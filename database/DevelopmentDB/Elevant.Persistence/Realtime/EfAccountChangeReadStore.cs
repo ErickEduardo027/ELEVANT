@@ -4,6 +4,8 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Integration;
+using Elevant.Domain.Entities.Workforce;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 
@@ -14,8 +16,12 @@ internal sealed class EfAccountChangeReadStore(
     ElevantDbContext context,
     IActorContextResolver actors) : IAccountChangeReadStore
 {
+    public Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
+        CancellationToken cancellationToken = default) =>
+        ReadAsync(accountId, after, limit, null, cancellationToken);
+
     public async Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
-        CancellationToken cancellationToken = default)
+        Guid? installationId, CancellationToken cancellationToken = default)
     {
         if (accountId == Guid.Empty || after < 0 || limit is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(limit));
@@ -56,6 +62,8 @@ internal sealed class EfAccountChangeReadStore(
                 role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
         var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
+        var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
+            role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
         var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
             .Select(role => role.RoleId).ToArray();
         var commercialGrants = hasInternalMembership ? await (
@@ -66,12 +74,15 @@ internal sealed class EfAccountChangeReadStore(
                 on grant.PermissionId equals permission.Id
             where internalRoleIds.Contains(role.PublicId) && role.IsActive &&
                 (permission.Code == "commercial.catalog.read" ||
-                 permission.Code == "commercial.requests.read")
+                 permission.Code == "commercial.requests.read" ||
+                 permission.Code == "commercial.service_closures.read")
             select permission.Code).Distinct().ToArrayAsync(cancellationToken) : [];
         var hasCatalogAccess = isSuperAdmin ||
             commercialGrants.Contains("commercial.catalog.read");
         var hasRequestsAccess = isSuperAdmin ||
             commercialGrants.Contains("commercial.requests.read");
+        var hasClosureAccess = isSuperAdmin ||
+            commercialGrants.Contains("commercial.service_closures.read");
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -85,6 +96,36 @@ internal sealed class EfAccountChangeReadStore(
                     (hasOccPlanningAccess && change.StationId != null &&
                      context.Stations.Any(station => station.Id == change.StationId &&
                          station.PublicId == change.ResourceId))) &&
+                ((change.Resource != "attendance_draft" &&
+                  change.Resource != "attendance_validation") ||
+                    (change.StationId != null &&
+                     context.GroundOperations.Any(operation =>
+                         operation.PublicId == change.ResourceId &&
+                         context.Turnarounds.Any(turnaround =>
+                             turnaround.Id == operation.TurnaroundId &&
+                             turnaround.StationId == change.StationId &&
+                             context.OperationAgentAssignments.Any(assignment =>
+                                 assignment.GroundOperationId == operation.Id &&
+                                 (hasOccPlanningAccess || hasHumanResourcesAccess ||
+                                  hasRampAccess && assignment.ReleasedAt == null &&
+                                  context.Users.Any(user => user.Id == accountInternalId &&
+                                      context.RampAgents.Any(agent =>
+                                          agent.PersonId == user.PersonId && agent.IsActive &&
+                                          agent.Id == assignment.RampAgentId &&
+                                          context.Set<RampAgentStationScope>().Any(scope =>
+                                              scope.RampAgentId == agent.Id &&
+                                              scope.StationId == turnaround.StationId &&
+                                              scope.ValidFrom <= turnaround.OperationDate &&
+                                              (scope.ValidTo == null ||
+                                               scope.ValidTo >= turnaround.OperationDate)) &&
+                                          installationId != null &&
+                                          context.Set<MobileDeviceAccountBinding>().Any(binding =>
+                                              binding.AccountId == accountInternalId &&
+                                              binding.UnboundAt == null &&
+                                              context.MobileDevices.Any(device =>
+                                                  device.Id == binding.MobileDeviceId &&
+                                                  device.InstallationId == installationId &&
+                                                  device.RevokedAt == null)))))))))) &&
                 (change.Resource != "finance_approved_services" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>
@@ -127,10 +168,13 @@ internal sealed class EfAccountChangeReadStore(
                                 organization.Id == airline.OrganizationId &&
                                 airlineOrganizationIds.Contains(organization.PublicId)))))) &&
                 (change.Resource != "commercial_catalog" ||
-                    (hasCatalogAccess && context.ServiceDefinitions.Any(service =>
+                    ((hasCatalogAccess || hasClosureAccess) && context.ServiceDefinitions.Any(service =>
                         service.PublicId == change.ResourceId))) &&
                 (change.Resource != "commercial_requests" ||
                     (hasRequestsAccess && context.ServiceRequests.Any(request =>
+                        request.PublicId == change.ResourceId))) &&
+                (change.Resource != "service_closures" ||
+                    (hasClosureAccess && context.ServiceClosureRequests.Any(request =>
                         request.PublicId == change.ResourceId))) &&
                 (change.Resource != "account_provisioning" ||
                     (isSuperAdmin && context.ServiceRequests.Any(request =>

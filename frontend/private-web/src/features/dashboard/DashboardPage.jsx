@@ -34,7 +34,7 @@ export default function DashboardPage({
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">OCC</p>
         <h1 className="mt-1 text-2xl font-bold">Panorama operativo</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          Planificación del día UTC, entregas en revisión y avisos registrados.
+          Planificación del día local de la estación, entregas en revisión y avisos registrados.
         </p>
       </div>
       {stationScopes.length > 0 && <label className="text-xs font-semibold">Estación
@@ -59,7 +59,7 @@ export default function DashboardPage({
 
     {status === 'success' && <>
       <p className="text-xs text-text-secondary-light">
-        Estación {data.stationCode} · fecha UTC {data.date} · conteos de las consultas mostradas
+        Estación {data.stationCode} · fecha local {data.date} · conteos de las consultas mostradas
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Escalas del día en consulta" value={data.turnarounds.length} icon={PlaneIcon} />
@@ -83,7 +83,7 @@ export default function DashboardPage({
               <span className="text-xs">{getPlanningStatusMeta(item.status).label}</span>
             </li>)}
           </ul> : <p className="py-6 text-center text-sm text-text-secondary-light">
-            No hay escalas registradas para esta estación y fecha UTC.
+            No hay escalas registradas para esta estación y fecha local.
           </p>}
           {data.turnarounds.length > 8 && <p className="pt-3 text-xs text-text-secondary-light">
             Se muestran las primeras 8 escalas. Abra Planificación para consultar el resto.

@@ -14,10 +14,6 @@ const VARIABLE_NAMES = [
 ];
 const REQUIRED_HR_DEMO_MODE = 'dashboard-read-only';
 
-function environmentValue(environment, nextName, legacyName) {
-  return environment[nextName] ?? environment[legacyName];
-}
-
 export class DevelopmentEnvironmentError extends Error {}
 
 function fail(message) {
@@ -75,7 +71,7 @@ export function validateDevelopmentEnvironment(environment = process.env) {
   const origins = Object.fromEntries(
     VARIABLE_NAMES.map((name) => [name, parseApiOrigin(
       name,
-      environmentValue(environment, name, name.replace('NEXT_PUBLIC_', 'VITE_')),
+      environment[name],
     )]),
   );
 
@@ -85,7 +81,7 @@ export function validateDevelopmentEnvironment(environment = process.env) {
     );
   }
 
-  const mode = environmentValue(environment, 'NEXT_PUBLIC_HR_DEMO_MODE', 'VITE_HR_DEMO_MODE');
+  const mode = environment.NEXT_PUBLIC_HR_DEMO_MODE;
   if (mode !== REQUIRED_HR_DEMO_MODE) {
     fail(`NEXT_PUBLIC_HR_DEMO_MODE must equal ${REQUIRED_HR_DEMO_MODE}.`);
   }
@@ -100,13 +96,6 @@ const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 if (invokedPath === fileURLToPath(import.meta.url)) {
   try {
     loadEnvConfig(path.resolve(fileURLToPath(new URL('..', import.meta.url))), process.env.NODE_ENV !== 'production');
-    for (const [nextName, legacyName] of [
-      ['NEXT_PUBLIC_ELEVANT_API_URL', 'VITE_ELEVANT_API_URL'],
-      ['NEXT_PUBLIC_PROTOTYPE_API_URL', 'VITE_PROTOTYPE_API_URL'],
-      ['NEXT_PUBLIC_HR_DEMO_MODE', 'VITE_HR_DEMO_MODE'],
-    ]) {
-      if (!process.env[nextName] && process.env[legacyName]) process.env[nextName] = process.env[legacyName];
-    }
     const result = validateDevelopmentEnvironment();
     process.stdout.write(
       `PRIVATE_WEB_DEVELOPMENT_ENV_OK origin=${result.apiOrigin} hr_demo_mode=${result.hrDemoMode}\n`,

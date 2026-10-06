@@ -35,6 +35,29 @@ internal static class WorkforceCommercialConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
+        modelBuilder.Entity<RampMobileAccessRequest>(builder =>
+        {
+            builder.ToTable("ramp_mobile_access_requests", "hr", table =>
+                table.HasCheckConstraint("ck_ramp_mobile_access_request_decision",
+                    "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [created_account_id] IS NULL) OR " +
+                    "([status] = N'Rejected' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NULL) OR " +
+                    "([status] = N'Fulfilled' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NOT NULL)"));
+            builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(item => item.RequestedAt).HasPrecision(3);
+            builder.Property(item => item.DecidedAt).HasPrecision(3);
+            builder.Property(item => item.DecisionReason).HasMaxLength(500);
+            builder.HasIndex(item => item.RampAgentId).HasFilter("[status] = N'Pending'").IsUnique();
+            builder.HasIndex(item => item.PublicId).IsUnique();
+            builder.HasOne<RampAgent>().WithMany().HasForeignKey(item => item.RampAgentId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.RequestedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.DecidedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.CreatedAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<RampAgentStationScope>(builder =>
         {
             builder.ToTable("ramp_agent_station_scopes", "hr", table =>
@@ -194,6 +217,43 @@ internal static class WorkforceCommercialConfiguration
 
     private static void ConfigureCommercial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ServiceClosureRequest>(builder =>
+        {
+            builder.ToTable("service_closure_requests", "commercial", table =>
+            {
+                table.HasCheckConstraint("ck_service_closure_decision",
+                    "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [decision_reason] IS NULL) OR " +
+                    "([status] = N'Approved' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL) OR " +
+                    "([status] = N'Denied' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [decision_reason] IS NOT NULL AND LEN([decision_reason]) >= 10)");
+                table.HasCheckConstraint("ck_service_closure_reopen",
+                    "([reopened_at] IS NULL AND [reopened_by_account_id] IS NULL AND [reopen_reason] IS NULL) OR " +
+                    "([status] = N'Approved' AND [reopened_at] IS NOT NULL AND [reopened_by_account_id] IS NOT NULL AND [reopen_reason] IS NOT NULL AND LEN([reopen_reason]) >= 10)");
+            });
+            builder.Property(item => item.ServiceNameSnapshot).HasMaxLength(160).IsRequired();
+            builder.Property(item => item.Reason).HasMaxLength(1000).IsRequired();
+            builder.Property(item => item.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(item => item.RequestedAt).HasPrecision(3);
+            builder.Property(item => item.DecidedAt).HasPrecision(3);
+            builder.Property(item => item.DecisionReason).HasMaxLength(1000);
+            builder.Property(item => item.ReopenedAt).HasPrecision(3);
+            builder.Property(item => item.ReopenReason).HasMaxLength(1000);
+            builder.HasIndex(item => item.ServiceDefinitionId)
+                .HasFilter("[status] = N'Pending'").IsUnique();
+            builder.HasIndex(item => item.PublicId).IsUnique();
+            builder.HasOne<ServiceDefinition>().WithMany()
+                .HasForeignKey(item => item.ServiceDefinitionId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(item => item.RequestedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(item => item.DecidedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany()
+                .HasForeignKey(item => item.ReopenedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<CommercialAirlineProfile>(builder =>
         {
             builder.ToTable("airline_profiles", "commercial");

@@ -7,38 +7,51 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-05"
-verified_commit: "f0b4b99d457fe4a8b4f114270591734b779b9633"
+last_verified: "2026-10-04"
+verified_commit: "76abdf66f33602b52e7f434cb95779e11ba52688"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
   - frontend/private-web/package.json
-  - frontend/private-web/next.config.mjs
   - frontend/private-web/app/layout.jsx
-  - frontend/private-web/app/auth-boundary.jsx
-  - frontend/private-web/src/features/auth/roleRouting.js
-  - frontend/private-web/src/features/human-resources/HRModulePage.jsx
+  - frontend/private-web/next.config.mjs
+  - frontend/private-web/proxy.js
+  - frontend/private-web/Dockerfile
   - frontend/private-web/src/features/auth/authService.js
   - frontend/private-web/src/features/admin-occ/navigation.js
   - frontend/private-web/src/features/human-resources/navigation.js
+  - frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx
   - frontend/private-web/src/config/elevantApiClient.js
+  - packages/api-client/src/client.ts
+  - backend/Elevant.Api/Controllers/HumanResourcesShiftsController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesShiftReadStore.cs
   - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
   - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
-  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/src/config/securityHeaders.mjs
 tags:
   - aplicaciones
   - private-web
   - aviam
   - react
-  - nextjs
   - prototipo
 ---
 
 # Private Web / AVIAM
+
+## Revisión de asistencia en la rama local posterior
+
+La ruta `/gestion-humana/attendance` consume el
+[cliente OpenAPI](../../packages/api-client/src/client.ts) para comparar los
+aportes de OCC y del agente por estación. La
+[vista](../../frontend/private-web/src/features/human-resources/attendance/AttendanceReviewPage.jsx)
+permite que G.H. elija los dos hitos y justifique discrepancias; solo la API
+autoriza y guarda la decisión. Revalida por pistas durables, foco, reconexión y
+sondeo visible; una lectura 401/403 retira el snapshot previo. La ruta y sus
+pruebas locales no constituyen evidencia de despliegue en Development.
 
 Private Web es la aplicación interna de AVIAM para OCC, administración y departamentos operativos. Su acceso usa la sesión real de la API de Development y algunas rutas OCC consumen contratos canónicos. Las pantallas prototípicas, objetos locales y rutas heredadas restantes no son autoridad de permisos, persistencia ni contrato HTTP.
 
@@ -55,9 +68,9 @@ Private Web es la aplicación interna de AVIAM para OCC, administración y depar
 
 ## Stack actual
 
-- Next.js 16 App Router con exportación estática (`output: 'export'`) y JavaScript/JSX.
+- Next.js 16 App Router y JavaScript/JSX con servidor Node `standalone`.
 - React 19 y React DOM 19.
-- Rutas basadas en el sistema de archivos bajo `app/`, con guards de cliente según el rol de la sesión; la API impone la autorización real.
+- Rutas de `app/` y guards por rol en el cliente; la API impone la autorización real.
 - Tailwind CSS 3 y tokens CSS para presentación.
 - MapLibre GL para vistas cartográficas.
 - `@elevant/api-client` como dependencia local del monorepo.
@@ -69,16 +82,14 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 | Ruta | Responsabilidad observada |
 | --- | --- |
-| `app/**/page.jsx`, `app/**/layout.jsx` | Rutas y layouts de Next.js App Router; Gestión Humana resuelve sus módulos con `app/gestion-humana/[module]/page.jsx`. |
-| `app/auth-boundary.jsx` | `ProtectedRole` y `LoginRoute`: espera de sesión, redirección a login y al home del rol. |
-| `src/features/auth/roleRouting.js` | Rutas canónicas, home por rol y normalización de entradas históricas. |
-| `src/app/RoleLayout.jsx` | Shell de navegación compartido por los layouts de rol. |
+| `app/` | Rutas Next, layouts y composición por rol. |
+| `proxy.js` | Cabeceras de seguridad y CSP con nonce por solicitud. |
 | `src/features/` | Interfaces y comportamiento por área: auth, OCC, planificación, monitoreo, posiciones, revisión, reportes, notificaciones, chat, contratos, finanzas y Gestión Humana. |
 | `src/services/` | Adaptadores de datos heredados y snapshots de prueba; no deben dictar el contrato futuro. |
 | `src/config/elevantApiClient.js` | Fábrica aislada para el cliente OpenAPI compartido. |
 | `src/components/`, `src/hooks/`, `src/lib/`, `src/styles/` | UI reutilizable, comportamiento transversal, utilidades y tokens. |
 | `tests/` y pruebas junto a features | Configuración transversal, smoke del cliente compartido y pruebas unitarias/de componentes. |
-| `dashboard.html`, `contracts.html`, `finance.html` | URL históricas redirigidas con 308 por Nginx (`nginx/default.conf`) a las rutas App Router. |
+| `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales. |
 
 ## Rutas y recorridos observados
 
@@ -86,7 +97,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 - `/login` autentica contra la API de Development; las credenciales mock solo existen en pruebas automatizadas.
 - El rol de la sesión redirige a `/admin-occ`, `/gestion-humana`, `/contratos` o `/finanzas`.
-- `ProtectedRole` (`app/auth-boundary.jsx`) y `roleRouting.js` organizan la navegación, pero no sustituyen la autorización del servidor.
+- Los guards del router organizan la navegación, pero no sustituyen la autorización del servidor.
 
 ### OCC / Administración
 
@@ -106,7 +117,35 @@ El Mapa de posiciones también usa la estación OCC seleccionada. En PUJ represe
 
 En la rama de integración de Development, planificación incorpora el alta manual de una escala OCC. La pantalla obtiene de la API las aerolíneas con contrato vigente, aeropuertos y posiciones activas para una estación autorizada; envía llegada, salida, fecha, posición y un UUID de intención estable para un reintento ambiguo. La API vuelve a comprobar alcance, contrato, ruta y disponibilidad de posición. Crear una escala deja su operación planificada. OCC puede programar después un turno local para un agente cuyo único impedimento sea la cobertura; el panel refresca opciones y ETag antes de asignar. Ninguno de esos comandos factura ni demuestra por sí solo promoción o prueba de navegador contra el VPS.
 
+La incorporación incremental de horarios sugeridos editables para esa cobertura se explica en [Opciones OCC de turno por vuelo](occ-turnos-vuelo.md), con su alcance y evidencia propios.
+
+En esta rama, una revalidación de planificación para la misma estación y fecha conserva el último snapshot hasta recibir la respuesta, evitando que se cierre transitoriamente el panel de una escala abierta. Cambiar estación o fecha, perder acceso o fallar la lectura retira los datos anteriores; una respuesta válida que ya no incluya la escala cierra el panel. Es comportamiento local verificado por pruebas del hook, no una confirmación de despliegue ni de una asignación real en el VPS. Fuente: [hook de planificación](../../frontend/private-web/src/features/planning/usePlanningData.js) y [pruebas](../../frontend/private-web/src/features/planning/usePlanningData.test.js).
+
 ### Gestión Humana
+
+En esta rama local, el panel de [alertas de programación](../../frontend/private-web/src/features/human-resources/schedules/ScheduleWarningsPanel.jsx)
+se añade a la vista de turnos. La [API versionada](../../backend/Elevant.Api/Controllers/HumanResourcesScheduleWarningsController.cs)
+autoriza el rol y estación en cada lectura y calcula superposición, descanso
+corto, carga de siete fechas locales y casos no evaluables. Es orientación
+preliminar, no una conclusión laboral ni horas pagadas. Evidencia de estaciones
+sin concesión se reduce a un indicador sin ID, código ni horario. La web
+retira los resultados al cambiar sesión o estación y reconsulta tras cambios
+durables de turnos, foco y reconexión. Código y pruebas locales no acreditan
+una promoción al VPS.
+
+En la rama local de solicitudes de acceso móvil, **Agentes de rampa** separa
+perfil laboral, petición y cuenta efectiva. G.H. envía un UUID de intención
+para un perfil elegible; Superadministración ve pendientes en Inicio y decide
+con rechazo motivado o creación de cuenta `RAMP_AGENT`. SQL conserva la
+solicitud y la decisión, mientras que IAM sigue siendo autoridad de acceso y
+estaciones. La bandeja envía versiones de solicitud y perfil y el conjunto de
+estaciones revisado; un 409 la refresca antes de decidir. Los avisos durables
+invalidan ambas vistas. No hay invitación por
+correo ni evidencia de promoción de esta rama al VPS. Fuentes:
+[contrato de acceso](../../backend/Elevant.Application/Abstractions/Identity/IRampMobileAccessRequestStore.cs),
+[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampMobileAccessRequestStore.cs),
+[vista de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
+y [bandeja](../../frontend/private-web/src/features/governance/RampMobileAccessInbox.jsx).
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
@@ -117,7 +156,7 @@ para turnos, habilitaciones o cobertura. El modo restringido solo expone
 dashboard, perfiles, habilitaciones, permisos y turnos conectados a la API; mantiene ocultas las rutas
 profundas aún no integradas. Recibir una señal de cambio, recuperar
 foco/conexión o cumplir 25 segundos provoca una nueva lectura. Esto no acredita
-un despliegue al VPS. Las escrituras de habilitaciones, permisos y turnos se
+un despliegue al VPS. Las escrituras de habilitaciones y permisos se
 describen más abajo y aún requieren validación de navegador y dispositivo. Fuentes:
 [servicio](../../frontend/private-web/src/services/humanResourcesDashboardService.js),
 [vista](../../frontend/private-web/src/features/human-resources/dashboard/DashboardPage.jsx)
@@ -135,6 +174,16 @@ incluso si se desactiva y pierde todos los scopes efectivos. El aviso solo
 incluye el UUID de estación, no la identidad del agente. Fuentes:
 [panel de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampProfileStore.cs).
+
+En esta rama local, el perfil admite terminales pertenecientes a sus
+estaciones y un supervisor activo sin ciclos de supervisión mediante campos
+aditivos de la API. La respuesta diferencia el estado de la cuenta IAM; este
+no prueba por sí solo que la cuenta tenga acceso móvil efectivo. Una
+edición de Gestión Humana puede reducir alcances y revocar grants existentes,
+pero no ampliar grants de la cuenta móvil; esa decisión sigue siendo de
+Superadministración. El panel no afirma que haya enviado una invitación. La
+ruta conservada es [el controlador de perfiles](../../backend/Elevant.Api/Controllers/RampProfilesController.cs)
+y la selección se comprueba en [su prueba de interfaz](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.test.jsx).
 
 La API de esta rama agrega una lectura paginada de los ciclos actuales de
 habilitación de rampa para Gestión Humana y Superadministración internas. La
@@ -169,17 +218,21 @@ pendiente. Fuentes:
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
 y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesPermitWriteStore.cs).
 
-La ruta restringida de horarios lee turnos reales por semana local y páginas
-de 20. Muestra agente, estación, terminal, posición y horas registradas, sin
-inferir disponibilidad. Gestión Humana puede registrar un turno nuevo después
-de consultar los scopes de estación y terminal vigentes para el agente/día. Una
-programación OCC emite las señales durables `hr_shifts` y `occ_planning`; la vista revalida también
-por foco, reconexión y sondeo de 25 segundos, y oculta datos anteriores si
-falla la lectura. La API ya permite registrar un turno mediante
-`PUT /api/v1/human-resources/shifts/{id}` con UUID estable, jornada máxima de 16
-horas, scopes de agente vigentes en estación y terminal, auditoría y señales
-`hr_shifts` y `occ_planning`. El formulario conserva el UUID de una intención incierta y
-reconsulta las opciones tras 409; el servidor vuelve a comprobar el alcance.
+La ruta restringida de horarios lee turnos reales por semana local, ventana
+de 15 días o mes calendario, siempre en páginas de 20. No presenta una página
+como total del período. Muestra agente, estación, terminal, posición y horas registradas, sin
+inferir disponibilidad. Gestión Humana ya no ofrece
+«Nuevo turno»: OCC es el único rol autorizado para registrar turnos. El
+`PUT /api/v1/human-resources/shifts/{id}` sigue disponible de forma transitoria
+para OCC, con UUID estable, jornada máxima de 16 horas, scopes de agente
+vigentes en estación y terminal, auditoría y señales `hr_shifts` y
+`occ_planning`. La vista GH revalida por pista durable, foco, reconexión y
+sondeo de 25 segundos, y oculta datos anteriores si falla la lectura. El
+calendario OCC y los patrones de turnos aún no están implementados. El código
+del repositorio por sí solo no acredita promoción al VPS.
+Las solicitudes de disponibilidad permanecen en la semana que contiene la
+fecha seleccionada incluso cuando la lectura de turnos cubre 15 días o un mes;
+la interfaz indica esa diferencia de alcance.
 Las ausencias y restricciones aprobadas ya bloquean la elegibilidad OCC
 para la fecha local consultada o el día de inicio de un turno nocturno. Las
 solicitudes pendientes y de cambio de turno no son una ausencia. La API ya
@@ -201,7 +254,7 @@ solicitud laboral. Planificación OCC invalida snapshot y opciones de asignació
 ante esa pista, foco, reconexión o sondeo visible de 25 segundos. Una pista
 perdida no reemplaza la comprobación final de elegibilidad y ETag en la API.
 La misma pista de estación se confirma al registrar o renovar un carnet o una
-habilitación, y al programar un turno desde Gestión Humana u OCC; ninguna pista
+habilitación, y al programar un turno desde OCC; ninguna pista
 incluye datos personales del agente.
 Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/schedules/CurrentShiftsPage.jsx),
@@ -212,15 +265,29 @@ usan [persistencia transaccional](../../database/DevelopmentDB/Elevant.Persisten
 Su [panel activo](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx)
 usa el [cliente versionado](../../frontend/private-web/src/services/humanResourcesAvailabilityService.js).
 
-La ruta restringida de Reportes de personal combina las primeras 100
-habilitaciones y permisos actuales con los primeros 100 turnos de la semana
-local mediante las tres lecturas autorizadas. Es una muestra, no un total
-histórico: permite abrir los módulos paginados, anuncia cuando una fuente tiene
-más páginas, oculta la muestra anterior ante un error y no ofrece exportaciones
-prototípicas. Revalida con señales durables, foco, reconexión y sondeo de 25
-segundos. Es código del worktree local; aún faltan CI, navegador y promoción al
-VPS. Fuentes: [vista de reportes](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
-y [selector de módulos](../../frontend/private-web/src/features/human-resources/HRModulePage.jsx).
+En este worktree posterior a la fotografía verificada de la nota, la ruta
+restringida de **Reportes de personal** consulta cuatro informes de API por
+estación: vigencias, movimientos de cuenta atribuibles por auditoría,
+distribución de turnos y cobertura de habilitaciones. Una página de hasta 20
+filas no se presenta como total global. Vigencias filtra habilitaciones o
+permisos y vigencia evaluada por fecha local de la estación; el mismo filtro
+se usa en la descarga. PDF y XLSX los genera la API a partir
+de un snapshot completo limitado a 5 000 filas; cada exportación vuelve a
+comprobar el rol G.H. y la concesión de estación y deja auditoría sin filas
+privadas. Los movimientos sin estación verificable no se atribuyen
+retroactivamente; los comandos de gobierno nuevos etiquetan altas, bajas y
+cambios de estado de cuentas de rampa con las estaciones verificadas al
+ejecutarlos. La vigencia de esos alcances para atribuir auditoría usa la fecha
+UTC del evento, coherente con la fecha UTC de alta del perfil; los intervalos
+de los informes siguen usando la fecha local de la estación. La vista retira
+la información anterior si se pierde acceso,
+y relee por señal durable, foco, reconexión y sondeo visible de 25 segundos.
+No hay todavía evidencia de CI, navegador ni promoción de estos reportes al
+VPS. Fuentes locales: [API](../../backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs),
+[consulta EF](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesReportStore.cs),
+[cliente compartido](../../packages/api-client/src/client.ts),
+[vista](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
+y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVerifiedReportsService.js).
 
 ### Contratos y Finanzas
 
@@ -310,16 +377,17 @@ npm test
 npm run test:delivery
 $env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
 $env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
 npm run dev
 npm run build
 ```
 
-Next sirve localmente en `http://localhost:3000`; `npm run preview` sirve la exportación estática generada por el build. `scripts/run-next.mjs` acepta temporalmente los nombres `VITE_*` heredados y los traduce a `NEXT_PUBLIC_*`. Verifica en el README del cliente cualquier cambio vigente en vez de copiar comandos antiguos del monorepo.
+`npm run preview` permite revisar el build local en el puerto `3000`. El runtime de Development usa el servidor standalone en `8080`, detrás de Tailscale y del Compose revisado.
 
 ## Pruebas que posee
 
 - pruebas Vitest de páginas, componentes, hooks, mappers y servicios;
-- pruebas de guards de ruta (`app/auth-boundary.test.jsx`, `app/protected-role.test.jsx`), autenticación y manejo de sesión expirada;
+- pruebas de rutas Next, autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración.
 
@@ -329,8 +397,7 @@ La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negoci
 
 - `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido.
 - `NEXT_PUBLIC_PROTOTYPE_API_URL` conserva temporalmente adaptadores heredados.
-- Los nombres `VITE_*` equivalentes solo se aceptan temporalmente como alias de migración.
-- Todo `NEXT_PUBLIC_*` (y su alias `VITE_*`) es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
+- Todo `NEXT_PUBLIC_*` es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
 - La configuración certificada exige orígenes HTTPS válidos y que ambas variables representen el mismo origen.
 - Un filtro, rol en memoria, ruta protegida o menú oculto nunca reemplaza la autorización de la API.
 
@@ -352,8 +419,7 @@ Cada feature debe consumir un endpoint versionado a través de un adaptador remo
 ## Fuentes y relaciones
 
 - [README del cliente](../../frontend/private-web/README.md)
-- [Guards de ruta App Router](../../frontend/private-web/app/auth-boundary.jsx)
-- [Rutas por rol](../../frontend/private-web/src/features/auth/roleRouting.js)
+- [Rutas Next actuales](../../frontend/private-web/app/layout.jsx)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)
 - [Mapa de aplicaciones](README.md)

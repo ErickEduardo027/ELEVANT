@@ -85,6 +85,20 @@ public sealed class AccountChangesEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task ForwardsCurrentInstallationForDeviceScopedHints()
+    {
+        var state = new FakeStore();
+        await using var app = Application(state);
+        using var client = Authorized(app);
+        var installationId = Guid.CreateVersion7();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/changes");
+        request.Headers.Add("X-Elevant-Installation-Id", installationId.ToString("D"));
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(installationId, state.LastInstallationId);
+    }
+
+    [Fact]
     public async Task OpenApiPublishesVersionedChangeFeed()
     {
         using var client = factory.CreateClient();
@@ -138,13 +152,19 @@ public sealed class AccountChangesEndpointsTests(ElevantApiFactory factory)
     {
         public int Reads { get; private set; }
         public (Guid, long, int) LastRead { get; private set; }
+        public Guid? LastInstallationId { get; private set; }
         public bool Deny { get; init; }
 
         public Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default) =>
+            ReadAsync(accountId, after, limit, null, cancellationToken);
+
+        public Task<AccountChangePage?> ReadAsync(Guid accountId, long after, int limit,
+            Guid? installationId, CancellationToken cancellationToken = default)
         {
             Reads++;
             LastRead = (accountId, after, limit);
+            LastInstallationId = installationId;
             if (Deny) return Task.FromResult<AccountChangePage?>(null);
             return Task.FromResult<AccountChangePage?>(after == 0
                 ? new AccountChangePage(

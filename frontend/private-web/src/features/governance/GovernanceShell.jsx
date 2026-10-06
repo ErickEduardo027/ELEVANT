@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../shell/components/Sidebar';
 import Topbar from '../dashboard/components/Topbar';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
+import RampMobileAccessInbox from './RampMobileAccessInbox';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
@@ -13,6 +14,7 @@ import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
 import {
   getGovernance, getProvisioning, provisionAirline,
+  listGovernanceRampMobileAccessRequests, rejectRampMobileAccessRequest,
   getGovernanceAudit,
   createRole, updateRole, deactivateRole, createUser, updateUser,
   deactivateUser, resetUserPassword,
@@ -32,47 +34,69 @@ export default function GovernanceShell({ user, onLogout }) {
   const [moduleId, setModuleId] = useState('home');
   const [snapshot, setSnapshot] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [rampRequests, setRampRequests] = useState([]);
   const [airlines, setAirlines] = useState([]);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const refreshVersion = useRef(0);
   const sidebar = useResponsiveSidebar();
   const { theme, toggleTheme } = usePreviewControls();
 
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     try {
-      const [nextSnapshot, nextTasks, nextAirlines] = await Promise.all([getGovernance(), getProvisioning(), getManagedAirlines()]);
+      const [nextSnapshot, nextTasks, nextAirlines, nextRampRequests] = await Promise.all([
+        getGovernance(), getProvisioning(), getManagedAirlines(),
+        listGovernanceRampMobileAccessRequests(),
+      ]);
+      if (version !== refreshVersion.current) return;
       setSnapshot(nextSnapshot);
       setTasks(nextTasks);
       setAirlines(nextAirlines);
+      setRampRequests(nextRampRequests);
       setStatus('ready');
       setError('');
     } catch (failure) {
+      if (version !== refreshVersion.current) return;
+      setSnapshot(null);
+      setTasks([]);
+      setAirlines([]);
+      setRampRequests([]);
       setStatus('error');
       setError(failure.message);
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { refreshVersion.current += 1; };
+  }, [refresh]);
   useCommercialRevalidation(refresh);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['account_provisioning', 'commercial_requests', 'airline_contracts', 'commercial_airlines', 'ramp_profiles'].includes(resource))) void refresh();
+      if (resources.some(resource => ['account_provisioning', 'commercial_requests', 'airline_contracts', 'commercial_airlines', 'ramp_profiles', 'ramp_mobile_access_requests'].includes(resource))) void refresh();
     });
     void observer.start();
     return () => { void observer.stop(); };
   }, [refresh]);
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
 
-  async function run(action, successMessage) {
+  async function run(action, successMessage, mobileAccessDecision = false) {
     setError(''); setNotice('');
     try { await action(); setNotice(successMessage); await refresh(); return true; }
-    catch (failure) { setError(failure.message); return false; }
+    catch (failure) {
+      if (failure.status === 409 && mobileAccessDecision) await refresh();
+      setError(failure.status === 409 && mobileAccessDecision
+        ? 'La solicitud o el perfil cambiaron. Revise la bandeja actualizada antes de decidir.'
+        : failure.message);
+      return false;
+    }
   }
   const active = modules.find(module => module.id === moduleId) ?? modules[0];
   return <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
     <Sidebar modules={modules} activeModuleId={moduleId} onSelectModule={id => { setModuleId(id); sidebar.closeOverlay(); }}
-      badgeCounts={{ home: tasks.length }} user={user} onLogout={onLogout}
+      badgeCounts={{ home: tasks.length + rampRequests.filter(item => item.status === 'Pending').length }} user={user} onLogout={onLogout}
       breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded}
       overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
     <div className="flex min-w-0 flex-1 flex-col">
@@ -89,7 +113,8 @@ export default function GovernanceShell({ user, onLogout }) {
           {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
           {error && <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</div>}
           {status === 'loading' ? <div className="rounded-xl bg-white p-8 dark:bg-surface-dark-card">Cargando gobernanza…</div> : null}
-          {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks} run={run} />}
+          {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks}
+            rampRequests={rampRequests} run={run} />}
           {status === 'ready' && moduleId === 'users' && <GovernanceUsers snapshot={snapshot} run={run} />}
           {status === 'ready' && moduleId === 'airlines' && <AirlinesPanel airlines={airlines}
             onSave={(id, values) => run(() => saveManagedAirline(id, values), 'Aerolínea guardada.')}
@@ -102,7 +127,7 @@ export default function GovernanceShell({ user, onLogout }) {
   </div>;
 }
 
-function GovernanceHome({ snapshot, tasks, run }) {
+function GovernanceHome({ snapshot, tasks, rampRequests, run }) {
   const activeUsers = snapshot.users.filter(item => item.status === 'Active').length;
   const customRoles = snapshot.roles.filter(item => item.isCustom && item.isActive).length;
   return <>
@@ -120,6 +145,12 @@ function GovernanceHome({ snapshot, tasks, run }) {
         <ProvisioningCard key={task.requestId} task={task} run={run} />)}</div> :
         <p className="mt-6 rounded-xl bg-black/[.035] p-5 text-sm dark:bg-white/[.04]">No hay cuentas pendientes de crear.</p>}
     </section>
+    <RampMobileAccessInbox requests={rampRequests} profiles={snapshot.rampProfiles ?? []}
+      roleId={snapshot.roles.find(role => role.code === 'RAMP_AGENT' && role.isActive)?.id}
+      onApprove={values => run(() => createUser(values),
+        'Cuenta móvil creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.', true)}
+      onReject={(id, reason, version) => run(() => rejectRampMobileAccessRequest(id, reason, version),
+        'Solicitud móvil rechazada. Gestión Humana verá el motivo.', true)} />
   </>;
 }
 
@@ -165,7 +196,7 @@ function UsersPanel({ snapshot, run }) {
   const [avatar, setAvatar] = useState(null);
   const roles = snapshot.roles.filter(role => role.isActive &&
     (editing ? role.portal === snapshot.users.find(user => user.id === editing)?.portal :
-      role.portal === 'BackOffice' || role.code === 'RAMP_AGENT'));
+      role.portal === 'BackOffice'));
   const selectedRole = roles.find(role => role.id === form.roleId);
   const rampProfiles = snapshot.rampProfiles ?? [];
   function edit(user) {
@@ -196,9 +227,9 @@ function UsersPanel({ snapshot, run }) {
     </section>
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
       <h2 className="text-lg font-bold">{editing ? 'Editar usuario' : 'Crear usuario interno'}</h2>
-      <p className="mt-1 text-xs text-text-secondary-light">La contraseña temporal exige cambio en el primer acceso.</p>
+      <p className="mt-1 text-xs text-text-secondary-light">La contraseña temporal exige cambio en el primer acceso y debe tener al menos 14 caracteres con mayúscula, minúscula, número y símbolo.</p>
       {[['firstName', 'Nombre'], ['lastName', 'Apellido'], ['email', 'Correo de acceso']].map(([key, label]) =>
-        <label key={key} className="mt-4 block text-xs font-semibold">{label}<input required type={key === 'email' ? 'email' : 'text'} value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" /></label>)}
+        <label key={key} className="mt-4 block text-xs font-semibold">{label}<input required type={key === 'email' ? 'email' : 'text'} minLength={key === 'email' ? undefined : 2} maxLength={key === 'email' ? 256 : 100} value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" /></label>)}
       <label className="mt-4 block text-xs font-semibold">Rol<select required value={form.roleId} onChange={event => setForm(current => ({ ...current, roleId: event.target.value, rampAgentId: '' }))} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark"><option value="">Seleccione un rol</option>{roles.map(role => <option key={role.id} value={role.id}>{role.name} · {role.portal === 'RampMobileApp' ? 'App de rampa' : 'Private Web'}</option>)}</select></label>
       {selectedRole?.portal === 'RampMobileApp' && <label className="mt-4 block text-xs font-semibold">Perfil operativo de Gestión Humana<select required value={form.rampAgentId} disabled={Boolean(editing)} onChange={event => {
         const profile = rampProfiles.find(item => item.id === event.target.value);
@@ -208,7 +239,7 @@ function UsersPanel({ snapshot, run }) {
       }} className="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark"><option value="">Seleccione un perfil con estación activa</option>{rampProfiles.filter(profile => profile.stations.length && (!profile.accountId || profile.accountId === editing)).map(profile => <option key={profile.id} value={profile.id}>{profile.name} · {profile.employeeNumber} · {profile.stations.join(', ')}</option>)}</select></label>}
       {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt="Foto actual del usuario" className="mt-4 h-16 w-16 rounded-full object-cover" />}
       <FileDropField label="Foto de perfil" accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint="Arrastre o busque una imagen PNG, JPG o WebP de hasta 8 MB." />
-      {!editing && <PasswordField fieldClassName="mt-4 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id="governance-create-password" required minLength={14} autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} />}
+      {!editing && <PasswordField fieldClassName="mt-4 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 p-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id="governance-create-password" required minLength={14} pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{14,}" title="Al menos 14 caracteres con mayúscula, minúscula, número y símbolo." autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} />}
       {editing && <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={event => setForm(current => ({ ...current, isActive: event.target.checked }))} /> Cuenta activa</label>}
       <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar usuario</button>{editing && <button type="button" onClick={() => { setEditing(null); setForm(emptyUser()); setAvatar(null); }} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>
     </form>
@@ -223,29 +254,35 @@ function RolesPanel({ snapshot, run }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [levels, setLevels] = useState({});
-  const modules = useMemo(() => snapshot.permissionCodes.filter(code => code.startsWith('commercial.') && code.endsWith('.read')).map(code => code.slice(0, -5)), [snapshot.permissionCodes]);
+  const [closureGrants, setClosureGrants] = useState([]);
+  const closureActions = ['read', 'request', 'decide', 'reopen'];
+  const modules = useMemo(() => snapshot.permissionCodes.filter(code => code.startsWith('commercial.') &&
+    code.endsWith('.read') && !code.startsWith('commercial.service_closures.')).map(code => code.slice(0, -5)), [snapshot.permissionCodes]);
   function edit(role) {
     setEditing(role.id); setName(role.name); setDescription(role.description ?? '');
+    setClosureGrants(role.permissions.filter(code => code.startsWith('commercial.service_closures.')));
     setLevels(Object.fromEntries(modules.map(module => [module,
       role.permissions.includes(`${module}.write`) || role.permissions.includes(`${module}.full`) ? 'full' :
         role.permissions.includes(`${module}.edit`) ? 'edit' :
           role.permissions.includes(`${module}.create`) ? 'create' :
-            role.permissions.includes(`${module}.read`) ? 'read' : 'none'])));
+            'read'])));
   }
   async function save(event) {
     event.preventDefault();
-    const permissionCodes = modules.flatMap(module => {
-      const level = levels[module];
-      if (level === 'none' || !level) return [];
+    const permissionCodes = [...modules.flatMap(module => {
+      const level = levels[module] ?? 'read';
       if (level === 'read') return [`${module}.read`];
       if (level === 'full') return [`${module}.read`, ...['create', 'edit', 'full']
         .filter(action => snapshot.permissionCodes.includes(`${module}.${action}`))
         .map(action => `${module}.${action}`)];
       return [`${module}.read`, `${module}.${level}`];
-    });
+    }), ...closureGrants];
+    if (closureGrants.some(code => code !== 'commercial.service_closures.read') &&
+      !permissionCodes.includes('commercial.service_closures.read'))
+      permissionCodes.push('commercial.service_closures.read');
     const values = { name, description, permissionCodes, isActive: true };
     const saved = await run(() => editing ? updateRole(editing, values) : createRole(values), editing ? 'Rol actualizado.' : 'Rol creado.');
-    if (saved) { setEditing(null); setName(''); setDescription(''); setLevels({}); }
+    if (saved) { setEditing(null); setName(''); setDescription(''); setLevels({}); setClosureGrants([]); }
   }
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Roles del sistema</h2><div className="mt-4 space-y-2">{snapshot.roles.map(role =>
@@ -254,8 +291,14 @@ function RolesPanel({ snapshot, run }) {
       <label className="mt-4 block text-xs font-semibold">Nombre<input required minLength={3} maxLength={120} value={name} onChange={event => setName(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
       <label className="mt-4 block text-xs font-semibold">Descripción<input maxLength={500} value={description} onChange={event => setDescription(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
       <h3 className="mt-5 text-sm font-semibold">Permisos por módulo</h3><div className="mt-2 space-y-2">{modules.map(module =>
-        <label key={module} className="flex items-center justify-between gap-2 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><span>{module === 'commercial.catalog' ? 'Servicios' : 'Solicitudes y borradores'}</span><select value={levels[module] ?? 'none'} onChange={event => setLevels(current => ({ ...current, [module]: event.target.value }))} className="rounded border bg-white p-1 dark:bg-surface-dark"><option value="none">Sin acceso</option><option value="read">Ver</option>{snapshot.permissionCodes.includes(`${module}.create`) && <option value="create">Ver y crear</option>}<option value="edit">Ver y editar</option><option value="full">Acceso completo</option></select></label>)}</div>
-      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar rol</button>{editing && <button type="button" onClick={() => { setEditing(null); setName(''); setDescription(''); setLevels({}); }}>Cancelar</button>}</div>
+        <label key={module} className="flex items-center justify-between gap-2 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><span>{module === 'commercial.catalog' ? 'Servicios' : 'Solicitudes y borradores'}</span><select value={levels[module] ?? 'read'} onChange={event => setLevels(current => ({ ...current, [module]: event.target.value }))} className="rounded border bg-white p-1 dark:bg-surface-dark"><option value="read">Ver</option>{snapshot.permissionCodes.includes(`${module}.create`) && <option value="create">Crear</option>}<option value="edit">Editar</option><option value="full">Acceso completo</option></select></label>)}</div>
+      <fieldset className="mt-5 space-y-2"><legend className="text-sm font-semibold">Clausura de servicios</legend>{closureActions.map(action => {
+        const code = `commercial.service_closures.${action}`;
+        if (!snapshot.permissionCodes.includes(code)) return null;
+        const label = { read: 'Ver historial', request: 'Solicitar clausura (OCC)', decide: 'Aprobar o denegar (Contratos)', reopen: 'Republicar (Contratos)' }[action];
+        return <label key={code} className="flex items-center gap-3 rounded-lg bg-black/[.03] px-3 py-2 text-xs dark:bg-white/[.04]"><input type="checkbox" checked={closureGrants.includes(code)} onChange={event => setClosureGrants(current => event.target.checked ? [...current, code] : current.filter(item => item !== code))} />{label}</label>;
+      })}</fieldset>
+      <div className="mt-5 flex gap-2"><button className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar rol</button>{editing && <button type="button" onClick={() => { setEditing(null); setName(''); setDescription(''); setLevels({}); setClosureGrants([]); }}>Cancelar</button>}</div>
     </form>
     <ConfirmDialog open={Boolean(pendingDeactivate)} title="Desactivar rol" description={`¿Desactivar el rol ${pendingDeactivate?.name ?? ''}?`} confirmLabel="Desactivar" onClose={() => setPendingDeactivate(null)} onConfirm={async () => { const role = pendingDeactivate; setPendingDeactivate(null); await run(() => deactivateRole(role.id), 'Rol desactivado.'); }} />
   </div>;

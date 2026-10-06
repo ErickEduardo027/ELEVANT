@@ -14,23 +14,6 @@ if (!['dev', 'build', 'start', 'typegen'].includes(command)) {
 
 loadEnvConfig(projectRoot, command === 'dev');
 
-const publicEnvironment = [
-  ['NEXT_PUBLIC_ELEVANT_API_URL', 'VITE_ELEVANT_API_URL'],
-  ['NEXT_PUBLIC_PROTOTYPE_API_URL', 'VITE_PROTOTYPE_API_URL'],
-  ['NEXT_PUBLIC_HR_DEMO_MODE', 'VITE_HR_DEMO_MODE'],
-  ['NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'VITE_GOOGLE_MAPS_API_KEY'],
-  ['NEXT_PUBLIC_FLIGHT_MAP_STYLE_LIGHT', 'VITE_FLIGHT_MAP_STYLE_LIGHT'],
-  ['NEXT_PUBLIC_FLIGHT_MAP_STYLE_DARK', 'VITE_FLIGHT_MAP_STYLE_DARK'],
-  ['NEXT_PUBLIC_POSITIONS_MAP_STYLE_LIGHT', 'VITE_POSITIONS_MAP_STYLE_LIGHT'],
-  ['NEXT_PUBLIC_POSITIONS_MAP_STYLE_DARK', 'VITE_POSITIONS_MAP_STYLE_DARK'],
-];
-
-for (const [nextName, legacyName] of publicEnvironment) {
-  if (!process.env[nextName] && process.env[legacyName]) {
-    process.env[nextName] = process.env[legacyName];
-  }
-}
-
 const nextCli = path.join(projectRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
 const result = spawnSync(process.execPath, [nextCli, command, ...process.argv.slice(3)], {
   cwd: projectRoot,

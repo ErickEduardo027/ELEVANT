@@ -7,11 +7,13 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "f533cf2b20c1ded9b68fb10d6edcf2d622551ac4"
+last_verified: "2026-10-03"
+verified_commit: "913fb3d5eedc7de9444eac15836d9cdd9a89706f"
 sources:
+  - .github/workflows/development-delivery.yml
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
+  - scripts/release/classify-changes.sh
   - docs/workflows/release-workflow.md
   - docs/workflows/web-workflow.md
   - docs/adr/0014-bind-api-releases-to-openapi-fingerprint.md
@@ -45,6 +47,17 @@ La identidad de una entrega es su digest OCI y su manifiesto validado, no un
 tag mutable. GitHub Actions construye y certifica fuera del VPS; el controlador
 privado consulta GHCR y decide si el candidato puede sustituir la última
 baseline saludable. No hay webhook de GitHub que despliegue dentro de Dokploy.
+
+El workflow web actualizado usa aplicación y `run_id` como nombre estable
+para el artefacto intermedio. Permite
+reintentar solo la publicación sin buscar un artefacto de un intento de build
+que nunca ocurrió; un build repetido reemplaza ese intermedio antes de
+publicar. La publicación sigue comprobando hash, identidad de imagen, commit,
+configuración y manifiesto API exacto. El bundle OCI aceptado mantiene digest
+inmutable y procedencia por intento. El cambio de workflow por sí solo no
+acredita ninguna promoción al VPS. Fuente:
+[workflow web](../../.github/workflows/web-ci.yml) y
+[prueba de reintento](../../frontend/tests/deployment/test_web_ci_artifacts.py).
 
 ```mermaid
 flowchart TB
@@ -114,9 +127,9 @@ en el host.
 
 ## 3. Webs: dos ciclos, dependencia API exacta
 
-Web CI clasifica `aviam-web` y `public-web` por separado para la publicación.
-Su matriz fija construye y certifica **ambas** webs cuando se dispara el
-workflow; cada perfil clasificado publica un bundle OCI v1 propio con manifiesto
+Web CI clasifica `aviam-web` y `public-web` por separado para validación y
+publicación. Su matriz construye y certifica solo las webs afectadas; cada
+perfil de release publica un bundle OCI v1 propio con manifiesto
 cerrado + Compose exacto, vuelve a verificar los payloads y mueve su alias al
 final. El bundle fija digest de la imagen web, hash Compose, fingerprint de
 configuración, bundle API, `runId`, imagen API y hash canónico OpenAPI usados en
@@ -125,9 +138,11 @@ el build.
 Antes del build, el resolver exige igualdad entre descriptor, snapshot y etiqueta
 del bundle API. `source.json` identifica el contrato; commit, run e imagen API
 se derivan del manifiesto inmutable resuelto y se conservan en el manifiesto web
-v1. Una referencia inmutable incompatible falla inmediatamente. Si el alias de
-descubrimiento todavía apunta a una release anterior sin la etiqueta requerida,
-con otra huella o anterior a un input API pendiente, se espera la release nueva.
+v1. Una referencia inmutable incompatible falla inmediatamente. Cuando el push
+requiere API nueva, `Development delivery` espera Backend CI y transfiere su
+bundle inmutable a Web CI. La ausencia de esa referencia bloquea Web CI. Si
+el push es solo web, se comprueba una vez que el alias apunta a una API
+certificada compatible; no se ocupa un runner esperando a que avance.
 
 Un mismo `web-cd` tiene dos perfiles con estado, cache y rollback separados.
 Antes de mutar uno exige que **esa API exacta** siga aceptada y viva: estado
@@ -136,9 +151,8 @@ No adivina que una API más reciente sea compatible. Un candidato web para una
 API distinta se difiere sin consumir el intento; una nueva certificación web
 puede fijar la API vigente.
 
-Las webs son previews técnicos independientes: una shell/health saludable no
-prueba que la API ya tenga los endpoints de autenticación y negocio de los
-prototipos. Ninguna web entra a la red SQL ni mueve el otro perfil.
+Una shell/health saludable no prueba por sí sola un ciclo de negocio completo
+ni su autorización. Ninguna web entra a la red SQL ni mueve el otro perfil.
 
 En el PR de integración #118, el certifier de AVIAM verifica que el bundle
 incluya el dashboard HR conectado y excluya el antiguo banner permanente de
@@ -148,10 +162,11 @@ un nuevo run certificado y la promoción normal del perfil AVIAM.
 
 ## Coordinación de fuente y publicación
 
-`scripts/release/path-ownership.sh` es la política común de inputs que producen
-API y de cambios que invalidan cada publicación web. Esos paths disparan Backend
-CI y Web CI, y los guards rechazan que un run antiguo mueva un alias después de
-un cambio relevante. El resolver exige `ELEVANT_SOURCE_COMMIT == HEAD`; una API
+`scripts/release/path-ownership.sh` define los inputs que producen API y los
+cambios que invalidan cada publicación web. `classify-changes.sh` distingue
+esos inputs de los que solo requieren validación, y ambos coordinadores lo
+usan. Los guards rechazan que un run antiguo mueva un alias después de un
+cambio relevante. El resolver exige `ELEVANT_SOURCE_COMMIT == HEAD`; una API
 anterior solo es reutilizable si pertenece a la misma historia y el diff hasta
 ese checkout no contiene ningún input API.
 
@@ -162,10 +177,10 @@ resolver tanto su digest API transferido como el alias vigente y exige igualdad
 byte a byte antes de publicar. Esto cierra la carrera entre certificar una web y
 mover el alias API sin cambiar los esquemas v1 ni relajar el gate exacto del VPS.
 
-Límite conocido: un rerun manual de Backend CI para el mismo commit puede crear
-otra tupla exacta de run/imagen/bundle sin un push que dispare Web CI. Una web en
-curso rechaza el alias cambiado; si se necesita fijar la nueva tupla, se
-rerunea Web CI para ese commit.
+Límite conocido: un rerun manual de `Development delivery` para el mismo commit
+puede crear otra tupla exacta de run/imagen/bundle. Una web en curso rechaza
+el alias cambiado; si se necesita fijar la nueva tupla, se rerunea el
+coordinador para ese commit.
 
 ## Orden y concurrencia
 

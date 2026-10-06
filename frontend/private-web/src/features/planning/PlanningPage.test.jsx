@@ -14,6 +14,9 @@ vi.mock('./components/ManualTurnaroundDialog', () => ({
 vi.mock('./components/OccShiftPanel', () => ({
   default: ({ onProgrammed }) => <button type="button" onClick={onProgrammed}>Simular turno programado</button>,
 }));
+// Page-level tests exercise selection and planning; the real attendance drawer is
+// exercised by PlanningDrawer/OccAttendancePanel tests with a controlled API boundary.
+vi.mock('./components/OccAttendancePanel', () => ({ default: () => null }));
 import {
   createPlanningFlight,
   createPlanningSnapshot,

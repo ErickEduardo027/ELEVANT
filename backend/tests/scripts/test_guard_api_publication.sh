@@ -131,9 +131,9 @@ assert_rejected_advance database-bundle-advance database/DevelopmentDB/Elevant.D
 assert_rejected_advance compose-advance backend/compose.development.api.yml
 assert_rejected_advance manifest-tool-advance backend/scripts/deployment/api_release_manifest.py
 assert_rejected_advance openapi-snapshot-advance packages/api-client/openapi/elevant-v1.json
-assert_rejected_advance openapi-tool-advance ops/dokploy/web-cd/openapi-tool.mjs
-assert_rejected_advance release-path-policy-advance scripts/release/path-ownership.sh
-assert_rejected_advance workflow-advance .github/workflows/backend-ci.yml
+assert_accepted_advance openapi-tool-advance ops/dokploy/web-cd/openapi-tool.mjs
+assert_accepted_advance release-path-policy-advance scripts/release/path-ownership.sh
+assert_accepted_advance workflow-advance .github/workflows/backend-ci.yml
 assert_rejected_advance dockerfile-advance backend/Dockerfile
 test_source_not_ancestor
 

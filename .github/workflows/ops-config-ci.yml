@@ -1,15 +1,23 @@
 name: Operations configuration CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
       - Development
-  pull_request:
-    branches:
-      - main
-      - Development
-
+    paths:
+      - "ops/dokploy/**"
+      - "database/DevelopmentDB/**"
+      - "backend/scripts/deployment/**"
+      - "backend/compose.development.api.yml"
+      - "frontend/scripts/deployment/**"
+      - "frontend/private-web/compose.development.aviam-web.yml"
+      - "frontend/public-web/compose.development.public-web.yml"
+      - "packages/api-client/openapi/**"
+      - "scripts/release/**"
+      - ".dockerignore"
+      - ".github/workflows/ops-config-ci.yml"
 permissions:
   contents: read
 
@@ -746,7 +754,3 @@ jobs:
               408a76510e6ffa9b7fc9119b88313f7d9eb5683bf8e68ebd0f323dbda2115034 \
               ops/dokploy/observability/compose.yml
           } | sha256sum --check --strict
-
-      - name: Scan repository for committed secrets
-        shell: pwsh
-        run: ./scripts/repository/check-secrets.ps1

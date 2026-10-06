@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const outputRoot = path.resolve(fileURLToPath(new URL('../out/_next/static/', import.meta.url)));
+const outputRoot = path.resolve(fileURLToPath(new URL('../.next/static/', import.meta.url)));
 const files = [];
 
 async function visit(directory) {
@@ -16,17 +16,14 @@ async function visit(directory) {
 
 await visit(outputRoot);
 const workers = files.filter(file => /maplibre-gl-worker.*\.(?:js|mjs)$/.test(path.basename(file)));
-assert.equal(workers.length, 1, 'The Next.js export must emit exactly one MapLibre worker asset');
+assert.ok(workers.length > 0, 'The Next.js build must emit a MapLibre worker asset');
 
 const chunks = files.filter(file => !workers.includes(file));
-const workerName = path.basename(workers[0]);
-let referenced = false;
-for (const chunk of chunks) {
-  if ((await readFile(chunk, 'utf8')).includes(workerName)) {
-    referenced = true;
-    break;
+const chunkSources = await Promise.all(chunks.map(chunk => readFile(chunk, 'utf8')));
+for (const worker of workers) {
+  const workerName = path.basename(worker);
+  const referenced = chunkSources.some(source => source.includes(workerName));
+  assert.ok(referenced, `The application must reference its emitted worker (${workerName})`);
   }
-}
-assert.ok(referenced, `The exported application must reference its emitted worker (${workerName})`);
 
-console.log(`PRIVATE_WEB_MAPLIBRE_WORKER_OK asset=${workerName}`);
+console.log(`PRIVATE_WEB_MAPLIBRE_WORKER_OK assets=${workers.length}`);

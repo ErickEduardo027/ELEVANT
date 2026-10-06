@@ -7,12 +7,15 @@ status: verified
 maturity: stable
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-10-03"
+verified_commit: "913fb3d5eedc7de9444eac15836d9cdd9a89706f"
 sources:
+  - .github/workflows/pull-request-ci.yml
+  - .github/workflows/development-delivery.yml
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
+  - .github/workflows/secret-scan.yml
   - docs/workflows/release-workflow.md
   - ops/dokploy/database-cd/README.md
   - ops/dokploy/api-cd/README.md
@@ -52,8 +55,12 @@ flowchart TD
 ```
 
 La ruta de PR es la norma del equipo, pero actualmente no está impuesta por
-branch protection. El push directo también debe superar los gates del run
-antes de cualquier publicación; no implica revisión humana previa.
+branch protection. `Pull request CI` exige un estado final estable: Vault y
+escaneo de secretos siempre, más cada carril seleccionado por rutas. Si uno
+falla, se cancela o se omite cuando era requerido, el gate final falla. Un
+carril no seleccionado puede aparecer como `skipped` sin volver rojo el PR.
+El push directo también debe superar los gates del run antes de cualquier
+publicación; no implica revisión humana previa.
 
 Backend CI bloquea la imagen API si Swagger compilado y snapshot divergen;
 API Client CI lo repite como defensa independiente. El bundle incompleto no
@@ -66,6 +73,7 @@ que su contenido esté desplegado ni autoriza ejecutarla como imagen mutable.
 | --- | --- | --- |
 | PR verde | validación de un SHA | revisión y run de push posterior, si hay merge |
 | job de publicación omitido | cambio no clasificado para ese carril, o condición de job no satisfecha | clasificación y `if` del workflow |
+| PR con carril omitido | normal si el clasificador no lo seleccionó; error si era requerido | salida del clasificador y `Final PR quality gate` |
 | CI rojo antes de bundle | no hay candidato nuevo completo de ese run | primer job fallido y artefactos anteriores |
 | alias movido | candidato publicado, no aceptado | digest resuelto y estado del controlador |
 | DB/API/web espera dependencia | promoción diferida, no éxito | DB/API exigida, estado vivo y siguiente poll |

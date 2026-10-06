@@ -1,10 +1,21 @@
 name: Web clients CI and Development delivery
 
 on:
+  workflow_call:
+    inputs:
+      same_run_api_manifest:
+        description: Immutable API manifest produced by the backend job in this run
+        type: string
+        required: false
+        default: ""
+      api_release_expected:
+        description: Fail closed if the same-run backend did not publish its required API manifest
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - main
-      - Development
     paths:
       - "frontend/private-web/**"
       - "frontend/public-web/**"
@@ -31,37 +42,6 @@ on:
       - "backend/Elevant.Infrastructure/**"
       - "backend/scripts/deployment/**"
       - "database/DevelopmentDB/Elevant.Persistence/**"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "frontend/private-web/**"
-      - "frontend/public-web/**"
-      - "frontend/scripts/deployment/**"
-      - "frontend/tests/deployment/**"
-      - "packages/api-client/**"
-      - "ops/dokploy/web-cd/**"
-      - ".github/workflows/web-ci.yml"
-      - ".github/workflows/backend-ci.yml"
-      - ".dockerignore"
-      - "Directory.Build.props"
-      - "Directory.Packages.props"
-      - "NuGet.config"
-      - "dotnet-tools.json"
-      - "global.json"
-      - "scripts/release/**"
-      - "backend/Dockerfile"
-      - "backend/compose.development.api.yml"
-      - "backend/Elevant.sln"
-      - "backend/Elevant.Api/**"
-      - "backend/Elevant.Application/**"
-      - "backend/Elevant.Contracts/**"
-      - "backend/Elevant.Domain/**"
-      - "backend/Elevant.Infrastructure/**"
-      - "backend/scripts/deployment/**"
-      - "database/DevelopmentDB/Elevant.Persistence/**"
-
 permissions:
   contents: read
 
@@ -78,6 +58,8 @@ jobs:
       aviam_owned: ${{ steps.paths.outputs.aviam_owned }}
       public_owned: ${{ steps.paths.outputs.public_owned }}
       any_owned: ${{ steps.paths.outputs.any_owned }}
+      any_validate: ${{ steps.paths.outputs.any_validate }}
+      validation_matrix: ${{ steps.paths.outputs.validation_matrix }}
       release_matrix: ${{ steps.paths.outputs.release_matrix }}
     steps:
       - name: Checkout complete history
@@ -102,31 +84,12 @@ jobs:
             git diff --name-only --no-renames -z "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_file_list"
           fi
 
-          aviam_owned=false
-          public_owned=false
-          # shellcheck source=scripts/release/path-ownership.sh
-          source scripts/release/path-ownership.sh
-          while IFS= read -r -d '' path; do
-            if elevant_is_web_shared_input_path "$path"; then
-              aviam_owned=true
-              public_owned=true
-            fi
-            if elevant_is_web_application_input_path aviam-web "$path"; then
-              aviam_owned=true
-            fi
-            if elevant_is_web_application_input_path public-web "$path"; then
-              public_owned=true
-            fi
-          done < "$changed_file_list"
-
-          matrix='{"include":[]}'
-          if [[ "$aviam_owned" == true && "$public_owned" == true ]]; then
-            matrix='{"include":[{"application":"aviam-web","directory":"frontend/private-web","imageName":"elevant-private-web","bundleName":"elevant-aviam-web-release-manifest","compose":"frontend/private-web/compose.development.aviam-web.yml"},{"application":"public-web","directory":"frontend/public-web","imageName":"elevant-public-web","bundleName":"elevant-public-web-release-manifest","compose":"frontend/public-web/compose.development.public-web.yml"}]}'
-          elif [[ "$aviam_owned" == true ]]; then
-            matrix='{"include":[{"application":"aviam-web","directory":"frontend/private-web","imageName":"elevant-private-web","bundleName":"elevant-aviam-web-release-manifest","compose":"frontend/private-web/compose.development.aviam-web.yml"}]}'
-          elif [[ "$public_owned" == true ]]; then
-            matrix='{"include":[{"application":"public-web","directory":"frontend/public-web","imageName":"elevant-public-web","bundleName":"elevant-public-web-release-manifest","compose":"frontend/public-web/compose.development.public-web.yml"}]}'
-          fi
+          classification="$(bash scripts/release/classify-changes.sh < "$changed_file_list")"
+          aviam_owned="$(jq -r '.aviam_release' <<< "$classification")"
+          public_owned="$(jq -r '.public_release' <<< "$classification")"
+          validation_matrix="$(jq -c '.validation_matrix' <<< "$classification")"
+          release_matrix="$(jq -c '.release_matrix' <<< "$classification")"
+          any_validate="$(jq -r '.aviam_validate or .public_validate' <<< "$classification")"
           any_owned=false
           [[ "$aviam_owned" == true || "$public_owned" == true ]] && any_owned=true
 
@@ -134,7 +97,9 @@ jobs:
             echo "aviam_owned=$aviam_owned"
             echo "public_owned=$public_owned"
             echo "any_owned=$any_owned"
-            echo "release_matrix=$matrix"
+            echo "any_validate=$any_validate"
+            echo "validation_matrix=$validation_matrix"
+            echo "release_matrix=$release_matrix"
           } >> "$GITHUB_OUTPUT"
           {
             echo "- AVIAM Web release input changed: \`$aviam_owned\`"
@@ -179,10 +144,14 @@ jobs:
           )
           bash -n "${scripts[@]}"
           bash -n scripts/release/path-ownership.sh
+          bash -n scripts/release/classify-changes.sh
           bash -n scripts/release/tests/test-path-ownership.sh
+          bash -n scripts/release/tests/test-classify-changes.sh
           shellcheck -x "${scripts[@]}"
           shellcheck scripts/release/path-ownership.sh
+          shellcheck -x -P scripts/release scripts/release/classify-changes.sh
           shellcheck -x scripts/release/tests/test-path-ownership.sh
+          shellcheck -x scripts/release/tests/test-classify-changes.sh
           modules=(
             frontend/scripts/deployment/csp-tool.mjs
             frontend/scripts/deployment/web-compose-tool.mjs
@@ -196,6 +165,8 @@ jobs:
           bash frontend/tests/deployment/test_guard_web_publication.sh
           bash frontend/tests/deployment/test_resolve_api_release.sh
           bash scripts/release/tests/test-path-ownership.sh
+          bash scripts/release/tests/test-classify-changes.sh
+          node --test scripts/release/tests/test-development-dag.mjs
 
       - name: Render and validate both reviewed Development web Compose files
         shell: bash
@@ -244,6 +215,7 @@ jobs:
 
   build_and_certify:
     name: Build and certify ${{ matrix.application }}
+    if: needs.classify.outputs.any_validate == 'true'
     needs:
       - classify
       - validate_delivery_tooling
@@ -254,14 +226,7 @@ jobs:
       packages: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - application: aviam-web
-            directory: frontend/private-web
-            image_name: elevant-private-web
-          - application: public-web
-            directory: frontend/public-web
-            image_name: elevant-public-web
+      matrix: ${{ fromJSON(needs.classify.outputs.validation_matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -332,16 +297,23 @@ jobs:
         env:
           ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
           ELEVANT_SOURCE_COMMIT: ${{ github.sha }}
-          ELEVANT_API_WAIT_SECONDS: "1800"
+          ELEVANT_API_WAIT_SECONDS: "0"
           ELEVANT_API_POLL_SECONDS: "15"
+          SAME_RUN_API_MANIFEST: ${{ inputs.same_run_api_manifest }}
+          API_RELEASE_EXPECTED: ${{ inputs.api_release_expected }}
         run: |
           set -Eeuo pipefail
           install -d -m 0700 artifacts/api-required
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/Development ]]; then
+            if [[ "$API_RELEASE_EXPECTED" == true && -z "$SAME_RUN_API_MANIFEST" ]]; then
+              echo "The backend job did not produce the required same-run API manifest." >&2
+              exit 1
+            fi
             owner="${GITHUB_REPOSITORY_OWNER,,}"
+            api_candidate="${SAME_RUN_API_MANIFEST:-ghcr.io/${owner}/elevant-api-release-manifest:development-certified}"
             ELEVANT_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
               bash frontend/scripts/deployment/resolve-api-release.sh \
-                "ghcr.io/${owner}/elevant-api-release-manifest:development-certified" \
+                "$api_candidate" \
                 "$GITHUB_WORKSPACE/artifacts/api-required"
             api_reference="$(<artifacts/api-required/api-release-manifest-reference.txt)"
             openapi_sha="$(<artifacts/api-required/openapi.sha256)"
@@ -381,10 +353,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          export VITE_ELEVANT_API_URL="$WEB_API_ORIGIN"
-          export VITE_PROTOTYPE_API_URL="$WEB_API_ORIGIN"
           if [[ "${{ matrix.application }}" == aviam-web ]]; then
-            export VITE_HR_DEMO_MODE=dashboard-read-only
+            export NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only
           fi
           export VCS_REF="$GITHUB_SHA"
           export OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
@@ -400,7 +370,9 @@ jobs:
           npm ci --no-audit --no-fund
           if [[ "${{ matrix.application }}" == aviam-web ]]; then
             npm run test:delivery
-            npm test -- --reporter=dot
+            npm test -- --maxWorkers=2 --reporter=dot
+            npm run lint
+            npm run typecheck
             npm run build
           else
             npm run validate:development-env
@@ -414,7 +386,7 @@ jobs:
         shell: bash
         env:
           APPLICATION: ${{ matrix.application }}
-          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+          LOCAL_IMAGE: ${{ matrix.imageName }}:ci
           API_MANIFEST: ${{ steps.api.outputs.reference }}
           OPENAPI_SHA: ${{ steps.api.outputs.openapi_sha }}
         run: |
@@ -429,9 +401,10 @@ jobs:
           )
           if [[ "$APPLICATION" == aviam-web ]]; then
             docker build "${common_args[@]}" \
-              --build-arg "VITE_ELEVANT_API_URL=$WEB_API_ORIGIN" \
-              --build-arg "VITE_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
-              --build-arg VITE_HR_DEMO_MODE=dashboard-read-only \
+              --build-arg "ELEVANT_DEPLOYMENT_ID=$GITHUB_SHA" \
+              --build-arg "NEXT_PUBLIC_ELEVANT_API_URL=$WEB_API_ORIGIN" \
+              --build-arg "NEXT_PUBLIC_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
+              --build-arg NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only \
               --file frontend/private-web/Dockerfile \
               --tag "$LOCAL_IMAGE" .
           else
@@ -449,7 +422,7 @@ jobs:
         shell: bash
         env:
           APPLICATION: ${{ matrix.application }}
-          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+          LOCAL_IMAGE: ${{ matrix.imageName }}:ci
           API_MANIFEST: ${{ steps.api.outputs.reference }}
           OPENAPI_SHA: ${{ steps.api.outputs.openapi_sha }}
         run: |
@@ -472,7 +445,7 @@ jobs:
         shell: bash
         env:
           APPLICATION: ${{ matrix.application }}
-          LOCAL_IMAGE: ${{ matrix.image_name }}:ci
+          LOCAL_IMAGE: ${{ matrix.imageName }}:ci
         run: |
           set -Eeuo pipefail
           root="artifacts/web-image-$APPLICATION"
@@ -493,11 +466,12 @@ jobs:
            (matrix.application == 'public-web' && needs.classify.outputs.public_owned == 'true'))
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: web-image-${{ matrix.application }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: web-image-${{ matrix.application }}-${{ github.run_id }}
           path: artifacts/web-image-${{ matrix.application }}
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+          overwrite: true
 
   publish_development_release:
     name: Publish ${{ matrix.application }} Development release
@@ -537,7 +511,7 @@ jobs:
       - name: Download the exact certified image
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: web-image-${{ matrix.application }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: web-image-${{ matrix.application }}-${{ github.run_id }}
           path: artifacts/web-image-${{ matrix.application }}
 
       - name: Verify and import the exact certified image

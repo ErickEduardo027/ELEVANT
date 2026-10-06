@@ -1,10 +1,14 @@
 name: Backend CI
 
 on:
+  workflow_call:
+    outputs:
+      api_manifest_ref:
+        description: Immutable API release manifest from this Development run, if published
+        value: ${{ jobs.publish-api-image.outputs.manifest_ref }}
   push:
     branches:
       - main
-      - Development
     paths:
       - "backend/**"
       - "database/**"
@@ -22,28 +26,6 @@ on:
       - "dotnet-tools.json"
       - "global.json"
       - ".github/workflows/backend-ci.yml"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "backend/**"
-      - "database/**"
-      - "ops/dokploy/api-cd/**"
-      - "ops/dokploy/web-cd/openapi-tool.mjs"
-      - "packages/api-client/openapi/**"
-      - "packages/api-client/package.json"
-      - "packages/api-client/scripts/check-openapi.mjs"
-      - "packages/api-client/scripts/snapshot-utils.mjs"
-      - "scripts/release/**"
-      - ".dockerignore"
-      - "Directory.Build.props"
-      - "Directory.Packages.props"
-      - "NuGet.config"
-      - "dotnet-tools.json"
-      - "global.json"
-      - ".github/workflows/backend-ci.yml"
-
 permissions:
   contents: read
 
@@ -83,34 +65,9 @@ jobs:
             git diff --name-only --no-renames -z "$BEFORE_SHA" "$GITHUB_SHA" > "$changed_file_list"
           fi
 
-          database_owned=false
-          api_owned=false
-          # shellcheck source=scripts/release/path-ownership.sh
-          source scripts/release/path-ownership.sh
-          while IFS= read -r -d '' path; do
-            case "$path" in
-              .github/workflows/backend-ci.yml | \
-              .dockerignore | \
-              Directory.Build.props | \
-              Directory.Packages.props | \
-              NuGet.config | \
-              dotnet-tools.json | \
-              global.json | \
-              backend/Elevant.sln | \
-              backend/Elevant.Application/* | \
-              backend/Elevant.Domain/* | \
-              backend/Elevant.Infrastructure/* | \
-              backend/Elevant.Api/Elevant.Api.csproj | \
-              backend/Elevant.Api/packages.lock.json | \
-              database/DevelopmentDB/*)
-                database_owned=true
-                ;;
-            esac
-
-            if elevant_is_api_build_input_path "$path"; then
-              api_owned=true
-            fi
-          done < "$changed_file_list"
+          classification="$(bash scripts/release/classify-changes.sh < "$changed_file_list")"
+          database_owned="$(jq -r '.database_release' <<< "$classification")"
+          api_owned="$(jq -r '.api_release' <<< "$classification")"
 
           echo "database_owned=$database_owned" >> "$GITHUB_OUTPUT"
           echo "api_owned=$api_owned" >> "$GITHUB_OUTPUT"
@@ -206,11 +163,15 @@ jobs:
           shellcheck scripts/deployment/certify-api-image.sh
           shellcheck tests/scripts/test_api_contract_fingerprint.sh
           bash -n ../scripts/release/path-ownership.sh
+          bash -n ../scripts/release/classify-changes.sh
           bash -n ../scripts/release/tests/test-path-ownership.sh
+          bash -n ../scripts/release/tests/test-classify-changes.sh
           bash tests/scripts/test_api_contract_fingerprint.sh
           bash tests/scripts/test_api_release_bundle.sh
           bash tests/scripts/test_guard_api_publication.sh
           bash ../scripts/release/tests/test-path-ownership.sh
+          bash ../scripts/release/tests/test-classify-changes.sh
+          node --test ../scripts/release/tests/test-development-dag.mjs
 
       - name: Test private API CD controller tooling
         shell: bash
@@ -1005,6 +966,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      manifest_ref: ${{ steps.publish_bundle.outputs.manifest_ref }}
     defaults:
       run:
         working-directory: backend
@@ -1117,7 +1080,7 @@ jobs:
         env:
           SAME_RUN_DATABASE_MANIFEST: ${{ needs.publish-database-images.outputs.manifest_ref }}
           ELEVANT_EXPECTED_REPOSITORY: ${{ github.repository }}
-          ELEVANT_DATABASE_WAIT_SECONDS: "1800"
+          ELEVANT_DATABASE_WAIT_SECONDS: "0"
           ELEVANT_DATABASE_POLL_SECONDS: "15"
         run: |
           set -Eeuo pipefail

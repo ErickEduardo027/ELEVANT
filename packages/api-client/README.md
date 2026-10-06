@@ -1,14 +1,51 @@
 # Cliente API compartido
 
+## Asistencia compartida OCC y agente
+
+`getOperationAttendanceDraft(operationId, assignmentId, { installationId? })`
+relee las dos contribuciones manuales de asistencia de la asignación: OCC y
+agente de rampa. OCC y Gestión Humana solo leen con alcance interno y de
+estación vigente; el agente asignado también debe presentar su instalación
+activa. `saveOccAttendanceDraft` y `saveRampAttendanceDraft` anexan una nueva
+revisión únicamente al carril del actor autenticado. Cada escritura exige
+`expectedRevision` e `Idempotency-Key` UUID; la ruta móvil exige además la
+instalación. Una revisión desactualizada o reutilizar la clave con otro
+contenido devuelve 409: se debe releer antes de crear otra intención.
+
+```ts
+const draft = await api.getOperationAttendanceDraft(operationId, assignmentId);
+const intentionId = crypto.randomUUID(); // conservar para reintentos de esta intención
+const receipt = await api.saveOccAttendanceDraft(operationId, assignmentId, {
+  expectedRevision: draft.occ?.revision ?? 0,
+  observedStartAt: "2026-10-02T12:00:00.000Z",
+  observedEndAt: null,
+  incidentNote: null,
+}, intentionId); // Idempotency-Key de esta intención
+```
+
+El backend persiste las dos observaciones con auditoría y pistas durables de
+cambio. Esta incorporación del contrato **no** conecta todavía las pantallas
+OCC, móvil o G.H., ni implementa firma, validación de G.H., nómina u horas
+extra. Tampoco acredita promoción de esta rama al VPS.
+
 El snapshot OpenAPI incluye `GetAffiliationOptions` como lectura anónima
 acotada de estaciones activas y servicios publicados, sin precios. El flujo
 público actual usa `GetPublicCommercialCatalog` y `SubmitCommercialRequest`
 para solicitar servicios sin elegir contraseña. Contratos aprueba o rechaza y
-el superadministrador crea las credenciales manualmente. Los endpoints de
+el superadministrador crea las credenciales manualmente. La operación
+`LookupCommercialRequestReceipt` permite recuperar por UUID y contenido un
+comprobante ya guardado, sin crear otra solicitud cuando una respuesta se pierde.
+Los endpoints de
 gobernanza, catálogo administrado y borradores también están en el snapshot.
 `GetManagedContractDraftOverview` ofrece a Contratos un resumen autorizado y
 acotado de borradores sin comentarios ni tarifas; la lectura completa sigue
 reservada para la pantalla de edición.
+La rama de clausura comercial añade operaciones protegidas para listar,
+solicitar, decidir y republicar servicios (`ListServiceClosures`,
+`CreateServiceClosure`, `DecideServiceClosure`, `ReopenService`). Cada comando
+exige versión o UUID según corresponda; los métodos Orval se generan del
+snapshot local revisado. La [guía comercial](../../docs/workflows/commercial-intake-and-governance.md#clausura-comercial-solicitada-por-occ-rama-de-implementación)
+precisa qué cambia para nuevas solicitudes públicas.
 El cliente valida la forma y los identificadores únicos del catálogo, pero no
 impone un máximo de filas ausente del contrato HTTP; la paginación del catálogo
 deberá añadirse de forma coordinada si el volumen lo requiere.
@@ -23,6 +60,11 @@ estación o tenant en la consulta. Esta capacidad se prepara en la rama de
 integración y no demuestra todavía un despliegue remoto. El servidor filtra
 las pistas de habilitaciones y turnos cuando la cuenta ya no conserva Gestión
 Humana o Superadministración internas.
+
+Para las pistas `attendance_draft` de un agente, Mobile Agent pasa
+`getAccountChanges(parameters, { installationId })` con la instalación actual.
+La API revalida el vínculo de **esa** instalación en cada página; una tablet
+revocada no recibe esas pistas aunque la cuenta tenga otra tablet activa.
 
 `getAirlineContracts({ page?, limit? })` consulta hasta 50 contratos por página
 para la única aerolínea derivada en la API de la sesión. El cliente valida

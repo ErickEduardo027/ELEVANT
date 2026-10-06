@@ -28,6 +28,14 @@
               "format": "int32",
               "default": 50
             }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -973,6 +981,72 @@
         ]
       }
     },
+    "/api/v1/airline/portal/operations/{operationId}/approved-evidence": {
+      "get": {
+        "tags": [
+          "AirlinePortal"
+        ],
+        "operationId": "GetAirlineApprovedOperationEvidence",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineApprovedOperationEvidenceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/operations": {
       "get": {
         "tags": [
@@ -1182,6 +1256,357 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{operationId}/assignments/{assignmentId}/attendance-draft": {
+      "get": {
+        "tags": [
+          "AttendanceDraft"
+        ],
+        "summary": "Returns the current revision in each lane, rechecking live access.",
+        "operationId": "GetOperationAttendanceDraft",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceDraftSnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{operationId}/assignments/{assignmentId}/attendance-draft/occ": {
+      "put": {
+        "tags": [
+          "AttendanceDraft"
+        ],
+        "summary": "Appends only the current OCC user's lane revision.",
+        "operationId": "SaveOccAttendanceDraft",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveAttendanceDraftRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceDraftWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/operations/{operationId}/assignments/{assignmentId}/attendance-draft/ramp-agent": {
+      "put": {
+        "tags": [
+          "AttendanceDraft"
+        ],
+        "summary": "Appends only the active assigned agent's lane revision.",
+        "operationId": "SaveRampAttendanceDraft",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveAttendanceDraftRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceDraftWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3799,6 +4224,201 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/ramp-mobile-access-requests": {
+      "get": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "ListGovernanceRampMobileAccessRequests",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RampMobileAccessRequestData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/ramp-mobile-access-requests/{id}/reject": {
+      "post": {
+        "tags": [
+          "Governance"
+        ],
+        "operationId": "RejectRampMobileAccessRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RejectRampMobileAccessInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RejectRampMobileAccessInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RejectRampMobileAccessInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampMobileAccessRequestData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3964,6 +4584,238 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/attendance": {
+      "get": {
+        "tags": [
+          "HumanResourcesAttendance"
+        ],
+        "summary": "Lists the station's assignment evidence for an operation-date interval.",
+        "operationId": "GetHumanResourcesAttendance",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAttendancePageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/attendance/{assignmentId}/validation": {
+      "put": {
+        "tags": [
+          "HumanResourcesAttendance"
+        ],
+        "summary": "Appends an immutable, revision-bound G.H. validation decision.",
+        "operationId": "ValidateHumanResourcesAttendance",
+        "parameters": [
+          {
+            "name": "assignmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ValidateAttendanceRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttendanceValidationWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4744,6 +5596,548 @@
         ]
       }
     },
+    "/api/v1/human-resources/reports/expirations": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "operationId": "ListHumanResourcesExpirations",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          },
+          {
+            "name": "documentKind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "validity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesExpirationResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesExpirationResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesExpirationResponseHumanResourcesReportPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/reports/account-movements": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "operationId": "ListHumanResourcesAccountMovements",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/reports/staff-distribution": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "operationId": "ListHumanResourcesStaffDistribution",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/reports/qualification-coverage": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "operationId": "ListHumanResourcesQualificationCoverage",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/reports/{kind}/export": {
+      "get": {
+        "tags": [
+          "HumanResourcesReports"
+        ],
+        "operationId": "ExportHumanResourcesReport",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentKind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "validity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/schedule-warnings": {
+      "get": {
+        "tags": [
+          "HumanResourcesScheduleWarnings"
+        ],
+        "operationId": "ListHumanResourcesScheduleWarnings",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesScheduleWarningPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/human-resources/shifts/options": {
       "get": {
         "tags": [
@@ -5008,6 +6402,7 @@
             }
           }
         },
+        "deprecated": true,
         "security": [
           {
             "Bearer": []
@@ -7171,6 +8566,69 @@
         }
       }
     },
+    "/api/v1/public/commercial-requests/receipt": {
+      "post": {
+        "tags": [
+          "PublicCommercialRequests"
+        ],
+        "operationId": "LookupCommercialRequestReceipt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitCommercialRequestRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitCommercialRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ramp/operations/{operationId}/incidents": {
       "get": {
         "tags": [
@@ -8419,6 +9877,391 @@
         ]
       }
     },
+    "/api/v1/human-resources/ramp-profiles/access-requests": {
+      "get": {
+        "tags": [
+          "RampProfiles"
+        ],
+        "operationId": "ListHumanResourcesMobileAccessRequests",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RampMobileAccessRequestData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/ramp-profiles/{id}/access-requests": {
+      "post": {
+        "tags": [
+          "RampProfiles"
+        ],
+        "operationId": "RequestRampMobileAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RampMobileAccessIntent"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RampMobileAccessIntent"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RampMobileAccessIntent"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampMobileAccessRequestData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures": {
+      "get": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "ListServiceClosures",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosurePage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "CreateServiceClosure",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateServiceClosureRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures/{id}/decision": {
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "DecideServiceClosure",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideServiceClosureRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/service-closures/services/{id}/reopen": {
+      "post": {
+        "tags": [
+          "ServiceClosures"
+        ],
+        "operationId": "ReopenService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenServiceRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/system/ping": {
       "get": {
         "tags": [
@@ -8614,6 +10457,89 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineApprovedOperationEvidenceResponse": {
+        "required": [
+          "available",
+          "incidentCount",
+          "operationId",
+          "services"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "actualEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "incidentCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineApprovedServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineApprovedServiceResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "contractedQuantity",
+          "executedQuantity",
+          "id",
+          "name",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "contractedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "executedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
             "type": "string"
           }
         },
@@ -9245,6 +11171,187 @@
         },
         "additionalProperties": false
       },
+      "AttendanceDraftContributionResponse": {
+        "required": [
+          "authorAccountId",
+          "incidentNote",
+          "observedEndAt",
+          "observedStartAt",
+          "recordedAt",
+          "revision"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "authorAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "observedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "observedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "incidentNote": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceDraftSnapshotResponse": {
+        "required": [
+          "assignmentId",
+          "occ",
+          "operationId",
+          "rampAgent",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occ": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "rampAgent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceDraftWriteResponse": {
+        "required": [
+          "contribution",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "contribution": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceValidationDecisionResponse": {
+        "required": [
+          "assignmentId",
+          "endAt",
+          "endSource",
+          "id",
+          "occRevision",
+          "rampAgentRevision",
+          "startAt",
+          "startSource",
+          "validatedAt",
+          "validatedByAccountId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rampAgentRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startSource": {
+            "type": "string"
+          },
+          "endSource": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "validatedByAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "validatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttendanceValidationWriteResponse": {
+        "required": [
+          "decision",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "decision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceValidationDecisionResponse"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AuditFieldChangeData": {
         "required": [
           "field"
@@ -9720,6 +11827,26 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          },
+          "accessRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "accessRequestVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedRampProfileVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedStationCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -9836,6 +11963,28 @@
         },
         "additionalProperties": false
       },
+      "CreateServiceClosureRequest": {
+        "required": [
+          "reason",
+          "requestId",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateSessionRequest": {
         "required": [
           "email",
@@ -9929,6 +12078,26 @@
           "reason": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecideServiceClosureRequest": {
+        "required": [
+          "approve",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -10589,6 +12758,18 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -10740,6 +12921,211 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesAccountMovementResponse": {
+        "required": [
+          "accountId",
+          "agentName",
+          "employeeNumber",
+          "id",
+          "kind",
+          "occurredAt",
+          "rampProfileId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "rows",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesAccountMovementResponse"
+            }
+          },
+          "documentKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "validity": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesAttendancePageResponse": {
+        "required": [
+          "from",
+          "hasMore",
+          "items",
+          "limit",
+          "page",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesAttendanceRowResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesAttendanceRowResponse": {
+        "required": [
+          "agentName",
+          "assignmentId",
+          "isDecisionCurrent",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "occ": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "rampAgent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceDraftContributionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "latestDecision": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttendanceValidationDecisionResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "isDecisionCurrent": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesAvailabilityRequestData": {
         "required": [
           "agentName",
@@ -10858,6 +13244,102 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesExpirationResponse": {
+        "required": [
+          "agentName",
+          "code",
+          "employeeNumber",
+          "expiresOn",
+          "id",
+          "kind",
+          "rampProfileId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesExpirationResponseHumanResourcesReportPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "rows",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesExpirationResponse"
+            }
+          },
+          "documentKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "validity": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesPermitData": {
         "required": [
           "agentName",
@@ -10950,6 +13432,94 @@
           "cycleNumber": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesQualificationCoverageResponse": {
+        "required": [
+          "eligibleAgents",
+          "equipmentCode",
+          "equipmentName",
+          "equipmentTypeId",
+          "qualifiedAgents"
+        ],
+        "type": "object",
+        "properties": {
+          "equipmentTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "equipmentCode": {
+            "type": "string"
+          },
+          "equipmentName": {
+            "type": "string"
+          },
+          "eligibleAgents": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "qualifiedAgents": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "rows",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesQualificationCoverageResponse"
+            }
+          },
+          "documentKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "validity": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -11085,6 +13655,165 @@
           "cycleNumber": {
             "type": "integer",
             "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesScheduleWarningEvidenceResponse": {
+        "required": [
+          "endsAt",
+          "shiftId",
+          "startsAt",
+          "stationCode",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesScheduleWarningPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "ruleEffectiveOn",
+          "ruleVersion",
+          "stationId",
+          "to",
+          "warnings"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ruleVersion": {
+            "type": "string"
+          },
+          "ruleEffectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesScheduleWarningResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesScheduleWarningResponse": {
+        "required": [
+          "agentName",
+          "anchorShiftId",
+          "employeeNumber",
+          "evidence",
+          "hasRestrictedEvidence",
+          "kind",
+          "rampProfileId",
+          "ruleEffectiveOn",
+          "ruleVersion",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "anchorShiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesScheduleWarningEvidenceResponse"
+            }
+          },
+          "hasRestrictedEvidence": {
+            "type": "boolean"
+          },
+          "measuredMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "thresholdMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "ruleVersion": {
+            "type": "string"
+          },
+          "ruleEffectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -11279,6 +14008,117 @@
           },
           "code": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesStaffDistributionResponse": {
+        "required": [
+          "agentName",
+          "employeeNumber",
+          "endsAtLocal",
+          "id",
+          "rampProfileId",
+          "startsAtLocal",
+          "terminalCode",
+          "terminalId",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "positionCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse": {
+        "required": [
+          "asOf",
+          "from",
+          "hasMore",
+          "limit",
+          "page",
+          "rows",
+          "stationId",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesStaffDistributionResponse"
+            }
+          },
+          "documentKind": {
+            "type": "string",
+            "nullable": true
+          },
+          "validity": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -14364,6 +17204,64 @@
         },
         "additionalProperties": false
       },
+      "RampMobileAccessIntent": {
+        "required": [
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampMobileAccessRequestData": {
+        "required": [
+          "id",
+          "rampProfileId",
+          "requestedAt",
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RampOperationCorrectionResponse": {
         "required": [
           "checklistId",
@@ -14617,6 +17515,13 @@
             "items": {
               "$ref": "#/components/schemas/RampProfileStation"
             }
+          },
+          "availableTerminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileTerminal"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -14670,6 +17575,22 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampProfileTerminal"
+            },
+            "nullable": true
+          },
+          "supervisorProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "accountStatus": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -14683,6 +17604,43 @@
         "type": "object",
         "properties": {
           "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileSupervisorSelection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampProfileTerminal": {
+        "required": [
+          "code",
+          "id",
+          "name",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
             "type": "string",
             "format": "uuid"
           },
@@ -15148,6 +18106,38 @@
         },
         "additionalProperties": false
       },
+      "RejectRampMobileAccessInput": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReopenServiceRequest": {
+        "required": [
+          "reason",
+          "serviceVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "serviceVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ReportRampIncidentRequest": {
         "required": [
           "description",
@@ -15278,6 +18268,33 @@
         },
         "additionalProperties": false
       },
+      "SaveAttendanceDraftRequest": {
+        "required": [
+          "expectedRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "observedStartAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "observedEndAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "incidentNote": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "SaveGovernanceRoleInput": {
         "required": [
           "isActive",
@@ -15346,6 +18363,22 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          },
+          "terminalIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
+          },
+          "supervisor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampProfileSupervisorSelection"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -15358,6 +18391,113 @@
         "properties": {
           "content": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceClosureData": {
+        "required": [
+          "id",
+          "isCurrentlyPublic",
+          "reason",
+          "requestedAt",
+          "requestedBy",
+          "serviceId",
+          "serviceName",
+          "serviceVersion",
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reopenedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reopenReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "isCurrentlyPublic": {
+            "type": "boolean"
+          },
+          "serviceVersion": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceClosurePage": {
+        "required": [
+          "hasMore",
+          "items",
+          "pendingCount",
+          "pendingServiceIds"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceClosureData"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingServiceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         },
         "additionalProperties": false
@@ -15868,6 +19008,36 @@
         },
         "additionalProperties": false
       },
+      "ValidateAttendanceRequest": {
+        "required": [
+          "endSource",
+          "expectedOccRevision",
+          "expectedRampAgentRevision",
+          "startSource"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedOccRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expectedRampAgentRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startSource": {
+            "type": "string"
+          },
+          "endSource": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "VerifyAirlineInput": {
         "required": [
           "countryCode",
@@ -15924,6 +19094,9 @@
       "name": "AirlinePortal"
     },
     {
+      "name": "AttendanceDraft"
+    },
+    {
       "name": "Authentication"
     },
     {
@@ -15975,6 +19148,9 @@
       "name": "Governance"
     },
     {
+      "name": "HumanResourcesAttendance"
+    },
+    {
       "name": "HumanResourcesAvailabilityRequests"
     },
     {
@@ -15982,6 +19158,12 @@
     },
     {
       "name": "HumanResourcesQualifications"
+    },
+    {
+      "name": "HumanResourcesReports"
+    },
+    {
+      "name": "HumanResourcesScheduleWarnings"
     },
     {
       "name": "HumanResourcesShifts"
@@ -16030,6 +19212,9 @@
     },
     {
       "name": "RampProfiles"
+    },
+    {
+      "name": "ServiceClosures"
     },
     {
       "name": "System"

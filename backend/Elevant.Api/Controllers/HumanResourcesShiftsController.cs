@@ -44,7 +44,7 @@ public sealed class HumanResourcesShiftsController(
         [FromQuery] int limit = 50, CancellationToken cancellationToken = default)
     {
         if (from is null || to is null || from > to ||
-            to.Value.DayNumber - from.Value.DayNumber > 6 ||
+            to.Value.DayNumber - from.Value.DayNumber > 30 ||
             page < 1 || limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             return Problem(statusCode: 400, title: "Invalid shift range or paging parameters.");
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
@@ -55,6 +55,7 @@ public sealed class HumanResourcesShiftsController(
     }
 
     [HttpPut("{id:guid}", Name = "RecordHumanResourcesShift")]
+    [Obsolete("Transitional OCC-only shift write; migrate to OCC scheduling when available.")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<HumanResourcesShiftRecorded>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]

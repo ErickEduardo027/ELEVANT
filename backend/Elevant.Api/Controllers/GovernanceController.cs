@@ -13,7 +13,8 @@ namespace Elevant.Api.Controllers;
 [Authorize]
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/governance")]
-public sealed class GovernanceController(IGovernanceStore store) : ControllerBase
+public sealed class GovernanceController(IGovernanceStore store,
+    IRampMobileAccessRequestStore accessRequests) : ControllerBase
 {
     [HttpGet("me/permissions", Name = "GetCurrentGovernancePermissions")]
     [ProducesResponseType<string[]>(StatusCodes.Status200OK, "application/json")]
@@ -65,11 +66,48 @@ public sealed class GovernanceController(IGovernanceStore store) : ControllerBas
 
     [HttpPost("users", Name = "CreateGovernanceUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public async Task<IActionResult> CreateUser([FromBody] CreateGovernanceUserInput input,
         CancellationToken cancellationToken) =>
         await MutateAsync((actorId) => store.CreateUserAsync(actorId, input, cancellationToken),
             StatusCodes.Status201Created);
+
+    [HttpGet("ramp-mobile-access-requests", Name = "ListGovernanceRampMobileAccessRequests")]
+    [ProducesResponseType<RampMobileAccessRequestData[]>(StatusCodes.Status200OK, "application/json")]
+    public async Task<IActionResult> ListRampMobileAccessRequests(CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var rows = await accessRequests.ListForGovernanceAsync(actorId, cancellationToken);
+        return rows is null ? Forbid() : Ok(rows);
+    }
+
+    [HttpPost("ramp-mobile-access-requests/{id:guid}/reject", Name = "RejectRampMobileAccessRequest")]
+    [RequestSizeLimit(16384)]
+    [ProducesResponseType<RampMobileAccessRequestData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> RejectRampMobileAccessRequest(Guid id,
+        [FromBody] RejectRampMobileAccessInput input, CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var result = await accessRequests.RejectAsync(actorId, id, input.Reason,
+            input.ExpectedVersion, cancellationToken);
+        return result.Failure switch
+        {
+            null => Ok(result.Request),
+            MobileAccessRequestFailure.Forbidden => Forbid(),
+            MobileAccessRequestFailure.Invalid => Problem(statusCode: 400, title: "Invalid rejection reason."),
+            MobileAccessRequestFailure.NotFound => Problem(statusCode: 404, title: "Mobile access request not found."),
+            MobileAccessRequestFailure.Conflict => Problem(statusCode: 409, title: "Mobile access request is no longer pending."),
+            _ => throw new InvalidOperationException(),
+        };
+    }
 
     [HttpPut("users/{id:guid}", Name = "UpdateGovernanceUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
@@ -116,3 +154,4 @@ public sealed class GovernanceController(IGovernanceStore store) : ControllerBas
 }
 
 public sealed record ResetGovernancePasswordRequest(string TemporaryPassword);
+public sealed record RejectRampMobileAccessInput(string Reason, string ExpectedVersion);

@@ -40,8 +40,384 @@ using Microsoft.Extensions.Options;
 
 namespace Elevant.IntegrationTests.Persistence;
 
-public sealed class SqlServerMigrationTests
+public sealed partial class SqlServerMigrationTests
 {
+    [Fact]
+    public async Task OccClosureRequiresContractsDecisionAndCanBeReopenedWithAReason()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!789"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var closures = scope.ServiceProvider.GetRequiredService<IServiceClosureStore>();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>();
+        var management = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var service = await context.ServiceDefinitions.AsNoTracking()
+            .SingleAsync(item => item.Code == "RAMP-AC", cancellationToken);
+        var requestId = Guid.CreateVersion7();
+        var reason = "El equipo de aire acondicionado no está disponible.";
+
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.RequestAsync(
+            contractsId, requestId, service.PublicId, reason, cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.RequestAsync(
+            occId, requestId, service.PublicId, "muy corto", cancellationToken)).Failure);
+        var pending = await closures.RequestAsync(occId, requestId, service.PublicId,
+            reason, cancellationToken);
+        Assert.Equal("Pending", pending.Request!.Status);
+        Assert.Equal(pending.Request, (await closures.RequestAsync(occId, requestId,
+            service.PublicId, reason, cancellationToken)).Request);
+        Assert.Equal(ServiceClosureFailure.Conflict, (await closures.RequestAsync(occId,
+            Guid.CreateVersion7(), service.PublicId, reason, cancellationToken)).Failure);
+        Assert.Contains((await closures.ListAsync(occId, null, 1, 25, cancellationToken))!.Items,
+            item => item.Id == requestId);
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
+            requestId, true, null, pending.Request.Version, cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.DecideAsync(contractsId,
+            requestId, false, "corto", pending.Request.Version, cancellationToken)).Failure);
+
+        var denied = await closures.DecideAsync(contractsId, requestId, false,
+            "La contingencia se resolverá hoy.", pending.Request.Version, cancellationToken);
+        Assert.Equal("Denied", denied.Request!.Status);
+        Assert.Contains((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+
+        var approvedRequestId = Guid.CreateVersion7();
+        var second = (await closures.RequestAsync(occId, approvedRequestId,
+            service.PublicId, reason, cancellationToken)).Request!;
+        var occRole = await context.Roles.SingleAsync(item => item.NormalizedName == "ADMIN_OCC",
+            cancellationToken);
+        var decidePermission = await context.Permissions.SingleAsync(item =>
+            item.Code == "commercial.service_closures.decide", cancellationToken);
+        context.Set<RolePermissionGrant>().Add(new RolePermissionGrant
+        {
+            RoleId = occRole.Id, PermissionId = decidePermission.Id,
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
+            approvedRequestId, true, null, second.Version, cancellationToken)).Failure);
+        var approved = await closures.DecideAsync(contractsId, approvedRequestId,
+            true, null, second.Version, cancellationToken);
+        Assert.Equal("Approved", approved.Request!.Status);
+        Assert.False(approved.Request.IsCurrentlyPublic);
+        Assert.DoesNotContain((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+        Assert.True((await context.ServiceDefinitions.AsNoTracking().SingleAsync(
+            item => item.PublicId == service.PublicId, cancellationToken)).IsActive);
+        Assert.Equal(ServiceClosureFailure.Conflict, (await closures.DecideAsync(contractsId,
+            approvedRequestId, false, "La clausura ya se aprobó.", second.Version,
+            cancellationToken)).Failure);
+        Assert.Equal(approved.Request, (await closures.RequestAsync(occId, approvedRequestId,
+            service.PublicId, reason, cancellationToken)).Request);
+        Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
+            contractsId, service.PublicId,
+            new ManagedServiceInput(service.Code, service.Name, service.Description!,
+                service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
+                service.DisplayOrder, true, true, approved.Request.ServiceVersion),
+            cancellationToken)).Failure);
+        Assert.Equal(ServiceClosureFailure.Invalid, (await closures.ReopenAsync(contractsId,
+            service.PublicId, "corto", approved.Request.ServiceVersion, cancellationToken)).Failure);
+        var reopened = await closures.ReopenAsync(contractsId, service.PublicId,
+            "El equipo se reparó y ya está disponible.", approved.Request.ServiceVersion,
+            cancellationToken);
+        Assert.True(reopened.Request!.IsCurrentlyPublic);
+        Assert.NotNull(reopened.Request.ReopenedAt);
+        Assert.Contains((await catalog.GetPublicAsync(cancellationToken)).Services,
+            item => item.Id == service.PublicId);
+        var closureHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "service_closures" &&
+                item.ResourceId == approvedRequestId).ToArray();
+        Assert.NotEmpty(closureHints);
+        var catalogHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId).ToArray();
+        Assert.NotEmpty(catalogHints);
+
+        var edited = await management.SaveAsync(contractsId, service.PublicId,
+            new ManagedServiceInput(service.Code, service.Name,
+                "Descripcion actualizada para OCC.", service.DefaultBillingUnit,
+                service.ImageUrl, service.VideoUrl, service.DisplayOrder, true, true,
+                reopened.Request.ServiceVersion), cancellationToken);
+        Assert.NotNull(edited.Service);
+        var occKey = await context.Users.Where(item => item.PublicId == occId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var occCatalogHints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId &&
+                item.RecipientAccountId == occKey).ToArray();
+        Assert.NotEmpty(occCatalogHints);
+        await scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>()
+            .DispatchPendingAsync(100, cancellationToken);
+        var occFeed = await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+            .ReadAsync(occId, 0, 100, cancellationToken);
+        Assert.Contains(Assert.IsType<AccountChangePage>(occFeed).Changes,
+            item => item.Resource == "commercial_catalog" &&
+                item.ResourceId == service.PublicId);
+    }
+
+    [Fact]
+    public async Task RampMobileAccessRequestIsIdempotentAndRequiresAnExplicitDecision()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+        {
+            await migration.Database.MigrateAsync(cancellationToken);
+            Assert.False(migration.Database.HasPendingModelChanges());
+        }
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!789"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var requests = scope.ServiceProvider.GetRequiredService<IRampMobileAccessRequestStore>();
+        var governance = scope.ServiceProvider.GetRequiredService<IGovernanceStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var superAdminId = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var humanResourcesRole = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.Roles, item => item.Code == "GESTION_HUMANA");
+        var secondHumanResources = await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Ana", "Prueba", "ana-hr@example.test",
+                humanResourcesRole.Id, "Synthetic-Hr!5678"), cancellationToken);
+        Assert.True(secondHumanResources.IsSuccess);
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
+            cancellationToken);
+        var profileInput = new SaveRampProfileInput("Lucia", "Ramos",
+            "SYNTHETIC-MOBILE-REQ", "Ramp agent",
+            DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]);
+        var profile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput, cancellationToken)).Profile!;
+        Assert.DoesNotContain((await requests.ListForHumanResourcesAsync(humanResourcesId,
+            cancellationToken))!, item => item.RampProfileId == profile.Id);
+        var requestId = Guid.CreateVersion7();
+        Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RequestAsync(
+            contractsId, profile.Id, requestId, cancellationToken)).Failure);
+        var pending = await requests.RequestAsync(humanResourcesId, profile.Id,
+            requestId, cancellationToken);
+        Assert.Null(pending.Failure);
+        Assert.Equal("Pending", pending.Request!.Status);
+        Assert.Equal(pending.Request, (await requests.RequestAsync(humanResourcesId,
+            profile.Id, requestId, cancellationToken)).Request);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RequestAsync(
+            humanResourcesId, profile.Id, Guid.CreateVersion7(), cancellationToken)).Failure);
+        Assert.Null(await requests.ListForGovernanceAsync(contractsId, cancellationToken));
+        Assert.Contains((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == requestId && item.Status == "Pending");
+        Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RejectAsync(
+            contractsId, requestId, "No procede", pending.Request.Version, cancellationToken)).Failure);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
+            superAdminId, requestId, "No procede", "stale-request-version", cancellationToken)).Failure);
+        var rejected = await requests.RejectAsync(superAdminId, requestId,
+            "Datos por revisar", pending.Request.Version, cancellationToken);
+        Assert.Equal("Rejected", rejected.Request!.Status);
+        Assert.Equal("Datos por revisar", rejected.Request.DecisionReason);
+        Assert.NotNull(rejected.Request.DecidedAt);
+        Assert.Equal(rejected.Request, (await requests.RejectAsync(superAdminId,
+            requestId, "Datos por revisar", pending.Request.Version, cancellationToken)).Request);
+        var renewedId = Guid.CreateVersion7();
+        var renewed = (await requests.RequestAsync(humanResourcesId,
+            profile.Id, renewedId, cancellationToken)).Request!;
+        Assert.Equal("Pending", renewed.Status);
+
+        var rampRole = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.Roles, item => item.Code == "RAMP_AGENT");
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos", "bypass-mobile@example.test",
+                rampRole.Id, "Synthetic-Ramp!5678", profile.Id), cancellationToken)).Failure);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput with { IsActive = false }, cancellationToken)).Failure);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos", "inactive-mobile@example.test",
+                rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+                AccessRequestId: renewedId, AccessRequestVersion: renewed.Version,
+                ExpectedRampProfileVersion: "stale-profile-version",
+                ExpectedStationCodes: ["PUJ"]), cancellationToken)).Failure);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput, cancellationToken)).Failure);
+        var reviewedProfile = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == profile.Id);
+        var reviewedRequest = Assert.Single((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == renewedId);
+        var extraAirport = await context.Airports.SingleAsync(item => item.IataCode == "MIA",
+            cancellationToken);
+        var extraStation = new Station
+        {
+            PublicId = Guid.CreateVersion7(), AirportId = extraAirport.Id,
+            Code = "MIA", Name = "Synthetic test station",
+            IanaTimeZone = "America/Santo_Domingo", IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        context.Stations.Add(extraStation);
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Null((await profiles.SaveAsync(humanResourcesId, profile.Id,
+            profileInput with { StationIds = [station.PublicId, extraStation.PublicId] },
+            cancellationToken)).Failure);
+        var staleApproval = new CreateGovernanceUserInput("Lucia", "Ramos",
+            "lucia-mobile@example.test", rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+            AccessRequestId: renewedId, AccessRequestVersion: reviewedRequest.Version,
+            ExpectedRampProfileVersion: reviewedProfile.Version,
+            ExpectedStationCodes: reviewedProfile.Stations);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            staleApproval, cancellationToken)).Failure);
+        reviewedProfile = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == profile.Id);
+        var approval = new CreateGovernanceUserInput("Lucia", "Ramos", "lucia-mobile@example.test",
+            rampRole.Id, "Synthetic-Ramp!5678", profile.Id,
+            AccessRequestId: renewedId, AccessRequestVersion: reviewedRequest.Version,
+            ExpectedRampProfileVersion: reviewedProfile.Version,
+            ExpectedStationCodes: reviewedProfile.Stations);
+        var created = await governance.CreateUserAsync(superAdminId,
+            approval, cancellationToken);
+        Assert.True(created.IsSuccess, created.Failure?.ToString());
+        Assert.Equal(created.Id, (await governance.CreateUserAsync(superAdminId,
+            approval, cancellationToken)).Id);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            approval with { TemporaryPassword = "Different-Ramp!5678" }, cancellationToken)).Failure);
+        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
+            superAdminId, renewedId, "Too late", reviewedRequest.Version,
+            cancellationToken)).Failure);
+        Assert.Contains((await requests.ListForHumanResourcesAsync(humanResourcesId,
+            cancellationToken))!, item => item.Id == renewedId &&
+                item.Status == "Fulfilled" && item.AccountId == created.Id);
+        var requesterKey = await context.Users.Where(item => item.PublicId == humanResourcesId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var approverKey = await context.Users.Where(item => item.PublicId == superAdminId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var secondHumanResourcesKey = await context.Users.Where(item =>
+            item.PublicId == secondHumanResources.Id).Select(item => item.Id)
+            .SingleAsync(cancellationToken);
+        var hints = (await context.OutboxMessages.AsNoTracking()
+            .Where(item => item.EventType == "account.changed.v1")
+            .ToArrayAsync(cancellationToken)).Select(AccountChangeOutboxWriter.Decode)
+            .Where(item => item.Resource == "ramp_mobile_access_requests" &&
+                item.ResourceId == renewedId).ToArray();
+        Assert.Contains(hints, item => item.RecipientAccountId == requesterKey);
+        Assert.Contains(hints, item => item.RecipientAccountId == approverKey);
+        Assert.Contains(hints, item => item.RecipientAccountId == secondHumanResourcesKey);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            approval with { Email = "other-mobile@example.test" }, cancellationToken)).Failure);
+
+        var racingProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with { EmployeeNumber = "SYNTHETIC-MOBILE-RACE" },
+            cancellationToken)).Profile!;
+        var racingId = Guid.CreateVersion7();
+        var racingRequest = (await requests.RequestAsync(humanResourcesId,
+            racingProfile.Id, racingId, cancellationToken)).Request!;
+        var racingReview = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == racingProfile.Id);
+        var racingApproval = approval with
+        {
+            Email = "lucia-race@example.test", RampAgentId = racingProfile.Id,
+            AccessRequestId = racingId, AccessRequestVersion = racingRequest.Version,
+            ExpectedRampProfileVersion = racingReview.Version,
+            ExpectedStationCodes = racingReview.Stations,
+        };
+        await using var approvalScope = provider.CreateAsyncScope();
+        await using var rejectionScope = provider.CreateAsyncScope();
+        var approveTask = approvalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, racingApproval, cancellationToken);
+        var rejectTask = rejectionScope.ServiceProvider.GetRequiredService<IRampMobileAccessRequestStore>()
+            .RejectAsync(superAdminId, racingId, "Race rejected", racingRequest.Version,
+                cancellationToken);
+        await Task.WhenAll(approveTask, rejectTask);
+        var approvalOutcome = await approveTask;
+        var rejectionOutcome = await rejectTask;
+        Assert.Equal(1, new[] { approvalOutcome.IsSuccess,
+            rejectionOutcome.Failure is null }.Count(success => success));
+        var raceState = Assert.Single((await requests.ListForGovernanceAsync(superAdminId,
+            cancellationToken))!, item => item.Id == racingId);
+        Assert.Equal(approvalOutcome.IsSuccess ? "Fulfilled" : "Rejected", raceState.Status);
+
+        var duplicateProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with { EmployeeNumber = "SYNTHETIC-MOBILE-DOUBLE" },
+            cancellationToken)).Profile!;
+        var duplicateId = Guid.CreateVersion7();
+        var duplicateRequest = (await requests.RequestAsync(humanResourcesId,
+            duplicateProfile.Id, duplicateId, cancellationToken)).Request!;
+        var duplicateReview = Assert.Single((await governance.GetAsync(superAdminId,
+            cancellationToken))!.RampProfiles, item => item.Id == duplicateProfile.Id);
+        var duplicateApproval = approval with
+        {
+            Email = "lucia-double@example.test", RampAgentId = duplicateProfile.Id,
+            AccessRequestId = duplicateId, AccessRequestVersion = duplicateRequest.Version,
+            ExpectedRampProfileVersion = duplicateReview.Version,
+            ExpectedStationCodes = duplicateReview.Stations,
+        };
+        await using var firstApprovalScope = provider.CreateAsyncScope();
+        await using var secondApprovalScope = provider.CreateAsyncScope();
+        var firstApproval = firstApprovalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, duplicateApproval, cancellationToken);
+        var secondApproval = secondApprovalScope.ServiceProvider.GetRequiredService<IGovernanceStore>()
+            .CreateUserAsync(superAdminId, duplicateApproval, cancellationToken);
+        await Task.WhenAll(firstApproval, secondApproval);
+        Assert.True((await firstApproval).IsSuccess);
+        Assert.Equal((await firstApproval).Id, (await secondApproval).Id);
+        Assert.Single(await context.Users.AsNoTracking().Where(item =>
+            item.NormalizedEmail == "LUCIA-DOUBLE@EXAMPLE.TEST")
+            .ToArrayAsync(cancellationToken));
+
+        var inactiveStationProfile = (await profiles.SaveAsync(humanResourcesId, null,
+            profileInput with
+            {
+                EmployeeNumber = "SYN-MOBILE-INACTIVE-STATION",
+                StationIds = [extraStation.PublicId],
+            }, cancellationToken)).Profile!;
+        var stationToDeactivate = await context.Stations.SingleAsync(item =>
+            item.PublicId == extraStation.PublicId, cancellationToken);
+        stationToDeactivate.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
+            new CreateGovernanceUserInput("Lucia", "Ramos",
+                "inactive-station-mobile@example.test", rampRole.Id,
+                "Synthetic-Ramp!5678", inactiveStationProfile.Id), cancellationToken)).Failure);
+    }
+
     [Fact]
     public async Task ExplicitDevelopmentScenarioSeedsLocalDatesAndPreservesWorkedOperations()
     {
@@ -373,7 +749,7 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
-    public async Task HumanResourcesShiftsReadBoundedWeekForLiveInternalRole()
+    public async Task HumanResourcesShiftsReadBoundedMonthForLiveInternalRole()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var masterConnection = ResolveMasterConnection();
@@ -433,6 +809,15 @@ public sealed class SqlServerMigrationTests
             Assert.NotNull(second);
             Assert.False(second.HasMore);
             Assert.Equal(new DateOnly(2026, 8, 19), Assert.Single(second.Shifts).WorkDate);
+            var month = await store.ListAsync(hrId, new DateOnly(2026, 8, 1),
+                new DateOnly(2026, 8, 31), 1, 20, cancellationToken);
+            Assert.NotNull(month);
+            Assert.Equal(2, month.Shifts.Count);
+            Assert.Equal(new DateOnly(2026, 8, 1), month.From);
+            Assert.Equal(new DateOnly(2026, 8, 31), month.To);
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.ListAsync(
+                hrId, new DateOnly(2026, 8, 1), new DateOnly(2026, 9, 1),
+                1, 20, cancellationToken));
             Assert.Empty((await store.ListAsync(hrId, monday.AddDays(7),
                 sunday.AddDays(7), 1, 20, cancellationToken))!.Shifts);
             Assert.Null(await store.ListAsync(occId, monday, sunday, 1, 20,
@@ -857,6 +1242,7 @@ public sealed class SqlServerMigrationTests
         await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
         await using (var seeder = CreateContext(connection))
             await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
         await using var provider = new ServiceCollection().AddLogging()
             .AddSingleton<TimeProvider>(TimeProvider.System)
             .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
@@ -938,24 +1324,24 @@ public sealed class SqlServerMigrationTests
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(occId, Guid.NewGuid(), input,
+                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Invalid,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { EndsAtLocal = new TimeOnly(4, 0) }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { TerminalId = Guid.NewGuid() }, cancellationToken)).Failure);
-            var saved = await store.RecordAsync(hrId, id, input, cancellationToken);
+            var saved = await store.RecordAsync(occId, id, input, cancellationToken);
             Assert.Null(saved.Failure);
             Assert.Equal(id, saved.Shift!.Id);
-            Assert.Equal(saved.Shift, (await store.RecordAsync(hrId, id, input,
+            Assert.Equal(saved.Shift, (await store.RecordAsync(occId, id, input,
                 cancellationToken)).Shift);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, id, input with
+                (await store.RecordAsync(occId, id, input with
                 { Notes = "Different" }, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                (await store.RecordAsync(occId, Guid.NewGuid(), input,
                     cancellationToken)).Failure);
         }
         var concurrentId = Guid.NewGuid();
@@ -965,7 +1351,7 @@ public sealed class SqlServerMigrationTests
             await using var scope = provider.CreateAsyncScope();
             return await scope.ServiceProvider
                 .GetRequiredService<IHumanResourcesShiftWriteStore>()
-                .RecordAsync(hrId, concurrentId, concurrentInput, cancellationToken);
+                .RecordAsync(occId, concurrentId, concurrentInput, cancellationToken);
         }
         var concurrentResults = await Task.WhenAll(ConcurrentRecordAsync(), ConcurrentRecordAsync());
         Assert.All(concurrentResults, result =>
@@ -991,9 +1377,11 @@ public sealed class SqlServerMigrationTests
             Assert.Equal(2, await context.OutboxMessages.AsNoTracking()
                 .CountAsync(message => message.PayloadJson.Contains(
                     "\"resource\":\"occ_planning\""), cancellationToken));
-            var hrKey = await context.Users.Where(user => user.PublicId == hrId)
+            var occKey = await context.Users.Where(user => user.PublicId == occId)
                 .Select(user => user.Id).SingleAsync(cancellationToken);
-            var roleKey = await context.Roles.Where(role => role.NormalizedName == "GESTION_HUMANA")
+            var stationKey = await context.Stations.Where(station => station.PublicId == stationId)
+                .Select(station => station.Id).SingleAsync(cancellationToken);
+            var roleKey = await context.Roles.Where(role => role.NormalizedName == "ADMIN_OCC")
                 .Select(role => role.Id).SingleAsync(cancellationToken);
             var agentKey = await context.RampAgents.Where(agent => agent.PublicId == agentId)
                 .Select(agent => agent.Id).SingleAsync(cancellationToken);
@@ -1005,17 +1393,43 @@ public sealed class SqlServerMigrationTests
             {
                 var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
                 Assert.Equal(HumanResourcesShiftWriteFailure.Conflict,
-                    (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
                     { WorkDate = date.AddDays(2) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { StationId = Guid.NewGuid() }, cancellationToken)).Failure);
             }
-            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == hrKey &&
+            var shiftCount = await context.ShiftAssignments.CountAsync(cancellationToken);
+            var auditCount = await context.AuditEntries.CountAsync(cancellationToken);
+            var outboxCount = await context.OutboxMessages.CountAsync(cancellationToken);
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt == null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)DateTimeOffset.UtcNow), cancellationToken));
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, Guid.NewGuid(), input with
+                    { WorkDate = date.AddDays(3) }, cancellationToken)).Failure);
+                Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
+                    (await store.RecordAsync(occId, id, input, cancellationToken)).Failure);
+            }
+            Assert.Equal(shiftCount, await context.ShiftAssignments.CountAsync(cancellationToken));
+            Assert.Equal(auditCount, await context.AuditEntries.CountAsync(cancellationToken));
+            Assert.Equal(outboxCount, await context.OutboxMessages.CountAsync(cancellationToken));
+            Assert.Equal(1, await context.AccountStationScopes.Where(grant => grant.AccountId == occKey &&
+                grant.StationId == stationKey && grant.RevokedAt != null)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(grant => grant.RevokedAt,
+                    (DateTimeOffset?)null), cancellationToken));
+            await context.Set<IdentityUserRole<long>>().Where(link => link.UserId == occKey &&
                 link.RoleId == roleKey).ExecuteDeleteAsync(cancellationToken);
         }
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input with
+                (await store.RecordAsync(occId, Guid.NewGuid(), input with
                 { WorkDate = date.AddDays(1) }, cancellationToken)).Failure);
         }
     }
@@ -1530,6 +1944,70 @@ public sealed class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task CommercialServiceImageUploadUsesGarageCompatiblePutAndCanBeRead()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var server = await GarageCompatibleS3Server.StartAsync(cancellationToken);
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(new DevelopmentAccountPasswords(
+                InitialPasswords.AdminOcc, InitialPasswords.RampAgent,
+                InitialPasswords.AirlineClient, InitialPasswords.HumanResources,
+                InitialPasswords.Contracts, InitialPasswords.Finance,
+                "Synthetic-SuperAdmin!234"), cancellationToken);
+
+        await using var provider = new ServiceCollection().AddLogging()
+            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                    ["MediaStorage:Endpoint"] = server.Endpoint,
+                    ["MediaStorage:AccessKey"] = "synthetic-access",
+                    ["MediaStorage:SecretKey"] = "synthetic-secret",
+                    ["MediaStorage:Bucket"] = "synthetic-bucket",
+                    ["MediaStorage:Region"] = "garage",
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var media = scope.ServiceProvider.GetRequiredService<ICommercialMediaStore>();
+        var actor = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var formats = new (string Purpose, string ContentType, byte[] Content)[]
+        {
+            ("service-image", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+            ("service-image", "image/jpeg", [0xff, 0xd8, 0xff]),
+            ("service-image", "image/webp", "RIFF0000WEBP"u8.ToArray()),
+            ("service-video", "video/mp4", [0, 0, 0, 12, 102, 116, 121, 112, 0, 0, 0, 0]),
+            ("service-video", "video/webm", [0x1a, 0x45, 0xdf, 0xa3]),
+            ("airline-logo", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+            ("avatar", "image/png", [137, 80, 78, 71, 13, 10, 26, 10]),
+        };
+        foreach (var format in formats)
+        {
+            using var input = new MemoryStream(format.Content);
+            var uploaded = await media.UploadAsync(actor, format.Purpose,
+                format.ContentType, input, input.Length, cancellationToken);
+
+            Assert.NotNull(uploaded);
+            Assert.Equal(format.Content, server.LastUploadedContent);
+            Assert.Equal($"/synthetic-bucket/{format.Purpose}/{uploaded.Id:N}",
+                server.LastUploadedPath);
+            await using var output = await media.OpenAsync($"{format.Purpose}/{uploaded.Id:N}",
+                cancellationToken: cancellationToken);
+            using var buffer = new MemoryStream();
+            await output.CopyToAsync(buffer, cancellationToken);
+            Assert.Equal(format.Content, buffer.ToArray());
+        }
+    }
+
+    [Fact]
     public async Task MediaLinksExpireBeforeCleanupButExistingPrivateLinksRemainReadable()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -1648,10 +2126,17 @@ public sealed class SqlServerMigrationTests
             "Boca Chica", "Passport", "AB123456");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
+        Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Failure);
         var submitted = await handler.HandleAsync(command, cancellationToken);
         Assert.True(submitted.IsSuccess);
         Assert.False(submitted.Replayed);
         Assert.True((await handler.HandleAsync(command, cancellationToken)).Replayed);
+        Assert.Equal(submitted.Reference,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Reference);
+        Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
+            (await handler.LookupReceiptAsync(command with { RepresentativeTitle = "Director" },
+                cancellationToken)).Failure);
         Assert.Equal(CommercialSubmissionFailure.Conflict,
             (await handler.HandleAsync(command with { RepresentativeTitle = "Director" }, cancellationToken)).Failure);
 
@@ -1669,6 +2154,8 @@ public sealed class SqlServerMigrationTests
             item => item.PublicId == catalog.Services[0].Id, cancellationToken);
         hiddenService.IsPublic = false;
         await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(submitted.Reference,
+            (await handler.LookupReceiptAsync(command, cancellationToken)).Reference);
         Assert.DoesNotContain((await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
             .GetPublicAsync(cancellationToken)).Services, item => item.Id == hiddenService.PublicId);
         var hiddenRequest = command with { RequestId = Guid.NewGuid() };
@@ -1730,6 +2217,112 @@ public sealed class SqlServerMigrationTests
         }
         Assert.True((await submission).IsSuccess);
         Assert.Equal(1222, Assert.IsType<SqlException>(retirementFailure).Number);
+    }
+
+    [Fact]
+    public async Task RampProfileEditWithOmittedTerminalsPreservesTemporarilyInactiveScope()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
+            cancellationToken);
+        var terminal = await context.Terminals.SingleAsync(item =>
+            item.StationId == station.Id && item.IsActive, cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-TERMINAL",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]) with
+        {
+            TerminalIds = [terminal.PublicId],
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        terminal.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent", TerminalIds = null }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        var agentId = await context.RampAgents.Where(item => item.PublicId == created.Profile.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.True(await context.Set<RampAgentTerminalScope>().AsNoTracking().AnyAsync(item =>
+            item.RampAgentId == agentId && item.TerminalId == terminal.Id && item.ValidTo == null,
+            cancellationToken));
+        terminal.IsActive = true;
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Contains((await profiles.ListAsync(humanResourcesId, cancellationToken))!.Profiles,
+            item => item.Id == created.Profile.Id &&
+                item.Terminals!.Any(link => link.Id == terminal.PublicId));
+    }
+
+    [Fact]
+    public async Task RampProfileEditPreservesItsExistingInactiveSupervisor()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var seederConnection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seed = CreateContext(seederConnection))
+            await new DevelopmentDataSeeder(seed).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using var provider = new ServiceCollection()
+            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build()).BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var supervisor = Assert.Single((await profiles.ListAsync(humanResourcesId,
+            cancellationToken))!.Profiles, item => item.EmployeeNumber == "DEV-RA-001");
+        var stationId = await context.Stations.Where(item => item.Code == "PUJ")
+            .Select(item => item.PublicId).SingleAsync(cancellationToken);
+        var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-SUPERVISOR",
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [stationId]) with
+        {
+            Supervisor = new RampProfileSupervisorSelection(supervisor.Id),
+        };
+        var created = await profiles.SaveAsync(humanResourcesId, null, input, cancellationToken);
+        Assert.Null(created.Failure);
+        var supervisorRow = await context.RampAgents.SingleAsync(item =>
+            item.PublicId == supervisor.Id, cancellationToken);
+        supervisorRow.IsActive = false;
+        await context.SaveChangesAsync(cancellationToken);
+
+        var edited = await profiles.SaveAsync(humanResourcesId, created.Profile!.Id,
+            input with { Category = "Lead ramp agent" }, cancellationToken);
+
+        Assert.Null(edited.Failure);
+        Assert.Equal("Lead ramp agent", edited.Profile!.Category);
+        Assert.Equal(supervisor.Id, edited.Profile.SupervisorProfileId);
     }
 
     [Fact]
@@ -1980,15 +2573,47 @@ public sealed class SqlServerMigrationTests
         Assert.DoesNotContain(snapshot.RampProfiles, profile => profile.AccountId is null);
         var humanResourcesAccountId = Guid.Parse("40000000-0000-7000-8000-000000000004");
         var rampProfiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var supervisorProfile = Assert.Single((await rampProfiles.ListAsync(
+            humanResourcesAccountId, cancellationToken))!.Profiles,
+            item => item.EmployeeNumber == "DEV-RA-001");
+        var terminalId = Guid.Parse("20000000-0000-7000-8000-000000000004");
         var profileInput = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-RA-2",
-            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.Id]);
+            "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.Id]) with
+        {
+            TerminalIds = [terminalId],
+            Supervisor = new RampProfileSupervisorSelection(supervisorProfile.Id),
+        };
         Assert.Null(await rampProfiles.ListAsync(contractsAccountId, cancellationToken));
         var savedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId, null,
             profileInput, cancellationToken);
         Assert.Null(savedProfile.Failure);
         var newRampProfileId = savedProfile.Profile!.Id;
+        Assert.Null(savedProfile.Profile.AccountStatus);
+        Assert.Contains(savedProfile.Profile.Terminals!, item => item.Id == terminalId);
+        Assert.Equal(supervisorProfile.Id, savedProfile.Profile.SupervisorProfileId);
         Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId, cancellationToken))!.Profiles,
-            profile => profile.Id == newRampProfileId && profile.Stations.Single().Id == station.Id);
+            profile => profile.Id == newRampProfileId && profile.Stations.Single().Id == station.Id &&
+                profile.Terminals!.Single().Id == terminalId &&
+                profile.SupervisorProfileId == supervisorProfile.Id);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.AvailableTerminals!, item =>
+            item.Id == terminalId && item.StationId == station.Id);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, supervisorProfile.Id, profileInput with
+            {
+                FirstName = supervisorProfile.FirstName,
+                LastName = supervisorProfile.LastName,
+                EmployeeNumber = supervisorProfile.EmployeeNumber,
+                Category = supervisorProfile.Category,
+                HireDate = supervisorProfile.HireDate,
+                Supervisor = new RampProfileSupervisorSelection(newRampProfileId),
+            }, cancellationToken)).Failure);
+        var legacyProfileUpdate = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with { TerminalIds = null, Supervisor = null },
+            cancellationToken);
+        Assert.Null(legacyProfileUpdate.Failure);
+        Assert.Contains(legacyProfileUpdate.Profile!.Terminals!, item => item.Id == terminalId);
+        Assert.Equal(supervisorProfile.Id, legacyProfileUpdate.Profile.SupervisorProfileId);
         Assert.Equal(GovernanceFailure.Invalid,
             (await governance.CreateUserAsync(superAdminId,
                 new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
@@ -1997,16 +2622,109 @@ public sealed class SqlServerMigrationTests
             new CreateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
                 rampRole.Id, "Synthetic-Ramp!5678", newRampProfileId), cancellationToken);
         Assert.True(rampAccount.IsSuccess, rampAccount.Failure?.ToString());
+        var rampCreationAudit = Assert.Single(await context.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "governance.user.created" &&
+                item.EntityPublicId == rampAccount.Id)
+            .ToArrayAsync(cancellationToken));
+        Assert.Equal(await context.Stations.Where(item => item.PublicId == station.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken),
+            rampCreationAudit.StationId);
+        Assert.True((await governance.DeleteUserAsync(superAdminId, rampAccount.Id!.Value,
+            cancellationToken)).IsSuccess);
+        Assert.True((await governance.DeleteUserAsync(superAdminId, rampAccount.Id.Value,
+            cancellationToken)).IsSuccess);
+        Assert.Equal(1, await context.AuditEntries.AsNoTracking().CountAsync(item =>
+            item.Action == "governance.user.deactivated" &&
+            item.EntityPublicId == rampAccount.Id, cancellationToken));
+        Assert.True((await governance.UpdateUserAsync(superAdminId, rampAccount.Id.Value,
+            new UpdateGovernanceUserInput("Lucia", "Ramos", "lucia@example.test",
+                rampRole.Id, true, newRampProfileId), cancellationToken)).IsSuccess);
+        var movementAudits = await context.AuditEntries.AsNoTracking()
+            .Where(item => (item.Action == "governance.user.deactivated" ||
+                item.Action == "governance.user.updated") &&
+                item.EntityPublicId == rampAccount.Id)
+            .OrderBy(item => item.OccurredAt).ToArrayAsync(cancellationToken);
+        Assert.Equal(2, movementAudits.Length);
+        Assert.All(movementAudits, item => Assert.Equal(rampCreationAudit.StationId,
+            item.StationId));
+        var reportDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var movementReport = await scope.ServiceProvider
+            .GetRequiredService<IHumanResourcesReportStore>()
+            .ListAccountMovementsAsync(humanResourcesAccountId, station.Id,
+                reportDate.AddDays(-1), reportDate.AddDays(1), 1, 20,
+                cancellationToken);
+        Assert.Null(movementReport.Failure);
+        Assert.Equal(["Created", "Deactivated", "Reactivated"],
+            movementReport.Page!.Rows.Where(item => item.AccountId == rampAccount.Id)
+                .Select(item => item.Kind).ToArray());
+        await context.Database.ExecuteSqlRawAsync(
+            """CREATE TRIGGER audit.tr_hr_movement_failure ON audit.audit_entries AFTER INSERT AS BEGIN IF EXISTS (SELECT 1 FROM inserted WHERE action = 'governance.user.deactivated') THROW 51000, 'Synthetic audit rejection', 1; END""",
+            cancellationToken);
+        try
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => governance.DeleteUserAsync(
+                superAdminId, rampAccount.Id.Value, cancellationToken));
+        }
+        finally
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "DROP TRIGGER audit.tr_hr_movement_failure", cancellationToken);
+        }
+        Assert.Equal(AccountLifecycleStatus.Active, await context.Users.AsNoTracking()
+            .Where(item => item.PublicId == rampAccount.Id)
+            .Select(item => item.Status).SingleAsync(cancellationToken));
+        context.ChangeTracker.Clear();
         Assert.Contains((await governance.GetAsync(superAdminId, cancellationToken))!.RampProfiles,
             profile => profile.Id == newRampProfileId && profile.AccountId == rampAccount.Id);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.Profiles, profile =>
+            profile.Id == newRampProfileId && profile.AccountStatus == "Active");
         var rampActor = await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
             .ResolveAsync(rampAccount.Id!.Value, cancellationToken);
         Assert.NotNull(rampActor);
         Assert.True(RampOperationsAccess.IsAuthorized(rampActor));
+        var spareAirportId = await context.Airports.Where(item => item.IataCode == "MIA")
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var extraStation = new Station
+        {
+            PublicId = Guid.CreateVersion7(), AirportId = spareAirportId,
+            Code = "MIA", Name = "Synthetic second station",
+            IanaTimeZone = "America/New_York", IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        context.Stations.Add(extraStation);
+        await context.SaveChangesAsync(cancellationToken);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, newRampProfileId, profileInput with
+            { StationIds = [extraStation.PublicId] }, cancellationToken)).Failure);
+        Assert.Equal(RampProfileFailure.Invalid, (await rampProfiles.SaveAsync(
+            humanResourcesAccountId, newRampProfileId, profileInput with
+            { Supervisor = new RampProfileSupervisorSelection(newRampProfileId) },
+            cancellationToken)).Failure);
+        var expandedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with
+            { StationIds = [station.Id, extraStation.PublicId] }, cancellationToken);
+        Assert.Null(expandedProfile.Failure);
+        Assert.Contains(expandedProfile.Profile!.Stations, item => item.Id == extraStation.PublicId);
+        var rampAccountKey = await context.Users.Where(item => item.PublicId == rampAccount.Id)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.False(await context.AccountStationScopes.AnyAsync(item =>
+            item.AccountId == rampAccountKey && item.StationId == extraStation.Id &&
+            item.RevokedAt == null, cancellationToken));
+        var clearedProfile = await rampProfiles.SaveAsync(humanResourcesAccountId,
+            newRampProfileId, profileInput with
+            { TerminalIds = [], Supervisor = new RampProfileSupervisorSelection(null) },
+            cancellationToken);
+        Assert.Null(clearedProfile.Failure);
+        Assert.Empty(clearedProfile.Profile!.Terminals!);
+        Assert.Null(clearedProfile.Profile.SupervisorProfileId);
         Assert.Null((await rampProfiles.SaveAsync(contractsAccountId, newRampProfileId,
             profileInput with { IsActive = false }, cancellationToken)).Profile);
         Assert.NotNull((await rampProfiles.SaveAsync(humanResourcesAccountId, newRampProfileId,
             profileInput with { IsActive = false }, cancellationToken)).Profile);
+        Assert.Contains((await rampProfiles.ListAsync(humanResourcesAccountId,
+            cancellationToken))!.Profiles, profile =>
+            profile.Id == newRampProfileId && profile.AccountStatus == "Disabled");
         Assert.Null(await scope.ServiceProvider.GetRequiredService<IActorContextResolver>()
             .ResolveAsync(rampAccount.Id.Value, cancellationToken));
         var catalogCreatorRole = await governance.CreateRoleAsync(superAdminId,
@@ -2561,6 +3279,158 @@ public sealed class SqlServerMigrationTests
         Assert.Equal("Escalera adicional", ownRequest.ServiceName);
         Assert.Equal("DEV-TAT-0002", ownRequest.OperationCode);
         Assert.Null(await store.GetRequestsAsync(Guid.NewGuid(), 1, 20, cancellationToken));
+    }
+
+    [Fact]
+    public async Task AirlineApprovedEvidenceUsesImmutableSnapshotAndHidesOtherTenants()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var approvedAt = new DateTimeOffset(2026, 8, 18, 15, 0, 0, TimeSpan.Zero);
+        Guid operationId;
+        var otherOrganizationId = Guid.NewGuid();
+        await using (var update = CreateContext(database.ConnectionString))
+        {
+            var otherOrganization = new Organization
+            {
+                PublicId = otherOrganizationId, Code = "QA-OTHER-AIR",
+                LegalName = "OTHER SYNTHETIC AIRLINE", DisplayName = "Other Airline",
+                Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Organizations.Add(otherOrganization);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherAirline = new Airline
+            {
+                PublicId = Guid.NewGuid(), OrganizationId = otherOrganization.Id,
+                IataCode = "QA", IcaoCode = "QAT", Name = "Other Airline", IsActive = true,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Airlines.Add(otherAirline);
+            await update.SaveChangesAsync(cancellationToken);
+
+            var turnaround = await update.Turnarounds.SingleAsync(item =>
+                item.OperationCode == "DEV-TAT-0001", cancellationToken);
+            var otherContract = new Contract
+            {
+                PublicId = Guid.NewGuid(), AirlineId = otherAirline.Id,
+                ContractCode = "QA-OTHER-CONTRACT", Status = ContractStatus.Active,
+                SignedOn = new DateOnly(2026, 1, 1),
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.Contracts.Add(otherContract);
+            await update.SaveChangesAsync(cancellationToken);
+            var otherVersion = new ContractVersion
+            {
+                PublicId = Guid.NewGuid(), ContractId = otherContract.Id,
+                VersionNumber = 1, Status = ContractVersionStatus.Approved,
+                ValidFrom = new DateOnly(2026, 1, 1),
+                ValidTo = new DateOnly(2026, 12, 31), CurrencyCode = "USD",
+                ApprovedAt = approvedAt, CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.ContractVersions.Add(otherVersion);
+            await update.SaveChangesAsync(cancellationToken);
+            update.Set<ContractVersionStation>().Add(new ContractVersionStation
+            {
+                ContractVersionId = otherVersion.Id, StationId = turnaround.StationId,
+            });
+            await update.SaveChangesAsync(cancellationToken);
+            var operation = await update.GroundOperations.SingleAsync(item =>
+                item.TurnaroundId == turnaround.Id, cancellationToken);
+            operationId = operation.PublicId;
+            operation.CurrentStatus = GroundOperationStatus.Approved;
+            operation.ActualStartAt = approvedAt.AddHours(-2);
+            operation.ActualEndAt = approvedAt.AddMinutes(-10);
+            var checklist = await update.OperationChecklists
+                .Where(item => item.GroundOperationId == operation.Id)
+                .OrderByDescending(item => item.RevisionNumber)
+                .FirstAsync(cancellationToken);
+            var agent = await update.RampAgents.SingleAsync(item =>
+                item.EmployeeNumber == "DEV-RA-001", cancellationToken);
+            var reviewer = await update.Users.SingleAsync(item =>
+                item.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000001"),
+                cancellationToken);
+            var service = await update.OperationServices
+                .Where(item => item.GroundOperationId == operation.Id)
+                .OrderBy(item => item.LineNumber)
+                .FirstAsync(cancellationToken);
+            var snapshot = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                version = 1,
+                services = new[] { new
+                {
+                    id = service.PublicId, code = "BAGGAGE", name = "Baggage handling",
+                    status = "Completed", contractedQuantity = 1m,
+                    executedQuantity = 1m, unit = "operation",
+                } },
+                incidents = new[] { new
+                {
+                    id = Guid.NewGuid(), type = "Internal", severity = "Low",
+                    status = "Closed", description = "Confidential internal note",
+                    occurredAt = approvedAt.AddMinutes(-30),
+                } },
+            });
+            var submission = new OperationSubmission
+            {
+                PublicId = Guid.NewGuid(), GroundOperationId = operation.Id,
+                OperationChecklistId = checklist.Id, RevisionNumber = 1,
+                Status = SubmissionStatus.Approved,
+                SubmittedByRampAgentId = agent.Id, SubmittedAt = approvedAt.AddMinutes(-5),
+                AgentNote = "Internal agent note", EvidenceJson = snapshot,
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            };
+            update.OperationSubmissions.Add(submission);
+            await update.SaveChangesAsync(cancellationToken);
+            update.ReviewDecisions.Add(new ReviewDecision
+            {
+                PublicId = Guid.NewGuid(), OperationSubmissionId = submission.Id,
+                ReviewerAccountId = reviewer.Id, Outcome = ReviewOutcome.Approved,
+                DecidedAt = approvedAt, Reason = "Internal reviewer note",
+                CreatedAt = approvedAt, UpdatedAt = approvedAt,
+            });
+            await update.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = new ServiceCollection()
+            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
+                }).Build())
+            .BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAirlinePortalReadStore>();
+        var organizationId = Guid.Parse("10000000-0000-7000-8000-000000000002");
+        var evidence = await store.GetApprovedOperationEvidenceAsync(
+            organizationId, operationId, cancellationToken);
+
+        Assert.NotNull(evidence);
+        Assert.True(evidence.Available);
+        Assert.Equal(approvedAt, evidence.ApprovedAt);
+        Assert.Equal(1, evidence.IncidentCount);
+        Assert.Equal("BAGGAGE", Assert.Single(evidence.Services).Code);
+        Assert.Equal(1m, Assert.Single(evidence.Services).ExecutedQuantity);
+        Assert.Null(await store.GetApprovedOperationEvidenceAsync(
+            otherOrganizationId, operationId, cancellationToken));
+        Assert.Null(await store.GetApprovedOperationEvidenceAsync(
+            organizationId, Guid.NewGuid(), cancellationToken));
+        var planned = await store.GetApprovedOperationEvidenceAsync(
+            organizationId, Guid.Parse("70000000-0000-7000-8000-000000000016"),
+            cancellationToken);
+        Assert.NotNull(planned);
+        Assert.False(planned.Available);
+        Assert.Empty(planned.Services);
     }
 
     [Fact]
@@ -8370,6 +9240,462 @@ public sealed class SqlServerMigrationTests
             .UseSqlServer(connection, ElevantSqlServerOptions.Configure)
             .Options;
         return new ElevantDbContext(options);
+    }
+
+    [Fact]
+    public async Task AttendanceValidationPreservesBothDraftsAndRejectsStaleDecisions()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        await using (var secondStation = CreateContext(database.ConnectionString))
+        {
+            var now = new DateTimeOffset(2026, 10, 2, 15, 0, 0, TimeSpan.Zero);
+            var airport = new Airport
+            {
+                PublicId = Guid.Parse("20000000-0000-7000-8000-000000000098"),
+                IataCode = "TST", IcaoCode = "MTST", Name = "Synthetic test airport",
+                City = "Test", CountryCode = "DO", CreatedAt = now, UpdatedAt = now,
+            };
+            secondStation.Airports.Add(airport);
+            await secondStation.SaveChangesAsync(cancellationToken);
+            secondStation.Stations.Add(new Station
+            {
+                PublicId = Guid.Parse("20000000-0000-7000-8000-000000000099"),
+                AirportId = airport.Id, Code = "TST", Name = "Synthetic test station",
+                IanaTimeZone = "America/Santo_Domingo", IsActive = true,
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await secondStation.SaveChangesAsync(cancellationToken);
+        }
+
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
+        var contractsId = Guid.Parse("40000000-0000-7000-8000-000000000005");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var assignmentId = Guid.Parse("70000000-0000-7000-8000-000000000006");
+        var installationId = Guid.CreateVersion7();
+        var start = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
+        Guid stationId;
+        Guid otherStationId;
+        DateOnly operationDate;
+        await using (var metadata = CreateContext(database.ConnectionString))
+        {
+            var operation = await metadata.GroundOperations.SingleAsync(item =>
+                item.PublicId == operationId, cancellationToken);
+            var turnaround = await metadata.Turnarounds.SingleAsync(item =>
+                item.Id == operation.TurnaroundId, cancellationToken);
+            stationId = await metadata.Stations.Where(item => item.Id == turnaround.StationId)
+                .Select(item => item.PublicId).SingleAsync(cancellationToken);
+            otherStationId = await metadata.Stations.Where(item => item.Code == "TST")
+                .Select(item => item.PublicId).SingleAsync(cancellationToken);
+            operationDate = turnaround.OperationDate;
+            var otherStationInternalId = await metadata.Stations
+                .Where(item => item.PublicId == otherStationId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            var otherTurnaround = new Turnaround
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000097"),
+                OperationCode = "TST-TAT-0001", AirlineId = turnaround.AirlineId,
+                StationId = otherStationInternalId, OperationDate = operationDate,
+                CurrentStatus = TurnaroundStatus.Scheduled,
+                Source = OperationalDataSource.Internal,
+                CreatedAt = start, UpdatedAt = start,
+            };
+            metadata.Turnarounds.Add(otherTurnaround);
+            await metadata.SaveChangesAsync(cancellationToken);
+            var otherOperation = new GroundOperation
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000098"),
+                TurnaroundId = otherTurnaround.Id,
+                CurrentStatus = GroundOperationStatus.Planned,
+                CreatedAt = start, UpdatedAt = start,
+            };
+            metadata.GroundOperations.Add(otherOperation);
+            await metadata.SaveChangesAsync(cancellationToken);
+            var existingAssignment = await metadata.OperationAgentAssignments
+                .SingleAsync(item => item.PublicId == assignmentId, cancellationToken);
+            metadata.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.Parse("70000000-0000-7000-8000-000000000099"),
+                GroundOperationId = otherOperation.Id,
+                RampAgentId = existingAssignment.RampAgentId,
+                AssignmentRole = "RampAgent", AssignedAt = start,
+                CreatedAt = start, UpdatedAt = start,
+            });
+            await metadata.SaveChangesAsync(cancellationToken);
+        }
+
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance validation tablet", "Android 16"), cancellationToken);
+            Assert.True(registration.IsSuccess);
+        }
+
+        async Task<AttendanceDraftWriteResult> SaveDraftAsync(Guid actor,
+            AttendanceDraftLane lane, int expectedRevision,
+            DateTimeOffset observedStart, DateTimeOffset observedEnd, Guid key)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .SaveAsync(new AttendanceDraftWriteRequest(actor, operationId, assignmentId,
+                    lane, expectedRevision, observedStart, observedEnd, "Observación manual",
+                    key, lane == AttendanceDraftLane.RampAgent ? installationId : null,
+                    "attendance-validation-test"), cancellationToken);
+        }
+
+        async Task<HumanResourcesAttendancePage?> ListAsync(Guid actor, Guid station)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceValidationStore>()
+                .ListAsync(actor, station, operationDate, operationDate, 1, 20,
+                    cancellationToken);
+        }
+
+        async Task<AttendanceValidationResult> ValidateAsync(
+            AttendanceValidationCommand command)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceValidationStore>()
+                .ValidateAsync(command, cancellationToken);
+        }
+
+        Assert.True((await SaveDraftAsync(occId, AttendanceDraftLane.Occ, 0,
+            start, start.AddHours(2), Guid.CreateVersion7())).IsSuccess);
+        Assert.True((await SaveDraftAsync(agentId, AttendanceDraftLane.RampAgent, 0,
+            start.AddMinutes(5), start.AddHours(2).AddMinutes(10), Guid.CreateVersion7())).IsSuccess);
+        Assert.Null(await ListAsync(contractsId, stationId));
+        Assert.Empty((await ListAsync(humanResourcesId, otherStationId))!.Items);
+        Assert.DoesNotContain((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.OperationCode == "TST-TAT-0001");
+        var pending = Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId);
+        Assert.Equal(1, pending.Occ!.Revision);
+        Assert.Equal(1, pending.RampAgent!.Revision);
+        Assert.Null(pending.LatestDecision);
+
+        var key = Guid.CreateVersion7();
+        var command = new AttendanceValidationCommand(humanResourcesId,
+            stationId, assignmentId, 1, 1, "Occ", "RampAgent",
+            "Diferencia revisada", key, "attendance-validation-test");
+        Assert.Equal(AttendanceValidationFailure.Forbidden,
+            (await ValidateAsync(command with { ActorAccountId = contractsId })).Failure);
+        Assert.Equal(AttendanceValidationFailure.NotFound,
+            (await ValidateAsync(command with { StationId = otherStationId })).Failure);
+        var approved = await ValidateAsync(command);
+        Assert.Null(approved.Failure);
+        Assert.Equal(start, approved.Decision!.StartAt);
+        Assert.Equal(start.AddHours(2).AddMinutes(10), approved.Decision.EndAt);
+        Assert.Equal(1, approved.Decision.OccRevision);
+        Assert.Equal(1, approved.Decision.RampAgentRevision);
+        var replay = await ValidateAsync(command);
+        Assert.True(replay.Replayed);
+        Assert.Equal(approved.Decision.Id, replay.Decision!.Id);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { Reason = "Cambiado" })).Failure);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { IdempotencyKey = Guid.CreateVersion7() })).Failure);
+        Assert.True(Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId).IsDecisionCurrent);
+
+        Assert.True((await SaveDraftAsync(occId, AttendanceDraftLane.Occ, 1,
+            start.AddMinutes(1), start.AddHours(2), Guid.CreateVersion7())).IsSuccess);
+        var stale = Assert.Single((await ListAsync(humanResourcesId, stationId))!.Items,
+            row => row.AssignmentId == assignmentId);
+        Assert.False(stale.IsDecisionCurrent);
+        Assert.Equal(approved.Decision.Id, stale.LatestDecision!.Id);
+        Assert.Equal(AttendanceValidationFailure.Conflict,
+            (await ValidateAsync(command with { IdempotencyKey = Guid.CreateVersion7() })).Failure);
+        var secondRevision = command with
+        {
+            ExpectedOccRevision = 2,
+            IdempotencyKey = Guid.CreateVersion7(),
+        };
+        var competing = await Task.WhenAll(
+            ValidateAsync(secondRevision),
+            ValidateAsync(secondRevision with { IdempotencyKey = Guid.CreateVersion7() }));
+        Assert.Single(competing, item => item.Failure is null);
+        Assert.Single(competing, item => item.Failure == AttendanceValidationFailure.Conflict);
+        Assert.Equal(2, competing.Single(item => item.Failure is null).Decision!.OccRevision);
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(2, await verify.OperationAttendanceValidations.CountAsync(cancellationToken));
+        Assert.Equal(3, await verify.OperationAttendanceContributionRevisions.CountAsync(cancellationToken));
+        Assert.Equal(2, await verify.AuditEntries.CountAsync(item =>
+            item.Action == "hr.attendance.validated", cancellationToken));
+        var airlineOrganizationId = await (
+            from operation in verify.GroundOperations.AsNoTracking()
+            join turnaround in verify.Turnarounds.AsNoTracking()
+                on operation.TurnaroundId equals turnaround.Id
+            join airline in verify.Airlines.AsNoTracking()
+                on turnaround.AirlineId equals airline.Id
+            where operation.PublicId == operationId
+            select airline.OrganizationId).SingleAsync(cancellationToken);
+        var validationAudits = await verify.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "hr.attendance.validated")
+            .ToArrayAsync(cancellationToken);
+        Assert.All(validationAudits, audit =>
+        {
+            Assert.Equal(airlineOrganizationId, audit.OrganizationId);
+            Assert.DoesNotContain("Diferencia revisada", audit.MetadataJson ?? string.Empty);
+        });
+        Assert.True(await verify.OutboxMessages.AnyAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_validation"), cancellationToken));
+        await using (var scope = provider.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>()
+                .DispatchPendingAsync(100, cancellationToken);
+        async Task<AccountChangePage?> FeedAsync(Guid actor, Guid? device = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+                .ReadAsync(actor, 0, 100, device, cancellationToken);
+        }
+        Assert.Contains((await FeedAsync(humanResourcesId))!.Changes,
+            item => item.Resource == "attendance_validation" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId, installationId))!.Changes,
+            item => item.Resource == "attendance_validation" && item.ResourceId == operationId);
+        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_validation");
+        await using (var revokeRole = CreateContext(database.ConnectionString))
+        {
+            var accountId = await revokeRole.Users.Where(item =>
+                item.PublicId == humanResourcesId).Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var roleId = await revokeRole.Roles.Where(item =>
+                item.NormalizedName == "GESTION_HUMANA").Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            var contractsRoleId = await revokeRole.Roles.Where(item =>
+                item.NormalizedName == "CONTRATOS").Select(item => item.Id)
+                .SingleAsync(cancellationToken);
+            revokeRole.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
+            {
+                UserId = accountId, RoleId = contractsRoleId,
+            });
+            await revokeRole.SaveChangesAsync(cancellationToken);
+            await revokeRole.Set<IdentityUserRole<long>>().Where(item =>
+                item.UserId == accountId && item.RoleId == roleId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        Assert.DoesNotContain((await FeedAsync(humanResourcesId))!.Changes,
+            item => item.Resource == "attendance_validation");
+    }
+
+    [Fact]
+    public async Task AttendanceDraftKeepsOccAndAgentRevisionsSeparateAndRetrySafe()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var masterConnection = ResolveMasterConnection();
+        if (masterConnection is null) return;
+
+        await using var database = await TemporaryDatabase.CreateAsync(
+            masterConnection, "Development", cancellationToken);
+        await using (var migration = CreateContext(database.ConnectionString))
+            await migration.Database.MigrateAsync(cancellationToken);
+        await database.ConfigureDevelopmentSeederPermissionsAsync(cancellationToken);
+        await using (var connection = await database.OpenAsDevelopmentSeederAsync(cancellationToken))
+        await using (var seeder = CreateContext(connection))
+            await new DevelopmentDataSeeder(seeder).SeedAsync(InitialPasswords, cancellationToken);
+
+        var occId = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        var agentId = Guid.Parse("40000000-0000-7000-8000-000000000002");
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var assignmentId = Guid.Parse("70000000-0000-7000-8000-000000000006");
+        var installationId = Guid.CreateVersion7();
+        var secondInstallationId = Guid.CreateVersion7();
+        var occKey = Guid.CreateVersion7();
+        var agentKey = Guid.CreateVersion7();
+        var startedAt = new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero);
+        await using var provider = CreateAuthenticationProvider(
+            database.ConnectionString, new PasswordHashCounter());
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var registration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, installationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance SQL test tablet", "Android 16"), cancellationToken);
+            Assert.True(registration.IsSuccess);
+            var secondRegistration = await scope.ServiceProvider
+                .GetRequiredService<IMobileDeviceCommandStore>()
+                .RegisterAsync(new MobileDeviceRegistrationWriteRequest(
+                    agentId, secondInstallationId, MobilePlatform.Android,
+                    "1.2.3", "Attendance SQL test second tablet", "Android 16"), cancellationToken);
+            Assert.True(secondRegistration.IsSuccess);
+        }
+
+        async Task<AttendanceDraftReadResult> ReadAsync(Guid actor, Guid? device)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .GetAsync(actor, operationId, assignmentId, device, cancellationToken);
+        }
+
+        async Task<AttendanceDraftWriteResult> SaveAsync(Guid actor, AttendanceDraftLane lane,
+            int revision, DateTimeOffset? start, string? note, Guid key, Guid? device)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAttendanceDraftStore>()
+                .SaveAsync(new AttendanceDraftWriteRequest(actor, operationId, assignmentId,
+                    lane, revision, start, null, note, key, device, "attendance-sql-test"),
+                    cancellationToken);
+        }
+
+        var empty = await ReadAsync(occId, null);
+        Assert.True(empty.IsSuccess);
+        Assert.Null(empty.Snapshot!.Occ);
+        Assert.Null(empty.Snapshot.RampAgent);
+        Assert.Equal(AttendanceDraftFailure.Forbidden, (await ReadAsync(agentId, null)).Failure);
+
+        var concurrent = await Task.WhenAll(
+            SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Equipo listo", occKey, null),
+            SaveAsync(agentId, AttendanceDraftLane.RampAgent, 0,
+                startedAt.AddMinutes(2), "Rampa lista", agentKey, installationId));
+        var occ = concurrent[0];
+        Assert.True(occ.IsSuccess);
+        Assert.Equal(1, occ.Contribution!.Revision);
+        var agent = concurrent[1];
+        Assert.True(agent.IsSuccess);
+        Assert.Equal(1, agent.Contribution!.Revision);
+        var both = await ReadAsync(agentId, installationId);
+        Assert.True(both.IsSuccess);
+        Assert.Equal("Equipo listo", both.Snapshot!.Occ!.IncidentNote);
+        Assert.Equal("Rampa lista", both.Snapshot.RampAgent!.IncidentNote);
+
+        var replay = await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+            startedAt, "Equipo listo", occKey, null);
+        Assert.True(replay.IsSuccess);
+        Assert.True(replay.Replayed);
+        Assert.Equal(occ.Contribution, replay.Contribution);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Cambiado", occKey, null)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, " Equipo listo ", occKey, null)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Conflict,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+                startedAt, "Nueva revisión", Guid.CreateVersion7(), null)).Failure);
+
+        var second = await SaveAsync(occId, AttendanceDraftLane.Occ, 1,
+            startedAt.AddMinutes(1), "Equipo revisado", Guid.CreateVersion7(), null);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(2, second.Contribution!.Revision);
+        var firstAfterSecond = await SaveAsync(occId, AttendanceDraftLane.Occ, 0,
+            startedAt, "Equipo listo", occKey, null);
+        Assert.True(firstAfterSecond.Replayed);
+        Assert.Equal(1, firstAfterSecond.Contribution!.Revision);
+
+        await using var verify = CreateContext(database.ConnectionString);
+        Assert.Equal(3, await verify.OperationAttendanceContributionRevisions.CountAsync(cancellationToken));
+        Assert.Equal(3, await verify.AuditEntries.CountAsync(item =>
+            item.Action == "ops.attendance_draft.saved", cancellationToken));
+        var auditRows = await verify.AuditEntries.AsNoTracking()
+            .Where(item => item.Action == "ops.attendance_draft.saved")
+            .ToArrayAsync(cancellationToken);
+        var occInternalIdForAudit = await verify.Users.Where(item => item.PublicId == occId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var agentInternalIdForAudit = await verify.Users.Where(item => item.PublicId == agentId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        Assert.Equal(2, auditRows.Count(item => item.ActorAccountId == occInternalIdForAudit &&
+            item.Source == AuditSource.Api));
+        Assert.Single(auditRows, item => item.ActorAccountId == agentInternalIdForAudit &&
+            item.Source == AuditSource.MobileSync);
+        Assert.All(auditRows, item =>
+        {
+            Assert.NotEqual(default, item.OccurredAt);
+            Assert.DoesNotContain("Equipo listo", item.MetadataJson ?? string.Empty);
+            Assert.DoesNotContain("Rampa lista", item.MetadataJson ?? string.Empty);
+        });
+        Assert.True(await verify.OutboxMessages.CountAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_draft"), cancellationToken) >= 2);
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var dispatch = scope.ServiceProvider.GetRequiredService<IAccountChangeDispatcherStore>();
+            await dispatch.DispatchPendingAsync(100, cancellationToken);
+        }
+        async Task<AccountChangePage?> FeedAsync(Guid actor, Guid? device = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IAccountChangeReadStore>()
+                .ReadAsync(actor, 0, 100, device, cancellationToken);
+        }
+        Assert.Contains((await FeedAsync(occId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId, installationId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.Contains((await FeedAsync(agentId, secondInstallationId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+        Assert.DoesNotContain((await FeedAsync(agentId))!.Changes,
+            item => item.Resource == "attendance_draft");
+        Assert.DoesNotContain((await FeedAsync(Guid.Parse(
+            "40000000-0000-7000-8000-000000000003")))!.Changes,
+            item => item.Resource == "attendance_draft");
+
+        var outboxBeforeRevocation = await verify.OutboxMessages.CountAsync(item =>
+            item.EventType == "account.changed.v1" &&
+            item.PayloadJson.Contains("attendance_draft"), cancellationToken);
+        await using (var revokeDevice = CreateContext(database.ConnectionString))
+        {
+            await revokeDevice.MobileDevices.Where(item => item.InstallationId == installationId)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.RevokedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        }
+        Assert.Equal(AttendanceDraftFailure.Forbidden,
+            (await ReadAsync(agentId, installationId)).Failure);
+        Assert.Equal(AttendanceDraftFailure.Forbidden,
+            (await SaveAsync(agentId, AttendanceDraftLane.RampAgent, 1,
+                startedAt.AddMinutes(4), "Sin dispositivo", Guid.CreateVersion7(),
+                installationId)).Failure);
+        Assert.DoesNotContain((await FeedAsync(agentId, installationId))!.Changes,
+            item => item.Resource == "attendance_draft");
+        Assert.Contains((await FeedAsync(agentId, secondInstallationId))!.Changes,
+            item => item.Resource == "attendance_draft" && item.ResourceId == operationId);
+
+        await using (var release = CreateContext(database.ConnectionString))
+            await release.OperationAgentAssignments.Where(item => item.PublicId == assignmentId)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.ReleasedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        Assert.Equal(AttendanceDraftFailure.NotFound,
+            (await SaveAsync(occId, AttendanceDraftLane.Occ, 2,
+                startedAt.AddMinutes(5), "Después de liberar", Guid.CreateVersion7(),
+                null)).Failure);
+        Assert.Equal(outboxBeforeRevocation,
+            await verify.OutboxMessages.CountAsync(item =>
+                item.EventType == "account.changed.v1" &&
+                item.PayloadJson.Contains("attendance_draft"), cancellationToken));
+
+        await using (var revokeStation = CreateContext(database.ConnectionString))
+        {
+            var occInternalId = await revokeStation.Users.Where(item => item.PublicId == occId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            await revokeStation.AccountStationScopes.Where(item =>
+                item.AccountId == occInternalId && item.RevokedAt == null)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.RevokedAt,
+                    DateTimeOffset.UtcNow), cancellationToken);
+        }
+        Assert.Equal(AttendanceDraftFailure.NotFound, (await ReadAsync(occId, null)).Failure);
+        Assert.DoesNotContain((await FeedAsync(occId))!.Changes,
+            item => item.Resource == "attendance_draft");
     }
 
     private static string? ResolveMasterConnection()

@@ -1,5 +1,58 @@
 # Backend de ELEVANT
 
+## Alertas preliminares de programación de G.H. (rama local)
+
+`GET /api/v1/human-resources/schedule-warnings?stationId=&from=&to=&page=&limit=`
+devuelve avisos de planificación para turnos confirmados de una estación
+autorizada, no decisiones legales o de nómina. Exige sesión vigente con rol
+`GESTION_HUMANA`, membresía AVIAM interna y concesión activa de la estación;
+400/401/403/404 distinguen entrada, autenticación, rol y estación no
+disponible. La ventana máxima es de 30 fechas inclusivas y la paginación es
+estable. La regla versionada usa descanso menor de 12 horas y duración
+programada superior a 48 horas en siete fechas locales; los horarios
+ambiguos o inexistentes por DST quedan «no evaluables». Turnos de otra
+estación pueden influir sin revelar identificadores, códigos ni tiempos de
+estaciones no concedidas. Se proyecta `HasRestrictedEvidence` y se omite la
+medición cuando el contexto está restringido. La respuesta es de solo
+lectura, sin caché; no crea tablas ni modifica la asignación OCC.
+
+## Reportes verificables de Gestión Humana (rama local)
+
+`GET /api/v1/human-resources/reports/{kind}` consulta vigencias, movimientos de
+cuenta con auditoría de estación verificable, distribución de turnos y cobertura
+de habilitaciones. Requiere rol `GESTION_HUMANA`, membresía interna AVIAM y
+concesión vigente de la estación; acepta hasta 30 fechas y páginas de 1 a 100.
+Vigencias admite `documentKind=Qualification|Permit` y
+`validity=Current|Expired`; la vigencia se evalúa con la fecha local de la
+estación y la página devuelve los filtros efectivos.
+`GET .../{kind}/export?format=pdf|xlsx` vuelve a autorizar, lee un snapshot
+coherente de hasta 5 000 filas, registra auditoría sin filas privadas y sirve
+un archivo con cabeceras `no-store` y `nosniff`. Un conjunto mayor devuelve
+422 sin archivo. Las filas de la página no son un total global ni la fuente
+de la exportación. No se atribuyen eventos de cuenta históricos sin estación
+verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
+bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
+en el momento del evento; los eventos anteriores no se atribuyen de forma
+retroactiva ni se reconstruyen desde concesiones actuales.
+Para esa atribución, las fechas de vigencia del perfil de rampa se evalúan
+con la fecha UTC del evento, la misma convención usada al crearlas. Esto
+evita perder la estación entre la medianoche UTC y la local.
+Código local: no acredita despliegue al VPS.
+
+## Revisión de asistencia (rama local)
+
+`GET /api/v1/human-resources/attendance` lista por estación autorizada, intervalo
+local de hasta 30 días y página las asignaciones con las últimas revisiones de
+OCC y agente. `PUT /api/v1/human-resources/attendance/{assignmentId}/validation`
+elige el origen de inicio y fin (`Occ` o `RampAgent`) y exige las dos revisiones
+esperadas y `Idempotency-Key` UUID. Si las horas difieren, exige justificación.
+Solo G.H. con membresía interna y alcance vigente puede validar. Una decisión
+es inmutable; un aporte posterior la marca como no vigente sin borrar el
+historial. El servidor responde 409 ante revisión vencida o decisión concurrente,
+y repite el resultado de un PUT idéntico con la misma clave. La transacción
+guarda auditoría y aviso durable `attendance_validation`; el cliente relee por
+REST. Este código no acredita todavía promoción al VPS.
+
 Backend compartido por AVIAM Private Web, Public Web y Mobile Agent. La solución .NET 10 queda deliberadamente plana para que Visual Studio muestre directamente los proyectos productivos:
 
 ```text
@@ -142,8 +195,34 @@ a 60 minutos y usa 15 por defecto.
   serializable; un reintento idéntico devuelve el mismo ciclo y una versión
   anterior devuelve 409. No admite fecha de emisión futura ni archivos.
   El feed comprueba de nuevo rol y membresía interna antes de entregar esa pista.
+- `GET /api/v1/human-resources/ramp-profiles` entrega perfiles y catálogos de
+  estaciones y terminales activas. `POST` y `PUT` guardan perfil, terminales
+  de sus estaciones y supervisor activo (sin autorreferencia ni ciclos). Omitir
+  `terminalIds` o `supervisor` en una actualización conserva el valor anterior;
+  enviar `[]` o `{ "id": null }` lo limpia respectivamente. La respuesta distingue
+  perfil sin cuenta, cuenta activa, pendiente o deshabilitada. Gestión Humana
+  puede retirar alcances de una cuenta ya vinculada, pero no conceder nuevos
+  grants de estación: la aprobación y vinculación siguen siendo exclusivas de
+  Superadministración. No se envía correo de invitación desde este endpoint.
+- `GET /api/v1/human-resources/ramp-profiles/access-requests` y
+  `POST /api/v1/human-resources/ramp-profiles/{id}/access-requests` permiten a
+  Gestión Humana consultar y solicitar acceso móvil con UUID de intención. La
+  API exige perfil activo, sin cuenta y con estación vigente; un reintento
+  idéntico no duplica la solicitud. `GET /api/v1/governance/ramp-mobile-access-requests`
+  y `POST /api/v1/governance/ramp-mobile-access-requests/{id}/reject` son de
+  Superadministración. El rechazo requiere `expectedVersion`; la creación de
+  `RAMP_AGENT` acepta `accessRequestId`, `accessRequestVersion`,
+  `expectedRampProfileVersion` y `expectedStationCodes`. Cuando se usa una
+  solicitud, una versión o alcance obsoleto devuelve 409 y cuenta, grants,
+  decisión y auditoría se confirman en una transacción. Repetir exactamente la
+  aprobación devuelve la misma cuenta mientras la contraseña temporal y los
+  datos de cuenta no hayan cambiado; después se consulta la solicitud
+  `Fulfilled` en vez de repetir el POST. Cambiar correo o contraseña en el
+  reintento no los reemplaza. Una solicitud pendiente impide saltar a la creación
+  genérica de cuenta de rampa. No se devuelve ni almacena la contraseña en la
+  solicitud, y tampoco se envía invitación automática.
 - `GET /api/v1/human-resources/shifts?from=&to=&page=&limit=` lista turnos
-  registrados de rampa en una ventana de hasta siete fechas locales, con
+  registrados de rampa en una ventana de hasta 31 fechas locales inclusivas, con
   agente, estación, terminal, posición y horario. Exige Gestión Humana o
   Superadministración interna vigente y no calcula disponibilidad.
   `GET /api/v1/human-resources/shifts/options?rampProfileId=&workDate=` entrega
@@ -151,7 +230,10 @@ a 60 minutos y usa 15 por defecto.
   vigentes de ese agente en esa fecha, junto con `hasShift`; una selección
   ofrecida no sustituye la revalidación del comando.
   `PUT /api/v1/human-resources/shifts/{id}` registra un turno por agente y día con
-  UUID de intención estable: exige agente, estación y terminal activos y scopes
+  UUID de intención estable. Durante la transición al calendario OCC, solo
+  `ADMIN_OCC` con membresía interna y concesión vigente de la estación puede usar este `PUT`; Gestión Humana y
+  Superadministración conservan la lectura, pero no la escritura. El comando
+  exige agente, estación y terminal activos y scopes
   vigentes en esa fecha, asigna la posición `RAMP-AGENT`, limita la jornada
   local a 16 horas y rechaza otra programación del mismo día. La transacción
   serializable guarda turno, auditoría y pista durable `hr_shifts`; reintentos
@@ -235,6 +317,17 @@ de tenant del navegador. Devuelve páginas de hasta 50 contratos con versiones
 aprobadas, estaciones y tarifas. Conserva las versiones aprobadas aunque el
 contrato venza, pero nunca expone borradores; el portal las consulta en modo
 solo lectura. No crea ni aprueba contratos.
+
+En esta rama posterior a #118,
+`GET /api/v1/airline/portal/operations/{operationId}/approved-evidence`
+revalida la membresía de aerolínea y la cobertura contractual histórica de
+la estación en la fecha operativa. Una operación ajena devuelve `404`; una
+propia sin aprobación devuelve `200` con `available=false`. Tras la aprobación
+proyecta servicios e incidencias desde la última entrega inmutable aprobada
+por OCC, pero solo expone el conteo de incidencias, sin descripciones, notas
+ni identidades internas. También muestra los tiempos reales de la operación.
+Es una lectura aditiva sin migración y requiere promoción API-primero antes
+del cliente Public Web que la consume.
 
 En la rama de integración de Development, la asignación OCC, el inicio y la
 entrega del agente, y la decisión OCC escriben una invalidación
@@ -402,3 +495,11 @@ El flujo local es `SQL -> provisioner -> migrator -> seeder-development -> API`.
 Los siguientes endpoints de negocio deben conservar el patrón de vertical slices
 y publicarse mediante OpenAPI. Ningún frontend debe consumir entidades EF
 directamente.
+
+La rama de clausura comercial agrega `GET/POST /api/v1/service-closures`, decisión
+por solicitud y republicación por servicio. La API exige membresía AVIAM
+interna y grants separados; `IServiceClosureStore` concentra la transacción
+que conserva expediente, auditoría, pistas internas y visibilidad pública. La
+respuesta del hub público es una invalidación posterior al commit. El
+[recorrido comercial](../docs/workflows/commercial-intake-and-governance.md#clausura-comercial-solicitada-por-occ-rama-de-implementación)
+detalla el efecto sobre nuevas solicitudes, sin atribuirle un despliegue.

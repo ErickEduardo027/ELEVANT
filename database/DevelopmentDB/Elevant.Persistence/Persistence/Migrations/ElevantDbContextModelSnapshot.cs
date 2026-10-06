@@ -1616,6 +1616,124 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceClosureRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<long?>("DecidedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("decided_by_account_id");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("decision_reason");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReopenReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reopen_reason");
+
+                    b.Property<DateTimeOffset?>("ReopenedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("reopened_at");
+
+                    b.Property<long?>("ReopenedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reopened_by_account_id");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<long>("RequestedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("ServiceDefinitionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("service_definition_id");
+
+                    b.Property<string>("ServiceNameSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("service_name_snapshot");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecidedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ReopenedByAccountId");
+
+                    b.HasIndex("RequestedByAccountId");
+
+                    b.HasIndex("ServiceDefinitionId")
+                        .IsUnique()
+                        .HasFilter("[status] = N'Pending'");
+
+                    b.ToTable("service_closure_requests", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_service_closure_decision", "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [decision_reason] IS NULL) OR ([status] = N'Approved' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL) OR ([status] = N'Denied' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [decision_reason] IS NOT NULL AND LEN([decision_reason]) >= 10)");
+
+                            t.HasCheckConstraint("ck_service_closure_reopen", "([reopened_at] IS NULL AND [reopened_by_account_id] IS NULL AND [reopen_reason] IS NULL) OR ([status] = N'Approved' AND [reopened_at] IS NOT NULL AND [reopened_by_account_id] IS NOT NULL AND [reopen_reason] IS NOT NULL AND LEN([reopen_reason]) >= 10)");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -3436,6 +3554,234 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("operation_agent_assignments", "ops", t =>
                         {
                             t.HasCheckConstraint("ck_agent_assignment_dates", "[released_at] IS NULL OR [released_at] >= [assigned_at]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AuthorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("author_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("IncidentNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("incident_note");
+
+                    b.Property<Guid?>("InstallationId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("installation_id");
+
+                    b.Property<string>("Lane")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("lane");
+
+                    b.Property<DateTimeOffset?>("ObservedEndAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("observed_end_at");
+
+                    b.Property<DateTimeOffset?>("ObservedStartAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("observed_start_at");
+
+                    b.Property<long>("OperationAgentAssignmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("operation_agent_assignment_id");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_sha256");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("int")
+                        .HasColumnName("revision_number");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("AuthorAccountId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OperationAgentAssignmentId", "Lane", "RevisionNumber")
+                        .IsUnique();
+
+                    b.ToTable("operation_attendance_contribution_revisions", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_contribution_chronology", "[observed_start_at] IS NULL OR [observed_end_at] IS NULL OR [observed_end_at] >= [observed_start_at]");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_lane", "[lane] IN ('Occ', 'RampAgent')");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_observation", "[observed_start_at] IS NOT NULL OR [observed_end_at] IS NOT NULL OR [incident_note] IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_attendance_contribution_revision_positive", "[revision_number] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceValidation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset>("EndAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("end_at");
+
+                    b.Property<string>("EndSource")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("end_source");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<long>("OccContributionRevisionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("occ_contribution_revision_id");
+
+                    b.Property<long>("OperationAgentAssignmentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("operation_agent_assignment_id");
+
+                    b.Property<string>("PayloadSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("payload_sha256");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long>("RampAgentContributionRevisionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ramp_agent_contribution_revision_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("StartAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("start_at");
+
+                    b.Property<string>("StartSource")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("start_source");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset>("ValidatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("validated_at");
+
+                    b.Property<long>("ValidatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("validated_by_account_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccContributionRevisionId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RampAgentContributionRevisionId");
+
+                    b.HasIndex("ValidatedByAccountId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OperationAgentAssignmentId", "OccContributionRevisionId", "RampAgentContributionRevisionId")
+                        .IsUnique();
+
+                    b.ToTable("operation_attendance_validations", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_attendance_validation_chronology", "[end_at] >= [start_at]");
+
+                            t.HasCheckConstraint("ck_attendance_validation_sources", "[start_source] IN ('Occ', 'RampAgent') AND [end_source] IN ('Occ', 'RampAgent')");
                         });
                 });
 
@@ -5875,6 +6221,100 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.RampMobileAccessRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("CreatedAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<long?>("DecidedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("decided_by_account_id");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("decision_reason");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long>("RampAgentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ramp_agent_id");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<long>("RequestedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAccountId");
+
+                    b.HasIndex("DecidedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RampAgentId")
+                        .IsUnique()
+                        .HasFilter("[status] = N'Pending'");
+
+                    b.HasIndex("RequestedByAccountId");
+
+                    b.ToTable("ramp_mobile_access_requests", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_ramp_mobile_access_request_decision", "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [created_account_id] IS NULL) OR ([status] = N'Rejected' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NULL) OR ([status] = N'Fulfilled' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Workforce.ShiftAssignment", b =>
                 {
                     b.Property<long>("Id")
@@ -6633,6 +7073,31 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceClosureRequest", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("DecidedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReopenedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.ServiceDefinition", null)
+                        .WithMany()
+                        .HasForeignKey("ServiceDefinitionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequest", b =>
                 {
                     b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
@@ -6919,6 +7384,48 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()
                         .HasForeignKey("RampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationAgentAssignment", null)
+                        .WithMany()
+                        .HasForeignKey("OperationAgentAssignmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAttendanceValidation", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", null)
+                        .WithMany()
+                        .HasForeignKey("OccContributionRevisionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationAgentAssignment", null)
+                        .WithMany()
+                        .HasForeignKey("OperationAgentAssignmentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationAttendanceContributionRevision", null)
+                        .WithMany()
+                        .HasForeignKey("RampAgentContributionRevisionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ValidatedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });
@@ -7346,6 +7853,31 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Reference.Terminal", null)
                         .WithMany()
                         .HasForeignKey("TerminalId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.RampMobileAccessRequest", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("DecidedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
+                        .WithMany()
+                        .HasForeignKey("RampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

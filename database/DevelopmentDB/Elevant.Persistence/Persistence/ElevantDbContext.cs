@@ -55,6 +55,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<RampAgent> RampAgents => Set<RampAgent>();
 
+    public DbSet<RampMobileAccessRequest> RampMobileAccessRequests => Set<RampMobileAccessRequest>();
+
     public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
 
     public DbSet<AirportPermitCycle> AirportPermitCycles => Set<AirportPermitCycle>();
@@ -66,6 +68,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
     public DbSet<CoverageRequirement> CoverageRequirements => Set<CoverageRequirement>();
 
     public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
+
+    public DbSet<ServiceClosureRequest> ServiceClosureRequests => Set<ServiceClosureRequest>();
 
     public DbSet<CommercialAirlineProfile> CommercialAirlineProfiles => Set<CommercialAirlineProfile>();
 
@@ -103,6 +107,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
     public DbSet<GroundOperation> GroundOperations => Set<GroundOperation>();
 
     public DbSet<OperationAgentAssignment> OperationAgentAssignments => Set<OperationAgentAssignment>();
+
+    public DbSet<OperationAttendanceContributionRevision> OperationAttendanceContributionRevisions => Set<OperationAttendanceContributionRevision>();
+
+    public DbSet<OperationAttendanceValidation> OperationAttendanceValidations => Set<OperationAttendanceValidation>();
 
     public DbSet<OperationEquipmentAssignment> OperationEquipmentAssignments => Set<OperationEquipmentAssignment>();
 

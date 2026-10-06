@@ -5,6 +5,7 @@ import { LayoutGridIcon, ShieldCheckIcon } from '../shell/components/icons';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import CommercialCatalogPage from '../contracts/catalog/CommercialCatalogPage';
+import ServiceClosurePanel from '../contracts/catalog/ServiceClosurePanel';
 import CommercialIntakePage from '../contracts/requests/CommercialIntakePage';
 import ManagedDraftsPage from '../contracts/drafts/ManagedDraftsPage';
 import { getMyPermissions } from '../../services/commercialGovernanceApi';
@@ -16,6 +17,8 @@ const workspaceModules = [
     description: 'Solicitudes de aerolíneas.' },
   { id: 'drafts', label: 'Borradores', permission: 'commercial.requests.read', icon: ShieldCheckIcon,
     description: 'Contratos pendientes de activación.' },
+  { id: 'closures', label: 'Clausuras', permission: 'commercial.service_closures.read', icon: ShieldCheckIcon,
+    description: 'Disponibilidad y decisiones sobre servicios.' },
 ];
 
 export default function CustomWorkspace({ user, onLogout }) {
@@ -52,7 +55,8 @@ export default function CustomWorkspace({ user, onLogout }) {
         {selected?.id === 'catalog' && <CommercialCatalogPage
           canCreate={allowed('commercial.catalog', 'create')}
           canEdit={allowed('commercial.catalog', 'edit')}
-          canRetire={allowed('commercial.catalog', 'full')} />}
+          canRetire={allowed('commercial.catalog', 'full')}
+          canSeeClosures={false} />}
         {selected?.id === 'requests' && <CommercialIntakePage
           canVerify={allowed('commercial.requests', 'full')}
           canApprove={allowed('commercial.requests', 'full')}
@@ -60,6 +64,12 @@ export default function CustomWorkspace({ user, onLogout }) {
         {selected?.id === 'drafts' && <ManagedDraftsPage
           canEdit={allowed('commercial.requests', 'edit')}
           canActivate={allowed('commercial.requests', 'full')} />}
+        {selected?.id === 'closures' && <ServiceClosurePanel
+          mode={permissions.includes('commercial.service_closures.decide') ||
+            permissions.includes('commercial.service_closures.reopen') ? 'contracts' : 'occ'}
+          canRequest={permissions.includes('commercial.service_closures.request')}
+          canDecide={permissions.includes('commercial.service_closures.decide')}
+          canReopen={permissions.includes('commercial.service_closures.reopen')} />}
       </main>
     </div>
   </div>;

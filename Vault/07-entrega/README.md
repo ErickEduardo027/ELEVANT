@@ -7,15 +7,18 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
+last_verified: "2026-10-03"
+verified_commit: "913fb3d5eedc7de9444eac15836d9cdd9a89706f"
 sources:
+  - .github/workflows/pull-request-ci.yml
+  - .github/workflows/development-delivery.yml
   - .github/workflows/backend-ci.yml
   - .github/workflows/web-ci.yml
   - .github/workflows/api-client-ci.yml
   - .github/workflows/ops-config-ci.yml
   - .github/workflows/vault-ci.yml
   - .github/workflows/mobile-ci.yml
+  - .github/workflows/secret-scan.yml
   - docs/workflows/release-workflow.md
   - .github/BRANCH_PROTECTION.md
   - ops/dokploy/README.md
@@ -48,10 +51,10 @@ fechada, no se deduce de que exista un workflow.
 
 ```mermaid
 flowchart LR
-    PR[Pull request] --> CI[Validación CI]
+    PR[Pull request] --> CI[Clasificación y gate final de PR]
     CI --> Review[Revisión humana]
     Review --> Merge[Merge a Development]
-    Merge --> Class[Clasificación de cambios]
+    Merge --> Class[Development delivery: clasificación y DAG]
     Class -->|DB-owned| DB[Bundle DB certificado]
     Class -->|API-owned| API[Bundle API certificado]
     Class -->|web-owned| WEB[Bundle por web]
@@ -73,9 +76,9 @@ permiso de escritura, que también pasa por los gates de publicación.
 
 ## Qué está dentro y qué no
 
-- **Actual, versionado:** workflows activos de backend, cliente API, webs,
-  Mobile Agent fuente, configuración operativa y Vault; bundle OCI y
-  controladores de DB/API/web.
+- **Actual, versionado:** coordinadores de PR y Development, workflows activos
+  de backend, cliente API, webs, Mobile Agent fuente, configuración operativa,
+  Vault y escaneo de secretos; bundle OCI y controladores de DB/API/web.
 - **Condicionado:** la promoción automática exige controlador instalado,
   baseline adoptada, schedules habilitados, runtime sano y gates satisfechos.
   Esos hechos vivos no los demuestra esta sección.

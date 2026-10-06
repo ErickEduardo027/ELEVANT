@@ -37,6 +37,9 @@ it('shows scoped, persisted OCC facts without synthetic counters or FlyAware cla
   expect(screen.getByText('Agente Uno')).toBeInTheDocument();
   expect(screen.getByText('operation_submitted')).toBeInTheDocument();
   expect(screen.getByText(/28 de septiembre|2026-09-28/i)).toBeInTheDocument();
+  expect(screen.getByText(/Planificación del día local/)).toBeInTheDocument();
+  expect(screen.getByText(/fecha local 2026-09-28/)).toBeInTheDocument();
+  expect(screen.queryByText(/fecha UTC|día UTC/)).not.toBeInTheDocument();
   expect(screen.queryByText(/sintéticos|FlyAware|42 vuelos/i)).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Estación OCC'),
     { target: { value: otherStationId } });
@@ -48,6 +51,7 @@ it('shows an honest empty station view with no invented operations', () => {
     ...snapshot, turnarounds: [], reviews: [], notifications: [],
   }} />);
   expect(screen.getByText(/No hay escalas registradas/)).toBeInTheDocument();
+  expect(screen.getByText(/estación y fecha local/)).toBeInTheDocument();
   expect(screen.getByText(/No hay entregas pendientes/)).toBeInTheDocument();
   expect(screen.getByText(/No hay avisos/)).toBeInTheDocument();
 });

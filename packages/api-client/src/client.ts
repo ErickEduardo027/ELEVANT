@@ -3,6 +3,7 @@ import {
   getGetAirlineContractsUrl,
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
+  getGetAirlineApprovedOperationEvidenceUrl,
   getGetAirlineOperationalRequestsUrl,
   getGetAirlinePreinvoiceUrl,
   getGetAirlinePreinvoiceDisputesUrl,
@@ -12,6 +13,7 @@ import {
   getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
+  getLookupCommercialRequestReceiptUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -64,6 +66,17 @@ import {
   getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
+  getGetOperationAttendanceDraftUrl,
+  getSaveOccAttendanceDraftUrl,
+  getSaveRampAttendanceDraftUrl,
+  getGetHumanResourcesAttendanceUrl,
+  getListHumanResourcesExpirationsUrl,
+  getListHumanResourcesAccountMovementsUrl,
+  getListHumanResourcesStaffDistributionUrl,
+  getListHumanResourcesQualificationCoverageUrl,
+  getListHumanResourcesScheduleWarningsUrl,
+  getExportHumanResourcesReportUrl,
+  getValidateHumanResourcesAttendanceUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
   getRegisterMobileDeviceUrl,
@@ -78,6 +91,7 @@ import {
   type AirlineContractPageResponse,
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
+  type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationalRequestPageResponse,
   type AirlinePreinvoiceDetailResponse,
   type AcceptAirlinePreinvoiceRequest,
@@ -114,6 +128,8 @@ import {
   type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
   type HumanResourcesShiftPage,
+  type HumanResourcesScheduleWarningPageResponse,
+  type ListHumanResourcesScheduleWarningsParams,
   type HumanResourcesAvailabilityRequestPage,
   type HumanResourcesAvailabilityWritten,
   type RecordHumanResourcesAvailabilityInput,
@@ -142,6 +158,20 @@ import {
   type CurrentSessionResponse,
   type GetRampOperationChecklistResponse,
   type GetRampIncidentsResponse,
+  type AttendanceDraftContributionResponse,
+  type AttendanceDraftSnapshotResponse,
+  type AttendanceDraftWriteResponse,
+  type SaveAttendanceDraftRequest,
+  type HumanResourcesAttendancePageResponse,
+  type HumanResourcesAttendanceRowResponse,
+  type AttendanceValidationDecisionResponse,
+  type AttendanceValidationWriteResponse,
+  type ValidateAttendanceRequest,
+  type GetHumanResourcesAttendanceParams,
+  type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
+  type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
+  type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
+  type HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
   type GetManualTurnaroundOptionsParams,
@@ -211,6 +241,7 @@ export type GetAirlinePortalBootstrapOptions = Omit<ElevantRequestInit, "body" |
 export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAirlineApprovedOperationEvidenceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -219,6 +250,23 @@ export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "meth
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type HumanResourcesReportKind = "expirations" | "account-movements" |
+  "staff-distribution" | "qualification-coverage";
+export type HumanResourcesReportQuery = {
+    stationId: string; from: string; to: string; page?: number; limit?: number;
+    documentKind?: "Qualification" | "Permit";
+    validity?: "Current" | "Expired";
+};
+export type HumanResourcesReportPage =
+  HumanResourcesExpirationResponseHumanResourcesReportPageResponse |
+  HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse |
+  HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse |
+  HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse;
+export type HumanResourcesScheduleWarningsQuery =
+  Required<Pick<ListHumanResourcesScheduleWarningsParams,
+    "stationId" | "from" | "to">> &
+  Pick<ListHumanResourcesScheduleWarningsParams, "page" | "limit">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -235,6 +283,8 @@ export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "b
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesScheduleWarningsOptions =
+  Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesAvailabilityRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ResolveHumanResourcesAvailabilityOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -269,7 +319,9 @@ export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "m
 export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method"> & {
+  installationId?: string;
+};
 export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
@@ -292,6 +344,12 @@ export type GetRampOperationChecklistOptions = Omit<
   "body" | "method"
 >;
 export type GetRampIncidentsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetOperationAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "method"> & {
+  readonly installationId?: string;
+};
+export type SaveAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ValidateHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -343,6 +401,10 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetAirlineOperationOptions,
   ): Promise<AirlinePortalOperationResponse>;
+  getAirlineApprovedOperationEvidence(
+    operationId: string,
+    options?: GetAirlineApprovedOperationEvidenceOptions,
+  ): Promise<AirlineApprovedOperationEvidenceResponse>;
   getAirlineOperationalRequests(
     parameters?: GetAirlineOperationalRequestsParams,
     options?: GetAirlineOperationalRequestsOptions,
@@ -375,6 +437,10 @@ export interface ElevantApiClient {
     options?: GetPublicCommercialCatalogOptions,
   ): Promise<PublicCommercialCatalog>;
   submitCommercialRequest(
+    request: SubmitCommercialRequestRequest,
+    options?: SubmitCommercialRequestOptions,
+  ): Promise<SubmitCommercialRequestResponse>;
+  lookupCommercialRequestReceipt(
     request: SubmitCommercialRequestRequest,
     options?: SubmitCommercialRequestOptions,
   ): Promise<SubmitCommercialRequestResponse>;
@@ -415,6 +481,10 @@ export interface ElevantApiClient {
     query: HumanResourcesShiftsQuery,
     options?: GetHumanResourcesShiftsOptions,
   ): Promise<HumanResourcesShiftPage>;
+  getHumanResourcesScheduleWarnings(
+    query: HumanResourcesScheduleWarningsQuery,
+    options?: GetHumanResourcesScheduleWarningsOptions,
+  ): Promise<HumanResourcesScheduleWarningPageResponse>;
   getHumanResourcesAvailabilityRequests(
     query: HumanResourcesAvailabilityQuery,
     options?: GetHumanResourcesAvailabilityRequestsOptions,
@@ -602,6 +672,43 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetRampIncidentsOptions,
   ): Promise<GetRampIncidentsResponse>;
+  getOperationAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    options?: GetOperationAttendanceDraftOptions,
+  ): Promise<AttendanceDraftSnapshotResponse>;
+  saveOccAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    request: SaveAttendanceDraftRequest,
+    idempotencyKey: string,
+    options?: SaveAttendanceDraftOptions,
+  ): Promise<AttendanceDraftWriteResponse>;
+  saveRampAttendanceDraft(
+    operationId: string,
+    assignmentId: string,
+    request: SaveAttendanceDraftRequest,
+    idempotencyKey: string,
+    installationId: string,
+    options?: SaveAttendanceDraftOptions,
+  ): Promise<AttendanceDraftWriteResponse>;
+  getHumanResourcesAttendance(
+    query: GetHumanResourcesAttendanceParams,
+    options?: GetHumanResourcesAttendanceOptions,
+  ): Promise<HumanResourcesAttendancePageResponse>;
+  getHumanResourcesReport(kind: HumanResourcesReportKind,
+    query: HumanResourcesReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<HumanResourcesReportPage>;
+  exportHumanResourcesReport(kind: HumanResourcesReportKind,
+    query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  validateHumanResourcesAttendance(
+    assignmentId: string,
+    stationId: string,
+    request: ValidateAttendanceRequest,
+    idempotencyKey: string,
+    options?: ValidateHumanResourcesAttendanceOptions,
+  ): Promise<AttendanceValidationWriteResponse>;
   reportRampIncident(
     operationId: string,
     request: ReportRampIncidentRequest,
@@ -1617,6 +1724,141 @@ function isGetRampIncidentsResponse(
   return new Set(ids).size === ids.length;
 }
 
+function isAttendanceContribution(
+  value: unknown,
+): value is AttendanceDraftContributionResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "revision", "authorAccountId", "recordedAt",
+    "observedStartAt", "observedEndAt", "incidentNote",
+  ]) || !["revision", "authorAccountId", "recordedAt",
+    "observedStartAt", "observedEndAt", "incidentNote"]
+    .every(key => Object.hasOwn(value, key))) return false;
+  if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 1 ||
+    !isUuid(value.authorAccountId) || !isDateTimeOffset(value.recordedAt) ||
+    (value.observedStartAt !== null && !isDateTimeOffset(value.observedStartAt)) ||
+    (value.observedEndAt !== null && !isDateTimeOffset(value.observedEndAt)) ||
+    (value.incidentNote !== null &&
+      (typeof value.incidentNote !== "string" ||
+        value.incidentNote.trim() !== value.incidentNote ||
+        value.incidentNote.length < 1 || value.incidentNote.length > 2_000))) return false;
+  return (value.observedStartAt !== null || value.observedEndAt !== null ||
+      value.incidentNote !== null) &&
+    (value.observedStartAt === null || value.observedEndAt === null ||
+      Date.parse(value.observedEndAt as string) >= Date.parse(value.observedStartAt as string));
+}
+
+function isAttendanceSnapshot(
+  value: unknown, operationId: string, assignmentId: string,
+): value is AttendanceDraftSnapshotResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "assignmentId", "stationId", "occ", "rampAgent"]) &&
+    ["operationId", "assignmentId", "stationId", "occ", "rampAgent"]
+      .every(key => Object.hasOwn(value, key)) &&
+    isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isUuid(value.assignmentId) && value.assignmentId.toLowerCase() === assignmentId &&
+    isUuid(value.stationId) &&
+    (value.occ === null || isAttendanceContribution(value.occ)) &&
+    (value.rampAgent === null || isAttendanceContribution(value.rampAgent));
+}
+
+function isAttendanceWriteResult(
+  value: unknown, request: SaveAttendanceDraftRequest,
+): value is AttendanceDraftWriteResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["contribution", "replayed"]) &&
+    isAttendanceContribution(value.contribution) &&
+    value.contribution.revision === request.expectedRevision + 1 &&
+    (request.observedStartAt == null
+      ? value.contribution.observedStartAt === null
+      : value.contribution.observedStartAt !== null &&
+        Date.parse(value.contribution.observedStartAt as string) ===
+          Date.parse(request.observedStartAt)) &&
+    (request.observedEndAt == null
+      ? value.contribution.observedEndAt === null
+      : value.contribution.observedEndAt !== null &&
+        Date.parse(value.contribution.observedEndAt as string) ===
+          Date.parse(request.observedEndAt)) &&
+    value.contribution.incidentNote === (request.incidentNote?.trim() || null) &&
+    typeof value.replayed === "boolean";
+}
+
+function isAttendanceValidationDecision(
+  value: unknown, assignmentId: string,
+): value is AttendanceValidationDecisionResponse {
+  return isRecord(value) && hasOnlyKeys(value, [
+    "id", "assignmentId", "occRevision", "rampAgentRevision",
+    "startSource", "endSource", "startAt", "endAt", "reason",
+    "validatedByAccountId", "validatedAt",
+  ]) &&
+    isUuid(value.id) && value.assignmentId === assignmentId &&
+    isInt32(value.occRevision) && value.occRevision > 0 &&
+    isInt32(value.rampAgentRevision) && value.rampAgentRevision > 0 &&
+    ["Occ", "RampAgent"].includes(value.startSource as string) &&
+    ["Occ", "RampAgent"].includes(value.endSource as string) &&
+    isDateTimeOffset(value.startAt) && isDateTimeOffset(value.endAt) &&
+    Date.parse(value.endAt) >= Date.parse(value.startAt) &&
+    (value.reason == null || (typeof value.reason === "string" &&
+      value.reason.trim() === value.reason && value.reason.length > 0 &&
+      value.reason.length <= 1_000)) &&
+    isUuid(value.validatedByAccountId) && isDateTimeOffset(value.validatedAt);
+}
+
+function isHumanResourcesAttendanceRow(
+  value: unknown, stationId: string, from: string, to: string,
+): value is HumanResourcesAttendanceRowResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "operationId", "assignmentId", "stationId", "operationDate",
+    "operationCode", "agentName", "occ", "rampAgent",
+    "latestDecision", "isDecisionCurrent",
+  ]) || !isUuid(value.operationId) || !isUuid(value.assignmentId) ||
+    value.stationId !== stationId || !isDateOnly(value.operationDate) ||
+    value.operationDate < from || value.operationDate > to ||
+    !isNonEmptyString(value.operationCode) || !isNonEmptyString(value.agentName) ||
+    (value.occ !== null && !isAttendanceContribution(value.occ)) ||
+    (value.rampAgent !== null && !isAttendanceContribution(value.rampAgent)) ||
+    (value.latestDecision !== null &&
+      !isAttendanceValidationDecision(value.latestDecision, value.assignmentId)) ||
+    typeof value.isDecisionCurrent !== "boolean") return false;
+  if (!value.isDecisionCurrent) return true;
+  return isRecord(value.latestDecision) && isRecord(value.occ) &&
+    isRecord(value.rampAgent) &&
+    value.latestDecision.occRevision === value.occ.revision &&
+    value.latestDecision.rampAgentRevision === value.rampAgent.revision;
+}
+
+function isHumanResourcesAttendancePage(
+  value: unknown, query: GetHumanResourcesAttendanceParams,
+): value is HumanResourcesAttendancePageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "stationId", "from", "to", "page", "limit", "hasMore", "items",
+  ]) || value.stationId !== query.stationId || value.from !== query.from ||
+    value.to !== query.to || value.page !== (query.page ?? 1) ||
+    value.limit !== (query.limit ?? 20) ||
+    typeof value.hasMore !== "boolean" || !Array.isArray(value.items) ||
+    value.items.length > value.limit ||
+    (value.hasMore && value.items.length !== value.limit)) return false;
+  const ids = new Set<string>();
+  return value.items.every(item => {
+    if (!isHumanResourcesAttendanceRow(item, query.stationId,
+      query.from, query.to) || ids.has(item.assignmentId)) return false;
+    ids.add(item.assignmentId);
+    return true;
+  });
+}
+
+function isAttendanceValidationWriteResult(
+  value: unknown, assignmentId: string, request: ValidateAttendanceRequest,
+): value is AttendanceValidationWriteResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["decision", "replayed"]) &&
+    typeof value.replayed === "boolean" &&
+    isAttendanceValidationDecision(value.decision, assignmentId) &&
+    value.decision.occRevision === request.expectedOccRevision &&
+    value.decision.rampAgentRevision === request.expectedRampAgentRevision &&
+    value.decision.startSource === request.startSource &&
+    value.decision.endSource === request.endSource &&
+    value.decision.reason === (request.reason?.trim() || null);
+}
+
 function isRampIncidentReceiptResponse(
   value: unknown,
   operationId: string,
@@ -2034,6 +2276,32 @@ function isAirlineOperationDetailResponse(value: unknown): value is AirlinePorta
     isOptionalNullable(value.plannedEndAt, isDateTimeOffset);
 }
 
+function isAirlineApprovedOperationEvidenceResponse(
+  value: unknown,
+): value is AirlineApprovedOperationEvidenceResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["operationId", "available", "approvedAt", "actualStartAt", "actualEndAt",
+      "incidentCount", "services"]) ||
+    !isUuid(value.operationId) || typeof value.available !== "boolean" ||
+    !isInt32(value.incidentCount) || value.incidentCount < 0 ||
+    !Array.isArray(value.services) ||
+    !value.services.every(service => isRecord(service) && hasOnlyKeys(service,
+      ["id", "code", "name", "status", "contractedQuantity", "executedQuantity",
+        "billingUnit"]) &&
+      isUuid(service.id) && isNonEmptyString(service.code) &&
+      isNonEmptyString(service.name) &&
+      ["Completed", "NotPerformed", "Exception"].includes(String(service.status)) &&
+      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
+      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
+      isNonEmptyString(service.billingUnit))) return false;
+  if (value.available)
+    return isDateTimeOffset(value.approvedAt) &&
+      isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
+      isOptionalNullable(value.actualEndAt, isDateTimeOffset);
+  return (value.approvedAt == null && value.actualStartAt == null &&
+    value.actualEndAt == null && value.incidentCount === 0 && value.services.length === 0);
+}
+
 function isAirlineOperationPageResponse(value: unknown): value is AirlineOperationPageResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "operations"]) ||
       !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
@@ -2442,7 +2710,7 @@ function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): H
   if (!isRecord(query) || !hasOnlyKeys(query, ["from", "to", "page", "limit"]) ||
       !isDateOnly(query.from) || !isDateOnly(query.to) || query.from > query.to ||
       (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
-        86_400_000 > 6 ||
+        86_400_000 > 30 ||
       (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
       (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 100)))
     throw new TypeError("Human Resources shift range or paging is invalid.");
@@ -3135,8 +3403,9 @@ function validatedOptionalDeviceText(
   value: unknown,
   field: string,
   maximumLength: number,
-) {
-  if (value === undefined || value === null) return value;
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -3324,6 +3593,208 @@ function validatedIncidentReportRequest(
   };
 }
 
+function validatedAttendanceDraftRequest(
+  request: SaveAttendanceDraftRequest,
+): SaveAttendanceDraftRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, [
+    "expectedRevision", "observedStartAt", "observedEndAt", "incidentNote",
+  ]) || !Number.isSafeInteger(request.expectedRevision) ||
+    (request.expectedRevision as number) < 0) {
+    throw new TypeError("Attendance draft request is invalid.");
+  }
+  const start = request.observedStartAt ?? null;
+  const end = request.observedEndAt ?? null;
+  const note = request.incidentNote ?? null;
+  const normalizedNote = typeof note === "string" ? note.trim() : null;
+  if ((start !== null && !isDateTimeOffset(start)) ||
+    (end !== null && !isDateTimeOffset(end)) ||
+    (note !== null && (typeof note !== "string" ||
+      normalizedNote!.length > 2_000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(note))) ||
+    (start === null && end === null && !normalizedNote) ||
+    (start !== null && end !== null && Date.parse(end) < Date.parse(start))) {
+    throw new TypeError("Attendance draft request is invalid.");
+  }
+  return request;
+}
+
+function validatedHumanResourcesAttendanceQuery(
+  query: GetHumanResourcesAttendanceParams,
+): GetHumanResourcesAttendanceParams {
+  if (!isRecord(query) || !hasOnlyKeys(query, [
+    "stationId", "from", "to", "page", "limit",
+  ]) || !isUuid(query.stationId) || !isDateOnly(query.from) ||
+    !isDateOnly(query.to) || query.from > query.to ||
+    (Date.parse(`${query.to}T00:00:00Z`) -
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+    (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+    (query.limit !== undefined && (!isInt32(query.limit) ||
+      query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources attendance query is invalid.");
+  return query;
+}
+
+function validatedHumanResourcesReportQuery(
+  kind: HumanResourcesReportKind, query: HumanResourcesReportQuery,
+): HumanResourcesReportQuery {
+  if (!["expirations", "account-movements", "staff-distribution",
+    "qualification-coverage"].includes(kind) || !isRecord(query) ||
+      !hasOnlyKeys(query, ["stationId", "from", "to", "page", "limit",
+        "documentKind", "validity"]) ||
+    !isUuid(query.stationId) || !isDateOnly(query.from) ||
+    !isDateOnly(query.to) || query.from > query.to ||
+    (Date.parse(`${query.to}T00:00:00Z`) -
+      Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+    (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) ||
+        query.limit < 1 || query.limit > 100)) ||
+      (kind !== "expirations" &&
+        (query.documentKind !== undefined || query.validity !== undefined)) ||
+      (query.documentKind !== undefined &&
+        !["Qualification", "Permit"].includes(query.documentKind)) ||
+      (query.validity !== undefined &&
+        !["Current", "Expired"].includes(query.validity)))
+    throw new TypeError("Human Resources report query is invalid.");
+  return query;
+}
+
+function validatedHumanResourcesScheduleWarningsQuery(
+  query: HumanResourcesScheduleWarningsQuery,
+): HumanResourcesScheduleWarningsQuery {
+  if (!isRecord(query) || !hasOnlyKeys(query,
+      ["stationId", "from", "to", "page", "limit"]) ||
+      !isUuid(query.stationId) || !isDateOnly(query.from) ||
+      !isDateOnly(query.to) || query.from > query.to ||
+      (Date.parse(`${query.to}T00:00:00Z`) -
+        Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
+      (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
+      (query.limit !== undefined && (!isInt32(query.limit) ||
+        query.limit < 1 || query.limit > 100)))
+    throw new TypeError("Human Resources schedule warning query is invalid.");
+  return query;
+}
+
+function isHumanResourcesScheduleWarningPage(value: unknown,
+  query: HumanResourcesScheduleWarningsQuery,
+): value is HumanResourcesScheduleWarningPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "from", "to",
+      "page", "limit", "hasMore", "asOf", "ruleVersion", "ruleEffectiveOn",
+      "warnings"]) || value.stationId !== query.stationId ||
+      value.from !== query.from || value.to !== query.to ||
+      value.page !== (query.page ?? 1) ||
+      value.limit !== (query.limit ?? 20) ||
+      typeof value.hasMore !== "boolean" || !isDateTimeOffset(value.asOf) ||
+      !isNonEmptyString(value.ruleVersion) ||
+      !isDateOnly(value.ruleEffectiveOn) ||
+      !Array.isArray(value.warnings) || value.warnings.length > value.limit ||
+      (value.hasMore && value.warnings.length !== value.limit)) return false;
+  const keys = new Set<string>();
+  return value.warnings.every(warning => {
+    if (!isRecord(warning) || !hasOnlyKeys(warning, [
+      "anchorShiftId", "rampProfileId", "agentName", "employeeNumber",
+      "workDate", "kind", "evidence", "hasRestrictedEvidence",
+      "measuredMinutes", "thresholdMinutes", "ruleVersion",
+      "ruleEffectiveOn", "reason",
+    ]) || !isUuid(warning.anchorShiftId) ||
+      !isUuid(warning.rampProfileId) ||
+      !isNonEmptyString(warning.agentName) ||
+      !isNonEmptyString(warning.employeeNumber) ||
+      !isDateOnly(warning.workDate) || warning.workDate < query.from ||
+      warning.workDate > query.to ||
+      !["Overlap", "ShortRest", "SevenDayLoad", "Unevaluable"]
+        .includes(String(warning.kind)) ||
+      !Array.isArray(warning.evidence) ||
+      typeof warning.hasRestrictedEvidence !== "boolean" ||
+      (warning.measuredMinutes != null &&
+        (!isInt32(warning.measuredMinutes) || warning.measuredMinutes < 0)) ||
+      (warning.thresholdMinutes != null &&
+        (!isInt32(warning.thresholdMinutes) || warning.thresholdMinutes < 0)) ||
+      (warning.hasRestrictedEvidence && warning.measuredMinutes != null) ||
+      (warning.kind === "Unevaluable" &&
+        (warning.measuredMinutes != null || !isNonEmptyString(warning.reason))) ||
+      (warning.reason != null && !isNonEmptyString(warning.reason)) ||
+      warning.ruleVersion !== value.ruleVersion ||
+      warning.ruleEffectiveOn !== value.ruleEffectiveOn) return false;
+    const key = `${warning.anchorShiftId}:${warning.kind}`;
+    if (keys.has(key)) return false;
+    keys.add(key);
+    const evidenceIds = new Set<string>();
+    return warning.evidence.every(evidence => {
+      if (!isRecord(evidence) || !hasOnlyKeys(evidence,
+          ["shiftId", "stationId", "stationCode", "startsAt", "endsAt"]) ||
+        !isUuid(evidence.shiftId) || evidenceIds.has(evidence.shiftId) ||
+        !isUuid(evidence.stationId) || !isNonEmptyString(evidence.stationCode) ||
+        !isDateTimeOffset(evidence.startsAt) ||
+        !isDateTimeOffset(evidence.endsAt) ||
+        Date.parse(evidence.startsAt) >= Date.parse(evidence.endsAt)) return false;
+      evidenceIds.add(evidence.shiftId);
+      return true;
+    });
+  });
+}
+
+function isHumanResourcesReportPage(value: unknown, kind: HumanResourcesReportKind,
+  query: HumanResourcesReportQuery): value is HumanResourcesReportPage {
+    if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "from", "to",
+      "page", "limit", "hasMore", "asOf", "rows", "documentKind",
+      "validity"]) ||
+      value.stationId !== query.stationId || value.from !== query.from ||
+      value.to !== query.to || value.page !== (query.page ?? 1) ||
+      value.limit !== (query.limit ?? 20) ||
+      (value.documentKind ?? null) !== (query.documentKind ?? null) ||
+      (value.validity ?? null) !== (query.validity ?? null) ||
+    typeof value.hasMore !== "boolean" || !isDateTimeOffset(value.asOf) ||
+    !Array.isArray(value.rows) || value.rows.length > value.limit ||
+    (value.hasMore && value.rows.length !== value.limit)) return false;
+  return value.rows.every(row => {
+    if (!isRecord(row)) return false;
+    if (kind === "expirations") return hasOnlyKeys(row, ["id", "rampProfileId",
+      "agentName", "employeeNumber", "kind", "code", "expiresOn"]) &&
+      isUuid(row.id) && isUuid(row.rampProfileId) &&
+      isNonEmptyString(row.agentName) && isNonEmptyString(row.employeeNumber) &&
+      isNonEmptyString(row.kind) && isNonEmptyString(row.code) &&
+      isDateOnly(row.expiresOn);
+    if (kind === "account-movements") return hasOnlyKeys(row, ["id", "accountId",
+      "rampProfileId", "agentName", "employeeNumber", "kind", "occurredAt"]) &&
+      isUuid(row.id) && isUuid(row.accountId) && isUuid(row.rampProfileId) &&
+      isNonEmptyString(row.agentName) && isNonEmptyString(row.employeeNumber) &&
+      isNonEmptyString(row.kind) && isDateTimeOffset(row.occurredAt);
+    if (kind === "staff-distribution") return hasOnlyKeys(row, ["id",
+      "rampProfileId", "agentName", "employeeNumber", "terminalId",
+      "terminalCode", "positionCode", "workDate", "startsAtLocal",
+      "endsAtLocal"]) && isUuid(row.id) && isUuid(row.rampProfileId) &&
+      isUuid(row.terminalId) && isNonEmptyString(row.agentName) &&
+      isNonEmptyString(row.employeeNumber) && isNonEmptyString(row.terminalCode) &&
+      (row.positionCode === null || row.positionCode === undefined ||
+        typeof row.positionCode === "string") && isDateOnly(row.workDate) &&
+      typeof row.startsAtLocal === "string" && typeof row.endsAtLocal === "string";
+    return hasOnlyKeys(row, ["equipmentTypeId", "equipmentCode",
+      "equipmentName", "eligibleAgents", "qualifiedAgents"]) &&
+      isUuid(row.equipmentTypeId) && isNonEmptyString(row.equipmentCode) &&
+      isNonEmptyString(row.equipmentName) && isInt32(row.eligibleAgents) &&
+      row.eligibleAgents >= 0 && isInt32(row.qualifiedAgents) &&
+      row.qualifiedAgents >= 0 && row.qualifiedAgents <= row.eligibleAgents;
+  });
+}
+
+function validatedAttendanceValidationRequest(
+  request: ValidateAttendanceRequest,
+): ValidateAttendanceRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, [
+    "expectedOccRevision", "expectedRampAgentRevision",
+    "startSource", "endSource", "reason",
+  ]) || !isInt32(request.expectedOccRevision) ||
+    request.expectedOccRevision < 1 || !isInt32(request.expectedRampAgentRevision) ||
+    request.expectedRampAgentRevision < 1 ||
+    !["Occ", "RampAgent"].includes(request.startSource as string) ||
+    !["Occ", "RampAgent"].includes(request.endSource as string) ||
+    (request.reason != null && (typeof request.reason !== "string" ||
+      request.reason.length > 1_000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(request.reason))))
+    throw new TypeError("Attendance validation request is invalid.");
+  return request;
+}
+
 function validatedRampOperationSubmissionRequest(
   request: SubmitRampOperationRequest,
 ): SubmitRampOperationRequest {
@@ -3467,6 +3938,31 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: "application/pdf" });
   };
 
+  const executeReportDocument = async (path: string, format: "pdf" | "xlsx",
+    init: ElevantRequestInit = {}): Promise<Blob> => {
+    const response = await send(path, { ...init, method: "GET" }, true);
+    const mime = format === "pdf" ? "application/pdf" :
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== mime)
+      throw malformedResponse(response.status);
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength && Number(declaredLength) > 16_777_216)
+      throw malformedResponse(response.status);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await response.arrayBuffer();
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw malformedResponse(response.status);
+    }
+    const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
+    const signature = format === "pdf" ? [37, 80, 68, 70, 45] : [80, 75];
+    if (bytes.byteLength < 8 || bytes.byteLength > 16_777_216 ||
+      !signature.every((value, index) => header[index] === value))
+      throw malformedResponse(response.status);
+    return new Blob([bytes], { type: mime });
+  };
+
   const executeOccAssignment = async (
     turnaroundId: string,
     request: AssignOccOperationRequest,
@@ -3510,8 +4006,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("Change feed cursor is invalid.");
       if (!Number.isInteger(limit) || limit < 1 || limit > 100)
         throw new TypeError("Change feed limit must be an integer from 1 to 100.");
+      const { installationId, ...requestOptions } = options ?? {};
+      const headers = headersFrom(requestOptions.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      if (installationId !== undefined) {
+        headers.set("x-elevant-installation-id",
+          validatedUuid(installationId, "installationId"));
+      }
       const result = await execute(getGetAccountChangesUrl(parameters),
-        { ...options, method: "GET" }, true);
+        { ...requestOptions, method: "GET", headers }, true);
       if (!isAccountChangeListResponse(result.data, after, limit))
         throw malformedResponse(result.status);
       return result.data;
@@ -3608,6 +4111,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         getGetAirlineOperationUrl(operationId), { ...options, method: "GET" }, true,
       );
       if (!isAirlineOperationDetailResponse(result.data) || result.data.id !== operationId)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineApprovedOperationEvidence(
+      operationId: string, options?: GetAirlineApprovedOperationEvidenceOptions,
+    ) {
+      if (!isUuid(operationId)) throw new TypeError("Operation ID must be a UUID.");
+      const result = await execute(
+        getGetAirlineApprovedOperationEvidenceUrl(operationId),
+        { ...options, method: "GET" }, true,
+      );
+      if (!isAirlineApprovedOperationEvidenceResponse(result.data) ||
+          result.data.operationId !== operationId)
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -3728,6 +4244,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "POST", headers, body: JSON.stringify(body) });
       if (!isCommercialRequestReceipt(result.data) ||
         result.status !== (result.data.replayed ? 200 : 201))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async lookupCommercialRequestReceipt(
+      request: SubmitCommercialRequestRequest,
+      options?: SubmitCommercialRequestOptions,
+    ) {
+      const body = validatedCommercialRequest(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getLookupCommercialRequestReceiptUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) });
+      if (!isCommercialRequestReceipt(result.data) || result.status !== 200 ||
+          result.data.replayed !== true)
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -3864,6 +4394,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.from !== scope.from || result.data.to !== scope.to ||
           result.data.page !== (scope.page ?? 1) ||
           result.data.limit !== (scope.limit ?? 50))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesScheduleWarnings(
+      query: HumanResourcesScheduleWarningsQuery,
+      options?: GetHumanResourcesScheduleWarningsOptions,
+    ) {
+      const scope = validatedHumanResourcesScheduleWarningsQuery(query);
+      const result = await execute(getListHumanResourcesScheduleWarningsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesScheduleWarningPage(result.data, scope))
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -4459,6 +5000,131 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isGetRampIncidentsResponse(result.data, operation)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getOperationAttendanceDraft(
+      operationId: string,
+      assignmentId: string,
+      options?: GetOperationAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const { installationId, ...requestOptions } = options ?? {};
+      const headers = headersFrom(requestOptions.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      if (installationId !== undefined) {
+        headers.set("x-elevant-installation-id",
+          validatedUuid(installationId, "installationId"));
+      }
+      const result = await execute(
+        getGetOperationAttendanceDraftUrl(operation, assignment),
+        { ...requestOptions, method: "GET", headers }, true,
+      );
+      if (!isAttendanceSnapshot(result.data, operation, assignment)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async saveOccAttendanceDraft(
+      operationId: string, assignmentId: string,
+      request: SaveAttendanceDraftRequest, idempotencyKey: string,
+      options?: SaveAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const draft = validatedAttendanceDraftRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.delete("x-elevant-installation-id");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(
+        getSaveOccAttendanceDraftUrl(operation, assignment),
+        { ...options, method: "PUT", headers, body: JSON.stringify(draft) }, true,
+      );
+      if (!isAttendanceWriteResult(result.data, draft)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async saveRampAttendanceDraft(
+      operationId: string, assignmentId: string,
+      request: SaveAttendanceDraftRequest, idempotencyKey: string,
+      installationId: string, options?: SaveAttendanceDraftOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const draft = validatedAttendanceDraftRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const installation = validatedUuid(installationId, "installationId");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      headers.set("x-elevant-installation-id", installation);
+      const result = await execute(
+        getSaveRampAttendanceDraftUrl(operation, assignment),
+        { ...options, method: "PUT", headers, body: JSON.stringify(draft) }, true,
+      );
+      if (!isAttendanceWriteResult(result.data, draft)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getHumanResourcesAttendance(
+      query: GetHumanResourcesAttendanceParams,
+      options?: GetHumanResourcesAttendanceOptions,
+    ) {
+      const scope = validatedHumanResourcesAttendanceQuery(query);
+      const result = await execute(getGetHumanResourcesAttendanceUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesAttendancePage(result.data, scope))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesReport(kind: HumanResourcesReportKind,
+      query: HumanResourcesReportQuery, options?: GetHumanResourcesReportOptions,
+    ) {
+      const scope = validatedHumanResourcesReportQuery(kind, query);
+      const url = kind === "expirations" ? getListHumanResourcesExpirationsUrl(scope) :
+        kind === "account-movements" ? getListHumanResourcesAccountMovementsUrl(scope) :
+        kind === "staff-distribution" ? getListHumanResourcesStaffDistributionUrl(scope) :
+        getListHumanResourcesQualificationCoverageUrl(scope);
+      const result = await execute(url, { ...options, method: "GET" }, true);
+      if (!isHumanResourcesReportPage(result.data, kind, scope))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    exportHumanResourcesReport(kind: HumanResourcesReportKind,
+      query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
+      options?: GetHumanResourcesReportOptions,
+    ) {
+      const scope = validatedHumanResourcesReportQuery(kind, query);
+      if (scope.page !== undefined || scope.limit !== undefined ||
+        (format !== "pdf" && format !== "xlsx"))
+        throw new TypeError("Human Resources export query is invalid.");
+      return executeReportDocument(getExportHumanResourcesReportUrl(kind,
+          { stationId: scope.stationId, from: scope.from, to: scope.to, format,
+            ...(scope.documentKind && { documentKind: scope.documentKind }),
+            ...(scope.validity && { validity: scope.validity }) }),
+      format, options);
+    },
+    async validateHumanResourcesAttendance(
+      assignmentId: string, stationId: string,
+      request: ValidateAttendanceRequest, idempotencyKey: string,
+      options?: ValidateHumanResourcesAttendanceOptions,
+    ) {
+      const assignment = validatedUuid(assignmentId, "assignmentId");
+      const station = validatedUuid(stationId, "stationId");
+      const body = validatedAttendanceValidationRequest(request);
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(getValidateHumanResourcesAttendanceUrl(
+        assignment, { stationId: station }),
+      { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (!isAttendanceValidationWriteResult(result.data, assignment, body))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async reportRampIncident(

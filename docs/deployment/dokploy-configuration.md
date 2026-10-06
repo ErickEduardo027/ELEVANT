@@ -893,6 +893,28 @@ iniciar el deploy, el controlador restaura el último par imagen + Compose sano;
 si ese rollback falla, pausa solo el perfil afectado. Nunca ejecutar
 `docker compose down`, eliminar las redes o conectar las webs a SQL.
 
+### Cambio controlado del runtime AVIAM Web a Next.js
+
+La imagen nueva de `aviam-web` ejecuta Next.js standalone con Node 24 y UID
+`101`. Conserva el contrato externo `127.0.0.1:18081 -> 8080`, `/healthz`
+con cuerpo `ok` y los smokes `/` y `/dashboard`. El Compose revisado monta
+`/tmp` y `/app/frontend/private-web/.next/cache` como tmpfs, mantiene rootfs
+read-only y permite más memoria y procesos para SSR. El servidor genera la CSP
+con nonce por solicitud y responde rutas profundas sin fallback SPA de Nginx.
+
+Para pasar de la baseline Nginx ya instalada, el operador deshabilita únicamente
+`ELEVANT AVIAM Web CD - Poll`, espera que no haya ejecución activa y pausa el
+perfil `aviam-web`; Database, API y Public Web conservan sus schedules. Registra
+la baseline A, su imagen y Compose exactos y verifica `--status` y `--dry-run`
+sin mutar Dokploy. Después del merge y la certificación de B, compara el
+Compose del bundle con `frontend/private-web/compose.development.aviam-web.yml`
+y confirma la misma tupla API antes de ejecutar el drill B → A → B documentado
+arriba. El controlador aplica el Compose del bundle; no se hace un Deploy manual
+del Raw ni se habilita AutoDeploy. Tras el drill, el operador verifica rutas
+profundas, CSP, recursos `/_next/static/`, sesión interna y aislamiento de red,
+reanuda el perfil, exige un no-op manual y habilita el poll. Si falla un gate,
+mantiene el perfil pausado y el poll deshabilitado para conservar o restaurar A.
+
 ### Alcance de aceptación
 
 La entrega sigue siendo un preview técnico compartido. Sesión y las consultas

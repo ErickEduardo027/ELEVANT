@@ -5,6 +5,7 @@
 !frontend/private-web/package.json
 !frontend/private-web/package-lock.json
 !frontend/private-web/next.config.mjs
+!frontend/private-web/proxy.js
 !frontend/private-web/jsconfig.json
 !frontend/private-web/tsconfig.json
 !frontend/private-web/eslint.config.mjs
@@ -16,13 +17,11 @@
 !frontend/private-web/src/**
 !frontend/private-web/public/
 !frontend/private-web/public/**
-!frontend/private-web/nginx/
-!frontend/private-web/nginx/**
 !frontend/private-web/scripts/
 !frontend/private-web/scripts/validate-development-env.mjs
 !frontend/private-web/scripts/run-next.mjs
-!frontend/private-web/scripts/finalize-static-export.mjs
 !frontend/private-web/scripts/verify-maplibre-worker.mjs
+!frontend/private-web/scripts/healthcheck.mjs
 
 !packages/
 !packages/api-client/
@@ -31,3 +30,9 @@
 !packages/api-client/src/**
 !packages/api-client/generated/
 !packages/api-client/generated/**
+
+# The package directory is copied after install; keep local build and test state out.
+frontend/private-web/node_modules
+frontend/private-web/.next
+frontend/private-web/.playwright-mcp
+frontend/private-web/tsconfig.tsbuildinfo

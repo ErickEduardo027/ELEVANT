@@ -28,6 +28,24 @@ que vuelven a consultar los endpoints REST. La prueba de bundle Android pasó,
 pero falta verificar esta conducta en el Pixel Tablet emulado y contra el VPS.
 No hay entrega push con la app cerrada ni cliente SignalR nativo en esta fase.
 
+El observador envía la instalación local en el encabezado del feed. Para las
+pistas de asistencia compartida, la API exige el vínculo vigente de esa
+instalación: revocar una tablet suprime sus pistas aunque otra tablet de la
+misma cuenta continúe activa. En esta rama, el detalle de la operación asignada
+muestra una tarjeta de asistencia observada: inicio, fin y nota manuales del
+agente y aporte OCC de solo lectura. Consulta el snapshot autorizado al entrar,
+volver a primer plano, recibir `attendance_draft`, actualizar a mano y cada
+25 segundos en primer plano. No usa la pista como dato ni pretende fichaje
+biométrico. Esta captura sigue pendiente de aceptación en el emulador contra
+Development después de su promoción.
+
+Un envío de respuesta incierta conserva en AsyncStorage el cuerpo y UUID
+originales bajo la sesión, cuenta, operación y asignación actuales; no lo
+reenvía automáticamente al reconectar. Una revisión `409` conserva el intento
+y muestra la versión canónica para que el agente decida entre descartarlo o
+usar la revisión actual antes de guardar otra vez. Al cerrar o revocar la sesión
+se eliminan esos comandos. Ni la nota ni el bearer se registran en logs.
+
 El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
 OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados
 Metro para Android. Es CI de fuente: no firma, publica ni distribuye una APK.

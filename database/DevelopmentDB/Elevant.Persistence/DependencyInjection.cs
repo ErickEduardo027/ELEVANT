@@ -65,14 +65,17 @@ public static class DependencyInjection
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IGovernanceStore, EfGovernanceStore>();
         services.AddScoped<IRampProfileStore, EfRampProfileStore>();
+        services.AddScoped<IRampMobileAccessRequestStore, EfRampMobileAccessRequestStore>();
         services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();
         services.AddScoped<IHumanResourcesQualificationWriteStore, EfHumanResourcesQualificationWriteStore>();
         services.AddScoped<IHumanResourcesPermitReadStore, EfHumanResourcesPermitReadStore>();
         services.AddScoped<IHumanResourcesPermitWriteStore, EfHumanResourcesPermitWriteStore>();
         services.AddScoped<IHumanResourcesShiftReadStore, EfHumanResourcesShiftReadStore>();
+        services.AddScoped<IHumanResourcesScheduleWarningStore, EfHumanResourcesScheduleWarningStore>();
         services.AddScoped<IHumanResourcesShiftWriteStore, EfHumanResourcesShiftWriteStore>();
         services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
         services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
+        services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
         services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
@@ -81,6 +84,7 @@ public static class DependencyInjection
         services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
         services.AddScoped<CommercialPermissionGuard>();
         services.AddScoped<ICommercialCatalogManagementStore, EfCommercialCatalogManagementStore>();
+        services.AddScoped<IServiceClosureStore, EfServiceClosureStore>();
         services.AddScoped<ICommercialAirlineManagementStore, EfCommercialAirlineManagementStore>();
         services.AddScoped<ICommercialMediaStore>(provider => new EfCommercialMediaStore(
             provider.GetRequiredService<ElevantDbContext>(),
@@ -120,6 +124,8 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
         services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
+        services.AddScoped<IAttendanceDraftStore, EfAttendanceDraftStore>();
+        services.AddScoped<IAttendanceValidationStore, EfAttendanceValidationStore>();
         services.AddScoped<IRampOperationSubmissionStore, EfRampOperationSubmissionStore>();
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();

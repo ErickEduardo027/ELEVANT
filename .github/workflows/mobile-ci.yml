@@ -1,6 +1,7 @@
 name: Mobile Agent CI
 
 on:
+  workflow_call:
   push:
     branches:
       - main
@@ -9,15 +10,6 @@ on:
       - "frontend/mobile-agent/**"
       - "packages/api-client/**"
       - ".github/workflows/mobile-ci.yml"
-  pull_request:
-    branches:
-      - main
-      - Development
-    paths:
-      - "frontend/mobile-agent/**"
-      - "packages/api-client/**"
-      - ".github/workflows/mobile-ci.yml"
-
 permissions:
   contents: read
 

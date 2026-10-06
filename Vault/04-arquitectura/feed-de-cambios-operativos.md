@@ -29,7 +29,7 @@ sources:
   - frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx
   - frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx
   - frontend/private-web/README.md
-  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/src/config/securityHeaders.mjs
   - frontend/private-web/Dockerfile
   - frontend/mobile-agent/src/services/mobile-change-observer.ts
   - frontend/mobile-agent/src/services/mobile-change-feed.ts

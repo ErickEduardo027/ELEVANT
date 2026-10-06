@@ -26,22 +26,35 @@ export function AirlineDocumentsPage() {
   const [error, setError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [selection, setSelection] = useState<{ preinvoiceId: string;
+    item: AirlinePreinvoicePageResponse["preinvoices"][number];
     status: "loading" | "ready" | "error" | "missing";
     invoice: NonFiscalInvoiceResponse | null;
     payment: NonFiscalPaymentResponse | null } | null>(null);
   const [download, setDownload] = useState<"idle" | "invoice" | "receipt" | "error">("idle");
   const generation = useRef(0);
   const selectionGeneration = useRef(0);
+  const selectedItem = useRef<AirlinePreinvoicePageResponse["preinvoices"][number] | null>(null);
+  const lastRefresh = useRef({ financeRevision, retryKey });
 
   useEffect(() => {
     const request = ++generation.current;
-    selectionGeneration.current += 1;
+    const keepSelection = selectedItem.current !== null;
+    if (!keepSelection) selectionGeneration.current += 1;
     queueMicrotask(() => { if (request === generation.current) {
-      setPages([]); setSelection(null); setDownload("idle"); setLoading(true);
+      if (!keepSelection) { setPages([]); setSelection(null); }
+      setDownload("idle"); setLoading(true);
     } });
     void getPreinvoices(1).then(page => {
-      if (request === generation.current) { setPages([page]); setError(false); }
-    }).catch(() => { if (request === generation.current) setError(true); })
+      if (request === generation.current) {
+        const currentItem = page.preinvoices.find(item => item.id === selectedItem.current?.id);
+        if (currentItem) selectedItem.current = currentItem;
+        setPages([page]); setError(false);
+      }
+    }).catch(() => { if (request === generation.current) {
+      selectedItem.current = null;
+      selectionGeneration.current += 1;
+      setPages([]); setSelection(null); setError(true);
+    } })
       .finally(() => { if (request === generation.current) setLoading(false); });
     return () => { generation.current += 1; selectionGeneration.current += 1; };
   }, [getPreinvoices, financeRevision, retryKey]);
@@ -57,21 +70,31 @@ export function AirlineDocumentsPage() {
     finally { if (request === generation.current) setLoading(false); }
   }, [getPreinvoices, loading, pages]);
 
-  const open = useCallback(async (preinvoiceId: string) => {
+  const open = useCallback(async (item: AirlinePreinvoicePageResponse["preinvoices"][number]) => {
     const request = ++selectionGeneration.current;
-    setSelection({ preinvoiceId, status: "loading", invoice: null, payment: null });
+    selectedItem.current = item;
+    const preinvoiceId = item.id;
+    setSelection({ preinvoiceId, item, status: "loading", invoice: null, payment: null });
     setDownload("idle");
     try {
       const invoice = await getPreinvoiceInvoice(preinvoiceId);
       const payment = await getInvoicePayment(invoice.id);
       if (request === selectionGeneration.current)
-        setSelection({ preinvoiceId, status: "ready", invoice, payment: payment.payment ?? null });
+        setSelection({ preinvoiceId, item, status: "ready", invoice,
+          payment: payment.payment ?? null });
     } catch (cause) {
       if (request === selectionGeneration.current)
-        setSelection({ preinvoiceId, status: cause instanceof ElevantApiError && cause.status === 404
-          ? "missing" : "error", invoice: null, payment: null });
+        setSelection({ preinvoiceId, item, status: cause instanceof ElevantApiError &&
+          cause.status === 404 ? "missing" : "error", invoice: null, payment: null });
     }
   }, [getPreinvoiceInvoice, getInvoicePayment]);
+
+  useEffect(() => {
+    if (lastRefresh.current.financeRevision === financeRevision &&
+        lastRefresh.current.retryKey === retryKey) return;
+    lastRefresh.current = { financeRevision, retryKey };
+    if (selectedItem.current) void open(selectedItem.current);
+  }, [financeRevision, retryKey, open]);
 
   const downloadPdf = useCallback(async (kind: "invoice" | "receipt") => {
     if (!selection || selection.status !== "ready" || !selection.invoice ||
@@ -92,8 +115,15 @@ export function AirlineDocumentsPage() {
     }
   }, [selection, download, getInvoiceDocument, getPaymentReceipt]);
 
-  const invoiced = pages.flatMap(page => page.preinvoices)
+  const listedInvoiced = pages.flatMap(page => page.preinvoices)
     .filter(item => item.status === "Invoiced");
+  const selectionOffPage = selection &&
+    !listedInvoiced.some(item => item.id === selection.preinvoiceId);
+  const selectedFromAnotherPage = selection?.status === "ready" && selection.invoice &&
+    !listedInvoiced.some(item => item.id === selection.preinvoiceId)
+    ? selection.item : null;
+  const invoiced = selectedFromAnotherPage
+    ? [...listedInvoiced, selectedFromAnotherPage] : listedInvoiced;
   return <div className={styles.page}>
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Repositorio autorizado</span>
@@ -105,14 +135,22 @@ export function AirlineDocumentsPage() {
       <button className={styles.loadMore} type="button" onClick={() => {
         setError(false); setRetryKey(current => current + 1);
       }}>Reintentar</button></div>}
-    {!loading && pages.length > 0 && invoiced.length === 0 &&
+    {selectionOffPage && selection.status === "loading" &&
+      <p role="status">Revalidando el documento seleccionado.</p>}
+    {selectionOffPage && selection.status === "missing" &&
+      <p role="alert">La factura seleccionada ya no está disponible para esta cuenta.</p>}
+    {selectionOffPage && selection.status === "error" &&
+      <p role="alert">No se pudieron revalidar los documentos seleccionados. Inténtalo de nuevo.</p>}
+    {!loading && pages.length > 0 && invoiced.length === 0 && !pages.at(-1)?.hasMore &&
       <p className={styles.empty}>No hay facturas emitidas en las páginas cargadas.</p>}
     {invoiced.map(item => <section className={styles.panel} key={item.id}
       aria-label={`Documentos de prefactura ${item.id}`}>
+      {selectedFromAnotherPage?.id === item.id &&
+        <span className={styles.kicker}>Documento seleccionado de otra página</span>}
       <span className={styles.kicker}>{item.stationCode} · {item.from} — {item.to}</span>
       <h2>Prefactura facturada</h2>
       <p className={styles.note}>Total {item.currencyCode} {item.total.toFixed(2)}</p>
-      <button className={styles.loadMore} type="button" onClick={() => void open(item.id)}>
+      <button className={styles.loadMore} type="button" onClick={() => void open(item)}>
         Ver documentos
       </button>
       {selection?.preinvoiceId === item.id && selection.status === "loading" &&

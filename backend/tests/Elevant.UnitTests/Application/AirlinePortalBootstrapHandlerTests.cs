@@ -137,6 +137,10 @@ public sealed class AirlinePortalBootstrapHandlerTests
             Guid organizationId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlinePortalOperationData?>(null);
 
+        public Task<AirlineApprovedOperationEvidenceData?> GetApprovedOperationEvidenceAsync(
+            Guid organizationId, Guid operationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AirlineApprovedOperationEvidenceData?>(null);
+
         public Task<AirlineOperationalRequestPageData?> GetRequestsAsync(
             Guid organizationId, int page, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<AirlineOperationalRequestPageData?>(null);

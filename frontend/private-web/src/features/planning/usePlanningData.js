@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getPlanningSnapshot } from '../../services/planningService';
 import { mapOccPlanningSnapshot } from './planningMappers';
 import { abortForEffectCleanup } from '../../lib/abort';
@@ -23,15 +23,25 @@ function safeViewError(message, error) {
 
 export function usePlanningData({ stationId, date, refreshToken = 0, enabled = true } = {}) {
   const [state, setState] = useState(() => (enabled ? INITIAL_STATE : IDLE_STATE));
+  const previousScope = useRef(null);
 
   useEffect(() => {
     if (!enabled) {
+      previousScope.current = null;
       setState(IDLE_STATE);
       return undefined;
     }
 
     const controller = new AbortController();
-    setState(INITIAL_STATE);
+    const sameScope = previousScope.current !== null &&
+      previousScope.current.stationId === stationId &&
+      previousScope.current.date === date;
+    previousScope.current = { stationId, date };
+    setState(previous => ({
+      status: 'loading',
+      data: sameScope ? previous.data : null,
+      error: null,
+    }));
 
     const request = {
       ...(stationId === undefined ? {} : { stationId }),

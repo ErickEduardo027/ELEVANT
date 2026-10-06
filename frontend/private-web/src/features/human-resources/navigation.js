@@ -23,6 +23,7 @@ export const HUMAN_RESOURCES_MODULE_IDS = {
   CERTIFICATIONS: 'certifications',
   PERMITS: 'permits',
   SCHEDULES: 'schedules',
+  ATTENDANCE: 'attendance',
   REPORTS: 'reports',
   AUDIT: 'audit',
   NOTIFICATIONS: 'notifications',
@@ -72,6 +73,13 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     icon: CalendarIcon,
     description: 'Turnos, disponibilidad y cobertura de personal.',
     badge: SCHEDULES_STATUS_MOCK.coverageAlerts > 0 ? { count: SCHEDULES_STATUS_MOCK.coverageAlerts, tone: 'warning' } : null,
+  },
+  {
+    id: HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE,
+    label: 'Revisión de asistencia',
+    path: `${HUMAN_RESOURCES_BASE_PATH}/attendance`,
+    icon: ChecklistIcon,
+    description: 'Contraste de horas observadas por OCC y agentes de rampa.',
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.REPORTS,

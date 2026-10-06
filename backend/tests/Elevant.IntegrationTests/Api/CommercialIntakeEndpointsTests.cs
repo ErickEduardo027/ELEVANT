@@ -43,9 +43,46 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
         Assert.Equal("REQ-2026-0001", json.RootElement.GetProperty("reference").GetString());
     }
 
+    [Fact]
+    public async Task ReceiptLookupIsReadOnlyAndReturnsNotFoundWithoutOriginalSubmission()
+    {
+        var stub = new IntakeStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ICommercialIntakeStore>();
+                services.AddSingleton<ICommercialIntakeStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        var payload = new { requestId = Guid.NewGuid(), airlineProfileId = Guid.NewGuid(),
+            serviceIds = new[] { Guid.NewGuid() }, representativeName = "Ana LÃ³pez",
+            representativeTitle = "Representante legal", representativeEmail = "ana@example.test",
+            representativePhone = "+1 809 555 0100", authorityDeclared = true };
+
+        using var missing = await client.PostAsJsonAsync(
+            "/api/v1/public/commercial-requests/receipt", payload,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Null(stub.Written);
+        Assert.Equal(payload.requestId, stub.LookedUp?.RequestId);
+
+        stub.Reference = "REQ-2026-0001";
+        using var found = await client.PostAsJsonAsync(
+            "/api/v1/public/commercial-requests/receipt", payload,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, found.StatusCode);
+        using var json = JsonDocument.Parse(await found.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.True(json.RootElement.GetProperty("replayed").GetBoolean());
+        Assert.Equal(stub.Reference, json.RootElement.GetProperty("reference").GetString());
+        Assert.Null(stub.Written);
+    }
+
     private sealed class IntakeStub : ICommercialIntakeStore
     {
         public SubmitCommercialRequestCommand? Written { get; private set; }
+        public SubmitCommercialRequestCommand? LookedUp { get; private set; }
+        public string? Reference { get; set; }
 
         public Task<CommercialSubmissionResult> SubmitAsync(
             SubmitCommercialRequestCommand command,
@@ -53,6 +90,13 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
         {
             Written = command;
             return Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0001", false));
+        }
+
+        public Task<string?> LookupReceiptAsync(SubmitCommercialRequestCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            LookedUp = command;
+            return Task.FromResult(Reference);
         }
     }
 }

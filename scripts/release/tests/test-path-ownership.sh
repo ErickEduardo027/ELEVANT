@@ -29,14 +29,12 @@ assert_false() {
 }
 
 for path in \
-  .github/workflows/backend-ci.yml \
   .dockerignore \
   Directory.Build.props \
   Directory.Packages.props \
   NuGet.config \
   dotnet-tools.json \
   global.json \
-  scripts/release/path-ownership.sh \
   backend/Dockerfile \
   backend/compose.development.api.yml \
   backend/Elevant.sln \
@@ -46,13 +44,15 @@ for path in \
   backend/Elevant.Domain/Features/Nested/File.cs \
   backend/Elevant.Infrastructure/Features/Nested/File.cs \
   backend/scripts/deployment/nested/file.sh \
-  ops/dokploy/web-cd/openapi-tool.mjs \
   packages/api-client/openapi/elevant-v1.json \
   database/DevelopmentDB/Elevant.Persistence/Nested/File.cs; do
   assert_true elevant_is_api_build_input_path "$path"
 done
 
 for path in \
+  .github/workflows/backend-ci.yml \
+  scripts/release/path-ownership.sh \
+  ops/dokploy/web-cd/openapi-tool.mjs \
   backend/Elevant.Api.Tests/Test.cs \
   database/DevelopmentDB/Elevant.DatabaseTool/change.cs \
   database/ProductionDB/.gitkeep \
@@ -65,7 +65,27 @@ done
 
 assert_true elevant_is_api_publication_superseding_path \
   database/DevelopmentDB/Elevant.DatabaseTool/change.cs
+assert_false elevant_is_api_publication_superseding_path .github/workflows/backend-ci.yml
 assert_false elevant_is_api_publication_superseding_path database/ProductionDB/.gitkeep
+
+assert_true elevant_is_database_release_input_path backend/Elevant.Application/Feature.cs
+assert_false elevant_is_api_build_input_path backend/scripts/deployment/guard-api-publication.sh
+assert_true elevant_is_database_release_input_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_build_input_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_publication_superseding_path backend/New.Runtime/Thing.cs
+assert_true elevant_is_api_build_input_path database/DevelopmentDB/New.Runtime/Thing.cs
+assert_false elevant_is_api_build_input_path backend/New.Runtime/README.md
+assert_true elevant_is_database_release_input_path database/DevelopmentDB/Elevant.Persistence/Migrations/New.cs
+assert_false elevant_is_database_release_input_path database/DevelopmentDB/tests/scripts/test_manifest.py
+assert_false elevant_is_database_release_input_path .github/workflows/backend-ci.yml
+assert_true elevant_is_api_release_input_path backend/Elevant.Api/Features/Flight.cs
+assert_false elevant_is_api_release_input_path .github/workflows/backend-ci.yml
+assert_true elevant_is_web_release_input_path aviam-web frontend/private-web/src/App.jsx
+assert_false elevant_is_web_release_input_path aviam-web frontend/private-web/tests/App.test.jsx
+assert_false elevant_is_web_release_input_path aviam-web frontend/scripts/deployment/guard-web-publication.sh
+assert_false elevant_is_web_release_input_path public-web frontend/scripts/deployment/resolve-api-release.sh
+assert_false elevant_is_web_release_input_path public-web frontend/private-web/src/App.jsx
+assert_true elevant_is_web_release_input_path public-web packages/api-client/src/index.ts
 
 assert_true elevant_is_web_shared_input_path packages/api-client/src/index.ts
 assert_true elevant_is_web_shared_input_path ops/dokploy/web-cd/openapi-tool.mjs

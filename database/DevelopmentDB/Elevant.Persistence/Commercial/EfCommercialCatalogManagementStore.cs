@@ -48,6 +48,12 @@ internal sealed class EfCommercialCatalogManagementStore(
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Conflict);
             if (!string.Equals(service.Code, input.Code.Trim(), StringComparison.OrdinalIgnoreCase))
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
+            if (!service.IsPublic && input.IsPublic &&
+                await context.ServiceClosureRequests.AnyAsync(item =>
+                    item.ServiceDefinitionId == service.Id &&
+                    item.Status == Elevant.Domain.Entities.Commercial.ServiceClosureStatus.Approved &&
+                    item.ReopenedAt == null, cancellationToken))
+                return CatalogMutationResult.Failed(CatalogMutationFailure.Conflict);
         }
         if (!await ValidAssetAsync(input.ImageUrl, "service-image", service.ImageUrl, cancellationToken) ||
             !await ValidAssetAsync(input.VideoUrl, "service-video", service.VideoUrl, cancellationToken))
@@ -130,7 +136,9 @@ internal sealed class EfCommercialCatalogManagementStore(
     {
         var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
             "commercial.catalog.read", cancellationToken);
-        foreach (var recipient in recipients)
+        var closureRecipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
+            "commercial.service_closures.read", cancellationToken);
+        foreach (var recipient in recipients.Concat(closureRecipients).Distinct())
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "commercial_catalog", serviceId, DateTimeOffset.UtcNow);
     }

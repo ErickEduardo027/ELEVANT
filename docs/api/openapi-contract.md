@@ -23,6 +23,39 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
+La lectura `GET /api/v1/human-resources/schedule-warnings` publica una página
+tipada de avisos preliminares para la estación, rango local y página
+solicitados. El contrato exige `stationId`, `from` y `to` (hasta 30 fechas
+inclusivas), permite `page` y `limit`, y responde con `asOf`, versión/fecha de
+regla, clase, evidencia visible y `hasRestrictedEvidence`. Los minutos
+medidos son nulos cuando una estación no autorizada influye o no puede
+evaluarse el horario. `401` es falta de autenticación; `403`, rol o membresía
+incompatible; `404`, estación fuera de alcance; `400`, parámetros inválidos.
+Se aplica `Cache-Control: no-store`. El cliente generado valida el cuerpo y
+no reemplaza la comprobación de permisos viva de la API.
+
+En esta rama local, las cuatro lecturas de reportes de Gestión Humana usan
+`GET /api/v1/human-resources/reports/{kind}` con rutas concretas para
+`expirations`, `account-movements`, `staff-distribution` y
+`qualification-coverage`. Cada página publica `stationId`, `from`, `to`,
+`page`, `limit`, `hasMore`, `asOf` y filas tipadas. Vigencias admite
+`documentKind=Qualification|Permit` y `validity=Current|Expired`, devueltos
+como filtros efectivos; la misma selección se aplica a la exportación.
+`GET .../{kind}/export`
+declara respuesta binaria PDF u OpenXML según `format`; el cliente generado
+comprueba firma y tipo antes de ofrecer la descarga. El servidor aplica
+autorización viva por rol y estación, 400/401/403/404/422 y `no-store`;
+OpenAPI no convierte por sí solo estas rutas en una promoción al VPS.
+
+La clausura comercial usa `GET/POST /api/v1/service-closures`,
+`POST /api/v1/service-closures/{id}/decision` y
+`POST /api/v1/service-closures/services/{id}/reopen`. Las respuestas exponen
+UUID y versiones opacas de expediente/servicio, nunca claves SQL. Cada comando
+revalida membresía interna y permiso; `400` indica entrada inválida, `403`
+permiso ausente, `404` recurso inexistente y `409` conflicto de versión o
+estado. El catálogo público conserva su contrato y omite servicios aprobados
+para clausura. Esta incorporación pertenece a la rama local hasta su merge.
+
 Además de creación y consulta de sesión, el contrato publica tres operaciones
 de negocio autenticadas para OCC:
 

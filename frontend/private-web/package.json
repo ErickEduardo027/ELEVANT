@@ -6,13 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "node ./scripts/run-next.mjs dev",
-    "start": "node ./scripts/serve-export.mjs",
+    "start": "node ./scripts/run-next.mjs start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "validate:development-env": "node ./scripts/validate-development-env.mjs",
     "test:delivery": "node --test ./scripts/test-development-delivery.mjs",
-    "build": "npm run validate:development-env && node ./scripts/run-next.mjs build && node ./scripts/finalize-static-export.mjs && node ./scripts/verify-maplibre-worker.mjs",
-    "preview": "node ./scripts/serve-export.mjs",
+    "build": "npm run validate:development-env && node ./scripts/run-next.mjs build && node ./scripts/verify-maplibre-worker.mjs",
+    "preview": "node ./scripts/run-next.mjs start",
     "test": "vitest run --configLoader runner --config vitest.config.mjs"
   },
   "dependencies": {

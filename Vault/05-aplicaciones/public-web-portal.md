@@ -21,6 +21,7 @@ sources:
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
   - frontend/public-web/src/components/portal/AirlineFinancePage.tsx
+  - frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx
   - frontend/public-web/src/components/portal/AirlineReportsPage.tsx
   - frontend/public-web/src/components/portal/AirlineContractPage.tsx
   - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
@@ -30,6 +31,7 @@ sources:
   - frontend/public-web/tests/e2e/auth.spec.ts
   - frontend/public-web/tests/e2e/portal.spec.ts
   - frontend/public-web/tests/unit/real-airline-contracts.test.tsx
+  - frontend/public-web/tests/unit/airline-portal-page.test.tsx
   - backend/Elevant.Api/Controllers/AirlinePortalController.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.cs
@@ -46,9 +48,10 @@ tags:
 # Public Web y portal de aerolíneas
 
 > El commit de verificación del frontmatter corresponde a la base anterior.
-> Los cambios de historial y detalle descritos como «esta rama de integración»
-> tienen pruebas locales, pero requieren nueva verificación integral, CI y
-> promoción antes de convertirse en estado remoto verificado.
+> El historial, Finanzas y Documentos ya tienen código en la release #118;
+> el snapshot de evidencia aprobada descrito más abajo pertenece a una rama
+> posterior con pruebas locales. Ni esas pruebas ni esta nota demuestran su
+> promoción al VPS o la aceptación del ciclo completo allí.
 > La descarga financiera descrita abajo pertenece a otro tramo local posterior;
 > tampoco se ha verificado en CI ni en el VPS.
 
@@ -61,7 +64,7 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Identidad | `POST /api/v1/auth/session` emite la sesión; `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
 | Contraseña temporal | El código permitido `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
-| Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. En esta rama de integración, Vuelos consulta además `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap; servicios y evidencias aún faltan. Este cambio aún no está desplegado. |
+| Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. Vuelos consulta `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap. Esta rama posterior añade una lectura de servicios y tiempos de la entrega aprobada por OCC, sin notas internas ni identidades de agentes; aún no está promocionada. |
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
 | Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted`, `Invoiced` o `Voided`) paginadas y filtradas por aerolínea en SQL. Puede releer por ID las líneas y montos snapshot de una prefactura propia; borradores y otros tenants no se exponen. Tras confirmación explícita puede aceptar una prefactura `Submitted` propia con un comando auditado e idempotente. Esta rama añade registro y consulta de disputas de líneas y de la resolución motivada por Finanzas. Una prefactura anulada queda visible solo como historial. Una prefactura `Invoiced` consulta su factura no fiscal congelada y, por otra ruta tenant-scoped, el estado persistido de un pago manual completo de prueba. Un aviso `airline_preinvoices` invalida la consulta; el sondeo de 25 segundos respalda la reconexión. No hay verificación bancaria ni documento fiscal; en el tramo local posterior, Documentos descarga un PDF no fiscal de factura y, si hay pago, de recibo. |
@@ -89,7 +92,48 @@ flowchart LR
     B --> P[Reportes acotados de operaciones y prefacturas propias]
 ```
 
-Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX prototípica; las rutas activas del portal no montan ese repositorio mock ni `PortalDemoPreview`. Inicio muestra la ventana actual del bootstrap; Vuelos carga páginas del historial propio desde SQL, incluso después de vencer un contrato que cubría la operación en su fecha, con estado vacío/error explícito. El detalle se autoriza por tenant y operación exacta, pero todavía no incluye servicios ni evidencia. Solicitudes carga la entidad operativa propia; un seed determinista de Development la vincula a `DEV-TAT-0002`. Finanzas muestra únicamente prefacturas publicadas propias y un vacío real si todavía no existen; al abrir una, relee las líneas inmutables con autorización por tenant. La creación de borradores es interna y no los hace visibles a la aerolínea hasta un envío auditado de Finanzas. El feed transporta solo una señal para releer por HTTP, nunca importes ni líneas. En este tramo local, Documentos relee factura y pago propios antes de ofrecer PDF privado; Reportes relee las primeras páginas de operaciones y prefacturas tras cambios, oculta instantáneamente la revisión anterior y comunica el límite de cobertura. Contratos consulta versiones publicadas y borradores por rutas autorizadas; los comentarios de borrador no activan unilateralmente el contrato. Otras evidencias operativas y escrituras de solicitudes siguen pendientes.
+Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX
+prototípica; las rutas activas no montan ese repositorio mock ni
+`PortalDemoPreview`. La rama de integración retira además el proveedor de
+sesión mock del layout activo; `AirlineSessionProvider` queda como único
+contexto de acceso. El login representa la verificación como pendiente antes
+de autenticar, sin una ruta inventada ni un estado autenticado ficticio. Esto
+es evidencia de código y pruebas locales, no de promoción al VPS. Fuentes:
+[layout](../../frontend/public-web/src/app/layout.tsx),
+[login](../../frontend/public-web/src/components/auth/AuthExperience.tsx) y
+[prueba](../../frontend/public-web/tests/unit/real-airline-login.test.tsx).
+Inicio muestra la ventana actual del bootstrap; Vuelos
+carga el historial propio desde SQL, incluso después de vencer un contrato
+que cubría la operación en su fecha, con vacío/error explícito. El detalle
+se autoriza por tenant y operación exacta. La rama posterior consulta
+`GET /api/v1/airline/portal/operations/{operationId}/approved-evidence`:
+antes de aprobar muestra un vacío real; después muestra servicios y conteo
+de incidencias congelados en la entrega aprobada, además de los tiempos
+reales de la operación. El backend lee el snapshot de revisión para servicios
+e incidencias, no las filas actuales que una corrección podría modificar.
+No envía descripciones de incidentes, notas internas ni identidades de
+agentes. Solicitudes carga la entidad operativa propia; un seed determinista
+de Development la vincula a `DEV-TAT-0002`. Finanzas muestra prefacturas
+publicadas propias y un vacío real si aún no existen; relee sus líneas
+inmutables con autorización por tenant. Los borradores internos no se hacen
+visibles hasta un envío auditado. El feed solo indica releer por HTTP, sin
+importes ni líneas. Documentos relee facturas y pagos propios antes de
+ofrecer PDF privado. Reportes comunica el límite de cobertura de sus
+primeras páginas. Los comentarios de borrador de Contratos no activan
+unilateralmente un contrato. Otras evidencias operativas y escrituras de
+solicitudes siguen pendientes.
+
+En la rama de integración, una invalidación financiera conserva la selección de la
+prefactura en Finanzas y el panel expandido en Documentos, incluso tras
+volver de una página posterior a la primera, mientras relee factura y pago
+por las rutas autorizadas. Si la relectura falla, la vista
+retira el detalle anterior y presenta un error recuperable. Esto evita que
+un sondeo periódico cierre la confirmación o el panel de descarga; una
+descarga iniciada durante la revalidación puede requerir reintento. Tampoco
+demuestra por sí solo la disponibilidad del objeto PDF en el VPS. Fuentes:
+[vista financiera](../../frontend/public-web/src/components/portal/AirlineFinancePage.tsx),
+[Documentos](../../frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx)
+y [prueba de regresión](../../frontend/public-web/tests/unit/airline-portal-page.test.tsx).
 
 En la rama de integración aún no promocionada, la aerolínea también puede
 registrar una disputa persistente e idempotente de líneas de una prefactura

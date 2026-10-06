@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { programPlanningShift } from '../../../services/planningService';
+import { OCC_SHIFT_PRESETS, getOccShiftPreset } from './occShiftPresets';
 
 function localClock(instant, timeZone) {
   if (!instant || !timeZone) return '';
@@ -19,6 +20,7 @@ export default function OccShiftPanel({ flight, optionsState, onProgrammed }) {
   const [agentId, setAgentId] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState('');
   const [endsAtLocal, setEndsAtLocal] = useState('');
+  const [presetId, setPresetId] = useState('');
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
   const controllerRef = useRef(null);
@@ -29,6 +31,7 @@ export default function OccShiftPanel({ flight, optionsState, onProgrammed }) {
       flight?.station?.ianaTimeZone));
     setEndsAtLocal(localClock(flight?.operation?.plannedEndAt,
       flight?.station?.ianaTimeZone));
+    setPresetId('');
     setStatus('idle');
     setError('');
     return () => controllerRef.current?.abort();
@@ -81,18 +84,33 @@ export default function OccShiftPanel({ flight, optionsState, onProgrammed }) {
           {candidates.map(agent => <option key={agent.id} value={agent.id}>{agent.displayName} · {agent.employeeNumber}</option>)}
         </select>
       </label>
+      <label className="block text-xs font-medium">Horario precargado
+        <select value={presetId} onChange={event => {
+          const preset = getOccShiftPreset(event.target.value);
+          setPresetId(preset?.id ?? '');
+          if (preset) {
+            setStartsAtLocal(preset.startsAtLocal);
+            setEndsAtLocal(preset.endsAtLocal);
+          }
+        }} className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-surface-dark-card">
+          <option value="">Personalizado</option>
+          {OCC_SHIFT_PRESETS.map(preset =>
+            <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+        </select>
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="block text-xs font-medium">Inicio del turno local
           <input required type="time" step="60" value={startsAtLocal}
-            onChange={event => setStartsAtLocal(event.target.value)}
+            onChange={event => { setStartsAtLocal(event.target.value); setPresetId(''); }}
             className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-surface-dark-card" />
         </label>
         <label className="block text-xs font-medium">Fin del turno local
           <input required type="time" step="60" value={endsAtLocal}
-            onChange={event => setEndsAtLocal(event.target.value)}
+            onChange={event => { setEndsAtLocal(event.target.value); setPresetId(''); }}
             className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-surface-dark-card" />
         </label>
       </div>
+      {startsAtLocal && endsAtLocal && startsAtLocal > endsAtLocal && <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">Fin al día siguiente, hora local de la estación.</p>}
       {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
       <button type="submit" disabled={status === 'submitting' || !agentId || !startsAtLocal || !endsAtLocal}
         className="rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">

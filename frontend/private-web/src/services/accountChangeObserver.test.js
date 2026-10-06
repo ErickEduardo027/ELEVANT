@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAccountChangeObserver } from './accountChangeObserver';
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
+import { createAccountChangeObserver, createPrivateWebAccountChangeObserver } from './accountChangeObserver';
 
 const ID = '10000000-0000-0000-0000-000000000001';
 const change = (resource, cursor) => ({ eventId: ID, resource, resourceId: ID,
@@ -28,7 +29,28 @@ function fixture(responses = []) {
 }
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+
+it('does not write authenticated WebSocket URLs to the browser console', () => {
+  vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.test');
+  const originalBuild = HubConnectionBuilder.prototype.build;
+  const connections = [];
+  vi.spyOn(HubConnectionBuilder.prototype, 'build').mockImplementation(function () {
+    const connection = originalBuild.call(this);
+    connections.push(connection);
+    return connection;
+  });
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+  createPrivateWebAccountChangeObserver(() => {});
+
+  expect(connections).toHaveLength(2);
+  for (const connection of connections) {
+    connection.connection._logger.log(LogLevel.Information,
+      'WebSocket connected to wss://api.test/hubs/operations?access_token=secret-canary.');
+  }
+  expect(info).not.toHaveBeenCalled();
+});
 
 describe('account change observer', () => {
   it('drains pages on start and resumes from the last acknowledged cursor', async () => {

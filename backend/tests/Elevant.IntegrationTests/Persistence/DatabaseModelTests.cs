@@ -15,6 +15,24 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed class DatabaseModelTests
 {
     [Fact]
+    public void ServiceClosuresKeepOnePendingRequestAndHistoricalActors()
+    {
+        using var context = CreateContext();
+        var request = context.Model.FindEntityType(
+            "Elevant.Domain.Entities.Commercial.ServiceClosureRequest");
+
+        Assert.NotNull(request);
+        Assert.Equal("commercial", request.GetSchema());
+        Assert.Equal("service_closure_requests", request.GetTableName());
+        Assert.Equal(3, request.FindProperty("RequestedAt")?.GetPrecision());
+        Assert.Contains(request.GetIndexes(), index => index.IsUnique &&
+            index.GetFilter() == "[status] = N'Pending'" &&
+            index.Properties.Select(property => property.Name).SequenceEqual(["ServiceDefinitionId"]));
+        Assert.All(request.GetForeignKeys(), foreignKey =>
+            Assert.Equal(DeleteBehavior.NoAction, foreignKey.DeleteBehavior));
+    }
+
+    [Fact]
     public void PublicAirlineProfilesDoNotCreateTenantsBeforeApproval()
     {
         using var context = CreateContext();

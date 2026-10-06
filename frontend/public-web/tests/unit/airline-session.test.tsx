@@ -46,7 +46,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 function Harness() {
-  const { status, session: current, signIn, signOut, retry, getPreinvoice,
+  const { status, session: current, signIn, signOut, retry, getApprovedEvidence, getPreinvoice,
     getPreinvoiceInvoice, getInvoiceDocument, acceptPreinvoice, disputePreinvoice,
     financeRevision } = useAirlineSession();
   const [detailStatus, setDetailStatus] = useState("");
@@ -56,6 +56,9 @@ function Harness() {
     <button onClick={() => void signIn({ email: actor.email, password: "Synthetic-Password!2026" })}>Entrar</button>
     <button onClick={signOut}>Salir</button>
     <button onClick={() => void retry()}>Reintentar</button>
+    <button onClick={() => void getApprovedEvidence("30000000-0000-7000-8000-000000000003")
+      .then(result => setDetailStatus(result.available ? "aprobada" : "pendiente"))
+      .catch(() => setDetailStatus("missing"))}>Consultar evidencia</button>
     <button onClick={() => void getPreinvoice("74000000-0000-7000-8000-000000000001")
       .then(() => setDetailStatus("found")).catch(() => setDetailStatus("missing"))}>Consultar prefactura</button>
     <button onClick={() => void getPreinvoiceInvoice("74000000-0000-7000-8000-000000000001")
@@ -112,6 +115,33 @@ it("loads a real airline session, persists only the token per tab, and revalidat
   fireEvent.click(screen.getByRole("button", { name: "Salir" }));
   await waitFor(() => expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous"));
   expect(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY)).toBeNull();
+});
+
+it("requests approved evidence with the current airline token", async () => {
+  const requests: Array<{ path: string; authorization: string | null }> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    requests.push({ path, authorization: new Headers(init?.headers).get("authorization") });
+    if (path === "/api/v1/auth/session" && init?.method === "POST") return json(session);
+    if (path === "/api/v1/auth/session") return json({ actor });
+    if (path === "/api/v1/airline/portal/bootstrap") return json(bootstrap);
+    if (path.endsWith("/approved-evidence")) return json({
+      operationId: "30000000-0000-7000-8000-000000000003", available: false,
+      approvedAt: null, actualStartAt: null, actualEndAt: null,
+      incidentCount: 0, services: [],
+    });
+    return json({ status: 404 }, 404);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("anonymous");
+  fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+  await screen.findByText("Demo Airlines");
+  fireEvent.click(screen.getByRole("button", { name: "Consultar evidencia" }));
+  await screen.findByText("pendiente");
+  expect(requests.at(-1)).toEqual({
+    path: "/api/v1/airline/portal/operations/30000000-0000-7000-8000-000000000003/approved-evidence",
+    authorization: "Bearer synthetic-short-lived-token",
+  });
 });
 
 it("rejects a back-office actor before fetching airline data or storing a token", async () => {
@@ -215,6 +245,7 @@ it("revokes the visible airline context on a periodic authorization failure", as
   }));
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("Demo Airlines");
+  await waitFor(() => expect(observe).toHaveBeenCalledOnce());
   revoked = true;
   window.dispatchEvent(new Event("focus"));
   await waitFor(() => expect(screen.getByTestId("session-status")).toHaveTextContent("anonymous"));

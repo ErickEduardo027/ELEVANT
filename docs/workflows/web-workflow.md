@@ -4,12 +4,12 @@ Existen dos aplicaciones web con entregas independientes:
 
 | Aplicación | Fuente | Runtime Development | Identidad de entrega |
 | --- | --- | --- | --- |
-| AVIAM Web | `frontend/private-web` | Vite estático + Nginx no-root | `aviam-web` |
+| AVIAM Web | `frontend/private-web` | Next.js `standalone` + Node no-root | `aviam-web` |
 | Public Web | `frontend/public-web` | Next.js `standalone` + Node no-root | `public-web` |
 
 Ambas usan npm y su propio `package-lock.json`, comparten
 `packages/api-client` y consumen la misma Elevant API versionada. No comparten
-necesariamente framework, sesión UI ni ciclo de despliegue. Nunca se conectan a
+sesión UI ni ciclo de despliegue. Nunca se conectan a
 SQL Server ni a proveedores de aviación directamente.
 
 ## Trabajo cotidiano
@@ -34,9 +34,19 @@ OpenAPI es la frontera cliente/servidor. Public Web nunca confía un tenant
 enviado por el navegador y AVIAM Web nunca obtiene privilegios por navegación
 o estado local.
 
+El artefacto temporal de la imagen certificada se nombra por
+aplicación y `run_id`, sin `run_attempt`: si GitHub reintenta únicamente el job
+de publicación, descarga la certificación ya producida en ese mismo run. Si se
+repite el build, `upload-artifact` reemplaza el artefacto del run antes de la
+publicación. SHA-256, identidad de imagen, configuración, commit y dependencia
+exacta de API se vuelven a verificar antes de publicar. El bundle OCI final
+conserva identidad inmutable y número de intento; este ajuste no cambia el
+controlador del VPS. Un reintento no garantiza promoción si el alias API fue
+reemplazado por una entrega más reciente.
+
 ## Configuración de build Development
 
-Los valores `VITE_*` y `NEXT_PUBLIC_*` se incorporan durante build, son
+Los valores `NEXT_PUBLIC_*` se incorporan durante build, son
 observables por el navegador y no admiten secretos. GitHub Actions obtiene los
 orígenes de variables de repositorio:
 
@@ -51,19 +61,22 @@ repositorio conservan placeholders; no contienen nombres de tailnet vivos. El
 build certificado de Development rechaza un origen `localhost`, credenciales,
 query/fragment o una ruta adicional.
 
-Mientras algunos adaptadores todavía usan el contrato prototipo, su URL de
-compatibilidad se fija al mismo `ELEVANT_DEV_API_ORIGIN`. Por eso una operación
-aún no implementada falla de forma visible en la API real en lugar de intentar
-alcanzar `localhost` en el equipo del usuario. `backend-prototipo` nunca se
+Las peticiones remotas usan `ELEVANT_DEV_API_ORIGIN`; la certificación del build
+rechaza referencias a `localhost` incrustadas. `backend-prototipo` nunca se
 despliega para simular funcionalidad.
 
 ## CI y publicación
 
-En pull requests, el workflow web instala dependencias bloqueadas, ejecuta las
-validaciones de cada aplicación, construye con orígenes sintéticos seguros y
-certifica sus imágenes/runtime. No publica ni accede al VPS.
+En pull requests, `Pull request CI` selecciona las aplicaciones afectadas y
+llama a Web CI. Cada una instala dependencias bloqueadas, ejecuta sus pruebas,
+construye con orígenes sintéticos seguros y certifica imagen/runtime. El gate
+final del PR exige que todos los carriles seleccionados, Vault y el escaneo de
+secretos terminen bien; un job omitido por error no cuenta como éxito. El PR no
+publica ni accede al VPS.
 
-En un push relevante a `Development`, cada carril aplicable:
+En un push relevante a `Development`, `Development delivery` ordena Backend CI
+antes de Web CI si cambió una entrada API. Un cambio exclusivo de una web no
+reconstruye backend y selecciona solo esa aplicación. Cada carril aplicable:
 
 1. valida el descriptor contra el snapshot, resuelve un bundle API certificado
    cuya etiqueta OpenAPI tenga esa misma huella, comprueba que no haya inputs API
@@ -79,15 +92,16 @@ En un push relevante a `Development`, cada carril aplicable:
    ambos payloads y exige igualdad byte a byte;
 7. mueve al final el alias `development-certified` del bundle propio.
 
-El alias API es solo descubrimiento. Si todavía señala una release previa con
-otra huella, sin la etiqueta v1 o anterior a un cambio que produzca API, el
-resolver espera el bundle exacto nuevo; una referencia API inmutable incompatible
-falla inmediatamente. Los mismos paths API disparan la recertificación de ambas
-webs. Antes de publicar se vuelve a comparar el alias con el bundle usado en el
-build, y API/AVIAM/Public comparten una exclusión de publicación con cola
-múltiple para no sustituir carriles pendientes. Así Backend y Web CI pueden
-comenzar en paralelo sin dejar una web atada a una release API que el
-controlador exacto ya no podrá promover.
+El alias API es solo descubrimiento. Cuando el mismo push requiere API nueva,
+Backend CI entrega a Web CI la referencia inmutable del bundle publicado; si
+no llega, Web CI falla cerrado. Cuando no hay input API nuevo, el resolver
+consulta una sola vez el alias y exige una release compatible en la misma
+historia. Una referencia API inmutable incompatible falla inmediatamente. Los
+mismos paths API disparan la recertificación de ambas webs. Antes de publicar
+se vuelve a comparar el alias con el bundle usado en el build, y
+API/AVIAM/Public comparten una exclusión de publicación con cola múltiple
+para no sustituir carriles pendientes. No hay un runner esperando durante
+minutos a que aparezca un alias API nuevo.
 
 Las imágenes son `elevant-private-web` y `elevant-public-web`; los bundles son
 `elevant-aviam-web-release-manifest` y
@@ -118,13 +132,12 @@ checkpoints manuales del operador. Versionar este flujo no modifica el VPS. Una
 promoción fallida vuelve al último par imagen/Compose sano; un fallo del
 rollback pausa solo el perfil afectado.
 
-## Alcance funcional actual
+## Alcance de la certificación
 
-El primer rollout publica previews técnicos para que el equipo desarrolle y
-valide integración remota. Health y las shells pueden estar operativos aunque
-la API todavía no implemente autenticación o endpoints de negocio usados por
-las pantallas prototipo. Una UI visible no demuestra que ese flujo sea
-funcional, autorizado o listo para Production.
+Health, shells e imágenes certificadas no prueban por sí solas un ciclo de
+negocio completo ni autorización correcta. Esos resultados exigen pruebas
+funcionales de las sesiones y endpoints contra la API y base del mismo entorno;
+ningún check de CI declara por sí solo disponibilidad para Production.
 
 Mobile Agent no participa de este despliegue: se ejecuta en emulador/tablet,
 consume la misma API por HTTPS/Tailscale y se distribuye por APK/EAS cuando
