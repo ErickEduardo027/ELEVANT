@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -125,6 +125,13 @@ test('health route returns the exact CD marker without caching', async () => {
   assert.equal(response.status, 200);
   assert.equal(await response.text(), 'ok');
   assert.match(response.headers.get('cache-control') ?? '', /no-store/);
+});
+
+test('the public asset directory cannot shadow the Next health route', async () => {
+  await assert.rejects(
+    access(path.join(projectRoot, 'public/healthz')),
+    { code: 'ENOENT' },
+  );
 });
 
 test('request nonce policy confines client traffic to the certified API and map tiles', async () => {

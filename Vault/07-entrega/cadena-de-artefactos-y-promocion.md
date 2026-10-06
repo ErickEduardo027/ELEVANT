@@ -159,6 +159,11 @@ puede fijar la API vigente.
 Una shell/health saludable no prueba por sí sola un ciclo de negocio completo
 ni su autorización. Ninguna web entra a la red SQL ni mueve el otro perfil.
 
+El [certificador de AVIAM Web](../../frontend/private-web/scripts/certify-image.sh)
+compara el cuerpo de `/healthz` con los dos bytes `ok` sin quitar saltos de
+línea. Así detecta una respuesta alterada antes de publicar la imagen. Esta
+prueba de imagen no acredita que el controlador ya la haya promovido.
+
 En el PR de integración #118, el certifier de AVIAM verifica que el bundle
 incluya el dashboard HR conectado y excluya el antiguo banner permanente de
 datos sintéticos. El gate anterior exigía ese banner y fallaba aun cuando las

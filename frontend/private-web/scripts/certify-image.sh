@@ -88,11 +88,14 @@ for _ in {1..45}; do
   fi
   sleep 1
 done
-[[ "$healthy" == true && "$(cat "$response_root/healthz")" == ok ]] || {
+# Command substitution discards trailing newlines, which can hide a static asset
+# shadowing the Next route after public/ is copied into the runtime image.
+printf '%s' ok > "$response_root/expected-healthz"
+if [[ "$healthy" != true ]] || ! cmp -s "$response_root/healthz" "$response_root/expected-healthz"; then
   docker logs "$container" >&2 || true
-  echo "AVIAM Web health route did not return its exact marker." >&2
+  echo "AVIAM Web health route did not return the exact two-byte marker." >&2
   exit 1
-}
+fi
 
 root_status="$(curl --silent --show-error --max-time 10 \
   --dump-header "$response_root/root.headers" \
