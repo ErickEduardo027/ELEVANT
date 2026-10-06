@@ -34,6 +34,9 @@ verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
 bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
 en el momento del evento; los eventos anteriores no se atribuyen de forma
 retroactiva ni se reconstruyen desde concesiones actuales.
+Para esa atribución, las fechas de vigencia del perfil de rampa se evalúan
+con la fecha UTC del evento, la misma convención usada al crearlas. Esto
+evita perder la estación entre la medianoche UTC y la local.
 Código local: no acredita despliegue al VPS.
 
 ## Revisión de asistencia (rama local)

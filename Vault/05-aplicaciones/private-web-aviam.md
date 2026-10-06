@@ -273,7 +273,10 @@ comprobar el rol G.H. y la concesión de estación y deja auditoría sin filas
 privadas. Los movimientos sin estación verificable no se atribuyen
 retroactivamente; los comandos de gobierno nuevos etiquetan altas, bajas y
 cambios de estado de cuentas de rampa con las estaciones verificadas al
-ejecutarlos. La vista retira la información anterior si se pierde acceso,
+ejecutarlos. La vigencia de esos alcances para atribuir auditoría usa la fecha
+UTC del evento, coherente con la fecha UTC de alta del perfil; los intervalos
+de los informes siguen usando la fecha local de la estación. La vista retira
+la información anterior si se pierde acceso,
 y relee por señal durable, foco, reconexión y sondeo visible de 25 segundos.
 No hay todavía evidencia de CI, navegador ni promoción de estos reportes al
 VPS. Fuentes locales: [API](../../backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs),
