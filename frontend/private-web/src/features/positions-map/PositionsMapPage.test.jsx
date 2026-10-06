@@ -20,6 +20,10 @@ vi.mock('./components/PositionMap', () => ({
   }),
 }));
 
+vi.mock('./components/GooglePositionMap', () => ({
+  default: () => <div data-testid="google-position-map-stub" />,
+}));
+
 function position(overrides) {
   return {
     id: 'A1',
@@ -80,6 +84,14 @@ describe('PositionsMapPage', () => {
     expect(screen.getByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
     expect(screen.getByText('PUJ · Aeropuerto Internacional de Punta Cana')).toBeInTheDocument();
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+  });
+
+  it('keeps MapLibre when a local Google key is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null}
+      connection="connected" onRetry={() => {}} />);
+    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('google-position-map-stub')).not.toBeInTheDocument();
   });
 
   it('shows a real planned-stand list for another station without drawing PUJ', () => {

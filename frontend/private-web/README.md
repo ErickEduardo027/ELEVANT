@@ -76,7 +76,7 @@ npm run build
 
 Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/espacio-de-trabajo`. El servidor Next redirige las URL históricas `index.html`, `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
 
-Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development; Google Maps es opcional y su clave queda visible en el navegador. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
+Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
 
 CI y Docker pasan `NEXT_PUBLIC_ELEVANT_API_URL`, `NEXT_PUBLIC_PROTOTYPE_API_URL` y `NEXT_PUBLIC_HR_DEMO_MODE` durante el build. El origen API también permanece fijado como variable pública en el runtime standalone para generar la CSP por solicitud. El cambio de runtime requiere revisar y aplicar el Compose del repositorio antes de promover una imagen nueva; una imagen Next no es compatible con el antiguo contenedor Nginx.
 
@@ -103,15 +103,19 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` es
-opcional: cuando está presente, el mapa de posiciones y el de vuelos usan Maps
-JavaScript API; sin ella mantienen MapLibre. La clave del navegador es visible
-para quien carga la página: restríngela en Google Cloud por los orígenes web
-autorizados y limita sus permisos a Maps JavaScript API. El modo oscuro se
-selecciona al crear el mapa y cambiar de tema recrea esa instancia, no los datos.
-Esta integración es de prueba local: la CSP actual no permite cargar
-Maps JavaScript API en la imagen publicada. No promociones un build con la clave
-hasta certificar una política CSP compatible y revisar los dominios cargados.
+de API al origen HTTPS privado de Development. Monitoreo y Mapa de posiciones
+usan MapLibre en local y en la imagen publicada; no requieren una clave de
+Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
+versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
+build y la certificación de la imagen comprueban esos dos archivos. Si cambias
+de versión de MapLibre, vuelve a ejecutar `npm ci` y el build; no edites los
+archivos generados. Los estilos públicos se cargan desde los orígenes permitidos
+por la CSP y necesitan conectividad del navegador a esos proveedores.
+
+El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
+indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
+de una clave local de Google quedó desactivada; cualquier experimento futuro
+con ese proveedor requiere una decisión y una CSP revisadas por separado.
 
 ## Planificación OCC remota
 

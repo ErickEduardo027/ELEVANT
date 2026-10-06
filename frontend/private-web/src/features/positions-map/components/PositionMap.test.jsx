@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('maplibre-gl', () => ({
+  setWorkerUrl: vi.fn(),
   Map: class { constructor() { throw new Error('WebGL unavailable'); } },
   NavigationControl: class {},
   AttributionControl: class {},

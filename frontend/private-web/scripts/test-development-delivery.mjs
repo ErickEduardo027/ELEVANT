@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { access, readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,21 @@ import {
 
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const repositoryRoot = path.resolve(projectRoot, '../..');
+
+test('the MapLibre worker copy preserves the worker and its relative shared import', async () => {
+  const { copyMapLibreWorkerAssets } = await import('./copy-maplibre-worker.mjs');
+  const destination = await mkdtemp(path.join(tmpdir(), 'elevant-maplibre-'));
+  try {
+    await copyMapLibreWorkerAssets(destination);
+    const worker = await readFile(path.join(destination, 'maplibre-gl-worker.mjs'));
+    const shared = await readFile(path.join(destination, 'maplibre-gl-shared.mjs'));
+    assert.deepEqual(worker, await readFile(path.join(projectRoot, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')));
+    assert.deepEqual(shared, await readFile(path.join(projectRoot, 'node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs')));
+    assert.match(worker.toString(), /from["']\.\/maplibre-gl-shared\.mjs["']/);
+  } finally {
+    await rm(destination, { recursive: true, force: true });
+  }
+});
 
 const validEnvironment = {
   NEXT_PUBLIC_ELEVANT_API_URL: 'https://api.elevant.test',

@@ -141,6 +141,21 @@ cmp -s "$response_root/favicon.png" \
   "$REPOSITORY_ROOT/frontend/private-web/public/brand/elevant-logo.png" || {
   echo "AVIAM Web brand icon did not match the reviewed asset." >&2; exit 1;
 }
+for asset in maplibre-gl-worker.mjs maplibre-gl-shared.mjs; do
+  curl --silent --show-error --fail --max-time 10 \
+    --dump-header "$response_root/$asset.headers" \
+    --output "$response_root/$asset" \
+    "$base_url/assets/maplibre/$asset" || {
+    echo "AVIAM Web MapLibre asset $asset could not be loaded." >&2; exit 1;
+  }
+  grep -Eqi '^content-type:.*(javascript|ecmascript)' "$response_root/$asset.headers" || {
+    echo "AVIAM Web MapLibre asset $asset has an invalid content type." >&2; exit 1;
+  }
+  cmp -s "$response_root/$asset" \
+    "$REPOSITORY_ROOT/frontend/private-web/node_modules/maplibre-gl/dist/$asset" || {
+    echo "AVIAM Web MapLibre asset $asset did not match the locked package." >&2; exit 1;
+  }
+done
 for header in content-security-policy permissions-policy referrer-policy \
   strict-transport-security x-content-type-options x-frame-options; do
   grep -Eqi "^$header:" "$response_root/root.headers" || {

@@ -107,6 +107,18 @@ En el worktree local de integración, el Dashboard OCC dejó de mostrar cifras s
 
 Monitoreo OCC también selecciona una estación de la sesión. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
+En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
+variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
+coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
+El worker y su importación compartida se copian juntos desde la dependencia
+fijada antes de desarrollo y build; la certificación comprueba que la imagen
+sirve ambos módulos. Esta evidencia es local y de CI; la disponibilidad remota
+requiere la promoción y comprobación del operador. Fuentes: [vista de
+Monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx),
+[mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
+[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs) y
+[certificación](../../frontend/private-web/scripts/certify-image.sh).
+
 En la rama de integración, Monitoreo y Mapa releen la estación autorizada
 cuando reciben `occ_planning` tras una asignación OCC. También refrescan al
 recuperar foco/conexión y cada 25 segundos con la pestaña visible; los sondeos

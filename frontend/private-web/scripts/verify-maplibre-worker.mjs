@@ -3,27 +3,34 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const outputRoot = path.resolve(fileURLToPath(new URL('../.next/static/', import.meta.url)));
-const files = [];
+const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const assetRoot = path.join(projectRoot, 'public/assets/maplibre');
+const packageRoot = path.join(projectRoot, 'node_modules/maplibre-gl/dist');
+const assetNames = ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs'];
 
+for (const name of assetNames) {
+  const copied = await readFile(path.join(assetRoot, name));
+  const installed = await readFile(path.join(packageRoot, name));
+  assert.deepEqual(copied, installed, `MapLibre ${name} must match the locked package`);
+}
+
+const worker = await readFile(path.join(assetRoot, assetNames[0]), 'utf8');
+assert.match(worker, /from["']\.\/maplibre-gl-shared\.mjs["']/, 'The worker must import its colocated shared module');
+
+const chunks = [];
 async function visit(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
     if (entry.isDirectory()) await visit(file);
-    else if (/\.(?:js|mjs)$/.test(entry.name)) files.push(file);
+    else if (/\.(?:js|mjs)$/.test(entry.name)) chunks.push(file);
   }
 }
 
-await visit(outputRoot);
-const workers = files.filter(file => /maplibre-gl-worker.*\.(?:js|mjs)$/.test(path.basename(file)));
-assert.ok(workers.length > 0, 'The Next.js build must emit a MapLibre worker asset');
+await visit(path.join(projectRoot, '.next/static'));
+const sources = await Promise.all(chunks.map(chunk => readFile(chunk, 'utf8')));
+assert.ok(
+  sources.some(source => source.includes('/assets/maplibre/maplibre-gl-worker.mjs')),
+  'The Next.js bundle must configure the served MapLibre worker URL',
+);
 
-const chunks = files.filter(file => !workers.includes(file));
-const chunkSources = await Promise.all(chunks.map(chunk => readFile(chunk, 'utf8')));
-for (const worker of workers) {
-  const workerName = path.basename(worker);
-  const referenced = chunkSources.some(source => source.includes(workerName));
-  assert.ok(referenced, `The application must reference its emitted worker (${workerName})`);
-  }
-
-console.log(`PRIVATE_WEB_MAPLIBRE_WORKER_OK assets=${workers.length}`);
+console.log('PRIVATE_WEB_MAPLIBRE_WORKER_OK assets=2');
