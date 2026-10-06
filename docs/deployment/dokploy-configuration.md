@@ -902,18 +902,23 @@ con cuerpo `ok` y los smokes `/` y `/dashboard`. El Compose revisado monta
 read-only y permite más memoria y procesos para SSR. El servidor genera la CSP
 con nonce por solicitud y responde rutas profundas sin fallback SPA de Nginx.
 
-Para pasar de la baseline Nginx ya instalada, el operador deshabilita únicamente
+Para pasar de la baseline Nginx ya instalada, el operador deshabilita
 `ELEVANT AVIAM Web CD - Poll`, espera que no haya ejecución activa y pausa el
-perfil `aviam-web`; Database, API y Public Web conservan sus schedules. Registra
-la baseline A, su imagen y Compose exactos y verifica `--status` y `--dry-run`
-sin mutar Dokploy. Después del merge y la certificación de B, compara el
+perfil `aviam-web`. Esta PR también ajusta el cliente API compartido: el
+clasificador certifica un bundle nuevo de Public Web. Por eso el operador
+deshabilita y pausa **también** el poll y perfil `public-web` antes del merge;
+Database y API conservan sus schedules. Registra las dos baselines A, imágenes
+y Compose exactos y verifica `--status` y `--dry-run` sin mutar Dokploy. Después
+del merge y la certificación de B, compara el
 Compose del bundle con `frontend/private-web/compose.development.aviam-web.yml`
 y confirma la misma tupla API antes de ejecutar el drill B → A → B documentado
 arriba. El controlador aplica el Compose del bundle; no se hace un Deploy manual
 del Raw ni se habilita AutoDeploy. Tras el drill, el operador verifica rutas
 profundas, CSP, recursos `/_next/static/`, sesión interna y aislamiento de red,
-reanuda el perfil, exige un no-op manual y habilita el poll. Si falla un gate,
-mantiene el perfil pausado y el poll deshabilitado para conservar o restaurar A.
+reanuda el perfil, exige un no-op manual y habilita el poll. A continuación
+acepta el bundle de Public Web con su propio drill, sin cambiar su perfil
+Compose; solo entonces reanuda su perfil y poll. Si falla un gate, mantiene
+pausado el perfil afectado y deshabilitado su poll para conservar o restaurar A.
 
 ### Alcance de aceptación
 

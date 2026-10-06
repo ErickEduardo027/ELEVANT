@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-10-06"
+verified_commit: "c2c66bca855778021e1b42aad86ecdad1ecf1c93"
 sources:
   - docs/adr/0004-centralize-external-api-access.md
   - docs/architecture/external-integrations.md
