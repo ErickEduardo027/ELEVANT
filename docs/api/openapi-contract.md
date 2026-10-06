@@ -23,6 +23,17 @@ anónima; los health checks declaran esa excepción y los hubs, que no forman pa
 de OpenAPI, requieren Bearer. El documento no incluye tokens ni ejemplos de
 credenciales.
 
+La lectura `GET /api/v1/human-resources/schedule-warnings` publica una página
+tipada de avisos preliminares para la estación, rango local y página
+solicitados. El contrato exige `stationId`, `from` y `to` (hasta 30 fechas
+inclusivas), permite `page` y `limit`, y responde con `asOf`, versión/fecha de
+regla, clase, evidencia visible y `hasRestrictedEvidence`. Los minutos
+medidos son nulos cuando una estación no autorizada influye o no puede
+evaluarse el horario. `401` es falta de autenticación; `403`, rol o membresía
+incompatible; `404`, estación fuera de alcance; `400`, parámetros inválidos.
+Se aplica `Cache-Control: no-store`. El cliente generado valida el cuerpo y
+no reemplaza la comprobación de permisos viva de la API.
+
 En esta rama local, las cuatro lecturas de reportes de Gestión Humana usan
 `GET /api/v1/human-resources/reports/{kind}` con rutas concretas para
 `expirations`, `account-movements`, `staff-distribution` y

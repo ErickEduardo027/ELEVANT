@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CurrentShiftsPage from './CurrentShiftsPage';
 import { getHumanResourcesShifts, recordHumanResourcesShift } from '../../../services/humanResourcesShiftsReadService';
 import { getHumanResourcesAvailabilityRequests } from
   '../../../services/humanResourcesAvailabilityService';
+import { getHumanResourcesScheduleWarnings } from
+  '../../../services/humanResourcesScheduleWarningsService';
 
 vi.mock('../../../services/humanResourcesShiftsReadService', () => ({
   getHumanResourcesShifts: vi.fn(),
@@ -15,6 +17,13 @@ vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
   recordHumanResourcesAvailabilityRequest: vi.fn(),
   resolveHumanResourcesAvailabilityRequest: vi.fn(),
 }));
+vi.mock('../../../services/humanResourcesScheduleWarningsService', () => ({
+  getHumanResourcesScheduleWarnings: vi.fn(),
+}));
+const session = vi.hoisted(() => ({ token: 'test-token', stationScopes: [
+  { stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ' },
+] }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ session }) }));
 const observerCallbacks = vi.hoisted(() => []);
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: callback => {
@@ -39,8 +48,28 @@ const initialDate = new Date(2026, 7, 18, 12);
 beforeEach(() => {
   getHumanResourcesAvailabilityRequests.mockImplementation(async query =>
     ({ ...query, hasMore: false, requests: [] }));
+  getHumanResourcesScheduleWarnings.mockImplementation(async query => ({
+    ...query, hasMore: false, asOf: '2026-08-18T12:00:00Z',
+    ruleVersion: 'dev-2026-10-05', ruleEffectiveOn: '2026-10-05', warnings: [],
+  }));
 });
-afterEach(() => { cleanup(); vi.resetAllMocks(); observerCallbacks.length = 0; });
+afterEach(() => { cleanup(); vi.resetAllMocks(); observerCallbacks.length = 0; session.token = 'test-token'; });
+
+it('removes a former account roster before its pending read completes', async () => {
+  let resolveOld;
+  getHumanResourcesShifts.mockImplementationOnce(() => new Promise(resolve => {
+    resolveOld = resolve;
+  })).mockResolvedValue({ from: '2026-08-17', to: '2026-08-23',
+    page: 1, limit: 20, hasMore: false, shifts: [] });
+  const view = render(<CurrentShiftsPage initialDate={initialDate} />);
+  await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+  session.token = 'next-account';
+  view.rerender(<CurrentShiftsPage initialDate={initialDate} />);
+  expect(await screen.findByText(/No hay turnos registrados/)).toBeInTheDocument();
+  await act(async () => resolveOld({ from: '2026-08-17', to: '2026-08-23',
+    page: 1, limit: 20, hasMore: false, shifts: [shift] }));
+  expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
+});
 
 it('reads the selected station-local week and navigates without prototype writes', async () => {
   getHumanResourcesShifts
@@ -89,7 +118,8 @@ it('reads the full month, navigates to the next month, and resets pagination on 
   }));
   render(<CurrentShiftsPage initialDate={initialDate} />);
   expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Páginas de turnos' }))
+    .getByRole('button', { name: 'Siguiente página' }));
   await waitFor(() => expect(getHumanResourcesShifts).toHaveBeenCalledWith(
     { from: '2026-08-17', to: '2026-08-23', page: 2, limit: 20 },
     expect.anything()));

@@ -119,6 +119,16 @@ En esta rama, una revalidación de planificación para la misma estación y fech
 
 ### Gestión Humana
 
+En esta rama local, el panel de [alertas de programación](../../frontend/private-web/src/features/human-resources/schedules/ScheduleWarningsPanel.jsx)
+se añade a la vista de turnos. La [API versionada](../../backend/Elevant.Api/Controllers/HumanResourcesScheduleWarningsController.cs)
+autoriza el rol y estación en cada lectura y calcula superposición, descanso
+corto, carga de siete fechas locales y casos no evaluables. Es orientación
+preliminar, no una conclusión laboral ni horas pagadas. Evidencia de estaciones
+sin concesión se reduce a un indicador sin ID, código ni horario. La web
+retira los resultados al cambiar sesión o estación y reconsulta tras cambios
+durables de turnos, foco y reconexión. Código y pruebas locales no acreditan
+una promoción al VPS.
+
 En la rama local de solicitudes de acceso móvil, **Agentes de rampa** separa
 perfil laboral, petición y cuenta efectiva. G.H. envía un UUID de intención
 para un perfil elegible; Superadministración ve pendientes en Inicio y decide
