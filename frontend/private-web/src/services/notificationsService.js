@@ -2,7 +2,7 @@ import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../f
 
 // En pruebas conserva el catálogo exhaustivo. En ejecución normal usa notificaciones persistentes del prototipo.
 function usesPrototypeApi() {
-  return import.meta.env.MODE !== 'test';
+  return process.env.NODE_ENV !== 'test';
 }
 
 function notifyBadgeChanged() {

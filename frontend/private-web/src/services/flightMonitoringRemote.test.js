@@ -13,7 +13,7 @@ import { getFlightMonitoringSnapshot, subscribeToFlightUpdates } from './flightM
 const stationId = '20000000-0000-0000-0000-000000000001';
 
 beforeEach(() => {
-  vi.stubEnv('MODE', 'development');
+  vi.stubEnv('NODE_ENV', 'development');
   vi.clearAllMocks();
   mocks.readSession.mockReturnValue({ stationScopes: [{ stationId, stationCode: 'PUJ' }] });
   mocks.getPlanningSnapshot.mockResolvedValue({

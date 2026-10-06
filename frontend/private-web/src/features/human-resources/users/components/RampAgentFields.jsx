@@ -76,7 +76,7 @@ export default function RampAgentFields({ value, onChange }) {
 
       <p className="rounded-lg border border-black/10 p-3 text-xs text-text-secondary-light dark:border-white/10 dark:text-text-secondary-dark">
         Las habilitaciones y certificaciones completas se administran en su propio módulo (próximamente:
-        "Habilitaciones y certificaciones"). Aquí solo se registra el acceso base a la app móvil.
+        &quot;Habilitaciones y certificaciones&quot;). Aquí solo se registra el acceso base a la app móvil.
       </p>
     </div>
   );

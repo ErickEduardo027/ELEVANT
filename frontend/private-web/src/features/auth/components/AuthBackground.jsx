@@ -1,4 +1,4 @@
-const base = import.meta.env.BASE_URL;
+const base = '/';
 
 // The silhouettes use alpha masks cut from the official isotype asset (same
 // bars, slant and wing cut-out, no redrawing): one for the two blue bars and

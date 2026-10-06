@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { getActivityMeta } from '../statusMeta';
 import { formatEventDateTime } from '../mappers';
 import { TONE_HEX } from '../../../../components/toneColors';
@@ -14,7 +14,7 @@ function SkeletonRows() {
 }
 
 export default function AuditActivityFeed({ activity, loading = false, actionsEnabled = true }) {
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <div className="rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
@@ -23,7 +23,7 @@ export default function AuditActivityFeed({ activity, loading = false, actionsEn
         {actionsEnabled && (
           <button
             type="button"
-            onClick={() => navigate('/gestion-humana/audit')}
+            onClick={() => router.push('/gestion-humana/audit')}
             className="text-xs font-medium text-accent-600 hover:underline"
           >
             Ver historial completo

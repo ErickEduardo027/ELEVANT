@@ -4,12 +4,12 @@ Existen dos aplicaciones web con entregas independientes:
 
 | Aplicación | Fuente | Runtime Development | Identidad de entrega |
 | --- | --- | --- | --- |
-| AVIAM Web | `frontend/private-web` | Vite estático + Nginx no-root | `aviam-web` |
+| AVIAM Web | `frontend/private-web` | Next.js `standalone` + Node no-root | `aviam-web` |
 | Public Web | `frontend/public-web` | Next.js `standalone` + Node no-root | `public-web` |
 
 Ambas usan npm y su propio `package-lock.json`, comparten
 `packages/api-client` y consumen la misma Elevant API versionada. No comparten
-necesariamente framework, sesión UI ni ciclo de despliegue. Nunca se conectan a
+sesión UI ni ciclo de despliegue. Nunca se conectan a
 SQL Server ni a proveedores de aviación directamente.
 
 ## Trabajo cotidiano
@@ -46,7 +46,7 @@ reemplazado por una entrega más reciente.
 
 ## Configuración de build Development
 
-Los valores `VITE_*` y `NEXT_PUBLIC_*` se incorporan durante build, son
+Los valores `NEXT_PUBLIC_*` se incorporan durante build, son
 observables por el navegador y no admiten secretos. GitHub Actions obtiene los
 orígenes de variables de repositorio:
 

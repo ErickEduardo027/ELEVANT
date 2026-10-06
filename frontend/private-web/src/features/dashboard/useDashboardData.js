@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { getDashboardSnapshot } from '../../services/dashboardService';
+import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 export function useDashboardData({ accountId, stationId, stationCode, date,
   refreshToken = 0 }) {
@@ -23,12 +24,12 @@ export function useDashboardData({ accountId, stationId, stationCode, date,
         if (!controller.signal.aborted) setState({ status: 'success', data, scopeKey });
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setState({ status: error?.status === 401 ? 'unauthorized' :
           error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error',
         data: null, scopeKey });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [accountId, stationId, stationCode, date, scopeKey, refreshToken, revision]);
 
   useEffect(() => {

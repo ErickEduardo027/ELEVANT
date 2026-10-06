@@ -12,12 +12,12 @@ const INITIAL_SERVICES = [
 let services = INITIAL_SERVICES.map(service => ({ ...service }));
 
 export async function getContractServices() {
-  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/services');
+  if (process.env.NODE_ENV !== 'test') return apiRequest('/api/contracts/services');
   return services.map(service => ({ ...service }));
 }
 
 export async function createContractService(input) {
-  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/services', {
+  if (process.env.NODE_ENV !== 'test') return apiRequest('/api/contracts/services', {
     method: 'POST', body: JSON.stringify(input),
   });
   const service = {
@@ -37,7 +37,7 @@ export async function createContractService(input) {
 }
 
 export async function updateContractService(serviceId, changes) {
-  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/services/${serviceId}`, {
+  if (process.env.NODE_ENV !== 'test') return apiRequest(`/api/contracts/services/${serviceId}`, {
     method: 'PATCH', body: JSON.stringify(changes),
   });
   let updated = null;

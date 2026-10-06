@@ -44,7 +44,7 @@ beforeEach(() => {
   mapOptions.length = 0;
   mapInstances.length = 0;
   markers.length = 0;
-  vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'synthetic-browser-key');
+  vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-browser-key');
   vi.mocked(loadGoogleMap).mockResolvedValue(maps);
 });
 

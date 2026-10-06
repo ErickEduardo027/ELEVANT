@@ -151,7 +151,7 @@ export default function PositionsMapPage({
     />
   );
 
-  const BaseMap = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ? GooglePositionMap : PositionMap;
+  const BaseMap = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? GooglePositionMap : PositionMap;
 
   const mapArea = (
     <div ref={mapAreaRef} className="relative min-h-[420px] flex-1 bg-surface-light dark:bg-surface-dark">

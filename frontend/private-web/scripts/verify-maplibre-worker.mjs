@@ -3,19 +3,27 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
-const assetsRoot = path.join(projectRoot, 'dist', 'assets');
-const files = await readdir(assetsRoot);
-const workers = files.filter(name => /^maplibre-gl-worker-[\w-]+\.js$/.test(name));
-const mainBundles = files.filter(name => /^main-[\w-]+\.js$/.test(name));
+const outputRoot = path.resolve(fileURLToPath(new URL('../.next/static/', import.meta.url)));
+const files = [];
 
-assert.equal(workers.length, 1, 'The MapLibre worker must be emitted exactly once');
-assert.equal(mainBundles.length, 1, 'The AVIAM application bundle must be emitted exactly once');
+async function visit(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) await visit(file);
+    else if (/\.(?:js|mjs)$/.test(entry.name)) files.push(file);
+  }
+}
 
-const mainBundle = await readFile(path.join(assetsRoot, mainBundles[0]), 'utf8');
-assert.ok(
-  mainBundle.includes(workers[0]),
-  'The AVIAM application must reference its emitted MapLibre worker',
-);
+await visit(outputRoot);
+const workers = files.filter(file => /maplibre-gl-worker.*\.(?:js|mjs)$/.test(path.basename(file)));
+assert.ok(workers.length > 0, 'The Next.js build must emit a MapLibre worker asset');
 
-console.log(`PRIVATE_WEB_MAPLIBRE_WORKER_OK asset=${workers[0]}`);
+const chunks = files.filter(file => !workers.includes(file));
+const chunkSources = await Promise.all(chunks.map(chunk => readFile(chunk, 'utf8')));
+for (const worker of workers) {
+  const workerName = path.basename(worker);
+  const referenced = chunkSources.some(source => source.includes(workerName));
+  assert.ok(referenced, `The application must reference its emitted worker (${workerName})`);
+  }
+
+console.log(`PRIVATE_WEB_MAPLIBRE_WORKER_OK assets=${workers.length}`);

@@ -1067,7 +1067,7 @@
     "workflows": [
       {
         "path": ".github/workflows/api-client-ci.yml",
-        "sha256": "5bdbb18b89203628328b76deb5aabf4b21d3ebf6e89205aceb13aad784338f4a"
+        "sha256": "2b50626581ac869ebea7dd893148a34cbf6554acf47db7c0213e7eddab68604c"
       },
       {
         "path": ".github/workflows/backend-ci.yml",
@@ -1099,7 +1099,7 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "52a22315a47a77fb8ebe3e2e4facdb5ae7dd384bc03f76166236b54d1239e691"
+        "sha256": "40a6a27567cd44bf0ea853d86e259f784bdc712b17cd444bbf257e10db49a5e9"
       }
     ],
     "openapi": [

@@ -32,7 +32,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 it('does not write authenticated WebSocket URLs to the browser console', () => {
-  vi.stubEnv('VITE_ELEVANT_API_URL', 'https://api.test');
+  vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.test');
   const originalBuild = HubConnectionBuilder.prototype.build;
   const connections = [];
   vi.spyOn(HubConnectionBuilder.prototype, 'build').mockImplementation(function () {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import ChatPage from './ChatPage';
 import { useChatData } from './useChatData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
@@ -12,7 +12,7 @@ export default function ChatRoute() {
   const [retryToken, setRetryToken] = useState(0);
   const { forceState } = useAdminOccPreview();
   const chat = useChatData('PUJ', retryToken, forceState === 'chatDisconnected');
-  const navigate = useNavigate();
+  const router = useRouter();
 
   return (
     <ChatPage
@@ -26,8 +26,8 @@ export default function ChatRoute() {
       onCloseConversation={chat.closeConversation}
       onCreateConversation={chat.createConversation}
       onNavigateToResource={(moduleId, resourceId) => {
-        if (moduleId === 'flight-monitoring') navigate(`/admin-occ/flight-monitoring?flightId=${resourceId}`);
-        if (moduleId === 'approvals') navigate(`/admin-occ/review?operationId=${resourceId}`);
+        if (moduleId === 'flight-monitoring') router.push(`/admin-occ/flight-monitoring?flightId=${resourceId}`);
+        if (moduleId === 'approvals') router.push(`/admin-occ/review?operationId=${resourceId}`);
       }}
       forceState={forceState}
     />

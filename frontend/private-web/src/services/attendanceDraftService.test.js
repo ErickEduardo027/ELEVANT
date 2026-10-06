@@ -35,7 +35,7 @@ function jsonResponse(body, status = 200) {
 }
 
 beforeEach(() => {
-  vi.stubEnv('VITE_ELEVANT_API_URL', 'https://api.example.test');
+  vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.example.test');
   auth.readSession.mockReturnValue({ token: 'occ-token' });
   auth.handleUnauthorizedResponse.mockClear();
 });

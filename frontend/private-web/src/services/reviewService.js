@@ -29,7 +29,7 @@ import {
 const STATION_UTC_OFFSET_MS = 4 * 60 * 60 * 1000;
 
 function usesPrototypeApi() {
-  return import.meta.env.MODE !== 'test';
+  return process.env.NODE_ENV !== 'test';
 }
 
 async function reviewApi(path, options = {}) {

@@ -5,14 +5,14 @@ import { PUJ_COORDINATES } from '../positionsMapMappers';
 import { attachPositionsLayers, updatePositionsData, setSelectedPositionFilter } from './positionMapLayers';
 
 // OpenStreetMap (vía OpenMapTiles/OpenFreeMap) — nunca Google Maps ni Mapbox. Configurable por
-// entorno, con el mismo mecanismo VITE_*_STYLE_* que ya usa FlightMap. El estilo "liberty" incluye
+// entorno, con el mismo mecanismo NEXT_PUBLIC_*_STYLE_* que ya usa FlightMap. El estilo "liberty" incluye
 // una capa building-3d con datos reales de altura (render_height) para el modo 3D; el estilo
 // "dark" de OpenFreeMap no define esa capa — limitación real de la fuente, no simulada.
 const DEFAULT_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 const STYLE_URLS = {
-  light: import.meta.env.VITE_POSITIONS_MAP_STYLE_LIGHT || DEFAULT_STYLE_LIGHT,
-  dark: import.meta.env.VITE_POSITIONS_MAP_STYLE_DARK || DEFAULT_STYLE_DARK,
+  light: process.env.NEXT_PUBLIC_POSITIONS_MAP_STYLE_LIGHT || DEFAULT_STYLE_LIGHT,
+  dark: process.env.NEXT_PUBLIC_POSITIONS_MAP_STYLE_DARK || DEFAULT_STYLE_DARK,
 };
 const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · © OpenFreeMap · © OpenMapTiles';
 

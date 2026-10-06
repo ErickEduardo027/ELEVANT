@@ -3403,8 +3403,9 @@ function validatedOptionalDeviceText(
   value: unknown,
   field: string,
   maximumLength: number,
-) {
-  if (value === undefined || value === null) return value;
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
   if (
     typeof value !== "string" ||
     value.length === 0 ||

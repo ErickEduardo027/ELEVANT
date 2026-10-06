@@ -353,10 +353,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          export VITE_ELEVANT_API_URL="$WEB_API_ORIGIN"
-          export VITE_PROTOTYPE_API_URL="$WEB_API_ORIGIN"
           if [[ "${{ matrix.application }}" == aviam-web ]]; then
-            export VITE_HR_DEMO_MODE=dashboard-read-only
+            export NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only
           fi
           export VCS_REF="$GITHUB_SHA"
           export OCI_SOURCE="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
@@ -372,7 +370,9 @@ jobs:
           npm ci --no-audit --no-fund
           if [[ "${{ matrix.application }}" == aviam-web ]]; then
             npm run test:delivery
-            npm test -- --reporter=dot
+            npm test -- --maxWorkers=2 --reporter=dot
+            npm run lint
+            npm run typecheck
             npm run build
           else
             npm run validate:development-env
@@ -401,9 +401,10 @@ jobs:
           )
           if [[ "$APPLICATION" == aviam-web ]]; then
             docker build "${common_args[@]}" \
-              --build-arg "VITE_ELEVANT_API_URL=$WEB_API_ORIGIN" \
-              --build-arg "VITE_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
-              --build-arg VITE_HR_DEMO_MODE=dashboard-read-only \
+              --build-arg "ELEVANT_DEPLOYMENT_ID=$GITHUB_SHA" \
+              --build-arg "NEXT_PUBLIC_ELEVANT_API_URL=$WEB_API_ORIGIN" \
+              --build-arg "NEXT_PUBLIC_PROTOTYPE_API_URL=$WEB_API_ORIGIN" \
+              --build-arg NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only \
               --file frontend/private-web/Dockerfile \
               --tag "$LOCAL_IMAGE" .
           else

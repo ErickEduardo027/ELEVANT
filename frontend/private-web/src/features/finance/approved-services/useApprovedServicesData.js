@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { getApprovedServices, createPreinvoiceDraft, getPreinvoiceDraft } from '../../../services/approvedServicesService';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 
 function stationToday(timeZone) {
@@ -91,11 +92,11 @@ export function useApprovedServicesData(initialStationId) {
         setStatus('success');
       })
       .catch(error => {
-        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        if (controller.signal.aborted || isAbortError(error)) return;
         setPage(null);
         setStatus(error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error');
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, from, to, rangeIsValid, revision]);
 
   useEffect(() => {

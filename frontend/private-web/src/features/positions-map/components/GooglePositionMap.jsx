@@ -38,7 +38,7 @@ const GooglePositionMap = forwardRef(function GooglePositionMap(
     setError(false);
     setLabelsVisible(false);
 
-    loadGoogleMap(import.meta.env.VITE_GOOGLE_MAPS_API_KEY).then(maps => {
+    loadGoogleMap(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY).then(maps => {
       if (disposed) return;
       mapsRef.current = maps;
       map = new maps.Map(containerRef.current, {

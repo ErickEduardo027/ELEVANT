@@ -7,13 +7,16 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-04"
-verified_commit: "76abdf66f33602b52e7f434cb95779e11ba52688"
+last_verified: "2026-10-06"
+verified_commit: "c2c66bca855778021e1b42aad86ecdad1ecf1c93"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
   - frontend/private-web/package.json
-  - frontend/private-web/src/app/router.jsx
+  - frontend/private-web/app/layout.jsx
+  - frontend/private-web/next.config.mjs
+  - frontend/private-web/proxy.js
+  - frontend/private-web/Dockerfile
   - frontend/private-web/src/features/auth/authService.js
   - frontend/private-web/src/features/admin-occ/navigation.js
   - frontend/private-web/src/features/human-resources/navigation.js
@@ -28,7 +31,7 @@ sources:
   - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
-  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/src/config/securityHeaders.mjs
 tags:
   - aplicaciones
   - private-web
@@ -65,9 +68,9 @@ Private Web es la aplicación interna de AVIAM para OCC, administración y depar
 
 ## Stack actual
 
-- Vite 6 y JavaScript/JSX como aplicación SPA.
-- React 18 y React DOM 18.
-- React Router 6 para rutas principales seleccionadas por el rol de la sesión; la API impone la autorización real.
+- Next.js 16 App Router y JavaScript/JSX con servidor Node `standalone`.
+- React 19 y React DOM 19.
+- Rutas de `app/` y guards por rol en el cliente; la API impone la autorización real.
 - Tailwind CSS 3 y tokens CSS para presentación.
 - MapLibre GL para vistas cartográficas.
 - `@elevant/api-client` como dependencia local del monorepo.
@@ -79,13 +82,14 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 | Ruta | Responsabilidad observada |
 | --- | --- |
-| `src/app/router.jsx` | Router principal, redirects, guards de navegación y composición por rol. |
+| `app/` | Rutas Next, layouts y composición por rol. |
+| `proxy.js` | Cabeceras de seguridad y CSP con nonce por solicitud. |
 | `src/features/` | Interfaces y comportamiento por área: auth, OCC, planificación, monitoreo, posiciones, revisión, reportes, notificaciones, chat, contratos, finanzas y Gestión Humana. |
 | `src/services/` | Adaptadores de datos heredados y snapshots de prueba; no deben dictar el contrato futuro. |
 | `src/config/elevantApiClient.js` | Fábrica aislada para el cliente OpenAPI compartido. |
 | `src/components/`, `src/hooks/`, `src/lib/`, `src/styles/` | UI reutilizable, comportamiento transversal, utilidades y tokens. |
 | `tests/` y pruebas junto a features | Configuración transversal, smoke del cliente compartido y pruebas unitarias/de componentes. |
-| `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales. |
+| `index.html`, `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales; `index.html` lleva al login. |
 
 ## Rutas y recorridos observados
 
@@ -371,18 +375,19 @@ Desde `frontend/private-web`:
 npm ci
 npm test
 npm run test:delivery
-$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
-$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
 npm run dev
 npm run build
 ```
 
-`npm run preview` permite revisar el build local. Vite usa el puerto local documentado por el README del cliente; verifica allí cualquier cambio vigente en vez de copiar comandos antiguos del monorepo.
+`npm run preview` permite revisar el build local en el puerto `3000`. El runtime de Development usa el servidor standalone en `8080`, detrás de Tailscale y del Compose revisado.
 
 ## Pruebas que posee
 
 - pruebas Vitest de páginas, componentes, hooks, mappers y servicios;
-- pruebas del router, autenticación y manejo de sesión expirada;
+- pruebas de rutas Next, autenticación y manejo de sesión expirada;
 - smoke de creación del cliente OpenAPI compartido;
 - prueba de entrega para validación de entorno, modelo Compose e invariantes de imagen/configuración.
 
@@ -390,9 +395,9 @@ La amplitud de pruebas de UI no prueba la existencia de endpoints .NET de negoci
 
 ## Configuración segura
 
-- `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido.
-- `VITE_PROTOTYPE_API_URL` conserva temporalmente adaptadores heredados.
-- Todo `VITE_*` es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
+- `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido.
+- `NEXT_PUBLIC_PROTOTYPE_API_URL` conserva temporalmente adaptadores heredados.
+- Todo `NEXT_PUBLIC_*` es público y queda en el bundle: nunca contiene token, contraseña, connection string ni secreto de proveedor.
 - La configuración certificada exige orígenes HTTPS válidos y que ambas variables representen el mismo origen.
 - Un filtro, rol en memoria, ruta protegida o menú oculto nunca reemplaza la autorización de la API.
 
@@ -414,7 +419,7 @@ Cada feature debe consumir un endpoint versionado a través de un adaptador remo
 ## Fuentes y relaciones
 
 - [README del cliente](../../frontend/private-web/README.md)
-- [Router actual](../../frontend/private-web/src/app/router.jsx)
+- [Rutas Next actuales](../../frontend/private-web/app/layout.jsx)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)
 - [Mapa de aplicaciones](README.md)

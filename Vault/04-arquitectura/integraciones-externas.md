@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "29600f562e82092b4341ff4c1696171037b51593"
+last_verified: "2026-10-06"
+verified_commit: "c2c66bca855778021e1b42aad86ecdad1ecf1c93"
 sources:
   - docs/adr/0004-centralize-external-api-access.md
   - docs/architecture/external-integrations.md
@@ -20,7 +20,7 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
-  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/src/config/securityHeaders.mjs
   - frontend/mobile-agent/README.md
 tags:
   - integraciones
@@ -121,7 +121,7 @@ Dos componentes MapLibre usan estilos públicos:
 
 - el mapa de monitoreo utiliza un estilo demo de MapLibre;
 - el mapa de posiciones utiliza estilos de OpenFreeMap/OpenMapTiles y atribución de OpenStreetMap;
-- ambos permiten reemplazar el style URL mediante configuración pública de Vite;
+- ambos permiten reemplazar el style URL mediante configuración pública de Next.js;
 - la CSP del runtime autoriza explícitamente los orígenes revisados de styles/tiles.
 
 Esta integración ocurre directamente desde el navegador porque entrega cartografía visual pública, no credenciales ni datos operacionales de un proveedor de aviación. Aun así introduce disponibilidad, términos de uso, privacidad de red del navegador y licenciamiento que deben revisarse antes de Production. Los styles demo no son una selección de proveedor productivo.

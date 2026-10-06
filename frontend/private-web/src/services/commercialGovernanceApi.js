@@ -1,7 +1,7 @@
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 
-const origin = String(import.meta.env.VITE_ELEVANT_API_URL || '').replace(/\/$/, '');
+const origin = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '').replace(/\/$/, '');
 
 export async function commercialApi(path, options = {}) {
   if (!origin) throw new Error('No está configurado el API de ELEVANT.');

@@ -14,8 +14,8 @@ afterEach(() => {
 });
 
 describe('private web API client seam', () => {
-  it('uses the literal Vite API URL without consulting the prototype adapter', async () => {
-    vi.stubEnv('VITE_ELEVANT_API_URL', 'https://private-api.elevant.test');
+  it('uses the literal Next.js API URL without consulting the prototype adapter', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://private-api.elevant.test');
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify(ping), {
         status: 200,
@@ -32,9 +32,9 @@ describe('private web API client seam', () => {
     );
   });
 
-  it('fails visibly when the Vite API URL is missing', () => {
-    vi.stubEnv('VITE_ELEVANT_API_URL', '');
+  it('fails visibly when the Next.js API URL is missing', () => {
+    vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', '');
 
-    expect(() => createPrivateWebApiClient()).toThrow(/VITE_ELEVANT_API_URL/);
+    expect(() => createPrivateWebApiClient()).toThrow(/NEXT_PUBLIC_ELEVANT_API_URL/);
   });
 });

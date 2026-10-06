@@ -53,26 +53,32 @@ página durante las recargas y la ajusta si desaparecen filas. Al guardar, abre
 la página donde queda el servicio según el orden devuelto por la API. Esta
 paginación se aplica en la vista: el endpoint sigue entregando la lista completa.
 
-Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente actual usa Vite 6, React 18, React Router y Tailwind.
+Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
 
 ## Ejecutar y validar
 
 Desde `frontend/private-web`:
 
+Si `.env.local` todavía contiene claves `VITE_*`, cambia sus nombres a `NEXT_PUBLIC_*` antes de ejecutar la aplicación. Las variables de Vite ya no configuran el build de Next.js.
+
 ```powershell
 npm ci
 npm test
 npm run test:delivery
-$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
-$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
-$env:VITE_HR_DEMO_MODE = "dashboard-read-only"
+npm run lint
+npm run typecheck
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
 npm run dev
 npm run build
 ```
 
-Vite sirve localmente en `http://localhost:5173`. Abre ese origen exacto, no `http://127.0.0.1:5173`: la política CORS de Development autoriza `localhost` y rechaza el origen alternativo. Las entradas históricas `dashboard.html`, `contracts.html` y `finance.html` se conservan junto con las rutas del router.
+Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/espacio-de-trabajo`. El servidor Next redirige las URL históricas `index.html`, `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
 
-Las variables `VITE_*` son públicas y nunca deben contener tokens, contraseñas ni cadenas SQL. Las tres primeras son obligatorias; la clave de Google Maps es opcional y visible en el navegador cuando se configura. El build falla si falta un origen, si no usa HTTPS, si apunta a localhost, si contiene una ruta, si los dos orígenes no coinciden o si `VITE_HR_DEMO_MODE` no vale exactamente `dashboard-read-only`. `VITE_ELEVANT_API_URL` configura el cliente OpenAPI compartido y `VITE_PROTOTYPE_API_URL` mantiene temporalmente los adaptadores anteriores apuntando a la misma API real de Development.
+Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development; Google Maps es opcional y su clave queda visible en el navegador. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
+
+CI y Docker pasan `NEXT_PUBLIC_ELEVANT_API_URL`, `NEXT_PUBLIC_PROTOTYPE_API_URL` y `NEXT_PUBLIC_HR_DEMO_MODE` durante el build. El origen API también permanece fijado como variable pública en el runtime standalone para generar la CSP por solicitud. El cambio de runtime requiere revisar y aplicar el Compose del repositorio antes de promover una imagen nueva; una imagen Next no es compatible con el antiguo contenedor Nginx.
 
 El dashboard de Gestión Humana deriva el total de agentes activos y perfiles sin cuenta vinculada de `GET /api/v1/human-resources/ramp-profiles`; ya no muestra las cifras sintéticas de turnos, habilitaciones o cobertura. Revalida al recibir un cambio durable, al recuperar foco/conexión y cada 25 segundos. **Agentes de rampa** usa perfiles, estaciones y terminales reales de la API; el formulario limita terminales a las estaciones seleccionadas, permite elegir un supervisor activo y distingue perfil sin cuenta de una cuenta IAM activa o deshabilitada. El estado IAM no confirma acceso móvil efectivo. Guardar un perfil no concede acceso ni envía invitaciones. En esta rama local, una acción separada solicita acceso móvil con UUID de intención estable; el estado se relee por `GET /api/v1/human-resources/ramp-profiles/access-requests`. **Habilitaciones y certificaciones** consulta `GET /api/v1/human-resources/qualifications` en páginas de 20, obtiene un ciclo puntual por agente y equipo, y permite registrar o renovar mediante `PUT /api/v1/human-resources/qualifications/{id}`. Conserva la clave de intención para un reintento incierto y relee el ciclo al recibir 409; no inventa adjuntos.
 
@@ -95,13 +101,13 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. `VITE_GOOGLE_MAPS_API_KEY` es
+de API al origen HTTPS privado de Development. `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` es
 opcional: cuando está presente, el mapa de posiciones y el de vuelos usan Maps
 JavaScript API; sin ella mantienen MapLibre. La clave del navegador es visible
 para quien carga la página: restríngela en Google Cloud por los orígenes web
 autorizados y limita sus permisos a Maps JavaScript API. El modo oscuro se
 selecciona al crear el mapa y cambiar de tema recrea esa instancia, no los datos.
-Esta integración es de prueba local: la CSP actual de Nginx no permite cargar
+Esta integración es de prueba local: la CSP actual no permite cargar
 Maps JavaScript API en la imagen publicada. No promociones un build con la clave
 hasta certificar una política CSP compatible y revisar los dominios cargados.
 
@@ -284,13 +290,14 @@ La imagen se construye desde la raíz del monorepo porque consume `packages/api-
 
 ```powershell
 docker build --file frontend/private-web/Dockerfile `
-  --build-arg VITE_ELEVANT_API_URL=https://api.elevant.test `
-  --build-arg VITE_PROTOTYPE_API_URL=https://api.elevant.test `
-  --build-arg VITE_HR_DEMO_MODE=dashboard-read-only `
+  --build-arg ELEVANT_DEPLOYMENT_ID=1111111111111111111111111111111111111111 `
+  --build-arg NEXT_PUBLIC_ELEVANT_API_URL=https://api.elevant.test `
+  --build-arg NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.elevant.test `
+  --build-arg NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only `
   --tag elevant-private-web:local .
 ```
 
-El runtime usa Nginx sin privilegios, UID `101`, puerto `8080`, raíz de solo lectura y un archivo físico `/healthz`. Las rutas profundas del SPA vuelven a `index.html`; los recursos inexistentes bajo `/assets/` responden `404` y los recursos versionados usan caché inmutable.
+El runtime usa Node 24 sin privilegios, UID `101`, puerto `8080` y raíz de solo lectura con caché Next en tmpfs. `/healthz` responde `ok`, las rutas profundas se renderizan en Next y los recursos versionados `/_next/static/` usan caché inmutable. La CSP se genera con nonce por solicitud y limita conexiones al origen API certificado, su equivalente WebSocket y los proveedores cartográficos revisados.
 
 `compose.development.aviam-web.yml` exige `ELEVANT_AVIAM_WEB_IMAGE` por digest, publica únicamente `127.0.0.1:18081` y conecta solo la red externa `elevant-dev-aviam-web-runtime`. Tailscale termina HTTPS fuera del contenedor. La aplicación no comparte la red de SQL Server.
 

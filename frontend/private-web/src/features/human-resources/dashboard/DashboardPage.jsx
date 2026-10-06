@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import KpiCard from '../../../components/KpiCard';
 import { UsersIcon, RefreshCwIcon } from '../../shell/components/icons';
 import { useHumanResourcesDashboardData } from './useHumanResourcesDashboardData';
@@ -18,7 +18,7 @@ function formatUpdatedAt(date) {
 }
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { status, data, lastUpdatedAt, refresh } = useHumanResourcesDashboardData();
   const isLoading = status === 'loading';
 
@@ -50,7 +50,7 @@ export default function DashboardPage() {
 
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <KpiCard label="Agentes de rampa activos" value={data?.activeStaffTotal} icon={UsersIcon} loading={isLoading} subtext="Perfiles operativos activos" />
-      <KpiCard label="Perfiles sin cuenta vinculada" value={pendingAccounts.length} icon={UsersIcon} tone={pendingAccounts.length ? 'signal' : 'default'} loading={isLoading} action={{ label: 'Revisar perfiles', onClick: () => navigate('/gestion-humana/users') }} />
+      <KpiCard label="Perfiles sin cuenta vinculada" value={pendingAccounts.length} icon={UsersIcon} tone={pendingAccounts.length ? 'signal' : 'default'} loading={isLoading} action={{ label: 'Revisar perfiles', onClick: () => router.push('/gestion-humana/users') }} />
     </div>
     <PendingAccountsList accounts={pendingAccounts} loading={isLoading} />
   </div>;

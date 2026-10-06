@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { loadOccReviewQueue } from '../../services/occReviewService';
+import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -31,9 +32,9 @@ export function useOccReviewQueue() {
         if (!controller.signal.aborted) setState({ status: 'success', data, error: null });
       })
       .catch(error => {
-        if (!controller.signal.aborted) setState({ status: 'error', data: null, error });
+        if (!controller.signal.aborted && !isAbortError(error)) setState({ status: 'error', data: null, error });
       });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [stationId, stationScopes, retry]);
 
   return {

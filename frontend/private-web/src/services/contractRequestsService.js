@@ -11,19 +11,19 @@ const INITIAL_REQUESTS = [
 let requests = INITIAL_REQUESTS.map(request => ({ ...request }));
 
 export async function getContractRequests() {
-  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/requests');
+  if (process.env.NODE_ENV !== 'test') return apiRequest('/api/contracts/requests');
   return requests.map(request => ({ ...request }));
 }
 
 export async function markRequestInReview(requestId) {
-  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/requests/${requestId}/review`, { method: 'POST' });
+  if (process.env.NODE_ENV !== 'test') return apiRequest(`/api/contracts/requests/${requestId}/review`, { method: 'POST' });
   return updateRequest(requestId, { status: 'inReview' });
 }
 
 export async function resolveContractRequest(requestId, { status, decisionNote }) {
   if (!['approved', 'rejected'].includes(status)) throw new Error('La decisión seleccionada no es válida.');
   if (!decisionNote.trim()) throw new Error('Debe registrar una observación para atender la solicitud.');
-  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/requests/${requestId}/resolve`, {
+  if (process.env.NODE_ENV !== 'test') return apiRequest(`/api/contracts/requests/${requestId}/resolve`, {
     method: 'POST', body: JSON.stringify({ status, decisionNote }),
   });
   return updateRequest(requestId, {

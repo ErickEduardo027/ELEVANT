@@ -7,7 +7,7 @@ import {
 import { CURRENT_USER_MOCK } from '../features/human-resources/mockData';
 import { handleUnauthorizedResponse, PROTOTYPE_API_URL, readSession } from '../features/auth/authService';
 
-const USE_BACKEND = import.meta.env.MODE !== 'test';
+const USE_BACKEND = process.env.NODE_ENV !== 'test';
 
 async function apiRequest(path, options = {}) {
   const session = readSession();

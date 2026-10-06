@@ -10,22 +10,23 @@ services:
       - "127.0.0.1:18081:8080"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1700
+      - /app/frontend/private-web/.next/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=0700
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 64
-    mem_limit: 128m
-    cpus: 0.15
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 0.35
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "node", "/app/healthcheck.mjs"]
       interval: 15s
       timeout: 5s
       retries: 4
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
-    stop_grace_period: 20s
+    stop_grace_period: 30s
     logging:
       driver: json-file
       options:

@@ -7,8 +7,8 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-26"
-verified_commit: "e047f7ac69c241d354fff9144f47747b98963719"
+last_verified: "2026-10-06"
+verified_commit: "c2c66bca855778021e1b42aad86ecdad1ecf1c93"
 sources:
   - database/DevelopmentDB/Elevant.Persistence/Realtime/AccountChangeOutboxWriter.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/AirlineOperationChangeWriter.cs
@@ -29,7 +29,7 @@ sources:
   - frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx
   - frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx
   - frontend/private-web/README.md
-  - frontend/private-web/nginx/security-headers.conf
+  - frontend/private-web/src/config/securityHeaders.mjs
   - frontend/private-web/Dockerfile
   - frontend/mobile-agent/src/services/mobile-change-observer.ts
   - frontend/mobile-agent/src/services/mobile-change-feed.ts

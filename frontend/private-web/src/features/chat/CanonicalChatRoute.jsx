@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import Link from '../../components/AppLink';
+import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
 import { OccStationPicker } from '../admin-occ/OccQueueState';
 import { loadOperationalConversations, loadOperationalMessages, sendOperationalMessage } from '../../services/operationalCommunicationService';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -51,18 +53,20 @@ export default function CanonicalChatRoute() {
       return undefined;
     }
     const controller = new AbortController();
+    let latestRequest = 0;
     const load = async () => {
+      const requestId = ++latestRequest;
       try {
         const data = await loadOperationalConversations(stationId, { signal: controller.signal });
-        if (!controller.signal.aborted) setConversations({ status: 'success', items: data.conversations, hasMore: data.hasMore });
-      } catch {
-        if (!controller.signal.aborted) setConversations(previous => ({ ...previous, status: 'error' }));
+        if (!controller.signal.aborted && requestId === latestRequest) setConversations({ status: 'success', items: data.conversations, hasMore: data.hasMore });
+      } catch (error) {
+        if (!controller.signal.aborted && !isAbortError(error) && requestId === latestRequest) setConversations(previous => ({ ...previous, status: 'error' }));
       }
     };
     setConversations({ status: 'loading', items: [], hasMore: false });
     void load();
     const timer = window.setInterval(load, 20_000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => { abortForEffectCleanup(controller); window.clearInterval(timer); };
   }, [stationId, stationScopes, listRevision]);
 
   useEffect(() => {
@@ -71,18 +75,20 @@ export default function CanonicalChatRoute() {
       return undefined;
     }
     const controller = new AbortController();
+    let latestRequest = 0;
     const load = async () => {
+      const requestId = ++latestRequest;
       try {
         const data = await loadOperationalMessages(selectedOperation.operationId, { signal: controller.signal });
-        if (!controller.signal.aborted) setMessages({ status: 'success', items: data.messages, hasMore: data.hasMore });
-      } catch {
-        if (!controller.signal.aborted) setMessages(previous => ({ ...previous, status: 'error' }));
+        if (!controller.signal.aborted && requestId === latestRequest) setMessages({ status: 'success', items: data.messages, hasMore: data.hasMore });
+      } catch (error) {
+        if (!controller.signal.aborted && !isAbortError(error) && requestId === latestRequest) setMessages(previous => ({ ...previous, status: 'error' }));
       }
     };
     setMessages({ status: 'loading', items: [], hasMore: false });
     void load();
     const timer = window.setInterval(load, 10_000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => { abortForEffectCleanup(controller); window.clearInterval(timer); };
   }, [selectedOperation?.operationId, messageRevision]);
 
   const selectConversation = operationId => {

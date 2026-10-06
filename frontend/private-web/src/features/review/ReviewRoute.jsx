@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'next/navigation';
 import ReviewPage from './ReviewPage';
 import { useReviewData } from './useReviewData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';

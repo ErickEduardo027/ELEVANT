@@ -17,7 +17,7 @@ on:
       - "frontend/private-web/.env.example"
       - "frontend/private-web/package.json"
       - "frontend/private-web/package-lock.json"
-      - "frontend/private-web/vite.config.js"
+      - "frontend/private-web/next.config.mjs"
       - "frontend/private-web/src/config/elevantApiClient.js"
       - "frontend/private-web/tests/elevantApiClient.smoke.test.js"
       - "frontend/public-web/.env.example"

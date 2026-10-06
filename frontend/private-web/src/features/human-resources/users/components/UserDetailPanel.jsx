@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import Drawer from '../../../../components/Drawer';
 import Tabs from '../../../../components/Tabs';
 import Badge from '../../../../components/Badge';
@@ -34,7 +34,7 @@ export default function UserDetailPanel({
   pending,
 }) {
   const [activeTab, setActiveTab] = useState('general');
-  const navigate = useNavigate();
+  const router = useRouter();
 
   if (!item) {
     return <Drawer open={open} onClose={onClose} title="" widthClassName="lg:w-[60%]" />;
@@ -182,7 +182,7 @@ export default function UserDetailPanel({
             </p>
             <button
               type="button"
-              onClick={() => navigate(`/gestion-humana/certifications?agentId=${item.id}`)}
+              onClick={() => router.push(`/gestion-humana/certifications?agentId=${item.id}`)}
               className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-accent-600 hover:underline"
             >
               <ShieldCheckIcon className="h-4 w-4" /> Ver habilitaciones completas

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../auth/AuthContext';
 import DashboardPage from './DashboardPage';
 import { useDashboardData } from './useDashboardData';
 
 export default function DashboardRoute() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { session } = useAuth();
   const stationScopes = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode),
@@ -32,8 +32,8 @@ export default function DashboardRoute() {
     selectedStationId={selected?.stationId ?? ''}
     onStationChange={setStationId}
     onRetry={() => setRetryToken(value => value + 1)}
-    onOpenPlanning={() => navigate('/admin-occ/planning')}
-    onOpenReview={() => navigate('/admin-occ/review')}
-    onOpenNotifications={() => navigate('/admin-occ/notifications')}
+    onOpenPlanning={() => router.push('/admin-occ/planning')}
+    onOpenReview={() => router.push('/admin-occ/review')}
+    onOpenNotifications={() => router.push('/admin-occ/notifications')}
   />;
 }

@@ -84,7 +84,7 @@ while IFS= read -r -d '' path; do
     packages/api-client/* | backend/Elevant.Api/* | backend/Elevant.Contracts/* | \
     Directory.Build.props | Directory.Packages.props | NuGet.config | global.json | \
     frontend/private-web/.env.example | frontend/private-web/package.json | \
-    frontend/private-web/package-lock.json | frontend/private-web/vite.config.js | \
+    frontend/private-web/package-lock.json | frontend/private-web/next.config.mjs | \
     frontend/private-web/src/config/elevantApiClient.js | \
     frontend/private-web/tests/elevantApiClient.smoke.test.js | \
     frontend/public-web/.env.example | frontend/public-web/package.json | \

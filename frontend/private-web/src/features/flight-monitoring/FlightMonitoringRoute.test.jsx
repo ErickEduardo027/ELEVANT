@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation } from '../../../tests/MemoryRouter.jsx';
 import { beforeEach, expect, it, vi } from 'vitest';
 import FlightMonitoringRoute from './FlightMonitoringRoute';
 import { useAuth } from '../auth/AuthContext';

@@ -893,6 +893,50 @@ iniciar el deploy, el controlador restaura el último par imagen + Compose sano;
 si ese rollback falla, pausa solo el perfil afectado. Nunca ejecutar
 `docker compose down`, eliminar las redes o conectar las webs a SQL.
 
+### Cambio controlado del runtime AVIAM Web a Next.js
+
+La imagen nueva de `aviam-web` ejecuta Next.js standalone con Node 24 y UID
+`101`. Conserva el contrato externo `127.0.0.1:18081 -> 8080`, `/healthz`
+con cuerpo `ok` y los smokes `/` y `/dashboard`. El Compose revisado monta
+`/tmp` y `/app/frontend/private-web/.next/cache` como tmpfs, mantiene rootfs
+read-only y permite más memoria y procesos para SSR. El servidor genera la CSP
+con nonce por solicitud y responde rutas profundas sin fallback SPA de Nginx.
+
+Para pasar de la baseline Nginx ya instalada, el operador deshabilita
+`ELEVANT AVIAM Web CD - Poll`, espera que no haya ejecución activa y pausa el
+perfil `aviam-web`. Esta PR también ajusta el cliente API compartido: el
+clasificador certifica un bundle nuevo de Public Web. Por eso el operador
+deshabilita y pausa **también** el poll y perfil `public-web` antes del merge;
+Database y API conservan sus schedules. Registra las dos baselines A, imágenes
+y Compose exactos y verifica `--status` sobre A. Después del merge y la
+certificación de B, compara el Compose del bundle con
+`frontend/private-web/compose.development.aviam-web.yml` y confirma la misma
+tupla API. Con ambos perfiles pausados y sus polls deshabilitados, guarda una
+copia restringida del Raw y del archivo Compose vivo A. En el recurso AVIAM Web
+guarda el Compose B exacto en **Raw**, sin pulsar Deploy ni activar AutoDeploy;
+reabre Raw y comprueba el contenido. Guardar Raw en Dokploy puede dejar el
+archivo `ELEVANT_WEB_CD_COMPOSE` del controlador en A hasta un Deploy. Por eso
+el operador sincroniza manualmente ese archivo vivo con el mismo Compose B,
+mediante un archivo temporal y reemplazo atómico, sin tocar `.env`, imagen,
+contenedor, redes ni volúmenes. Comprueba que Raw y archivo vivo representan B
+y que `--dry-run` pasa: el controlador compara la semántica del Compose vivo
+con el payload certificado y rechaza el drill si siguen distintos.
+
+Solo entonces ejecuta el drill B → A → B documentado arriba. El
+controlador usa el Compose certificado de cada imagen durante la promoción y
+el rollback, pero **nunca reescribe el archivo Compose vivo ni el editor Raw**.
+Si el drill falla y vuelve a A, el operador restaura también el Raw y el
+archivo vivo A desde las copias restringidas, confirma la semántica A y deja
+pausado el perfil y deshabilitado su poll hasta resolver el fallo. No se hace
+un Deploy manual del Raw ni se habilita AutoDeploy. Tras un drill exitoso,
+el operador verifica rutas
+profundas, CSP, recursos `/_next/static/`, sesión interna y aislamiento de red,
+reanuda el perfil, exige un no-op manual y habilita el poll. A continuación
+acepta el bundle de Public Web con su propio drill; su Compose no cambia, así
+que no necesita esta preparación de Raw. Solo entonces reanuda su perfil y
+poll. Si falla un gate, mantiene pausado el perfil afectado y deshabilitado su
+poll para conservar o restaurar A.
+
 ### Alcance de aceptación
 
 La entrega sigue siendo un preview técnico compartido. Sesión y las consultas

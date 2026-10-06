@@ -3,13 +3,10 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 const STORAGE_KEY = 'elevant-theme';
 
 function readInitialTheme() {
-  if (typeof window === 'undefined') return 'light';
-  const stored = window.localStorage?.getItem(STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark') return stored;
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'light';
 }
 
-const ThemeContext = createContext(null);
+  const ThemeContext = createContext(null);
 
 // Same mechanism as the Admin/OCC reference shell: a single `theme` state
 // toggles the `dark` class on the document root, which Tailwind's
@@ -23,6 +20,14 @@ const ThemeContext = createContext(null);
 // del árbol resuelve esto sin cambiar la API pública de useTheme().
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(readInitialTheme);
+
+  useEffect(() => {
+    const stored = window.localStorage?.getItem(STORAGE_KEY);
+    const preferred = stored === 'light' || stored === 'dark'
+      ? stored
+      : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    if (preferred !== theme) setTheme(preferred);
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');

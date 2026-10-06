@@ -4,7 +4,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PositionsMapPage from './PositionsMapPage';
 
-beforeEach(() => vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', ''));
+beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
 afterEach(() => vi.unstubAllEnvs());
 
 vi.mock('./components/PositionMap', () => ({

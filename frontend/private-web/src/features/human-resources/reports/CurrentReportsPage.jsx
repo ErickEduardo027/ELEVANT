@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useAppSearchParams as useSearchParams } from '../../../hooks/useAppSearchParams';
+import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import { useAuth } from '../../auth/AuthContext';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { exportHumanResourcesReport, getHumanResourcesReport } from
@@ -119,12 +120,12 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
         setState({ status: 'success', data, key: queryKey });
     }).catch(error => {
       if (controller.signal.aborted || version !== requestVersion.current ||
-        error?.name === 'AbortError') return;
+        isAbortError(error)) return;
       setState({ status: error?.status === 401 ? 'unauthorized' :
         error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error',
       data: null, key: queryKey });
     });
-    return () => controller.abort();
+    return () => abortForEffectCleanup(controller);
   }, [session?.token, stationId, scopeAllowed, kind, from, to, page,
     documentKind, validity,
     rangeAllowed, revision, queryKey]);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../../tests/MemoryRouter.jsx';
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(), queue: vi.fn(), detail: vi.fn(), decide: vi.fn(),

@@ -48,6 +48,15 @@ El alias mutable solo permite localizar el candidato; la identidad ejecutada es 
 
 En la preparación comercial del 26-09-2026 se observó que guardar Raw y Environment en Dokploy no regeneró sus archivos `code/` antes de Deploy. El operador comprobó el Raw guardado por hash, pausó Database CD con los schedules deshabilitados y sincronizó los archivos vivos bajo copia de seguridad restringida, sin desplegar. Este checkpoint preparatorio no equivale a una promoción aceptada; el [procedimiento de Dokploy](../../docs/deployment/dokploy-configuration.md) exige después bundle certificado, `--dry-run` y las verificaciones de promoción.
 
+Un cambio de runtime web que altera la semántica del Compose requiere la
+misma distinción entre Raw guardado y archivo vivo. El controlador Web CD
+compara el archivo vivo con el Compose certificado antes del drill y nunca
+lo reescribe. El [procedimiento revisado](../../docs/deployment/dokploy-configuration.md)
+exige pausar el perfil, guardar A, preparar B en ambas representaciones sin
+desplegar y pasar `--dry-run`; si el drill restaura A, también se restauran
+ambas representaciones de Compose antes de reanudar. Esto describe el contrato
+de operación, no afirma que la migración a Next.js ya esté desplegada.
+
 ## Dependencias y relojes
 
 | Carril | Frecuencia aceptada | Gate que impide adelantarlo |

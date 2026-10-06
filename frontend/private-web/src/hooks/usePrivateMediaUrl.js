@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { readSession } from '../features/auth/authService';
 import { commercialMediaUrl } from '../services/commercialGovernanceApi';
+import { abortForEffectCleanup, isAbortError } from '../lib/abort';
 
 export function usePrivateMediaUrl(url) {
   const [src, setSrc] = useState(null);
@@ -21,8 +22,8 @@ export function usePrivateMediaUrl(url) {
         objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       }
-    }).catch(() => { if (!controller.signal.aborted) setSrc(null); });
-    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }).catch(error => { if (!controller.signal.aborted && !isAbortError(error)) setSrc(null); });
+    return () => { abortForEffectCleanup(controller); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [url]);
   return src;
 }

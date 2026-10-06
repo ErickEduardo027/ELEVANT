@@ -88,3 +88,14 @@ it('never renders the prior station or account snapshot during a scope switch', 
   expect(result.current.status).toBe('loading');
   expect(result.current.data).toBeNull();
 });
+
+it('does not expose an AbortError as a dashboard failure', async () => {
+  vi.mocked(getDashboardSnapshot).mockRejectedValueOnce(
+    new DOMException('signal is aborted without reason', 'AbortError'),
+  );
+  const { result } = renderHook(() => useDashboardData(scope));
+  await waitFor(() => expect(getDashboardSnapshot).toHaveBeenCalledOnce());
+  await act(async () => {});
+  expect(result.current.status).toBe('loading');
+  expect(result.current.data).toBeNull();
+});

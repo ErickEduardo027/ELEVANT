@@ -64,7 +64,11 @@ mutate("aviam-web", "a root runtime user", (source) => source.replace('user: "10
 mutate("public-web", "retained Linux capabilities", (source) => source.replace("      - ALL", "      - NET_ADMIN"));
 mutate("aviam-web", "disabled no-new-privileges", (source) => source.replace("no-new-privileges:true", "no-new-privileges:false"));
 mutate("public-web", "a widened CPU limit", (source) => source.replace("cpus: 0.35", "cpus: 1.0"));
-mutate("aviam-web", "a removed memory limit", (source) => source.replace("    mem_limit: 128m\n", ""));
+mutate("aviam-web", "a removed memory limit", (source) => source.replace("    mem_limit: 512m\n", ""));
+mutate("aviam-web", "a missing writable Next cache", (source) => source.replace(
+  "      - /app/frontend/private-web/.next/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=0700\n",
+  "",
+));
 mutate("public-web", "a removed PID limit", (source) => source.replace("    pids_limit: 256\n", ""));
 mutate("aviam-web", "a disabled healthcheck", (source) => source.replace(
   "    healthcheck:\n      test:",

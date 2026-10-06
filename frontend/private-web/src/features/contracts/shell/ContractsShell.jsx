@@ -44,7 +44,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   }, [theme]);
 
   useEffect(() => {
-    if (import.meta.env.MODE === 'test') return undefined;
+    if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.some(resource => ['commercial_requests',
         'contract_draft_comments', 'airline_contracts'].includes(resource))) {

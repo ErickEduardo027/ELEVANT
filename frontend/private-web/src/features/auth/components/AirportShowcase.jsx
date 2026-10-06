@@ -1,6 +1,6 @@
 import { useAuthLanguage } from '../i18n/useAuthLanguage';
 
-const base = import.meta.env.BASE_URL;
+const base = '/';
 
 // width = native pixel width of the supplied PNG; the stylesheet scales every
 // logo by the same factor so the strip keeps the mockup's proportions.

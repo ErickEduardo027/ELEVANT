@@ -34,12 +34,12 @@ function withStatus(contract) {
 }
 
 export async function getContracts() {
-  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/contracts');
+  if (process.env.NODE_ENV !== 'test') return apiRequest('/api/contracts/contracts');
   return contracts.map(withStatus);
 }
 
 export async function createContract(input) {
-  if (import.meta.env.MODE !== 'test') return apiRequest('/api/contracts/contracts', {
+  if (process.env.NODE_ENV !== 'test') return apiRequest('/api/contracts/contracts', {
     method: 'POST', body: JSON.stringify(input),
   });
   const sequence = contracts.length + 19;
@@ -58,7 +58,7 @@ export async function createContract(input) {
 }
 
 export async function updateContract(contractId, changes) {
-  if (import.meta.env.MODE !== 'test') return apiRequest(`/api/contracts/contracts/${contractId}`, {
+  if (process.env.NODE_ENV !== 'test') return apiRequest(`/api/contracts/contracts/${contractId}`, {
     method: 'PATCH', body: JSON.stringify(changes),
   });
   let updated = null;

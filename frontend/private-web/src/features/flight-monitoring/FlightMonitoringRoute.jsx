@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchParams';
 import { useAuth } from '../auth/AuthContext';
 import FlightMonitoringPage from './FlightMonitoringPage';
 import { useFlightMonitoringData } from './useFlightMonitoringData';

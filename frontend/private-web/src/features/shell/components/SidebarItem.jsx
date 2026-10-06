@@ -1,4 +1,7 @@
-import { NavLink } from 'react-router-dom';
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 const BADGE_TONE_CLASSES = {
   default: 'bg-signal-500',
@@ -44,6 +47,7 @@ function ItemContent({ Icon, label, expanded, hasBadge, badgeCount, badgeToneCla
 }
 
 export default function SidebarItem({ icon: Icon, label, to, active = false, expanded = true, badge, onClick, onNavigate }) {
+  const pathname = usePathname();
   const badgeCount = typeof badge === 'number' ? badge : badge?.count;
   const badgeToneClass = BADGE_TONE_CLASSES[(typeof badge === 'object' && badge?.tone) || 'default'];
   const hasBadge = Number.isFinite(badgeCount) && badgeCount > 0;
@@ -58,9 +62,9 @@ export default function SidebarItem({ icon: Icon, label, to, active = false, exp
     }`;
 
   if (to) {
+    const isActive = pathname === to || (to !== '/' && pathname?.startsWith(`${to}/`));
     return (
-      <NavLink to={to} onClick={onNavigate} className={({ isActive }) => sharedClassName(isActive)}>
-        {({ isActive }) => (
+      <Link href={to} onClick={onNavigate} aria-current={isActive ? 'page' : undefined} className={sharedClassName(isActive)}>
           <ItemContent
             Icon={Icon}
             label={label}
@@ -70,8 +74,7 @@ export default function SidebarItem({ icon: Icon, label, to, active = false, exp
             badgeToneClass={badgeToneClass}
             active={isActive}
           />
-        )}
-      </NavLink>
+      </Link>
     );
   }
 

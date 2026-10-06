@@ -14,7 +14,7 @@ const EMPTY_FORM = {
 
 function validate(values, mode) {
   const errors = {};
-  if (mode === 'create' && import.meta.env.MODE !== 'test' && !values.requestId) errors.requestId = 'Seleccione una solicitud aprobada.';
+  if (mode === 'create' && process.env.NODE_ENV !== 'test' && !values.requestId) errors.requestId = 'Seleccione una solicitud aprobada.';
   if (mode === 'create' && !values.airline.trim()) errors.airline = 'Indique la aerolínea.';
   if (mode === 'create' && !values.airlineCode.trim()) errors.airlineCode = 'Indique el código.';
   if (mode === 'create' && !values.startDate) errors.startDate = 'Indique la fecha de inicio.';
@@ -50,7 +50,7 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
         : EMPTY_FORM,
     );
     setErrors({});
-    if (!contract && import.meta.env.MODE !== 'test') {
+    if (!contract && process.env.NODE_ENV !== 'test') {
       getContractRequests()
         .then(items => setApprovedRequests(items.filter(item => item.status === 'approved' && !item.contractId)))
         .catch(() => setApprovedRequests([]));
@@ -115,7 +115,7 @@ export default function ContractFormModal({ open, contract, onClose, onSubmit })
         <form onSubmit={handleSubmit} className="space-y-5 p-6">
           {mode === 'create' ? (
             <>
-            {import.meta.env.MODE !== 'test' && (
+            {process.env.NODE_ENV !== 'test' && (
               <label htmlFor="contract-request" className="block text-sm font-medium">
                 Solicitud aprobada
                 <select id="contract-request" value={values.requestId} onChange={event => selectRequest(event.target.value)} className={inputClass}>

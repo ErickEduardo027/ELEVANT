@@ -5,7 +5,7 @@ import AuthControls from './components/AuthControls';
 import LoginIntro from './components/LoginIntro';
 import { useAuthLanguage } from './i18n/useAuthLanguage';
 
-const base = import.meta.env.BASE_URL;
+const base = '/';
 const markLight = `${base}brand/elevant-mark-light.png`;
 const markDark = `${base}brand/elevant-mark-dark.png`;
 
