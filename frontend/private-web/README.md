@@ -31,6 +31,12 @@ de servicios se incluyen como recursos estáticos. Las confirmaciones de
 retirada, archivo y descarte se presentan dentro de la aplicación. La carga
 remota exige preparar el [almacén privado](../../ops/dokploy/media-storage/README.md).
 
+En **Contratos → Servicios → Catálogo**, la lista interna muestra diez servicios
+por página, incluidos los ocultos. Indica el rango y el total, conserva la
+página durante las recargas y la ajusta si desaparecen filas. Al guardar, abre
+la página donde queda el servicio según el orden devuelto por la API. Esta
+paginación se aplica en la vista: el endpoint sigue entregando la lista completa.
+
 Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente actual usa Vite 6, React 18, React Router y Tailwind.
 
 ## Ejecutar y validar
