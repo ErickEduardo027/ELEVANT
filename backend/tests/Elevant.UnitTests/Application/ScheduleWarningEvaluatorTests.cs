@@ -6,6 +6,7 @@ public sealed class ScheduleWarningEvaluatorTests
 {
     private static readonly Guid Puj = Guid.Parse("20000000-0000-7000-8000-000000000003");
     private static readonly Guid Jfk = Guid.Parse("20000000-0000-7000-8000-000000000091");
+    private static readonly Guid Sdq = Guid.Parse("20000000-0000-7000-8000-000000000099");
     private static readonly Guid Agent = Guid.Parse("50000000-0000-7000-8000-000000000001");
     private static readonly ScheduleWarningRule Rule = new("dev-2026-10-05",
         new DateOnly(2026, 10, 5), TimeSpan.FromHours(12), TimeSpan.FromHours(48));
@@ -92,6 +93,28 @@ public sealed class ScheduleWarningEvaluatorTests
         var warnings = Evaluate(shifts, new DateOnly(2026, 10, 6));
         Assert.Contains(warnings, item => item.Kind == ScheduleWarningKind.Overlap &&
             item.MeasuredMinutes == 240);
+    }
+
+    [Theory]
+    [InlineData(7, 1, 2)]
+    [InlineData(12, 1, 2)]
+    [InlineData(8, 1, 2)]
+    [InlineData(8, 3, 2)]
+    public void HiddenCrossStationOverlapIsDetectedRegardlessOfStartOrIdOrder(
+        int hiddenStartHour, int hiddenId, int visibleId)
+    {
+        var hidden = Shift(hiddenId, Sdq, "SDQ", "America/Santo_Domingo", 6,
+            hiddenStartHour, 0, hiddenStartHour + 2, 0) with { CanReveal = false };
+        var visible = Shift(visibleId, Puj, "PUJ", "America/Santo_Domingo", 6,
+            8, 0, 16, 0);
+
+        var warning = Assert.Single(Evaluate([hidden, visible],
+            new DateOnly(2026, 10, 6)), item => item.Kind == ScheduleWarningKind.Overlap);
+        Assert.Equal(visible.Id, warning.AnchorShiftId);
+        Assert.True(warning.HasRestrictedEvidence);
+        Assert.Null(warning.MeasuredMinutes);
+        Assert.DoesNotContain(warning.Evidence, item => item.ShiftId == hidden.Id);
+        Assert.DoesNotContain(warning.Evidence, item => item.StationCode == "SDQ");
     }
 
     [Theory]

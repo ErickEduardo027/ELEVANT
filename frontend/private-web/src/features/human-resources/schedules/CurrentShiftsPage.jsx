@@ -30,10 +30,12 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const weekTo = toDateKey(addDays(anchorWeek, 6));
   const grantKey = Array.isArray(session?.stationScopes)
     ? session.stationScopes.map(scope => scope.stationId).sort().join(',') : '';
-  const queryKey = `${session?.token ?? ''}|${grantKey}|${from}|${to}|${page}|${revision}`;
+  const authorizationKey = `${session?.token ?? ''}|${grantKey}`;
+  const queryKey = `${authorizationKey}|${from}|${to}|${page}|${revision}`;
   const shown = state.key === queryKey ? state :
     { key: queryKey, status: 'loading', data: null };
-  const requestsAuthorized = requestsAuthorizedKey === queryKey;
+  const requestsAuthorized = Boolean(session?.token) &&
+    requestsAuthorizedKey === authorizationKey;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,7 +44,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     getHumanResourcesShifts({ from, to, page, limit: PAGE_LIMIT }, { signal: controller.signal })
       .then(data => {
         if (!controller.signal.aborted && version === requestVersion.current) {
-          setRequestsAuthorizedKey(queryKey);
+          setRequestsAuthorizedKey(authorizationKey);
           setState({ key: queryKey, status: 'success', data });
         }
       })
@@ -55,7 +57,7 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
           error?.status === 403 ? 'forbidden' : 'error', data: null });
       });
     return () => controller.abort();
-  }, [from, to, page, revision, queryKey]);
+  }, [from, to, page, revision, queryKey, authorizationKey]);
 
   useEffect(() => {
     const refresh = () => setRevision(value => value + 1);

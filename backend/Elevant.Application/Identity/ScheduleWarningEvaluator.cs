@@ -69,6 +69,7 @@ public static class ScheduleWarningEvaluator
                 .ThenBy(item => item.Shift.EmployeeNumber, StringComparer.Ordinal)
                 .ThenBy(item => item.Shift.Id).ToArray();
             var dailyWarnings = new HashSet<(DateOnly Date, ScheduleWarningKind Kind)>();
+            var emittedOverlapPairs = new HashSet<(Guid First, Guid Second)>();
 
             foreach (var target in targets)
             {
@@ -95,6 +96,23 @@ public static class ScheduleWarningEvaluator
                     continue;
                 }
 
+                // Every UTC intersection matters, including a hidden shift that
+                // starts after the visible one. Emit each pair only once.
+                foreach (var other in valid.Where(item =>
+                             item.Shift.Id != target.Shift.Id &&
+                             item.Start!.Value < target.End!.Value &&
+                             item.End!.Value > target.Start!.Value))
+                {
+                    var pair = target.Shift.Id.CompareTo(other.Shift.Id) < 0
+                        ? (target.Shift.Id, other.Shift.Id)
+                        : (other.Shift.Id, target.Shift.Id);
+                    if (!emittedOverlapPairs.Add(pair)) continue;
+                    var overlap = Min(target.End!.Value, other.End!.Value) -
+                        Max(target.Start!.Value, other.Start!.Value);
+                    warnings.Add(Create(target, ScheduleWarningKind.Overlap,
+                        [target, other], (int)overlap.TotalMinutes, 0, rule, null));
+                }
+
                 var preceding = valid.Where(item =>
                         item.Shift.Id != target.Shift.Id &&
                         (item.Start!.Value < target.Start!.Value ||
@@ -105,16 +123,7 @@ public static class ScheduleWarningEvaluator
                 if (preceding is not null)
                 {
                     var rest = target.Start!.Value - preceding.End!.Value;
-                    if (rest < TimeSpan.Zero)
-                    {
-                        var overlap = Min(target.End!.Value, preceding.End.Value) -
-                            target.Start.Value;
-                        if (overlap > TimeSpan.Zero)
-                            warnings.Add(Create(target, ScheduleWarningKind.Overlap,
-                                [preceding, target], (int)overlap.TotalMinutes, 0,
-                                rule, null));
-                    }
-                    else if (rest < rule.MinimumRest)
+                    if (rest >= TimeSpan.Zero && rest < rule.MinimumRest)
                     {
                         warnings.Add(Create(target, ScheduleWarningKind.ShortRest,
                             [preceding, target], (int)rest.TotalMinutes,
