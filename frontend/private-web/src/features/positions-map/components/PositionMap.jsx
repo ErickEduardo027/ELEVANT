@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Map as MaplibreMap, NavigationControl, AttributionControl, LngLatBounds } from 'maplibre-gl';
+import { Map as MaplibreMap, NavigationControl, AttributionControl, LngLatBounds, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PUJ_COORDINATES } from '../positionsMapMappers';
 import { attachPositionsLayers, updatePositionsData, setSelectedPositionFilter } from './positionMapLayers';
@@ -50,6 +50,7 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
     let ready = false;
     let disposed = false;
     try {
+      setWorkerUrl('/assets/maplibre/maplibre-gl-worker.mjs');
       map = new MaplibreMap({
       container: containerRef.current,
       style: STYLE_URLS[theme] ?? STYLE_URLS.light,
@@ -174,7 +175,7 @@ const PositionMap = forwardRef(function PositionMap({ positions, selectedPositio
   }));
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl">
+    <div className="absolute inset-0 overflow-hidden rounded-2xl">
       <div ref={containerRef} data-testid="position-map-container" className="h-full w-full" />
       {mapUnavailable && <div role="alert" className="absolute inset-0 z-20 overflow-y-auto bg-white/95 p-5 text-ink-900 dark:bg-surface-dark-card/95 dark:text-text-primary-dark">
         <h3 className="text-base font-semibold">La cartografía no está disponible</h3>

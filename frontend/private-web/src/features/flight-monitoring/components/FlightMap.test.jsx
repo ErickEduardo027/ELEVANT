@@ -5,7 +5,7 @@ import { __state } from 'maplibre-gl';
 import FlightMap from './FlightMap';
 
 vi.mock('maplibre-gl', () => {
-  const state = { maps: [] };
+  const state = { maps: [], workerUrl: null };
 
   class FakeMarker {
     constructor(options) {
@@ -30,6 +30,9 @@ vi.mock('maplibre-gl', () => {
 
   class FakeMap {
     constructor(options) {
+      if (state.workerUrl !== '/assets/maplibre/maplibre-gl-worker.mjs') {
+        throw new Error('MapLibre worker URL must be configured before creating a map');
+      }
       this.options = options;
       this.markers = [];
       this.controls = [];
@@ -97,6 +100,7 @@ vi.mock('maplibre-gl', () => {
     Marker: FakeMarker,
     NavigationControl: FakeNavigationControl,
     LngLatBounds: FakeLngLatBounds,
+    setWorkerUrl: url => { state.workerUrl = url; },
     __state: state,
   };
 });
@@ -108,12 +112,14 @@ function flight(overrides) {
 describe('FlightMap', () => {
   beforeEach(() => {
     __state.maps.length = 0;
+    __state.workerUrl = null;
     cleanup();
   });
 
   it('mounts a map centered on PUJ with the navigation control and the airport marker', () => {
     render(<FlightMap flights={[]} selectedFlightId={null} onSelectFlight={() => {}} theme="light" />);
     const map = __state.maps[0];
+    expect(__state.workerUrl).toBe('/assets/maplibre/maplibre-gl-worker.mjs');
     expect(map.options.center).toEqual([-68.3634, 18.5674]);
     expect(map.controls).toHaveLength(1);
     expect(map.markers).toHaveLength(1); // airport marker only

@@ -3,7 +3,6 @@ import FlightToolbar from './components/FlightToolbar';
 import FlightListPanel from './components/FlightListPanel';
 import FlightListDrawer from './components/FlightListDrawer';
 import FlightMap from './components/FlightMap';
-import GoogleFlightMap from './components/GoogleFlightMap';
 import FlightLegend from './components/FlightLegend';
 import FlightDetailPopover from './components/FlightDetailPopover';
 import FlightToastStack from './components/FlightToast';
@@ -29,12 +28,10 @@ function MonitoringMapArea({
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
   // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
-  const useGoogle = stationCode === 'PUJ' && Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
-  const BaseMap = useGoogle ? GoogleFlightMap : FlightMap;
   return (
     <div className="relative min-h-[420px] flex-1">
-      {stationCode === 'PUJ' && (geolocatedFlights.length > 0 || useGoogle) ? <>
-        <BaseMap
+      {stationCode === 'PUJ' ? <>
+        <FlightMap
           flights={geolocatedFlights}
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}

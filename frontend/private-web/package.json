@@ -5,12 +5,14 @@
   "description": "Internal AVIAM operations application built with Next.js.",
   "type": "module",
   "scripts": {
+    "predev": "node ./scripts/copy-maplibre-worker.mjs",
     "dev": "node ./scripts/run-next.mjs dev",
     "start": "node ./scripts/run-next.mjs start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "validate:development-env": "node ./scripts/validate-development-env.mjs",
     "test:delivery": "node --test ./scripts/test-development-delivery.mjs",
+    "prebuild": "node ./scripts/copy-maplibre-worker.mjs",
     "build": "npm run validate:development-env && node ./scripts/run-next.mjs build && node ./scripts/verify-maplibre-worker.mjs",
     "preview": "node ./scripts/run-next.mjs start",
     "test": "vitest run --configLoader runner --config vitest.config.mjs"

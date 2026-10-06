@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Map as MaplibreMap, Marker, NavigationControl, LngLatBounds } from 'maplibre-gl';
+import { Map as MaplibreMap, Marker, NavigationControl, LngLatBounds, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PUJ_COORDINATES } from '../flightMonitoringMappers';
 import { createAircraftMarkerElement, updateAircraftMarkerElement } from './AircraftMarker';
@@ -31,6 +31,7 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   const recomputePopoverPositionRef = useRef(() => {});
 
   useEffect(() => {
+    setWorkerUrl('/assets/maplibre/maplibre-gl-worker.mjs');
     const map = new MaplibreMap({
       container: containerRef.current,
       style: STYLE_URLS[theme] ?? STYLE_URLS.light,
@@ -142,7 +143,7 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl">
+    <div className="absolute inset-0 overflow-hidden rounded-2xl">
       <div ref={containerRef} data-testid="flight-map-container" className="h-full w-full" />
       <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
         <button

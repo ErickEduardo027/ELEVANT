@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import PositionsToolbar from './components/PositionsToolbar';
 import PositionMap from './components/PositionMap';
-import GooglePositionMap from './components/GooglePositionMap';
 import MapControls from './components/MapControls';
 import PositionLegend from './components/PositionLegend';
 import PositionSummary from './components/PositionSummary';
@@ -151,11 +150,9 @@ export default function PositionsMapPage({
     />
   );
 
-  const BaseMap = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? GooglePositionMap : PositionMap;
-
   const mapArea = (
     <div ref={mapAreaRef} className="relative min-h-[420px] flex-1 bg-surface-light dark:bg-surface-dark">
-      <BaseMap
+      <PositionMap
         ref={mapRef}
         positions={filteredPositions}
         selectedPositionId={selectedPositionId}

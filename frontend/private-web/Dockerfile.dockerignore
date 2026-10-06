@@ -20,6 +20,7 @@
 !frontend/private-web/scripts/
 !frontend/private-web/scripts/validate-development-env.mjs
 !frontend/private-web/scripts/run-next.mjs
+!frontend/private-web/scripts/copy-maplibre-worker.mjs
 !frontend/private-web/scripts/verify-maplibre-worker.mjs
 !frontend/private-web/scripts/healthcheck.mjs
 

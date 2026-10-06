@@ -31,6 +31,7 @@ artifacts/
 node_modules/
 .pnpm-store/
 .next/
+frontend/private-web/tsconfig.tsbuildinfo
 .astro/
 .expo/
 dist/
@@ -92,6 +93,7 @@ Desktop.ini
 
 .fake
 .worktrees/
+frontend/private-web/public/assets/maplibre/
 .superpowers/
 
 # Backend local del prototipo

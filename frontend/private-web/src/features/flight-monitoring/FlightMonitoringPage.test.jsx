@@ -12,6 +12,10 @@ vi.mock('./components/FlightMap', () => ({
   },
 }));
 
+vi.mock('./components/GoogleFlightMap', () => ({
+  default: () => <div data-testid="google-flight-map-stub" />,
+}));
+
 function flight(overrides) {
   return {
     id: 1,
@@ -89,7 +93,16 @@ describe('FlightMonitoringPage', () => {
       />
     );
     expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
-    expect(screen.getByText(/La posición en vivo no está disponible/)).toBeInTheDocument();
+    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
+    expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
+  });
+
+  it('keeps MapLibre when a local Google key is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<FlightMonitoringPage status="success" data={{ station: { code: 'PUJ' }, flights: [] }}
+      error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />);
+    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('google-flight-map-stub')).not.toBeInTheDocument();
   });
 
   it('does not center another station on PUJ when a local Google key exists', () => {
