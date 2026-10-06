@@ -108,6 +108,7 @@ test('AVIAM uses a standalone Next server behind the existing CD endpoint contra
   const scripts = JSON.parse(packageJson).scripts;
   assert.match(config, /output:\s*['"]standalone['"]/);
   assert.match(config, /outputFileTracingRoot:/);
+  assert.match(config, /source: '\/index\.html', destination: '\/login'/);
   assert.match(dockerfile, /\.next\/standalone/);
   assert.match(dockerfile, /CMD \["node", "server\.js"\]/);
   assert.doesNotMatch(dockerfile, /nginx|\/out\//i);

@@ -212,7 +212,19 @@ case "${1:-} ${2:-}" in
     ;;
   compose*)
     case " $* " in
-      *" --format json "*) printf '%s\n' '{"name":"test","services":{"aviam-web":{"image":"${ELEVANT_AVIAM_WEB_IMAGE}"}}}' ;;
+      *" --format json "*)
+        compose_file=""; previous=""
+        for arg in "$@"; do
+          if [[ "$previous" == -f ]]; then compose_file="$arg"; break; fi
+          previous="$arg"
+        done
+        [[ -n "$compose_file" && -f "$compose_file" ]] || exit 1
+        if grep -q '^    mem_limit: 256m$' "$compose_file"; then
+          printf '%s\n' '{"name":"test","services":{"aviam-web":{"image":"${ELEVANT_AVIAM_WEB_IMAGE}","mem_limit":"256m"}}}'
+        else
+          printf '%s\n' '{"name":"test","services":{"aviam-web":{"image":"${ELEVANT_AVIAM_WEB_IMAGE}"}}}'
+        fi
+        ;;
       *" config --quiet "*)
         config_number="$(increment_counter "$MOCK_WEB_COMPOSE_CONFIG_COUNT")"
         printf 'WEB_CONFIG:%s:%s\n' "$config_number" "${ELEVANT_AVIAM_WEB_IMAGE:-}" >> "$MOCK_DOCKER_LOG"
@@ -466,17 +478,27 @@ DRILL_WEB_IMAGE="$WEB_REPO@$DRILL_WEB_DIGEST"
 DRILL_COMMIT="$(repeat 5 40)"
 DRILL_RUN=31
 DRILL_BASELINE_WEB_IMAGE="$WEB_REPO@$WEB_DIGEST"
+DRILL_BASELINE_COMPOSE="$TMP/drill-baseline-a-compose.yml"
+cp "$TMP/bundle/compose.development.web.yml" "$DRILL_BASELINE_COMPOSE"
+cat >> "$DRILL_BASELINE_COMPOSE" <<'YAML'
+    mem_limit: 256m
+YAML
+DRILL_BASELINE_COMPOSE_SHA="$(sha256sum "$DRILL_BASELINE_COMPOSE" | awk '{print $1}')"
 DRILL_BASELINE_STATE="$TMP/drill-baseline-last-success.json"
 DRILL_BASELINE_CURRENT="$TMP/drill-baseline-current.json"
+DRILL_BASELINE_ATTEMPT="$TMP/drill-baseline-attempt.json"
 cp "$TMP/runtime/state/aviam-web/last-success.json" "$DRILL_BASELINE_STATE"
 cp "$TMP/runtime/state/aviam-web/current.json" "$DRILL_BASELINE_CURRENT"
+cp "$TMP/runtime/state/aviam-web/attempts/${BUNDLE_DIGEST#sha256:}.json" "$DRILL_BASELINE_ATTEMPT"
 DRILL_BASELINE_STATE_HASH="$(sha256sum "$DRILL_BASELINE_STATE" | awk '{print $1}')"
 DRILL_BASELINE_CURRENT_HASH="$(sha256sum "$DRILL_BASELINE_CURRENT" | awk '{print $1}')"
 
 reset_drill_fixture() {
   cp "$DRILL_BASELINE_STATE" "$TMP/runtime/state/aviam-web/last-success.json"
   cp "$DRILL_BASELINE_CURRENT" "$TMP/runtime/state/aviam-web/current.json"
-  chmod 0600 "$TMP/runtime/state/aviam-web/last-success.json" "$TMP/runtime/state/aviam-web/current.json"
+  cp "$DRILL_BASELINE_ATTEMPT" "$TMP/runtime/state/aviam-web/attempts/${BUNDLE_DIGEST#sha256:}.json"
+  chmod 0600 "$TMP/runtime/state/aviam-web/last-success.json" "$TMP/runtime/state/aviam-web/current.json" \
+    "$TMP/runtime/state/aviam-web/attempts/${BUNDLE_DIGEST#sha256:}.json"
   rm -f "$TMP/runtime/state/aviam-web/attempts/${DRILL_BUNDLE_DIGEST#sha256:}.json" \
     "$TMP/registry-down" "$TMP/web-config-count" "$TMP/web-health-count" "$TMP/web-smoke-count" "$TMP/web-up-count" "$TMP/node-write-count"
   printf 'paused\n' > "$TMP/runtime/state/aviam-web/paused"
@@ -608,6 +630,17 @@ write_adopted_drill_baseline() {
     --set messageCode=baseline_adopted --set updatedAt=2026-09-05T00:00:00Z --set workflowUrl=
   chmod 0600 "$file"
 }
+
+# A runtime profile change must be staged as the exact certified candidate in
+# the live Compose file before the controller can start a B -> A -> B drill.
+# Saving a candidate only in Dokploy Raw may leave the on-disk file at A.
+reset_drill_fixture
+cp "$DRILL_BASELINE_COMPOSE" "$TMP/live/docker-compose.yml"
+assert_failure "unstaged candidate Compose was accepted" controller --dry-run
+grep -q 'live web Compose semantics differ from the certified payload' "$TMP/error" || fail "unstaged Compose mismatch was not explained"
+assert_no_drill_mutation "unstaged candidate Compose"
+cp "$TMP/bundle/compose.development.web.yml" "$TMP/live/docker-compose.yml"
+assert_success "staged candidate Compose was rejected" controller --dry-run
 
 # A failed candidate `docker compose ... config --quiet` is a hard preflight
 # failure. The ordinal fault only fails that first candidate check, so a caller
@@ -954,6 +987,30 @@ for state_file in "$TMP/runtime/state/aviam-web/current.json" "$TMP/runtime/stat
   [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field rollbackStatus)" == succeeded ]] || fail "successful drill state did not prove rollback"
   [[ "$(node "$ROOT/state-tool.mjs" get --file "$state_file" --field messageCode)" == promotion_with_rollback_drill_succeeded ]] || fail "successful drill state recorded the wrong message code"
 done
+
+# A runtime migration uses a different cached Compose for A, while the live Raw
+# has already been staged with B. Prove that each drill leg uses its own model.
+reset_drill_fixture
+baseline_cache="$TMP/runtime/state/aviam-web/compose/web/$DRILL_BASELINE_COMPOSE_SHA.yml"
+cp "$DRILL_BASELINE_COMPOSE" "$baseline_cache"
+chmod 0600 "$baseline_cache"
+for baseline_file in "$TMP/runtime/state/aviam-web/last-success.json" "$TMP/runtime/state/aviam-web/current.json" \
+  "$TMP/runtime/state/aviam-web/attempts/${BUNDLE_DIGEST#sha256:}.json"; do
+  node - "$baseline_file" "$DRILL_BASELINE_COMPOSE_SHA" <<'NODE'
+const fs = require('node:fs');
+const file = process.argv[2];
+const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+state.webComposeSha256 = process.argv[3];
+fs.writeFileSync(file, `${JSON.stringify(state)}\n`);
+NODE
+  chmod 0600 "$baseline_file"
+done
+assert_success "runtime migration drill rejected different A/B Compose models" controller --promote-with-rollback-drill "$DRILL_BUNDLE_DIGEST"
+mapfile -t migrated_ups < <(grep ' up -d --pull never --no-build --no-deps --force-recreate aviam-web$' "$TMP/docker.log")
+[[ "${#migrated_ups[@]}" == 3 ]] || fail "runtime migration drill did not execute B -> A -> B"
+candidate_cache="$TMP/runtime/state/aviam-web/compose/web/$COMPOSE_SHA.yml"
+[[ "${migrated_ups[0]}" == *"-f $candidate_cache up -d"* && "${migrated_ups[1]}" == *"-f $baseline_cache up -d"* && "${migrated_ups[2]}" == *"-f $candidate_cache up -d"* ]] ||
+  fail "runtime migration drill did not use candidate B, baseline A, candidate B Compose files"
 
 # The first operational drill starts from --adopt-current, whose real state has
 # no release-manifest digest. Its healthy image/run baseline is still valid A.

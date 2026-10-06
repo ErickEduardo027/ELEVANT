@@ -110,8 +110,9 @@ for route in /dashboard /admin-occ/dashboard /contratos /finanzas /gestion-human
     exit 1
   }
 done
-for old in dashboard.html contracts.html finance.html; do
+for old in index.html dashboard.html contracts.html finance.html; do
   case "$old" in
+    index.html) destination=/login ;;
     dashboard.html) destination=/admin-occ/dashboard ;;
     contracts.html) destination=/contratos ;;
     finance.html) destination=/finanzas ;;

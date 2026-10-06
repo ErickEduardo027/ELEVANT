@@ -20,6 +20,7 @@ const nextConfig = {
   turbopack: { root: monorepoRoot },
   async redirects() {
     return [
+      { source: '/index.html', destination: '/login', permanent: true },
       { source: '/dashboard.html', destination: '/admin-occ/dashboard', permanent: true },
       { source: '/contracts.html', destination: '/contratos', permanent: true },
       { source: '/finance.html', destination: '/finanzas', permanent: true },

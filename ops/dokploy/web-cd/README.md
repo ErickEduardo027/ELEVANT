@@ -237,6 +237,20 @@ Before either controller is enabled, the operator separately creates:
 The initial image and Compose are manually reviewed and tested before adoption.
 No web resource gets a database network.
 
+For a semantic Compose change on an adopted profile, disable its poll and pause
+the profile first. Preserve restricted copies of the accepted A Raw text and
+on-disk `ELEVANT_WEB_CD_COMPOSE`. Save the certified B Compose in Dokploy Raw
+without deploying; reopen it and check the contents. Dokploy may leave the
+on-disk Compose at A until deployment, so the operator must stage that same B
+file there with an atomic replacement while the profile is paused. Do not
+change `.env`, the image, or the running container during staging. Verify both
+representations and run `--dry-run` before the explicit B -> A -> B drill. The
+controller checks live/certified Compose semantics and never writes live Raw.
+If the drill fails and A is restored, restore both A Compose representations
+from the restricted copies before resuming or re-enabling the poll. Keep the
+profile paused on any mismatch. The full operator sequence is in
+[`docs/deployment/dokploy-configuration.md`](../../../docs/deployment/dokploy-configuration.md).
+
 Each installed profile also records the exact API Compose project (not a
 container name), fixed service `api`, container port `8080`, Swagger path and
 an immutable `curlimages/curl` probe digest. It also records the exact private

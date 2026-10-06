@@ -74,7 +74,7 @@ npm run dev
 npm run build
 ```
 
-Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/espacio-de-trabajo`. El servidor Next redirige las URL históricas `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
+Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/espacio-de-trabajo`. El servidor Next redirige las URL históricas `index.html`, `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
 
 Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development; Google Maps es opcional y su clave queda visible en el navegador. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
 

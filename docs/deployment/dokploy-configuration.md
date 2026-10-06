@@ -908,17 +908,34 @@ perfil `aviam-web`. Esta PR también ajusta el cliente API compartido: el
 clasificador certifica un bundle nuevo de Public Web. Por eso el operador
 deshabilita y pausa **también** el poll y perfil `public-web` antes del merge;
 Database y API conservan sus schedules. Registra las dos baselines A, imágenes
-y Compose exactos y verifica `--status` y `--dry-run` sin mutar Dokploy. Después
-del merge y la certificación de B, compara el
-Compose del bundle con `frontend/private-web/compose.development.aviam-web.yml`
-y confirma la misma tupla API antes de ejecutar el drill B → A → B documentado
-arriba. El controlador aplica el Compose del bundle; no se hace un Deploy manual
-del Raw ni se habilita AutoDeploy. Tras el drill, el operador verifica rutas
+y Compose exactos y verifica `--status` sobre A. Después del merge y la
+certificación de B, compara el Compose del bundle con
+`frontend/private-web/compose.development.aviam-web.yml` y confirma la misma
+tupla API. Con ambos perfiles pausados y sus polls deshabilitados, guarda una
+copia restringida del Raw y del archivo Compose vivo A. En el recurso AVIAM Web
+guarda el Compose B exacto en **Raw**, sin pulsar Deploy ni activar AutoDeploy;
+reabre Raw y comprueba el contenido. Guardar Raw en Dokploy puede dejar el
+archivo `ELEVANT_WEB_CD_COMPOSE` del controlador en A hasta un Deploy. Por eso
+el operador sincroniza manualmente ese archivo vivo con el mismo Compose B,
+mediante un archivo temporal y reemplazo atómico, sin tocar `.env`, imagen,
+contenedor, redes ni volúmenes. Comprueba que Raw y archivo vivo representan B
+y que `--dry-run` pasa: el controlador compara la semántica del Compose vivo
+con el payload certificado y rechaza el drill si siguen distintos.
+
+Solo entonces ejecuta el drill B → A → B documentado arriba. El
+controlador usa el Compose certificado de cada imagen durante la promoción y
+el rollback, pero **nunca reescribe el archivo Compose vivo ni el editor Raw**.
+Si el drill falla y vuelve a A, el operador restaura también el Raw y el
+archivo vivo A desde las copias restringidas, confirma la semántica A y deja
+pausado el perfil y deshabilitado su poll hasta resolver el fallo. No se hace
+un Deploy manual del Raw ni se habilita AutoDeploy. Tras un drill exitoso,
+el operador verifica rutas
 profundas, CSP, recursos `/_next/static/`, sesión interna y aislamiento de red,
 reanuda el perfil, exige un no-op manual y habilita el poll. A continuación
-acepta el bundle de Public Web con su propio drill, sin cambiar su perfil
-Compose; solo entonces reanuda su perfil y poll. Si falla un gate, mantiene
-pausado el perfil afectado y deshabilitado su poll para conservar o restaurar A.
+acepta el bundle de Public Web con su propio drill; su Compose no cambia, así
+que no necesita esta preparación de Raw. Solo entonces reanuda su perfil y
+poll. Si falla un gate, mantiene pausado el perfil afectado y deshabilitado su
+poll para conservar o restaurar A.
 
 ### Alcance de aceptación
 

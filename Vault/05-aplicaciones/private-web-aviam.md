@@ -89,7 +89,7 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 | `src/config/elevantApiClient.js` | Fábrica aislada para el cliente OpenAPI compartido. |
 | `src/components/`, `src/hooks/`, `src/lib/`, `src/styles/` | UI reutilizable, comportamiento transversal, utilidades y tokens. |
 | `tests/` y pruebas junto a features | Configuración transversal, smoke del cliente compartido y pruebas unitarias/de componentes. |
-| `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales. |
+| `index.html`, `dashboard.html`, `contracts.html`, `finance.html` | Entradas históricas redirigidas a las rutas actuales; `index.html` lleva al login. |
 
 ## Rutas y recorridos observados
 
