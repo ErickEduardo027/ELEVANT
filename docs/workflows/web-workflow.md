@@ -44,6 +44,11 @@ conserva identidad inmutable y número de intento; este ajuste no cambia el
 controlador del VPS. Un reintento no garantiza promoción si el alias API fue
 reemplazado por una entrega más reciente.
 
+El job de publicación corre en un runner limpio. Para AVIAM instala las
+dependencias de su lockfile antes de repetir la certificación de la imagen;
+el validador de entorno del certificador necesita `@next/env`. La imagen
+certificada se descarga del job anterior y conserva su verificación por hash.
+
 ## Configuración de build Development
 
 Los valores `NEXT_PUBLIC_*` se incorporan durante build, son

@@ -59,6 +59,11 @@ acredita ninguna promoción al VPS. Fuente:
 [workflow web](../../.github/workflows/web-ci.yml) y
 [prueba de reintento](../../frontend/tests/deployment/test_web_ci_artifacts.py).
 
+El job de publicación usa un runner limpio. Antes de recertificar AVIAM Web,
+instala las dependencias de su lockfile porque el validador de entorno del
+certificador usa `@next/env`; la imagen sigue entrando desde el artefacto
+certificado y se comprueba de nuevo antes de publicarse.
+
 ```mermaid
 flowchart TB
     Merge[Push relevante a Development] --> Test[Checks del commit]

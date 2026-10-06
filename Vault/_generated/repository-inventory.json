@@ -1099,7 +1099,7 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "40a6a27567cd44bf0ea853d86e259f784bdc712b17cd444bbf257e10db49a5e9"
+        "sha256": "c8710dedc30477b598aa61904c724e50e3f00ba85a2d6f655ca4e130bf6cc014"
       }
     ],
     "openapi": [
