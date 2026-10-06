@@ -97,6 +97,11 @@ reconstruye backend y selecciona solo esa aplicación. Cada carril aplicable:
    ambos payloads y exige igualdad byte a byte;
 7. mueve al final el alias `development-certified` del bundle propio.
 
+En AVIAM Web, la prueba de imagen exige que `/healthz` devuelva exactamente
+`ok` (dos bytes) después de copiar `public/` al runtime. Compara bytes sin
+eliminar saltos de línea finales; así detecta un recurso público que oculte el
+Route Handler de Next y falle luego en el healthcheck de Dokploy.
+
 El alias API es solo descubrimiento. Cuando el mismo push requiere API nueva,
 Backend CI entrega a Web CI la referencia inmutable del bundle publicado; si
 no llega, Web CI falla cerrado. Cuando no hay input API nuevo, el resolver
