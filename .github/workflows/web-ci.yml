@@ -587,6 +587,11 @@ jobs:
           cmp -s "$transferred/openapi.sha256" \
             artifacts/resolved-api-alias/openapi.sha256
 
+      - name: Install locked AVIAM certification dependencies
+        if: matrix.application == 'aviam-web'
+        working-directory: frontend/private-web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Re-certify, publish and verify the immutable web image
         id: web_image
         shell: bash

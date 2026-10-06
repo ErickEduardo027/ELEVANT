@@ -62,12 +62,17 @@ describe('OccAttendancePanel', () => {
 
   it('keeps attempted fields after 409, shows the canonical revision, and asks for another decision', async () => {
     const user = userEvent.setup();
-    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, contribution(1, 'Inicial')))
-      .mockResolvedValueOnce(snapshot(assignmentId, contribution(2, 'Edición concurrente')));
-    mocks.save.mockRejectedValueOnce({ status: 409, code: 'stale-revision', recoverable: true });
+    let remoteRevision = false;
+    mocks.read.mockImplementation(() => Promise.resolve(snapshot(assignmentId,
+      contribution(remoteRevision ? 2 : 1, remoteRevision ? 'Edición concurrente' : 'Inicial'))));
+    mocks.save.mockImplementationOnce(() => {
+      remoteRevision = true;
+      return Promise.reject({ status: 409, code: 'stale-revision', recoverable: true });
+    });
     render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley Ramp" />);
 
     const note = await screen.findByRole('textbox', { name: 'Nota de OCC' });
+    await waitFor(() => expect(note).toHaveValue('Inicial'));
     await user.clear(note);
     await user.type(note, 'Retraso observado');
     await user.click(screen.getByRole('button', { name: 'Guardar observación OCC' }));
@@ -84,12 +89,22 @@ describe('OccAttendancePanel', () => {
 
   it('does not save against an old revision when the post-409 refresh fails', async () => {
     const user = userEvent.setup();
-    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, contribution(1, 'Inicial')))
-      .mockRejectedValueOnce({ code: 'request-failed', recoverable: true })
-      .mockResolvedValueOnce(snapshot(assignmentId, contribution(2, 'Versión remota')));
-    mocks.save.mockRejectedValueOnce({ status: 409, code: 'stale-revision', recoverable: true });
+    let readPhase = 'initial';
+    mocks.read.mockImplementation(() => {
+      if (readPhase === 'initial') return Promise.resolve(snapshot(assignmentId, contribution(1, 'Inicial')));
+      if (readPhase === 'failure') {
+        readPhase = 'remote';
+        return Promise.reject({ code: 'request-failed', recoverable: true });
+      }
+      return Promise.resolve(snapshot(assignmentId, contribution(2, 'Versión remota')));
+    });
+    mocks.save.mockImplementationOnce(() => {
+      readPhase = 'failure';
+      return Promise.reject({ status: 409, code: 'stale-revision', recoverable: true });
+    });
     render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
     const note = await screen.findByRole('textbox', { name: 'Nota de OCC' });
+    await waitFor(() => expect(note).toHaveValue('Inicial'));
     await user.clear(note);
     await user.type(note, 'Mi intento');
     await user.click(screen.getByRole('button', { name: 'Guardar observación OCC' }));
@@ -107,11 +122,14 @@ describe('OccAttendancePanel', () => {
     const user = userEvent.setup();
     const earlier = { ...contribution(1, 'Misma nota'), observedStartAt: '2026-10-05T10:00:00Z' };
     const later = { ...contribution(2, 'Misma nota'), observedStartAt: '2026-10-05T11:00:00Z' };
-    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, earlier))
-      .mockResolvedValueOnce(snapshot(assignmentId, later));
+    let remoteRevision = false;
+    mocks.read.mockImplementation(() => Promise.resolve(snapshot(assignmentId,
+      remoteRevision ? later : earlier)));
     render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
     const start = await screen.findByLabelText('Entrada observada');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Nota de OCC' })).toHaveValue('Misma nota'));
     fireEvent.change(start, { target: { value: '2026-10-05T12:00' } });
+    remoteRevision = true;
     mocks.observer.mock.results[0].value.callback(['attendance_draft']);
     expect(await screen.findByText(/Entrada guardada:/)).toBeInTheDocument();
     expect(screen.getByText(/Entrada de tu intento:/)).toHaveTextContent('2026-10-05T12:00');
@@ -136,16 +154,19 @@ describe('OccAttendancePanel', () => {
 
   it('does not silently replace an unsaved OCC edit after a remote revision arrives', async () => {
     const user = userEvent.setup();
-    mocks.read.mockResolvedValueOnce(snapshot(assignmentId, contribution(1, 'Inicial')))
-      .mockResolvedValueOnce(snapshot(assignmentId, contribution(2, 'Nueva nota remota')));
+    let remoteRevision = false;
+    mocks.read.mockImplementation(() => Promise.resolve(snapshot(assignmentId,
+      contribution(remoteRevision ? 2 : 1, remoteRevision ? 'Nueva nota remota' : 'Inicial'))));
     render(<OccAttendancePanel operationId={operationId} assignmentId={assignmentId} displayName="Riley" />);
     const note = await screen.findByRole('textbox', { name: 'Nota de OCC' });
+    await waitFor(() => expect(note).toHaveValue('Inicial'));
     await user.clear(note);
     await user.type(note, 'Mi edición sin guardar');
+    remoteRevision = true;
     mocks.observer.mock.results[0].value.callback(['attendance_draft']);
     expect(await screen.findByText(/Versión guardada: 2/)).toBeInTheDocument();
     expect(note).toHaveValue('Mi edición sin guardar');
-    expect(screen.getByRole('alert')).toHaveTextContent('cambió');
+    expect(await screen.findByRole('alert')).toHaveTextContent('cambió');
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
