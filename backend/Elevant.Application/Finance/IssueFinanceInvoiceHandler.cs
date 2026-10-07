@@ -40,7 +40,7 @@ public sealed class IssueFinanceInvoiceHandler(
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
             return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Unauthorized);
-        if (!actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+        if (!actor!.HasPermission("finance.preinvoices.manage") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

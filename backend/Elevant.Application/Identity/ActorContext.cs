@@ -11,7 +11,20 @@ public sealed record ActorContext(
     string DisplayName,
     IReadOnlyList<ActorRole> Roles,
     IReadOnlyList<ActorMembership> Memberships,
-    IReadOnlyList<ActorStationScope> StationScopes);
+    IReadOnlyList<ActorStationScope> StationScopes,
+    DepartmentAccess? Access = null)
+{
+    /// <summary>
+    /// Effective department access. Actors resolved from the database always carry it;
+    /// actors built without it (tests, legacy callers) derive it from their role codes.
+    /// </summary>
+    public DepartmentAccess? EffectiveAccess =>
+        Access ?? DepartmentAccessResolver.FromRoles(Roles
+            .Where(role => DepartmentAccessResolver.CountsForAccess(role.Code, role.Portal))
+            .Select(role => role.Code));
+
+    public bool HasPermission(string permissionCode) => EffectiveAccess?.Has(permissionCode) ?? false;
+}
 
 /// <summary>A currently assigned application role.</summary>
 public sealed record ActorRole(

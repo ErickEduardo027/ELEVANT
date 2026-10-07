@@ -30,8 +30,7 @@ internal sealed class EfHumanResourcesReportStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.reports.export") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -233,8 +232,7 @@ internal sealed class EfHumanResourcesReportStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.reports.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -338,8 +336,7 @@ internal sealed class EfHumanResourcesReportStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.reports.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -406,8 +403,7 @@ internal sealed class EfHumanResourcesReportStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.reports.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -466,8 +462,7 @@ internal sealed class EfHumanResourcesReportStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.reports.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

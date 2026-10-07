@@ -29,7 +29,8 @@ internal sealed class EfAttendanceValidationStore(
             limit is < 1 or > 100 || (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(startDate));
 
-        var actor = await ResolveHumanResourcesAsync(actorAccountId, cancellationToken);
+        var actor = await ResolveHumanResourcesAsync(actorAccountId,
+            "human_resources.attendance.read", cancellationToken);
         if (actor is null) return null;
         if (!actor.StationScopes.Any(scope => scope.StationId == stationId))
             return new HumanResourcesAttendancePage(stationId, startDate, endDate, page, limit,
@@ -184,6 +185,7 @@ internal sealed class EfAttendanceValidationStore(
             CancellationToken cancellationToken)
     {
         var actor = await ResolveHumanResourcesAsync(command.ActorAccountId,
+            "human_resources.attendance.validate",
             cancellationToken);
         if (actor is null)
             return (AttendanceValidationResult.Failed(AttendanceValidationFailure.Forbidden), null);
@@ -300,13 +302,12 @@ internal sealed class EfAttendanceValidationStore(
     }
 
     private async Task<Elevant.Application.Identity.ActorContext?> ResolveHumanResourcesAsync(
-        Guid accountId, CancellationToken cancellationToken)
+        Guid accountId, string permissionCode, CancellationToken cancellationToken)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(accountId, cancellationToken);
         return actor is not null &&
-            actor.Roles.Any(role => role.Code == "GESTION_HUMANA" &&
-                role.Portal == PortalKind.BackOffice) &&
+            actor.HasPermission(permissionCode) &&
             actor.Memberships.Any(membership =>
                 membership.Kind == MembershipKind.InternalStaff &&
                 membership.OrganizationType == OrganizationType.AviamOperator)

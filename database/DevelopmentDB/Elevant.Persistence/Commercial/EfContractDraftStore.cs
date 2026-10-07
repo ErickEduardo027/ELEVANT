@@ -20,7 +20,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftOverviewData?> GetOverviewForContractsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.drafts.read", cancellationToken))
             return null;
         var drafts = await (from version in context.ContractVersions.AsNoTracking()
             join contract in context.Contracts.AsNoTracking()
@@ -47,7 +47,7 @@ internal sealed class EfContractDraftStore(
     public async Task<IReadOnlyList<ContractDraftData>?> ListForContractsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.drafts.read", cancellationToken))
             return null;
         return await ListAsync(null, cancellationToken);
     }
@@ -146,7 +146,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftResult> UpdateAsync(Guid actorId, Guid versionId,
         UpdateContractDraftInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.edit", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.drafts.edit", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         if (input is null || string.IsNullOrWhiteSpace(input.Terms) ||
             input.Terms.Trim().Length > 10000 || input.CurrencyCode?.Length != 3 ||
@@ -213,7 +213,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftResult> ActivateAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.full", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.drafts.activate", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         var row = await (from version in context.ContractVersions
             join contract in context.Contracts on version.ContractId equals contract.Id
@@ -286,7 +286,7 @@ internal sealed class EfContractDraftStore(
         Guid resourceId, DateTimeOffset at, CancellationToken cancellationToken)
     {
         var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.requests.read", cancellationToken);
+            "contracts.drafts.read", cancellationToken);
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 resource, resourceId, at);

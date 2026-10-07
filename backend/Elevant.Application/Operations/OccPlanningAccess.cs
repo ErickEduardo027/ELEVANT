@@ -5,10 +5,9 @@ namespace Elevant.Application.Operations;
 
 internal static class OccPlanningAccess
 {
-    public static bool IsAuthorized(ActorContext actor) =>
-        actor.Roles.Any(role =>
-            string.Equals(role.Code, "ADMIN_OCC", StringComparison.Ordinal) &&
-            role.Portal == PortalKind.BackOffice) &&
+    /// <summary>AVIAM staff holding the given Operations permission.</summary>
+    public static bool IsAuthorized(ActorContext actor, string permissionCode) =>
+        actor.HasPermission(permissionCode) &&
         actor.Memberships.Any(membership =>
             membership.OrganizationType == OrganizationType.AviamOperator &&
             membership.Kind == MembershipKind.InternalStaff);

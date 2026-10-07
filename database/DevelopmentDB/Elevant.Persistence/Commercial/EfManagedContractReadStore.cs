@@ -14,7 +14,7 @@ internal sealed class EfManagedContractReadStore(
     {
         if (page < 1 || limit is < 1 or > 50 || (long)(page - 1) * limit > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(page));
-        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.agreements.read", cancellationToken))
             return null;
 
         var rows = await (from contract in context.Contracts.AsNoTracking()

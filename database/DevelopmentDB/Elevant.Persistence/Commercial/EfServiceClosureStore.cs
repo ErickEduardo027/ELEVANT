@@ -253,8 +253,12 @@ internal sealed class EfServiceClosureStore(ElevantDbContext context,
         return actor?.Memberships.Any(membership =>
             membership.Kind == MembershipKind.InternalStaff &&
             membership.OrganizationType == OrganizationType.AviamOperator) == true &&
-            await permissions.HasAsync(actorId,
-                "commercial.service_closures." + action, cancellationToken);
+            await permissions.HasAnyAsync(actorId, action switch
+            {
+                "request" => ["operations.service_closures.request"],
+                "read" => ["contracts.service_closures.read", "operations.service_closures.read"],
+                _ => ["contracts.service_closures." + action],
+            }, cancellationToken);
     }
 
     private Task<long> ActorKeyAsync(Guid actorId, CancellationToken cancellationToken) =>
@@ -285,14 +289,14 @@ internal sealed class EfServiceClosureStore(ElevantDbContext context,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.service_closures.read", cancellationToken);
+        var recipients = await CommercialNotificationRecipients.WithAnyPermissionAsync(context,
+            ["contracts.service_closures.read", "operations.service_closures.read"], cancellationToken);
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "service_closures", requestId, now);
         if (!catalogChanged) return;
         var catalogRecipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.catalog.read", cancellationToken);
+            "contracts.catalog.read", cancellationToken);
         foreach (var recipient in catalogRecipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "commercial_catalog", serviceId, now);

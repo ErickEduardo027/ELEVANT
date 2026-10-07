@@ -11,7 +11,7 @@ public sealed class OperationalCommunicationHandler(
     public async Task<CommunicationResult<OperationConversationListData>> GetConversationsAsync(
         Guid accountId, Guid? stationId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationConversationListData>(failure);
         if (stationId == Guid.Empty || (stationId is Guid requested &&
@@ -23,7 +23,7 @@ public sealed class OperationalCommunicationHandler(
     public async Task<CommunicationResult<OperationMessageListData>> GetMessagesAsync(
         Guid accountId, Guid operationId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationMessageListData>(failure);
         if (operationId == Guid.Empty)
@@ -35,7 +35,7 @@ public sealed class OperationalCommunicationHandler(
         Guid accountId, Guid operationId, Guid clientMessageId, Guid? installationId,
         string? content, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.chat.send", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationMessageData>(failure);
         var body = content?.Trim();
@@ -52,7 +52,7 @@ public sealed class OperationalCommunicationHandler(
     public async Task<CommunicationResult<OperationalNotificationListData>> GetNotificationsAsync(
         Guid accountId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.notifications.read", cancellationToken);
         return access.Failure is { } failure
             ? CommunicationResults.Failed<OperationalNotificationListData>(failure)
             : await store.GetNotificationsAsync(access.Value!, cancellationToken);
@@ -62,7 +62,7 @@ public sealed class OperationalCommunicationHandler(
         Guid accountId, Guid notificationId, bool isRead,
         CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.notifications.read", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationalNotificationData>(failure);
         if (notificationId == Guid.Empty)
@@ -71,14 +71,14 @@ public sealed class OperationalCommunicationHandler(
     }
 
     private async Task<CommunicationResult<OperationalAccess>> ResolveAccessAsync(
-        Guid accountId, CancellationToken cancellationToken)
+        Guid accountId, string occPermission, CancellationToken cancellationToken)
     {
         if (accountId == Guid.Empty)
             return CommunicationResults.Failed<OperationalAccess>(OperationalCommunicationFailure.Unauthorized);
         var actor = await actorResolver.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
             return CommunicationResults.Failed<OperationalAccess>(OperationalCommunicationFailure.Unauthorized);
-        var role = OccPlanningAccess.IsAuthorized(actor!) ? "occ" :
+        var role = OccPlanningAccess.IsAuthorized(actor!, occPermission) ? "occ" :
             RampOperationsAccess.IsAuthorized(actor!) ? "agent" : null;
         if (role is null)
             return CommunicationResults.Failed<OperationalAccess>(OperationalCommunicationFailure.Forbidden);

@@ -26,7 +26,7 @@ public sealed class ProgramOccShiftHandler(
         var actor = await actorContextResolver.ResolveAsync(command.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return ProgramOccShiftResult.Failed(OccPlanningFailure.Unauthorized);
-        if (!OccPlanningAccess.IsAuthorized(actor!))
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.assign"))
             return ProgramOccShiftResult.Failed(OccPlanningFailure.Forbidden);
 
         var stations = actor!.StationScopes.Select(scope => scope.StationId)

@@ -47,7 +47,7 @@ public sealed class RecordNonFiscalPaymentHandler(
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Unauthorized);
-        if (!actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+        if (!actor!.HasPermission("finance.reconciliation.record") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

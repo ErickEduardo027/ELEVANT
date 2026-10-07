@@ -23,7 +23,7 @@ public sealed class GetNonFiscalInvoiceHandler(
         if (accountId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId) ||
-            !actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor!.HasPermission("finance.reconciliation.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;

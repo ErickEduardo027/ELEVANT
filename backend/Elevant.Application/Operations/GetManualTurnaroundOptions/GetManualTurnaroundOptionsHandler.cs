@@ -21,7 +21,7 @@ public sealed class GetManualTurnaroundOptionsHandler(
         var actor = await actorContextResolver.ResolveAsync(query.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, query.AccountId))
             return GetManualTurnaroundOptionsResult.Failed(OccPlanningFailure.Unauthorized);
-        if (!OccPlanningAccess.IsAuthorized(actor!))
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.manage"))
             return GetManualTurnaroundOptionsResult.Failed(OccPlanningFailure.Forbidden);
         if (!actor!.StationScopes.Any(scope => scope.StationId == query.StationId))
             return GetManualTurnaroundOptionsResult.Failed(OccPlanningFailure.NotFound);
