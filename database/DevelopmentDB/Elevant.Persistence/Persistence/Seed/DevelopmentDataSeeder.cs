@@ -394,6 +394,19 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         await EnsureAccountStationScopeAsync(humanResourcesAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(contractsAccount.Id, station.Id, cancellationToken);
         await EnsureAccountStationScopeAsync(financeAccount.Id, station.Id, cancellationToken);
+        await EnsureDepartmentAssignmentAsync(adminAccount.Id, DepartmentAssignmentKind.Administrator, Department.Operations,
+            "43000000-0000-7000-8000-000000000001", cancellationToken);
+        await EnsureDepartmentAssignmentAsync(agentAccount.Id, DepartmentAssignmentKind.Member, Department.Operations,
+            "43000000-0000-7000-8000-000000000002", cancellationToken);
+        await EnsureDepartmentAssignmentAsync(humanResourcesAccount.Id, DepartmentAssignmentKind.Administrator, Department.HumanResources,
+            "43000000-0000-7000-8000-000000000004", cancellationToken);
+        await EnsureDepartmentAssignmentAsync(contractsAccount.Id, DepartmentAssignmentKind.Administrator, Department.Contracts,
+            "43000000-0000-7000-8000-000000000005", cancellationToken);
+        await EnsureDepartmentAssignmentAsync(financeAccount.Id, DepartmentAssignmentKind.Administrator, Department.Finance,
+            "43000000-0000-7000-8000-000000000006", cancellationToken);
+        if (superAdminAccount is not null)
+            await EnsureDepartmentAssignmentAsync(superAdminAccount.Id, DepartmentAssignmentKind.SuperAdministrator, null,
+                "43000000-0000-7000-8000-000000000007", cancellationToken);
 
         var rampAgent = await GetOrAddAsync(
             context.RampAgents,
@@ -1238,6 +1251,19 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         await context.SaveChangesAsync(cancellationToken);
         return entity;
     }
+
+    // Insert-only: an existing assignment is never rewritten by the seed.
+    private Task<DepartmentAssignment> EnsureDepartmentAssignmentAsync(
+        long accountId,
+        DepartmentAssignmentKind kind,
+        Department? department,
+        string publicId,
+        CancellationToken cancellationToken) =>
+        GetOrAddAsync(
+            context.DepartmentAssignments,
+            assignment => assignment.AccountId == accountId,
+            () => Stamp(new DepartmentAssignment { AccountId = accountId, Kind = kind, Department = department }, publicId),
+            cancellationToken);
 
     private static TEntity Stamp<TEntity>(TEntity entity, string publicId)
         where TEntity : AuditableEntity
