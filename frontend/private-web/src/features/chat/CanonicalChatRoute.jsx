@@ -120,7 +120,7 @@ export default function CanonicalChatRoute() {
     }
   };
 
-  return <main className="mx-auto max-w-[1440px] space-y-5 p-1 text-ink-900 dark:text-text-primary-dark">
+  return <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 p-1 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
       <div><h1 className="text-xl font-semibold">Chat operativo</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Mensajes persistentes por operación entre OCC y agentes asignados. Los cambios se recuperan al reconectar; la consulta periódica sigue activa.</p></div>
       {stationScopes.length > 0 && <OccStationPicker stationScopes={stationScopes} stationId={stationId} onChange={value => { if (!pendingCommand) { setStationId(value); setParams({}); } }} />}
@@ -143,5 +143,5 @@ export default function CanonicalChatRoute() {
               </>}
             </section>
           </div>}
-  </main>;
+  </section>;
 }

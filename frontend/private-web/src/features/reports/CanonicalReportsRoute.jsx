@@ -36,7 +36,7 @@ export default function CanonicalReportsRoute() {
   const queue = useOccReviewQueue();
   const rows = approvedRows(queue.data);
   const timeZone = queue.data?.ianaTimeZone ?? 'UTC';
-  return <main className="mx-auto max-w-[1440px] space-y-5 text-ink-900 dark:text-text-primary-dark">
+  return <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
       <div><h1 className="text-xl font-semibold">Reportes operativos</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Entregas aprobadas por OCC, obtenidas de la API.</p></div>
       {queue.stationScopes.length > 0 && <OccStationPicker stationScopes={queue.stationScopes} stationId={queue.stationId} onChange={queue.setStationId} />}
@@ -54,5 +54,5 @@ export default function CanonicalReportsRoute() {
       {rows.length === 0 ? <p className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">No hay entregas aprobadas entre las operaciones visibles de esta estación.</p> :
         <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-black/10 dark:border-white/10"><tr><th className="p-3">Operación</th><th className="p-3">Aerolínea</th><th className="p-3">Agente</th><th className="p-3">Entrega</th><th className="p-3">Servicios</th><th className="p-3">Incidencias</th><th className="p-3">Detalle</th></tr></thead><tbody>{rows.map(item => <tr key={item.operationId} className="border-b border-black/5 dark:border-white/5"><td className="p-3"><strong>{item.operationCode}</strong><br />{item.operationDate}</td><td className="p-3">{item.airlineName}</td><td className="p-3">{item.agentName}</td><td className="p-3">{dateTime(item.submittedAt, timeZone)}</td><td className="p-3">{item.serviceCount}</td><td className="p-3">{item.incidentCount}</td><td className="p-3"><Link className="font-semibold text-accent-600 underline" to={`/admin-occ/review?operationId=${item.operationId}`}>Ver evidencia</Link></td></tr>)}</tbody></table></div>}
     </>}
-  </main>;
+  </section>;
 }

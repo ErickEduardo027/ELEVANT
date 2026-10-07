@@ -49,7 +49,7 @@ describe('useResponsiveSidebar', () => {
   });
 
   it('keeps the rail icon-only on tablet and opens an overlay on toggle instead', () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     const { result } = renderHook(() => useResponsiveSidebar());
 
     expect(result.current.breakpoint).toBe('tablet');
@@ -62,7 +62,7 @@ describe('useResponsiveSidebar', () => {
   });
 
   it('hides the inline rail on mobile and drives the drawer via overlayOpen', () => {
-    mockMatchMedia(['(max-width: 1024px)', '(max-width: 640px)']);
+    mockMatchMedia(['(max-width: 1023.98px)', '(max-width: 639.98px)']);
     const { result } = renderHook(() => useResponsiveSidebar());
 
     expect(result.current.breakpoint).toBe('mobile');

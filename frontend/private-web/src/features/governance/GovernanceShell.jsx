@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Sidebar from '../shell/components/Sidebar';
-import Topbar from '../dashboard/components/Topbar';
+import ShellFrame from '../shell/ShellFrame';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
 import RampMobileAccessInbox from './RampMobileAccessInbox';
@@ -94,19 +93,17 @@ export default function GovernanceShell({ user, onLogout }) {
     }
   }
   const active = modules.find(module => module.id === moduleId) ?? modules[0];
-  return <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
-    <Sidebar modules={modules} activeModuleId={moduleId} onSelectModule={id => { setModuleId(id); sidebar.closeOverlay(); }}
-      badgeCounts={{ home: tasks.length + rampRequests.filter(item => item.status === 'Pending').length }} user={user} onLogout={onLogout}
-      breakpoint={sidebar.breakpoint} railVisible={sidebar.railVisible} railExpanded={sidebar.railExpanded}
-      overlayOpen={sidebar.overlayOpen} onToggle={sidebar.toggle} onCloseOverlay={sidebar.closeOverlay} />
-    <div className="flex min-w-0 flex-1 flex-col">
-      <Topbar station={station()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme}
-        user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
-      <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="mx-auto max-w-[1400px] space-y-5">
+  return <ShellFrame
+      mainKey={moduleId}
+      sidebarProps={{ modules, activeModuleId: moduleId, onSelectModule: id => { setModuleId(id); sidebar.closeOverlay(); },
+        badgeCounts: { home: tasks.length + rampRequests.filter(item => item.status === 'Pending').length }, user, onLogout,
+        breakpoint: sidebar.breakpoint, railVisible: sidebar.railVisible, railExpanded: sidebar.railExpanded,
+        overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay }}
+      topbarProps={{ station: station(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}>
+        <div className="mx-auto max-w-[1400px] space-y-5 3xl:max-w-[1760px]">
           <header className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">Gobernanza / AVIAM</p>
-              <h1 className="mt-1 text-3xl font-bold">{active.label}</h1>
+            <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">Gobernanza / AVIAM</p>
+              <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{active.label}</h1>
               <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{active.description}</p></div>
             <button type="button" onClick={refresh} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold dark:border-white/10">Actualizar</button>
           </header>
@@ -122,9 +119,7 @@ export default function GovernanceShell({ user, onLogout }) {
             onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')} />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} />}
         </div>
-      </main>
-    </div>
-  </div>;
+  </ShellFrame>;
 }
 
 function GovernanceHome({ snapshot, tasks, rampRequests, run }) {

@@ -185,7 +185,7 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
     }
   }
 
-  return <main className="mx-auto max-w-[1440px] space-y-5 text-ink-900 dark:text-text-primary-dark">
+  return <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana · consulta autorizada</p>
@@ -304,5 +304,5 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
           className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50">Página siguiente</button>
       </nav>
     </section>}
-  </main>;
+  </section>;
 }

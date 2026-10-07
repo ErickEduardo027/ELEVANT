@@ -173,7 +173,7 @@ export default function PositionsMapPage({
   );
 
   return (
-    <div className="mx-auto flex h-full max-w-[1440px] flex-col gap-4">
+    <div className="mx-auto flex h-full max-w-[1440px] 3xl:max-w-[1760px] flex-col gap-4">
       <PositionsToolbar
         search={search}
         onSearchChange={handleSearchChange}

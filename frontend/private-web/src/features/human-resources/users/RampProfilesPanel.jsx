@@ -134,7 +134,7 @@ export default function RampProfilesPanel() {
   const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
   const inactiveCurrentSupervisor = catalog?.profiles.find(profile =>
     profile.id === persistedSupervisorId && profile.id === form.supervisorProfileId && !profile.isActive);
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">Gestión Humana / Personal</p>
       <h1 className="mt-1 text-2xl font-bold">Perfiles de agentes de rampa</h1>
       <p className="mt-1 text-sm text-text-secondary-light">Registre el perfil, estaciones y terminales. Superadministración aprueba y vincula la cuenta móvil.</p></header>

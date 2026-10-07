@@ -119,7 +119,7 @@ export default function AuditPage() {
     return (
       <div
         role="alert"
-        className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
+        className="mx-auto flex max-w-[1440px] 3xl:max-w-[1760px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
       >
         <p className="text-sm font-semibold text-status-danger">No fue posible cargar la trazabilidad.</p>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -137,7 +137,7 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4">
+    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
       <div className="rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

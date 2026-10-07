@@ -180,7 +180,7 @@ describe('FlightMonitoringPage — tablet layout', () => {
   });
 
   it('hides the inline list panel and shows a "Ver vuelos" toggle on tablet', () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );
@@ -189,7 +189,7 @@ describe('FlightMonitoringPage — tablet layout', () => {
   });
 
   it('opens the list drawer when the toggle is clicked, and closes it via the backdrop', async () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );

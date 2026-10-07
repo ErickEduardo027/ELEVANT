@@ -27,7 +27,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
 
   const isLoading = status === 'loading';
   const kpis = data?.kpis;
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
       <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
