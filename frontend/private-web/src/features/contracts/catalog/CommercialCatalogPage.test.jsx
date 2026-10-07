@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CommercialCatalogPage from './CommercialCatalogPage';
 import { getManagedServices, saveManagedService, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
@@ -23,36 +23,55 @@ const makeService = number => ({
   version: `version-${number}`,
 });
 
-it('shows ten services per page with the visible range and bounded navigation', async () => {
+const cardNames = () => screen.getAllByRole('article').map(card => card.querySelector('strong').textContent);
+const orderBadges = () => screen.getAllByTitle('Número de orden asignado por el sistema').map(badge => badge.textContent);
+
+async function openCreateForm(user) {
+  await user.click(screen.getByRole('button', { name: 'Crear servicio' }));
+  return screen.getByRole('dialog', { name: 'Nuevo servicio' });
+}
+
+async function fill(user, field, text) {
+  await user.click(field);
+  await user.paste(text);
+}
+
+async function pick(user, comboboxName, optionName) {
+  await user.click(screen.getByRole('combobox', { name: comboboxName }));
+  await user.click(screen.getByRole('option', { name: optionName }));
+}
+
+it('shows twelve services per page with the visible range and bounded navigation', async () => {
   const user = userEvent.setup();
-  const services = Array.from({ length: 23 }, (_, index) => makeService(index + 1));
+  const services = Array.from({ length: 27 }, (_, index) => makeService(index + 1));
   services[1].isPublic = false;
   getManagedServices.mockResolvedValue(services);
 
   render(<CommercialCatalogPage />);
   expect(await screen.findByText('Servicio 1')).toBeInTheDocument();
-  expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(10);
-  expect(screen.getByText('Mostrando 1–10 de 23 servicios')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(12);
+  expect(screen.getByText('Mostrando 1–12 de 27 servicios')).toBeInTheDocument();
   expect(screen.getByText('Página 1 de 3')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
-  expect(screen.queryByText('Servicio 11')).not.toBeInTheDocument();
-  expect(screen.getByText('Servicio 2')).toBeInTheDocument();
+  expect(screen.getByText('Servicio 12')).toBeInTheDocument();
+  expect(screen.queryByText('Servicio 13')).not.toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Siguiente' }));
-  expect(screen.getByText('Mostrando 11–20 de 23 servicios')).toBeInTheDocument();
-  expect(screen.getByText('Servicio 11')).toBeInTheDocument();
+  expect(screen.getByText('Mostrando 13–24 de 27 servicios')).toBeInTheDocument();
+  expect(cardNames()[0]).toBe('Servicio 13');
+  expect(orderBadges()[0]).toBe('Número de orden N.º 13');
   expect(screen.queryByText('Servicio 1')).not.toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Siguiente' }));
   expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(3);
-  expect(screen.getByText('Mostrando 21–23 de 23 servicios')).toBeInTheDocument();
+  expect(screen.getByText('Mostrando 25–27 de 27 servicios')).toBeInTheDocument();
   expect(screen.getByText('Página 3 de 3')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
 });
 
-it('shows an empty catalog and keeps a single page for exactly ten services', async () => {
+it('shows an empty catalog and keeps a single page for exactly twelve services', async () => {
   const user = userEvent.setup();
-  const services = Array.from({ length: 10 }, (_, index) => makeService(index + 1));
+  const services = Array.from({ length: 12 }, (_, index) => makeService(index + 1));
   getManagedServices.mockResolvedValueOnce([]).mockResolvedValue(services);
 
   render(<CommercialCatalogPage />);
@@ -60,8 +79,8 @@ it('shows an empty catalog and keeps a single page for exactly ten services', as
   expect(screen.getByText('Mostrando 0–0 de 0 servicios')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Actualizar' }));
 
-  expect(await screen.findByText('Servicio 10')).toBeInTheDocument();
-  expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(10);
+  expect(await screen.findByText('Servicio 12')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Editar' })).toHaveLength(12);
   expect(screen.getByText('Página 1 de 1')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
@@ -69,7 +88,7 @@ it('shows an empty catalog and keeps a single page for exactly ten services', as
 
 it('returns to the last available page when a refresh reduces the catalog', async () => {
   const user = userEvent.setup();
-  const services = Array.from({ length: 23 }, (_, index) => makeService(index + 1));
+  const services = Array.from({ length: 27 }, (_, index) => makeService(index + 1));
   getManagedServices.mockResolvedValueOnce(services).mockResolvedValue(services.slice(0, 8));
 
   render(<CommercialCatalogPage />);
@@ -85,43 +104,181 @@ it('returns to the last available page when a refresh reduces the catalog', asyn
   expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
 });
 
-it('shows a newly created service on its catalog page', async () => {
-  const user = userEvent.setup();
-  const services = Array.from({ length: 10 }, (_, index) => makeService(index + 1));
-  getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([...services, makeService(11)]);
-  saveManagedService.mockResolvedValue({ id: 'service-11' });
+it('lists services by display order with a sequential order number', async () => {
+  getManagedServices.mockResolvedValue([
+    { ...makeService(1), name: 'Remolque de aeronaves', displayOrder: 7 },
+    { ...makeService(2), name: 'Aire acondicionado', displayOrder: 3 },
+    { ...makeService(3), name: 'Carga y descarga', displayOrder: 0 },
+    { ...makeService(4), name: 'Baggage handling', displayOrder: 0 },
+  ]);
 
   render(<CommercialCatalogPage />);
-  await screen.findByText('Servicio 1');
-  await user.click(screen.getByRole('button', { name: 'Crear servicio' }));
-  await user.type(screen.getByLabelText('Código'), 'SERVICE-11');
-  await user.type(screen.getByLabelText('Nombre'), 'Servicio 11');
-  await user.type(screen.getByLabelText('Descripción'), 'Descripción 11');
-  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
-
-  expect(await screen.findByText('Página 2 de 2')).toBeInTheDocument();
-  expect(screen.getByText('Servicio 11')).toBeInTheDocument();
-  expect(screen.getByText('Mostrando 11–11 de 11 servicios')).toBeInTheDocument();
+  await screen.findAllByRole('article');
+  expect(cardNames()).toEqual(['Baggage handling', 'Carga y descarga', 'Aire acondicionado', 'Remolque de aeronaves']);
+  expect(orderBadges()).toEqual(['Número de orden N.º 1', 'Número de orden N.º 2', 'Número de orden N.º 3', 'Número de orden N.º 4']);
 });
 
-it('follows an edited service when its display order moves it to another page', async () => {
+it('creates a catalog service with its own code at the end of the order', async () => {
   const user = userEvent.setup();
-  const services = Array.from({ length: 11 }, (_, index) => makeService(index + 1));
-  getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([
-    ...services.slice(1), { ...services[0], displayOrder: 20 },
-  ]);
-  saveManagedService.mockResolvedValue({ id: 'service-1' });
+  const services = Array.from({ length: 12 }, (_, index) => makeService(index + 1));
+  services[4].displayOrder = 40;
+  const created = { ...makeService(13), name: 'Carga y descarga', code: 'RAMP-CARGO', displayOrder: 41 };
+  getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([...services, created]);
+  saveManagedService.mockResolvedValue({ id: created.id });
 
   render(<CommercialCatalogPage />);
   await screen.findByText('Servicio 1');
-  await user.click(screen.getAllByRole('button', { name: 'Editar' })[0]);
-  await user.clear(screen.getByLabelText('Orden'));
-  await user.type(screen.getByLabelText('Orden'), '20');
+  const dialog = await openCreateForm(user);
+  expect(within(dialog).queryByRole('spinbutton')).not.toBeInTheDocument();
+  expect(within(dialog).getByText('N.º 13')).toBeInTheDocument();
+  expect(screen.getByLabelText(/^Código/)).toHaveAttribute('readonly');
+
+  await pick(user, /Nombre del servicio/, /Carga y descarga/);
+  expect(screen.getByLabelText(/^Código/)).toHaveValue('RAMP-CARGO');
+  await pick(user, /Unidad de cobro/, /Por tonelada/);
+  await fill(user, screen.getByLabelText(/Descripción/), '  Atención de carga  ');
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
-  expect(await screen.findByText('Página 2 de 2')).toBeInTheDocument();
-  expect(screen.getByText('Servicio 1')).toBeInTheDocument();
-  expect(screen.queryByText('Servicio 2')).not.toBeInTheDocument();
+  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
+    code: 'RAMP-CARGO', name: 'Carga y descarga', description: 'Atención de carga',
+    billingUnit: 'tonelada', displayOrder: 41,
+  })));
+  expect(await screen.findByText('Servicio publicado en el catálogo.')).toBeInTheDocument();
+  expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
+  expect(cardNames()).toEqual(['Carga y descarga']);
+  expect(orderBadges()).toEqual(['Número de orden N.º 13']);
+});
+
+it('creates a new service with «Otro» without saving the option itself', async () => {
+  const user = userEvent.setup();
+  getManagedServices.mockResolvedValue([makeService(1)]);
+  saveManagedService.mockResolvedValue({ id: 'service-2' });
+
+  render(<CommercialCatalogPage />);
+  await screen.findByText('Servicio 1');
+  await openCreateForm(user);
+  expect(screen.queryByLabelText(/Nombre personalizado/)).not.toBeInTheDocument();
+  await pick(user, /Nombre del servicio/, /^Otro/);
+  await fill(user, screen.getByLabelText(/Nombre personalizado/), '  Asistencia   especial ');
+  await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'sa');
+  await pick(user, /Unidad de cobro/, /^Otro/);
+  await fill(user, screen.getByLabelText(/Unidad de cobro personalizada/), 'turno');
+  await fill(user, screen.getByLabelText(/Descripción/), 'Acompañamiento');
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+
+  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
+    code: 'SA', name: 'Asistencia especial', billingUnit: 'turno', displayOrder: 2,
+  })));
+});
+
+it('offers services created earlier with their own code and billing unit', async () => {
+  const user = userEvent.setup();
+  const created = { ...makeService(2), name: 'Asistencia especial', code: 'SA', billingUnit: 'turno', displayOrder: 2 };
+  getManagedServices.mockResolvedValue([makeService(1), created]);
+
+  render(<CommercialCatalogPage />);
+  await screen.findAllByRole('article');
+  await openCreateForm(user);
+  await pick(user, /Nombre del servicio/, /Asistencia especial/);
+  expect(screen.getByLabelText(/^Código/)).toHaveValue('SA');
+  expect(within(screen.getByRole('dialog', { name: 'Nuevo servicio' })).getByRole('status'))
+    .toHaveTextContent('Asistencia especial ya está en el catálogo con el número de orden 2');
+  await user.click(screen.getByRole('combobox', { name: /Unidad de cobro/ }));
+  expect(screen.getByRole('option', { name: /turno/ })).toBeInTheDocument();
+});
+
+it('blocks duplicates and opens the existing service for editing instead', async () => {
+  const user = userEvent.setup();
+  const existing = { ...makeService(1), code: 'RAMP-TOW', name: 'Remolque de aeronaves' };
+  getManagedServices.mockResolvedValue([existing]);
+
+  render(<CommercialCatalogPage />);
+  await screen.findAllByRole('article');
+  await openCreateForm(user);
+  await pick(user, /Nombre del servicio/, /Remolque de aeronaves/);
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  expect(screen.getByText('Ya existe un servicio con ese nombre y código.')).toBeInTheDocument();
+  expect(saveManagedService).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole('button', { name: 'Editar este servicio' }));
+  expect(screen.getByRole('dialog', { name: 'Editar servicio' })).toBeInTheDocument();
+  expect(screen.getByLabelText(/Nombre del servicio/)).toHaveValue('Remolque de aeronaves');
+});
+
+it('explains missing and invalid fields without calling the API', async () => {
+  const user = userEvent.setup();
+  getManagedServices.mockResolvedValue([{ ...makeService(1), code: 'RAMP-TOW', name: 'Remolque de aeronaves' }]);
+
+  render(<CommercialCatalogPage />);
+  await screen.findAllByRole('article');
+  await openCreateForm(user);
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+
+  expect(screen.getByText('Selecciona un servicio.')).toBeInTheDocument();
+  expect(screen.getByText('Selecciona cómo se cobra el servicio.')).toBeInTheDocument();
+  expect(screen.getByText('Escribe una descripción breve del servicio.')).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: /Nombre del servicio/ })).toHaveFocus();
+  expect(screen.getByRole('combobox', { name: /Nombre del servicio/ })).toHaveAttribute('aria-invalid', 'true');
+
+  await pick(user, /Nombre del servicio/, /^Otro/);
+  await pick(user, /Unidad de cobro/, /^Otro/);
+  await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'ramp tow');
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  expect(screen.getByText('Escribe el nombre del servicio personalizado.')).toBeInTheDocument();
+  expect(screen.getByText(/Usa solo letras de la A a la Z/)).toBeInTheDocument();
+  expect(screen.getByText('Escribe la unidad de cobro personalizada.')).toBeInTheDocument();
+
+  await fill(user, screen.getByLabelText(/Nombre personalizado/), 'Remolque');
+  await user.clear(screen.getByLabelText(/Código del nuevo servicio/));
+  await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'ramp-tow');
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  expect(screen.getByText('El código RAMP-TOW ya pertenece a «Remolque de aeronaves».')).toBeInTheDocument();
+  expect(saveManagedService).not.toHaveBeenCalled();
+});
+
+it('shows a clear message when the API rejects a duplicate code', async () => {
+  const user = userEvent.setup();
+  getManagedServices.mockResolvedValue([]);
+  saveManagedService.mockRejectedValue(Object.assign(new Error('Service changed; reload and retry.'), { status: 409 }));
+
+  render(<CommercialCatalogPage />);
+  await screen.findByText('No hay servicios en el catálogo.');
+  await openCreateForm(user);
+  await pick(user, /Nombre del servicio/, /Escaleras móviles/);
+  await pick(user, /Unidad de cobro/, /Por operación/);
+  await fill(user, screen.getByLabelText(/Descripción/), 'Escaleras');
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+
+  expect(await screen.findByText(/ya existe un servicio con ese código o el catálogo cambió/)).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Nuevo servicio' })).toBeInTheDocument();
+});
+
+it('edits name and billing unit while keeping code and order', async () => {
+  const user = userEvent.setup();
+  const services = Array.from({ length: 3 }, (_, index) => makeService(index + 1));
+  services[1].billingUnit = 'operation';
+  getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([
+    services[0], { ...services[1], name: 'Remolque' }, services[2],
+  ]);
+  saveManagedService.mockResolvedValue({ id: 'service-2' });
+
+  render(<CommercialCatalogPage />);
+  await screen.findByText('Servicio 2');
+  await user.click(screen.getAllByRole('button', { name: 'Editar' })[1]);
+  const dialog = screen.getByRole('dialog', { name: 'Editar servicio' });
+  expect(within(dialog).getByText('N.º 2')).toBeInTheDocument();
+  expect(screen.getByLabelText(/^Código/)).toHaveAttribute('readonly');
+  expect(screen.getByRole('combobox', { name: /Unidad de cobro/ })).toHaveValue('operation');
+  await user.clear(screen.getByLabelText(/Nombre del servicio/));
+  await fill(user, screen.getByLabelText(/Nombre del servicio/), 'Remolque');
+  await pick(user, /Unidad de cobro/, /Por aeronave/);
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+
+  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith('service-2', expect.objectContaining({
+    code: 'SERVICE-2', name: 'Remolque', billingUnit: 'aeronave', displayOrder: 2, version: 'version-2',
+  })));
+  await screen.findByText('Servicio actualizado. El catálogo público se refrescará.');
+  expect(cardNames()).toEqual(['Servicio 1', 'Remolque', 'Servicio 3']);
 });
 
 it('edits a service in a right drawer and uploads its selected image before saving', async () => {
@@ -139,12 +296,14 @@ it('edits a service in a right drawer and uploads its selected image before savi
   await user.click(await screen.findByRole('button', { name: 'Editar' }));
   const dialog = screen.getByRole('dialog', { name: 'Editar servicio' });
   expect(dialog).toHaveClass('right-0');
+  expect(screen.getByRole('combobox', { name: /Unidad de cobro/ })).toHaveValue('Por operación');
   expect(screen.getByRole('button', { name: 'Volver atrás' })).toBeInTheDocument();
   const image = new File(['image'], 'cargo.png', { type: 'image/png' });
   fireEvent.change(screen.getByLabelText('Foto del servicio'), { target: { files: [image] } });
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   await waitFor(() => expect(uploadCommercialMedia).toHaveBeenCalledWith('service-image', image));
   expect(saveManagedService).toHaveBeenCalledWith('service-1', expect.objectContaining({
+    code: 'RAMP-CARGO', name: 'Carga y descarga', billingUnit: 'operación', displayOrder: 1,
     imageUrl: '/api/v1/media/00000000-0000-0000-0000-000000000001',
   }));
 });
