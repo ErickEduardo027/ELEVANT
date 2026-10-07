@@ -314,7 +314,7 @@ h2 {
 
 /* Brand and navigation */
 .site-header {
-  position: absolute;
+  position: fixed;
   z-index: var(--z-nav);
   top: 0;
   right: 0;
@@ -643,7 +643,7 @@ h2 {
 .hero-telemetry dt {
   color: var(--text-muted);
   font-family: var(--font-data);
-  font-size: 0.5rem;
+  font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1610,7 +1610,7 @@ h2 {
   border-top: 1px solid var(--line);
   color: #6f8199;
   font-family: var(--font-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   line-height: 1.7;
 }
 
@@ -1778,7 +1778,7 @@ h2 {
   }
 
   .hero-telemetry dt {
-    font-size: 0.58rem;
+    font-size: 0.65rem;
   }
 
   .hero-telemetry dd {
@@ -1984,7 +1984,7 @@ h2 {
     gap: 1rem;
     color: #8fa2ba;
     font-family: var(--font-data);
-    font-size: 0.52rem;
+    font-size: 0.65rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     writing-mode: vertical-rl;

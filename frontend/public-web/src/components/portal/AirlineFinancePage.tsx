@@ -33,7 +33,7 @@ function InvoiceSummary({ invoice, payment }: { invoice: NonFiscalInvoiceRespons
       {line.operationCode} · {line.serviceName} · {amount(invoice.currencyCode, line.amount)}
     </p>)}
     <strong>Total: {amount(invoice.currencyCode, invoice.total)}</strong>
-    {payment ? <p>Pago manual registrado: {payment.reference} Â· {amount(
+    {payment ? <p>Pago manual registrado: {payment.reference} · {amount(
       payment.currencyCode, payment.amount)}</p> : <p>Sin pago registrado.</p>}
   </section>;
 }

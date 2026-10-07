@@ -99,7 +99,7 @@
   display: block;
   color: #67768a;
   font-family: var(--font-data);
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   letter-spacing: 0.09em;
   line-height: 1.25;
   text-transform: uppercase;
@@ -140,6 +140,7 @@
 }
 
 .content {
+  container: portal / inline-size;
   width: min(100%, 96rem);
   min-height: calc(100dvh - var(--portal-header));
   margin-inline: auto;
@@ -167,7 +168,7 @@
   margin: 1rem 0 0 3.45rem;
   color: #9fb1c9;
   font-family: var(--font-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -190,7 +191,7 @@
   margin: 0 0 0.45rem 0.8rem;
   color: #6f85a2;
   font-family: var(--font-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -366,7 +367,7 @@
 .drawerHeader span {
   color: #7890af;
   font-family: var(--font-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -429,7 +430,7 @@
   background: transparent;
   color: #7f91aa;
   cursor: pointer;
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   font-weight: 650;
 }
 
@@ -585,15 +586,11 @@
 
   .topbarUser small {
     color: #68778a;
-    font-size: 0.58rem;
+    font-size: 0.65rem;
   }
 
   .content {
-    padding: 1.6rem 1.5rem 3rem;
-  }
-
-  .bottomNavigation {
-    display: none;
+    padding: 1.6rem 1.5rem calc(6.5rem + env(safe-area-inset-bottom));
   }
 }
 
@@ -644,6 +641,10 @@
   }
 
   .drawer {
+    display: none;
+  }
+
+  .bottomNavigation {
     display: none;
   }
 }

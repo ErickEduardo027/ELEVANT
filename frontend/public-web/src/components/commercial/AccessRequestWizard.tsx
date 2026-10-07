@@ -47,6 +47,14 @@ export function AccessRequestWizard() {
   const reconcileAfterSubmit = useRef(false);
   const reconciling = useRef(false);
   const carousel = useRef<HTMLDivElement>(null);
+  const scrollCarousel = (direction: 1 | -1) => {
+    const track = carousel.current;
+    if (!track) return;
+    const card = track.firstElementChild as HTMLElement | null;
+    const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
+    const step = card ? card.getBoundingClientRect().width + gap : track.clientWidth * 0.8;
+    track.scrollBy?.({ left: direction * step, behavior: "smooth" });
+  };
   const [divisions, setDivisions] = useState<DivisionsState>([]);
   const [divisionsError, setDivisionsError] = useState(false);
   const divisionsCountry = useRef("");
@@ -285,7 +293,7 @@ export function AccessRequestWizard() {
         disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
         <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione uno o varios servicios de rampa.</span></div>
-        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => carousel.current?.scrollBy({ left: -390, behavior: "smooth" })}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => carousel.current?.scrollBy({ left: 390, behavior: "smooth" })}>→</button></div></div>
+        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => scrollCarousel(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => scrollCarousel(1)}>→</button></div></div>
         <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
           {catalog?.services.map((service, index) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">

@@ -82,6 +82,11 @@
 .draftCommentForm textarea { width: 100%; resize: vertical; border: 1px solid #b8c9db; border-radius: .45rem; padding: .7rem; font: inherit; }
 .draftCommentForm button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
 .draftCommentForm button:disabled { opacity: .5; cursor: wait; }
-@media (max-width: 38rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } }
-@media (max-width: 50rem) { .preinvoiceLines > div { grid-template-columns: 1fr; gap: .2rem; } }
-@media (max-width: 38rem) { .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } }
+.metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.metrics strong { font-size: clamp(1.5rem, 6cqi, 2rem); }
+.sectionHeading, .requestCardHeading { flex-wrap: wrap; }
+.loadMore { display: block; margin-inline: auto; }
+@container portal (min-width: 44rem) { .metrics { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); } }
+@container portal (max-width: 37.99rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } .requestHeading h1 { max-width: none; } }
+@container portal (max-width: 49.99rem) { .preinvoiceLines > div { grid-template-columns: 1fr; gap: .2rem; } }
+@container portal (max-width: 23.99rem) { .metrics { grid-template-columns: 1fr; } }
