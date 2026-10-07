@@ -29,8 +29,13 @@ import {
 import { colors } from '../theme/colors';
 import { exitApplication } from '../utils/app-exit';
 import { resetToLogin } from '../utils/session-navigation';
+import { useLayoutClass } from '../utils/layout-class';
+import { OperationDetail } from './flight/[id]';
+import { dateTimeFormat } from '../utils/date-format';
 
 type BlockingState = 'offline' | 'unavailable' | null;
+
+const operationKey = (item: RampAssignedOperationResponse) => item.operation.id;
 
 export default function HomeScreen() {
   const [actor, setActor] = useState<MobileAgentActor | null>(null);
@@ -43,15 +48,26 @@ export default function HomeScreen() {
   const [profileVisible, setProfileVisible] = useState(false);
   const [sessionClosing, setSessionClosing] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
+  const hasLoadedRef = useRef(false);
+  const layoutClass = useLayoutClass();
+  const expanded = layoutClass === 'expanded';
+  const columns = layoutClass === 'medium' ? 2 : 1;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const activeId = operations.some(item => item.operation.id === selectedId)
+    ? selectedId
+    : operations[0]?.operation.id ?? null;
 
+  // Tras la primera carga, volver al inicio revalida en segundo plano: la lista y
+  // su posición se conservan y solo cambia lo que devuelva la API.
   const load = useCallback(async (refresh = false) => {
+    const silent = !refresh && hasLoadedRef.current;
     requestRef.current?.abort();
     const request = new AbortController();
     requestRef.current = request;
 
     if (refresh) setRefreshing(true);
-    else setLoading(true);
-    setBlockingState(null);
+    else if (!silent) setLoading(true);
+    if (!silent) setBlockingState(null);
 
     try {
       const session = await getMobileSession();
@@ -67,6 +83,8 @@ export default function HomeScreen() {
       setOperations(snapshot.operations);
       setSource(snapshot.source);
       setUpdatedAt(snapshot.updatedAt);
+      setBlockingState(null);
+      hasLoadedRef.current = true;
     } catch (error) {
       if (request.signal.aborted) return;
 
@@ -87,12 +105,13 @@ export default function HomeScreen() {
           return;
         }
         if (error.code === 'network_unavailable') {
+          if (silent) return;
           setBlockingState('offline');
           return;
         }
       }
 
-      setBlockingState('unavailable');
+      if (!silent) setBlockingState('unavailable');
     } finally {
       if (!request.signal.aborted) {
         setLoading(false);
@@ -114,6 +133,7 @@ export default function HomeScreen() {
       await logoutMobileAgent();
       setActor(null);
       setOperations([]);
+      hasLoadedRef.current = false;
       resetToLogin();
     } catch {
       setBlockingState('unavailable');
@@ -121,14 +141,19 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // En tablet horizontal el manifiesto se abre junto a la lista; en el resto, en su propia pantalla.
+  const openOperation = useCallback((operationId: string) => {
+    if (expanded) setSelectedId(operationId);
+    else router.push({ pathname: '/flight/[id]', params: { id: operationId } });
+  }, [expanded]);
+
   const renderOperation = useCallback(
     ({ item }: { item: RampAssignedOperationResponse }) => (
-      <AssignedOperationCard
-        operation={item}
-        onPress={() => router.push({ pathname: '/flight/[id]', params: { id: item.operation.id } })}
-      />
+      <View style={columns > 1 ? styles.gridCell : undefined}>
+        <AssignedOperationCard operation={item} onOpen={openOperation} selected={expanded && item.operation.id === activeId} />
+      </View>
     ),
-    [],
+    [activeId, columns, expanded, openOperation],
   );
 
   const stationCodes = actor?.stationScopes.map(scope => scope.stationCode).join(' · ') ?? 'Sin estación';
@@ -210,10 +235,16 @@ export default function HomeScreen() {
           title="No tienes operaciones asignadas"
         />
       ) : (
+        <View style={expanded ? styles.split : styles.fill}>
         <FlatList
-          contentContainerStyle={styles.list}
+          key={`columns-${columns}`}
+          columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
+          contentContainerStyle={[styles.list, columns > 1 && styles.gridList]}
           data={operations}
-          keyExtractor={item => item.operation.id}
+          extraData={activeId}
+          keyExtractor={operationKey}
+          numColumns={columns}
+          style={expanded ? styles.splitList : undefined}
           refreshControl={(
             <RefreshControl
               accessibilityLabel="Actualizar operaciones asignadas"
@@ -226,6 +257,12 @@ export default function HomeScreen() {
           renderItem={renderOperation}
           showsVerticalScrollIndicator={false}
         />
+        {expanded && activeId && (
+          <View style={styles.splitDetail}>
+            <OperationDetail key={activeId} operationId={activeId} />
+          </View>
+        )}
+        </View>
       )}
 
       <Modal
@@ -321,12 +358,7 @@ function formatUpdatedAt(value: string | null) {
   if (!value) return 'desconocida';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'desconocida';
-  return new Intl.DateTimeFormat('es-DO', {
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-  }).format(date);
+  return dateTimeFormat({ day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short' }).format(date);
 }
 
 const styles = StyleSheet.create({
@@ -403,6 +435,13 @@ const styles = StyleSheet.create({
   },
   countText: { color: colors.navy, fontWeight: '900' },
   list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 36, gap: 13 },
+  fill: { flex: 1 },
+  gridList: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
+  gridRow: { gap: 13 },
+  gridCell: { flex: 1 },
+  split: { flex: 1, flexDirection: 'row' },
+  splitList: { width: 400, flexGrow: 0, borderRightWidth: 1, borderRightColor: colors.border },
+  splitDetail: { flex: 1 },
   state: {
     flex: 1,
     alignItems: 'center',

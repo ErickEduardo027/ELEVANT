@@ -66,7 +66,7 @@ test('reads canonical lanes with confirmed installation and same account session
   await expect(readRampAttendanceDraft(operationId, assignmentId)).resolves.toMatchObject({ operationId, assignmentId });
   expect(mockApi.getOperationAttendanceDraft).toHaveBeenCalledWith(operationId,
     assignmentId, { signal: undefined, installationId });
-  expect(mockRegister).toHaveBeenCalledWith({ accessToken: 'token' }, { signal: undefined });
+  expect(mockRegister).toHaveBeenCalledWith({ accessToken: 'token' }, { signal: undefined, reuseForSession: true });
 });
 
 test('persists one intent and retries an uncertain write with identical key and payload', async () => {

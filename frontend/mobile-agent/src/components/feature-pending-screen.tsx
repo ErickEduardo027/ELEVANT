@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { PrimaryButton } from './ui';
 
@@ -12,7 +13,7 @@ export function FeaturePendingScreen({
   readonly title: string;
 }) {
   return (
-    <View accessibilityLiveRegion="polite" style={styles.container}>
+    <SafeAreaView accessibilityLiveRegion="polite" edges={['bottom', 'left', 'right']} style={styles.container}>
       <View style={styles.icon}>
         <Ionicons name="shield-checkmark-outline" size={38} color={colors.navy} />
       </View>
@@ -30,7 +31,7 @@ export function FeaturePendingScreen({
         onPress={() => router.replace('/home')}
         secondary
       />
-    </View>
+    </SafeAreaView>
   );
 }
 

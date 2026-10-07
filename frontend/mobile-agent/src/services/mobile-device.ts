@@ -14,7 +14,14 @@ export type MobileDeviceRegistrationContext = Readonly<{
 
 export type RegisterCurrentMobileDeviceOptions = Readonly<{
   signal?: AbortSignal;
+  /**
+   * Solo para lecturas periódicas: reutiliza el registro ya confirmado con el
+   * mismo token. Las escrituras siempre vuelven a registrar el dispositivo.
+   */
+  reuseForSession?: boolean;
 }>;
+
+let confirmedForSession: Readonly<{ accessToken: string; device: RegisteredMobileDevice }> | null = null;
 
 export type RegisteredMobileDevice = Readonly<{
   installationId: string;
@@ -41,6 +48,9 @@ export async function registerCurrentMobileDevice(
   context: MobileDeviceRegistrationContext,
   options: RegisterCurrentMobileDeviceOptions = {},
 ): Promise<RegisteredMobileDevice> {
+  if (options.reuseForSession && confirmedForSession?.accessToken === context.accessToken) {
+    return confirmedForSession.device;
+  }
   try {
     const installationId = await readOrCreateMobileInstallationId();
     const platform = currentPlatform();
@@ -63,7 +73,9 @@ export async function registerCurrentMobileDevice(
       throw new MobileServiceError('malformed_response');
     }
 
-    return { installationId, registration };
+    const device = { installationId, registration };
+    confirmedForSession = { accessToken: context.accessToken, device };
+    return device;
   } catch (error) {
     const normalized = asMobileServiceError(error);
     if (normalized.code === 'conflict') {
