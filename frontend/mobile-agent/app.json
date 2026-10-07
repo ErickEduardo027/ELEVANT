@@ -3,7 +3,7 @@
     "name": "ELEVANT Mobile",
     "slug": "elevant-mobile-agent",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/elevant-symbol.png",
     "scheme": "elevant",
     "userInterfaceStyle": "light",

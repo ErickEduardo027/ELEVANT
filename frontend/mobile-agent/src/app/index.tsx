@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -78,6 +79,16 @@ export default function LoginScreen() {
     : notice === 'access_revoked'
       ? 'Tu cuenta ya no tiene un perfil operativo válido. Contacta a AVIAM antes de reintentar.'
       : '';
+
+  // Mientras se lee la sesión guardada no se muestra el formulario: si existe,
+  // la app pasa directo al inicio sin parpadear la pantalla de acceso.
+  if (checkingSession && !notice) {
+    return (
+      <SafeAreaView style={[styles.safe, styles.checking]}>
+        <ActivityIndicator accessibilityLabel="Comprobando la sesión" color={colors.navy} size="large" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -208,6 +219,7 @@ function loginErrorMessage(error: unknown) {
 }
 
 const styles = StyleSheet.create({
+  checking: { alignItems: 'center', justifyContent: 'center' },
   safe: { flex: 1, backgroundColor: colors.white },
   keyboard: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 24, justifyContent: 'space-between' },

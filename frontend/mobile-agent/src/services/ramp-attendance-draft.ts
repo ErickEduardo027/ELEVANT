@@ -48,7 +48,7 @@ export async function readRampAttendanceDraft(
   const context = await getMobileSessionRequestContext();
   try {
     const { installationId } = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken }, options);
+      { accessToken: context.accessToken }, { signal: options.signal, reuseForSession: true });
     if (!(await sameIdentity(context))) throw new MobileServiceError('cancelled');
     const snapshot = await createMobileAgentApiClient({
       getAccessToken: () => context.accessToken,

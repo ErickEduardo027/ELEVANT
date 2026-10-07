@@ -1,6 +1,6 @@
 import type { RampOperationServiceResponse } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -28,7 +28,7 @@ export type ServiceExecutionNotice = Readonly<{
 
 type TerminalTarget = 'Completed' | 'NotPerformed' | 'Exception';
 
-export function RampServiceExecutionCard({
+export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
   actionable,
   busy,
   correctionMode = false,
@@ -320,7 +320,7 @@ export function RampServiceExecutionCard({
       {notice && <ServiceNotice notice={notice} />}
     </Card>
   );
-}
+});
 
 function TerminalChoices({
   actionable,
