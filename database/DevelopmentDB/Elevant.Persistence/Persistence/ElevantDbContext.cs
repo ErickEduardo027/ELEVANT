@@ -33,6 +33,22 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<AccountStationScope> AccountStationScopes => Set<AccountStationScope>();
 
+    public DbSet<AccessProfile> AccessProfiles => Set<AccessProfile>();
+
+    public DbSet<AccessProfileGrant> AccessProfileGrants => Set<AccessProfileGrant>();
+
+    public DbSet<DepartmentAssignment> DepartmentAssignments => Set<DepartmentAssignment>();
+
+    public DbSet<AccountPermissionGrant> AccountPermissionGrants => Set<AccountPermissionGrant>();
+
+    public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();
+
+    public DbSet<UserAccessRequestGrant> UserAccessRequestGrants => Set<UserAccessRequestGrant>();
+
+    public DbSet<UserAccessRequestStation> UserAccessRequestStations => Set<UserAccessRequestStation>();
+
+    public DbSet<UserAccessRequestTerminal> UserAccessRequestTerminals => Set<UserAccessRequestTerminal>();
+
     public DbSet<Airline> Airlines => Set<Airline>();
 
     public DbSet<Airport> Airports => Set<Airport>();
@@ -144,6 +160,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         base.OnModelCreating(builder);
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
+        builder.ConfigureDepartmentGovernance();
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigurePreinvoices();
         builder.ConfigureNonFiscalInvoices();
