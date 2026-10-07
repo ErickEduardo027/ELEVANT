@@ -209,7 +209,7 @@ export default function PositionsMapPage({
           </PositionsListDrawer>
         </div>
       ) : (
-        <div className={`grid flex-1 gap-4 ${sidePanelOpen ? 'grid-cols-1 xl:grid-cols-[3fr_7fr]' : 'grid-cols-1'}`}>
+        <div className={`grid min-h-0 flex-1 gap-4 ${sidePanelOpen ? 'grid-cols-1 lg:grid-cols-[minmax(16rem,3fr)_7fr] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]' : 'grid-cols-1'}`}>
           {sidePanelOpen && sidePanel}
           {mapArea}
         </div>

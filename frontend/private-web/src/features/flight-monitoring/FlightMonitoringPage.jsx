@@ -172,21 +172,23 @@ export default function FlightMonitoringPage({
       {isLoading ? (
         <FlightMonitoringSkeleton />
       ) : isTablet ? (
-        <div className="relative flex flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setListDrawerOpen(true)}
+              className="rounded-lg border border-black/10 bg-white/90 px-3 py-2 text-xs font-semibold text-ink-900 shadow-sm dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+            >
+              Ver vuelos ({filteredFlights.length})
+            </button>
+          </div>
           {mapArea}
-          <button
-            type="button"
-            onClick={() => setListDrawerOpen(true)}
-            className="absolute left-3 top-3 z-10 rounded-lg border border-black/10 bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink-900 shadow-md backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
-          >
-            Ver vuelos
-          </button>
           <FlightListDrawer open={listDrawerOpen} onClose={() => setListDrawerOpen(false)}>
             {listPanel}
           </FlightListDrawer>
         </div>
       ) : (
-        <div className="grid flex-1 grid-cols-1 gap-4 xl:grid-cols-[3fr_7fr]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
           {listPanel}
           {mapArea}
         </div>

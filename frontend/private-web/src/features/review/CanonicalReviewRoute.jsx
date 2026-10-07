@@ -36,7 +36,7 @@ function Notice({ title, children, onRetry }) {
 
 function ReviewEvidence({ detail }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <section aria-label="Servicios ejecutados" className="rounded-xl border border-black/10 p-4 dark:border-white/10">
         <h3 className="font-semibold">Servicios ({detail.services.length})</h3>
         {detail.services.length === 0 ? <p className="mt-2 text-sm">Sin servicios registrados.</p> : (
@@ -152,8 +152,15 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   const [message, setMessage] = useState(null);
   const decisionInFlight = useRef(false);
   const decisionAbort = useRef(null);
+  const detailRef = useRef(null);
 
   useEffect(() => () => decisionAbort.current?.abort(), []);
+
+  // El detalle se muestra debajo de la cola; al elegir una operación se lleva a
+  // la vista para que en teléfono y tablet no quede fuera de pantalla.
+  useEffect(() => {
+    if (selectedId) detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, [selectedId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -241,7 +248,7 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
         {queue.data.hasMore && <Notice title="Hay más entregas fuera de esta vista.">La API limita la cola a 100 entregas; esta pantalla no representa el historial completo.</Notice>}
         {rows.length === 0 ? <Notice title="No hay entregas para revisar en esta estación." /> : (
           <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="table-stack w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase dark:border-white/10"><tr><th className="p-3">Operación</th><th className="p-3">Agente</th><th className="p-3">Enviada</th><th className="p-3">Estado</th><th className="p-3">Revisión</th></tr></thead>
               <tbody>{rows.map(row => (
                 <tr key={row.operationId} className="border-b border-black/5 dark:border-white/5">
@@ -256,7 +263,7 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
           </div>
         )}
       </>}
-      {selectedId && <section aria-label="Detalle de entrega" className="space-y-4 rounded-2xl border border-accent-600/20 bg-white/90 p-5 dark:bg-surface-dark-card">
+      {selectedId && <section ref={detailRef} aria-label="Detalle de entrega" className="scroll-mt-4 space-y-4 rounded-2xl border border-accent-600/20 bg-white/90 p-4 dark:bg-surface-dark-card sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Detalle de entrega</h2><button type="button" onClick={() => onSelectOperation(null)} className="min-h-11 rounded-lg border px-4 py-2">Cerrar detalle</button></div>
         {detail.status === 'loading' && <p role="status">Cargando ejecución y evidencias…</p>}
         {detail.status === 'error' && <Notice title="No se pudo cargar el detalle." onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}

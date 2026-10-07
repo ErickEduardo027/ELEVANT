@@ -65,7 +65,7 @@ export default function ApprovedServicesPage({ initialStationId }) {
         <p className="mt-1 text-sm">{data.draftDetail.lines.length} línea{data.draftDetail.lines.length === 1 ? '' : 's'} · {money(data.draftDetail.total, data.draftDetail.currencyCode)} · {data.draftDetail.status}</p>
         <p className="mt-2 text-xs text-text-secondary-light">Borrador interno de prueba. Aún no es factura ni recibo fiscal.</p>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-sm">
+          <table className="table-stack w-full min-w-[620px] text-left text-sm">
             <caption className="sr-only">Líneas guardadas con la evidencia y tarifa congeladas</caption>
             <thead className="border-b border-accent-600/20 text-xs uppercase text-text-secondary-light">
               <tr><th className="py-2 pr-3">Operación</th><th className="px-3 py-2">Servicio</th>
@@ -140,7 +140,7 @@ export default function ApprovedServicesPage({ initialStationId }) {
           {data.status === 'loading'
             ? <div data-testid="approved-services-loading" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" />
             : data.services.length
-              ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+              ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
                 <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]"><tr>
                   <th className="px-3 py-3">Elegir</th>
                   <th className="px-5 py-3">Servicio</th><th className="px-5 py-3">Aerolínea / vuelo</th>

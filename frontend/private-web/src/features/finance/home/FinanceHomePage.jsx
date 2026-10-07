@@ -75,11 +75,11 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
         <KpiCard label="Borradores en consulta" value={data?.kpis.draftPreinvoices} icon={PreInvoiceIcon} loading={isLoading} />
         <KpiCard label="Disputas en consulta" value={data?.kpis.disputedPreinvoices} icon={ReconciliationIcon} loading={isLoading} tone="signal" />
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <SectionCard title="Servicios aprobados recientes" actionLabel="Ver servicios"
           onAction={() => onNavigate('finance-approved-services')}>
           {isLoading ? <div data-testid="services-table-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" />
-            : data.approvedServices.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+            : data.approvedServices.length ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
               <thead className="bg-black/[0.025] text-xs uppercase tracking-wide text-text-secondary-light dark:bg-white/[0.025] dark:text-text-secondary-dark">
                 <tr><th className="px-5 py-3">Servicio</th><th className="px-5 py-3">Aerolínea</th><th className="px-5 py-3">Vuelo</th><th className="px-5 py-3">Operación</th><th className="px-5 py-3 text-right">Importe</th></tr>
               </thead><tbody className="divide-y divide-black/5 dark:divide-white/5">

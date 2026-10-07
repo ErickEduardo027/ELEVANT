@@ -95,7 +95,7 @@ export default function QualificationRenewalModal({ open, onClose, item, onSubmi
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
           {item.agentName} · {item.employeeNumber}
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="Nueva fecha de obtención" required>
             <input type="date" className={inputClassName} value={formState.obtainedAt} onChange={event => update({ obtainedAt: event.target.value })} />
           </FormField>

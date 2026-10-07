@@ -1,7 +1,7 @@
 export default function AuditEntryDetail({ entry }) {
   return (
     <div className="space-y-4 border-t border-black/5 pt-4 dark:border-white/5">
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div className="rounded-xl border border-black/5 bg-white/60 p-3 dark:border-white/5 dark:bg-white/[0.02]">
           <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
             Detalle

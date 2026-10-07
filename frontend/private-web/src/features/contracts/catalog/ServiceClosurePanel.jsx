@@ -108,7 +108,7 @@ export default function ServiceClosurePanel({ mode = 'occ', canRequest = mode ==
     {error && !dialog && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     {status === 'loading' && <p role="status">Cargando servicios…</p>}
     {(mode === 'occ' || canRequest) && status === 'ready' && <div className="flex snap-x gap-4 overflow-x-auto pb-3" aria-label="Servicios publicados">
-      {catalog.map(service => <article key={service.id} className="w-[290px] shrink-0 snap-start overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card">
+      {catalog.map(service => <article key={service.id} className="w-[min(290px,80vw)] shrink-0 snap-start overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card">
         <ServiceImage url={service.imageUrl} name={service.name} />
         <div className="space-y-2 p-4"><h3 className="font-bold">{service.name}</h3><p className="min-h-14 text-sm text-text-secondary-light">{service.description}</p>
           {service.videoUrl && <ServiceVideo url={service.videoUrl} name={service.name} />}
@@ -139,7 +139,7 @@ export default function ServiceClosurePanel({ mode = 'occ', canRequest = mode ==
         {history.hasMore && <button type="button" onClick={() => setPage(value => value + 1)} className="text-sm text-accent-600">Siguiente</button>}</div>
     </section>
     {dialog && <div role="presentation" className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4">
-      <form role="dialog" aria-modal="true" aria-label="Confirmar acción de servicio" onSubmit={submit} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl dark:bg-surface-dark-card">
+      <form role="dialog" aria-modal="true" aria-label="Confirmar acción de servicio" onSubmit={submit} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-white p-5 shadow-xl dark:bg-surface-dark-card sm:p-6">
         <h3 className="text-lg font-bold">{dialog.action === 'request' ? 'Notificar clausura' : dialog.action === 'approve' ? 'Aprobar clausura' : dialog.action === 'deny' ? 'Denegar clausura' : 'Republicar servicio'}</h3>
         <p className="text-sm">{dialog.item.name ?? dialog.item.serviceName}</p>
         <p className="text-sm text-text-secondary-light">{dialog.action === 'approve' ? 'El servicio dejará de aparecer para nuevas solicitudes de aerolíneas.' : 'La decisión quedará registrada y será visible para OCC y Contratos.'}</p>
