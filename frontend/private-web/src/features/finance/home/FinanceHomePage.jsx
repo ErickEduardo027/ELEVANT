@@ -31,7 +31,7 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
   stations = [], stationId = '', onStationChange }) {
   const isLoading = status === 'loading';
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Finanzas</p>

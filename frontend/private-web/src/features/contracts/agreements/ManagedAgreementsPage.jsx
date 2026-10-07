@@ -40,7 +40,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
     version => version.rates.map(rate => ({ ...rate, contract, version })))), [contracts]);
   const [title, description] = TITLES[mode] ?? TITLES.contracts;
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-3">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión contractual</p>
         <h1 className="mt-1 text-2xl font-bold">{title}</h1>

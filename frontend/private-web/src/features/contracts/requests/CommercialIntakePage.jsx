@@ -37,7 +37,7 @@ export default function CommercialIntakePage({ canVerify = true, canApprove = tr
     try { await action(); setNotice(message); await reload(); return true; }
     catch (failure) { setError(failure.message); return false; }
   }
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Entrada pública</p><h1 className="mt-1 text-2xl font-bold">Solicitudes</h1><p className="mt-1 text-sm text-text-secondary-light">Verifique aerolínea y representante antes de aceptar los servicios. La aprobación crea un borrador.</p></div><button type="button" onClick={reload} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Actualizar</button></header>
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon } from '../features/shell/components/icons';
+import StackedTable from './StackedTable';
 
 // Tabla enterprise genérica: columnas declarativas, paginación cliente y
 // selección múltiple opcional. Generalizada de ReportTable +
@@ -20,6 +21,7 @@ export default function DataTable({
   onToggleSelectAll,
   onRowClick,
   pageSize = 10,
+  minWidthClassName = 'min-w-[720px]',
 }) {
   const [page, setPage] = useState(0);
 
@@ -35,8 +37,8 @@ export default function DataTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
+      <StackedTable>
+        <table className={`table-stack w-full text-left text-sm ${minWidthClassName}`}>
           <thead>
             <tr className="border-b border-black/5 text-xs font-medium uppercase tracking-wide text-text-secondary-light dark:border-white/5 dark:text-text-secondary-dark">
               {selectable && (
@@ -113,10 +115,10 @@ export default function DataTable({
             )}
           </tbody>
         </table>
-      </div>
+      </StackedTable>
 
       {!loading && rows.length > pageSize && (
-        <div className="flex items-center justify-between border-t border-black/5 px-4 py-3 text-xs text-text-secondary-light dark:border-white/5 dark:text-text-secondary-dark">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/5 px-4 py-3 text-xs text-text-secondary-light dark:border-white/5 dark:text-text-secondary-dark">
           <span>
             Página {currentPage + 1} de {pageCount}
           </span>

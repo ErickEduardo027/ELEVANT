@@ -1,6 +1,6 @@
 export default function ModulePlaceholder({ icon: Icon, label, description }) {
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col items-center justify-center gap-4 rounded-2xl border border-black/5 bg-white/70 px-6 py-20 text-center backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
+    <div className="mx-auto flex max-w-[1440px] 3xl:max-w-[1760px] flex-col items-center justify-center gap-4 rounded-2xl border border-black/5 bg-white/70 px-6 py-20 text-center backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-600/10 text-accent-600 dark:bg-accent-600/20">
         <Icon className="h-6 w-6" />
       </span>

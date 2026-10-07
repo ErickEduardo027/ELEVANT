@@ -25,7 +25,7 @@ describe('useIsTabletBreakpoint', () => {
   });
 
   it('is true when the tablet media query matches', () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     const { result } = renderHook(() => useIsTabletBreakpoint());
     expect(result.current).toBe(true);
   });

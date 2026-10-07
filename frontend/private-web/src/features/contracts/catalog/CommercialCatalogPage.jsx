@@ -91,7 +91,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const visibleServices = services.slice(pageStart, pageStart + PAGE_SIZE);
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <nav aria-label="Secciones de servicios" className="flex gap-2"><button type="button" onClick={() => setSection('catalog')} aria-current={section === 'catalog' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Catálogo</button>{canSeeClosures && <button type="button" onClick={() => setSection('closures')} aria-current={section === 'closures' ? 'page' : undefined} className="min-h-11 rounded-lg border px-4 text-sm">Solicitudes de clausura</button>}</nav>
     {canSeeClosures && section === 'closures' ? <ServiceClosurePanel mode="contracts" /> : <>
     <header className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Oferta</p><h1 className="mt-1 text-2xl font-bold">Servicios</h1><p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Edite los servicios que ve la aerolínea al solicitar acceso. Las solicitudes conservan su selección histórica.</p></div>{canCreate && <button type="button" onClick={() => open()} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Crear servicio</button>}</header>

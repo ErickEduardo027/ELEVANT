@@ -1,9 +1,20 @@
+import { BREAKPOINTS } from './src/config/breakpoints.js';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
   content: ['./app/**/*.{js,jsx}', './src/**/*.{js,jsx}'],
   theme: {
+    screens: Object.fromEntries(Object.entries(BREAKPOINTS).map(([name, px]) => [name, `${px}px`])),
     extend: {
+      // Capas con nombre: navegación < overlay del menú < drawers/modales < toasts.
+      zIndex: {
+        nav: '30',
+        overlay: '40',
+        drawer: '50',
+        modal: '60',
+        toast: '70',
+      },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],

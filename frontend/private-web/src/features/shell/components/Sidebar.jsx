@@ -229,7 +229,7 @@ export default function Sidebar({
       {showOverlayLayer && (
         <div
           aria-hidden={!overlayOpen}
-          className={`fixed inset-0 z-40 bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200 ${
+          className={`fixed inset-0 z-overlay bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200 ${
             overlayOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
           onClick={onCloseOverlay}
@@ -239,7 +239,7 @@ export default function Sidebar({
       {showOverlayLayer && (
         <aside
           aria-hidden={!overlayOpen}
-          className={`fixed inset-y-0 left-0 z-50 w-[260px] border-r border-black/5 bg-white/95 backdrop-blur-md transition-transform duration-200 ease-in-out dark:border-white/5 dark:bg-surface-dark-card ${
+          className={`fixed inset-y-0 left-0 z-overlay w-[min(85vw,280px)] border-r border-black/5 bg-white/95 backdrop-blur-md transition-transform duration-200 ease-in-out dark:border-white/5 dark:bg-surface-dark-card ${
             overlayOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

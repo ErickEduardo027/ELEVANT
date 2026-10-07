@@ -36,7 +36,7 @@ function ItemContent({ Icon, label, expanded, hasBadge, badgeCount, badgeToneCla
       {!expanded && (
         <span
           role="tooltip"
-          className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-black/10 bg-white px-2 py-1 text-xs font-medium text-ink-900 opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+          className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-black/10 bg-white px-2 py-1 text-xs font-medium text-ink-900 opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
         >
           {label}
           {hasBadge && <span className="ml-1 text-signal-500">({badgeCount})</span>}

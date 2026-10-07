@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import Sidebar from '../../shell/components/Sidebar';
+import ShellFrame from '../../shell/ShellFrame';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
-import Topbar from '../../dashboard/components/Topbar';
 import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import ContractsHomePage from '../home/ContractsHomePage';
@@ -64,26 +63,24 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark">
-      <Sidebar
-        modules={CONTRACT_MODULES}
-        activeModuleId={activeModuleId}
-        onSelectModule={handleSelectModule}
-        badgeCounts={{ [CONTRACT_MODULE_IDS.REQUESTS]: pendingReal,
-          [CONTRACT_MODULE_IDS.CATALOG]: pendingClosures }}
-        user={user}
-        onLogout={onLogout}
-        breakpoint={sidebar.breakpoint}
-        railVisible={sidebar.railVisible}
-        railExpanded={sidebar.railExpanded}
-        overlayOpen={sidebar.overlayOpen}
-        onToggle={sidebar.toggle}
-        onCloseOverlay={sidebar.closeOverlay}
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar station={stationSnapshot()} notificationsEnabled={false} theme={theme} onToggleTheme={toggleTheme} user={user} onOpenMenu={sidebar.toggle} onLogout={onLogout} />
-        <main key={activeModule.id} className="min-w-0 flex-1 overflow-y-auto p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6">
+    <ShellFrame
+      mainKey={activeModule.id}
+      sidebarProps={{
+        modules: CONTRACT_MODULES,
+        activeModuleId,
+        onSelectModule: handleSelectModule,
+        badgeCounts: { [CONTRACT_MODULE_IDS.REQUESTS]: pendingReal, [CONTRACT_MODULE_IDS.CATALOG]: pendingClosures },
+        user,
+        onLogout,
+        breakpoint: sidebar.breakpoint,
+        railVisible: sidebar.railVisible,
+        railExpanded: sidebar.railExpanded,
+        overlayOpen: sidebar.overlayOpen,
+        onToggle: sidebar.toggle,
+        onCloseOverlay: sidebar.closeOverlay,
+      }}
+      topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
+    >
           {activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
@@ -101,8 +98,6 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}
-        </main>
-      </div>
-    </div>
+    </ShellFrame>
   );
 }

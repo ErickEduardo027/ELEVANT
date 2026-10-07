@@ -306,13 +306,13 @@ export default function CanonicalReviewRoute() {
   }
 
   return (
-    <main className="mx-auto max-w-[1440px] space-y-5 text-ink-900 dark:text-text-primary-dark">
+    <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
       <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-accent-600">Control operativo</p><h1 className="text-2xl font-bold">Revisión OCC</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Entregas reales enviadas por agentes de rampa a la API.</p></div>
         {stationScopes.length > 0 && <label className="text-sm font-medium">Estación<select aria-label="Estación de revisión" value={stationId} onChange={event => { setStationId(event.target.value); selectOperation(null); }} className="ml-2 min-h-11 rounded-lg border border-black/20 bg-white px-3 text-ink-900">{stationScopes.map(scope => <option key={scope.stationId} value={scope.stationId}>{scope.stationCode}</option>)}</select></label>}
       </header>
       {stationScopes.length === 0 ? <Notice title="Sin estaciones habilitadas.">Solicita que tu cuenta OCC tenga un alcance de estación activo.</Notice> : (
         <ReviewStation key={stationId} stationId={stationId} selectedId={UUID.test(selectedId ?? '') ? selectedId : null} onSelectOperation={selectOperation} />
       )}
-    </main>
+    </section>
   );
 }
