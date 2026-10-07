@@ -8,7 +8,7 @@ amplía la evidencia.
 
 ## Mapa de contexto
 
-- `frontend/private-web` es la aplicación interna AVIAM en Vite/React.
+- `frontend/private-web` es la aplicación interna AVIAM en Next.js/React.
 - `frontend/public-web` es el sitio y portal público en Next.js/React.
 - `frontend/mobile-agent` es la aplicación nativa Expo/React Native. Su
   integración de negocio con la API y su entrega APK todavía no están completas.

@@ -5,7 +5,7 @@ cd /d "%~dp0"
 echo Iniciando ELEVANT...
 start "ELEVANT Backend" cmd /k "cd /d ""%CD%\backend-prototipo"" && npm start"
 timeout /t 2 /nobreak >nul
-start "ELEVANT Web departamental" cmd /k "cd /d ""%CD%\frontend\private-web"" && npm run dev -- --host 0.0.0.0"
+start "ELEVANT Web departamental" cmd /k "cd /d ""%CD%\frontend\private-web"" && npm run dev -- -p 5173 -H 0.0.0.0"
 start "ELEVANT Portal aerolinea" cmd /k "cd /d ""%CD%\frontend\public-web"" && npm run dev -- --hostname 0.0.0.0"
 start "ELEVANT Agente movil" cmd /k "cd /d ""%CD%\frontend\mobile-agent"" && npx expo start --tunnel --clear"
 

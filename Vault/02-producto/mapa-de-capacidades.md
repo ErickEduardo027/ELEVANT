@@ -11,12 +11,9 @@ last_verified: "2026-09-12"
 verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
 sources:
   - frontend/private-web/README.md
-  - frontend/private-web/src/features/shell/modules.js
   - frontend/public-web/README.md
-  - frontend/public-web/src/lib/portal/repository.ts
   - frontend/mobile-agent/README.md
   - frontend/mobile-agent/src/app/home.tsx
-  - frontend/mobile-agent/src/storage/prototype-storage.ts
   - backend/README.md
   - docs/architecture/database-v1.md
   - docs/database/schema-v1.md
@@ -95,7 +92,7 @@ Al entregar una capacidad, actualiza su fila solo si la evidencia incluye el con
 ## Fuentes
 
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): superficie de prototipos.
-- [Módulos internos](../../frontend/private-web/src/features/shell/modules.js), [repositorio mock del portal](../../frontend/public-web/src/lib/portal/repository.ts), [inicio móvil](../../frontend/mobile-agent/src/app/home.tsx) y [outbox móvil](../../frontend/mobile-agent/src/storage/prototype-storage.ts): cobertura ejecutable sin convertirla en contrato servidor.
+- Módulos internos, repositorio mock del portal, [inicio móvil](../../frontend/mobile-agent/src/app/home.tsx) y outbox móvil: cobertura ejecutable sin convertirla en contrato servidor.
 - [Backend](../../backend/README.md) y [OpenAPI versionado](../../packages/api-client/openapi/elevant-v1.json): superficie HTTP real.
 - [Base de datos v1](../../docs/architecture/database-v1.md) y [esquema v1](../../docs/database/schema-v1.md): cobertura persistente y diferidos.
 - [Tiempo real](../../docs/architecture/realtime.md) e [integración de vuelos](../../backend/Elevant.Infrastructure/Integrations/FlightAware/README.md): shells futuros y sus límites.

@@ -128,7 +128,7 @@ docker compose --env-file database/DevelopmentDB/.env `
   -f $localCompose config --quiet
 ```
 
-Variables públicas de frontend (`VITE_*`, `NEXT_PUBLIC_*`, `EXPO_PUBLIC_*`)
+Variables públicas de frontend (`NEXT_PUBLIC_*`, `EXPO_PUBLIC_*`)
 también forman parte del bundle. Pueden contener un origen de prueba, pero nunca
 token, contraseña o cadena SQL. Usa dominios reservados como
 `https://api.elevant.test` en ejemplos; no copies el FQDN privado de un ambiente

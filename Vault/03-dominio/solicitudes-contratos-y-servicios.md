@@ -22,7 +22,6 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/PreinvoiceConfiguration.cs
-  - frontend/public-web/src/lib/portal/types.ts
   - backend/Elevant.Api/Controllers/AirlinePortalController.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
 tags:
@@ -197,4 +196,4 @@ Hasta acordar el contrato:
 - [Enums comerciales](../../backend/Elevant.Domain/Enumerations/WorkforceCommercialEnums.cs)
 - [Solicitud operativa](../../backend/Elevant.Domain/Entities/Operations/OperationalServiceRequest.cs)
 - [Restricciones comerciales EF](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs)
-- [Tipos del portal, sólo prototipo](../../frontend/public-web/src/lib/portal/types.ts)
+- Tipos del portal, sólo prototipo

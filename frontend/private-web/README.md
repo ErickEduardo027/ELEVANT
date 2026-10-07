@@ -117,6 +117,22 @@ indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
 de una clave local de Google quedó desactivada; cualquier experimento futuro
 con ese proveedor requiere una decisión y una CSP revisadas por separado.
 
+## Layout responsive
+
+Todas las áreas se renderizan dentro de `src/features/shell/ShellFrame.jsx`, con
+sidebar y topbar fijos y scroll solo en el contenido. Los breakpoints salen de
+`src/config/breakpoints.js` (los mismos para Tailwind y para los hooks, más `3xl`
+a 1920 px). Para pantallas nuevas:
+
+- envuelve la cabecera en `PageHeader`, los filtros en `FilterBar` y las vistas
+  lista + panel en `SplitLayout`, que se separa a partir de `lg`;
+- añade la clase `table-stack` a las tablas anchas: se apilan como tarjetas
+  etiquetadas cuando su contenedor mide menos de 40 rem;
+- da a los grids de varias columnas un `grid-cols-1` base y evita anchos fijos.
+
+Comprueba las pantallas a 360, 768, 1024 y 1920 px antes de entregar. Ejecuta
+la app en el puerto 5173 (`npm run dev -- -p 5173`) para no chocar con Public Web.
+
 ## Planificación OCC remota
 
 Guardar o desactivar un perfil de rampa invalida la planificación OCC de sus

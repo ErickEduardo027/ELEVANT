@@ -120,7 +120,7 @@ Hoy sólo se puede recorrer de extremo a extremo la ruta técnica de `system/pin
 
 ### Clientes
 
-- Una variable pública de Vite, Next o Expo nunca contiene un secreto.
+- Una variable pública de Next o Expo nunca contiene un secreto.
 - El navegador o dispositivo no convierte un `organizationId`, `stationId`, `agentId` o rol recibido/enviado en autorización.
 - La caché local, el almacenamiento del navegador y los mocks son reemplazables y descartables.
 - Mobile necesita idempotencia de servidor para escrituras reintentables; la tabla de receipts existe, pero no el handler HTTP que la use.

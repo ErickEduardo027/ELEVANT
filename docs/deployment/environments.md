@@ -8,9 +8,9 @@ Por diseño, una sola API/base lógica sirve a AVIAM Web, Public Web y Mobile Ag
 | --- | --- | --- | --- |
 | Rama | feature actual | `Development` | commit promovido desde `main` |
 | API | `http://127.0.0.1:8080` | `ELEVANT_DEV_API_ORIGIN` | dominio público controlado |
-| AVIAM Web | `http://localhost:5173` | `ELEVANT_DEV_AVIAM_WEB_ORIGIN` | dominio interno/controlado |
+| AVIAM Web | `http://localhost:5173` (`npm run dev -- -p 5173`) | `ELEVANT_DEV_AVIAM_WEB_ORIGIN` | dominio interno/controlado |
 | Public Web | `http://localhost:3000` | `ELEVANT_DEV_PUBLIC_WEB_ORIGIN` | dominio público controlado |
-| Mobile | Expo/device con backend prototipo | APK de pruebas y conexión funcional a la API compartida pendientes | build de tienda con API pública, por diseñar |
+| Mobile | Expo/dispositivo contra la API Development | APK de pruebas y conexión funcional a la API compartida pendientes | build de tienda con API pública, por diseñar |
 | Base | `ElevantDevelopmentDb` local | `ElevantDevelopmentDb` | `ElevantProductionDb` |
 | Datos | sintéticos | sintéticos/reconstruibles | reales autorizados |
 | SQL edition | Developer | Developer | por decidir/licenciar |

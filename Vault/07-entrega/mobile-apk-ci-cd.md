@@ -15,7 +15,6 @@ sources:
   - frontend/mobile-agent/package.json
   - frontend/mobile-agent/app.json
   - frontend/mobile-agent/src/config/elevant-api.ts
-  - frontend/mobile-agent/src/storage/prototype-storage.ts
   - .github/workflows/mobile-ci.yml
   - .github/workflows/api-client-ci.yml
   - docs/workflows/mobile-workflow.md

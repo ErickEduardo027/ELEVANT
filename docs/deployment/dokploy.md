@@ -52,7 +52,7 @@ Deployables separados:
 1. `elevant-dev-database`: manual, sin AutoDeploy.
 2. `elevant-dev-database-release`: one-shot por versión.
 3. `elevant-dev-api`: Compose independiente, CD pull-based controlado.
-4. `elevant-dev-aviam-web`: Vite estático/Nginx, runtime y Web CD aceptados.
+4. `elevant-dev-aviam-web`: Next standalone, runtime y Web CD aceptados.
 5. `elevant-dev-public-web`: Next standalone, runtime y Web CD aceptados.
 6. `elevant-dev-sql-tools-gateway`: proxy TCP privado aceptado para SSMS
    Development, sin AutoDeploy ni credenciales.
@@ -132,7 +132,7 @@ resuelve el digest del bundle, valida etiquetas, manifiesto y hashes, guarda los
 Compose por contenido y ejecuta las dos referencias `@sha256:...` incluidas con
 los Compose certificados. Antes de SQL compara el modelo Compose canónico con
 los Raw vivos de Dokploy: formato y comentarios pueden variar, la semántica no.
-No se construye .NET/Next/Vite en el KVM.
+No se construye .NET ni Next en el KVM.
 
 ## 3. Crear almacenamiento/red una sola vez
 
@@ -272,7 +272,7 @@ Internet ni se considera autenticada por estar detrás de Tailscale.
 | Deployable | Imagen/runtime | Bind host | Red de datos | Límite inicial |
 | --- | --- | --- | --- | --- |
 | API | ASP.NET no-root | `127.0.0.1:18080:8080` | sí | 768 MB / 0.60 CPU |
-| AVIAM Web | build Vite + Nginx unprivileged | `127.0.0.1:18081:8080` | no | 128 MB / 0.15 CPU |
+| AVIAM Web | Next `standalone`, Node no-root | `127.0.0.1:18081:8080` | no | 512 MB / 0.35 CPU |
 | Public Web | Next `standalone`, Node no-root | `127.0.0.1:18082:3000` | no | 512 MB / 0.35 CPU |
 
 GitHub Actions construye la API una sola vez y, antes de exportar o publicar su
@@ -303,7 +303,7 @@ actualización. AVIAM Web y Public Web permanecen desplegadas en recursos y
 estados independientes; el orden de una reconstrucción sigue siendo primero
 AVIAM Web y después Public Web.
 
-Los valores `VITE_*`/`NEXT_PUBLIC_*` se hornean durante build, son públicos y no
+Los valores `NEXT_PUBLIC_*` se hornean durante build, son públicos y no
 pueden contener secretos. GitHub Actions toma los orígenes HTTPS exactos de
 estas variables de repositorio, sin escribir nombres vivos en las plantillas:
 

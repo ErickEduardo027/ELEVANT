@@ -28,8 +28,6 @@ sources:
   - frontend/private-web/README.md
   - frontend/public-web/README.md
   - frontend/mobile-agent/README.md
-  - frontend/public-web/src/lib/portal/types.ts
-  - frontend/mobile-agent/src/data/mock.ts
 tags:
   - brechas
   - preguntas-abiertas

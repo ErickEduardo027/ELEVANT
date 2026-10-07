@@ -55,6 +55,28 @@ pruebas locales no constituyen evidencia de despliegue en Development.
 
 Private Web es la aplicación interna de AVIAM para OCC, administración y departamentos operativos. Su acceso usa la sesión real de la API de Development y algunas rutas OCC consumen contratos canónicos. Las pantallas prototípicas, objetos locales y rutas heredadas restantes no son autoridad de permisos, persistencia ni contrato HTTP.
 
+## Layout responsive
+
+Las áreas internas comparten [ShellFrame](../../frontend/private-web/src/features/shell/ShellFrame.jsx):
+sidebar y topbar fijos, con desplazamiento solo en el contenido. Los
+breakpoints viven en un único [módulo](../../frontend/private-web/src/config/breakpoints.js)
+que usan tanto Tailwind como los hooks; incluye `3xl` (1920 px).
+
+- Por debajo de 640 px la navegación es un drawer. De 640 a 1023 px hay un rail
+  de iconos y desde 1024 px el rail completo. En teléfono, el topbar mueve los
+  relojes al menú de usuario.
+- Las tablas con la clase `table-stack` pasan a tarjetas etiquetadas cuando su
+  contenedor mide menos de 40 rem
+  ([CSS](../../frontend/private-web/src/styles/tokens.css),
+  [etiquetado](../../frontend/private-web/src/components/StackedTable.jsx)).
+- Los paneles laterales y los dashboards 3/2 se separan desde 1024 px. Para
+  pantallas nuevas existen `PageHeader`, `SplitLayout` y `FilterBar` en
+  `src/components`. Los modales son hojas inferiores en teléfono.
+- El chat OCC funciona como lista/detalle por debajo de 1024 px.
+
+La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
+1920 px contra la API Development. No acredita un despliegue en el VPS.
+
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |

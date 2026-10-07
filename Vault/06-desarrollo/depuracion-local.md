@@ -89,7 +89,7 @@ proceso para ocultarlo.
 | SQL sano pero API no ready | logs de provisioner/migrator/seeder-development/API en orden | corrige la primera etapa fallida y vuelve a iniciar el stack |
 | seed falla al repetir | invariantes/idempotencia del seeder | corrige el seeder; no limpia tablas a mano para lograr verde |
 | puerto local ocupado | `Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue` | identifica el dueño y selecciona el flujo aprobado; no mates procesos desconocidos |
-| Private Web rechaza build | ambas `VITE_*`, mismo origen HTTPS DNS sin ruta | usa un origen `.test` local válido y vuelve a ejecutar el validator |
+| Private Web rechaza build | ambas `NEXT_PUBLIC_*_API_URL` y `NEXT_PUBLIC_HR_DEMO_MODE`, mismo origen HTTPS DNS sin ruta | usa un origen `.test` local válido y vuelve a ejecutar el validator |
 | Public Web rechaza tipos | documentación Next instalada y salida de `next typegen` | `npm ci`, luego `npm run typecheck`; corrige fuente, no `.next` |
 | Mobile abre pero no alcanza API | origen alcanzable desde dispositivo y conectividad | recuerda que `localhost` es la tablet/emulador; usa una ruta local autorizada |
 | Mobile falla con API client | resolución Metro y bundle seam | ejecuta `lint`, `typecheck` y `test:api-client-bundle` |

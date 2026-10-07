@@ -7,7 +7,7 @@
 - `database/DevelopmentDB`: EF Core, migraciones, DatabaseTool, Compose y
   operación SQL de Development.
 - `database/ProductionDB`: límite futuro reservado; vacío salvo `.gitkeep`.
-- `frontend/private-web`: aplicación AVIAM interna en Vite/React.
+- `frontend/private-web`: aplicación AVIAM interna en Next.js/React.
 - `frontend/public-web`: landing y portal de clientes en Next.js/React.
 - `frontend/mobile-agent`: aplicación nativa Expo/React Native para agentes.
 - `packages/api-client`: cliente TypeScript compartido y generado desde OpenAPI.
