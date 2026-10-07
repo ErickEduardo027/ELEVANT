@@ -15,6 +15,76 @@ export interface AcceptAirlinePreinvoiceResponse {
   replayed: boolean;
 }
 
+export interface AccessProfileData {
+  id: string;
+  department: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isActive: boolean;
+  permissions: string[];
+  members: number;
+  version: string;
+}
+
+export interface GovernanceStationData {
+  id: string;
+  code: string;
+}
+
+export interface GovernanceTerminalData {
+  id: string;
+  code: string;
+  stationId: string;
+}
+
+export interface AccessRequestData {
+  id: string;
+  department: string;
+  kind: string;
+  status: string;
+  requestedBy: string;
+  requestedAt: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  accessProfileName?: string | null;
+  permissions: string[];
+  stations: GovernanceStationData[];
+  terminals: GovernanceTerminalData[];
+  /** @nullable */
+  employeeNumber?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  hireDate?: string | null;
+  /** @nullable */
+  supervisorRampAgentId?: string | null;
+  /** @nullable */
+  supervisorName?: string | null;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  decidedAt?: string | null;
+  /** @nullable */
+  decidedBy?: string | null;
+  /** @nullable */
+  createdAccountId?: string | null;
+  version: string;
+}
+
+export interface AccessRequestPage {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  requests: AccessRequestData[];
+}
+
 export interface AccountChangeResponse {
   eventId: string;
   cursor: string;
@@ -315,6 +385,26 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+export interface ClientAirlineData {
+  organizationId: string;
+  name: string;
+  iataCode: string;
+  users: number;
+  activeUsers: number;
+}
+
+export interface ClientUserData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  status: string;
+  mustChangePassword: boolean;
+  /** @nullable */
+  lastLoginAt?: string | null;
+  version: string;
+}
+
 export interface CommercialAccountResponse {
   accountId: string;
 }
@@ -428,6 +518,27 @@ export interface ContractDraftOverviewItemData {
 export interface ContractDraftOverviewData {
   count: number;
   recent: ContractDraftOverviewItemData[];
+}
+
+export interface CreateClientUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  temporaryPassword: string;
+}
+
+export interface CreateDepartmentAccountInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  temporaryPassword: string;
+  stationIds: string[];
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  permissionCodes?: string[] | null;
 }
 
 export interface CreateGovernanceUserInput {
@@ -587,6 +698,81 @@ export interface DecideServiceClosureRequest {
   version: string;
 }
 
+export interface DecideUserAccessInput {
+  expectedVersion: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface PermissionActionData {
+  code: string;
+  action: string;
+  label: string;
+}
+
+export interface PermissionModuleData {
+  key: string;
+  label: string;
+  actions: PermissionActionData[];
+}
+
+export interface DepartmentCatalogData {
+  department: string;
+  label: string;
+  modules: PermissionModuleData[];
+}
+
+export interface DepartmentSummaryData {
+  department: string;
+  label: string;
+  administrators: number;
+  members: number;
+  rampAgents: number;
+  inactive: number;
+  pendingRequests: number;
+  pendingFirstLogin: number;
+  activeProfiles: number;
+}
+
+export interface DepartmentUserData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  kind: string;
+  status: string;
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  accessProfileName?: string | null;
+  permissions: string[];
+  stations: GovernanceStationData[];
+  mustChangePassword: boolean;
+  /** @nullable */
+  lastLoginAt?: string | null;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+  version: string;
+}
+
+export interface DepartmentUserPage {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  users: DepartmentUserData[];
+}
+
+export interface DepartmentsOverviewData {
+  totalInternalUsers: number;
+  administrators: number;
+  members: number;
+  pendingRequests: number;
+  departments: DepartmentSummaryData[];
+}
+
 export interface DisputeAirlinePreinvoiceRequest {
   requestId: string;
   subject: string;
@@ -599,6 +785,10 @@ export interface DisputeAirlinePreinvoiceResponse {
   disputeId: string;
   status: string;
   replayed: boolean;
+}
+
+export interface ExpectedVersionInput {
+  expectedVersion: string;
 }
 
 export interface FinanceApprovedServiceResponse {
@@ -1172,6 +1362,14 @@ export interface IssueFinanceInvoiceResponse {
   replayed: boolean;
 }
 
+export interface LegacyRoleData {
+  id: string;
+  code: string;
+  name: string;
+  permissions: string[];
+  activeUsers: number;
+}
+
 export interface ManagedAirlineData {
   id: string;
   sourceName: string;
@@ -1352,6 +1550,16 @@ export interface MediaAssetData {
   purpose: string;
   contentType: string;
   length: number;
+}
+
+export interface MyDepartmentAccessData {
+  kind: string;
+  /** @nullable */
+  department?: string | null;
+  permissions: string[];
+  stations: GovernanceStationData[];
+  canManageDepartmentUsers: boolean;
+  canValidateAccessRequests: boolean;
 }
 
 export interface NonFiscalInvoiceLineResponse {
@@ -2223,6 +2431,31 @@ export interface ReportRampIncidentRequest {
   occurredAt: string;
 }
 
+export interface RequestUserAccessInput {
+  requestId: string;
+  kind: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  stationIds: string[];
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  permissionCodes?: string[] | null;
+  /** @nullable */
+  terminalIds?: string[] | null;
+  /** @nullable */
+  employeeNumber?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  hireDate?: string | null;
+  /** @nullable */
+  supervisorRampAgentId?: string | null;
+}
+
 export interface ResetGovernancePasswordRequest {
   temporaryPassword: string;
 }
@@ -2251,6 +2484,15 @@ export interface ReviewCommercialInput {
   /** @nullable */
   reason?: string | null;
   stationIds: string[];
+}
+
+export interface SaveAccessProfileInput {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  permissionCodes: string[];
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SaveAttendanceDraftRequest {
@@ -2325,6 +2567,11 @@ export interface SessionResponse {
   tokenType: string;
   expiresAt: string;
   actor: SessionActorResponse;
+}
+
+export interface SetDepartmentUserStatusInput {
+  isActive: boolean;
+  expectedVersion: string;
 }
 
 export interface SetOperationalNotificationReadRequest {
@@ -2428,6 +2675,20 @@ export interface UpdateContractDraftInput {
   rates: UpdateDraftRateInput[];
 }
 
+export interface UpdateDepartmentUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  stationIds: string[];
+  expectedVersion: string;
+  /** @nullable */
+  avatarMediaUrl?: string | null;
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  permissionCodes?: string[] | null;
+}
+
 export interface UpdateGovernanceUserInput {
   firstName: string;
   lastName: string;
@@ -2504,6 +2765,23 @@ version?: string;
 export type UploadCommercialMediaBody = {
   purpose?: string;
   file?: Blob;
+};
+
+export type ListDepartmentUsersParams = {
+page?: number;
+limit?: number;
+kind?: string;
+status?: string;
+accessProfileId?: string;
+stationId?: string;
+search?: string;
+};
+
+export type ListUserAccessRequestsParams = {
+department?: string;
+status?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetFinanceApprovedServicesParams = {
@@ -4140,6 +4418,869 @@ export const getActivateManagedContractDraftUrl = (versionId: string,) => {
 export const activateManagedContractDraft = async (versionId: string, options?: RequestInit): Promise<CommercialIdResponse> => {
 
   const res = await fetch(getActivateManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetMyDepartmentAccessUrl = () => {
+
+
+
+
+  return `/api/v1/governance/me/access`
+}
+
+export const getMyDepartmentAccess = async ( options?: RequestInit): Promise<MyDepartmentAccessData> => {
+
+  const res = await fetch(getGetMyDepartmentAccessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MyDepartmentAccessData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentPermissionCatalogUrl = () => {
+
+
+
+
+  return `/api/v1/governance/catalog`
+}
+
+export const getDepartmentPermissionCatalog = async ( options?: RequestInit): Promise<DepartmentCatalogData[]> => {
+
+  const res = await fetch(getGetDepartmentPermissionCatalogUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentCatalogData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentsOverviewUrl = () => {
+
+
+
+
+  return `/api/v1/governance/departments/summary`
+}
+
+export const getDepartmentsOverview = async ( options?: RequestInit): Promise<DepartmentsOverviewData> => {
+
+  const res = await fetch(getGetDepartmentsOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentsOverviewData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentSummaryUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/summary`
+}
+
+export const getDepartmentSummary = async (department: string, options?: RequestInit): Promise<DepartmentSummaryData> => {
+
+  const res = await fetch(getGetDepartmentSummaryUrl(department),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentSummaryData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListDepartmentUsersUrl = (department: string,
+    params?: ListDepartmentUsersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/departments/${department}/users?${stringifiedParams}` : `/api/v1/governance/departments/${department}/users`
+}
+
+export const listDepartmentUsers = async (department: string,
+    params?: ListDepartmentUsersParams, options?: RequestInit): Promise<DepartmentUserPage> => {
+
+  const res = await fetch(getListDepartmentUsersUrl(department,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentUserPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateDepartmentUserUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/users`
+}
+
+export const createDepartmentUser = async (department: string,
+    createDepartmentAccountInput?: CreateDepartmentAccountInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateDepartmentUserUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createDepartmentAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateDepartmentAdministratorUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/administrators`
+}
+
+export const createDepartmentAdministrator = async (department: string,
+    createDepartmentAccountInput?: CreateDepartmentAccountInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateDepartmentAdministratorUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createDepartmentAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateDepartmentUserUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/users/${id}`
+}
+
+export const updateDepartmentUser = async (department: string,
+    id: string,
+    updateDepartmentUserInput?: UpdateDepartmentUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateDepartmentUserUrl(department,id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateDepartmentUserInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetDepartmentUserStatusUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/users/${id}/status`
+}
+
+export const setDepartmentUserStatus = async (department: string,
+    id: string,
+    setDepartmentUserStatusInput?: SetDepartmentUserStatusInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetDepartmentUserStatusUrl(department,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setDepartmentUserStatusInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResetDepartmentUserPasswordUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/users/${id}/password-reset`
+}
+
+export const resetDepartmentUserPassword = async (department: string,
+    id: string,
+    resetGovernancePasswordRequest?: ResetGovernancePasswordRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResetDepartmentUserPasswordUrl(department,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resetGovernancePasswordRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListAccessProfilesUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/access-profiles`
+}
+
+export const listAccessProfiles = async (department: string, options?: RequestInit): Promise<AccessProfileData[]> => {
+
+  const res = await fetch(getListAccessProfilesUrl(department),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AccessProfileData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateAccessProfileUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/access-profiles`
+}
+
+export const createAccessProfile = async (department: string,
+    saveAccessProfileInput?: SaveAccessProfileInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateAccessProfileUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAccessProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateAccessProfileUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/access-profiles/${id}`
+}
+
+export const updateAccessProfile = async (department: string,
+    id: string,
+    saveAccessProfileInput?: SaveAccessProfileInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateAccessProfileUrl(department,id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveAccessProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDeactivateAccessProfileUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/access-profiles/${id}/deactivate`
+}
+
+export const deactivateAccessProfile = async (department: string,
+    id: string,
+    expectedVersionInput?: ExpectedVersionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDeactivateAccessProfileUrl(department,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(expectedVersionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRequestDepartmentUserAccessUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/access-requests`
+}
+
+export const requestDepartmentUserAccess = async (department: string,
+    requestUserAccessInput?: RequestUserAccessInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRequestDepartmentUserAccessUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(requestUserAccessInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListUserAccessRequestsUrl = (params?: ListUserAccessRequestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/access-requests?${stringifiedParams}` : `/api/v1/governance/access-requests`
+}
+
+export const listUserAccessRequests = async (params?: ListUserAccessRequestsParams, options?: RequestInit): Promise<AccessRequestPage> => {
+
+  const res = await fetch(getListUserAccessRequestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AccessRequestPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCancelUserAccessRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/access-requests/${id}/cancel`
+}
+
+export const cancelUserAccessRequest = async (id: string,
+    expectedVersionInput?: ExpectedVersionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelUserAccessRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(expectedVersionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getValidateUserAccessRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/access-requests/${id}/validate`
+}
+
+export const validateUserAccessRequest = async (id: string,
+    decideUserAccessInput?: DecideUserAccessInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getValidateUserAccessRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(decideUserAccessInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRejectUserAccessRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/access-requests/${id}/reject`
+}
+
+export const rejectUserAccessRequest = async (id: string,
+    decideUserAccessInput?: DecideUserAccessInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRejectUserAccessRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(decideUserAccessInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListGovernanceClientsUrl = () => {
+
+
+
+
+  return `/api/v1/governance/clients`
+}
+
+export const listGovernanceClients = async ( options?: RequestInit): Promise<ClientAirlineData[]> => {
+
+  const res = await fetch(getListGovernanceClientsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ClientAirlineData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListGovernanceClientUsersUrl = (organizationId: string,) => {
+
+
+
+
+  return `/api/v1/governance/clients/${organizationId}/users`
+}
+
+export const listGovernanceClientUsers = async (organizationId: string, options?: RequestInit): Promise<ClientUserData[]> => {
+
+  const res = await fetch(getListGovernanceClientUsersUrl(organizationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ClientUserData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateGovernanceClientUserUrl = (organizationId: string,) => {
+
+
+
+
+  return `/api/v1/governance/clients/${organizationId}/users`
+}
+
+export const createGovernanceClientUser = async (organizationId: string,
+    createClientUserInput?: CreateClientUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateGovernanceClientUserUrl(organizationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createClientUserInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetGovernanceClientUserStatusUrl = (organizationId: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/clients/${organizationId}/users/${id}/status`
+}
+
+export const setGovernanceClientUserStatus = async (organizationId: string,
+    id: string,
+    setDepartmentUserStatusInput?: SetDepartmentUserStatusInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetGovernanceClientUserStatusUrl(organizationId,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setDepartmentUserStatusInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResetGovernanceClientUserPasswordUrl = (organizationId: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/clients/${organizationId}/users/${id}/password-reset`
+}
+
+export const resetGovernanceClientUserPassword = async (organizationId: string,
+    id: string,
+    resetGovernancePasswordRequest?: ResetGovernancePasswordRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResetGovernanceClientUserPasswordUrl(organizationId,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resetGovernancePasswordRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListLegacyRolesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/legacy-roles`
+}
+
+export const listLegacyRoles = async ( options?: RequestInit): Promise<LegacyRoleData[]> => {
+
+  const res = await fetch(getListLegacyRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: LegacyRoleData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getConvertLegacyRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/legacy-roles/${id}/convert`
+}
+
+export const convertLegacyRole = async (id: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+  const res = await fetch(getConvertLegacyRoleUrl(id),
   {
     ...options,
     method: 'POST'

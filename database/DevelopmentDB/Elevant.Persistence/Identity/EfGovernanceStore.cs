@@ -279,6 +279,8 @@ internal sealed class EfGovernanceStore(
             (item.Portal == PortalKind.BackOffice ||
                 item.Portal == PortalKind.RampMobileApp && item.NormalizedName == "RAMP_AGENT"), cancellationToken);
         if (role is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        // The super administrator is unique and never granted through user management.
+        if (role.NormalizedName == "SUPERADMIN") return GovernanceResult.Failed(GovernanceFailure.Protected);
         var isRamp = role.Portal == PortalKind.RampMobileApp;
         if (isRamp != input.RampAgentId.HasValue)
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
@@ -569,6 +571,9 @@ internal sealed class EfGovernanceStore(
         var currentSuperAdmin = await context.Roles.AnyAsync(item =>
             assignments.Select(link => link.RoleId).Contains(item.Id) &&
             item.NormalizedName == "SUPERADMIN", cancellationToken);
+        // The super administrator role is never transferred: nobody gains it and its holder keeps it.
+        if (currentSuperAdmin != (role.NormalizedName == "SUPERADMIN"))
+            return GovernanceResult.Failed(GovernanceFailure.Protected);
         if (currentSuperAdmin && (role.NormalizedName != "SUPERADMIN" || !input.IsActive) &&
             await ActiveRoleUserCountAsync(await context.Roles.Where(item =>
                 item.NormalizedName == "SUPERADMIN").Select(item => item.Id)
