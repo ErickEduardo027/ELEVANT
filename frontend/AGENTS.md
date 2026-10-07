@@ -16,7 +16,7 @@ Keep mock and remote adapters replaceable. Components should not decide which da
 
 ## Application-specific rules
 
-- AVIAM Web is currently Vite 6 + React 18. Its public API variable is `VITE_PROTOTYPE_API_URL`; anything prefixed `VITE_` is visible in the browser.
+- AVIAM Web is Next.js 16 (App Router) + React 19. Read its nested `AGENTS.md` and the installed Next documentation before code changes. Its public API variables are `NEXT_PUBLIC_ELEVANT_API_URL` (shared OpenAPI client) and `NEXT_PUBLIC_PROTOTYPE_API_URL` (legacy adapters, same origin); `NEXT_PUBLIC_*` values are build-time public configuration, never secrets.
 - Public Web is Next.js 16 + React 19. Read its nested `AGENTS.md` and the installed Next documentation before code changes. `NEXT_PUBLIC_*` values are build-time public configuration, never secrets.
 - Mobile Agent is Expo 54 + React Native. Native requests are not governed by browser CORS. Offline writes must send a stable device ID and idempotency key and reconcile the API result; local data is a cache, not the source of truth.
 

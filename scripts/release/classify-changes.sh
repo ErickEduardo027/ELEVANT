@@ -33,7 +33,7 @@ while IFS= read -r -d '' path; do
     .github/workflows/development-delivery.yml | \
     .github/workflows/pull-request-ci.yml | \
     .dockerignore | .editorconfig | .gitattributes | .gitignore | \
-    AGENTS.md | CONTRIBUTING.md | LICENSE.md | README.md | SECURITY.md | \
+    AGENTS.md | CLAUDE.md | CONTRIBUTING.md | LICENSE.md | README.md | SECURITY.md | \
     SETUP_REPORT.md | .1GUIA-PRUEBA-COMPLETA-PROTOTIPO.md | \
     INICIAR-PROTOTIPO.cmd | PREPARAR-PROTOTIPO.cmd | \
     PROBAR-PROTOTIPO.cmd | RESTABLECER-DATOS-PROTOTIPO.cmd | \
