@@ -7,7 +7,7 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-26"
+last_verified: "2026-10-07"
 verified_commit: pending
 sources:
   - docs/workflows/commercial-intake-and-governance.md
@@ -29,6 +29,8 @@ sources:
   - frontend/private-web/src/hooks/useCommercialRevalidation.js
   - frontend/private-web/src/features/contracts/catalog/CommercialCatalogPage.jsx
   - frontend/private-web/src/features/contracts/catalog/CommercialCatalogPage.test.jsx
+  - frontend/private-web/src/features/contracts/catalog/serviceCatalogForm.js
+  - frontend/private-web/src/components/Combobox.jsx
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Seed/DevelopmentDataSeeder.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialCatalogStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialIntakeStore.cs
@@ -72,11 +74,33 @@ flowchart LR
 El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Cinco iconos de sitios oficiales se sirven localmente en ambas webs; los demás usan monogramas. Los campos no corroborados permanecen como «Sin dato confirmado». Superadministración administra las fichas y puede completar las filas de fixture aún intactas; el seed no actualiza datos existentes. El representante puede añadir datos opcionales y revisa un cuarto paso antes del envío. No elige contraseña. Contratos verifica y decide; la aprobación crea un contrato en borrador. El superadministrador crea la cuenta con contraseña temporal y entrega manual. La aerolínea puede comentar el borrador; cada tarifa pendiente aparece «por definir» hasta que Contratos la confirme. La activación exige todas las tarifas confirmadas, además de vigencia, servicios y estaciones.
 
 En esta rama, **Contratos → Servicios → Catálogo** muestra la lista interna de
-servicios en páginas de diez, incluidos los ocultos. La interfaz muestra rango
-y total, ajusta la página al actualizar si el catálogo se reduce y ubica el
-servicio creado o editado después de guardarlo. Es una paginación de la vista:
+servicios en páginas de doce, incluidos los ocultos, en el mismo orden del API:
+`displayOrder` y, en empate, nombre. La interfaz muestra rango y total, ajusta la
+página al actualizar si el catálogo se reduce y ubica el servicio creado o
+editado después de guardarlo. Es una paginación de la vista:
 `GET /contracts/catalog/services` sigue devolviendo la lista completa. Este
 cambio local no acredita una promoción al VPS.
+
+`displayOrder` es funcional: ordena el catálogo público y las opciones de
+afiliación. Cada tarjeta muestra su posición secuencial (1, 2, 3…) en ese orden;
+el usuario no la escribe. Al crear, private-web envía el mayor `displayOrder`
+cargado más uno, contando ocultos y retirados, de modo que el servicio queda al
+final; al editar se conserva. El API no asigna ni exige unicidad de este número,
+así que los valores guardados pueden tener huecos o repetidos heredados y dos
+altas simultáneas pueden compartirlo; la posición visible sigue siendo
+secuencial.
+
+Nombre y código forman una sola entidad. El combobox de **Nombre del servicio**
+reúne los servicios del API (incluidos los creados con «Otro») y los siete
+servicios de rampa con código formal (`RAMP-*`) aún no creados; al elegir uno, el
+código se completa y no se edita. Elegir un servicio que ya existe bloquea el
+alta y ofrece editarlo. «Otro» pide nombre y código nuevos, que no pueden
+repetir los de otra entidad; el texto «Otro» nunca se guarda. **Unidad de
+cobro** es un combobox con un catálogo inicial de ground handling (operación,
+aeronave, pasajero, tonelada, hora, unidad, servicio, día), las unidades ya
+usadas en el catálogo y «Otro» con texto libre. Se guarda como sustantivo porque
+las tarifas la muestran como «Precio por …»; no hay unidad por defecto ni regla
+automática por servicio.
 
 El módulo Usuarios muestra los roles personalizados con acciones Ver/Crear/Editar/Acceso completo; cada módulo comienza en Ver, que es el mínimo, y el formulario valida la política de contraseña temporal del API antes de enviarla. También ofrece `RAMP_AGENT` sólo al vincular un perfil operativo de Gestión Humana con estación vigente. La [guía de rampa](../../docs/workflows/ramp-agent-readiness.md) distingue el perfil de la elegibilidad de OCC para una tarea concreta. Configuración lee auditoría paginada con actor y cambios de campos permitidos; contraseñas y correos no se incluyen en el detalle.
 
