@@ -24,9 +24,6 @@ sources:
   - frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx
   - frontend/public-web/src/components/portal/AirlineReportsPage.tsx
   - frontend/public-web/src/components/portal/AirlineContractPage.tsx
-  - frontend/public-web/src/components/portal/PortalDemoPreview.tsx
-  - frontend/public-web/src/components/portal/PortalViews.tsx
-  - frontend/public-web/src/components/portal/PortalWorkspace.tsx
   - frontend/public-web/src/lib/elevant-api.ts
   - frontend/public-web/tests/e2e/auth.spec.ts
   - frontend/public-web/tests/e2e/portal.spec.ts
@@ -159,6 +156,23 @@ un vacío real cuando no hay registro y no verifica fondos externos. Fuentes:
 [controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs),
 [persistencia de disputas](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePreinvoiceDisputeStore.cs)
 y [cliente compartido](../../packages/api-client/src/client.ts).
+
+## Layout responsive
+
+La escala de breakpoints es mobile-first en rem (40, 48, 64, 80 y 90 rem) y
+ahora también la usa `/solicitar-acceso`, que en tablet se presenta en una sola
+columna. El contenido del portal es un contenedor CSS (`container: portal`): las
+métricas, las líneas de tarifa y prefactura y los encabezados responden al
+ancho disponible junto al sidebar, no al del viewport
+([estilos](../../frontend/public-web/src/components/portal/AirlinePortalPage.module.css)).
+La navegación inferior del portal se mantiene hasta 64 rem. El héroe 3D elige
+la calidad LITE en teléfonos, tablets y equipos o redes limitados.
+
+Playwright añade proyectos de 360, 1024 y 1920 px que repiten las
+comprobaciones de desbordamiento con un
+[detector de elementos fuera del viewport](../../frontend/public-web/tests/e2e/layout.ts).
+Las specs del portal dependen de un stub de API incompleto y ya fallaban antes
+de este cambio; CI no ejecuta e2e.
 
 ## Desarrollo y evidencia
 

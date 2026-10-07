@@ -82,6 +82,18 @@ tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la AP
 privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca
 contiene secretos.
 
+## Fluidez y tablet
+
+- La app sigue la orientación del dispositivo. `src/utils/layout-class.ts`
+  clasifica el ancho: desde 900 dp el inicio muestra la lista junto al
+  manifiesto (`OperationDetail`), y entre 600 y 899 dp usa dos columnas.
+- Tras la primera carga las pantallas revalidan en segundo plano sin spinner a
+  pantalla completa. Los sondeos usan `startForegroundInterval` y se pausan con
+  la app en segundo plano.
+- Las fechas se formatean con `src/utils/date-format.ts`, que cachea las
+  instancias de `Intl`. Las listas largas deben usar `FlatList` con filas
+  memoizadas y handlers estables.
+
 ## Autorización y almacenamiento
 
 La API determina la cuenta, el perfil de agente y las estaciones autorizadas. El

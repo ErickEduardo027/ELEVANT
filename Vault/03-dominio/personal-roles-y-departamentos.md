@@ -13,7 +13,6 @@ sources:
   - frontend/private-web/README.md
   - frontend/private-web/src/features/auth/roleRouting.js
   - frontend/private-web/src/features/human-resources/users/usersMock.js
-  - frontend/private-web/src/features/planning/components/AssignmentModal.jsx
   - backend/Elevant.Domain/Entities/Workforce/RampAgent.cs
   - backend/Elevant.Domain/Entities/Workforce/ShiftAssignment.cs
   - backend/Elevant.Domain/Entities/Workforce/QualificationCycle.cs

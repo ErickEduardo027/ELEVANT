@@ -45,7 +45,7 @@ La [política SQL](../../docs/security/database-access.md) concede CRUD por esqu
 
 1. Define propietario, ambiente, consumidor, duración y rotación antes de crear el valor.
 2. Usa el almacén o variables protegidas del ambiente; los `.env.example` versionados sólo contienen nombres y marcadores.
-3. Limita el secreto al proceso que lo necesita. Variables `VITE_*`, `NEXT_PUBLIC_*` y `EXPO_PUBLIC_*` forman parte de clientes públicos y nunca guardan credenciales.
+3. Limita el secreto al proceso que lo necesita. Variables `NEXT_PUBLIC_*` y `EXPO_PUBLIC_*` forman parte de clientes públicos y nunca guardan credenciales.
 4. Ante exposición, revoca o rota primero; luego limita el artefacto, investiga y sanea historia coordinadamente. Borrar el texto del commit sin revocar no restaura la seguridad.
 
 La [guía de secretos](../../docs/security/secrets-management.md) contiene el procedimiento. Esta nota no reproduce valores, rutas del host, comandos de extracción ni instrucciones para distribuir credenciales.
