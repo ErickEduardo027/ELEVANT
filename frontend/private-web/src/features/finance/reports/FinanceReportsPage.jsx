@@ -107,7 +107,7 @@ export default function FinanceReportsPage({ initialStationId }) {
             {airlines.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
         </div>
-        {rows.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+        {rows.length ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
             <tr><th className="px-5 py-3">Aerolínea</th><th className="px-5 py-3">Moneda</th>
               <th className="px-5 py-3">Borrador</th><th className="px-5 py-3">Enviada</th>

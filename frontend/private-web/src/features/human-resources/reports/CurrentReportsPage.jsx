@@ -287,7 +287,7 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
         <p className="py-10 text-sm text-text-secondary-light dark:text-text-secondary-dark">
           No hay filas para estos filtros. Prueba otra estación o intervalo.
         </p> :
-        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
+        <div className="mt-4 overflow-x-auto"><table className="table-stack w-full min-w-[720px] text-left text-sm">
           <thead><tr className="border-b border-slate-200 text-xs uppercase tracking-wide dark:border-white/10">
             {KINDS[kind].columns.map(([field, label]) => <th key={field} scope="col" className="px-3 py-3">{label}</th>)}
           </tr></thead>

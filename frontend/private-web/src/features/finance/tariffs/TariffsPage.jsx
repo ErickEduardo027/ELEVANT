@@ -93,7 +93,7 @@ export default function TariffsPage({ initialStationId }) {
     {state.status === 'success' && <>
       <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 tarifas por página · solo lectura</p>
       {state.data.tariffs.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
-        <table className="w-full min-w-[940px] text-left text-sm">
+        <table className="table-stack w-full min-w-[940px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
             <tr><th className="px-5 py-3">Aerolínea</th><th className="px-5 py-3">Servicio</th>
               <th className="px-5 py-3">Contrato</th><th className="px-5 py-3">Tarifa publicada</th>

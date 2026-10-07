@@ -62,7 +62,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>
             <p className="mt-1 text-xs text-text-secondary-light">{version.rates.length} tarifas pactadas</p>
           </div>)}</article>)}</div> : <p className="rounded-xl border p-8 text-center">No hay contratos aprobados en esta página.</p>)}
-      {mode === 'services' && (rates.length ? <div className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card"><table className="w-full min-w-[760px] text-left text-sm">
+      {mode === 'services' && (rates.length ? <div className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm">
         <thead className="bg-black/[.03] text-xs uppercase dark:bg-white/[.03]"><tr><th className="p-3">Servicio</th><th className="p-3">Contrato</th><th className="p-3">Tarifa</th><th className="p-3">Estaciones</th><th className="p-3">Versión</th><th className="p-3">Vigencia</th></tr></thead>
         <tbody>{rates.map(rate => <tr key={`${rate.version.id}-${rate.id}`} className="border-t border-black/5 dark:border-white/10">
           <td className="p-3"><strong>{rate.serviceName}</strong><span className="block text-xs">{rate.serviceCode}</span></td>

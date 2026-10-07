@@ -71,7 +71,7 @@ export default function DashboardPage({
         <KpiCard label="Avisos visibles sin leer" value={data.notifications
           .filter(item => item.readAt == null).length} icon={ChecklistIcon} />
       </div>
-      <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Panel title="Escalas registradas"
           action={<Action onClick={onOpenPlanning}>Abrir planificación</Action>}>
           {data.turnarounds.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">
