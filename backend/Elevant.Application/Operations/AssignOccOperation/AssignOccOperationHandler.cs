@@ -38,7 +38,7 @@ public sealed class AssignOccOperationHandler(
             return AssignOccOperationResult.Failed(OccPlanningFailure.Unauthorized);
         }
 
-        if (!OccPlanningAccess.IsAuthorized(actor!))
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.assign"))
         {
             return AssignOccOperationResult.Failed(OccPlanningFailure.Forbidden);
         }

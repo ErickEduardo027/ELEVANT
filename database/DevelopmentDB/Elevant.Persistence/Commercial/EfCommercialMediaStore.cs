@@ -34,8 +34,8 @@ internal sealed class EfCommercialMediaStore(
         var authorized = purpose switch
         {
             "service-image" or "service-video" =>
-                await permissions.HasAsync(actorId, "commercial.catalog.edit", cancellationToken) ||
-                await permissions.HasAsync(actorId, "commercial.catalog.create", cancellationToken),
+                await permissions.HasAsync(actorId, "contracts.catalog.edit", cancellationToken) ||
+                await permissions.HasAsync(actorId, "contracts.catalog.create", cancellationToken),
             "airline-logo" => await permissions.IsSuperAdministratorAsync(actorId, cancellationToken),
             "avatar" => await CanManageAvatarsAsync(actorId, cancellationToken),
             _ => false,
@@ -119,11 +119,11 @@ internal sealed class EfCommercialMediaStore(
         {
             "service-image" => await context.ServiceDefinitions.AsNoTracking()
                 .AnyAsync(item => item.IsActive && item.IsPublic && item.ImageUrl == url, cancellationToken) ||
-                actorId.HasValue && await permissions.HasAsync(actorId.Value, "commercial.catalog.read", cancellationToken) &&
+                actorId.HasValue && await permissions.HasAsync(actorId.Value, "contracts.catalog.read", cancellationToken) &&
                 await context.ServiceDefinitions.AsNoTracking().AnyAsync(item => item.ImageUrl == url, cancellationToken),
             "service-video" => await context.ServiceDefinitions.AsNoTracking()
                 .AnyAsync(item => item.IsActive && item.IsPublic && item.VideoUrl == url, cancellationToken) ||
-                actorId.HasValue && await permissions.HasAsync(actorId.Value, "commercial.catalog.read", cancellationToken) &&
+                actorId.HasValue && await permissions.HasAsync(actorId.Value, "contracts.catalog.read", cancellationToken) &&
                 await context.ServiceDefinitions.AsNoTracking().AnyAsync(item => item.VideoUrl == url, cancellationToken),
             "airline-logo" => await context.CommercialAirlineProfiles.AsNoTracking()
                 .AnyAsync(item => item.IsPublished && item.LogoObjectKey == url, cancellationToken) ||
@@ -203,8 +203,10 @@ internal sealed class EfCommercialMediaStore(
     private async Task<bool> CanManageAvatarsAsync(Guid actorId, CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        return actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-            role.Code is "SUPERADMIN" or "GESTION_HUMANA") == true &&
+        // Ramp agent photos: Human Resources keeps its access; Operations administrators
+        // attach the photo when they request a new agent.
+        return (actor?.HasPermission("human_resources.ramp_profiles.read") == true ||
+                actor?.EffectiveAccess?.Administers(Elevant.Domain.Enumerations.Department.Operations) == true) &&
             actor.Memberships.Any(membership => membership.Kind == MembershipKind.InternalStaff &&
                 membership.OrganizationType == OrganizationType.AviamOperator);
     }

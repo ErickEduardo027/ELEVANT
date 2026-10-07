@@ -21,8 +21,7 @@ internal sealed class EfHumanResourcesPermitWriteStore(
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code is "GESTION_HUMANA" or "SUPERADMIN") != true ||
+        if (actor?.HasPermission("human_resources.permits.manage") != true ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

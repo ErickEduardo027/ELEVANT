@@ -23,7 +23,7 @@ internal sealed class EfFinanceApprovedServicesReadStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(accountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("finance.approved_services.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||

@@ -27,7 +27,7 @@ public sealed class GetOccPlanningSnapshotHandler(
             return GetOccPlanningSnapshotResult.Failed(OccPlanningFailure.Unauthorized);
         }
 
-        if (!OccPlanningAccess.IsAuthorized(actor!))
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.read"))
         {
             return GetOccPlanningSnapshotResult.Failed(OccPlanningFailure.Forbidden);
         }

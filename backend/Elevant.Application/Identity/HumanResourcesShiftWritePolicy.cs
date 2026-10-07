@@ -6,8 +6,7 @@ namespace Elevant.Application.Identity;
 public static class HumanResourcesShiftWritePolicy
 {
     public static bool CanRecord(ActorContext? actor) =>
-        actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-            role.Code == "ADMIN_OCC") == true &&
+        actor?.HasPermission("operations.planning.assign") == true &&
         actor.Memberships.Any(membership =>
             membership.OrganizationType == OrganizationType.AviamOperator &&
             membership.Kind == MembershipKind.InternalStaff);

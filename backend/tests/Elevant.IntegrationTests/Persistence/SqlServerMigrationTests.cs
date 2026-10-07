@@ -7719,6 +7719,9 @@ public sealed partial class SqlServerMigrationTests
             Assert.Single(await inspection.PreinvoiceDisputeResolutions.AsNoTracking()
                 .Where(item => item.DisputeId == voidedDispute.Id)
                 .ToArrayAsync(cancellationToken));
+            // The failed rollback stops at the guard after reversing newer migrations;
+            // restore the latest schema before the remaining checks.
+            await inspection.Database.MigrateAsync(cancellationToken);
         }
 
         if (reviewOutcome == "Approved")

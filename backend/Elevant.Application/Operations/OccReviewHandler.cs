@@ -11,7 +11,7 @@ public sealed class OccReviewHandler(
     public async Task<OccReviewQueueResult> GetQueueAsync(
         Guid accountId, Guid stationId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.review.read", cancellationToken);
         if (access.Failure is OccReviewFailure failure) return OccReviewQueueResult.Failed(failure);
         if (stationId == Guid.Empty) return OccReviewQueueResult.Failed(OccReviewFailure.InvalidRequest);
         if (!access.Stations!.Contains(stationId))
@@ -25,7 +25,7 @@ public sealed class OccReviewHandler(
     public async Task<OccReviewDetailResult> GetDetailAsync(
         Guid accountId, Guid operationId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.review.read", cancellationToken);
         if (access.Failure is OccReviewFailure failure) return OccReviewDetailResult.Failed(failure);
         if (operationId == Guid.Empty)
             return OccReviewDetailResult.Failed(OccReviewFailure.InvalidRequest);
@@ -39,7 +39,7 @@ public sealed class OccReviewHandler(
         Guid accountId, Guid operationId, Guid submissionId,
         CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.review.read", cancellationToken);
         if (access.Failure is OccReviewFailure failure) return OccReviewDetailResult.Failed(failure);
         if (operationId == Guid.Empty || submissionId == Guid.Empty)
             return OccReviewDetailResult.Failed(OccReviewFailure.InvalidRequest);
@@ -53,7 +53,7 @@ public sealed class OccReviewHandler(
     public async Task<OccReviewSubmissionHistoryResult> GetSubmissionHistoryAsync(
         Guid accountId, Guid operationId, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.review.read", cancellationToken);
         if (access.Failure is OccReviewFailure failure)
             return OccReviewSubmissionHistoryResult.Failed(failure);
         if (operationId == Guid.Empty)
@@ -75,7 +75,7 @@ public sealed class OccReviewHandler(
         string? requestId,
         CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.review.decide", cancellationToken);
         if (access.Failure is OccReviewFailure failure)
             return OccReviewDecisionWriteResult.Failed(failure);
         if (operationId == Guid.Empty || submissionId == Guid.Empty ||
@@ -91,13 +91,13 @@ public sealed class OccReviewHandler(
     }
 
     private async Task<(IReadOnlyCollection<Guid>? Stations, OccReviewFailure? Failure)> ResolveAccessAsync(
-        Guid accountId, CancellationToken cancellationToken)
+        Guid accountId, string permissionCode, CancellationToken cancellationToken)
     {
         if (accountId == Guid.Empty) return (null, OccReviewFailure.Unauthorized);
         var actor = await actorResolver.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
             return (null, OccReviewFailure.Unauthorized);
-        if (!OccPlanningAccess.IsAuthorized(actor!))
+        if (!OccPlanningAccess.IsAuthorized(actor!, permissionCode))
             return (null, OccReviewFailure.Forbidden);
         var stations = actor!.StationScopes.Select(scope => scope.StationId)
             .Where(id => id != Guid.Empty).Distinct().ToArray();

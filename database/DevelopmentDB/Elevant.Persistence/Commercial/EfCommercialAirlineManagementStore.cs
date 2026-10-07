@@ -219,7 +219,7 @@ internal sealed class EfCommercialAirlineManagementStore(
     private async Task NotifyInternalAsync(Guid profileId, CancellationToken cancellationToken)
     {
         var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.catalog.read", cancellationToken);
+            "contracts.catalog.read", cancellationToken);
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "commercial_airlines", profileId, DateTimeOffset.UtcNow);

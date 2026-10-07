@@ -51,7 +51,7 @@ public sealed class CreatePreinvoiceDraftHandler(
         var actor = await actorContextResolver.ResolveAsync(command.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unauthorized);
-        if (!actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+        if (!actor!.HasPermission("finance.approved_services.preinvoice") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

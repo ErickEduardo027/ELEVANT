@@ -109,9 +109,7 @@ internal sealed class EfOccPlanningCommandStore(
         var liveActor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.ActorAccountId, cancellationToken);
         if (liveActor is null ||
-            !liveActor.Roles.Any(role =>
-                string.Equals(role.Code, "ADMIN_OCC", StringComparison.Ordinal) &&
-                role.Portal == PortalKind.BackOffice) ||
+            !liveActor.HasPermission("operations.planning.assign") ||
             !liveActor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

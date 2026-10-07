@@ -19,7 +19,7 @@ internal sealed class EfCommercialWorkflowStore(
     public async Task<IReadOnlyList<CommercialStationData>?> ListStationsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.requests.read", cancellationToken))
             return null;
         return await context.Stations.AsNoTracking().Where(station => station.IsActive)
             .OrderBy(station => station.Code)
@@ -30,7 +30,7 @@ internal sealed class EfCommercialWorkflowStore(
     public async Task<IReadOnlyList<CommercialRequestData>?> ListRequestsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.requests.read", cancellationToken))
             return null;
         var requests = await (from request in context.ServiceRequests.AsNoTracking()
             join profile in context.CommercialAirlineProfiles.AsNoTracking()
@@ -79,7 +79,7 @@ internal sealed class EfCommercialWorkflowStore(
     public async Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId,
         Guid profileId, VerifyAirlineInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.requests.full", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.requests.verify", cancellationToken))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
         if (input is null || !ValidText(input.LegalName, 200) ||
             !ValidCode(input.CountryCode, 2) || !ValidCode(input.IataCode, 2) ||
@@ -134,7 +134,7 @@ internal sealed class EfCommercialWorkflowStore(
         Guid requestId, ReviewCommercialInput input, CancellationToken cancellationToken = default)
     {
         if (!await permissions.HasAsync(actorId,
-            input?.Approve == true ? "commercial.requests.full" : "commercial.requests.edit",
+            input?.Approve == true ? "contracts.requests.approve" : "contracts.requests.reject",
             cancellationToken))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
         if (input is null || input.StationIds is null ||
@@ -296,7 +296,7 @@ internal sealed class EfCommercialWorkflowStore(
         CancellationToken cancellationToken)
     {
         var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.requests.read", cancellationToken);
+            "contracts.requests.read", cancellationToken);
         var now = DateTimeOffset.UtcNow;
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,

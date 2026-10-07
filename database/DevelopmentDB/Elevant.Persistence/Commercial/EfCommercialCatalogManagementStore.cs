@@ -17,7 +17,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<IReadOnlyList<ManagedServiceData>?> ListAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.catalog.read", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.catalog.read", cancellationToken))
             return null;
         return (await context.ServiceDefinitions.AsNoTracking()
             .OrderBy(service => service.DisplayOrder).ThenBy(service => service.Name)
@@ -27,8 +27,8 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> SaveAsync(Guid actorId, Guid? serviceId,
         ManagedServiceInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, serviceId is null ? "commercial.catalog.create" :
-            "commercial.catalog.edit", cancellationToken))
+        if (!await permissions.HasAsync(actorId, serviceId is null ? "contracts.catalog.create" :
+            "contracts.catalog.edit", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         if (!Valid(input) || (serviceId is not null &&
             !TryVersion(input.Version, out _)))
@@ -99,7 +99,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> DeleteAsync(Guid actorId, Guid serviceId,
         string version, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "commercial.catalog.full", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.catalog.retire", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         var service = await context.ServiceDefinitions.SingleOrDefaultAsync(
             item => item.PublicId == serviceId, cancellationToken);
@@ -135,9 +135,9 @@ internal sealed class EfCommercialCatalogManagementStore(
     private async Task NotifyInternalAsync(Guid serviceId, CancellationToken cancellationToken)
     {
         var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.catalog.read", cancellationToken);
-        var closureRecipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-            "commercial.service_closures.read", cancellationToken);
+            "contracts.catalog.read", cancellationToken);
+        var closureRecipients = await CommercialNotificationRecipients.WithAnyPermissionAsync(context,
+            ["contracts.service_closures.read", "operations.service_closures.read"], cancellationToken);
         foreach (var recipient in recipients.Concat(closureRecipients).Distinct())
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "commercial_catalog", serviceId, DateTimeOffset.UtcNow);

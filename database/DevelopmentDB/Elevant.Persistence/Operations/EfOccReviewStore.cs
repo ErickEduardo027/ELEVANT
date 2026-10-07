@@ -276,8 +276,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         var liveActor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.ActorAccountId, cancellationToken);
         if (liveActor is null ||
-            !liveActor.Roles.Any(role => role.Code == "ADMIN_OCC" &&
-                role.Portal == PortalKind.BackOffice) ||
+            !liveActor.HasPermission("operations.review.decide") ||
             !liveActor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
