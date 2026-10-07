@@ -103,7 +103,7 @@ export default function PermitRenewalModal({ open, onClose, item, onSubmit }) {
           <input className={inputClassName} value={formState.number} onChange={event => update({ number: event.target.value })} />
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField label="Fecha de emisión" required>
             <input type="date" className={inputClassName} value={formState.issuedAt} onChange={event => update({ issuedAt: event.target.value })} />
           </FormField>

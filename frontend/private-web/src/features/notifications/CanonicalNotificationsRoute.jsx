@@ -70,7 +70,7 @@ export default function CanonicalNotificationsRoute() {
   };
 
   const unread = state.items.filter(item => !item.readAt).length;
-  return <main className="mx-auto max-w-[1100px] space-y-5 text-ink-900 dark:text-text-primary-dark">
+  return <section className="mx-auto max-w-[1100px] space-y-5 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
       <div><h1 className="text-xl font-semibold">Notificaciones operativas</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Avisos persistentes de entregas, decisiones y mensajes de tus operaciones autorizadas.</p></div>
       <button type="button" onClick={() => setRevision(value => value + 1)} className="min-h-11 rounded-lg border border-accent-600 px-4 text-sm font-semibold text-accent-600">Actualizar</button>
@@ -93,5 +93,5 @@ export default function CanonicalNotificationsRoute() {
       {state.hasMore && <p className="text-xs">Se muestran los 100 avisos más recientes; existe más historial.</p>}
     </>}
     </>}
-  </main>;
+  </section>;
 }

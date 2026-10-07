@@ -57,7 +57,7 @@ export default function CurrentQualificationsPage() {
     };
   }, []);
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana</p>
@@ -111,7 +111,7 @@ export default function CurrentQualificationsPage() {
     {state.status === 'success' && <>
       <p className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página</p>
       {state.data.qualifications.length ? <section className="overflow-x-auto rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
-        <table className="w-full min-w-[780px] text-left text-sm">
+        <table className="table-stack w-full min-w-[780px] text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
             <tr><th className="px-5 py-3">Agente</th><th className="px-5 py-3">Equipo</th>
               <th className="px-5 py-3">Obtenida</th><th className="px-5 py-3">Vence</th>

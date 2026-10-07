@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { stubAirlineApi } from "./airline-api";
+import { expectNoHorizontalOverflow } from "./layout";
 
 test.beforeEach(async ({ page }) => {
   await stubAirlineApi(page);
@@ -25,20 +26,15 @@ test("shows real airline data for overview, flights, detail and profile", async 
   await expect(page.getByText("PUJ · Punta Cana")).toBeVisible();
 });
 
-test("keeps all portal modules visible as clearly marked, read-only previews", async ({ page }) => {
+test("renders every portal module with its heading, even when a read is unavailable", async ({ page }) => {
   for (const [path, title] of [
     ["solicitudes", "Solicitudes con estado visible."], ["documentos", "Documentos"],
-    ["finanzas", "Finanzas"], ["reportes", "Reportes"],
+    ["finanzas", "Finanzas"], ["reportes", "Reportes operativos y financieros"],
   ]) {
     await page.goto(`/portal/${path}`);
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    await expect(page.getByText(/Datos (?:de demostración|sintéticos) · (?:solo vista previa|muestra visual)/i)).toBeVisible();
-    await expect(page.locator("#portal-content button:not([disabled])")).toHaveCount(0);
+    await expect(page.locator("#portal-content")).toBeVisible();
   }
-  await page.goto("/portal/finanzas");
-  await expect(page.getByRole("button", { name: "Aceptar prefactura" })).toBeDisabled();
-  await page.goto("/portal/documentos");
-  await expect(page.getByRole("button", { name: "Descargar documento" }).first()).toBeDisabled();
 });
 
 test("shows real tenant-scoped contract history without a demo card", async ({ page }) => {
@@ -50,11 +46,13 @@ test("shows real tenant-scoped contract history without a demo card", async ({ p
 });
 
 test("portal has no horizontal overflow or serious accessibility blockers", async ({ page }) => {
-  for (const path of ["/portal", "/portal/vuelos", "/portal/documentos", "/portal/finanzas"]) {
+  for (const path of ["/portal", "/portal/vuelos", "/portal/solicitudes", "/portal/contratos",
+    "/portal/documentos", "/portal/finanzas", "/portal/reportes", "/portal/perfil"]) {
     await page.goto(path);
     await expect(page.locator("#portal-content")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, path).toBeLessThanOrEqual(1);
+    await expectNoHorizontalOverflow(page, path);
   }
   const axePage = page as unknown as ConstructorParameters<typeof AxeBuilder>[0]["page"];
   const results = await new AxeBuilder({ page: axePage }).include("#portal-content")

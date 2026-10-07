@@ -176,7 +176,7 @@ export default function PlanningPage({
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4">
+    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
       <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate} />
 
       {!hasStationScope ? (

@@ -149,7 +149,7 @@ export function AirlineDocumentsPage() {
         <span className={styles.kicker}>Documento seleccionado de otra página</span>}
       <span className={styles.kicker}>{item.stationCode} · {item.from} — {item.to}</span>
       <h2>Prefactura facturada</h2>
-      <p className={styles.note}>Total {item.currencyCode} {item.total.toFixed(2)}</p>
+      <p className={styles.note}>Total {item.currencyCode} {new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(item.total)}</p>
       <button className={styles.loadMore} type="button" onClick={() => void open(item)}>
         Ver documentos
       </button>

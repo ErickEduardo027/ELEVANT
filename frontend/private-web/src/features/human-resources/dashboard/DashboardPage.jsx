@@ -23,7 +23,7 @@ export default function DashboardPage() {
   const isLoading = status === 'loading';
 
   if (status === 'error') {
-    return <div className="mx-auto max-w-[1440px] rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card" role="alert">
+    return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card" role="alert">
       <p className="text-sm font-semibold text-status-danger">No fue posible cargar el resumen.</p>
       <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">Verifique la conexión e intente nuevamente.</p>
       <button type="button" onClick={refresh} className="mt-3 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white">
@@ -33,7 +33,7 @@ export default function DashboardPage() {
   }
 
   const pendingAccounts = data?.pendingAccounts ?? [];
-  return <div className="mx-auto max-w-[1440px] space-y-4">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div>
         <h1 className="text-lg font-semibold text-ink-900 dark:text-text-primary-dark">Dashboard</h1>

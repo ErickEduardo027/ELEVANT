@@ -122,7 +122,7 @@ export default function NotificationsPage({
     return (
       <div
         role="alert"
-        className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
+        className="mx-auto flex max-w-[1440px] 3xl:max-w-[1760px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
       >
         <p className="text-sm font-semibold text-status-danger">No fue posible cargar las notificaciones.</p>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -146,7 +146,7 @@ export default function NotificationsPage({
   ];
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4">
+    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
       <NotificationsHeader counts={notificationCounts} onMarkAllAsRead={handleMarkAllAsRead} onOpenSettings={() => setSettingsOpen(true)} />
 
       <NotificationFilterBar

@@ -36,7 +36,7 @@ export default function PositionToastStack({ toasts, onDismiss }) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
+    <div className="fixed inset-x-4 bottom-4 z-toast flex flex-col gap-2 sm:left-auto sm:w-80">
       {toasts.map(toast => (
         <Toast key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}

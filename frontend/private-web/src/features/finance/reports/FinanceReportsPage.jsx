@@ -58,7 +58,7 @@ export default function FinanceReportsPage({ initialStationId }) {
     };
   }, [session?.accountId]);
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
@@ -107,7 +107,7 @@ export default function FinanceReportsPage({ initialStationId }) {
             {airlines.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
         </div>
-        {rows.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm">
+        {rows.length ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
           <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
             <tr><th className="px-5 py-3">Aerolínea</th><th className="px-5 py-3">Moneda</th>
               <th className="px-5 py-3">Borrador</th><th className="px-5 py-3">Enviada</th>

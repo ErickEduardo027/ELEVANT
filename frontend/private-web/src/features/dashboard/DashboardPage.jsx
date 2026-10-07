@@ -28,7 +28,7 @@ export default function DashboardPage({
     error: 'No se pudo cargar el panorama operativo de la estación.',
   };
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">OCC</p>
@@ -71,7 +71,7 @@ export default function DashboardPage({
         <KpiCard label="Avisos visibles sin leer" value={data.notifications
           .filter(item => item.readAt == null).length} icon={ChecklistIcon} />
       </div>
-      <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Panel title="Escalas registradas"
           action={<Action onClick={onOpenPlanning}>Abrir planificación</Action>}>
           {data.turnarounds.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">

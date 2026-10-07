@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { formatClockTime, formatUtcClockTime } from '../../../lib/clock';
-import { BellIcon, ChevronDownIcon, LogOutIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
+import { BellIcon, ChevronDownIcon, MenuIcon, MoonIcon, SunIcon } from './icons';
 import NotificationPopover from '../../notifications/components/NotificationPopover';
+
+function initials(name) {
+  return name
+    .split(' ')
+    .map(part => part[0])
+    .slice(0, 2)
+    .join('');
+}
 
 export default function Topbar({
   station,
@@ -19,15 +27,17 @@ export default function Topbar({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const localClock = station ? `${station.localAbbr} ${formatClockTime(station.localTime)}` : '';
+  const utcClock = station ? `UTC ${formatUtcClockTime(station.utcTime)}` : '';
 
   return (
-    <header className="flex items-center gap-4 border-b border-black/5 bg-white/70 px-6 py-3 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
+    <header className="relative z-nav flex shrink-0 items-center gap-2 border-b border-black/5 bg-white/70 px-3 py-2.5 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card sm:gap-4 sm:px-6 sm:py-3">
       {onOpenMenu && (
         <button
           type="button"
           onClick={onOpenMenu}
           aria-label="Abrir menú de navegación"
-          className="-ml-1 rounded-lg p-2 hover:bg-black/5 dark:hover:bg-white/5 sm:hidden"
+          className="rounded-lg p-2 hover:bg-black/5 dark:hover:bg-white/5 sm:hidden"
         >
           <MenuIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
         </button>
@@ -37,39 +47,26 @@ export default function Topbar({
         <>
           <button
             type="button"
-            className="flex items-center gap-1 rounded-lg border border-black/10 px-3 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark"
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark sm:px-3"
           >
             {station.code}
             <ChevronDownIcon className="h-3.5 w-3.5" />
           </button>
-          <div className="flex items-center gap-3 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            <span>
-              {station.localAbbr} {formatClockTime(station.localTime)}
-            </span>
+          <div className="hidden items-center gap-3 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark md:flex">
+            <span>{localClock}</span>
             <span aria-hidden="true">·</span>
-            <span>UTC {formatUtcClockTime(station.utcTime)}</span>
+            <span>{utcClock}</span>
           </div>
         </>
       ) : (
         roleLabel && (
-          <span className="rounded-lg border border-black/10 px-3 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark">
+          <span className="min-w-0 truncate rounded-lg border border-black/10 px-2.5 py-1.5 text-sm font-semibold text-ink-900 dark:border-white/10 dark:text-text-primary-dark sm:px-3">
             {roleLabel}
           </span>
         )
       )}
 
-      <div className="ml-auto flex items-center gap-3">
-        {onLogout && (
-          <button
-            type="button"
-            onClick={onLogout}
-            aria-label="Cerrar sesión"
-            className="rounded-full p-2 hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <LogOutIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
-          </button>
-        )}
-
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
         {notificationsEnabled && <div className="relative">
           <button
             type="button"
@@ -115,25 +112,26 @@ export default function Topbar({
             onClick={() => setMenuOpen(open => !open)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-black/5 dark:hover:bg-white/5"
+            aria-label={user.name}
+            className="flex items-center gap-2 rounded-full p-1 hover:bg-black/5 dark:hover:bg-white/5 sm:pr-2"
           >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-600 text-xs font-semibold text-white">
-              {user.name
-                .split(' ')
-                .map(part => part[0])
-                .slice(0, 2)
-                .join('')}
+            <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-600 text-xs font-semibold text-white">
+              {initials(user.name)}
             </span>
-            <span className="text-xs font-medium text-ink-900 dark:text-text-primary-dark">{user.name}</span>
+            <span aria-hidden="true" className="hidden max-w-[12rem] truncate text-xs font-medium text-ink-900 dark:text-text-primary-dark sm:inline">{user.name}</span>
           </button>
 
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-full z-10 mt-2 w-44 rounded-lg border border-black/10 bg-white/95 py-1 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
+              className="absolute right-0 top-full z-overlay mt-2 w-56 rounded-lg border border-black/10 bg-white/95 py-1 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
             >
               <div className="px-3 py-1.5 text-xs text-text-secondary-light dark:text-text-secondary-dark">
+                <span className="block truncate font-semibold text-ink-900 dark:text-text-primary-dark sm:hidden">{user.name}</span>
                 {user.role}
+                {station && (
+                  <span className="mt-1 block font-mono md:hidden">{localClock} · {utcClock}</span>
+                )}
               </div>
               {profileActionsEnabled && (
                 <button

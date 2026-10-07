@@ -1,4 +1,5 @@
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
+import { dateTimeFormat } from '../../utils/date-format';
 
 export type OperationStatusTone = 'blue' | 'green' | 'orange' | 'red';
 
@@ -55,12 +56,7 @@ export function formatOperationTime(
   if (Number.isNaN(date.getTime()) || !timeZone) return '—';
 
   try {
-    return new Intl.DateTimeFormat('es-DO', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone,
-    }).format(date);
+    return dateTimeFormat({ hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).format(date);
   } catch {
     return '—';
   }
@@ -70,12 +66,7 @@ export function formatOperationDate(value: string) {
   const date = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return value;
 
-  return new Intl.DateTimeFormat('es-DO', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-  }).format(date);
+  return dateTimeFormat({ weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }).format(date);
 }
 
 export function operationFlightLabel(operation: RampAssignedOperationResponse) {

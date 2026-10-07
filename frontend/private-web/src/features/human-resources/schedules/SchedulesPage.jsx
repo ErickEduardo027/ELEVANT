@@ -96,7 +96,7 @@ export default function SchedulesPage() {
     return (
       <div
         role="alert"
-        className="mx-auto flex max-w-[1440px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
+        className="mx-auto flex max-w-[1440px] 3xl:max-w-[1760px] flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
       >
         <p className="text-sm font-semibold text-status-danger">No fue posible cargar los horarios y la disponibilidad.</p>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
@@ -114,7 +114,7 @@ export default function SchedulesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4">
+    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
         <div>
           <h1 className="text-lg font-semibold text-ink-900 dark:text-text-primary-dark">Horarios y disponibilidad</h1>

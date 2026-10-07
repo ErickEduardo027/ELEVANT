@@ -98,7 +98,7 @@ export default function OccShiftPanel({ flight, optionsState, onProgrammed }) {
             <option key={preset.id} value={preset.id}>{preset.label}</option>)}
         </select>
       </label>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">
         <label className="block text-xs font-medium">Inicio del turno local
           <input required type="time" step="60" value={startsAtLocal}
             onChange={event => { setStartsAtLocal(event.target.value); setPresetId(''); }}

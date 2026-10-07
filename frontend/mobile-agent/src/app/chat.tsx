@@ -1,7 +1,7 @@
 import type { OperationConversationResponse, OperationMessageResponse } from '@elevant/api-client';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../components/ui';
 import { MobileServiceError } from '../services/mobile-service-error';
@@ -12,6 +12,11 @@ import {
 } from '../services/operational-communication';
 import { colors } from '../theme/colors';
 import { resetToLogin } from '../utils/session-navigation';
+import { formatLocalDateTime } from '../utils/date-format';
+import { startForegroundInterval } from '../utils/foreground-interval';
+
+const messageKey = (item: OperationMessageResponse) => item.id;
+const renderMessage = ({ item }: { item: OperationMessageResponse }) => <View style={styles.bubble}><Text style={styles.byline}>{item.senderName} · {item.senderRole === 'occ' ? 'OCC' : 'Agente'} · {formatLocalDateTime(item.sentAt)}</Text><Text style={styles.messageText}>{item.content}</Text></View>;
 
 function messageError(error: unknown) {
   if (error instanceof MobileServiceError) {
@@ -37,6 +42,8 @@ export default function ChatScreen() {
   const [sendError, setSendError] = useState('');
   const [listRevision, setListRevision] = useState(0);
   const [messageRevision, setMessageRevision] = useState(0);
+  const loadedConversationRef = useRef<string | null>(null);
+  const messagesRef = useRef<FlatList<OperationMessageResponse>>(null);
 
   useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
     if (resources.includes('operation_messages')) {
@@ -59,10 +66,11 @@ export default function ChatScreen() {
         if (!controller.signal.aborted) { messageError(error); setListStatus('error'); }
       }
     };
-    setListStatus('loading');
+    // Solo la primera carga muestra el indicador; después se revalida en sitio.
+    setListStatus(current => (current === 'ready' ? current : 'loading'));
     void load();
-    const timer = setInterval(load, 20_000);
-    return () => { controller.abort(); clearInterval(timer); };
+    const stopPolling = startForegroundInterval(() => void load(), 20_000);
+    return () => { controller.abort(); stopPolling(); };
     // A retry changes listRevision to restart this focus-scoped request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operationId, listRevision]));
@@ -73,15 +81,15 @@ export default function ChatScreen() {
     const load = async () => {
       try {
         const result = await getOperationalMessages(selected, controller.signal);
-        if (!controller.signal.aborted) { setMessages(result.messages); setMessagesStatus('ready'); }
+        if (!controller.signal.aborted) { setMessages(result.messages); setMessagesStatus('ready'); loadedConversationRef.current = selected; }
       } catch (error) {
         if (!controller.signal.aborted) { messageError(error); setMessagesStatus('error'); }
       }
     };
-    setMessagesStatus('loading');
+    if (loadedConversationRef.current !== selected) setMessagesStatus('loading');
     void load();
-    const timer = setInterval(load, 10_000);
-    return () => { controller.abort(); clearInterval(timer); };
+    const stopPolling = startForegroundInterval(() => void load(), 10_000);
+    return () => { controller.abort(); stopPolling(); };
     // A retry changes messageRevision to restart this focus-scoped request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, messageRevision]));
@@ -116,7 +124,7 @@ export default function ChatScreen() {
   };
 
   const current = conversations.find(item => item.operationId === selected);
-  return <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+  return <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0} style={styles.safe}>
     <View style={styles.header}><Text style={styles.title}>Chat con OCC</Text><Text style={styles.subtitle}>Mensajes guardados por operación. Requiere conexión segura.</Text></View>
     {listStatus === 'loading' ? <ActivityIndicator color={colors.navy} /> : listStatus === 'error' ? <View style={styles.notice}><Text>No fue posible cargar tus conversaciones.</Text><PrimaryButton title="REINTENTAR" onPress={() => setListRevision(value => value + 1)} secondary /></View> :
       conversations.length === 0 ? <View style={styles.notice}><Text>No tienes operaciones con conversación disponible.</Text></View> : <>
@@ -124,13 +132,12 @@ export default function ChatScreen() {
           {conversations.map(item => <Pressable key={item.operationId} accessibilityRole="button" accessibilityState={{ selected: selected === item.operationId, disabled: Boolean(pending) }} disabled={Boolean(pending)} onPress={() => setSelected(item.operationId)} style={[styles.conversation, selected === item.operationId && styles.selectedConversation]}><Text style={styles.conversationTitle}>{item.operationCode}</Text><Text style={styles.conversationStation}>{item.stationCode}</Text></Pressable>)}
         </ScrollView>
         {current && <><View style={styles.operationHeader}><Text style={styles.operationTitle}>{current.operationCode}</Text><Text>{current.airlineName} · {current.agentName ?? 'Agente de rampa'}</Text></View>
-          <ScrollView style={styles.messages} contentContainerStyle={styles.messageItems} accessibilityLabel="Mensajes de la operación">
-            {messagesStatus === 'loading' ? <ActivityIndicator color={colors.navy} /> : messagesStatus === 'error' ? <View style={styles.notice}><Text>No fue posible cargar los mensajes.</Text><PrimaryButton title="REINTENTAR" onPress={() => setMessageRevision(value => value + 1)} secondary /></View> : messages.length === 0 ? <Text style={styles.empty}>Aún no hay mensajes.</Text> : messages.map(item => <View key={item.id} style={styles.bubble}><Text style={styles.byline}>{item.senderName} · {item.senderRole === 'occ' ? 'OCC' : 'Agente'} · {new Date(item.sentAt).toLocaleString('es-DO')}</Text><Text style={styles.messageText}>{item.content}</Text></View>)}
-          </ScrollView>
+          {messagesStatus === 'loading' ? <ActivityIndicator color={colors.navy} style={styles.messages} /> : messagesStatus === 'error' ? <View style={[styles.notice, styles.messages]}><Text>No fue posible cargar los mensajes.</Text><PrimaryButton title="REINTENTAR" onPress={() => setMessageRevision(value => value + 1)} secondary /></View> :
+            <FlatList ref={messagesRef} accessibilityLabel="Mensajes de la operación" contentContainerStyle={styles.messageItems} data={messages} keyExtractor={messageKey} keyboardShouldPersistTaps="handled" ListEmptyComponent={<Text style={styles.empty}>Aún no hay mensajes.</Text>} onContentSizeChange={() => messagesRef.current?.scrollToEnd({ animated: false })} renderItem={renderMessage} style={styles.messages} />}
           <View style={styles.composer}><TextInput accessibilityLabel="Escribir mensaje" editable={!pending && !sending} multiline maxLength={2000} onChangeText={setDraft} placeholder="Escribe a OCC…" style={styles.input} value={pending?.content ?? draft} />{sendError ? <Text accessibilityRole="alert" style={styles.error}>{sendError} {pending ? 'Reintenta con el mismo mensaje.' : ''}</Text> : null}<PrimaryButton title={sending ? 'ENVIANDO…' : pending ? 'REINTENTAR ENVÍO' : 'ENVIAR MENSAJE'} onPress={() => void submit()} disabled={sending || (!pending && !draft.trim())} /></View>
         </>}
       </>}
-  </SafeAreaView>;
+  </KeyboardAvoidingView></SafeAreaView>;
 }
 
 const styles = StyleSheet.create({

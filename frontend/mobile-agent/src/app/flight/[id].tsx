@@ -6,7 +6,8 @@ import type {
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Alert,
@@ -56,6 +57,7 @@ import {
 } from '../../services/ramp-operation-service-execution';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
+import { dateTimeFormat } from '../../utils/date-format';
 
 type DetailState = 'loading' | 'ready' | 'not-found' | 'offline' | 'unavailable';
 type StartNotice = Readonly<{
@@ -66,6 +68,11 @@ type StartNotice = Readonly<{
 
 export default function OperationDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  return <OperationDetail operationId={id} />;
+}
+
+/** Manifiesto de una operación; la ruta lo usa a pantalla completa y el inicio en tablet lo muestra junto a la lista. */
+export function OperationDetail({ operationId: id }: Readonly<{ operationId?: string }>) {
   const [operation, setOperation] = useState<RampAssignedOperationResponse | null>(null);
   const [focused, setFocused] = useState(false);
   const [state, setState] = useState<DetailState>('loading');
@@ -96,13 +103,16 @@ export default function OperationDetailScreen() {
   const correctionInFlightRef = useRef(false);
   const lastStartedOperationRef = useRef<RampGroundOperationResponse | null>(null);
   const lastServiceExecutionsRef = useRef(new Map<string, RampOperationServiceExecutionResponse>());
+  const loadedOperationIdRef = useRef<string | null>(null);
 
-  const load = useCallback(async (refresh = false) => {
+  // `silent` revalida al volver a la pantalla sin spinner ni reinicio de la vista;
+  // `true` es el gesto de actualizar y `false` la primera carga de la operación.
+  const load = useCallback(async (refresh: boolean | 'silent' = false) => {
     requestRef.current?.abort();
     const request = new AbortController();
     requestRef.current = request;
-    if (refresh) setRefreshing(true);
-    else {
+    if (refresh === true) setRefreshing(true);
+    else if (refresh !== 'silent') {
       setState('loading');
       setStarting(false);
       setStartNotice(null);
@@ -161,6 +171,7 @@ export default function OperationDetailScreen() {
       setOperation(found);
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
+      loadedOperationIdRef.current = found ? id ?? null : null;
       if (snapshot.source === 'network') {
         setServiceReconciliationRequired(false);
       }
@@ -187,10 +198,12 @@ export default function OperationDetailScreen() {
           error.code === 'network_unavailable' ||
           error.code === 'request_timeout'
         ) {
+          if (refresh === 'silent' && loadedOperationIdRef.current === id) return;
           setState('offline');
           return;
         }
       }
+      if (refresh === 'silent' && loadedOperationIdRef.current === id) return;
       setState('unavailable');
     } finally {
       if (!request.signal.aborted) setRefreshing(false);
@@ -199,7 +212,7 @@ export default function OperationDetailScreen() {
 
   useFocusEffect(useCallback(() => {
     setFocused(true);
-    void load();
+    void load(loadedOperationIdRef.current === id ? 'silent' : false);
     return () => {
       setFocused(false);
       requestRef.current?.abort();
@@ -212,7 +225,7 @@ export default function OperationDetailScreen() {
       submissionInFlightRef.current = false;
       correctionInFlightRef.current = false;
     };
-  }, [load]));
+  }, [id, load]));
 
   const startOperation = useCallback(async () => {
     if (
@@ -610,6 +623,16 @@ export default function OperationDetailScreen() {
       ]);
   }, [correctionPending, reopenCorrection]);
 
+  // Un handler estable por servicio: escribir la nota de traspaso u otros campos
+  // no vuelve a renderizar las tarjetas de servicio memoizadas.
+  const insets = useContext(SafeAreaInsetsContext) ?? { top: 0, right: 0, bottom: 0, left: 0 };
+  const transitionServiceRef = useRef(transitionService);
+  useEffect(() => { transitionServiceRef.current = transitionService; }, [transitionService]);
+  const serviceTransitionHandlers = useMemo(() => new Map((operation?.services ?? []).map(service => [
+    service.id,
+    (transitionRequest: TransitionRampOperationServiceRequest) => void transitionServiceRef.current(service, transitionRequest),
+  ] as const)), [operation?.services]);
+
   if (state !== 'ready' || !operation) {
     return <DetailStateScreen onRetry={() => void load()} state={state} />;
   }
@@ -623,7 +646,7 @@ export default function OperationDetailScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      contentContainerStyle={[styles.container, { paddingBottom: 38 + insets.bottom }]}
       refreshControl={(
         <RefreshControl
           accessibilityLabel="Actualizar detalle de la operación"
@@ -763,7 +786,7 @@ export default function OperationDetailScreen() {
             }
             key={service.id}
             notice={serviceNotices[service.id]}
-            onTransition={(transitionRequest) => void transitionService(service, transitionRequest)}
+            onTransition={serviceTransitionHandlers.get(service.id)!}
             pending={pendingServiceCommands[service.id]}
             service={service}
           />
@@ -1391,20 +1414,14 @@ function formatDateTime(value: string, timeZone: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'por confirmar';
   try {
-    return new Intl.DateTimeFormat('es-DO', {
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      month: 'short',
-      timeZone,
-    }).format(date);
+    return dateTimeFormat({ day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short', timeZone }).format(date);
   } catch {
     return 'por confirmar';
   }
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 38, gap: 12 },
+  container: { width: '100%', maxWidth: 960, alignSelf: 'center', padding: 16, paddingBottom: 38, gap: 12 },
   cachedBanner: {
     padding: 12,
     borderWidth: 1,

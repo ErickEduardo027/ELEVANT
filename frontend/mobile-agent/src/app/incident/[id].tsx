@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -15,6 +15,7 @@ import {
 } from '../../services/ramp-incidents';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
+import { formatLocalDateTime } from '../../utils/date-format';
 
 const types: readonly { value: RampIncidentType; label: string }[] = [
   { value: 'Operational', label: 'Operativa' },
@@ -49,7 +50,7 @@ function labelFor(value: string) {
 
 function displayTime(value: string) {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString('es-BO') : 'Hora no disponible';
+  return Number.isFinite(date.getTime()) ? formatLocalDateTime(value) : 'Hora no disponible';
 }
 
 export default function IncidentScreen() {
@@ -65,6 +66,8 @@ export default function IncidentScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  // Las recargas conservan la lista visible; solo la primera consulta muestra el indicador.
+  const incidentsNewestFirst = useMemo(() => [...(center?.incidents ?? [])].reverse(), [center?.incidents]);
 
   const load = useCallback(async () => {
     requestRef.current?.abort();
@@ -240,8 +243,8 @@ export default function IncidentScreen() {
               <Text style={styles.retryText}>Actualizar</Text>
             </Pressable>
           </View>
-          {loading && <ActivityIndicator accessibilityLabel="Cargando incidencias" color={colors.navy} size="large" />}
-          {!loading && center?.outbox.map(item => (
+          {loading && !center && <ActivityIndicator accessibilityLabel="Cargando incidencias" color={colors.navy} size="large" />}
+          {center?.outbox.map(item => (
             <Card key={item.idempotencyKey} style={styles.reportCard}>
               <View style={styles.reportTop}>
                 <StatusPill text={item.state === 'pending' ? 'PENDIENTE DE ENVÍO' : 'REQUIERE REVISIÓN'} tone={item.state === 'pending' ? 'orange' : 'red'} />
@@ -254,7 +257,7 @@ export default function IncidentScreen() {
                 : 'El servidor no aceptó este reporte. No se borró; verifica la operación con OCC.'}</Text>
             </Card>
           ))}
-          {!loading && [...(center?.incidents ?? [])].reverse().map(incident => (
+          {incidentsNewestFirst.map(incident => (
             <Card key={incident.id} style={styles.reportCard}>
               <View style={styles.reportTop}>
                 <StatusPill text={incident.status === 'Open' ? 'REGISTRADA' : incident.status.toUpperCase()} tone="green" />
@@ -264,7 +267,7 @@ export default function IncidentScreen() {
               <Text style={styles.reportDescription}>{incident.description}</Text>
             </Card>
           ))}
-          {!loading && center?.online && center.incidents.length === 0 && center.outbox.length === 0 && (
+          {center?.online && center.incidents.length === 0 && center.outbox.length === 0 && (
             <Card style={styles.emptyCard}>
               <Ionicons name="checkmark-circle-outline" size={30} color={colors.success} />
               <Text style={styles.emptyTitle}>Sin incidencias registradas</Text>

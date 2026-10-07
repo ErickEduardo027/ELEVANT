@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import type { RampAssignedOperationResponse } from '@elevant/api-client';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,12 +16,14 @@ import {
 import { colors } from '../theme/colors';
 import { StatusPill } from './ui';
 
-export function AssignedOperationCard({
+export const AssignedOperationCard = memo(function AssignedOperationCard({
   operation,
-  onPress,
+  onOpen,
+  selected = false,
 }: {
   readonly operation: RampAssignedOperationResponse;
-  readonly onPress: () => void;
+  readonly onOpen: (operationId: string) => void;
+  readonly selected?: boolean;
 }) {
   const route = operationRoute(operation);
   const timeZone = operation.turnaround.station.ianaTimeZone;
@@ -35,8 +38,9 @@ export function AssignedOperationCard({
       accessibilityHint="Abre el manifiesto y los servicios asignados"
       accessibilityLabel={`${operationFlightLabel(operation)}, ${status}, ${operationDate}, ${hasRoute ? `ruta ${route.origin} a ${route.destination}` : 'ruta por confirmar'}, ${timeLabel} ${time}, estación ${operation.turnaround.station.code}, ${operationStandLabel(operation)}, ${operation.services.length} servicios`}
       accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      accessibilityState={{ selected }}
+      onPress={() => onOpen(operation.operation.id)}
+      style={({ pressed }) => [styles.card, selected && styles.selected, pressed && styles.pressed]}
     >
       <View style={styles.timeRail}>
         <Text style={styles.time}>{time}</Text>
@@ -93,9 +97,10 @@ export function AssignedOperationCard({
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
+  selected: { borderColor: colors.blue, borderWidth: 2 },
   card: {
     minHeight: 190,
     borderWidth: 1,

@@ -16,9 +16,6 @@ sources:
   - frontend/mobile-agent/app.json
   - .github/workflows/mobile-ci.yml
   - frontend/mobile-agent/src/services/mobile-auth.ts
-  - frontend/mobile-agent/src/services/assigned-flights.ts
-  - frontend/mobile-agent/src/services/automatic-sync.ts
-  - frontend/mobile-agent/src/storage/prototype-storage.ts
 tags:
   - aplicaciones
   - mobile-agent
@@ -58,10 +55,8 @@ Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/i
 | --- | --- |
 | `src/app/` | Pantallas y navegación file-based de Expo Router. |
 | `src/services/` | Autenticación, vuelos asignados, sincronización y chat contra endpoints prototípicos. |
-| `src/storage/prototype-storage.ts` | Estado local de operaciones/checklists, outbox y chat. |
 | `src/hooks/use-automatic-sync.ts` | Intento de sincronización al iniciar, por intervalo y al volver a estado activo. |
 | `src/config/elevant-api.ts` | Fábrica del cliente OpenAPI compartido, todavía separada de los servicios prototípicos. |
-| `src/data/mock.ts` | Vocabulario, checklist y tipos de UI del prototipo; no contrato. |
 | `tests/api-client.metro-smoke.ts` | Smoke de bundle del cliente compartido en Android. |
 
 ## Pantallas y recorrido prototípico
@@ -109,6 +104,25 @@ Por tanto, la outbox demuestra el recorrido de UX, no garantías de entrega exac
 | Evidencias | Selección de foto prototípica. | Upload seguro a object storage con metadatos, permisos y retención. |
 
 Las peticiones nativas no usan CORS del navegador, pero sí requieren autenticación, autorización y transporte HTTPS. Acceso de red privado no sustituye esos controles.
+
+## Fluidez y tablet
+
+Inicio, manifiesto, chat, notificaciones e incidencias revalidan en segundo
+plano tras la primera carga, en lugar de volver a mostrar un spinner a pantalla
+completa. Los sondeos se pausan con la app en segundo plano
+([utilidad](../../frontend/mobile-agent/src/utils/foreground-interval.ts)).
+Chat y notificaciones usan `FlatList` y las fechas reutilizan formateadores
+`Intl` en caché.
+
+La app sigue la orientación del dispositivo. Según la
+[clase de layout](../../frontend/mobile-agent/src/utils/layout-class.ts):
+
+- desde 900 dp el inicio muestra la lista de operaciones junto al manifiesto
+  seleccionado;
+- entre 600 y 899 dp, la lista usa dos columnas.
+
+Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
+lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
 
 ## Desarrollo local
 
@@ -162,7 +176,7 @@ verificables de:
 ## Fuentes y relaciones
 
 - [README del cliente](../../frontend/mobile-agent/README.md)
-- [Storage prototípico](../../frontend/mobile-agent/src/storage/prototype-storage.ts)
+- Storage prototípico
 - [Flujo Mobile](../../docs/workflows/mobile-workflow.md)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)

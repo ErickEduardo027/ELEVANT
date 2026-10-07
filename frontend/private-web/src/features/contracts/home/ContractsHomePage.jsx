@@ -27,7 +27,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
 
   const isLoading = status === 'loading';
   const kpis = data?.kpis;
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
       <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
@@ -41,7 +41,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
       <KpiCard label="Borradores por activar" value={kpis?.pendingDrafts ?? 0} icon={ContractIcon} loading={isLoading} />
       <KpiCard label="Solicitudes rechazadas" value={kpis?.rejectedRequests ?? 0} icon={RequestIcon} loading={isLoading} />
     </div>
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <SectionCard title="Solicitudes recientes" actionLabel="Ver solicitudes" onAction={() => onNavigate('contracts-requests')}>
         {isLoading ? <div data-testid="requests-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" /> :
           data?.recentRequests?.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">{data.recentRequests.map(request =>

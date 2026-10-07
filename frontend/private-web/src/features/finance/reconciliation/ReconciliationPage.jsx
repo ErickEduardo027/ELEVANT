@@ -75,7 +75,7 @@ export default function ReconciliationPage({ initialStationId }) {
   const visible = state.status === 'success' ? state.data.rows
     .filter(row => filter === 'all' || lifecycle(row).id === filter) : [];
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
@@ -122,12 +122,12 @@ export default function ReconciliationPage({ initialStationId }) {
         </label>
         <span className="text-xs text-text-secondary-light">Página {page} · hasta 20 registros por página</span>
       </div>
-      {visible.length ? <section aria-label="Seguimiento financiero" className="grid gap-4">
+      {visible.length ? <section aria-label="Seguimiento financiero" className="grid grid-cols-1 gap-4">
         {visible.map(row => <article key={row.preinvoiceId}
           className="rounded-2xl border border-black/5 bg-white/70 p-5 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs text-text-secondary-light">{row.preinvoiceId}</p>
+            <div className="min-w-0">
+              <p className="break-all font-mono text-xs text-text-secondary-light">{row.preinvoiceId}</p>
               <h2 className="text-lg font-bold">{row.airlineName}</h2>
               <p className="text-sm text-text-secondary-light">{row.from} — {row.to}</p>
             </div>

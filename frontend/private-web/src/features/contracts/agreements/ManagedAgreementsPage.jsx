@@ -40,7 +40,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
     version => version.rates.map(rate => ({ ...rate, contract, version })))), [contracts]);
   const [title, description] = TITLES[mode] ?? TITLES.contracts;
 
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-3">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión contractual</p>
         <h1 className="mt-1 text-2xl font-bold">{title}</h1>
@@ -62,7 +62,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>
             <p className="mt-1 text-xs text-text-secondary-light">{version.rates.length} tarifas pactadas</p>
           </div>)}</article>)}</div> : <p className="rounded-xl border p-8 text-center">No hay contratos aprobados en esta página.</p>)}
-      {mode === 'services' && (rates.length ? <div className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card"><table className="w-full min-w-[760px] text-left text-sm">
+      {mode === 'services' && (rates.length ? <div className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm">
         <thead className="bg-black/[.03] text-xs uppercase dark:bg-white/[.03]"><tr><th className="p-3">Servicio</th><th className="p-3">Contrato</th><th className="p-3">Tarifa</th><th className="p-3">Estaciones</th><th className="p-3">Versión</th><th className="p-3">Vigencia</th></tr></thead>
         <tbody>{rates.map(rate => <tr key={`${rate.version.id}-${rate.id}`} className="border-t border-black/5 dark:border-white/10">
           <td className="p-3"><strong>{rate.serviceName}</strong><span className="block text-xs">{rate.serviceCode}</span></td>

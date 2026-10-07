@@ -242,7 +242,7 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
     } finally { setWriting(false); }
   };
 
-  return <main className="mx-auto max-w-[1440px] space-y-5 text-ink-900 dark:text-text-primary-dark">
+  return <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana · evidencia operativa</p>
@@ -387,5 +387,5 @@ export default function AttendanceReviewPage({ initialDate = new Date() }) {
           Reintentar misma validación</button>
       </div>}
     {message && <p role="alert" className={`${CARD_CLASS} text-sm`}>{message}</p>}
-  </main>;
+  </section>;
 }

@@ -53,7 +53,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
   }
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_410px]">
+  return <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_410px]">
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="text-lg font-bold">Aerolíneas</h2><p className="text-xs text-text-secondary-light">Las fichas publicadas aparecen en nuevas solicitudes.</p></div>
@@ -64,9 +64,9 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} /> Mostrar archivadas</label>
       </div>
       <div className="mt-5 space-y-3">{visible.map((airline) => <article key={airline.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
-          <div><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada' : 'Sin verificar'}</p></div>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
+          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada' : 'Sin verificar'}</p></div>
         </div>
         <div className="flex gap-3"><button type="button" aria-label={`Editar ${airline.displayName}`} onClick={() => edit(airline)} className="text-xs font-semibold text-accent-600">Editar</button>{airline.isPublished && <button type="button" onClick={() => setPendingArchive(airline)} className="text-xs font-semibold text-status-danger">Archivar</button>}</div>
       </article>)}{visible.length === 0 && <p className="rounded-xl bg-black/[.03] p-5 text-sm dark:bg-white/[.04]">No hay aerolíneas que coincidan con el filtro.</p>}</div>

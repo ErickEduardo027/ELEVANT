@@ -296,7 +296,7 @@ export default function PreinvoicesPage({ initialStationId }) {
   }
 
   const rows = state.result?.preinvoices ?? [];
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
         <h1 className="mt-1 text-2xl font-bold">Pre-facturación</h1>
@@ -331,7 +331,7 @@ export default function PreinvoicesPage({ initialStationId }) {
     </div>}
     {state.status === 'success' && <>
       {rows.length ? <section className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card">
-        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-black/[.03] text-xs uppercase dark:bg-white/[.03]"><tr>
+        <table className="table-stack w-full min-w-[760px] text-left text-sm"><thead className="bg-black/[.03] text-xs uppercase dark:bg-white/[.03]"><tr>
           <th className="p-3">Prefactura</th><th className="p-3">Aerolínea</th><th className="p-3">Período</th>
           <th className="p-3">Líneas</th><th className="p-3 text-right">Total</th><th className="p-3">Estado</th><th className="p-3">Detalle</th>
         </tr></thead><tbody>{rows.map(item => <tr key={item.id} className="border-t border-black/5 dark:border-white/10">

@@ -1,32 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
+import { MEDIA_QUERIES } from '../../config/breakpoints';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 const STORAGE_KEY = 'elevant-sidebar-expanded';
-const TABLET_QUERY = '(max-width: 1024px)';
-const MOBILE_QUERY = '(max-width: 640px)';
-
-function matches(query) {
-  return typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches);
-}
+// Alineados con Tailwind: móvil por debajo de `sm` (640px) y tablet por debajo
+// de `lg` (1024px). A 640px exactos ya hay rail; a 1024px ya hay escritorio.
+const TABLET_QUERY = MEDIA_QUERIES.belowDesktop;
+const MOBILE_QUERY = MEDIA_QUERIES.mobile;
 
 function readStoredExpanded() {
   if (typeof window === 'undefined') return true;
   const stored = window.localStorage?.getItem(STORAGE_KEY);
   return stored === null ? true : stored === 'true';
-}
-
-function useMediaQuery(query) {
-  const [matched, setMatched] = useState(() => matches(query));
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
-    const mql = window.matchMedia(query);
-    const onChange = event => setMatched(event.matches);
-    mql.addEventListener('change', onChange);
-    setMatched(mql.matches);
-    return () => mql.removeEventListener('change', onChange);
-  }, [query]);
-
-  return matched;
 }
 
 // Drives the three responsive sidebar behaviors: on desktop the inline rail

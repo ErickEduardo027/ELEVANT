@@ -12,12 +12,9 @@ verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
 sources:
   - frontend/private-web/README.md
   - frontend/private-web/src/features/planning/PlanningPage.jsx
-  - frontend/private-web/src/features/review/ReviewPage.jsx
   - frontend/public-web/README.md
-  - frontend/public-web/src/lib/portal/repository.ts
   - frontend/mobile-agent/README.md
   - frontend/mobile-agent/src/app/home.tsx
-  - frontend/mobile-agent/src/storage/prototype-storage.ts
   - backend/README.md
   - docs/architecture/database-v1.md
   - docs/database/schema-v1.md
@@ -154,7 +151,7 @@ Un recorrido cambia de mapa a capacidad entregada cuando existen, como mínimo:
 ## Fuentes
 
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): recorridos prototipados.
-- [Planificación interna](../../frontend/private-web/src/features/planning/PlanningPage.jsx), [revisión OCC](../../frontend/private-web/src/features/review/ReviewPage.jsx), [repositorio mock del portal](../../frontend/public-web/src/lib/portal/repository.ts), [inicio móvil](../../frontend/mobile-agent/src/app/home.tsx) y [outbox móvil](../../frontend/mobile-agent/src/storage/prototype-storage.ts): evidencia ejecutable de los recorridos y de su carácter local/prototipado.
+- [Planificación interna](../../frontend/private-web/src/features/planning/PlanningPage.jsx), revisión OCC, repositorio mock del portal, [inicio móvil](../../frontend/mobile-agent/src/app/home.tsx) y outbox móvil: evidencia ejecutable de los recorridos y de su carácter local/prototipado.
 - [Backend](../../backend/README.md): ausencia actual de endpoints funcionales.
 - [Base de datos v1](../../docs/architecture/database-v1.md) y [esquema v1](../../docs/database/schema-v1.md): agregados, relaciones e historia canónica.
 

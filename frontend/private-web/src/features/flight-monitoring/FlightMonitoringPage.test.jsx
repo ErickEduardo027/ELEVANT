@@ -176,25 +176,25 @@ describe('FlightMonitoringPage — tablet layout', () => {
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );
     expect(screen.getByTestId('flight-list-panel')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ver vuelos' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ver vuelos/ })).not.toBeInTheDocument();
   });
 
   it('hides the inline list panel and shows a "Ver vuelos" toggle on tablet', () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );
     expect(screen.queryByTestId('flight-list-panel')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ver vuelos' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ver vuelos/ })).toBeInTheDocument();
   });
 
   it('opens the list drawer when the toggle is clicked, and closes it via the backdrop', async () => {
-    mockMatchMedia(['(max-width: 1024px)']);
+    mockMatchMedia(['(max-width: 1023.98px)']);
     render(
       <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Ver vuelos' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Ver vuelos/ }));
     expect(screen.getByTestId('flight-list-drawer')).toBeInTheDocument();
     expect(screen.getByText('DM161')).toBeInTheDocument();
 

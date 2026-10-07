@@ -18,7 +18,7 @@ export default function Toast({ toasts, onDismiss }) {
   if (!toasts.length) return null;
 
   return (
-    <div className="fixed right-4 top-4 z-[60] flex w-full max-w-sm flex-col gap-2">
+    <div className="fixed inset-x-4 top-4 z-toast flex flex-col gap-2 sm:left-auto sm:w-full sm:max-w-sm">
       {toasts.map(toast => {
         const Icon = TONE_ICON[toast.tone] ?? TONE_ICON.success;
         return (

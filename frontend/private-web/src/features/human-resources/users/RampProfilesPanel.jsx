@@ -134,13 +134,13 @@ export default function RampProfilesPanel() {
   const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
   const inactiveCurrentSupervisor = catalog?.profiles.find(profile =>
     profile.id === persistedSupervisorId && profile.id === form.supervisorProfileId && !profile.isActive);
-  return <div className="mx-auto max-w-[1440px] space-y-5">
+  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header><p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">Gestión Humana / Personal</p>
       <h1 className="mt-1 text-2xl font-bold">Perfiles de agentes de rampa</h1>
       <p className="mt-1 text-sm text-text-secondary-light">Registre el perfil, estaciones y terminales. Superadministración aprueba y vincula la cuenta móvil.</p></header>
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm">{error}</p>}
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_390px]">
       <section className="rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
         <div className="flex items-center justify-between"><h2 className="font-bold">Personal registrado</h2><button type="button" onClick={refresh} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
         {!catalog ? !error && <p className="mt-4 text-sm">Cargando perfiles…</p> : catalog.profiles.length === 0 ? <p className="mt-4 text-sm">Aún no hay perfiles.</p> :

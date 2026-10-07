@@ -11,7 +11,7 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
   const dialogRef = useDialogFocus(open);
 
   return (
-    <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
+    <div className={`fixed inset-0 z-drawer ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
       <div
         onClick={onClose}
         className={`absolute inset-0 bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200 ${
@@ -24,11 +24,11 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`absolute inset-y-0 right-0 flex w-full flex-col border-l border-black/5 bg-white shadow-2xl transition-transform duration-200 ease-in-out dark:border-white/5 dark:bg-surface-dark-card ${widthClassName} ${
+        className={`absolute inset-y-0 right-0 flex w-full flex-col border-l sm:w-[min(90vw,30rem)] border-black/5 bg-white shadow-2xl transition-transform duration-200 ease-in-out dark:border-white/5 dark:bg-surface-dark-card ${widthClassName} ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-black/5 px-6 py-4 dark:border-white/5">
+        <div className="flex items-start justify-between gap-3 border-b border-black/5 px-4 py-4 dark:border-white/5 sm:px-6">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-ink-900 dark:text-text-primary-dark">{title}</h2>
             {description && (
@@ -44,8 +44,8 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
             <XIcon className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="border-t border-black/5 px-6 py-4 dark:border-white/5">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
+        {footer && <div className="border-t border-black/5 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/5 sm:px-6">{footer}</div>}
       </aside>
     </div>
   );

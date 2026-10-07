@@ -127,15 +127,19 @@ Desde `frontend/private-web`:
 npm ci
 npm run test:delivery
 npm test
-$env:VITE_ELEVANT_API_URL = "https://api.elevant.test"
-$env:VITE_PROTOTYPE_API_URL = $env:VITE_ELEVANT_API_URL
+npm run lint
+npm run typecheck
+$env:NEXT_PUBLIC_ELEVANT_API_URL = "https://api.elevant.test"
+$env:NEXT_PUBLIC_PROTOTYPE_API_URL = $env:NEXT_PUBLIC_ELEVANT_API_URL
+$env:NEXT_PUBLIC_HR_DEMO_MODE = "dashboard-read-only"
 npm run build
-npm run dev
+npm run dev -- -p 5173
 ```
 
 El build ejecuta `validate:development-env`: exige los dos orígenes HTTPS DNS,
-sin ruta ni slash final, idénticos y no loopback. La aplicación no declara
-scripts `lint` o `typecheck` separados; no documentes comandos inexistentes.
+sin ruta ni slash final, idénticos y no loopback, además del modo de
+demostración de Gestión Humana. El puerto 5173 evita chocar con Public Web en
+el 3000 y es uno de los orígenes locales permitidos por CORS en la API.
 
 Para una prueba Vitest enfocada:
 
