@@ -83,7 +83,7 @@ function AirlineFlightsPage({ airlineName }: {
       value?.toLocaleLowerCase("es").includes(query))) : operations;
 
   return <div className={styles.page}>
-    <div className={styles.realScope}><div><span className={styles.kicker}>Vuelos · {airlineName}</span>
+    <div className={styles.realScope}><div><span className={styles.kicker}>{airlineName}</span><h1>Vuelos</h1>
       <p>{operations.length} operaciones cargadas del historial autorizado.</p></div></div>
     <label className={styles.flightSearch}>Buscar vuelo u operación
       <input type="search" value={flightQuery} onChange={event => setFlightQuery(event.target.value)}

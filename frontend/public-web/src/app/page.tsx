@@ -136,7 +136,7 @@ export default function HomePage() {
                     src={actor.image}
                     alt={actor.alt}
                     fill
-                    sizes="(max-width: 767px) 100vw, 58vw"
+                    sizes="(max-width: 1023px) 100vw, 58vw"
                   />
                   <div className="actor-chapter__image-label">
                     <span>{actor.number}</span>
@@ -292,7 +292,7 @@ export default function HomePage() {
               alt="Aeronave estacionada en plataforma al caer la tarde"
               fill
               loading="eager"
-              sizes="(max-width: 899px) 100vw, 44vw"
+              sizes="(max-width: 1023px) 100vw, 44vw"
             />
             <div className="demo-section__visual-copy">
               <span>PUJ / SIGUIENTE ROTACIÓN</span>

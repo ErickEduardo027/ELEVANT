@@ -233,7 +233,7 @@
   padding: 0.8rem 1rem 0.8rem 1.25rem;
   color: #8fa8c5;
   font-family: var(--auth-data);
-  font-size: 0.52rem;
+  font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -275,7 +275,7 @@
   margin-top: 0.3rem;
   color: #829ab6;
   font-family: var(--auth-data);
-  font-size: 0.48rem;
+  font-size: 0.65rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -329,12 +329,13 @@
   left: clamp(1rem, 5vw, 3rem);
   color: #6f89a8;
   font-family: var(--auth-data);
-  font-size: 0.5rem;
+  font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .formRegion {
+  color-scheme: light;
   position: relative;
   z-index: 3;
   min-width: 0;
@@ -609,7 +610,7 @@
   align-self: center;
   color: #50617a;
   font-family: var(--auth-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.03em;
 }
 
@@ -773,7 +774,7 @@
   border: 1px solid #9aabba;
   border-radius: 50%;
   font-family: var(--auth-data);
-  font-size: 0.52rem;
+  font-size: 0.65rem;
   place-items: center;
 }
 
@@ -813,7 +814,7 @@
   display: none;
   margin-top: 0.15rem;
   color: #708198;
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   line-height: 1.25;
 }
 
@@ -864,7 +865,7 @@
   background: #eaf8f3;
   color: #075f47;
   font-family: var(--auth-data);
-  font-size: 0.58rem;
+  font-size: 0.65rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -907,7 +908,7 @@
 .sessionCard dt {
   color: #6c7d92;
   font-family: var(--auth-data);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1313,5 +1314,20 @@
   .field textarea,
   .passwordControl input {
     border-width: 2px;
+  }
+}
+
+/* Teléfonos: el panel descriptivo se compacta para que el formulario de acceso
+   quede dentro de la primera pantalla. */
+@media (max-width: 47.99rem) {
+  .credential {
+    min-height: 0;
+    padding-top: calc(5.5rem + env(safe-area-inset-top));
+    padding-bottom: 2.5rem;
+  }
+
+  .routeCard,
+  .credentialFootnote {
+    display: none;
   }
 }
