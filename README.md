@@ -11,7 +11,7 @@ Mobile Agent nativo ─────┘                  │
 
 | Aplicación | Usuarios | Tecnología actual |
 | --- | --- | --- |
-| `frontend/private-web` | Personal interno de AVIAM: OCC, administración y departamentos | Vite 6, React 18 |
+| `frontend/private-web` | Personal interno de AVIAM: OCC, administración y departamentos | Next.js 16, React 19 |
 | `frontend/public-web` | Visitantes y clientes/aerolíneas con aislamiento por organización y estación | Next.js 16, React 19 |
 | `frontend/mobile-agent` | Agentes de rampa en tablet Android/iOS | Expo 54, React Native |
 | `backend` | API compartida, dominio, aplicación e infraestructura | .NET 10 |

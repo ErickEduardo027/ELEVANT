@@ -19,6 +19,7 @@ NODE
 }
 
 check docs-only '{"backend_validate":false,"database_release":false,"api_release":false,"aviam_validate":false,"public_validate":false,"aviam_release":false,"public_release":false}' 'docs/note.md'
+check agent-guides '{"backend_validate":false,"database_release":false,"api_release":false,"aviam_validate":false,"public_validate":false,"aviam_release":false,"public_release":false,"ops_validate":false,"api_client_validate":false,"mobile_validate":false}' 'AGENTS.md' 'CLAUDE.md'
 check ci-only '{"backend_validate":true,"database_release":false,"api_release":false,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' '.github/workflows/backend-ci.yml' '.github/workflows/web-ci.yml'
 check backend-workflow '{"backend_validate":true,"aviam_validate":true,"public_validate":true,"api_release":false}' '.github/workflows/backend-ci.yml'
 check api-source '{"backend_validate":true,"database_release":true,"api_release":true,"aviam_release":true,"public_release":true}' 'backend/Elevant.Application/Operations/Service.cs'
