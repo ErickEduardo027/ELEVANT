@@ -1,9 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { expectNoHorizontalOverflow } from "./layout";
 
 const routes = [
   { path: "/", label: "landing" },
   { path: "/login", label: "login" },
+  { path: "/solicitar-acceso", label: "solicitud de acceso" },
 ] as const;
 
 test.describe("calidad responsive y accesible", () => {
@@ -14,7 +16,8 @@ test.describe("calidad responsive y accesible", () => {
   for (const route of routes) {
     test(`${route.label} no produce overflow horizontal`, async ({ page }) => {
       await page.goto(route.path);
-      await page.locator("footer").scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expectNoHorizontalOverflow(page, route.path);
 
       const measurement = await page.evaluate(() => {
         const root = document.documentElement;

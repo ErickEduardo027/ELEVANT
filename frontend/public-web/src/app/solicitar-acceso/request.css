@@ -25,7 +25,7 @@
 .access-steps li[data-active="true"] span:first-child, .access-steps li[data-done="true"] span:last-child { color: #ff641f; }
 .access-intro__foot { color: #7188a1; margin-top: auto; padding-top: 45px; }
 .access-panel { padding: clamp(26px, 4vw, 70px) clamp(24px, 5vw, 90px) 35px; display: flex; flex-direction: column; min-width: 0; }
-.access-panel__top { display: flex; justify-content: space-between; color: #668099; border-bottom: 1px solid #cbd5df; padding-bottom: 17px; }
+.access-panel__top { display: flex; justify-content: space-between; color: #4a6178; border-bottom: 1px solid #cbd5df; padding-bottom: 17px; }
 .access-panel__heading { margin: clamp(40px, 6vh, 72px) 0 30px; }
 .access-panel__heading > p { color: #d35115; margin: 0 0 13px; }
 .access-panel__heading h2 { font-family: var(--font-display); letter-spacing: -.045em; font-weight: 400; font-size: clamp(2.2rem, 3.3vw, 3.9rem); line-height: 1.05; margin: 0 0 10px; }
@@ -86,7 +86,7 @@
 .access-error { color: #9c2f13; background: #ffe9e0; padding: 13px 16px; font-size: .85rem; }
 .access-loading { color: #425d78; }
 .access-panel__footer { margin-top: auto; padding-top: 38px; display: flex; align-items: center; justify-content: space-between; gap: 15px; }
-.access-panel__footer > span { font: .7rem var(--font-data); color: #8ca0b2; }
+.access-panel__footer > span { font: .7rem var(--font-data); color: #55697e; }
 .access-back { border: 0; background: transparent; color: #244565; cursor: pointer; padding: 12px 0; }
 .access-next { border: 0; background: #ff641f; color: #fff; font-weight: 700; padding: 16px 23px; min-width: 195px; display: flex; justify-content: space-between; gap: 35px; cursor: pointer; }
 .access-next:hover { background: #d8470d; }

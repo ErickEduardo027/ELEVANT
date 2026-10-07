@@ -43,5 +43,22 @@ export default defineConfig({
         defaultBrowserType: "chromium",
       },
     },
+    // Anchos extremos y el salto a escritorio: solo repiten las comprobaciones
+    // de desbordamiento para cubrir el layout sin duplicar toda la suite.
+    {
+      name: "phone-360",
+      grep: /overflow/i,
+      use: { ...devices["Pixel 5"], viewport: { width: 360, height: 780 }, defaultBrowserType: "chromium" },
+    },
+    {
+      name: "laptop-1024",
+      grep: /overflow/i,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1024, height: 768 } },
+    },
+    {
+      name: "wide-1920",
+      grep: /overflow/i,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1920, height: 1080 } },
+    },
   ],
 });

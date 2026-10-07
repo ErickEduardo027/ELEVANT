@@ -4,10 +4,11 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 
-import type { GraphicTier } from "@/lib/graphics";
+import { selectGraphicTier, type GraphicTier } from "@/lib/graphics";
 
 import styles from "./HeroFlightScene.module.css";
 
@@ -26,7 +27,28 @@ export type HeroFlightSceneProps = {
 
 const DEFAULT_ARIA_LABEL =
   "Vuelo de Miami a Punta Cana sobre un globo terrestre. La ruta se convierte en cinco hitos: planificar, ejecutar, evidenciar, validar y consultar.";
-const FORCED_GRAPHICS_TIER: Exclude<GraphicTier, "STATIC"> = "FULL";
+type EngineTier = Exclude<GraphicTier, "STATIC">;
+
+/**
+ * Elige la calidad del motor con las señales del dispositivo: teléfonos, tablets,
+ * equipos con poca memoria o redes lentas reciben LITE. El héroe conserva siempre
+ * la escena 3D, por eso STATIC se trata como LITE en lugar de un póster fijo.
+ */
+const subscribeToNothing = () => () => {};
+const getServerTier = () => null;
+
+function detectEngineTier(): EngineTier {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  const tier = selectGraphicTier({
+    reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
+    saveData: Boolean(connection?.saveData),
+    effectiveType: connection?.effectiveType ?? null,
+    webGLAvailable: true,
+    deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null,
+    viewportWidth: window.innerWidth,
+  });
+  return tier === "FULL" ? "FULL" : "LITE";
+}
 
 function clampProgress(value: number) {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
@@ -100,7 +122,7 @@ export function HeroFlightScene({
   const engineRef = useRef<HeroFlightEngineInstance | null>(null);
   const progressRef = useRef<number | undefined>(progress);
   const onTierChangeRef = useRef(onTierChange);
-  const tier = FORCED_GRAPHICS_TIER;
+  const tier = useSyncExternalStore<EngineTier | null>(subscribeToNothing, detectEngineTier, getServerTier);
   const [renderState, setRenderState] = useState<RenderState>("poster");
   const [webGLFailed, setWebGLFailed] = useState(false);
 
@@ -123,12 +145,13 @@ export function HeroFlightScene({
   }, [onTierChange]);
 
   useEffect(() => {
-    onTierChangeRef.current?.(tier);
+    if (tier) onTierChangeRef.current?.(tier);
   }, [tier]);
 
   useEffect(() => {
     const scene = sceneRef.current;
     const canvasHost = canvasHostRef.current;
+    if (!tier) return;
     if (!scene || !canvasHost || webGLFailed) {
       engineRef.current = null;
       setRenderState(webGLFailed ? "unavailable" : "poster");
@@ -238,7 +261,7 @@ export function HeroFlightScene({
     <div
       ref={sceneRef}
       className={[styles.scene, className].filter(Boolean).join(" ")}
-      data-graphics-tier={tier}
+      data-graphics-tier={tier ?? undefined}
       data-render-state={renderState}
       style={sceneStyle}
     >
@@ -260,7 +283,7 @@ export function HeroFlightScene({
       <div className={styles.tierBadge} aria-hidden="true">
         {renderState === "unavailable"
           ? "RESPALDO VISUAL"
-          : `MOTOR 3D · ${tier}`}
+          : `MOTOR 3D · ${tier ?? "…"}`}
       </div>
     </div>
   );
