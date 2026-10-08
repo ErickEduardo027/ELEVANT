@@ -371,7 +371,7 @@ internal static class WorkforceCommercialConfiguration
                 table.HasCheckConstraint("ck_contract_version_dates", "[valid_to] IS NULL OR [valid_to] >= [valid_from]");
                 table.HasCheckConstraint("ck_contract_version_currency", "LEN([currency_code]) = 3");
             });
-            builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(32);
             builder.Property(version => version.ValidFrom).HasColumnType("date");
             builder.Property(version => version.ValidTo).HasColumnType("date");
             builder.Property(version => version.CurrencyCode).HasColumnType("char(3)");

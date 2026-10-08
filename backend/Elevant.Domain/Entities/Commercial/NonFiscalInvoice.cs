@@ -11,4 +11,8 @@ public sealed class NonFiscalInvoice : AuditableEntity
     public string Number { get; set; } = string.Empty;
     public string CurrencyCode { get; set; } = string.Empty;
     public decimal Total { get; set; }
+
+    public int PaymentTermDays { get; set; }
+
+    public DateOnly? DueDate { get; set; }
 }

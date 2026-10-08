@@ -1,3 +1,5 @@
+using Elevant.Domain.Enumerations;
+
 namespace Elevant.Domain.Entities.Commercial;
 
 /// <summary>Independent frozen copy of one accepted priced service line.</summary>
@@ -6,6 +8,12 @@ public sealed class NonFiscalInvoiceLine : AuditableEntity
     public long InvoiceId { get; set; }
     public long PreinvoiceLineId { get; set; }
     public int LineNumber { get; set; }
+
+    public PreinvoiceLineKind Kind { get; set; } = PreinvoiceLineKind.Service;
+
+    public int? ParentLineNumber { get; set; }
+
+    public string? Reason { get; set; }
     public string OperationCode { get; set; } = string.Empty;
     public DateOnly OperationDate { get; set; }
     public string ServiceCode { get; set; } = string.Empty;

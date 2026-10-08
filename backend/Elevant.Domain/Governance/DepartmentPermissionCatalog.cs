@@ -63,9 +63,15 @@ public static class DepartmentPermissionCatalog
             [
                 Module("finance", "home", "Inicio", ("read", "Ver")),
                 Module("finance", "approved_services", "Servicios aprobados", ("read", "Ver"), ("preinvoice", "Generar prefacturas")),
-                Module("finance", "preinvoices", "Pre-facturación", ("read", "Ver"), ("manage", "Publicar y facturar")),
-                Module("finance", "reconciliation", "Seguimiento", ("read", "Ver"), ("record", "Registrar pagos")),
-                Module("finance", "tariffs", "Tarifas", ("read", "Ver")),
+                Module("finance", "preinvoices", "Pre-facturación", ("read", "Ver"),
+                    ("manage", "Editar importes, publicar y facturar")),
+                Module("finance", "reconciliation", "Facturas y cobros", ("read", "Ver"),
+                    ("record", "Registrar pagos y notas de crédito")),
+                Module("finance", "tariffs", "Tarifario de servicios", ("read", "Ver"), ("manage", "Crear y publicar tarifas")),
+                Module("finance", "charges", "Tarifario de cargos", ("read", "Ver"), ("manage", "Crear y publicar cargos")),
+                Module("finance", "exchange_rates", "Tasas de cambio", ("read", "Ver"), ("manage", "Registrar tasas")),
+                Module("finance", "contract_approvals", "Aprobación de contratos", ("read", "Ver"),
+                    ("decide", "Aprobar o devolver contratos")),
                 Module("finance", "reports", "Reportes", ("read", "Ver"), ("export", "Exportar")),
             ],
         };

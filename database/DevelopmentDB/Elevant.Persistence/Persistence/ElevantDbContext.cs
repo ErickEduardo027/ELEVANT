@@ -114,6 +114,32 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<NonFiscalPayment> NonFiscalPayments => Set<NonFiscalPayment>();
 
+    public DbSet<BillingUnit> BillingUnits => Set<BillingUnit>();
+
+    public DbSet<ServiceTariffVersion> ServiceTariffVersions => Set<ServiceTariffVersion>();
+
+    public DbSet<ServiceTariffRate> ServiceTariffRates => Set<ServiceTariffRate>();
+
+    public DbSet<ChargeDefinition> ChargeDefinitions => Set<ChargeDefinition>();
+
+    public DbSet<ChargeDefinitionService> ChargeDefinitionServices => Set<ChargeDefinitionService>();
+
+    public DbSet<ChargeTariffVersion> ChargeTariffVersions => Set<ChargeTariffVersion>();
+
+    public DbSet<ChargeRate> ChargeRates => Set<ChargeRate>();
+
+    public DbSet<ContractChargeRate> ContractChargeRates => Set<ContractChargeRate>();
+
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+
+    public DbSet<ContractFinanceReview> ContractFinanceReviews => Set<ContractFinanceReview>();
+
+    public DbSet<AirlineBillingProfile> AirlineBillingProfiles => Set<AirlineBillingProfile>();
+
+    public DbSet<NonFiscalCreditNote> NonFiscalCreditNotes => Set<NonFiscalCreditNote>();
+
+    public DbSet<OperationServiceCharge> OperationServiceCharges => Set<OperationServiceCharge>();
+
     public DbSet<FinancialDocument> FinancialDocuments => Set<FinancialDocument>();
 
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();
@@ -165,6 +191,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigurePreinvoices();
         builder.ConfigureNonFiscalInvoices();
         builder.ConfigureNonFiscalPayments();
+        builder.ConfigureFinanceTariffs();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);
