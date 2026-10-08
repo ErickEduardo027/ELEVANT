@@ -70,6 +70,9 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
 
+> [!note] Rama `feat/finance-refinement`
+> En Finanzas, los cargos aplicados por el agente y los ajustes de Finanzas aparecen como líneas propias bajo su servicio, con motivo, y se pueden disputar una a una. La factura muestra vencimiento, estado, saldo, pagos parciales y notas de crédito mediante `GET /api/v1/airline/portal/invoices/{id}/statement`. Sigue siendo no fiscal. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+
 ## Recorrido y límites
 
 ```mermaid

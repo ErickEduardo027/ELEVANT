@@ -306,6 +306,21 @@ no queda verificada por registrar su referencia. La release #118 está
 promovida en Development; todavía falta recorrer en el VPS una operación nueva
 hasta factura, pago y recibo.
 
+### Finanzas: tarifarios, cargos y cobros (ADR-0016)
+
+La navegación de Finanzas se arma con los permisos `finance.*` del acceso
+departamental (`src/features/finance/shell/modules.js`). «Tarifarios» agrupa
+tarifario de servicios (tarifa base versionada por moneda), tarifario de cargos
+(catálogo CRUD e importes por versión) y tasas de cambio USD→DOP. «Aprobación de
+contratos» compara cada precio con la base y aprueba o devuelve con motivo;
+Contratos envía a Finanzas en lugar de activar. Pre-facturación muestra los
+cargos marcados por los agentes y los ajustes bajo su servicio y permite editar,
+excluir o ajustar en borrador con motivo y versión esperada. «Facturas y cobros»
+sustituye a Seguimiento: saldo, vencimiento, pagos parciales con método y fecha,
+y notas de crédito. Reportes lee ocho reportes calculados por la API y exporta
+CSV o PDF no fiscal con `finance.reports.export`. Los adaptadores están en
+`src/services/financeBookService.js`. Nada de esto es facturación fiscal.
+
 ## Imagen de Development
 
 La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:

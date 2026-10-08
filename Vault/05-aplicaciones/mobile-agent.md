@@ -73,6 +73,9 @@ Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/i
 
 El cierre de atención exige un checklist completo en el estado local. Esa regla de interfaz no es todavía una invariante del servidor ni un contrato público.
 
+> [!note] Rama `feat/finance-refinement`
+> El detalle de operación añade «Cargos aplicados»: el agente marca solo el tipo de cargo (nocturno, tiempo extra…) en servicios en curso, completados o en excepción, sin ver precios. Usa `GET/POST /api/v1/ramp/operations/{id}/…/charges` con clave idempotente estable por servicio, cargo y acción y conserva la última lista como caché sin conexión. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+
 ## Estado offline actual
 
 La implementación guarda con AsyncStorage:
