@@ -2,7 +2,9 @@ namespace Elevant.Application.Abstractions.Commercial;
 
 public sealed record ContractDraftRateData(Guid Id, string ServiceName,
     string BillingUnit, decimal UnitPrice, decimal MinimumQuantity,
-    bool IsConfirmed);
+    bool IsConfirmed, decimal? BasePrice = null, decimal? BaseMinimum = null);
+public sealed record ContractDraftChargeData(Guid ChargeId, string Code, string Name, string Method,
+    decimal? BaseValue, bool IsExcluded, decimal? Value);
 public sealed record ContractDraftCommentData(Guid Id, string Author,
     string Body, DateTimeOffset At, bool IsAirline);
 public sealed record ContractDraftData(Guid Id, Guid ContractId,
@@ -10,7 +12,9 @@ public sealed record ContractDraftData(Guid Id, Guid ContractId,
     DateOnly ValidFrom, DateOnly? ValidTo, string CurrencyCode,
     string? Terms, IReadOnlyList<string> Stations,
     IReadOnlyList<ContractDraftRateData> Rates,
-    IReadOnlyList<ContractDraftCommentData> Comments);
+    IReadOnlyList<ContractDraftCommentData> Comments,
+    string VersionStatus = "Draft", string? FinanceDecision = null, string? FinanceReason = null,
+    IReadOnlyList<ContractDraftChargeData>? Charges = null);
 public sealed record ContractDraftOverviewItemData(Guid Id, string ContractCode, string Airline);
 public sealed record ContractDraftOverviewData(int Count,
     IReadOnlyList<ContractDraftOverviewItemData> Recent);
@@ -18,7 +22,9 @@ public sealed record UpdateDraftRateInput(Guid Id, string BillingUnit,
     decimal UnitPrice, decimal MinimumQuantity, bool IsConfirmed = false);
 public sealed record UpdateContractDraftInput(DateOnly ValidFrom,
     DateOnly? ValidTo, string CurrencyCode, string Terms,
-    IReadOnlyList<UpdateDraftRateInput> Rates);
+    IReadOnlyList<UpdateDraftRateInput> Rates,
+    IReadOnlyList<UpdateDraftChargeInput>? ChargeRates = null);
+public sealed record UpdateDraftChargeInput(Guid ChargeId, bool IsExcluded, decimal? Value);
 public enum ContractDraftFailure { Forbidden, NotFound, Conflict, Invalid }
 public sealed record ContractDraftResult(Guid? Id, ContractDraftFailure? Failure)
 {

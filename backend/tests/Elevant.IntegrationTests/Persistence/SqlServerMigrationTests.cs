@@ -2481,6 +2481,19 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!.Contracts, item => item.Code == contract.ContractCode);
         Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
             cancellationToken)).IsSuccess);
+        // Contracts only submits; the contract becomes active when Finance approves it.
+        Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
+            .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
+        var tariffBook = scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>();
+        var financeAccountId = Guid.Parse("40000000-0000-7000-8000-000000000006");
+        var pendingApproval = Assert.Single((await tariffBook.ListContractApprovalsAsync(financeAccountId, true,
+            cancellationToken))!, item => item.VersionId == airlineDraft.Id);
+        Assert.Equal("PendingFinanceApproval", pendingApproval.Status);
+        Assert.Equal(FinanceCatalogFailure.Forbidden, (await tariffBook.DecideContractApprovalAsync(contractsAccountId,
+            airlineDraft.Id, new DecideContractApprovalInput("Approved", null, pendingApproval.Version),
+            cancellationToken)).Failure);
+        Assert.True((await tariffBook.DecideContractApprovalAsync(financeAccountId, airlineDraft.Id,
+            new DecideContractApprovalInput("Approved", null, pendingApproval.Version), cancellationToken)).IsSuccess);
         var financeAccountKey = await context.Users.AsNoTracking().Where(account =>
             account.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000006"))
             .Select(account => account.Id).SingleAsync(cancellationToken);
