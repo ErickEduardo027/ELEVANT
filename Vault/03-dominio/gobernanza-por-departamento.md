@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-07"
-verified_commit: "789d3fda01abd90277388407f99a550d1085bb86"
+verified_commit: "611180fd3e57b31666002778fa7611da7638a227"
 sources:
   - docs/adr/0015-department-user-governance.md
   - backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs
