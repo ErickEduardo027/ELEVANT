@@ -7665,6 +7665,30 @@ public sealed partial class SqlServerMigrationTests
                 Assert.Contains((await ledger.ListAsync(financeAccountId, stationId, null, "Paid", 1, 25,
                     cancellationToken))!.Invoices, item => item.Id == invoice.PublicId);
                 Assert.Null(await ledger.ListAsync(occAccountId, null, null, null, 1, 25, cancellationToken));
+
+                // Reports read the same ledger: revenue by kind, receivables, collections, charges and credit notes.
+                var reports = ledgerScope.ServiceProvider.GetRequiredService<IFinanceReportStore>();
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var period = new FinanceReportFilter(today.AddDays(-1), today.AddDays(1), stationId, null, null);
+                var revenue = (await reports.GetAsync(financeAccountId, "revenue", period, cancellationToken))!;
+                var revenueRow = Assert.Single(revenue.Rows);
+                Assert.Equal("10.00", revenueRow[5]);
+                Assert.Equal("-5.00", revenueRow[6]);
+                Assert.Equal(invoice.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), revenueRow[7]);
+                Assert.Empty((await reports.GetAsync(financeAccountId, "receivables", period, cancellationToken))!.Rows);
+                // Collections use the payment date the cashier recorded (the check is dated in August).
+                var collections = (await reports.GetAsync(financeAccountId, "collections",
+                    period with { From = new DateOnly(2026, 8, 1) }, cancellationToken))!;
+                Assert.Contains(collections.Rows, row => row[0] == "2026-08" && row[3] == "Check" && row[5] == "50.00");
+                Assert.Contains(collections.Rows, row => row[3] == "Transfer");
+                var chargeReport = (await reports.GetAsync(financeAccountId, "charges",
+                    period with { From = new DateOnly(2026, 8, 1), To = new DateOnly(2026, 8, 31) }, cancellationToken))!;
+                Assert.Contains(chargeReport.Rows, row => row[0] == "Cargo" && row[4] == "1" && row[6] == "10.00");
+                Assert.Contains(chargeReport.Rows, row => row[0] == "Ajuste" && row[8] == "Compensación comercial");
+                Assert.Single((await reports.GetAsync(financeAccountId, "credit-notes", period, cancellationToken))!.Rows);
+                Assert.Null(await reports.GetAsync(occAccountId, "revenue", period, cancellationToken));
+                Assert.Null(await reports.GetAsync(financeAccountId, "revenue", period with { StationId = Guid.NewGuid() },
+                    cancellationToken));
             }
             payment = await inspection.NonFiscalPayments.AsNoTracking()
                 .Where(item => item.InvoiceId == invoice.Id).OrderByDescending(item => item.CreatedAt)
@@ -9130,6 +9154,9 @@ public sealed partial class SqlServerMigrationTests
         public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber) =>
             System.Text.Encoding.UTF8.GetBytes(
                 $"%PDF-1.7\nReceipt {payment.Reference} {invoiceNumber}\n%%EOF");
+
+        public byte[] RenderReport(FinanceReportData report, string filterSummary) =>
+            System.Text.Encoding.UTF8.GetBytes($"%PDF-1.7\nReport {report.Key}\n%%EOF");
     }
 
     private sealed class ThrowingFinancialPdfRenderer : IFinancialDocumentPdfRenderer
@@ -9138,6 +9165,9 @@ public sealed partial class SqlServerMigrationTests
             throw new InvalidOperationException("Synthetic renderer failure.");
 
         public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber) =>
+            throw new InvalidOperationException("Synthetic renderer failure.");
+
+        public byte[] RenderReport(FinanceReportData report, string filterSummary) =>
             throw new InvalidOperationException("Synthetic renderer failure.");
     }
 
