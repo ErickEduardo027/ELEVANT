@@ -256,6 +256,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/03-dominio/gobernanza-por-departamento.md",
+        "id": "dominio-gobernanza-por-departamento",
+        "title": "Gobernanza de usuarios por departamento",
+        "type": "architecture",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/03-dominio/identidad-tenancy-y-autorizacion.md",
         "id": "dominio-identidad-tenancy-autorizacion",
         "title": "Identidad, tenancy y autorización",
@@ -1105,13 +1115,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "483d42fcd03b1b9a0d7cb679e9f464cb86be8e27f5591b81a06f183ff705eed5",
+        "sha256": "8b49c862338cdd00ffbfb7b7c51cae26cd6ce5a21f023d08947c939e8904777e",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "2b37b70c7b8c054529825eebb5ecda19b0f05add8e6b0f81ff74e59f40c0f167",
+        "sha256": "0c225b670f107e50452d2ca441287405bf9a769586a525499821f1eefc779c8c",
         "title": null,
         "version": null
       }
@@ -1290,6 +1300,12 @@
         "name": "OperationAttendanceValidation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261005164319_OperationAttendanceValidation.cs",
         "sha256": "283aec6b0b0d0e24d9201cfa79c27c643995b365dc9814e6e192deb2ce3e9790"
+      },
+      {
+        "id": "20261007180310",
+        "name": "AddDepartmentGovernance",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261007180310_AddDepartmentGovernance.cs",
+        "sha256": "9faedc5399b6565812a7b42e220a30c3fc7e74281e143ce3896b8b5915e0fb70"
       }
     ],
     "manifestContracts": [

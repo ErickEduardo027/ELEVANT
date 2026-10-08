@@ -167,19 +167,20 @@ retira los resultados al cambiar sesión o estación y reconsulta tras cambios
 durables de turnos, foco y reconexión. Código y pruebas locales no acreditan
 una promoción al VPS.
 
-En la rama local de solicitudes de acceso móvil, **Agentes de rampa** separa
-perfil laboral, petición y cuenta efectiva. G.H. envía un UUID de intención
-para un perfil elegible; Superadministración ve pendientes en Inicio y decide
-con rechazo motivado o creación de cuenta `RAMP_AGENT`. SQL conserva la
-solicitud y la decisión, mientras que IAM sigue siendo autoridad de acceso y
-estaciones. La bandeja envía versiones de solicitud y perfil y el conjunto de
-estaciones revisado; un 409 la refresca antes de decidir. Los avisos durables
-invalidan ambas vistas. No hay invitación por
-correo ni evidencia de promoción de esta rama al VPS. Fuentes:
-[contrato de acceso](../../backend/Elevant.Application/Abstractions/Identity/IRampMobileAccessRequestStore.cs),
-[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfRampMobileAccessRequestStore.cs),
-[vista de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx)
-y [bandeja](../../frontend/private-web/src/features/governance/RampMobileAccessInbox.jsx).
+Con la gobernanza por departamento (ADR-0015), el flujo anterior de acceso
+móvil (G.H. pedía la cuenta y Superadministración la creaba) queda retirado de
+la interfaz; sus endpoints siguen deprecados. El administrador del Centro de
+Operaciones solicita el alta del agente con su perfil operativo completo desde
+**Usuarios del departamento**, y Gestión Humana la valida en **Validaciones de
+acceso** definiendo la contraseña temporal o la rechaza con motivo. **Agentes
+de rampa** de Gestión Humana es una consulta; Operaciones mantiene los perfiles.
+El superadministrador ve **Usuarios** con **Clientes** (usuarios del portal por
+aerolínea) y **Usuarios internos** (recuentos globales y por departamento).
+Cada shell muestra sólo los módulos que concede `GET governance/me/access`.
+Fuentes: [gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md),
+[usuarios del departamento](../../frontend/private-web/src/features/department-users/DepartmentUsersPage.jsx),
+[validaciones](../../frontend/private-web/src/features/department-users/AccessValidationsPage.jsx)
+y [vista de perfiles](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.jsx).
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
@@ -213,9 +214,8 @@ En esta rama local, el perfil admite terminales pertenecientes a sus
 estaciones y un supervisor activo sin ciclos de supervisión mediante campos
 aditivos de la API. La respuesta diferencia el estado de la cuenta IAM; este
 no prueba por sí solo que la cuenta tenga acceso móvil efectivo. Una
-edición de Gestión Humana puede reducir alcances y revocar grants existentes,
-pero no ampliar grants de la cuenta móvil; esa decisión sigue siendo de
-Superadministración. El panel no afirma que haya enviado una invitación. La
+edición del administrador de Operaciones sólo concede estaciones que él mismo tiene;
+las altas nuevas pasan por la validación de Gestión Humana. El panel no afirma que haya enviado una invitación. La
 ruta conservada es [el controlador de perfiles](../../backend/Elevant.Api/Controllers/RampProfilesController.cs)
 y la selección se comprueba en [su prueba de interfaz](../../frontend/private-web/src/features/human-resources/users/RampProfilesPanel.test.jsx).
 
