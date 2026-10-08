@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<GetRampOperationChecklistHandler>();
         services.AddScoped<SubmitRampOperationChecklistHandler>();
         services.AddScoped<TransitionRampOperationServiceHandler>();
+        services.AddScoped<RampServiceChargesHandler>();
         services.AddScoped<RampIncidentHandler>();
         services.AddScoped<RampOperationSubmissionHandler>();
         services.AddScoped<RampOperationCorrectionHandler>();

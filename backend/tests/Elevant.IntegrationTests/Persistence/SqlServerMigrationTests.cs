@@ -6727,6 +6727,40 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(serviceStarted.CommitReceiptId, serviceStartedReplay.CommitReceiptId);
         Assert.Equal(serviceStarted.Transition, serviceStartedReplay.Transition);
 
+        // The agent marks charges on a service in progress; prices never reach the ramp.
+        async Task<RampServiceChargeWriteResult> ChargeAsync(Guid commandKey, Guid chargeId,
+            RampServiceChargeAction action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IRampServiceChargeStore>().ApplyAsync(
+                new RampServiceChargeWriteRequest(accountId, [stationId], operationId, baggageServiceId, chargeId,
+                    action, installationId, commandKey, commandKey, "ramp-charge-sql-test"), cancellationToken);
+        }
+        RampOperationChargesData chargeOptions;
+        await using (var chargeScope = provider.CreateAsyncScope())
+            chargeOptions = (await chargeScope.ServiceProvider.GetRequiredService<IRampServiceChargeStore>()
+                .ReadAsync(accountId, [stationId], operationId, installationId, cancellationToken))!;
+        var baggageCharges = Assert.Single(chargeOptions.Services, item => item.ServiceId == baggageServiceId);
+        Assert.True(baggageCharges.CanEdit);
+        var nightCharge = Assert.Single(baggageCharges.Available, item => item.Code == "NIGHT");
+        Assert.Empty(baggageCharges.Applied);
+        var nightKey = Guid.NewGuid();
+        var nightApplied = await ChargeAsync(nightKey, nightCharge.Id, RampServiceChargeAction.Apply);
+        Assert.True(nightApplied.IsSuccess);
+        Assert.Equal("NIGHT", Assert.Single(nightApplied.Command!.Service.Applied).Code);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(nightApplied.Command),
+            System.Text.Json.JsonSerializer.Serialize((await ChargeAsync(nightKey, nightCharge.Id,
+                RampServiceChargeAction.Apply)).Command));
+        Assert.Equal(RampOperationServiceTransitionWriteFailure.IdempotencyKeyConflict,
+            (await ChargeAsync(nightKey, nightCharge.Id, RampServiceChargeAction.Remove)).Failure);
+        Assert.Equal(RampOperationServiceTransitionWriteFailure.Conflict,
+            (await ChargeAsync(Guid.NewGuid(), nightCharge.Id, RampServiceChargeAction.Apply)).Failure);
+        Assert.Empty((await ChargeAsync(Guid.NewGuid(), nightCharge.Id, RampServiceChargeAction.Remove))
+            .Command!.Service.Applied);
+        Assert.Equal(RampOperationServiceTransitionWriteFailure.Conflict,
+            (await ChargeAsync(Guid.NewGuid(), Guid.NewGuid(), RampServiceChargeAction.Apply)).Failure);
+        Assert.True((await ChargeAsync(Guid.NewGuid(), nightCharge.Id, RampServiceChargeAction.Apply)).IsSuccess);
+
         var serviceKeyCollision = await TransitionServiceAsync(
             serviceStartedKey,
             baggageServiceId,
@@ -6855,6 +6889,8 @@ public sealed partial class SqlServerMigrationTests
             .AsNoTracking()
             .Where(item => item.MobileDeviceId == deviceInternalId)
             .ToArrayAsync(cancellationToken);
+        Assert.Equal(5, receipts.Count(item => item.CommandType == "ramp.operation.service.charge.v1"));
+        receipts = receipts.Where(item => item.CommandType != "ramp.operation.service.charge.v1").ToArray();
         Assert.Equal(7, receipts.Length);
         Assert.Equal(
             1,
