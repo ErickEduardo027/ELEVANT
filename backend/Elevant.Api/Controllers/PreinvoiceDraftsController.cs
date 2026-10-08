@@ -138,7 +138,9 @@ public sealed class PreinvoiceDraftsController(
                 line.Id, line.OperationServiceId, line.ApprovedSubmissionId,
                 line.LineNumber, line.OperationCode, line.OperationDate,
                 line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
-                line.BillingUnit, line.UnitPrice, line.CurrencyCode, line.Amount)).ToArray()));
+                line.BillingUnit, line.UnitPrice, line.CurrencyCode, line.Amount, line.Kind,
+                line.ParentLineId, line.ComputedQuantity, line.ComputedAmount, line.IsExcluded,
+                line.AdjustmentReason, line.EditedAt)).ToArray(), detail.Version));
     }
 
     private bool TryAccount(out Guid accountId) =>

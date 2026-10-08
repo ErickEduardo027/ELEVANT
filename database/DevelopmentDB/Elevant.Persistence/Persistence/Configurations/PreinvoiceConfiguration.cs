@@ -40,7 +40,8 @@ internal static class PreinvoiceConfiguration
             builder.ToTable("preinvoice_lines", "commercial", table =>
             {
                 table.HasCheckConstraint("ck_preinvoice_line_number", "[line_number] > 0");
-                table.HasCheckConstraint("ck_preinvoice_line_quantity", "[executed_quantity] > 0");
+                table.HasCheckConstraint("ck_preinvoice_line_quantity",
+                    "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
                 table.HasCheckConstraint("ck_preinvoice_line_price",
                     "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
                 table.HasCheckConstraint("ck_preinvoice_line_kind",

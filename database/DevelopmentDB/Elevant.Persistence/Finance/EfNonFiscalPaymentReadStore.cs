@@ -64,9 +64,10 @@ internal sealed class EfNonFiscalPaymentReadStore(
     {
         var payment = await context.NonFiscalPayments.AsNoTracking()
             .Where(item => item.InvoiceId == internalInvoiceId)
+            .OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id)
             .Select(item => new NonFiscalPaymentData(item.PublicId, invoiceId,
                 item.Reference, item.CurrencyCode, item.Amount, item.CreatedAt))
-            .SingleOrDefaultAsync(cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
         return new NonFiscalPaymentLookupData(invoiceId, payment, invoiceNumber);
     }
 }

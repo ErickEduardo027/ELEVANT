@@ -123,7 +123,7 @@ internal sealed class EfAirlinePreinvoiceDisputeStore(
             return DisputeAirlinePreinvoiceResult.Failed(DisputeAirlinePreinvoiceFailure.Conflict);
 
         var lines = await context.PreinvoiceLines.AsNoTracking()
-            .Where(item => item.PreinvoiceId == scope.Id && command.LineIds.Contains(item.PublicId))
+            .Where(item => item.PreinvoiceId == scope.Id && !item.IsExcluded && command.LineIds.Contains(item.PublicId))
             .Select(item => item.Id).ToArrayAsync(cancellationToken);
         if (lines.Length != command.LineIds.Count)
             return DisputeAirlinePreinvoiceResult.Failed(DisputeAirlinePreinvoiceFailure.InvalidRequest);

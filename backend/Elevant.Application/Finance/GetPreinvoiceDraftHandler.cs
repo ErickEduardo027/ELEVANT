@@ -6,16 +6,24 @@ using Elevant.Domain.Enumerations;
 
 namespace Elevant.Application.Finance;
 
+/// <summary>
+/// A service line, a charge marked on that service (ParentLineId) or a manual
+/// adjustment. Computed values stay beside the billed amount when Finance edits it.
+/// </summary>
 public sealed record PreinvoiceDraftLineDetail(
-    Guid Id, Guid OperationServiceId, Guid ApprovedSubmissionId,
+    Guid Id, Guid? OperationServiceId, Guid? ApprovedSubmissionId,
     int LineNumber, string OperationCode, DateOnly OperationDate,
     string ServiceCode, string ServiceName, decimal ExecutedQuantity,
-    string BillingUnit, decimal UnitPrice, string CurrencyCode, decimal Amount);
+    string BillingUnit, decimal UnitPrice, string CurrencyCode, decimal Amount,
+    string Kind = "Service", Guid? ParentLineId = null, decimal? ComputedQuantity = null,
+    decimal? ComputedAmount = null, bool IsExcluded = false, string? AdjustmentReason = null,
+    DateTimeOffset? EditedAt = null);
 
 public sealed record PreinvoiceDraftDetail(
     Guid Id, Guid AirlineId, string AirlineName, Guid StationId,
     DateOnly From, DateOnly To, string CurrencyCode,
-    decimal Total, string Status, IReadOnlyList<PreinvoiceDraftLineDetail> Lines);
+    decimal Total, string Status, IReadOnlyList<PreinvoiceDraftLineDetail> Lines,
+    string? Version = null);
 
 public sealed class GetPreinvoiceDraftHandler(
     IActorContextResolver actors, IPreinvoiceDraftStore store)

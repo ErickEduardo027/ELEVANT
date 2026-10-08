@@ -99,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
+        services.AddScoped<IPreinvoiceLineEditStore, EfPreinvoiceLineEditStore>();
+        services.AddScoped<IFinanceInvoiceLedgerStore, EfFinanceInvoiceLedgerStore>();
         services.AddScoped<IFinanceReconciliationReadStore, EfFinanceReconciliationReadStore>();
         services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();

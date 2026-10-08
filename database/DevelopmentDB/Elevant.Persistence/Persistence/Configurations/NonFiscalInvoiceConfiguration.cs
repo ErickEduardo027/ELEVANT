@@ -42,7 +42,8 @@ internal static class NonFiscalInvoiceConfiguration
             builder.ToTable("non_fiscal_invoice_lines", "commercial", table =>
             {
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_number", "[line_number] > 0");
-                table.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity", "[executed_quantity] > 0");
+                table.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity",
+                    "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_price",
                     "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_currency", "LEN([currency_code]) = 3");

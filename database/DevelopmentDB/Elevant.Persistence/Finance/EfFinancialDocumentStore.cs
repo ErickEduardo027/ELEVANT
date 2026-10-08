@@ -61,7 +61,7 @@ internal sealed class EfFinancialDocumentStore(
         long invoiceId, long? paymentId, string kind, Guid sourceId,
         Func<byte[]> render, string fileName, CancellationToken cancellationToken)
     {
-        var existing = await ClassifyAsync(() => FindAsync(invoiceId, kind, cancellationToken),
+        var existing = await ClassifyAsync(() => FindAsync(invoiceId, paymentId, kind, cancellationToken),
             FinancialDocumentFailureStage.MetadataRead);
         if (existing is not null)
             return await ReadVerifiedAsync(existing, kind, fileName, cancellationToken);
@@ -113,7 +113,7 @@ internal sealed class EfFinancialDocumentStore(
         // An uncertain commit or a concurrent first reader may have won the
         // unique (invoice, kind) index. Re-read before cleanup: deleting this
         // attempt's S3 key would lose the document if its first commit succeeded.
-        existing = await ClassifyAsync(() => FindAsync(invoiceId, kind, cancellationToken),
+        existing = await ClassifyAsync(() => FindAsync(invoiceId, paymentId, kind, cancellationToken),
                 FinancialDocumentFailureStage.MetadataRead)
             ?? throw new FinancialDocumentUnavailableException(
                 FinancialDocumentFailureStage.MetadataConflict);
@@ -133,10 +133,11 @@ internal sealed class EfFinancialDocumentStore(
         return await ReadVerifiedAsync(existing, kind, fileName, cancellationToken);
     }
 
-    private Task<FinancialDocument?> FindAsync(long invoiceId, string kind,
+    /// <summary>One invoice document per invoice; one receipt per payment (an invoice may have several).</summary>
+    private Task<FinancialDocument?> FindAsync(long invoiceId, long? paymentId, string kind,
         CancellationToken cancellationToken) => context.FinancialDocuments.AsNoTracking()
-        .SingleOrDefaultAsync(item => item.InvoiceId == invoiceId && item.Kind == kind,
-            cancellationToken);
+        .SingleOrDefaultAsync(item => item.InvoiceId == invoiceId && item.Kind == kind &&
+            (paymentId == null ? item.PaymentId == null : item.PaymentId == paymentId), cancellationToken);
 
     private async Task<FinancialDocumentData> ReadVerifiedAsync(
         FinancialDocument row, string kind, string fileName,

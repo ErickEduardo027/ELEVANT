@@ -13,7 +13,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Finance;
 
-/// <summary>Records one full manual Development payment against one non-fiscal invoice.</summary>
+/// <summary>
+/// Records a manual payment against a non-fiscal invoice. Several partial payments
+/// may settle an invoice; together with credit notes they never exceed its total.
+/// </summary>
 internal sealed class EfNonFiscalPaymentStore(
     ElevantDbContext context, TimeProvider timeProvider) : INonFiscalPaymentStore
 {
@@ -110,13 +113,17 @@ internal sealed class EfNonFiscalPaymentStore(
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.NotFound);
         if (scope.Total <= 0)
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);
+        var settled = await context.NonFiscalPayments.AsNoTracking().Where(item => item.InvoiceId == scope.Id)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+        var credited = await context.NonFiscalCreditNotes.AsNoTracking().Where(item => item.InvoiceId == scope.Id)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+        var balance = scope.Total - settled - credited;
 
         var accountId = await context.Users.AsNoTracking()
             .Where(account => account.PublicId == command.AccountId)
             .Select(account => account.Id).SingleAsync(cancellationToken);
         var prior = await context.NonFiscalPayments.AsNoTracking()
-            .Where(item => item.InvoiceId == scope.Id || item.RequestId == command.RequestId ||
-                item.Reference == command.Reference)
+            .Where(item => item.RequestId == command.RequestId || item.Reference == command.Reference)
             .Select(item => new { item.PublicId, item.InvoiceId, item.RequestId,
                 item.RecordedByAccountId, item.Reference, item.Amount, item.CurrencyCode })
             .ToArrayAsync(cancellationToken);
@@ -125,20 +132,26 @@ internal sealed class EfNonFiscalPaymentStore(
             var exact = prior.Length == 1 && prior[0].InvoiceId == scope.Id &&
                 prior[0].RequestId == command.RequestId &&
                 prior[0].RecordedByAccountId == accountId &&
-                prior[0].Reference == command.Reference;
+                prior[0].Reference == command.Reference &&
+                (command.Amount is null || command.Amount == prior[0].Amount);
             return exact
                 ? RecordNonFiscalPaymentResult.Success(prior[0].PublicId,
                     prior[0].Reference, prior[0].Amount, prior[0].CurrencyCode, true)
                 : RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);
         }
 
+        var amount = command.Amount ?? balance;
+        if (balance <= 0 || amount <= 0 || amount > balance)
+            return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);
         var paymentId = Guid.CreateVersion7();
         context.NonFiscalPayments.Add(new NonFiscalPayment
         {
             PublicId = paymentId, InvoiceId = scope.Id,
             RecordedByAccountId = accountId, RequestId = command.RequestId,
             Reference = command.Reference, CurrencyCode = scope.CurrencyCode,
-            Amount = scope.Total, CreatedAt = now, UpdatedAt = now,
+            Amount = amount, Method = command.Method,
+            PaidOn = command.PaidOn ?? DateOnly.FromDateTime(now.UtcDateTime),
+            CreatedAt = now, UpdatedAt = now,
         });
         context.AuditEntries.Add(new AuditEntry
         {
@@ -150,7 +163,9 @@ internal sealed class EfNonFiscalPaymentStore(
             OrganizationId = scope.AirlineOrganizationId, StationId = scope.StationId,
             Source = AuditSource.Api, CorrelationId = command.RequestId,
             RequestId = command.RequestId.ToString("D"),
-            Reason = "Finance recorded a full manual Development payment; no external settlement was verified.",
+            Reason = amount == balance
+                ? "Finance recorded a manual payment settling the invoice; no external settlement was verified."
+                : "Finance recorded a partial manual payment; no external settlement was verified.",
         });
         await FinanceApprovedServiceChangeWriter.AddAsync(context,
             scope.StationId, scope.PreinvoicePublicId, now, "finance_preinvoices", cancellationToken);
@@ -158,7 +173,7 @@ internal sealed class EfNonFiscalPaymentStore(
             scope.AirlineOrganizationId, scope.PreinvoicePublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return RecordNonFiscalPaymentResult.Success(paymentId,
-            command.Reference, scope.Total, scope.CurrencyCode, false);
+            command.Reference, amount, scope.CurrencyCode, false);
     }
 
     private async Task<RecordNonFiscalPaymentResult> ReplayOrConflictAsync(

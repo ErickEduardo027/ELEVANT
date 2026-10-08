@@ -221,7 +221,8 @@ public sealed class AirlinePortalController(
             detail.Lines.Select(line => new AirlinePreinvoiceLineResponse(
                 line.Id, line.OperationCode, line.OperationDate,
                 line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
-                line.BillingUnit, line.UnitPrice, line.Amount)).ToArray()));
+                line.BillingUnit, line.UnitPrice, line.Amount, line.Kind, line.ParentLineId,
+                line.Reason)).ToArray()));
     }
 
     [HttpGet("preinvoices", Name = "GetAirlinePreinvoices")]

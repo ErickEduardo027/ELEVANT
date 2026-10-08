@@ -22,7 +22,8 @@ internal sealed class FinancialDocumentConfiguration : IEntityTypeConfiguration<
         builder.Property(item => item.ObjectKey).HasMaxLength(240).IsRequired();
         builder.Property(item => item.ContentType).HasMaxLength(32).IsRequired();
         builder.Property(item => item.Sha256).HasMaxLength(64).IsRequired();
-        builder.HasIndex(item => new { item.InvoiceId, item.Kind }).IsUnique();
+        builder.HasIndex(item => new { item.InvoiceId, item.Kind }).IsUnique()
+            .HasFilter("[kind] = 'Invoice'");
         builder.HasIndex(item => item.PaymentId).IsUnique()
             .HasFilter("[payment_id] IS NOT NULL");
         builder.HasIndex(item => item.ObjectKey).IsUnique();

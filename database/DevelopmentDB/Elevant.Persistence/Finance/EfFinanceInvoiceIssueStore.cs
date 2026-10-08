@@ -122,10 +122,13 @@ internal sealed class EfFinanceInvoiceIssueStore(
         if (scope.Status != PreinvoiceStatus.Accepted)
             return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
 
-        var lines = await context.PreinvoiceLines.AsNoTracking()
+        // Excluded lines stay on the preinvoice for traceability but are not invoiced.
+        var allLines = await context.PreinvoiceLines.AsNoTracking()
             .Where(line => line.PreinvoiceId == scope.Id)
             .OrderBy(line => line.LineNumber).ToArrayAsync(cancellationToken);
-        if (lines.Length is < 1 or > 100 || lines.Any(line => line.ReleasedAt is not null) ||
+        var lines = allLines.Where(line => !line.IsExcluded).ToArray();
+        var lineNumbers = allLines.ToDictionary(line => line.Id, line => line.LineNumber);
+        if (lines.Length is < 1 or > 500 || lines.Any(line => line.ReleasedAt is not null) ||
             lines.Select(line => line.LineNumber).Distinct().Count() != lines.Length ||
             lines.Any(line => line.CurrencyCode != scope.CurrencyCode) ||
             lines.Sum(line => line.Amount) != scope.Total)
@@ -139,6 +142,9 @@ internal sealed class EfFinanceInvoiceIssueStore(
         if (updated != 1)
             return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
 
+        var terms = await context.AirlineBillingProfiles.AsNoTracking()
+            .Where(profile => profile.AirlineId == scope.AirlineId)
+            .Select(profile => (int?)profile.PaymentTermDays).SingleOrDefaultAsync(cancellationToken) ?? 30;
         var invoiceId = Guid.CreateVersion7();
         var invoice = new NonFiscalInvoice
         {
@@ -146,6 +152,7 @@ internal sealed class EfFinanceInvoiceIssueStore(
             StationId = scope.StationId, IssuedByAccountId = accountId,
             RequestId = command.RequestId, Number = $"NF-{invoiceId:N}",
             CurrencyCode = scope.CurrencyCode, Total = scope.Total,
+            PaymentTermDays = terms, DueDate = DateOnly.FromDateTime(now.UtcDateTime).AddDays(terms),
             CreatedAt = now, UpdatedAt = now,
         };
         context.NonFiscalInvoices.Add(invoice);
@@ -159,7 +166,10 @@ internal sealed class EfFinanceInvoiceIssueStore(
                 ServiceCode = line.ServiceCode, ServiceName = line.ServiceName,
                 ExecutedQuantity = line.ExecutedQuantity, BillingUnit = line.BillingUnit,
                 UnitPrice = line.UnitPrice, CurrencyCode = line.CurrencyCode,
-                Amount = line.Amount, CreatedAt = now, UpdatedAt = now,
+                Amount = line.Amount, Kind = line.Kind,
+                ParentLineNumber = line.ParentLineId is { } parent ? lineNumbers[parent] : null,
+                Reason = line.Kind == Elevant.Domain.Enumerations.PreinvoiceLineKind.Service ? null : line.AdjustmentReason,
+                CreatedAt = now, UpdatedAt = now,
             });
         context.AuditEntries.Add(new AuditEntry
         {

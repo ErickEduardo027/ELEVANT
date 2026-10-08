@@ -11,7 +11,8 @@ public sealed record AirlinePreinvoicePageResponse(
 public sealed record AirlinePreinvoiceLineResponse(
     Guid Id, string OperationCode, DateOnly OperationDate,
     string ServiceCode, string ServiceName, decimal ExecutedQuantity,
-    string BillingUnit, decimal UnitPrice, decimal Amount);
+    string BillingUnit, decimal UnitPrice, decimal Amount,
+    string Kind, Guid? ParentLineId, string? Reason);
 
 public sealed record AirlinePreinvoiceDetailResponse(
     Guid Id, Guid StationId, string StationCode, DateOnly From, DateOnly To,
