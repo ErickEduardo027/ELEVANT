@@ -81,6 +81,8 @@ export {
   type StartRampOperationOptions,
   type SubmitRampOperationChecklistOptions,
   type TransitionRampOperationServiceOptions,
+  type GetRampOperationChargesOptions,
+  type ApplyRampServiceChargeOptions,
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
@@ -268,6 +270,12 @@ export {
   type RampOperationServiceResponse,
   type RampOperationServiceExecutionResponse,
   type RampOperationServiceTransitionResponse,
+  type RampOperationChargesResponse,
+  type RampServiceChargesResponse,
+  type RampServiceChargeCommandResponse,
+  type RampChargeOptionResponse,
+  type RampAppliedChargeResponse,
+  type ApplyRampServiceChargeRequest,
   type RampOperationStartResponse,
   type RampStandResponse,
   type RampStationResponse,

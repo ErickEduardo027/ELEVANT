@@ -86,6 +86,8 @@ import {
   getStartRampOperationUrl,
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
+  getGetRampOperationChargesUrl,
+  getApplyRampServiceChargeUrl,
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
@@ -203,6 +205,10 @@ import {
   type ReportRampIncidentRequest,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
+  type RampOperationChargesResponse,
+  type RampServiceChargesResponse,
+  type RampServiceChargeCommandResponse,
+  type ApplyRampServiceChargeRequest,
   type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
   type RegisterMobileDeviceRequest,
@@ -361,6 +367,8 @@ export type TransitionRampOperationServiceOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetRampOperationChargesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ApplyRampServiceChargeOptions = Omit<ElevantRequestInit, "body" | "method">;
 
 export interface OccPlanningOptionsWithMetadata {
   readonly options: OccPlanningOptionsResponse;
@@ -744,6 +752,18 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: TransitionRampOperationServiceOptions,
   ): Promise<RampOperationServiceTransitionResponse>;
+  getRampOperationCharges(
+    operationId: string,
+    options?: GetRampOperationChargesOptions,
+  ): Promise<RampOperationChargesResponse>;
+  applyRampServiceCharge(
+    operationId: string,
+    serviceId: string,
+    request: ApplyRampServiceChargeRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ApplyRampServiceChargeOptions,
+  ): Promise<RampServiceChargeCommandResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -1685,6 +1705,69 @@ function isRampOperationServiceTransitionResponse(
     isFiniteNumber(value.service.executedQuantity) &&
     value.service.executedQuantity >= 0 &&
     isString(value.service.billingUnit)
+  );
+}
+
+function isRampChargeName(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+}
+
+function isRampServiceChargesResponse(value: unknown): value is RampServiceChargesResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["serviceId", "canEdit", "available", "applied"]) &&
+    isUuid(value.serviceId) &&
+    typeof value.canEdit === "boolean" &&
+    Array.isArray(value.available) &&
+    value.available.length <= 200 &&
+    value.available.every(option =>
+      isRecord(option) &&
+      hasOnlyKeys(option, ["id", "code", "name", "description", "category", "allowMultiple"]) &&
+      isUuid(option.id) &&
+      isRampChargeName(option.code, 32) &&
+      isRampChargeName(option.name, 120) &&
+      (option.description === undefined || option.description === null ||
+        (typeof option.description === "string" && option.description.length <= 500)) &&
+      isRampChargeName(option.category, 32) &&
+      typeof option.allowMultiple === "boolean") &&
+    Array.isArray(value.applied) &&
+    value.applied.length <= 200 &&
+    value.applied.every(applied =>
+      isRecord(applied) &&
+      hasOnlyKeys(applied, ["id", "chargeId", "code", "name", "appliedAt"]) &&
+      isUuid(applied.id) &&
+      isUuid(applied.chargeId) &&
+      isRampChargeName(applied.code, 32) &&
+      isRampChargeName(applied.name, 120) &&
+      isDateTimeOffset(applied.appliedAt))
+  );
+}
+
+function isRampOperationChargesResponse(
+  value: unknown,
+  operationId: string,
+): value is RampOperationChargesResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "services"]) &&
+    isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    Array.isArray(value.services) &&
+    value.services.length <= 100 &&
+    value.services.every(isRampServiceChargesResponse)
+  );
+}
+
+function isRampServiceChargeCommandResponse(
+  value: unknown,
+  serviceId: string,
+): value is RampServiceChargeCommandResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "service"]) &&
+    isUuid(value.receiptId) &&
+    isRampServiceChargesResponse(value.service) &&
+    value.service.serviceId.toLowerCase() === serviceId
   );
 }
 
@@ -5289,6 +5372,60 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           transition.targetStatus,
         )
       ) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getRampOperationCharges(
+      operationId: string,
+      options?: GetRampOperationChargesOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetRampOperationChargesUrl(operation),
+        { ...options, method: "GET" },
+        true,
+      );
+      if (!isRampOperationChargesResponse(result.data, operation)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async applyRampServiceCharge(
+      operationId: string,
+      serviceId: string,
+      request: ApplyRampServiceChargeRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: ApplyRampServiceChargeOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const service = validatedUuid(serviceId, "serviceId");
+      if (
+        !isRecord(request) ||
+        !hasOnlyKeys(request, ["chargeId", "action"]) ||
+        (request.action !== "Apply" && request.action !== "Remove")
+      ) {
+        throw new TypeError("Ramp service charge request is invalid.");
+      }
+      const charge = validatedUuid(request.chargeId, "chargeId");
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getApplyRampServiceChargeUrl(operation, service),
+        {
+          ...options,
+          method: "POST",
+          headers,
+          body: JSON.stringify({ chargeId: charge, action: request.action }),
+        },
+        true,
+      );
+      if (!isRampServiceChargeCommandResponse(result.data, service)) {
         throw malformedResponse(result.status);
       }
       return result.data;
