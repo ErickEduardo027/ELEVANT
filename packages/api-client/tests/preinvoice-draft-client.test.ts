@@ -18,7 +18,19 @@ const detail: PreinvoiceDraftResponse = {
     approvedSubmissionId: "70000000-0000-7000-8000-000000000008",
     lineNumber: 1, operationCode: "DEV-TAT-0002", operationDate: request.from,
     serviceCode: "GPU", serviceName: "GPU", executedQuantity: 1,
-    billingUnit: "hour", unitPrice: 10, currencyCode: "USD", amount: 10 }],
+    billingUnit: "hour", unitPrice: 10, currencyCode: "USD", amount: 10,
+    kind: "Service", isExcluded: false },
+  { id: "60000000-0000-7000-8000-000000000009", operationServiceId: serviceId,
+    approvedSubmissionId: "70000000-0000-7000-8000-000000000008", lineNumber: 2,
+    operationCode: "DEV-TAT-0002", operationDate: request.from, serviceCode: "OVERTIME",
+    serviceName: "Tiempo extra", executedQuantity: 0, billingUnit: "hour", unitPrice: 0,
+    currencyCode: "USD", amount: 0, kind: "Charge", parentLineId: "60000000-0000-7000-8000-000000000007",
+    computedQuantity: 0, computedAmount: 0, isExcluded: false },
+  { id: "60000000-0000-7000-8000-00000000000a", operationServiceId: null, approvedSubmissionId: null,
+    lineNumber: 3, operationCode: "AJUSTE", operationDate: request.to, serviceCode: "AJUSTE",
+    serviceName: "Descuento", executedQuantity: 1, billingUnit: "unit", unitPrice: 2, currencyCode: "USD",
+    amount: -2, kind: "Adjustment", isExcluded: false, adjustmentReason: "Compensación" }],
+  version: "AAAAAAAAB9E=",
 };
 
 describe("preinvoice draft client", () => {

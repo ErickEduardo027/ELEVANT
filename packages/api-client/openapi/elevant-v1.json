@@ -4765,20 +4765,52 @@
         ]
       }
     },
-    "/api/v1/finance/invoices/by-preinvoice/{preinvoiceId}": {
+    "/api/v1/finance/invoices": {
       "get": {
         "tags": [
-          "FinanceInvoices"
+          "FinanceInvoiceLedger"
         ],
-        "operationId": "GetFinanceInvoiceByPreinvoice",
+        "operationId": "ListFinanceInvoices",
         "parameters": [
           {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
+            "name": "stationId",
+            "in": "query",
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
             }
           }
         ],
@@ -4788,27 +4820,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NonFiscalInvoiceResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
+                  "$ref": "#/components/schemas/FinanceInvoicePageData"
                 }
               }
             }
@@ -4819,9 +4831,7 @@
             "Bearer": []
           }
         ]
-      }
-    },
-    "/api/v1/finance/invoices": {
+      },
       "post": {
         "tags": [
           "FinanceInvoices"
@@ -4903,6 +4913,205 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoices/{invoiceId}": {
+      "get": {
+        "tags": [
+          "FinanceInvoiceLedger"
+        ],
+        "operationId": "GetFinanceInvoice",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceInvoiceDetailData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoices/{invoiceId}/credit-notes": {
+      "post": {
+        "tags": [
+          "FinanceInvoiceLedger"
+        ],
+        "operationId": "IssueFinanceCreditNote",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/IssueCreditNoteInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/IssueCreditNoteInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/IssueCreditNoteInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoices/by-preinvoice/{preinvoiceId}": {
+      "get": {
+        "tags": [
+          "FinanceInvoices"
+        ],
+        "operationId": "GetFinanceInvoiceByPreinvoice",
+        "parameters": [
+          {
+            "name": "preinvoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NonFiscalInvoiceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5057,6 +5266,209 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/preinvoices/{preinvoiceId}/lines/{lineId}": {
+      "put": {
+        "tags": [
+          "FinancePreinvoiceLines"
+        ],
+        "operationId": "EditFinancePreinvoiceLine",
+        "parameters": [
+          {
+            "name": "preinvoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "lineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/preinvoices/{preinvoiceId}/adjustments": {
+      "post": {
+        "tags": [
+          "FinancePreinvoiceLines"
+        ],
+        "operationId": "AddFinancePreinvoiceAdjustment",
+        "parameters": [
+          {
+            "name": "preinvoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5345,6 +5757,1466 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/reports": {
+      "get": {
+        "tags": [
+          "FinanceReports"
+        ],
+        "operationId": "ListFinanceReports",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FinanceReportDefinition"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/reports/{reportKey}": {
+      "get": {
+        "tags": [
+          "FinanceReports"
+        ],
+        "operationId": "GetFinanceReport",
+        "parameters": [
+          {
+            "name": "reportKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceReportData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/reports/{reportKey}/export": {
+      "get": {
+        "tags": [
+          "FinanceReports"
+        ],
+        "summary": "Exports a report as CSV (UTF-8 with BOM) or PDF; every export is audited.",
+        "operationId": "ExportFinanceReport",
+        "parameters": [
+          {
+            "name": "reportKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/billing-units": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceBillingUnits",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BillingUnitData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "CreateFinanceBillingUnit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/billing-units/{id}": {
+      "put": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "UpdateFinanceBillingUnit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveBillingUnitInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/service-tariffs": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceServiceTariffs",
+        "parameters": [
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TariffVersionSummaryData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "CreateFinanceServiceTariffDraft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/service-tariffs/{id}": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "GetFinanceServiceTariff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTariffVersionData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "SaveFinanceServiceTariffDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveServiceTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveServiceTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveServiceTariffDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "DeleteFinanceServiceTariffDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/service-tariffs/{id}/publish": {
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "PublishFinanceServiceTariff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charges": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceCharges",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChargeDefinitionData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "CreateFinanceCharge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charges/{id}": {
+      "put": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "UpdateFinanceCharge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeDefinitionInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charge-tariffs": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceChargeTariffs",
+        "parameters": [
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TariffVersionSummaryData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "CreateFinanceChargeTariffDraft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTariffDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charge-tariffs/{id}": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "GetFinanceChargeTariff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargeTariffVersionData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "SaveFinanceChargeTariffDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeTariffDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SaveChargeTariffDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "DeleteFinanceChargeTariffDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charge-tariffs/{id}/publish": {
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "PublishFinanceChargeTariff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinanceExpectedVersionInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/exchange-rates": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceExchangeRates",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "includeHistory",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeRateData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "RecordFinanceExchangeRate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordExchangeRateInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordExchangeRateInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordExchangeRateInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/exchange-rates/{id}/correction": {
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "CorrectFinanceExchangeRate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CorrectExchangeRateInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CorrectExchangeRateInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CorrectExchangeRateInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/contract-approvals": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceContractApprovals",
+        "parameters": [
+          {
+            "name": "pendingOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContractApprovalSummaryData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/contract-approvals/{versionId}": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "GetFinanceContractApproval",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractApprovalDetailData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/contract-approvals/{versionId}/decision": {
+      "post": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "DecideFinanceContractApproval",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideContractApprovalInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideContractApprovalInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DecideContractApprovalInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceIdResponse"
                 }
               }
             }
@@ -11541,6 +13413,210 @@
         ]
       }
     },
+    "/api/v1/ramp/operations/{operationId}/charges": {
+      "get": {
+        "tags": [
+          "RampServiceCharges"
+        ],
+        "summary": "Charges the agent may mark on each service, and the ones already marked. Never includes prices.",
+        "operationId": "GetRampOperationCharges",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampOperationChargesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/services/{serviceId}/charges": {
+      "post": {
+        "tags": [
+          "RampServiceCharges"
+        ],
+        "summary": "Marks (Apply) or unmarks (Remove) one charge on a service; idempotent per device and key.",
+        "operationId": "ApplyRampServiceCharge",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ApplyRampServiceChargeRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampServiceChargeCommandResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/service-closures": {
       "get": {
         "tags": [
@@ -12107,6 +14183,36 @@
           "occurredAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AddPreinvoiceAdjustmentInput": {
+        "required": [
+          "amount",
+          "description",
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "parentLineId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -12753,6 +14859,7 @@
           "billingUnit",
           "executedQuantity",
           "id",
+          "kind",
           "operationCode",
           "operationDate",
           "serviceCode",
@@ -12792,6 +14899,18 @@
           "amount": {
             "type": "number",
             "format": "double"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parentLineId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -12871,6 +14990,23 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyRampServiceChargeRequest": {
+        "required": [
+          "action",
+          "chargeId"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -13089,6 +15225,40 @@
         },
         "additionalProperties": false
       },
+      "BillingUnitData": {
+        "required": [
+          "code",
+          "id",
+          "isActive",
+          "name",
+          "quantityScale",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantityScale": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CatalogMutationFailure": {
         "enum": [
           0,
@@ -13124,6 +15294,166 @@
             "minLength": 14,
             "type": "string",
             "format": "password"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChargeDefinitionData": {
+        "required": [
+          "allowMultiple",
+          "appliesToAllServices",
+          "category",
+          "code",
+          "graceMinutes",
+          "id",
+          "isActive",
+          "method",
+          "name",
+          "quantityRule",
+          "roundingIncrement",
+          "serviceIds",
+          "version",
+          "visibleToAgents"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "quantityRule": {
+            "type": "string"
+          },
+          "graceMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "roundingIncrement": {
+            "type": "number",
+            "format": "double"
+          },
+          "appliesToAllServices": {
+            "type": "boolean"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "allowMultiple": {
+            "type": "boolean"
+          },
+          "visibleToAgents": {
+            "type": "boolean"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "billingUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChargeRateData": {
+        "required": [
+          "chargeCode",
+          "chargeId",
+          "chargeName",
+          "method",
+          "minimumAmount",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chargeCode": {
+            "type": "string"
+          },
+          "chargeName": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumAmount": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChargeRateInput": {
+        "required": [
+          "chargeId",
+          "minimumAmount",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumAmount": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChargeTariffVersionData": {
+        "required": [
+          "rates",
+          "summary"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TariffVersionSummaryData"
+              }
+            ]
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChargeRateData"
+            }
           }
         },
         "additionalProperties": false
@@ -13396,6 +15726,195 @@
         },
         "additionalProperties": false
       },
+      "ContractApprovalDetailData": {
+        "required": [
+          "charges",
+          "history",
+          "rates",
+          "stations",
+          "summary"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContractApprovalSummaryData"
+              }
+            ]
+          },
+          "terms": {
+            "type": "string",
+            "nullable": true
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractRateComparisonData"
+            }
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractChargeComparisonData"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractFinanceReviewData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractApprovalSummaryData": {
+        "required": [
+          "airline",
+          "contractCode",
+          "contractId",
+          "currencyCode",
+          "ratesBelowBase",
+          "ratesWithoutBase",
+          "status",
+          "submittedAt",
+          "validFrom",
+          "version",
+          "versionId"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractCode": {
+            "type": "string"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ratesBelowBase": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ratesWithoutBase": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractChargeComparisonData": {
+        "required": [
+          "chargeCode",
+          "chargeId",
+          "chargeName",
+          "isExcluded",
+          "method"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chargeCode": {
+            "type": "string"
+          },
+          "chargeName": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "isExcluded": {
+            "type": "boolean"
+          },
+          "contractValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "baseValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftChargeData": {
+        "required": [
+          "chargeId",
+          "code",
+          "isExcluded",
+          "method",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "baseValue": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "isExcluded": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ContractDraftCommentData": {
         "required": [
           "at",
@@ -13449,7 +15968,8 @@
           "rates",
           "stations",
           "status",
-          "validFrom"
+          "validFrom",
+          "versionStatus"
         ],
         "type": "object",
         "properties": {
@@ -13503,6 +16023,24 @@
             "items": {
               "$ref": "#/components/schemas/ContractDraftCommentData"
             }
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "financeDecision": {
+            "type": "string",
+            "nullable": true
+          },
+          "financeReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftChargeData"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -13579,6 +16117,112 @@
           },
           "isConfirmed": {
             "type": "boolean"
+          },
+          "basePrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "baseMinimum": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractFinanceReviewData": {
+        "required": [
+          "decidedAt",
+          "decidedBy",
+          "decision"
+        ],
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractRateComparisonData": {
+        "required": [
+          "billingUnit",
+          "contractMinimum",
+          "contractPrice",
+          "rateId",
+          "serviceCode",
+          "serviceName"
+        ],
+        "type": "object",
+        "properties": {
+          "rateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "contractPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "contractMinimum": {
+            "type": "number",
+            "format": "double"
+          },
+          "basePrice": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "baseMinimum": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "differencePercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CorrectExchangeRateInput": {
+        "required": [
+          "expectedVersion",
+          "rate",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "rate": {
+            "type": "number",
+            "format": "double"
+          },
+          "source": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -13870,6 +16514,32 @@
         },
         "additionalProperties": false
       },
+      "CreateTariffDraftInput": {
+        "required": [
+          "currencyCode",
+          "validFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "copyFromVersionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CurrentSessionResponse": {
         "required": [
           "actor"
@@ -13882,6 +16552,26 @@
                 "$ref": "#/components/schemas/SessionActorResponse"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecideContractApprovalInput": {
+        "required": [
+          "decision",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -14284,6 +16974,88 @@
         },
         "additionalProperties": false
       },
+      "EditPreinvoiceLineInput": {
+        "required": [
+          "exclude",
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "exclude": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExchangeRateData": {
+        "required": [
+          "fromCurrency",
+          "id",
+          "isCurrent",
+          "rate",
+          "rateDate",
+          "recordedAt",
+          "recordedBy",
+          "source",
+          "toCurrency",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rateDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fromCurrency": {
+            "type": "string"
+          },
+          "toCurrency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number",
+            "format": "double"
+          },
+          "source": {
+            "type": "string"
+          },
+          "recordedBy": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "supersedesId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ExpectedVersionInput": {
         "required": [
           "expectedVersion"
@@ -14433,6 +17205,317 @@
           },
           "hasMore": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceCreditNoteData": {
+        "required": [
+          "amount",
+          "id",
+          "issuedAt",
+          "issuedBy",
+          "number",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "issuedBy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceExpectedVersionInput": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceIdResponse": {
+        "required": [
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceInvoiceDetailData": {
+        "required": [
+          "creditNotes",
+          "lines",
+          "payments",
+          "summary"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FinanceInvoiceSummaryData"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceInvoiceLineData"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinancePaymentData"
+            }
+          },
+          "creditNotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceCreditNoteData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceInvoiceLineData": {
+        "required": [
+          "amount",
+          "billingUnit",
+          "kind",
+          "lineNumber",
+          "operationCode",
+          "operationDate",
+          "quantity",
+          "serviceCode",
+          "serviceName",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "lineNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parentLineNumber": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceInvoicePageData": {
+        "required": [
+          "hasMore",
+          "invoices",
+          "limit",
+          "page"
+        ],
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceInvoiceSummaryData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceInvoiceSummaryData": {
+        "required": [
+          "airline",
+          "airlineId",
+          "balance",
+          "credited",
+          "currencyCode",
+          "daysOverdue",
+          "id",
+          "issuedAt",
+          "number",
+          "paid",
+          "preinvoiceId",
+          "stationCode",
+          "stationId",
+          "status",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "preinvoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number",
+            "format": "double"
+          },
+          "paid": {
+            "type": "number",
+            "format": "double"
+          },
+          "credited": {
+            "type": "number",
+            "format": "double"
+          },
+          "balance": {
+            "type": "number",
+            "format": "double"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "daysOverdue": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePaymentData": {
+        "required": [
+          "amount",
+          "id",
+          "method",
+          "recordedAt",
+          "recordedBy",
+          "reference"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "paidOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recordedBy": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -14639,6 +17722,135 @@
             "items": {
               "$ref": "#/components/schemas/FinanceReconciliationData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceReportColumn": {
+        "required": [
+          "key",
+          "label",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceReportData": {
+        "required": [
+          "columns",
+          "description",
+          "from",
+          "key",
+          "notes",
+          "rows",
+          "summary",
+          "title",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "consolidationCurrency": {
+            "type": "string",
+            "nullable": true
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceReportMetric"
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceReportColumn"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceReportDefinition": {
+        "required": [
+          "description",
+          "key",
+          "title"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceReportMetric": {
+        "required": [
+          "label",
+          "type",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -16318,6 +19530,28 @@
           "validity": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "IssueCreditNoteInput": {
+        "required": [
+          "amount",
+          "reason",
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -18603,15 +21837,15 @@
       "PreinvoiceDraftLineResponse": {
         "required": [
           "amount",
-          "approvedSubmissionId",
           "billingUnit",
           "currencyCode",
           "executedQuantity",
           "id",
+          "isExcluded",
+          "kind",
           "lineNumber",
           "operationCode",
           "operationDate",
-          "operationServiceId",
           "serviceCode",
           "serviceName",
           "unitPrice"
@@ -18624,11 +21858,13 @@
           },
           "operationServiceId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "approvedSubmissionId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "lineNumber": {
             "type": "integer",
@@ -18664,6 +21900,36 @@
           "amount": {
             "type": "number",
             "format": "double"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parentLineId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "computedQuantity": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "computedAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "isExcluded": {
+            "type": "boolean"
+          },
+          "adjustmentReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -18721,6 +21987,10 @@
             "items": {
               "$ref": "#/components/schemas/PreinvoiceDraftLineResponse"
             }
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -19071,6 +22341,37 @@
         },
         "additionalProperties": false
       },
+      "RampAppliedChargeResponse": {
+        "required": [
+          "appliedAt",
+          "chargeId",
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "appliedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "RampAssignedOperationResponse": {
         "required": [
           "assignment",
@@ -19129,6 +22430,39 @@
             "items": {
               "$ref": "#/components/schemas/RampAssignedOperationResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampChargeOptionResponse": {
+        "required": [
+          "allowMultiple",
+          "category",
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string"
+          },
+          "allowMultiple": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -19575,6 +22909,26 @@
         },
         "additionalProperties": false
       },
+      "RampOperationChargesResponse": {
+        "required": [
+          "operationId",
+          "services"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampServiceChargesResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "RampOperationCorrectionResponse": {
         "required": [
           "checklistId",
@@ -19992,6 +23346,58 @@
         },
         "additionalProperties": false
       },
+      "RampServiceChargeCommandResponse": {
+        "required": [
+          "receiptId",
+          "service"
+        ],
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "service": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RampServiceChargesResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampServiceChargesResponse": {
+        "required": [
+          "applied",
+          "available",
+          "canEdit",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampChargeOptionResponse"
+            }
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAppliedChargeResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "RampStandResponse": {
         "required": [
           "code",
@@ -20133,6 +23539,36 @@
               }
             ],
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecordExchangeRateInput": {
+        "required": [
+          "fromCurrency",
+          "rate",
+          "rateDate",
+          "source",
+          "toCurrency"
+        ],
+        "type": "object",
+        "properties": {
+          "rateDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fromCurrency": {
+            "type": "string"
+          },
+          "toCurrency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number",
+            "format": "double"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -20314,6 +23750,20 @@
           },
           "reference": {
             "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "method": {
+            "type": "string",
+            "nullable": true
+          },
+          "paidOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -20714,6 +24164,142 @@
         },
         "additionalProperties": false
       },
+      "SaveBillingUnitInput": {
+        "required": [
+          "code",
+          "isActive",
+          "name",
+          "quantityScale"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantityScale": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SaveChargeDefinitionInput": {
+        "required": [
+          "allowMultiple",
+          "appliesToAllServices",
+          "category",
+          "code",
+          "graceMinutes",
+          "isActive",
+          "method",
+          "name",
+          "quantityRule",
+          "roundingIncrement",
+          "visibleToAgents"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "quantityRule": {
+            "type": "string"
+          },
+          "graceMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "roundingIncrement": {
+            "type": "number",
+            "format": "double"
+          },
+          "appliesToAllServices": {
+            "type": "boolean"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
+          },
+          "allowMultiple": {
+            "type": "boolean"
+          },
+          "visibleToAgents": {
+            "type": "boolean"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "billingUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SaveChargeTariffDraftInput": {
+        "required": [
+          "expectedVersion",
+          "rates",
+          "validFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChargeRateInput"
+            }
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "SaveGovernanceRoleInput": {
         "required": [
           "isActive",
@@ -20798,6 +24384,39 @@
               }
             ],
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SaveServiceTariffDraftInput": {
+        "required": [
+          "expectedVersion",
+          "rates",
+          "validFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceTariffRateInput"
+            }
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -20916,6 +24535,105 @@
             "items": {
               "type": "string",
               "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceTariffRateData": {
+        "required": [
+          "billingUnit",
+          "minimumBillableQuantity",
+          "serviceCode",
+          "serviceId",
+          "serviceName",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumBillableQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceTariffRateInput": {
+        "required": [
+          "billingUnit",
+          "minimumBillableQuantity",
+          "serviceId",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumBillableQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceTariffVersionData": {
+        "required": [
+          "rates",
+          "summary"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TariffVersionSummaryData"
+              }
+            ]
+          },
+          "rates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceTariffRateData"
             }
           }
         },
@@ -21316,6 +25034,59 @@
         },
         "additionalProperties": false
       },
+      "TariffVersionSummaryData": {
+        "required": [
+          "currencyCode",
+          "id",
+          "rateCount",
+          "status",
+          "validFrom",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "publishedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "rateCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "TransitionRampOperationServiceRequest": {
         "required": [
           "targetStatus"
@@ -21370,6 +25141,13 @@
             "items": {
               "$ref": "#/components/schemas/UpdateDraftRateInput"
             }
+          },
+          "chargeRates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UpdateDraftChargeInput"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -21417,6 +25195,28 @@
             "items": {
               "type": "string"
             },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateDraftChargeInput": {
+        "required": [
+          "chargeId",
+          "isExcluded"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isExcluded": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
             "nullable": true
           }
         },
@@ -21613,10 +25413,16 @@
       "name": "FinanceFinancialDocuments"
     },
     {
+      "name": "FinanceInvoiceLedger"
+    },
+    {
       "name": "FinanceInvoices"
     },
     {
       "name": "FinancePayments"
+    },
+    {
+      "name": "FinancePreinvoiceLines"
     },
     {
       "name": "FinancePreinvoiceList"
@@ -21626,6 +25432,12 @@
     },
     {
       "name": "FinanceReconciliation"
+    },
+    {
+      "name": "FinanceReports"
+    },
+    {
+      "name": "FinanceTariffBook"
     },
     {
       "name": "FinanceTariffs"
@@ -21698,6 +25510,9 @@
     },
     {
       "name": "RampProfiles"
+    },
+    {
+      "name": "RampServiceCharges"
     },
     {
       "name": "ServiceClosures"

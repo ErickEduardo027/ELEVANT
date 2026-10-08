@@ -2372,7 +2372,7 @@ function isAirlinePreinvoicePageResponse(
 function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePreinvoiceDetailResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "stationId", "stationCode",
       "from", "to", "currencyCode", "total", "status", "createdAt", "lines"]) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
     return false;
   const { lines, ...header } = value;
   if (!isAirlinePreinvoicePageResponse({ page: 1, limit: 1, hasMore: false,
@@ -2383,13 +2383,15 @@ function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePrei
   const validLines = lines.every(line => {
     if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
         "serviceCode", "serviceName", "executedQuantity", "billingUnit",
-        "unitPrice", "amount"]) || !isUuid(line.id) || ids.has(line.id) ||
+        "unitPrice", "amount", "kind", "parentLineId", "reason"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
         !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
         line.operationDate < periodFrom || line.operationDate > periodTo ||
         !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
-        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
-        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0) return false;
+        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
+        !isOptionalNullable(line.parentLineId, isUuid) || (kind === "Charge" && !isUuid(line.parentLineId)) ||
+        !isOptionalNullable(line.reason, isString)) return false;
     ids.add(line.id);
     return true;
   });
@@ -2461,20 +2463,24 @@ function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
       typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
       !isFiniteNumber(value.total) || value.total < 0 ||
       !isDateTimeOffset(value.issuedAt) || !Array.isArray(value.lines) ||
-      value.lines.length < 1 || value.lines.length > 100) return false;
+      value.lines.length < 1 || value.lines.length > 500) return false;
   const ids = new Set<string>();
+  let previousNumber = 0;
   for (let index = 0; index < value.lines.length; index++) {
     const line = value.lines[index];
     if (!isRecord(line) || !hasOnlyKeys(line,
         ["id", "lineNumber", "operationCode", "operationDate", "serviceCode",
-          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount"]) ||
-        !isUuid(line.id) || ids.has(line.id) || line.lineNumber !== index + 1 ||
+          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount", "kind", "parentLineNumber",
+          "reason"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
+        !isInt32(line.lineNumber) || line.lineNumber <= previousNumber ||
         !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
         !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
-        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
-        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0)
+        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
+        !isOptionalNullable(line.parentLineNumber, isInt32) || !isOptionalNullable(line.reason, isString))
       return false;
+    previousNumber = line.lineNumber;
     ids.add(line.id);
   }
   // SQL validates decimal(19,4) snapshots at issuance. Re-adding parsed JSON
@@ -3159,30 +3165,50 @@ function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceRe
     typeof value.replayed === "boolean";
 }
 
+const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment"];
+
+/**
+ * Service lines bill a positive executed quantity; charges may bill zero (inside a
+ * grace period) and adjustments may be negative discounts.
+ */
+function isPricedLineAmounts(line: Record<string, unknown>, kind: string): boolean {
+  return isFiniteNumber(line.executedQuantity) &&
+    (kind === "Service" ? line.executedQuantity > 0 : line.executedQuantity >= 0) &&
+    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
+    isFiniteNumber(line.amount) && (kind === "Adjustment" || line.amount >= 0);
+}
+
 function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
-      "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
+      "stationId", "from", "to", "currencyCode", "total", "status", "lines", "version"]) ||
+      (value.version !== undefined && value.version !== null && !isNonEmptyString(value.version)) ||
       !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
       !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
       !isDateOnly(value.to) || value.to < value.from ||
       typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
       !isFiniteNumber(value.total) || value.total < 0 ||
       !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
     return false;
-  const validLines = value.lines.every((line, index) => isRecord(line) &&
-    hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
-      "operationCode", "operationDate", "serviceCode", "serviceName",
-      "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
-    isUuid(line.id) && isUuid(line.operationServiceId) && isUuid(line.approvedSubmissionId) &&
-    line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
-    isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
-    String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
-    isNonEmptyString(line.serviceName) && isFiniteNumber(line.executedQuantity) &&
-    line.executedQuantity > 0 && isNonEmptyString(line.billingUnit) &&
-    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
-    line.currencyCode === value.currencyCode &&
-    isFiniteNumber(line.amount) && line.amount >= 0);
+  const validLines = value.lines.every((line, index) => {
+    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
+        "operationCode", "operationDate", "serviceCode", "serviceName",
+        "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount", "kind", "parentLineId",
+        "computedQuantity", "computedAmount", "isExcluded", "adjustmentReason", "editedAt"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    return PRICED_LINE_KINDS.includes(kind) && isUuid(line.id) &&
+      (kind === "Adjustment" ? isOptionalNullable(line.operationServiceId, isUuid) : isUuid(line.operationServiceId)) &&
+      (kind === "Adjustment" ? isOptionalNullable(line.approvedSubmissionId, isUuid) : isUuid(line.approvedSubmissionId)) &&
+      isOptionalNullable(line.parentLineId, isUuid) && (kind !== "Charge" || isUuid(line.parentLineId)) &&
+      line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
+      isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
+      String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
+      isNonEmptyString(line.serviceName) && isNonEmptyString(line.billingUnit) &&
+      line.currencyCode === value.currencyCode && isPricedLineAmounts(line, kind) &&
+      isOptionalNullable(line.computedQuantity, isFiniteNumber) && isOptionalNullable(line.computedAmount, isFiniteNumber) &&
+      (line.isExcluded === undefined || typeof line.isExcluded === "boolean") &&
+      isOptionalNullable(line.adjustmentReason, isString) && isOptionalNullable(line.editedAt, isDateTimeOffset);
+  });
   return validLines;
 }
 
