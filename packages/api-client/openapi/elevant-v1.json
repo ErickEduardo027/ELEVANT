@@ -6015,6 +6015,34 @@
         ]
       }
     },
+    "/api/v1/finance/services": {
+      "get": {
+        "tags": [
+          "FinanceTariffBook"
+        ],
+        "operationId": "ListFinanceServiceOptions",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FinanceServiceOptionData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/billing-units": {
       "get": {
         "tags": [
@@ -17851,6 +17879,35 @@
           "currencyCode": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceServiceOptionData": {
+        "required": [
+          "code",
+          "defaultBillingUnit",
+          "id",
+          "isActive",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "defaultBillingUnit": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

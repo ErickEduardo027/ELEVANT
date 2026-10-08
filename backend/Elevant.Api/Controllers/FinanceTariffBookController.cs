@@ -19,6 +19,11 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/finance")]
 public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) : ControllerBase
 {
+    [HttpGet("services", Name = "ListFinanceServiceOptions")]
+    [ProducesResponseType<FinanceServiceOptionData[]>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> Services(CancellationToken cancellationToken) =>
+        ReadAsync(actor => store.ListServicesAsync(actor, cancellationToken));
+
     [HttpGet("billing-units", Name = "ListFinanceBillingUnits")]
     [ProducesResponseType<BillingUnitData[]>(StatusCodes.Status200OK, "application/json")]
     public Task<IActionResult> BillingUnits(CancellationToken cancellationToken) =>

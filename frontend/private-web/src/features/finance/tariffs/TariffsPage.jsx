@@ -8,7 +8,7 @@ function date(value) {
   return value ?? 'Sin vencimiento';
 }
 
-export default function TariffsPage({ initialStationId }) {
+export default function TariffsPage({ initialStationId, embedded = false }) {
   const session = useMemo(() => readSession(), []);
   const stations = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode), [session]);
@@ -60,7 +60,7 @@ export default function TariffsPage({ initialStationId }) {
 
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4">
-      <div>
+      <div hidden={embedded}>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
         <h1 className="mt-1 text-2xl font-bold">Tarifas contractuales</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">

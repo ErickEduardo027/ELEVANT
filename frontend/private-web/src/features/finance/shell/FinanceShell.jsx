@@ -7,10 +7,13 @@ import FinanceHomePage from '../home/FinanceHomePage';
 import { useFinanceHomeData } from '../home/useFinanceHomeData';
 import ApprovedServicesPage from '../approved-services/ApprovedServicesPage';
 import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
-import ReconciliationPage from '../reconciliation/ReconciliationPage';
-import TariffsPage from '../tariffs/TariffsPage';
+import InvoicesPage from '../invoices/InvoicesPage';
+import ServiceTariffsPage from '../tariffs/ServiceTariffsPage';
+import ChargesPage from '../charges/ChargesPage';
+import ExchangeRatesPage from '../exchange-rates/ExchangeRatesPage';
+import ContractApprovalsPage from '../contract-approvals/ContractApprovalsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
-import { FINANCE_MODULES, FINANCE_MODULE_IDS } from './modules';
+import { FINANCE_MODULE_IDS, financeNavigation, selectableModules } from './modules';
 import { allowedNavigation, useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import NoModulesNotice from '../../access/NoModulesNotice';
 import DepartmentUsersPage from '../../department-users/DepartmentUsersPage';
@@ -25,7 +28,8 @@ function stationSnapshot() {
 
 export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const { access } = useDepartmentAccess();
-  const modules = useMemo(() => allowedNavigation(FINANCE_MODULES, access), [access]);
+  const navigation = useMemo(() => financeNavigation(item => allowedNavigation([item], access).length > 0), [access]);
+  const modules = useMemo(() => selectableModules(navigation), [navigation]);
   const [activeModuleId, setActiveModuleId] = useState(FINANCE_MODULE_IDS.HOME);
   const activeModule = modules.find(module => module.id === activeModuleId) ?? modules[0];
   const home = useFinanceHomeData(activeModule?.id === FINANCE_MODULE_IDS.HOME);
@@ -45,10 +49,10 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   return (
     <ShellFrame
       mainKey={activeModule?.id ?? 'none'}
-      sidebarProps={{ modules, activeModuleId: activeModule?.id, onSelectModule: handleSelectModule, badgeCounts: {}, user, onLogout, breakpoint: sidebar.breakpoint, railVisible: sidebar.railVisible, railExpanded: sidebar.railExpanded, overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay }}
+      sidebarProps={{ modules: navigation, activeModuleId: activeModule?.id, onSelectModule: handleSelectModule, badgeCounts: {}, user, onLogout, breakpoint: sidebar.breakpoint, railVisible: sidebar.railVisible, railExpanded: sidebar.railExpanded, overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay }}
       topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
     >
-          {!activeModule ? <NoModulesNotice /> : activeModule.id === FINANCE_MODULE_IDS.USERS ? <DepartmentUsersPage department={DEPARTMENTS.FINANCE} /> : activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <ReconciliationPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <TariffsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage initialStationId={home.stationId} /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+          {!activeModule ? <NoModulesNotice /> : activeModule.id === FINANCE_MODULE_IDS.USERS ? <DepartmentUsersPage department={DEPARTMENTS.FINANCE} /> : activeModule.id === FINANCE_MODULE_IDS.HOME ? <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} /> : activeModule.id === FINANCE_MODULE_IDS.APPROVED_SERVICES ? <ApprovedServicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.PREINVOICES ? <PreinvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.RECONCILIATION ? <InvoicesPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.TARIFFS ? <ServiceTariffsPage initialStationId={home.stationId} /> : activeModule.id === FINANCE_MODULE_IDS.CHARGES ? <ChargesPage /> : activeModule.id === FINANCE_MODULE_IDS.EXCHANGE_RATES ? <ExchangeRatesPage /> : activeModule.id === FINANCE_MODULE_IDS.CONTRACT_APPROVALS ? <ContractApprovalsPage /> : activeModule.id === FINANCE_MODULE_IDS.REPORTS ? <FinanceReportsPage initialStationId={home.stationId} /> : <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
     </ShellFrame>
   );
 }

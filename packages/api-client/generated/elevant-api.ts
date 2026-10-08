@@ -1226,6 +1226,14 @@ export interface FinanceReportDefinition {
   description: string;
 }
 
+export interface FinanceServiceOptionData {
+  id: string;
+  code: string;
+  name: string;
+  defaultBillingUnit: string;
+  isActive: boolean;
+}
+
 export interface FinanceTariffData {
   id: string;
   contractId: string;
@@ -6496,6 +6504,34 @@ export const exportFinanceReport = async (reportKey: string,
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getListFinanceServiceOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/finance/services`
+}
+
+export const listFinanceServiceOptions = async ( options?: RequestInit): Promise<FinanceServiceOptionData[]> => {
+
+  const res = await fetch(getListFinanceServiceOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceServiceOptionData[] = body ? JSON.parse(body) : {}
   return data
 }
 
