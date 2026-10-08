@@ -23,7 +23,10 @@ internal static class NonFiscalPaymentConfiguration
             builder.Property(item => item.Reference).HasMaxLength(80).IsRequired();
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Amount).HasPrecision(19, 4);
-            builder.HasIndex(item => item.InvoiceId).IsUnique();
+            builder.Property(item => item.Method).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(Elevant.Domain.Enumerations.PaymentMethod.Transfer);
+            builder.Property(item => item.PaidOn).HasColumnType("date");
+            builder.HasIndex(item => item.InvoiceId);
             builder.HasIndex(item => item.RequestId).IsUnique();
             builder.HasIndex(item => item.Reference).IsUnique();
             builder.HasOne<NonFiscalInvoice>().WithMany().HasForeignKey(item => item.InvoiceId)

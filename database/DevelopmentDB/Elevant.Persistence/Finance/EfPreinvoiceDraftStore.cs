@@ -75,10 +75,10 @@ internal sealed class EfPreinvoiceDraftStore(
         var lines = await (
             from line in context.PreinvoiceLines.AsNoTracking()
             join service in context.OperationServices.AsNoTracking()
-                on line.OperationServiceId equals service.Id
+                on line.OperationServiceId equals (long?)service.Id
             join submission in context.OperationSubmissions.AsNoTracking()
-                on line.ApprovedSubmissionId equals submission.Id
-            where line.PreinvoiceId == draft.Id
+                on line.ApprovedSubmissionId equals (long?)submission.Id
+            where line.PreinvoiceId == draft.Id && line.Kind == PreinvoiceLineKind.Service
             orderby line.LineNumber
             select new PreinvoiceDraftLineDetail(
                 line.PublicId, service.PublicId, submission.PublicId,
@@ -237,7 +237,8 @@ internal sealed class EfPreinvoiceDraftStore(
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.NotFound);
         var serviceInternalIds = rows.Select(row => row.ServiceId).ToArray();
         if (await context.PreinvoiceLines.AsNoTracking().AnyAsync(
-            line => serviceInternalIds.Contains(line.OperationServiceId) && line.ReleasedAt == null,
+            line => line.Kind == PreinvoiceLineKind.Service && line.OperationServiceId != null &&
+                serviceInternalIds.Contains(line.OperationServiceId.Value) && line.ReleasedAt == null,
             cancellationToken))
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Conflict);
 

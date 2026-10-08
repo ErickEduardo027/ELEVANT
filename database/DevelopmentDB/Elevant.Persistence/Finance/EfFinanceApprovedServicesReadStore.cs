@@ -86,7 +86,8 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                     from line in context.PreinvoiceLines.AsNoTracking()
                     join draft in context.Preinvoices.AsNoTracking()
                         on line.PreinvoiceId equals draft.Id
-                    where line.OperationServiceId == service.Id && line.ReleasedAt == null
+                    where line.OperationServiceId == service.Id && line.ReleasedAt == null &&
+                        line.Kind == PreinvoiceLineKind.Service
                     select (Guid?)draft.PublicId).FirstOrDefault(),
                 FlightNumber = context.FlightLegs.AsNoTracking()
                     .Where(leg => leg.TurnaroundId == turnaround.Id &&

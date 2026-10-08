@@ -55,6 +55,7 @@ public enum ContractStatus
 public enum ContractVersionStatus
 {
     Draft,
+    PendingFinanceApproval,
     Approved,
     Superseded,
     Rejected,

@@ -41,7 +41,13 @@ internal static class PreinvoiceConfiguration
             {
                 table.HasCheckConstraint("ck_preinvoice_line_number", "[line_number] > 0");
                 table.HasCheckConstraint("ck_preinvoice_line_quantity", "[executed_quantity] > 0");
-                table.HasCheckConstraint("ck_preinvoice_line_price", "[unit_price] >= 0 AND [amount] >= 0");
+                table.HasCheckConstraint("ck_preinvoice_line_price",
+                    "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
+                table.HasCheckConstraint("ck_preinvoice_line_kind",
+                    "([kind] = N'Service' AND [operation_service_id] IS NOT NULL AND [approved_submission_id] IS NOT NULL AND [charge_definition_id] IS NULL) OR " +
+                    "([kind] = N'Charge' AND [operation_service_id] IS NOT NULL AND [approved_submission_id] IS NOT NULL AND [charge_definition_id] IS NOT NULL AND [parent_line_id] IS NOT NULL) OR " +
+                    "([kind] = N'Adjustment' AND [charge_definition_id] IS NULL AND LEN([adjustment_reason]) >= 3)");
+                table.HasCheckConstraint("ck_preinvoice_line_excluded", "[is_excluded] = 0 OR [amount] = 0");
                 table.HasCheckConstraint("ck_preinvoice_line_currency", "LEN([currency_code]) = 3");
             });
             builder.Property(item => item.OperationCode).HasMaxLength(40).IsRequired();
@@ -54,9 +60,22 @@ internal static class PreinvoiceConfiguration
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Amount).HasPrecision(19, 4);
             builder.Property(item => item.ReleasedAt).HasPrecision(3);
+            builder.Property(item => item.Kind).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(Elevant.Domain.Enumerations.PreinvoiceLineKind.Service);
+            builder.Property(item => item.ComputedQuantity).HasPrecision(18, 4);
+            builder.Property(item => item.ComputedAmount).HasPrecision(19, 4);
+            builder.Property(item => item.AdjustmentReason).HasMaxLength(500);
+            builder.Property(item => item.EditedAt).HasPrecision(3);
             builder.HasIndex(item => new { item.PreinvoiceId, item.LineNumber }).IsUnique();
             builder.HasIndex(item => item.OperationServiceId).IsUnique()
-                .HasFilter("[released_at] IS NULL");
+                .HasFilter("[released_at] IS NULL AND [kind] = N'Service'");
+            builder.HasIndex(item => new { item.OperationServiceId, item.ChargeDefinitionId });
+            builder.HasOne<PreinvoiceLine>().WithMany().HasForeignKey(item => item.ParentLineId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ChargeDefinition>().WithMany().HasForeignKey(item => item.ChargeDefinitionId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.EditedByAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
             builder.HasOne<Preinvoice>().WithMany().HasForeignKey(item => item.PreinvoiceId)
                 .OnDelete(DeleteBehavior.NoAction);
             builder.HasOne<OperationService>().WithMany().HasForeignKey(item => item.OperationServiceId)
