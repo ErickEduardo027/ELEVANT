@@ -724,6 +724,18 @@ export interface DepartmentCatalogData {
   modules: PermissionModuleData[];
 }
 
+export interface GovernanceSupervisorData {
+  id: string;
+  name: string;
+  employeeNumber: string;
+}
+
+export interface DepartmentOptionsData {
+  stations: GovernanceStationData[];
+  terminals: GovernanceTerminalData[];
+  supervisors: GovernanceSupervisorData[];
+}
+
 export interface DepartmentSummaryData {
   department: string;
   label: string;
@@ -4542,6 +4554,34 @@ export const getDepartmentSummary = async (department: string, options?: Request
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: DepartmentSummaryData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentGovernanceOptionsUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/options`
+}
+
+export const getDepartmentGovernanceOptions = async (department: string, options?: RequestInit): Promise<DepartmentOptionsData> => {
+
+  const res = await fetch(getGetDepartmentGovernanceOptionsUrl(department),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentOptionsData = body ? JSON.parse(body) : {}
   return data
 }
 

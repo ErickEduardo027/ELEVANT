@@ -6,7 +6,7 @@ import { useAuth } from '../src/features/auth/AuthContext';
 import LoginPage from '../src/features/auth/LoginPage';
 import PasswordChangePage from '../src/features/auth/PasswordChangePage';
 import { PasswordChangeRequiredError } from '../src/features/auth/authService';
-import { getRoleHomePath, ROLE_KEYS, ROUTE_PATHS } from '../src/features/auth/roleRouting';
+import { getRoleHomePath, normalizeRole, ROUTE_PATHS } from '../src/features/auth/roleRouting';
 
 function SessionLoading() {
   return <main className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark" role="status">Comprobando sesión…</main>;
@@ -31,7 +31,7 @@ export function ProtectedRole({ role, children }) {
   const { session, ready, logout } = useAuth();
   const router = useRouter();
   const hydrated = useRouteHydration();
-  const normalizedRole = session?.role?.startsWith('CUSTOM_') ? ROLE_KEYS.CUSTOM : session?.role;
+  const normalizedRole = normalizeRole(session?.role);
   const allowed = normalizedRole === role;
 
   useEffect(() => {

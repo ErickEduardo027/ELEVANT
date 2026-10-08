@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import FinanceShell from './FinanceShell';
+import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../../access/testAccess';
 
 describe('FinanceShell', () => {
   it('does not show invented finance data or an unimplemented notification feed', async () => {
-    render(<FinanceShell />);
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}><FinanceShell /></DepartmentAccessProvider>);
     expect(await screen.findByRole('heading', { name: 'Resumen financiero' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('No hay una estación financiera autorizada');
     expect(screen.queryByText(/Datos sintéticos/i)).not.toBeInTheDocument();
@@ -12,7 +14,7 @@ describe('FinanceShell', () => {
   });
 
   it('does not expose deferred prototype departmental chat', async () => {
-    render(<FinanceShell />);
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}><FinanceShell /></DepartmentAccessProvider>);
     expect(await screen.findByRole('heading', { name: 'Resumen financiero' })).toBeInTheDocument();
     expect(screen.getByRole('navigation')).not.toHaveTextContent('Comunicaciones');
   });

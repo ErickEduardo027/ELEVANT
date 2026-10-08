@@ -6,6 +6,13 @@ public sealed record DepartmentCatalogData(string Department, string Label, IRea
 
 public sealed record GovernanceStationData(Guid Id, string Code);
 public sealed record GovernanceTerminalData(Guid Id, string Code, Guid StationId);
+public sealed record GovernanceSupervisorData(Guid Id, string Name, string EmployeeNumber);
+
+/// <summary>What an actor may grant when creating or editing users of a department.</summary>
+public sealed record DepartmentOptionsData(
+    IReadOnlyList<GovernanceStationData> Stations,
+    IReadOnlyList<GovernanceTerminalData> Terminals,
+    IReadOnlyList<GovernanceSupervisorData> Supervisors);
 
 /// <summary>Effective governance of the signed-in account.</summary>
 public sealed record MyDepartmentAccessData(
@@ -155,6 +162,8 @@ public interface IDepartmentGovernanceStore
     Task<IReadOnlyList<DepartmentCatalogData>?> GetCatalogAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<DepartmentsOverviewData?> GetOverviewAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<DepartmentSummaryData?> GetDepartmentSummaryAsync(Guid actorId, string department,
+        CancellationToken cancellationToken = default);
+    Task<DepartmentOptionsData?> GetOptionsAsync(Guid actorId, string department,
         CancellationToken cancellationToken = default);
     Task<DepartmentUserPage?> ListUsersAsync(Guid actorId, string department, int page, int limit,
         string? kind, string? status, Guid? accessProfileId, Guid? stationId, string? search,

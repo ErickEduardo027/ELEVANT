@@ -44,7 +44,7 @@ frontend/mobile-agent (Expo tablet app for ramp agents)                         
 ### Frontends
 
 - **private-web** uses Next.js 16 (App Router), React 19, Tailwind, and JS/JSX. It was migrated from Vite.
-  - Routes and guards are in `app/`. They include `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin`, and `/espacio-de-trabajo`.
+  - Routes and guards are in `app/`. They include `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, and `/superadmin`. Shells show only the modules allowed by the department access loaded from `GET governance/me/access` (`src/features/access`); see ADR-0015 for the department governance model.
   - The feature screens remain in `src/features/<area>`. API adapters live in `src/services/`, with co-located `*.test.js` files.
   - Browser config uses the `NEXT_PUBLIC_*` prefix, never `VITE_*`. The Development build validates `NEXT_PUBLIC_ELEVANT_API_URL` and `NEXT_PUBLIC_PROTOTYPE_API_URL` (HTTPS, same origin) and requires `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`.
   - Next is launched via `scripts/run-next.mjs`. The MapLibre worker is copied in `predev`/`prebuild` and verified after the build.

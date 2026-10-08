@@ -93,7 +93,8 @@ internal sealed partial class EfDepartmentGovernanceStore(
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor?.Access is null) return null;
-        var visible = actor.IsSuper
+        // Validators read every department so they can review what each request grants.
+        var visible = actor.IsSuper || actor.CanValidate
             ? DepartmentPermissionCatalog.Departments
             : actor.Access.Department is { } own ? [own] : [];
         return visible.Select(department => new DepartmentCatalogData(KeyOf(department), DepartmentLabels[department],
@@ -165,7 +166,7 @@ internal sealed partial class EfDepartmentGovernanceStore(
             active.Count(user => user.IsRampAgent),
             departmentUsers.Count(user => user.Status != AccountLifecycleStatus.Active),
             pending,
-            active.Count(user => user.MustChangePassword && user.LastLoginAt is null),
+            active.Count(user => user.MustChangePassword),
             profiles);
     }
 
@@ -182,7 +183,7 @@ internal sealed partial class EfDepartmentGovernanceStore(
         return new DepartmentsOverviewData(
             active.Length,
             active.Count(user => user.Access.Kind == DepartmentAssignmentKind.Administrator),
-            active.Count(user => user.Access.Kind == DepartmentAssignmentKind.Member),
+            active.Count(user => user.Access.Kind == DepartmentAssignmentKind.Member && !user.IsRampAgent),
             departments.Sum(summary => summary.PendingRequests),
             departments);
     }
@@ -194,6 +195,41 @@ internal sealed partial class EfDepartmentGovernanceStore(
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Administers(parsed)) return null;
         return await SummaryAsync(parsed, await DepartmentUsersAsync(parsed, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>Stations the actor may grant (all active ones for the super administrator), their terminals and active ramp supervisors.</summary>
+    public async Task<DepartmentOptionsData?> GetOptionsAsync(Guid actorId, string department,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParse(department, out var parsed)) return null;
+        var actor = await ActorAsync(actorId, cancellationToken);
+        if (actor is null || !actor.Administers(parsed)) return null;
+        var own = actor.StationIds.ToArray();
+        var stations = await context.Stations.AsNoTracking()
+            .Where(station => station.IsActive && (actor.IsSuper || own.Contains(station.PublicId)))
+            .OrderBy(station => station.Code)
+            .Select(station => new { station.Id, station.PublicId, station.Code }).ToArrayAsync(cancellationToken);
+        var stationIds = stations.Select(station => station.Id).ToArray();
+        var stationKeys = stations.ToDictionary(station => station.Id, station => station.PublicId);
+        GovernanceTerminalData[] terminals = [];
+        GovernanceSupervisorData[] supervisors = [];
+        if (parsed == Department.Operations)
+        {
+            terminals = (await context.Terminals.AsNoTracking()
+                    .Where(terminal => terminal.IsActive && stationIds.Contains(terminal.StationId))
+                    .OrderBy(terminal => terminal.Code).ToArrayAsync(cancellationToken))
+                .Select(terminal => new GovernanceTerminalData(terminal.PublicId, terminal.Code, stationKeys[terminal.StationId]))
+                .ToArray();
+            supervisors = await (from agent in context.RampAgents.AsNoTracking()
+                                 join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+                                 where agent.IsActive
+                                 orderby person.LastName, person.FirstName
+                                 select new GovernanceSupervisorData(agent.PublicId, person.FirstName + " " + person.LastName,
+                                     agent.EmployeeNumber)).ToArrayAsync(cancellationToken);
+        }
+        return new DepartmentOptionsData(
+            stations.Select(station => new GovernanceStationData(station.PublicId, station.Code)).ToArray(),
+            terminals, supervisors);
     }
 
     public async Task<DepartmentUserPage?> ListUsersAsync(Guid actorId, string department, int page, int limit,
