@@ -21,6 +21,7 @@ export const DepartmentPermissionCodes = {
   }),
   finance: codes('finance', {
     home: ['read'], approved_services: ['read', 'preinvoice'], preinvoices: ['read', 'manage'],
-    reconciliation: ['read', 'record'], tariffs: ['read'], reports: ['read', 'export'],
+    reconciliation: ['read', 'record'], tariffs: ['read', 'manage'], charges: ['read', 'manage'],
+    exchange_rates: ['read', 'manage'], contract_approvals: ['read', 'decide'], reports: ['read', 'export'],
   }),
 };

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PreinvoiceLinesEditor from './PreinvoiceLinesEditor';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
@@ -22,6 +24,9 @@ function money(value, currency) {
 }
 
 export default function PreinvoicesPage({ initialStationId }) {
+  const access = useOptionalDepartmentAccess();
+  const canManage = Boolean(access?.can('finance.preinvoices.manage'));
+  const [lineNotice, setLineNotice] = useState('');
   const session = useMemo(() => readSession(), []);
   const scopes = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode), [session]);
@@ -379,9 +384,9 @@ export default function PreinvoicesPage({ initialStationId }) {
     {state.status === 'success' && detail.value && <section aria-label="Detalle de prefactura" className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-5">
       <h2 className="font-semibold">{detail.value.airlineName} · {detail.value.id}</h2>
       <p className="mt-1 text-sm">{STATUS[detail.value.status] ?? detail.value.status} · {money(detail.value.total, detail.value.currencyCode)}</p>
-      <ul className="mt-3 space-y-2 text-sm">{detail.value.lines.map(line => <li key={line.id}>
-        {line.operationCode} · {line.serviceName} · {money(line.amount, detail.value.currencyCode)}
-      </li>)}</ul>
+      <PreinvoiceLinesEditor preinvoice={detail.value} canEdit={canManage}
+        onChanged={message => { setLineNotice(message); void openDetail(detail.value.id, { preserveAttempts: true }); }} />
+      {lineNotice && <p role="status" className="mt-2 text-sm">{lineNotice}</p>}
       {detail.value.disputes?.length > 0 && <section className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
         aria-label="Disputas de la aerolínea">
         <h3 className="text-sm font-semibold">Disputas registradas</h3>

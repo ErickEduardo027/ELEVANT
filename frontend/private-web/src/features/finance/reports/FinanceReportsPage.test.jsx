@@ -1,67 +1,58 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
-import FinanceReportsPage from './FinanceReportsPage';
-import { getFinanceReport } from '../../../services/financeReportsService';
-import { readSession } from '../../auth/authService';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import FinanceReportsPage, { formatCell } from './FinanceReportsPage';
+import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../../access/testAccess';
+import { downloadFinanceReport, getFinanceReport } from '../../../services/financeBookService';
 
-const observerFactory = vi.hoisted(() => vi.fn());
-vi.mock('../../../services/financeReportsService', () => ({ getFinanceReport: vi.fn() }));
-vi.mock('../../auth/authService', () => ({ readSession: vi.fn() }));
-vi.mock('../../../services/accountChangeObserver', () => ({
-  createPrivateWebAccountChangeObserver: observerFactory,
+vi.mock('../../../services/financeBookService', async importOriginal => ({
+  ...(await importOriginal()),
+  getFinanceReport: vi.fn(),
+  downloadFinanceReport: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 'st-1', stationCode: 'PUJ' }] }) }));
 
-const report = { counts: { drafts: 1, submitted: 0, disputed: 1,
-  accepted: 0, invoiced: 1, voided: 0 }, hasMore: true,
-rows: [
-  { airlineId: 'airline-one', airlineName: 'Arajet', currencyCode: 'USD',
-    drafts: 1, submitted: 0, disputed: 0, accepted: 0, invoiced: 1, voided: 0 },
-  { airlineId: 'airline-two', airlineName: 'Air Century', currencyCode: 'DOP',
-    drafts: 0, submitted: 0, disputed: 1, accepted: 0, invoiced: 0, voided: 0 },
-] };
+const revenue = {
+  key: 'revenue', title: 'Ingresos por período', description: 'Facturado por mes.', from: '2026-10-01', to: '2026-10-08',
+  consolidationCurrency: 'USD', summary: [{ label: 'Consolidado USD', value: '1500.00', type: 'money', currencyCode: 'USD' }],
+  columns: [{ key: 'month', label: 'Mes', type: 'text' }, { key: 'currency', label: 'Moneda', type: 'text' },
+    { key: 'total', label: 'Total', type: 'money' }, { key: 'usd', label: 'Total USD', type: 'money' }],
+  rows: [['2026-10', 'DOP', '58500.00', '1000.00']], notes: ['Nota de prueba.'],
+};
 
-beforeEach(() => {
-  vi.mocked(readSession).mockReturnValue({ accountId: 'finance-account',
-    stationScopes: [{ stationId: 'station-one', stationCode: 'PUJ' },
-      { stationId: 'station-two', stationCode: 'SDQ' }] });
-  vi.mocked(getFinanceReport).mockReset();
-  vi.mocked(getFinanceReport).mockResolvedValue(report);
-  observerFactory.mockReset();
-  observerFactory.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined) });
-});
+function renderPage(codes = DepartmentPermissionCodes.finance) {
+  return render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', codes)}>
+    <FinanceReportsPage initialStationId="st-1" /></DepartmentAccessProvider>);
+}
 
-it('does not issue an unscoped report read without a station grant', () => {
-  vi.mocked(readSession).mockReturnValue({ accountId: 'finance-account', stationScopes: [] });
-  render(<FinanceReportsPage />);
-  expect(screen.getByRole('alert')).toHaveTextContent('No hay una estación financiera autorizada');
-  expect(getFinanceReport).not.toHaveBeenCalled();
-});
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-it('renders a bounded station-scoped report with no fake export or old 404 route', async () => {
-  render(<FinanceReportsPage initialStationId="station-two" />);
-  expect(await within(await screen.findByRole('table')).findByText('Arajet')).toBeInTheDocument();
-  expect(getFinanceReport).toHaveBeenCalledWith({ stationId: 'station-two' },
-    expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  expect(screen.getByText(/hasta 50 prefacturas/i)).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /Exportar/i })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Filtrar reporte por aerolínea'), {
-    target: { value: 'Arajet' },
+describe('FinanceReportsPage', () => {
+  it('formats money with the row currency and consolidated columns in USD', () => {
+    expect(formatCell('58500.00', revenue.columns[2], revenue.rows[0], revenue.columns)).toMatch(/^DOP 58[.,]500/);
+    expect(formatCell('1000.00', revenue.columns[3], revenue.rows[0], revenue.columns)).toMatch(/^USD 1[.,]000/);
+    expect(formatCell(null, revenue.columns[2], revenue.rows[0], revenue.columns)).toBe('—');
   });
-  expect(within(screen.getByRole('table')).queryByText('Air Century')).not.toBeInTheDocument();
-});
 
-it('revalidates after a durable finance change and handles read errors', async () => {
-  const { unmount } = render(<FinanceReportsPage />);
-  await within(await screen.findByRole('table')).findByText('Arajet');
-  await act(async () => observerFactory.mock.calls[0][0](['finance_preinvoices']));
-  await waitFor(() => expect(getFinanceReport).toHaveBeenCalledTimes(2));
-  unmount();
+  it('reads the selected server report with the filters and exports it', async () => {
+    getFinanceReport.mockResolvedValue(revenue);
+    renderPage();
+    expect(await screen.findByText('Nota de prueba.')).toBeInTheDocument();
+    expect(getFinanceReport).toHaveBeenCalledWith('revenue', expect.objectContaining({ stationId: 'st-1' }));
+    expect(within(screen.getByRole('table')).getByText('2026-10')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
+    expect(downloadFinanceReport).toHaveBeenCalledWith('revenue', 'pdf', expect.objectContaining({ stationId: 'st-1' }));
+    getFinanceReport.mockResolvedValue({ ...revenue, key: 'receivables', rows: [], notes: [] });
+    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por cobrar' }));
+    expect(await screen.findByText('Sin datos')).toBeInTheDocument();
+    expect(getFinanceReport).toHaveBeenLastCalledWith('receivables', expect.any(Object));
+  });
 
-  vi.mocked(getFinanceReport).mockRejectedValueOnce(new Error('offline'));
-  render(<FinanceReportsPage />);
-  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar el reporte');
-  expect(screen.queryByText('Arajet')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-  expect(await within(await screen.findByRole('table')).findByText('Arajet')).toBeInTheDocument();
+  it('hides export without the export permission and explains a forbidden read', async () => {
+    getFinanceReport.mockRejectedValue(Object.assign(new Error('forbidden'), { status: 403 }));
+    renderPage(['finance.reports.read']);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No tiene acceso/);
+    expect(screen.queryByRole('button', { name: 'Exportar CSV' })).not.toBeInTheDocument();
+  });
 });

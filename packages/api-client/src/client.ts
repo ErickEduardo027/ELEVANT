@@ -37,6 +37,8 @@ import {
   getGetFinanceInvoiceByPreinvoiceUrl,
   getGetAirlineInvoiceByPreinvoiceUrl,
   getGetAirlinePaymentByInvoiceUrl,
+  getGetAirlineInvoiceStatementUrl,
+  type AirlineInvoiceStatementResponse,
   getGetAirlineInvoiceDocumentUrl,
   getGetAirlinePaymentReceiptUrl,
   getGetFinanceInvoiceDocumentUrl,
@@ -86,6 +88,8 @@ import {
   getStartRampOperationUrl,
   getSubmitRampOperationChecklistUrl,
   getTransitionRampOperationServiceUrl,
+  getGetRampOperationChargesUrl,
+  getApplyRampServiceChargeUrl,
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
@@ -203,6 +207,10 @@ import {
   type ReportRampIncidentRequest,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
+  type RampOperationChargesResponse,
+  type RampServiceChargesResponse,
+  type RampServiceChargeCommandResponse,
+  type ApplyRampServiceChargeRequest,
   type RampOperationStartResponse,
   type RampAssignedOperationsResponse,
   type RegisterMobileDeviceRequest,
@@ -361,6 +369,8 @@ export type TransitionRampOperationServiceOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetRampOperationChargesOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type ApplyRampServiceChargeOptions = Omit<ElevantRequestInit, "body" | "method">;
 
 export interface OccPlanningOptionsWithMetadata {
   readonly options: OccPlanningOptionsResponse;
@@ -552,6 +562,10 @@ export interface ElevantApiClient {
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
   ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlineInvoiceStatement(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<AirlineInvoiceStatementResponse>;
   getAirlineInvoiceDocument(
     preinvoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
@@ -744,6 +758,18 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: TransitionRampOperationServiceOptions,
   ): Promise<RampOperationServiceTransitionResponse>;
+  getRampOperationCharges(
+    operationId: string,
+    options?: GetRampOperationChargesOptions,
+  ): Promise<RampOperationChargesResponse>;
+  applyRampServiceCharge(
+    operationId: string,
+    serviceId: string,
+    request: ApplyRampServiceChargeRequest,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ApplyRampServiceChargeOptions,
+  ): Promise<RampServiceChargeCommandResponse>;
   getSystemPing(options?: GetSystemPingOptions): Promise<SystemPingResponse>;
 }
 
@@ -1688,6 +1714,69 @@ function isRampOperationServiceTransitionResponse(
   );
 }
 
+function isRampChargeName(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+}
+
+function isRampServiceChargesResponse(value: unknown): value is RampServiceChargesResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["serviceId", "canEdit", "available", "applied"]) &&
+    isUuid(value.serviceId) &&
+    typeof value.canEdit === "boolean" &&
+    Array.isArray(value.available) &&
+    value.available.length <= 200 &&
+    value.available.every(option =>
+      isRecord(option) &&
+      hasOnlyKeys(option, ["id", "code", "name", "description", "category", "allowMultiple"]) &&
+      isUuid(option.id) &&
+      isRampChargeName(option.code, 32) &&
+      isRampChargeName(option.name, 120) &&
+      (option.description === undefined || option.description === null ||
+        (typeof option.description === "string" && option.description.length <= 500)) &&
+      isRampChargeName(option.category, 32) &&
+      typeof option.allowMultiple === "boolean") &&
+    Array.isArray(value.applied) &&
+    value.applied.length <= 200 &&
+    value.applied.every(applied =>
+      isRecord(applied) &&
+      hasOnlyKeys(applied, ["id", "chargeId", "code", "name", "appliedAt"]) &&
+      isUuid(applied.id) &&
+      isUuid(applied.chargeId) &&
+      isRampChargeName(applied.code, 32) &&
+      isRampChargeName(applied.name, 120) &&
+      isDateTimeOffset(applied.appliedAt))
+  );
+}
+
+function isRampOperationChargesResponse(
+  value: unknown,
+  operationId: string,
+): value is RampOperationChargesResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["operationId", "services"]) &&
+    isUuid(value.operationId) &&
+    value.operationId.toLowerCase() === operationId &&
+    Array.isArray(value.services) &&
+    value.services.length <= 100 &&
+    value.services.every(isRampServiceChargesResponse)
+  );
+}
+
+function isRampServiceChargeCommandResponse(
+  value: unknown,
+  serviceId: string,
+): value is RampServiceChargeCommandResponse {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ["receiptId", "service"]) &&
+    isUuid(value.receiptId) &&
+    isRampServiceChargesResponse(value.service) &&
+    value.service.serviceId.toLowerCase() === serviceId
+  );
+}
+
 function isRampIncidentResponse(value: unknown) {
   return (
     isRecord(value) &&
@@ -2372,7 +2461,7 @@ function isAirlinePreinvoicePageResponse(
 function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePreinvoiceDetailResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "stationId", "stationCode",
       "from", "to", "currencyCode", "total", "status", "createdAt", "lines"]) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
     return false;
   const { lines, ...header } = value;
   if (!isAirlinePreinvoicePageResponse({ page: 1, limit: 1, hasMore: false,
@@ -2383,13 +2472,15 @@ function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePrei
   const validLines = lines.every(line => {
     if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
         "serviceCode", "serviceName", "executedQuantity", "billingUnit",
-        "unitPrice", "amount"]) || !isUuid(line.id) || ids.has(line.id) ||
+        "unitPrice", "amount", "kind", "parentLineId", "reason"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
         !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
         line.operationDate < periodFrom || line.operationDate > periodTo ||
         !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
-        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
-        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0) return false;
+        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
+        !isOptionalNullable(line.parentLineId, isUuid) || (kind === "Charge" && !isUuid(line.parentLineId)) ||
+        !isOptionalNullable(line.reason, isString)) return false;
     ids.add(line.id);
     return true;
   });
@@ -2461,20 +2552,24 @@ function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
       typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
       !isFiniteNumber(value.total) || value.total < 0 ||
       !isDateTimeOffset(value.issuedAt) || !Array.isArray(value.lines) ||
-      value.lines.length < 1 || value.lines.length > 100) return false;
+      value.lines.length < 1 || value.lines.length > 500) return false;
   const ids = new Set<string>();
+  let previousNumber = 0;
   for (let index = 0; index < value.lines.length; index++) {
     const line = value.lines[index];
     if (!isRecord(line) || !hasOnlyKeys(line,
         ["id", "lineNumber", "operationCode", "operationDate", "serviceCode",
-          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount"]) ||
-        !isUuid(line.id) || ids.has(line.id) || line.lineNumber !== index + 1 ||
+          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount", "kind", "parentLineNumber",
+          "reason"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
+        !isInt32(line.lineNumber) || line.lineNumber <= previousNumber ||
         !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
         !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isFiniteNumber(line.executedQuantity) || line.executedQuantity <= 0 ||
-        !isNonEmptyString(line.billingUnit) || !isFiniteNumber(line.unitPrice) ||
-        line.unitPrice < 0 || !isFiniteNumber(line.amount) || line.amount < 0)
+        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
+        !isOptionalNullable(line.parentLineNumber, isInt32) || !isOptionalNullable(line.reason, isString))
       return false;
+    previousNumber = line.lineNumber;
     ids.add(line.id);
   }
   // SQL validates decimal(19,4) snapshots at issuance. Re-adding parsed JSON
@@ -3159,30 +3254,124 @@ function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceRe
     typeof value.replayed === "boolean";
 }
 
+const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment"];
+const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
+const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other"];
+
+function isStatementText(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+}
+
+/** Airline statement: own invoice only, balance consistent with payments and credit notes. */
+function isAirlineInvoiceStatementResponse(
+  value: unknown,
+  invoiceId: string,
+): value is AirlineInvoiceStatementResponse {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "invoiceId", "number", "preinvoiceId", "currencyCode", "total", "paid", "credited", "balance",
+      "issuedAt", "dueDate", "status", "daysOverdue", "lines", "payments", "creditNotes",
+    ]) ||
+    !isUuid(value.invoiceId) || value.invoiceId.toLowerCase() !== invoiceId ||
+    !isStatementText(value.number, 64) || !isUuid(value.preinvoiceId) ||
+    (value.currencyCode !== "USD" && value.currencyCode !== "DOP") ||
+    !isFiniteNumber(value.total) || value.total < 0 ||
+    !isFiniteNumber(value.paid) || value.paid < 0 ||
+    !isFiniteNumber(value.credited) || value.credited < 0 ||
+    !isFiniteNumber(value.balance) ||
+    Math.abs(value.total - value.paid - value.credited - value.balance) > 0.0001 ||
+    !isDateTimeOffset(value.issuedAt) ||
+    (value.dueDate !== null && value.dueDate !== undefined && !isDateOnly(value.dueDate)) ||
+    typeof value.status !== "string" || !INVOICE_STATUSES.includes(value.status) ||
+    !Number.isInteger(value.daysOverdue) || (value.daysOverdue as number) < 0 ||
+    !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500 ||
+    !Array.isArray(value.payments) || value.payments.length > 500 ||
+    !Array.isArray(value.creditNotes) || value.creditNotes.length > 500
+  ) return false;
+  let previous = 0;
+  for (const line of value.lines) {
+    if (
+      !isRecord(line) ||
+      !hasOnlyKeys(line, [
+        "lineNumber", "kind", "parentLineNumber", "operationCode", "operationDate", "serviceCode",
+        "serviceName", "quantity", "billingUnit", "unitPrice", "amount", "reason",
+      ]) ||
+      !Number.isInteger(line.lineNumber) || (line.lineNumber as number) <= previous ||
+      typeof line.kind !== "string" || !PRICED_LINE_KINDS.includes(line.kind) ||
+      (line.parentLineNumber !== null && line.parentLineNumber !== undefined &&
+        (!Number.isInteger(line.parentLineNumber) || (line.parentLineNumber as number) >= (line.lineNumber as number))) ||
+      (line.kind === "Service" && line.parentLineNumber !== null && line.parentLineNumber !== undefined) ||
+      !isStatementText(line.operationCode, 64) || !isDateOnly(line.operationDate) ||
+      !isStatementText(line.serviceCode, 64) || !isStatementText(line.serviceName, 200) ||
+      !isFiniteNumber(line.quantity) || line.quantity < 0 ||
+      !isStatementText(line.billingUnit, 32) ||
+      !isFiniteNumber(line.unitPrice) || !isFiniteNumber(line.amount) ||
+      (line.kind !== "Adjustment" && (line.amount < 0 || line.unitPrice < 0)) ||
+      (line.reason !== null && line.reason !== undefined &&
+        !(typeof line.reason === "string" && line.reason.length <= 1000))
+    ) return false;
+    previous = line.lineNumber as number;
+  }
+  return value.payments.every(payment =>
+    isRecord(payment) &&
+    hasOnlyKeys(payment, ["reference", "method", "paidOn", "amount", "recordedAt"]) &&
+    isStatementText(payment.reference, 80) &&
+    typeof payment.method === "string" && PAYMENT_METHODS.includes(payment.method) &&
+    (payment.paidOn === null || payment.paidOn === undefined || isDateOnly(payment.paidOn)) &&
+    isFiniteNumber(payment.amount) && payment.amount > 0 &&
+    isDateTimeOffset(payment.recordedAt)) &&
+    value.creditNotes.every(note =>
+      isRecord(note) &&
+      hasOnlyKeys(note, ["number", "amount", "reason", "issuedAt"]) &&
+      isStatementText(note.number, 64) &&
+      isFiniteNumber(note.amount) && note.amount > 0 &&
+      isStatementText(note.reason, 1000) &&
+      isDateTimeOffset(note.issuedAt));
+}
+
+/**
+ * Service lines bill a positive executed quantity; charges may bill zero (inside a
+ * grace period) and adjustments may be negative discounts.
+ */
+function isPricedLineAmounts(line: Record<string, unknown>, kind: string): boolean {
+  return isFiniteNumber(line.executedQuantity) &&
+    (kind === "Service" ? line.executedQuantity > 0 : line.executedQuantity >= 0) &&
+    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
+    isFiniteNumber(line.amount) && (kind === "Adjustment" || line.amount >= 0);
+}
+
 function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
-      "stationId", "from", "to", "currencyCode", "total", "status", "lines"]) ||
+      "stationId", "from", "to", "currencyCode", "total", "status", "lines", "version"]) ||
+      (value.version !== undefined && value.version !== null && !isNonEmptyString(value.version)) ||
       !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
       !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
       !isDateOnly(value.to) || value.to < value.from ||
       typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
       !isFiniteNumber(value.total) || value.total < 0 ||
       !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 100)
+      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
     return false;
-  const validLines = value.lines.every((line, index) => isRecord(line) &&
-    hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
-      "operationCode", "operationDate", "serviceCode", "serviceName",
-      "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount"]) &&
-    isUuid(line.id) && isUuid(line.operationServiceId) && isUuid(line.approvedSubmissionId) &&
-    line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
-    isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
-    String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
-    isNonEmptyString(line.serviceName) && isFiniteNumber(line.executedQuantity) &&
-    line.executedQuantity > 0 && isNonEmptyString(line.billingUnit) &&
-    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
-    line.currencyCode === value.currencyCode &&
-    isFiniteNumber(line.amount) && line.amount >= 0);
+  const validLines = value.lines.every((line, index) => {
+    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
+        "operationCode", "operationDate", "serviceCode", "serviceName",
+        "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount", "kind", "parentLineId",
+        "computedQuantity", "computedAmount", "isExcluded", "adjustmentReason", "editedAt"])) return false;
+    const kind = line.kind === undefined ? "Service" : String(line.kind);
+    return PRICED_LINE_KINDS.includes(kind) && isUuid(line.id) &&
+      (kind === "Adjustment" ? isOptionalNullable(line.operationServiceId, isUuid) : isUuid(line.operationServiceId)) &&
+      (kind === "Adjustment" ? isOptionalNullable(line.approvedSubmissionId, isUuid) : isUuid(line.approvedSubmissionId)) &&
+      isOptionalNullable(line.parentLineId, isUuid) && (kind !== "Charge" || isUuid(line.parentLineId)) &&
+      line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
+      isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
+      String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
+      isNonEmptyString(line.serviceName) && isNonEmptyString(line.billingUnit) &&
+      line.currencyCode === value.currencyCode && isPricedLineAmounts(line, kind) &&
+      isOptionalNullable(line.computedQuantity, isFiniteNumber) && isOptionalNullable(line.computedAmount, isFiniteNumber) &&
+      (line.isExcluded === undefined || typeof line.isExcluded === "boolean") &&
+      isOptionalNullable(line.adjustmentReason, isString) && isOptionalNullable(line.editedAt, isDateTimeOffset);
+  });
   return validLines;
 }
 
@@ -4621,6 +4810,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       return result.data;
     },
+    async getAirlineInvoiceStatement(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetAirlineInvoiceStatementUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isAirlineInvoiceStatementResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     getAirlineInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(preinvoiceId, "preinvoiceId");
       return executePdf(getGetAirlineInvoiceDocumentUrl(id), options);
@@ -5263,6 +5462,60 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           transition.targetStatus,
         )
       ) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async getRampOperationCharges(
+      operationId: string,
+      options?: GetRampOperationChargesOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(
+        getGetRampOperationChargesUrl(operation),
+        { ...options, method: "GET" },
+        true,
+      );
+      if (!isRampOperationChargesResponse(result.data, operation)) {
+        throw malformedResponse(result.status);
+      }
+      return result.data;
+    },
+    async applyRampServiceCharge(
+      operationId: string,
+      serviceId: string,
+      request: ApplyRampServiceChargeRequest,
+      installationId: string,
+      idempotencyKey: string,
+      options?: ApplyRampServiceChargeOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const service = validatedUuid(serviceId, "serviceId");
+      if (
+        !isRecord(request) ||
+        !hasOnlyKeys(request, ["chargeId", "action"]) ||
+        (request.action !== "Apply" && request.action !== "Remove")
+      ) {
+        throw new TypeError("Ramp service charge request is invalid.");
+      }
+      const charge = validatedUuid(request.chargeId, "chargeId");
+      const installation = validatedUuid(installationId, "installationId");
+      const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("x-elevant-installation-id", installation);
+      headers.set("idempotency-key", commandKey);
+      const result = await execute(
+        getApplyRampServiceChargeUrl(operation, service),
+        {
+          ...options,
+          method: "POST",
+          headers,
+          body: JSON.stringify({ chargeId: charge, action: request.action }),
+        },
+        true,
+      );
+      if (!isRampServiceChargeCommandResponse(result.data, service)) {
         throw malformedResponse(result.status);
       }
       return result.data;

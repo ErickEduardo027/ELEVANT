@@ -24,7 +24,7 @@ it('requires explicit tariff confirmation before a draft can be activated', asyn
   updateManagedDraft.mockResolvedValue({});
   render(<ManagedDraftsPage />);
   await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
-  expect(screen.getByRole('button', { name: 'Activar contrato' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Enviar a Finanzas' })).toBeDisabled();
   await userEvent.click(screen.getByRole('checkbox', { name: /Confirmar tarifa/i }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
   await waitFor(() => expect(updateManagedDraft).toHaveBeenCalledWith('draft-1',

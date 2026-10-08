@@ -16,6 +16,10 @@ const RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX =
   'elevant:mobile:ramp-checklist-submit-command:v1:';
 const RAMP_SERVICE_TRANSITION_COMMAND_PREFIX =
   'elevant:mobile:ramp-service-transition-command:v1:';
+const RAMP_SERVICE_CHARGE_COMMAND_PREFIX =
+  'elevant:mobile:ramp-service-charge-command:v1:';
+const RAMP_OPERATION_CHARGES_CACHE_PREFIX =
+  'elevant:mobile:ramp-operation-charges:v1:';
 const RAMP_OPERATION_SUBMIT_COMMAND_PREFIX =
   'elevant:mobile:ramp-operation-submit-command:v1:';
 const RAMP_CORRECTION_COMMAND_PREFIX =
@@ -277,6 +281,8 @@ function allRampExecutionKeys(appKeys: readonly string[]) {
       key.startsWith(RAMP_CHECKLIST_DRAFT_PREFIX) ||
       key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_SERVICE_CHARGE_COMMAND_PREFIX) ||
+      key.startsWith(RAMP_OPERATION_CHARGES_CACHE_PREFIX) ||
       key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
       key.startsWith(RAMP_CORRECTION_COMMAND_PREFIX) ||
       key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX) ||
@@ -497,6 +503,23 @@ function rampServiceTransitionCommandKey(
     throw new MobileSessionStorageError();
   }
   return `${RAMP_SERVICE_TRANSITION_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${serviceId.toLowerCase()}:${targetStatus.toLowerCase()}`;
+}
+
+function rampServiceChargeCommandKey(
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  chargeId: string,
+  action: string,
+) {
+  assertRampExecutionIds(accountId, operationId, serviceId, chargeId);
+  if (action !== 'Apply' && action !== 'Remove') throw new MobileSessionStorageError();
+  return `${RAMP_SERVICE_CHARGE_COMMAND_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}:${serviceId.toLowerCase()}:${chargeId.toLowerCase()}:${action.toLowerCase()}`;
+}
+
+function rampOperationChargesCacheKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${RAMP_OPERATION_CHARGES_CACHE_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
 }
 
 function rampIncidentOutboxKey(accountId: string, operationId: string) {
@@ -1056,6 +1079,76 @@ export async function removeRampServiceTransitionCommandIfCurrent(
     ),
     expectedIdempotencyKey,
   );
+}
+
+/** One stable key per service, charge and action, so a retry never doubles a mark. */
+export async function getOrCreateRampServiceChargeCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  chargeId: string,
+  action: string,
+  payload: string,
+): Promise<CurrentRampExecutionCommand> {
+  return getOrCreateRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampServiceChargeCommandKey(accountId, operationId, serviceId, chargeId, action),
+    payload,
+  );
+}
+
+export async function removeRampServiceChargeCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  serviceId: string,
+  chargeId: string,
+  action: string,
+  expectedIdempotencyKey: string,
+) {
+  return removeRampExecutionCommandIfCurrent(
+    sessionId,
+    accountId,
+    rampServiceChargeCommandKey(accountId, operationId, serviceId, chargeId, action),
+    expectedIdempotencyKey,
+  );
+}
+
+/** Last server copy of an operation's charge options and marks; a cache only. */
+export async function readRampOperationChargesCacheIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+): Promise<CurrentRampExecutionValue> {
+  return readRampExecutionValueIfCurrent(
+    sessionId,
+    accountId,
+    rampOperationChargesCacheKey(accountId, operationId),
+  );
+}
+
+export async function writeRampOperationChargesCacheIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  value: string,
+): Promise<'written' | 'not-current'> {
+  const key = rampOperationChargesCacheKey(accountId, operationId);
+  if (!isJsonObjectString(value)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) {
+        return 'not-current';
+      }
+      await AsyncStorage.setItem(key, value);
+      return 'written';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
 }
 
 export async function readRampOperationSubmitCommandIfCurrent(

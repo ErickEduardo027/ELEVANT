@@ -85,20 +85,34 @@ const getInvoicePayment = vi.fn<(invoiceId: string) => Promise<NonFiscalPaymentL
   payment: { id: '74000000-0000-7000-8000-000000000011', invoiceId,
     reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 125.5,
     recordedAt: '2026-09-28T17:00:00Z' } }));
+const statementOf = (invoiceId: string, paid: number) => ({ invoiceId,
+  number: "NF-74000000000070008000000000000009", preinvoiceId: "74000000-0000-7000-8000-000000000001",
+  currencyCode: "USD", total: 125.5, paid, credited: 0, balance: 125.5 - paid,
+  issuedAt: "2026-09-28T16:00:00Z", dueDate: "2026-10-28", status: paid > 0 ? "PartiallyPaid" : "Pending", daysOverdue: 0,
+  lines: [{ lineNumber: 1, kind: "Service", parentLineNumber: null, operationCode: "DEV-TAT-0021",
+    operationDate: "2026-08-18", serviceCode: "GPU", serviceName: "Ground power", quantity: 1, billingUnit: "hour",
+    unitPrice: 115.5, amount: 115.5, reason: null },
+  { lineNumber: 2, kind: "Charge", parentLineNumber: 1, operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+    serviceCode: "NIGHT", serviceName: "Recargo nocturno", quantity: 1, billingUnit: "operation", unitPrice: 10,
+    amount: 10, reason: "Servicio entre 22:00 y 06:00" }],
+  payments: paid > 0 ? [{ reference: "BANK-TEST-123", method: "Transfer", paidOn: "2026-09-29", amount: paid,
+    recordedAt: "2026-09-29T17:00:00Z" }] : [],
+  creditNotes: [] });
+const getInvoiceStatement = vi.fn(async (invoiceId: string) => statementOf(invoiceId, 50));
 const getInvoiceDocument = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; approvedEvidence = emptyEvidence;
   getOperations.mockClear(); getOperation.mockClear(); getApprovedEvidence.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear();
+  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear(); getInvoiceStatement.mockClear();
   preinvoicePage = initialPreinvoicePage;
   getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
 
@@ -343,20 +357,21 @@ it("shows the real non-fiscal invoice only for an invoiced airline preinvoice", 
       operationDate: '2026-08-18', serviceCode: 'GPU', serviceName: 'Ground power',
       executedQuantity: 1, billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] };
   getPreinvoice.mockResolvedValueOnce(invoicedDetail).mockResolvedValueOnce(invoicedDetail);
-  getInvoicePayment.mockResolvedValueOnce({
-    invoiceId: '74000000-0000-7000-8000-000000000009', payment: null,
-  });
+  getInvoiceStatement.mockResolvedValueOnce(statementOf('74000000-0000-7000-8000-000000000009', 0));
   const page = render(<AirlinePortalPage view="finance" />);
   fireEvent.click(await screen.findByRole('button', { name: /Ver l.*neas de prefactura/i }));
   expect(await screen.findByText(/NF-74000000000070008000000000000009/)).toBeInTheDocument();
   expect(getPreinvoiceInvoice).toHaveBeenCalledExactlyOnceWith(
     '74000000-0000-7000-8000-000000000001');
-  expect(getInvoicePayment).toHaveBeenCalledWith('74000000-0000-7000-8000-000000000009');
+  expect(getInvoiceStatement).toHaveBeenCalledWith('74000000-0000-7000-8000-000000000009');
   expect(screen.getByText('Sin pago registrado.')).toBeInTheDocument();
+  expect(screen.getByText(/vence el 2026-10-28/)).toBeInTheDocument();
+  expect(screen.getByText(/Cargo · Recargo nocturno/)).toBeInTheDocument();
   financeRevision = 1;
   page.rerender(<AirlinePortalPage view="finance" />);
   expect(await screen.findByText(/BANK-TEST-123/)).toBeInTheDocument();
-  expect(getInvoicePayment).toHaveBeenCalledTimes(2);
+  expect(screen.getByText(/Pago parcial · Saldo USD 75.50/)).toBeInTheDocument();
+  expect(getInvoiceStatement).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole('button', { name: 'Aceptar prefactura' })).not.toBeInTheDocument();
 });
 
@@ -609,4 +624,27 @@ it("shows an honest empty state when the airline has no operational requests", a
   expect(await screen.findByText(/No hay solicitudes operativas registradas/)).toBeInTheDocument();
   expect(screen.queryByText("Escalera adicional")).not.toBeInTheDocument();
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
+});
+
+it("lists each agent charge under its service as a separate disputable line", async () => {
+  const withCharge = await getPreinvoice("74000000-0000-7000-8000-000000000001");
+  getPreinvoice.mockClear();
+  const detail = { ...withCharge, total: 135.5, lines: [
+    { id: "74000000-0000-7000-8000-000000000003", operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
+      serviceCode: "NIGHT", serviceName: "Recargo nocturno", executedQuantity: 1, billingUnit: "operation",
+      unitPrice: 10, amount: 10, kind: "Charge", parentLineId: withCharge.lines[0].id,
+      reason: "Ajustado al horario real" },
+    { ...withCharge.lines[0], kind: "Service", parentLineId: null, reason: null }] };
+  getPreinvoice.mockResolvedValueOnce(detail);
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
+  const charge = await screen.findByText("Cargo · Recargo nocturno");
+  const lines = screen.getByLabelText(/Líneas de prefactura/);
+  const rendered = Array.from(lines.children).map(node => node.textContent ?? "");
+  expect(rendered[0]).toContain("Ground power");
+  expect(rendered[1]).toContain("Recargo nocturno");
+  expect(screen.getByText("Motivo de Finanzas: Ajustado al horario real")).toBeInTheDocument();
+  expect(charge).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
+  expect(screen.getByRole("checkbox", { name: "Disputar Recargo nocturno" })).toBeInTheDocument();
 });

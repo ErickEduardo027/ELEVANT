@@ -14,6 +14,9 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('../src/components/attendance-draft-card', () => ({
   AttendanceDraftCard: props => mockCard(props),
 }));
+jest.mock('../src/components/ramp-operation-charges-card', () => ({
+  RampOperationChargesCard: () => null,
+}));
 jest.mock('../src/services/assigned-operations', () => ({
   getAssignedOperations: (...args) => mockGetAssigned(...args),
 }));

@@ -9,6 +9,7 @@ public sealed record FinanceCatalogResult(Guid? Id, FinanceCatalogFailure? Failu
     public static FinanceCatalogResult Failed(FinanceCatalogFailure failure) => new(null, failure);
 }
 
+public sealed record FinanceServiceOptionData(Guid Id, string Code, string Name, string DefaultBillingUnit, bool IsActive);
 public sealed record BillingUnitData(Guid Id, string Code, string Name, int QuantityScale, bool IsActive, string Version);
 public sealed record SaveBillingUnitInput(string Code, string Name, int QuantityScale, bool IsActive,
     string? ExpectedVersion = null);
@@ -70,6 +71,7 @@ public sealed record DecideContractApprovalInput(string Decision, string? Reason
 /// </summary>
 public interface IFinanceTariffBookStore
 {
+    Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input,
         CancellationToken cancellationToken = default);

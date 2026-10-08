@@ -24,6 +24,7 @@ import {
   RampServiceExecutionCard,
   type ServiceExecutionNotice,
 } from '../../components/ramp-service-execution-card';
+import { RampOperationChargesCard } from '../../components/ramp-operation-charges-card';
 import {
   flightLegTimeLabel,
   formatOperationDate,
@@ -797,6 +798,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           </Card>
         )}
       </View>
+      {!cached && operation.services.length > 0 && (
+        <RampOperationChargesCard
+          operationId={operation.operation.id}
+          refreshKey={`${operation.operation.status}:${operation.review?.status ?? ''}:${operation.services.map(service => service.status).join(',')}`}
+          services={operation.services}
+        />
+      )}
 
       {operation.operation.status === 'InProgress' && (
         <View style={styles.nextPhase}>

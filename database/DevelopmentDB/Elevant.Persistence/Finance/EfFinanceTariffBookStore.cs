@@ -77,6 +77,16 @@ internal sealed partial class EfFinanceTariffBookStore(
         params AuditFieldChangeData[] changes) =>
         CommercialAuditWriter.Add(context, actorId, action, entityType, entityId, reason, changes);
 
+    /// <summary>Catalog services Finance can price, including inactive ones still present in tariffs.</summary>
+    public async Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (await AuthorizeAsync(actorId, "finance.tariffs.read", cancellationToken) is null) return null;
+        return await context.ServiceDefinitions.AsNoTracking().OrderBy(service => service.Code)
+            .Select(service => new FinanceServiceOptionData(service.PublicId, service.Code, service.Name,
+                service.DefaultBillingUnit, service.IsActive)).ToArrayAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
