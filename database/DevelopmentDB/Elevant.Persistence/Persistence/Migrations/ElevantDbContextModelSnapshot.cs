@@ -2074,6 +2074,115 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("service_request_status_events", "commercial");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccessProfile", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("Department", "Name")
+                        .IsUnique()
+                        .HasFilter("[is_active] = CAST(1 AS bit)");
+
+                    b.ToTable("access_profiles", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccessProfileGrant", b =>
+                {
+                    b.Property<long>("AccessProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("access_profile_id");
+
+                    b.Property<string>("PermissionCode")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("permission_code");
+
+                    b.HasKey("AccessProfileId", "PermissionCode");
+
+                    b.ToTable("access_profile_grants", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccountPermissionGrant", b =>
+                {
+                    b.Property<long>("AccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("PermissionCode")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("permission_code");
+
+                    b.HasKey("AccountId", "PermissionCode");
+
+                    b.ToTable("account_permission_grants", "iam");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccountStationScope", b =>
                 {
                     b.Property<long>("Id")
@@ -2112,6 +2221,84 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("account_station_scopes", "iam", t =>
                         {
                             t.HasCheckConstraint("ck_account_station_scope_dates", "[revoked_at] IS NULL OR [revoked_at] >= [granted_at]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.DepartmentAssignment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("AccessProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("access_profile_id");
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Department")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccessProfileId");
+
+                    b.HasIndex("AccountId")
+                        .IsUnique();
+
+                    b.HasIndex("Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_department_assignments_single_super_administrator")
+                        .HasFilter("[kind] = N'SuperAdministrator'");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("Department", "Kind");
+
+                    b.ToTable("department_assignments", "iam", t =>
+                        {
+                            t.HasCheckConstraint("ck_department_assignment_kind", "([kind] = N'SuperAdministrator' AND [department] IS NULL AND [access_profile_id] IS NULL) OR ([kind] = N'Administrator' AND [department] IS NOT NULL AND [access_profile_id] IS NULL) OR ([kind] = N'Member' AND [department] IS NOT NULL)");
                         });
                 });
 
@@ -2425,6 +2612,211 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("PermissionId");
 
                     b.ToTable("role_permissions", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("AccessProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("access_profile_id");
+
+                    b.Property<string>("AvatarMediaUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("avatar_media_url");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("category");
+
+                    b.Property<long?>("CreatedAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<long?>("DecidedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("decided_by_account_id");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("decision_reason");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("EmployeeNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("employee_number");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("first_name");
+
+                    b.Property<DateOnly?>("HireDate")
+                        .HasColumnType("date")
+                        .HasColumnName("hire_date");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("last_name");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<long>("RequestedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<long?>("SupervisorRampAgentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("supervisor_ramp_agent_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccessProfileId");
+
+                    b.HasIndex("CreatedAccountId");
+
+                    b.HasIndex("DecidedByAccountId");
+
+                    b.HasIndex("Email")
+                        .IsUnique()
+                        .HasFilter("[status] = N'Pending'");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedByAccountId");
+
+                    b.HasIndex("SupervisorRampAgentId");
+
+                    b.HasIndex("Status", "Department");
+
+                    b.ToTable("user_access_requests", "iam", t =>
+                        {
+                            t.HasCheckConstraint("ck_user_access_request_decision", "([status] = N'Pending' AND [decided_at] IS NULL AND [decided_by_account_id] IS NULL AND [created_account_id] IS NULL) OR ([status] IN (N'Rejected', N'Cancelled') AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NULL) OR ([status] = N'Validated' AND [decided_at] IS NOT NULL AND [decided_by_account_id] IS NOT NULL AND [created_account_id] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_user_access_request_ramp_agent", "[kind] <> N'RampAgent' OR ([department] = N'Operations' AND [employee_number] IS NOT NULL AND [category] IS NOT NULL AND [hire_date] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestGrant", b =>
+                {
+                    b.Property<long>("UserAccessRequestId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_access_request_id");
+
+                    b.Property<string>("PermissionCode")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("permission_code");
+
+                    b.HasKey("UserAccessRequestId", "PermissionCode");
+
+                    b.ToTable("user_access_request_grants", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestStation", b =>
+                {
+                    b.Property<long>("UserAccessRequestId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_access_request_id");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.HasKey("UserAccessRequestId", "StationId");
+
+                    b.HasIndex("StationId");
+
+                    b.ToTable("user_access_request_stations", "iam");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestTerminal", b =>
+                {
+                    b.Property<long>("UserAccessRequestId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_access_request_id");
+
+                    b.Property<long>("TerminalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("terminal_id");
+
+                    b.HasKey("UserAccessRequestId", "TerminalId");
+
+                    b.HasIndex("TerminalId");
+
+                    b.ToTable("user_access_request_terminals", "iam");
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Infrastructure.AccountChange", b =>
@@ -7166,6 +7558,33 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccessProfile", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccessProfileGrant", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Identity.AccessProfile", null)
+                        .WithMany()
+                        .HasForeignKey("AccessProfileId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccountPermissionGrant", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Identity.AccountStationScope", b =>
                 {
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
@@ -7177,6 +7596,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
                         .WithMany()
                         .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.DepartmentAssignment", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Identity.AccessProfile", null)
+                        .WithMany()
+                        .HasForeignKey("AccessProfileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });
@@ -7207,6 +7640,74 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequest", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Identity.AccessProfile", null)
+                        .WithMany()
+                        .HasForeignKey("AccessProfileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("DecidedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
+                        .WithMany()
+                        .HasForeignKey("SupervisorRampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestGrant", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Identity.UserAccessRequest", null)
+                        .WithMany()
+                        .HasForeignKey("UserAccessRequestId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestStation", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Identity.UserAccessRequest", null)
+                        .WithMany()
+                        .HasForeignKey("UserAccessRequestId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.UserAccessRequestTerminal", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Terminal", null)
+                        .WithMany()
+                        .HasForeignKey("TerminalId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Identity.UserAccessRequest", null)
+                        .WithMany()
+                        .HasForeignKey("UserAccessRequestId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

@@ -24,7 +24,7 @@ public sealed class GetFinanceApprovedServicesHandler(
         var actor = await actorContextResolver.ResolveAsync(query.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, query.AccountId))
             return FinanceApprovedServicesResult.Failed(FinanceApprovedServicesFailure.Unauthorized);
-        if (!actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+        if (!actor!.HasPermission("finance.approved_services.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

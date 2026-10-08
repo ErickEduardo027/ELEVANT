@@ -72,7 +72,7 @@ internal sealed class EfFinanceInvoiceIssueStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(command.AccountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("finance.preinvoices.manage") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -186,7 +186,7 @@ internal sealed class EfFinanceInvoiceIssueStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(command.AccountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("finance.preinvoices.manage") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

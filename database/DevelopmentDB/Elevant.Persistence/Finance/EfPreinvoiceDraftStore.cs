@@ -47,7 +47,7 @@ internal sealed class EfPreinvoiceDraftStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(accountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("finance.preinvoices.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -167,7 +167,7 @@ internal sealed class EfPreinvoiceDraftStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.AccountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("finance.approved_services.preinvoice") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||

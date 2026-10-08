@@ -4,6 +4,9 @@ import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_
 import { CURRENT_USER_MOCK } from './mockData';
 import { useUnreadNotificationsCount } from './notifications/useUnreadNotificationsCount';
 import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
+import { allowedNavigation, useDepartmentAccess } from '../access/DepartmentAccessContext';
+import { useNavigationGuard } from '../access/useNavigationGuard';
+import NoModulesNotice from '../access/NoModulesNotice';
 
 export default function HumanResourcesLayout({
   user = CURRENT_USER_MOCK,
@@ -11,11 +14,12 @@ export default function HumanResourcesLayout({
   dashboardReadOnlyDemo = HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO,
   children,
 }) {
+  const { access } = useDepartmentAccess();
   const unreadNotificationsCount = useUnreadNotificationsCount({ enabled: !dashboardReadOnlyDemo });
 
   const navigation = useMemo(
     () =>
-      HUMAN_RESOURCES_NAVIGATION
+      allowedNavigation(HUMAN_RESOURCES_NAVIGATION, access)
         .filter(item => !dashboardReadOnlyDemo ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ||
@@ -23,7 +27,9 @@ export default function HumanResourcesLayout({
           item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE ||
-          item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS)
+          item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.DEPARTMENT_USERS)
         .map(item =>
         dashboardReadOnlyDemo && (item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||
@@ -37,8 +43,10 @@ export default function HumanResourcesLayout({
             }
           : item
       ),
-    [dashboardReadOnlyDemo, unreadNotificationsCount]
+    [access, dashboardReadOnlyDemo, unreadNotificationsCount]
   );
+
+  const { permitted, empty } = useNavigationGuard(HUMAN_RESOURCES_NAVIGATION, navigation);
 
   return (
     <AppShell
@@ -49,6 +57,6 @@ export default function HumanResourcesLayout({
       notificationsPath={dashboardReadOnlyDemo ? undefined : `${HUMAN_RESOURCES_BASE_PATH}/notifications`}
       notificationsEnabled={!dashboardReadOnlyDemo}
       profileActionsEnabled={!dashboardReadOnlyDemo}
-    >{children}</AppShell>
+    >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
   );
 }

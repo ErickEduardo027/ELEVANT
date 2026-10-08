@@ -26,7 +26,7 @@ public sealed class GetPreinvoiceDraftHandler(
         if (accountId == Guid.Empty || draftId == Guid.Empty) return null;
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId) ||
-            !actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor!.HasPermission("finance.preinvoices.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -40,7 +40,7 @@ public sealed class GetPreinvoiceDraftHandler(
         if (accountId == Guid.Empty || draftId == Guid.Empty) return null;
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId) ||
-            !actor!.Roles.Any(role => role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) ||
+            !actor!.HasPermission("finance.preinvoices.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

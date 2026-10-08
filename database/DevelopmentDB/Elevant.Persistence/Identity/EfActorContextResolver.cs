@@ -121,12 +121,15 @@ internal sealed class EfActorContextResolver(
                 select new ActorStationScope(station.PublicId, station.Code))
             .ToArrayAsync(cancellationToken);
 
+        var access = await DepartmentAccessQueries.ReadAsync(context, account.Id, cancellationToken);
+
         return new ActorContext(
             account.PublicId,
             account.Email,
             displayName,
             roles,
             memberships,
-            stationScopes);
+            stationScopes,
+            access);
     }
 }

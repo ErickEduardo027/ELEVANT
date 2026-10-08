@@ -86,8 +86,7 @@ internal sealed class EfHumanResourcesQualificationReadStore(
         CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        return actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-            role.Code is "GESTION_HUMANA" or "SUPERADMIN") == true &&
+        return actor?.HasPermission("human_resources.qualifications.read") == true &&
             actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff);

@@ -34,14 +34,6 @@ export async function commercialApi(path, options = {}) {
 export const getGovernance = () => commercialApi('/governance');
 export const getGovernanceAudit = (page = 1) => commercialApi(`/governance/audit?page=${page}&limit=25`);
 export const getRampProfiles = () => commercialApi('/human-resources/ramp-profiles');
-export const listRampMobileAccessRequests = () => commercialApi('/human-resources/ramp-profiles/access-requests');
-export const requestRampMobileAccess = (profileId, requestId) => commercialApi(`/human-resources/ramp-profiles/${profileId}/access-requests`, {
-  method: 'POST', body: JSON.stringify({ requestId }),
-});
-export const listGovernanceRampMobileAccessRequests = () => commercialApi('/governance/ramp-mobile-access-requests');
-export const rejectRampMobileAccessRequest = (id, reason, expectedVersion) => commercialApi(`/governance/ramp-mobile-access-requests/${id}/reject`, {
-  method: 'POST', body: JSON.stringify({ reason, expectedVersion }),
-});
 export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
 });
@@ -57,23 +49,6 @@ export const getMyPermissions = () => commercialApi('/governance/me/permissions'
 export const getProvisioning = () => commercialApi('/governance/provisioning');
 export const provisionAirline = (requestId, email, temporaryPassword) => commercialApi(`/governance/provisioning/${requestId}`, {
   method: 'POST', body: JSON.stringify({ email, temporaryPassword }),
-});
-export const createRole = values => commercialApi('/governance/roles', {
-  method: 'POST', body: JSON.stringify(values),
-});
-export const updateRole = (id, values) => commercialApi(`/governance/roles/${id}`, {
-  method: 'PUT', body: JSON.stringify(values),
-});
-export const deactivateRole = id => commercialApi(`/governance/roles/${id}`, { method: 'DELETE' });
-export const createUser = values => commercialApi('/governance/users', {
-  method: 'POST', body: JSON.stringify(values),
-});
-export const updateUser = (id, values) => commercialApi(`/governance/users/${id}`, {
-  method: 'PUT', body: JSON.stringify(values),
-});
-export const deactivateUser = id => commercialApi(`/governance/users/${id}`, { method: 'DELETE' });
-export const resetUserPassword = (id, temporaryPassword) => commercialApi(`/governance/users/${id}/password-reset`, {
-  method: 'POST', body: JSON.stringify({ temporaryPassword }),
 });
 export const getCommercialRequests = () => commercialApi('/contracts/commercial-requests');
 export const getCommercialStations = () => commercialApi('/contracts/commercial-requests/stations');

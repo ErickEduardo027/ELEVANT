@@ -14,6 +14,9 @@ import CurrentReportsPage from './reports/CurrentReportsPage';
 import AuditRoute from './audit/AuditRoute';
 import NotificationsRoute from './notifications/NotificationsRoute';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
+import DepartmentUsersPage from '../department-users/DepartmentUsersPage';
+import AccessValidationsPage from '../department-users/AccessValidationsPage';
+import { DEPARTMENTS } from '../../services/departmentGovernanceService';
 import { HUMAN_RESOURCES_NAVIGATION } from './navigation';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -37,6 +40,8 @@ export default function HRModulePage({ moduleId }) {
   if (moduleId === 'reports') return <CurrentReportsPage />;
   if (moduleId === 'audit') return <AuditRoute />;
   if (moduleId === 'notifications') return <NotificationsRoute />;
+  if (moduleId === 'access-requests') return <AccessValidationsPage />;
+  if (moduleId === 'department-users') return <DepartmentUsersPage department={DEPARTMENTS.HUMAN_RESOURCES} />;
 
   const moduleItem = HUMAN_RESOURCES_NAVIGATION.find(item => item.id === moduleId);
   return moduleItem ? <ModulePlaceholder icon={moduleItem.icon} label={moduleItem.label} description={moduleItem.description} /> : null;

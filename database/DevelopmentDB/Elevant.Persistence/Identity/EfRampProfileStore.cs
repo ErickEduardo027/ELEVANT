@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Workforce;
@@ -61,10 +62,18 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
     public async Task<RampProfileResult> SaveAsync(Guid actorId, Guid? profileId,
         SaveRampProfileInput input, CancellationToken cancellationToken = default)
     {
-        if (!await AuthorizedAsync(actorId, cancellationToken))
+        var actor = await AuthorizedActorAsync(actorId, cancellationToken);
+        if (actor is null)
             return RampProfileResult.Failed(RampProfileFailure.Forbidden);
         if (input is null || !Valid(input))
             return RampProfileResult.Failed(RampProfileFailure.Invalid);
+        // Operations administrators maintain the operational profile of their agents but
+        // only grant stations they hold; new agents are created through validated requests.
+        var operations = actor.EffectiveAccess?.Administers(Department.Operations) == true &&
+            !actor.HasPermission("human_resources.ramp_profiles.read");
+        if (operations && (profileId is null ||
+                input.StationIds.Any(id => actor.StationScopes.All(scope => scope.StationId != id))))
+            return RampProfileResult.Failed(profileId is null ? RampProfileFailure.Forbidden : RampProfileFailure.Invalid);
         var requestedStations = await context.Stations.Where(item =>
             input.StationIds.Contains(item.PublicId) && item.IsActive)
             .ToArrayAsync(cancellationToken);
@@ -267,13 +276,19 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         }
     }
 
-    private async Task<bool> AuthorizedAsync(Guid actorId, CancellationToken cancellationToken)
+    private async Task<bool> AuthorizedAsync(Guid actorId, CancellationToken cancellationToken) =>
+        await AuthorizedActorAsync(actorId, cancellationToken) is not null;
+
+    /// <summary>Human Resources reads ramp profiles; Operations administrators also maintain them.</summary>
+    private async Task<ActorContext?> AuthorizedActorAsync(Guid actorId, CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        return actor?.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-            role.Code is "GESTION_HUMANA" or "SUPERADMIN") == true &&
+        return actor is not null &&
+            (actor.HasPermission("human_resources.ramp_profiles.read") ||
+                actor.EffectiveAccess?.Administers(Department.Operations) == true) &&
             actor.Memberships.Any(membership => membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff);
+                membership.Kind == MembershipKind.InternalStaff)
+            ? actor : null;
     }
 
     private async Task<bool> WouldCreateSupervisorCycleAsync(long profileId, long supervisorId,

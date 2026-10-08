@@ -26,8 +26,7 @@ internal sealed class EfHumanResourcesScheduleWarningStore(
 
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Portal == PortalKind.BackOffice &&
-                role.Code == "GESTION_HUMANA") ||
+            !actor.HasPermission("human_resources.schedules.read") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

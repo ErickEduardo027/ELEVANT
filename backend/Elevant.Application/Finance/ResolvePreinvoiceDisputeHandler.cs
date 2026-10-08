@@ -53,8 +53,7 @@ public sealed class ResolvePreinvoiceDisputeHandler(
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return ResolvePreinvoiceDisputeResult.Failed(
                 ResolvePreinvoiceDisputeFailure.Unauthorized);
-        if (!actor!.Roles.Any(role => role.Code == "FINANZAS" &&
-                role.Portal == PortalKind.BackOffice) ||
+        if (!actor!.HasPermission("finance.preinvoices.manage") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

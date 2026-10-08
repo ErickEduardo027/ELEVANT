@@ -47,42 +47,22 @@ internal sealed class EfAccountChangeReadStore(
             .ToArray();
         var hasAirlinePortalRole = actor.Roles.Any(role =>
             role.Code == "AIRLINE_CLIENT" && role.Portal == PortalKind.AirlinePortal);
-        var hasFinanceAccess = actor.Roles.Any(role =>
-            role.Code == "FINANZAS" && role.Portal == PortalKind.BackOffice) &&
-            actor.Memberships.Any(membership =>
-                membership.Kind == MembershipKind.InternalStaff &&
-                membership.OrganizationType == OrganizationType.AviamOperator);
         var hasInternalMembership = actor.Memberships.Any(membership =>
             membership.Kind == MembershipKind.InternalStaff &&
             membership.OrganizationType == OrganizationType.AviamOperator);
-        var isSuperAdmin = hasInternalMembership && actor.Roles.Any(role =>
-            role.Code == "SUPERADMIN" && role.Portal == PortalKind.BackOffice);
-        var hasHumanResourcesAccess = isSuperAdmin ||
-            hasInternalMembership && actor.Roles.Any(role =>
-                role.Code == "GESTION_HUMANA" && role.Portal == PortalKind.BackOffice);
-        var hasOccPlanningAccess = hasInternalMembership && actor.Roles.Any(role =>
-            role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice);
+        // Department governance decides who may read each internal hint stream.
+        var access = hasInternalMembership ? actor.EffectiveAccess : null;
+        var isSuperAdmin = access?.IsSuperAdministrator == true;
+        var hasFinanceAccess = access?.Department == Department.Finance;
+        var hasHumanResourcesAccess = isSuperAdmin || access?.Department == Department.HumanResources;
+        var hasOccPlanningAccess = access?.Department == Department.Operations &&
+            access.Has("operations.planning.read");
         var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
-        var internalRoleIds = actor.Roles.Where(role => role.Portal == PortalKind.BackOffice)
-            .Select(role => role.RoleId).ToArray();
-        var commercialGrants = hasInternalMembership ? await (
-            from role in context.Roles.AsNoTracking()
-            join grant in context.Set<RolePermissionGrant>().AsNoTracking()
-                on role.Id equals grant.RoleId
-            join permission in context.Permissions.AsNoTracking()
-                on grant.PermissionId equals permission.Id
-            where internalRoleIds.Contains(role.PublicId) && role.IsActive &&
-                (permission.Code == "commercial.catalog.read" ||
-                 permission.Code == "commercial.requests.read" ||
-                 permission.Code == "commercial.service_closures.read")
-            select permission.Code).Distinct().ToArrayAsync(cancellationToken) : [];
-        var hasCatalogAccess = isSuperAdmin ||
-            commercialGrants.Contains("commercial.catalog.read");
-        var hasRequestsAccess = isSuperAdmin ||
-            commercialGrants.Contains("commercial.requests.read");
-        var hasClosureAccess = isSuperAdmin ||
-            commercialGrants.Contains("commercial.service_closures.read");
+        var hasCatalogAccess = access?.Has("contracts.catalog.read") == true;
+        var hasRequestsAccess = access?.Has("contracts.requests.read") == true;
+        var hasClosureAccess = access?.Has("contracts.service_closures.read") == true ||
+            access?.Has("operations.service_closures.read") == true;
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&

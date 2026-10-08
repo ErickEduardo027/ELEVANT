@@ -40,6 +40,7 @@ Este mapa organiza el lenguaje de ELEVANT para planificar y controlar servicios 
 | ¿Qué representa una escala y cómo se registra su ejecución? | [Turnaround y operación en tierra](turnaround-y-operacion.md) |
 | ¿Cómo se diferencian solicitudes comerciales y operativas? | [Solicitudes, contratos y servicios](solicitudes-contratos-y-servicios.md) |
 | ¿Cómo se deriva tenant, cuenta, estación y autorización? | [Identidad, tenancy y autorización](identidad-tenancy-y-autorizacion.md) |
+| ¿Quién crea usuarios internos y con qué permisos? | [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md) |
 | ¿Cómo se separan roles, puestos, asignaciones y departamentos? | [Personal, roles y departamentos](personal-roles-y-departamentos.md) |
 | ¿Qué significan fechas, instantes, estados e historia? | [Tiempo, estados y trazabilidad](tiempo-estados-y-trazabilidad.md) |
 | ¿Qué todavía no está decidido o implementado? | [Brechas y preguntas abiertas](brechas-y-preguntas-abiertas.md) |

@@ -330,7 +330,7 @@ internal sealed class EfOperationalCommunicationStore(
         var live = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(access.AccountId, cancellationToken);
         if (live is null ||
-            !live.Roles.Any(role => role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice) ||
+            !(live.HasPermission("operations.chat.read") || live.HasPermission("operations.notifications.read")) ||
             !live.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;

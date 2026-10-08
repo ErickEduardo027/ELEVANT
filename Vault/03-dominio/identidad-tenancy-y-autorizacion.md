@@ -86,7 +86,7 @@ Un `organizationId`, `airlineId` o `stationId` recibido desde Public Web sólo p
 
 ## Acceso interno y móvil
 
-El acceso interno combina cuenta activa, membresía interna, roles/permisos y scope de estación. Un rol global no debe habilitar automáticamente todas las aerolíneas o estaciones.
+El acceso interno combina cuenta activa, membresía interna, asignación de departamento con sus permisos de acción y scope de estación. Un rol global no debe habilitar automáticamente todas las aerolíneas o estaciones. El modelo de superadministrador único, administradores por departamento y validación de altas por Gestión Humana está en [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md).
 
 En persistencia, `MobileDevice`, `MobileDeviceAccountBinding`, `Account` y `MobileCommandReceipt` son conceptos separados. Se materializan la unicidad de `InstallationId`, un máximo de un binding no cerrado por dispositivo y el dedupe de recibos por `(MobileDeviceId, IdempotencyKey)`. El recibo referencia dispositivo y cuenta de forma independiente.
 
@@ -127,6 +127,7 @@ La API actual no implementa autenticación ni endpoints de negocio. Por ello, la
 
 - [Índice de dominio](README.md)
 - [Personal, roles y departamentos](personal-roles-y-departamentos.md)
+- [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md)
 - [Entidades y relaciones v1](entidades-y-relaciones-v1.md)
 - [Brechas y preguntas abiertas](brechas-y-preguntas-abiertas.md)
 

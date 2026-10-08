@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import SidebarItem from './SidebarItem';
+import SidebarGroup from './SidebarGroup';
 import { ChevronDownIcon, LogOutIcon } from './icons';
 
 const LOGO_URL = '/brand/elevant-logo.png';
@@ -130,7 +131,12 @@ function SidebarContent({
   onLogout,
   profileActionsEnabled,
 }) {
-  const items = navigation ?? modules?.map(item => ({ ...item, badge: badgeCounts?.[item.id], path: item.path ?? `#${item.id}` })) ?? [];
+  const items = navigation ?? modules?.map(item => ({
+    ...item,
+    badge: badgeCounts?.[item.id],
+    path: item.path ?? `#${item.id}`,
+    children: item.children?.map(child => ({ ...child, badge: badgeCounts?.[child.id] })),
+  })) ?? [];
   const useModuleNavigation = Boolean(modules?.length && !navigation);
 
   return (
@@ -153,7 +159,20 @@ function SidebarContent({
       </div>
 
       <nav aria-label="Navegación principal" className="flex-1 space-y-1 overflow-y-auto">
-        {items.map(item => (
+        {items.map(item => item.children?.length ? (
+          <SidebarGroup
+            key={item.id}
+            item={item}
+            expanded={expanded}
+            useModuleNavigation={useModuleNavigation}
+            activeModuleId={activeModuleId}
+            onSelectModule={id => {
+              onSelectModule?.(id);
+              if (presentation === 'overlay') onCloseOverlay?.();
+            }}
+            onNavigate={onCloseOverlay}
+          />
+        ) : (
           <SidebarItem
             key={item.id}
             icon={item.icon}

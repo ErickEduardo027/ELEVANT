@@ -51,7 +51,7 @@ flowchart LR
 | Job title | Describe la relación organizacional de una membresía. | `OrganizationMembership.JobTitle`. |
 | Posición operativa | Función de rampa que puede exigir equipo/habilitación. | Catálogo `OperationalPosition`. |
 | Rol de asignación | Papel contextual dentro de una operación concreta. | `OperationAgentAssignment.AssignmentRole`, hoy string. |
-| Departamento | Agrupación organizativa presentada en Private Web. | Prototipo; no existe entidad `Department` v1. |
+| Departamento | Gestión Humana, Contratos, Centro de Operaciones o Finanzas; agrupa cuentas y permisos. | Enum `Department` y `iam.department_assignments`; ver [gobernanza por departamento](gobernanza-por-departamento.md). |
 
 ## Actores comprobados
 
@@ -62,6 +62,8 @@ flowchart LR
 El seeder sintético de Development prueba solamente anclas de acceso para Admin OCC, Ramp Agent y Airline Client. No demuestra que esos sean los únicos roles ni que su catálogo de permisos esté completo.
 
 ## Departamentos y roles observados en Private Web
+
+Desde ADR-0015 los cuatro departamentos son una entidad de autorización del servidor; ver [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md). Los términos siguientes del prototipo siguen siendo sólo vocabulario de interfaz.
 
 El router del prototipo separa `ADMIN_OCC`, `GESTION_HUMANA`, `CONTRATOS` y `FINANZAS`. Sus mocks añaden términos como Analista OCC, Gestor de Contratos, Analista de Finanzas, Generalista de Gestión Humana, Agente de Rampa y Usuario de Aerolínea.
 

@@ -101,7 +101,7 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     }
 
                     var recipients = await CommercialNotificationRecipients.WithPermissionAsync(context,
-                        "commercial.requests.read", cancellationToken);
+                        "contracts.requests.read", cancellationToken);
                     foreach (var recipient in recipients)
                         AccountChangeOutboxWriter.Add(context, recipient, null,
                             "commercial_requests", request.PublicId, request.SubmittedAt);

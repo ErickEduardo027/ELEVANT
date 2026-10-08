@@ -81,7 +81,7 @@ internal sealed class EfOccShiftProgrammingStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.ActorAccountId, cancellationToken);
         if (actor is null ||
-            !actor.Roles.Any(role => role.Code == "ADMIN_OCC" && role.Portal == PortalKind.BackOffice) ||
+            !actor.HasPermission("operations.planning.assign") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
