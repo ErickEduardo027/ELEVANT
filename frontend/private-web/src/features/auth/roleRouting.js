@@ -5,7 +5,6 @@ export const ROUTE_PATHS = {
   CONTRATOS: '/contratos',
   FINANZAS: '/finanzas',
   SUPERADMIN: '/superadmin',
-  CUSTOM: '/espacio-de-trabajo',
 };
 
 export const ROLE_KEYS = {
@@ -14,8 +13,12 @@ export const ROLE_KEYS = {
   CONTRATOS: 'CONTRATOS',
   FINANZAS: 'FINANZAS',
   SUPERADMIN: 'SUPERADMIN',
-  CUSTOM: 'CUSTOM',
 };
+
+/** Legacy CUSTOM_* roles are Contracts members until they are converted into templates. */
+export function normalizeRole(role) {
+  return role?.startsWith('CUSTOM_') ? ROLE_KEYS.CONTRATOS : role;
+}
 
 const ENTRY_REDIRECTS = {
   '/': ROUTE_PATHS.LOGIN,
@@ -31,7 +34,6 @@ const ROLE_HOME_PATHS = {
   [ROLE_KEYS.CONTRATOS]: ROUTE_PATHS.CONTRATOS,
   [ROLE_KEYS.FINANZAS]: ROUTE_PATHS.FINANZAS,
   [ROLE_KEYS.SUPERADMIN]: ROUTE_PATHS.SUPERADMIN,
-  [ROLE_KEYS.CUSTOM]: ROUTE_PATHS.CUSTOM,
 };
 
 export function normalizePathname(pathname = '/') {
@@ -41,7 +43,7 @@ export function normalizePathname(pathname = '/') {
 }
 
 export function getRoleHomePath(role) {
-  return ROLE_HOME_PATHS[role?.startsWith('CUSTOM_') ? ROLE_KEYS.CUSTOM : role] ?? ROUTE_PATHS.LOGIN;
+  return ROLE_HOME_PATHS[normalizeRole(role)] ?? ROUTE_PATHS.LOGIN;
 }
 
 export function getRoleFromPath(pathname) {
@@ -61,7 +63,7 @@ export function resolveRoute(pathname, session) {
   }
 
   const routeRole = getRoleFromPath(normalized);
-  if (!routeRole || routeRole !== (session.role?.startsWith('CUSTOM_') ? ROLE_KEYS.CUSTOM : session.role)) {
+  if (!routeRole || routeRole !== normalizeRole(session.role)) {
     return { kind: 'redirect', pathname: homePath, role: session.role };
   }
 

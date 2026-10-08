@@ -151,7 +151,7 @@ describe('authService', () => {
     expect(window.sessionStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
   });
 
-  it('routes a custom back-office role to its permission-scoped workspace', async () => {
+  it('routes a legacy custom role to the Contracts shell scoped by its permissions', async () => {
     const client = { createSession: vi.fn().mockResolvedValue(apiSession({
       actor: { ...apiSession().actor, roles: [{
         roleId: '50000000-0000-0000-0000-000000000099',
@@ -160,8 +160,8 @@ describe('authService', () => {
       }] },
     })) };
     const session = await login({ email: 'reviewer@example.test', password: 'IndividualPassword!2026' }, client);
-    expect(session).toMatchObject({ role: 'CUSTOM_ABCD1234EF56', homePath: '/espacio-de-trabajo' });
-    expect(readSession()?.homePath).toBe('/espacio-de-trabajo');
+    expect(session).toMatchObject({ role: 'CUSTOM_ABCD1234EF56', homePath: '/contratos' });
+    expect(readSession()?.homePath).toBe('/contratos');
   });
 
   it('removes an expired session when it is read', () => {
