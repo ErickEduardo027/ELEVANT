@@ -84,7 +84,7 @@ Esta lista evita que un vacío se convierta en una suposición. “Brecha” no 
 - Al vincular `OperationService` con una tarifa, exigir precio/moneda all-or-none, enlace de tarifa cuando corresponda, la misma definición de servicio y aerolínea, cobertura de estación, versión aprobada y vigente, y copia consistente e histórica de unidad/precio/moneda.
 - Normalizar o gobernar strings todavía abiertos: unidad de cobro, categoría, estado de equipo, rol de asignación y tipo de incidente.
 - Decidir Schedule Change, Special Assistance y otros tipos observados en Public Web sin asumir que ya existen.
-- Definir facturación, prefacturas, impuestos, conciliación, disputas y ledger; hoy están explícitamente fuera de v1.
+- Prefacturas, disputas, factura no fiscal, pagos parciales, notas de crédito, tarifarios y cargos ya tienen modelo (ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md)); siguen abiertos impuestos y documento fiscal (ITBIS, NCF), conciliación bancaria y obtención automática de tasas.
 
 ### Operación, evidencia y revisión
 
@@ -135,7 +135,7 @@ Esta lista evita que un vacío se convierta en una suposición. “Brecha” no 
 
 ## Fuera de alcance v1 explícito
 
-- facturas, prefacturas y ledger de conciliación;
+- facturación fiscal (ITBIS, NCF) y conciliación bancaria;
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas;
