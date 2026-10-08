@@ -60,7 +60,8 @@ internal sealed class EfContractDraftStore(
                 on version.ContractId equals contract.Id
             join airline in context.Airlines.AsNoTracking()
                 on contract.AirlineId equals airline.Id
-            where version.Status == ContractVersionStatus.Draft &&
+            where (version.Status == ContractVersionStatus.Draft ||
+                    version.Status == ContractVersionStatus.PendingFinanceApproval) &&
                 contract.Status == ContractStatus.Draft &&
                 (airlineIds == null || airlineIds.Contains(airline.Id))
             orderby version.Id descending
@@ -87,6 +88,26 @@ internal sealed class EfContractDraftStore(
             orderby comment.CreatedAt
             select new { comment, person.FirstName, person.LastName })
             .ToArrayAsync(cancellationToken);
+        var reviews = (await context.ContractFinanceReviews.AsNoTracking()
+                .Where(review => versionIds.Contains(review.ContractVersionId))
+                .OrderByDescending(review => review.DecidedAt).ToArrayAsync(cancellationToken))
+            .GroupBy(review => review.ContractVersionId).ToDictionary(group => group.Key, group => group.First());
+        var contractCharges = (await context.ContractChargeRates.AsNoTracking()
+                .Where(rate => versionIds.Contains(rate.ContractVersionId)).ToArrayAsync(cancellationToken))
+            .ToLookup(rate => rate.ContractVersionId);
+        var charges = await context.ChargeDefinitions.AsNoTracking().Where(charge => charge.IsActive)
+            .OrderBy(charge => charge.Code).ToArrayAsync(cancellationToken);
+        var basePrices = new Dictionary<long, IReadOnlyDictionary<long, FinanceTariffLookup.BaseServiceRate>>();
+        var baseCharges = new Dictionary<long, IReadOnlyDictionary<long, FinanceTariffLookup.BaseChargeRate>>();
+        foreach (var draft in drafts)
+        {
+            var serviceIds = rates.Where(rate => rate.rate.ContractVersionId == draft.version.Id)
+                .Select(rate => rate.rate.ServiceDefinitionId).ToArray();
+            basePrices[draft.version.Id] = await FinanceTariffLookup.ServiceRatesAsync(context,
+                draft.version.CurrencyCode, draft.version.ValidFrom, null, serviceIds, cancellationToken);
+            baseCharges[draft.version.Id] = await FinanceTariffLookup.ChargeRatesAsync(context,
+                draft.version.CurrencyCode, draft.version.ValidFrom, cancellationToken);
+        }
         var airlineAuthors = await (from assignment in context.Set<IdentityUserRole<long>>().AsNoTracking()
             join role in context.Roles.AsNoTracking() on assignment.RoleId equals role.Id
             where role.NormalizedName == "AIRLINE_CLIENT"
@@ -100,12 +121,25 @@ internal sealed class EfContractDraftStore(
             rates.Where(rate => rate.rate.ContractVersionId == item.version.Id)
                 .Select(rate => new ContractDraftRateData(rate.rate.PublicId,
                     rate.Name, rate.rate.BillingUnit, rate.rate.UnitPrice,
-                    rate.rate.MinimumQuantity, rate.rate.IsConfirmed == true)).ToArray(),
+                    rate.rate.MinimumQuantity, rate.rate.IsConfirmed == true,
+                    basePrices[item.version.Id].GetValueOrDefault(rate.rate.ServiceDefinitionId)?.UnitPrice,
+                    basePrices[item.version.Id].GetValueOrDefault(rate.rate.ServiceDefinitionId)?.MinimumBillableQuantity))
+                .ToArray(),
             comments.Where(comment => comment.comment.ContractVersionId == item.version.Id)
                 .Select(comment => new ContractDraftCommentData(comment.comment.PublicId,
                     $"{comment.FirstName} {comment.LastName}".Trim(),
                     comment.comment.Body, comment.comment.CreatedAt,
-                    airlineAuthors.Contains(comment.comment.AuthorAccountId))).ToArray()))
+                    airlineAuthors.Contains(comment.comment.AuthorAccountId))).ToArray(),
+            item.version.Status.ToString(),
+            reviews.GetValueOrDefault(item.version.Id)?.Decision.ToString(),
+            reviews.GetValueOrDefault(item.version.Id)?.Reason,
+            charges.Select(charge =>
+            {
+                var negotiated = contractCharges[item.version.Id].FirstOrDefault(rate => rate.ChargeDefinitionId == charge.Id);
+                return new ContractDraftChargeData(charge.PublicId, charge.Code, charge.Name, charge.Method.ToString(),
+                    baseCharges[item.version.Id].GetValueOrDefault(charge.Id)?.Value, negotiated?.IsExcluded == true,
+                    negotiated?.Value);
+            }).ToArray()))
             .ToArray();
     }
 
@@ -149,8 +183,11 @@ internal sealed class EfContractDraftStore(
         if (!await permissions.HasAsync(actorId, "contracts.drafts.edit", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         if (input is null || string.IsNullOrWhiteSpace(input.Terms) ||
-            input.Terms.Trim().Length > 10000 || input.CurrencyCode?.Length != 3 ||
-            !input.CurrencyCode.All(char.IsAsciiLetterUpper) ||
+            input.Terms.Trim().Length > 10000 || input.CurrencyCode is not ("USD" or "DOP") ||
+            input.ChargeRates is { Count: > 100 } ||
+            input.ChargeRates?.Any(rate => rate.IsExcluded ? rate.Value is not null : rate.Value is < 0 or > 900_000_000m) == true ||
+            input.ChargeRates is not null &&
+                input.ChargeRates.Select(rate => rate.ChargeId).Distinct().Count() != input.ChargeRates.Count ||
             input.ValidTo is not null && input.ValidTo < input.ValidFrom ||
             input.Rates is null or { Count: < 1 or > 100 } ||
             input.Rates.Select(rate => rate.Id).Distinct().Count() != input.Rates.Count ||
@@ -170,6 +207,23 @@ internal sealed class EfContractDraftStore(
         if (rates.Length != input.Rates.Count || rates.Any(rate =>
             !input.Rates.Any(item => item.Id == rate.PublicId)))
             return ContractDraftResult.Failed(ContractDraftFailure.Invalid);
+        var chargeKeys = input.ChargeRates?.Select(rate => rate.ChargeId).ToArray() ?? [];
+        var chargeIds = await context.ChargeDefinitions.AsNoTracking().Where(charge => chargeKeys.Contains(charge.PublicId))
+            .ToDictionaryAsync(charge => charge.PublicId, charge => charge.Id, cancellationToken);
+        if (chargeIds.Count != chargeKeys.Length) return ContractDraftResult.Failed(ContractDraftFailure.Invalid);
+        if (input.ChargeRates is not null)
+        {
+            context.ContractChargeRates.RemoveRange(await context.ContractChargeRates
+                .Where(rate => rate.ContractVersionId == row.Version.Id).ToArrayAsync(cancellationToken));
+            foreach (var charge in input.ChargeRates.Where(rate => rate.IsExcluded || rate.Value is not null))
+                context.ContractChargeRates.Add(new ContractChargeRate
+                {
+                    PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id,
+                    ChargeDefinitionId = chargeIds[charge.ChargeId], IsExcluded = charge.IsExcluded,
+                    Value = charge.IsExcluded ? null : charge.Value,
+                    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                });
+        }
         var beforePrices = string.Join(", ", rates.OrderBy(rate => rate.PublicId)
             .Select(rate => $"{rate.PublicId}:{rate.UnitPrice.ToString(CultureInfo.InvariantCulture)}"));
         var beforeConfirmation = string.Join(", ", rates.OrderBy(rate => rate.PublicId)
@@ -235,29 +289,15 @@ internal sealed class EfContractDraftStore(
         var actorDatabaseId = await context.Users.Where(item => item.PublicId == actorId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        row.Version.Status = ContractVersionStatus.Approved;
-        row.Version.ApprovedAt = now;
-        row.Version.ApprovedByAccountId = actorDatabaseId;
+        // Finance approval activates the contract; Contracts submits the reviewed draft.
+        row.Version.Status = ContractVersionStatus.PendingFinanceApproval;
         row.Version.UpdatedAt = now;
-        row.Contract.Status = ContractStatus.Active;
-        row.Contract.SignedOn = DateOnly.FromDateTime(now.UtcDateTime);
-        row.Contract.UpdatedAt = now;
-        context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
-        {
-            ContractId = row.Contract.Id, FromStatus = ContractStatus.Draft,
-            ToStatus = ContractStatus.Active, OccurredAt = now,
-            ActorAccountId = actorDatabaseId,
-        });
-        AccountChangeOutboxWriter.Add(context, row.Request.ProvisionedAccountId.Value,
-            null, "airline_contracts", row.Contract.PublicId, now);
-        var coveredStations = await context.Set<ContractVersionStation>().AsNoTracking()
-            .Where(station => station.ContractVersionId == row.Version.Id)
-            .Select(station => station.StationId).ToArrayAsync(cancellationToken);
-        foreach (var coveredStation in coveredStations)
-            await FinanceApprovedServiceChangeWriter.AddAsync(context, coveredStation,
-                row.Version.PublicId, now, "finance_tariffs", cancellationToken);
-        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.contract.activated",
-            "commercial.contracts", row.Contract.PublicId);
+        foreach (var recipient in await CommercialNotificationRecipients.WithPermissionAsync(context,
+                     "finance.contract_approvals.read", cancellationToken))
+            AccountChangeOutboxWriter.Add(context, recipient, null, "contract_approvals", row.Version.PublicId, now);
+        await NotifyReadersAsync("contract_approvals", row.Version.PublicId, now, cancellationToken);
+        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.contract.submitted_to_finance",
+            "commercial.contract_versions", row.Version.PublicId);
         await context.SaveChangesAsync(cancellationToken);
         return ContractDraftResult.Success(row.Contract.PublicId);
     }

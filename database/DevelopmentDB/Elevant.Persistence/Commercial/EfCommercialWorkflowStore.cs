@@ -10,6 +10,8 @@ using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
+using Elevant.Persistence.Finance;
+
 namespace Elevant.Persistence.Commercial;
 
 internal sealed class EfCommercialWorkflowStore(
@@ -253,16 +255,23 @@ internal sealed class EfCommercialWorkflowStore(
             var requestedServices = await context.Set<ServiceRequestItem>()
                 .Where(item => item.ServiceRequestId == request.Id)
                 .ToArrayAsync(cancellationToken);
+            // The draft starts from the Finance base tariff; Contracts negotiates from there.
+            var baseRates = await FinanceTariffLookup.ServiceRatesAsync(context, version.CurrencyCode,
+                version.ValidFrom, stations.Length == 1 ? stations[0].Id : null,
+                requestedServices.Where(item => item.ServiceDefinitionId != null)
+                    .Select(item => item.ServiceDefinitionId!.Value).ToArray(), cancellationToken);
             foreach (var service in requestedServices)
             {
                 if (service.ServiceDefinitionId is not long definitionId)
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid);
+                var baseRate = baseRates.GetValueOrDefault(definitionId);
                 context.ContractServiceRates.Add(new ContractServiceRate
                 {
                     PublicId = Guid.CreateVersion7(), ContractVersionId = version.Id,
                     ServiceDefinitionId = definitionId,
-                    BillingUnit = service.RequestedUnit ?? "operación",
-                    UnitPrice = 0, MinimumQuantity = 0, IsConfirmed = false,
+                    BillingUnit = baseRate?.BillingUnit ?? service.RequestedUnit ?? "operación",
+                    UnitPrice = baseRate?.UnitPrice ?? 0, MinimumQuantity = baseRate?.MinimumBillableQuantity ?? 0,
+                    IsConfirmed = false,
                 });
             }
             AddStatusEvent(request.Id, oldStatus, request.Status, actorDatabaseId, now, null);
