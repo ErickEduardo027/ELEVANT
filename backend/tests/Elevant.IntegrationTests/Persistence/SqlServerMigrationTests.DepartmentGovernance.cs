@@ -206,6 +206,20 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(1, summary.PendingFirstLogin);
         Assert.Contains((await store.ListUsersAsync(GovernanceOccAdmin, "operations", 1, 25, "RampAgent", null, null,
             null, null, cancellationToken))!.Users, item => item.Id == validated.Id);
+
+        // Operations maintains the operational profile of its agents within its own stations.
+        var options = (await store.GetOptionsAsync(GovernanceOccAdmin, "operations", cancellationToken))!;
+        Assert.Equal(puj.PublicId, Assert.Single(options.Stations).Id);
+        Assert.Contains(options.Terminals, item => item.Id == terminal.PublicId);
+        Assert.Null(await store.GetOptionsAsync(GovernanceContracts, "operations", cancellationToken));
+        Assert.Equal(4, (await store.GetCatalogAsync(GovernanceHumanResources, cancellationToken))!.Count);
+        Assert.Single((await store.GetCatalogAsync(GovernanceContracts, cancellationToken))!);
+        var rampProfiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
+        var edit = new SaveRampProfileInput("Pedro", "Rampa", "SYNTHETIC-GOV-RAMP", "Agente líder",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-10)), true, [puj.PublicId], TerminalIds: [terminal.PublicId]);
+        Assert.Null((await rampProfiles.SaveAsync(GovernanceOccAdmin, agent.PublicId, edit, cancellationToken)).Failure);
+        Assert.Equal(RampProfileFailure.Forbidden, (await rampProfiles.SaveAsync(GovernanceOccAdmin, null,
+            edit with { EmployeeNumber = "SYNTHETIC-GOV-NEW" }, cancellationToken)).Failure);
     }
 
     private static async Task<ServiceProvider> SeededGovernanceProviderAsync(TemporaryDatabase database,

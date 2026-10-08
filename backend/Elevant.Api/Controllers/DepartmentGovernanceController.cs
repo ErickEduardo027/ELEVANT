@@ -40,6 +40,11 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
     public Task<IActionResult> Summary(string department, CancellationToken cancellationToken) =>
         ReadAsync(actorId => store.GetDepartmentSummaryAsync(actorId, department, cancellationToken));
 
+    [HttpGet("departments/{department}/options", Name = "GetDepartmentGovernanceOptions")]
+    [ProducesResponseType<DepartmentOptionsData>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> Options(string department, CancellationToken cancellationToken) =>
+        ReadAsync(actorId => store.GetOptionsAsync(actorId, department, cancellationToken));
+
     [HttpGet("departments/{department}/users", Name = "ListDepartmentUsers")]
     [ProducesResponseType<DepartmentUserPage>(StatusCodes.Status200OK, "application/json")]
     public Task<IActionResult> Users(string department, [FromQuery] int page = 1, [FromQuery] int limit = 25,

@@ -3015,6 +3015,41 @@
         ]
       }
     },
+    "/api/v1/governance/departments/{department}/options": {
+      "get": {
+        "tags": [
+          "DepartmentGovernance"
+        ],
+        "operationId": "GetDepartmentGovernanceOptions",
+        "parameters": [
+          {
+            "name": "department",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartmentOptionsData"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/governance/departments/{department}/users": {
       "get": {
         "tags": [
@@ -13972,6 +14007,35 @@
         },
         "additionalProperties": false
       },
+      "DepartmentOptionsData": {
+        "required": [
+          "stations",
+          "supervisors",
+          "terminals"
+        ],
+        "type": "object",
+        "properties": {
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceStationData"
+            }
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceTerminalData"
+            }
+          },
+          "supervisors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceSupervisorData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "DepartmentSummaryData": {
         "required": [
           "activeProfiles",
@@ -14953,6 +15017,27 @@
             "format": "uuid"
           },
           "code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GovernanceSupervisorData": {
+        "required": [
+          "employeeNumber",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "employeeNumber": {
             "type": "string"
           }
         },
