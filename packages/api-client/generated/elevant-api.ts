@@ -209,6 +209,58 @@ export interface AirlineEnrichmentResult {
   failure?: CatalogMutationFailure | null;
 }
 
+export interface AirlineInvoiceStatementCreditNoteResponse {
+  number: string;
+  amount: number;
+  reason: string;
+  issuedAt: string;
+}
+
+export interface AirlineInvoiceStatementLineResponse {
+  lineNumber: number;
+  kind: string;
+  /** @nullable */
+  parentLineNumber?: number | null;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  quantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface AirlineInvoiceStatementPaymentResponse {
+  reference: string;
+  method: string;
+  /** @nullable */
+  paidOn?: string | null;
+  amount: number;
+  recordedAt: string;
+}
+
+export interface AirlineInvoiceStatementResponse {
+  invoiceId: string;
+  number: string;
+  preinvoiceId: string;
+  currencyCode: string;
+  total: number;
+  paid: number;
+  credited: number;
+  balance: number;
+  issuedAt: string;
+  /** @nullable */
+  dueDate?: string | null;
+  status: string;
+  daysOverdue: number;
+  lines: AirlineInvoiceStatementLineResponse[];
+  payments: AirlineInvoiceStatementPaymentResponse[];
+  creditNotes: AirlineInvoiceStatementCreditNoteResponse[];
+}
+
 export interface AirlinePortalOperationResponse {
   id: string;
   code: string;
@@ -3615,6 +3667,34 @@ export const getAirlinePaymentReceipt = async (invoiceId: string, options?: Requ
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceStatementUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/statement`
+}
+
+export const getAirlineInvoiceStatement = async (invoiceId: string, options?: RequestInit): Promise<AirlineInvoiceStatementResponse> => {
+
+  const res = await fetch(getGetAirlineInvoiceStatementUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineInvoiceStatementResponse = body ? JSON.parse(body) : {}
   return data
 }
 

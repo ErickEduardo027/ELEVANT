@@ -261,6 +261,72 @@
         ]
       }
     },
+    "/api/v1/airline/portal/invoices/{invoiceId}/statement": {
+      "get": {
+        "tags": [
+          "AirlinePortal"
+        ],
+        "operationId": "GetAirlineInvoiceStatement",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineInvoiceStatementResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/invoices/{invoiceId}/payment": {
       "get": {
         "tags": [
@@ -14582,6 +14648,211 @@
               }
             ],
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineInvoiceStatementCreditNoteResponse": {
+        "required": [
+          "amount",
+          "issuedAt",
+          "number",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineInvoiceStatementLineResponse": {
+        "required": [
+          "amount",
+          "billingUnit",
+          "kind",
+          "lineNumber",
+          "operationCode",
+          "operationDate",
+          "quantity",
+          "serviceCode",
+          "serviceName",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "lineNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parentLineNumber": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineInvoiceStatementPaymentResponse": {
+        "required": [
+          "amount",
+          "method",
+          "recordedAt",
+          "reference"
+        ],
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "paidOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineInvoiceStatementResponse": {
+        "required": [
+          "balance",
+          "credited",
+          "creditNotes",
+          "currencyCode",
+          "daysOverdue",
+          "invoiceId",
+          "issuedAt",
+          "lines",
+          "number",
+          "paid",
+          "payments",
+          "preinvoiceId",
+          "status",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "preinvoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number",
+            "format": "double"
+          },
+          "paid": {
+            "type": "number",
+            "format": "double"
+          },
+          "credited": {
+            "type": "number",
+            "format": "double"
+          },
+          "balance": {
+            "type": "number",
+            "format": "double"
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "daysOverdue": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineInvoiceStatementLineResponse"
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineInvoiceStatementPaymentResponse"
+            }
+          },
+          "creditNotes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlineInvoiceStatementCreditNoteResponse"
+            }
           }
         },
         "additionalProperties": false

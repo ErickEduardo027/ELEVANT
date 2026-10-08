@@ -129,6 +129,47 @@ internal sealed class EfFinanceInvoiceLedgerStore(
         return new FinanceInvoiceDetailData(summary, lines, payments, notes);
     }
 
+    public async Task<AirlineInvoiceStatementData?> GetStatementForAirlineAsync(Guid organizationId, Guid invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || invoiceId == Guid.Empty) return null;
+        var row = await (
+            from invoice in context.NonFiscalInvoices.AsNoTracking()
+            join preinvoice in context.Preinvoices.AsNoTracking() on invoice.PreinvoiceId equals preinvoice.Id
+            join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+            join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
+            join station in context.Stations.AsNoTracking() on invoice.StationId equals station.Id
+            where organization.PublicId == organizationId && organization.Type == OrganizationType.AirlineCustomer &&
+                  organization.Status == OrganizationStatus.Active && airline.IsActive && invoice.PublicId == invoiceId
+            select new Row
+            {
+                Id = invoice.Id, PublicId = invoice.PublicId, Number = invoice.Number, PreinvoiceId = preinvoice.PublicId,
+                AirlineId = airline.PublicId, Airline = airline.Name, StationId = station.PublicId,
+                StationCode = station.Code, CurrencyCode = invoice.CurrencyCode, Total = invoice.Total,
+                IssuedAt = invoice.CreatedAt, DueDate = invoice.DueDate,
+            }).SingleOrDefaultAsync(cancellationToken);
+        if (row is null) return null;
+        var summary = (await SummariesAsync([row], cancellationToken))[0];
+        var lines = await context.NonFiscalInvoiceLines.AsNoTracking().Where(line => line.InvoiceId == row.Id)
+            .OrderBy(line => line.LineNumber)
+            .Select(line => new FinanceInvoiceLineData(line.LineNumber, line.Kind.ToString(), line.ParentLineNumber,
+                line.OperationCode, line.OperationDate, line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
+                line.BillingUnit, line.UnitPrice, line.Amount, line.Reason))
+            .ToArrayAsync(cancellationToken);
+        var payments = await context.NonFiscalPayments.AsNoTracking().Where(payment => payment.InvoiceId == row.Id)
+            .OrderBy(payment => payment.CreatedAt)
+            .Select(payment => new AirlineInvoicePaymentData(payment.Reference, payment.Method.ToString(),
+                payment.PaidOn, payment.Amount, payment.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+        var notes = await context.NonFiscalCreditNotes.AsNoTracking().Where(note => note.InvoiceId == row.Id)
+            .OrderBy(note => note.CreatedAt)
+            .Select(note => new AirlineInvoiceCreditNoteData(note.Number, note.Amount, note.Reason, note.CreatedAt))
+            .ToArrayAsync(cancellationToken);
+        return new AirlineInvoiceStatementData(summary.Id, summary.Number, summary.PreinvoiceId, summary.CurrencyCode,
+            summary.Total, summary.Paid, summary.Credited, summary.Balance, summary.IssuedAt, summary.DueDate,
+            summary.Status, summary.DaysOverdue, lines, payments, notes);
+    }
+
     /// <summary>A credit note reduces the balance and never exceeds it; the request id makes it idempotent.</summary>
     public async Task<FinanceCatalogResult> IssueCreditNoteAsync(Guid actorId, Guid invoiceId, IssueCreditNoteInput input,
         CancellationToken cancellationToken = default)

@@ -7666,6 +7666,18 @@ public sealed partial class SqlServerMigrationTests
                     cancellationToken))!.Invoices, item => item.Id == invoice.PublicId);
                 Assert.Null(await ledger.ListAsync(occAccountId, null, null, null, 1, 25, cancellationToken));
 
+                // The airline sees its own statement: charge lines, payments and credit notes, no staff names.
+                var statement = (await ledger.GetStatementForAirlineAsync(airlineOrganizationId, invoice.PublicId,
+                    cancellationToken))!;
+                Assert.Equal("Paid", statement.Status);
+                Assert.Equal(0m, statement.Balance);
+                Assert.Equal(paid.Lines.Count, statement.Lines.Count);
+                Assert.Contains(statement.Lines, line => line.Kind == "Charge" && line.ParentLineNumber == 1);
+                Assert.Equal(2, statement.Payments.Count);
+                Assert.Equal("Bonificación por servicio parcial", Assert.Single(statement.CreditNotes).Reason);
+                Assert.Null(await ledger.GetStatementForAirlineAsync(Guid.NewGuid(), invoice.PublicId,
+                    cancellationToken));
+
                 // Reports read the same ledger: revenue by kind, receivables, collections, charges and credit notes.
                 var reports = ledgerScope.ServiceProvider.GetRequiredService<IFinanceReportStore>();
                 var today = DateOnly.FromDateTime(DateTime.UtcNow);

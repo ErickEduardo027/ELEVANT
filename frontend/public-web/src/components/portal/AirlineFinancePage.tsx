@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
   type PreinvoiceDisputeResponse,
+  type AirlineInvoiceStatementResponse,
   type NonFiscalInvoiceResponse,
-  type NonFiscalPaymentResponse,
   type AirlinePreinvoicePageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
@@ -24,23 +24,52 @@ function amount(currency: string, total: number) {
   }).format(total)}`;
 }
 
-function InvoiceSummary({ invoice, payment }: { invoice: NonFiscalInvoiceResponse;
-  payment: NonFiscalPaymentResponse | null }) {
+const KIND: Record<string, string> = { Service: "Servicio", Charge: "Cargo", Adjustment: "Ajuste" };
+const INVOICE_STATUS: Record<string, string> = {
+  Pending: "Pendiente de pago", PartiallyPaid: "Pago parcial", Paid: "Pagada", Overdue: "Vencida",
+};
+const METHOD: Record<string, string> = { Transfer: "Transferencia", Check: "Cheque", Cash: "Efectivo", Other: "Otro" };
+
+/** Each service followed by the charges and adjustments that belong to it. */
+function orderedLines<T extends { id: string; parentLineId?: string | null }>(lines: T[]): T[] {
+  const children = (id: string) => lines.filter(line => line.parentLineId === id);
+  const roots = lines.filter(line => !line.parentLineId || !lines.some(other => other.id === line.parentLineId));
+  return roots.flatMap(root => [root, ...children(root.id)]);
+}
+
+/** Non-fiscal statement: lines with their charges, balance, due date, payments and credit notes. */
+function InvoiceSummary({ invoice, statement }: { invoice: NonFiscalInvoiceResponse;
+  statement: AirlineInvoiceStatementResponse | null }) {
+  const currency = invoice.currencyCode;
   return <section className={styles.disputeRecord} aria-label="Factura no fiscal">
     <strong>Factura no fiscal {invoice.number}</strong>
-    <p>Emitida el {invoice.issuedAt.slice(0, 10)}.</p>
-    {invoice.lines.map(line => <p key={line.id}>
-      {line.operationCode} · {line.serviceName} · {amount(invoice.currencyCode, line.amount)}
+    <p>Emitida el {invoice.issuedAt.slice(0, 10)}{statement?.dueDate ? ` · vence el ${statement.dueDate}` : ""}.</p>
+    {statement ? statement.lines.map(line => <p key={line.lineNumber}
+      className={line.parentLineNumber ? styles.nestedLine : undefined}>
+      {KIND[line.kind] ?? line.kind} · {line.kind === "Service" ? `${line.operationCode} · ` : ""}{line.serviceName} · {amount(currency, line.amount)}
+      {line.reason ? ` · ${line.reason}` : ""}
+    </p>) : invoice.lines.map(line => <p key={line.id}>
+      {line.operationCode} · {line.serviceName} · {amount(currency, line.amount)}
     </p>)}
-    <strong>Total: {amount(invoice.currencyCode, invoice.total)}</strong>
-    {payment ? <p>Pago manual registrado: {payment.reference} · {amount(
-      payment.currencyCode, payment.amount)}</p> : <p>Sin pago registrado.</p>}
+    <strong>Total: {amount(currency, invoice.total)}</strong>
+    {statement ? <>
+      <p>{INVOICE_STATUS[statement.status] ?? statement.status} · Saldo {amount(currency, statement.balance)}
+        {statement.daysOverdue > 0 ? ` · ${statement.daysOverdue} días de atraso` : ""}</p>
+      {statement.payments.length === 0 && <p>Sin pago registrado.</p>}
+      {statement.payments.map(payment => <p key={payment.reference}>
+        Pago {METHOD[payment.method] ?? payment.method} {payment.reference}
+        {payment.paidOn ? ` · ${payment.paidOn}` : ""} · {amount(currency, payment.amount)}
+      </p>)}
+      {statement.creditNotes.map(note => <p key={note.number}>
+        Nota de crédito {note.number} · {amount(currency, note.amount)} · {note.reason}
+      </p>)}
+    </> : <p>No se pudo consultar el estado de cuenta de la factura.</p>}
   </section>;
 }
 
 export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const { getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice,
-    getInvoicePayment, acceptPreinvoice,
+    getInvoiceStatement, acceptPreinvoice,
     disputePreinvoice, financeRevision } = useAirlineSession();
   const [pages, setPages] = useState<AirlinePreinvoicePageResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +82,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
   const [detail, setDetail] = useState<{ id: string; status: "loading" | "ready" | "error" | "missing";
     value: (AirlinePreinvoiceDetailResponse & { disputes: PreinvoiceDisputeResponse[];
       invoice: NonFiscalInvoiceResponse | null;
-      payment: NonFiscalPaymentResponse | null }) | null } | null>(null);
+      statement: AirlineInvoiceStatementResponse | null }) | null } | null>(null);
   const [acceptance, setAcceptance] = useState<{ id: string | null;
     status: "idle" | "confirm" | "pending" | "success" | "conflict" | "error" }>(
       { id: null, status: "idle" });
@@ -97,9 +126,8 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         getPreinvoice(id), getPreinvoiceDisputes(id)]);
       const invoice = preinvoice.status === "Invoiced"
         ? await getPreinvoiceInvoice(id) : null;
-      const payment = invoice ? await getInvoicePayment(invoice.id) : null;
-      const value = { ...preinvoice, disputes: disputeList.disputes, invoice,
-        payment: payment?.payment ?? null };
+      const statement = invoice ? await getInvoiceStatement(invoice.id).catch(() => null) : null;
+      const value = { ...preinvoice, disputes: disputeList.disputes, invoice, statement };
       if (request === detailGeneration.current)
         setDetail({ id, status: "ready", value });
     } catch (error) {
@@ -107,7 +135,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         setDetail({ id, status: error instanceof ElevantApiError && error.status === 404
           ? "missing" : "error", value: null });
     }
-  }, [getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment]);
+  }, [getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoiceStatement]);
 
   useEffect(() => {
     if (lastRefresh.current.financeRevision === financeRevision &&
@@ -231,9 +259,11 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
         <p role="alert">No se pudo consultar el detalle. Inténtalo de nuevo.</p>}
       {detail?.id === item.id && detail.status === "ready" && detail.value &&
         <div aria-label={`Líneas de prefactura ${item.id}`} className={styles.preinvoiceLines}>
-          {detail.value.lines.map(line => <div key={line.id}>
-            <strong>{line.serviceName}</strong>
+          {orderedLines(detail.value.lines).map(line => <div key={line.id}
+            className={line.parentLineId ? styles.nestedLine : undefined}>
+            <strong>{line.kind && line.kind !== "Service" ? `${KIND[line.kind] ?? line.kind} · ` : ""}{line.serviceName}</strong>
             <span>{line.operationCode} · {line.operationDate}</span>
+            {line.reason && <span>Motivo de Finanzas: {line.reason}</span>}
             <span>{line.executedQuantity} {line.billingUnit} × {amount(item.currencyCode, line.unitPrice)}</span>
             <strong>{amount(item.currencyCode, line.amount)}</strong>
             {dispute.id === item.id && dispute.status === "edit" &&
@@ -260,7 +290,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
             </p>}
           </section>)}
           {detail.value.invoice && <InvoiceSummary invoice={detail.value.invoice}
-            payment={detail.value.payment} />}
+            statement={detail.value.statement} />}
           {detail.value.status === "Submitted" && acceptance.status === "idle" &&
             dispute.status === "idle" &&
             <button className={styles.loadMore} type="button"

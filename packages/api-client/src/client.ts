@@ -37,6 +37,8 @@ import {
   getGetFinanceInvoiceByPreinvoiceUrl,
   getGetAirlineInvoiceByPreinvoiceUrl,
   getGetAirlinePaymentByInvoiceUrl,
+  getGetAirlineInvoiceStatementUrl,
+  type AirlineInvoiceStatementResponse,
   getGetAirlineInvoiceDocumentUrl,
   getGetAirlinePaymentReceiptUrl,
   getGetFinanceInvoiceDocumentUrl,
@@ -560,6 +562,10 @@ export interface ElevantApiClient {
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
   ): Promise<NonFiscalPaymentLookupResponse>;
+  getAirlineInvoiceStatement(
+    invoiceId: string,
+    options?: GetNonFiscalPaymentOptions,
+  ): Promise<AirlineInvoiceStatementResponse>;
   getAirlineInvoiceDocument(
     preinvoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
@@ -3249,6 +3255,80 @@ function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceRe
 }
 
 const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment"];
+const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
+const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other"];
+
+function isStatementText(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+}
+
+/** Airline statement: own invoice only, balance consistent with payments and credit notes. */
+function isAirlineInvoiceStatementResponse(
+  value: unknown,
+  invoiceId: string,
+): value is AirlineInvoiceStatementResponse {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "invoiceId", "number", "preinvoiceId", "currencyCode", "total", "paid", "credited", "balance",
+      "issuedAt", "dueDate", "status", "daysOverdue", "lines", "payments", "creditNotes",
+    ]) ||
+    !isUuid(value.invoiceId) || value.invoiceId.toLowerCase() !== invoiceId ||
+    !isStatementText(value.number, 64) || !isUuid(value.preinvoiceId) ||
+    (value.currencyCode !== "USD" && value.currencyCode !== "DOP") ||
+    !isFiniteNumber(value.total) || value.total < 0 ||
+    !isFiniteNumber(value.paid) || value.paid < 0 ||
+    !isFiniteNumber(value.credited) || value.credited < 0 ||
+    !isFiniteNumber(value.balance) ||
+    Math.abs(value.total - value.paid - value.credited - value.balance) > 0.0001 ||
+    !isDateTimeOffset(value.issuedAt) ||
+    (value.dueDate !== null && value.dueDate !== undefined && !isDateOnly(value.dueDate)) ||
+    typeof value.status !== "string" || !INVOICE_STATUSES.includes(value.status) ||
+    !Number.isInteger(value.daysOverdue) || (value.daysOverdue as number) < 0 ||
+    !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500 ||
+    !Array.isArray(value.payments) || value.payments.length > 500 ||
+    !Array.isArray(value.creditNotes) || value.creditNotes.length > 500
+  ) return false;
+  let previous = 0;
+  for (const line of value.lines) {
+    if (
+      !isRecord(line) ||
+      !hasOnlyKeys(line, [
+        "lineNumber", "kind", "parentLineNumber", "operationCode", "operationDate", "serviceCode",
+        "serviceName", "quantity", "billingUnit", "unitPrice", "amount", "reason",
+      ]) ||
+      !Number.isInteger(line.lineNumber) || (line.lineNumber as number) <= previous ||
+      typeof line.kind !== "string" || !PRICED_LINE_KINDS.includes(line.kind) ||
+      (line.parentLineNumber !== null && line.parentLineNumber !== undefined &&
+        (!Number.isInteger(line.parentLineNumber) || (line.parentLineNumber as number) >= (line.lineNumber as number))) ||
+      (line.kind === "Service" && line.parentLineNumber !== null && line.parentLineNumber !== undefined) ||
+      !isStatementText(line.operationCode, 64) || !isDateOnly(line.operationDate) ||
+      !isStatementText(line.serviceCode, 64) || !isStatementText(line.serviceName, 200) ||
+      !isFiniteNumber(line.quantity) || line.quantity < 0 ||
+      !isStatementText(line.billingUnit, 32) ||
+      !isFiniteNumber(line.unitPrice) || !isFiniteNumber(line.amount) ||
+      (line.kind !== "Adjustment" && (line.amount < 0 || line.unitPrice < 0)) ||
+      (line.reason !== null && line.reason !== undefined &&
+        !(typeof line.reason === "string" && line.reason.length <= 1000))
+    ) return false;
+    previous = line.lineNumber as number;
+  }
+  return value.payments.every(payment =>
+    isRecord(payment) &&
+    hasOnlyKeys(payment, ["reference", "method", "paidOn", "amount", "recordedAt"]) &&
+    isStatementText(payment.reference, 80) &&
+    typeof payment.method === "string" && PAYMENT_METHODS.includes(payment.method) &&
+    (payment.paidOn === null || payment.paidOn === undefined || isDateOnly(payment.paidOn)) &&
+    isFiniteNumber(payment.amount) && payment.amount > 0 &&
+    isDateTimeOffset(payment.recordedAt)) &&
+    value.creditNotes.every(note =>
+      isRecord(note) &&
+      hasOnlyKeys(note, ["number", "amount", "reason", "issuedAt"]) &&
+      isStatementText(note.number, 64) &&
+      isFiniteNumber(note.amount) && note.amount > 0 &&
+      isStatementText(note.reason, 1000) &&
+      isDateTimeOffset(note.issuedAt));
+}
 
 /**
  * Service lines bill a positive executed quantity; charges may bill zero (inside a
@@ -4727,6 +4807,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetAirlinePaymentByInvoiceUrl(id),
         { ...options, method: "GET" }, true);
       if (!isNonFiscalPaymentLookupResponse(result.data, id))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineInvoiceStatement(
+      invoiceId: string, options?: GetNonFiscalPaymentOptions,
+    ) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetAirlineInvoiceStatementUrl(id),
+        { ...options, method: "GET" }, true);
+      if (!isAirlineInvoiceStatementResponse(result.data, id))
         throw malformedResponse(result.status);
       return result.data;
     },
