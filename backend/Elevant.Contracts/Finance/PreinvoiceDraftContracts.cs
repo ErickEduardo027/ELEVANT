@@ -7,12 +7,15 @@ public sealed record CreatePreinvoiceDraftRequest(
 public sealed record CreatePreinvoiceDraftResponse(Guid Id, bool Replayed);
 
 public sealed record PreinvoiceDraftLineResponse(
-    Guid Id, Guid OperationServiceId, Guid ApprovedSubmissionId,
+    Guid Id, Guid? OperationServiceId, Guid? ApprovedSubmissionId,
     int LineNumber, string OperationCode, DateOnly OperationDate,
     string ServiceCode, string ServiceName, decimal ExecutedQuantity,
-    string BillingUnit, decimal UnitPrice, string CurrencyCode, decimal Amount);
+    string BillingUnit, decimal UnitPrice, string CurrencyCode, decimal Amount,
+    string Kind, Guid? ParentLineId, decimal? ComputedQuantity, decimal? ComputedAmount,
+    bool IsExcluded, string? AdjustmentReason, DateTimeOffset? EditedAt);
 
 public sealed record PreinvoiceDraftResponse(
     Guid Id, Guid AirlineId, string AirlineName, Guid StationId,
     DateOnly From, DateOnly To, string CurrencyCode,
-    decimal Total, string Status, IReadOnlyList<PreinvoiceDraftLineResponse> Lines);
+    decimal Total, string Status, IReadOnlyList<PreinvoiceDraftLineResponse> Lines,
+    string? Version = null);

@@ -52,7 +52,7 @@ internal sealed class EfFinancePreinvoiceListStore(
                 item.From, item.To, item.CurrencyCode, item.Total, item.Status,
                 item.CreatedAt,
                 LineCount = context.PreinvoiceLines.AsNoTracking()
-                    .Count(line => line.PreinvoiceId == item.Id),
+                    .Count(line => line.PreinvoiceId == item.Id && !line.IsExcluded),
             }).Skip((page - 1) * limit).Take(limit + 1).ToArrayAsync(cancellationToken);
 
         return new FinancePreinvoicePageData(page, limit, rows.Length > limit,

@@ -5,6 +5,7 @@ using Elevant.Api.HealthChecks;
 using Elevant.Application.Finance;
 using Elevant.Contracts.Finance;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Domain.Enumerations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -42,8 +43,11 @@ public sealed class FinancePaymentsController(
             Response.Headers.WWWAuthenticate = "Bearer";
             return ProblemResult<RecordNonFiscalPaymentResponse>(401, "Authentication failed.");
         }
+        var method = PaymentMethod.Transfer;
+        if (request.Method is not null && !Enum.TryParse(request.Method, false, out method))
+            return ProblemResult<RecordNonFiscalPaymentResponse>(400, "Invalid payment request.");
         var result = await writer.HandleAsync(accountId, request.InvoiceId,
-            request.RequestId, request.Reference, cancellationToken);
+            request.RequestId, request.Reference, request.Amount, method, request.PaidOn, cancellationToken);
         if (!result.IsSuccess)
         {
             var (status, title) = result.Failure!.Value switch

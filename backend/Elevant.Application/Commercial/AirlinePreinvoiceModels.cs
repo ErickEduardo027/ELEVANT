@@ -7,10 +7,12 @@ public sealed record AirlinePreinvoiceData(
 public sealed record AirlinePreinvoicePageData(
     IReadOnlyList<AirlinePreinvoiceData> Preinvoices, bool HasMore);
 
+/// <summary>A service, a charge marked on a service (ParentLineId) or a Finance adjustment with its reason.</summary>
 public sealed record AirlinePreinvoiceLineData(
     Guid Id, string OperationCode, DateOnly OperationDate,
     string ServiceCode, string ServiceName, decimal ExecutedQuantity,
-    string BillingUnit, decimal UnitPrice, decimal Amount);
+    string BillingUnit, decimal UnitPrice, decimal Amount,
+    string Kind = "Service", Guid? ParentLineId = null, string? Reason = null);
 
 public sealed record PreinvoiceDisputeResolutionData(
     Guid Id, string Decision, string Reason, DateTimeOffset ResolvedAt);

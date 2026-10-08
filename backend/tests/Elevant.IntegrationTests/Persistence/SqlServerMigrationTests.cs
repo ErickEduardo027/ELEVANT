@@ -7205,9 +7205,18 @@ public sealed partial class SqlServerMigrationTests
             var draft = await inspection.Preinvoices.AsNoTracking()
                 .SingleAsync(item => item.PublicId == created.DraftId, cancellationToken);
             var line = await inspection.PreinvoiceLines.AsNoTracking()
-                .SingleAsync(item => item.PreinvoiceId == draft.Id, cancellationToken);
+                .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Service,
+                    cancellationToken);
+            // The NIGHT surcharge the agent marked is billed as its own line under the service (25 %).
+            var nightLine = await inspection.PreinvoiceLines.AsNoTracking()
+                .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge,
+                    cancellationToken);
+            Assert.Equal(line.Id, nightLine.ParentLineId);
+            Assert.Equal("NIGHT", nightLine.ServiceCode);
+            Assert.Equal(decimal.Round(line.Amount * 0.25m, 4), nightLine.Amount);
+            Assert.Equal(nightLine.Amount, nightLine.ComputedAmount);
             Assert.Equal(PreinvoiceStatus.Draft, draft.Status);
-            Assert.Equal(draft.Total, line.Amount);
+            Assert.Equal(draft.Total, line.Amount + nightLine.Amount);
             Assert.Equal(1m, line.ExecutedQuantity);
             Assert.True(line.UnitPrice > 0);
             Assert.Equal(approvedServiceName, line.ServiceName);
@@ -7227,10 +7236,40 @@ public sealed partial class SqlServerMigrationTests
                     created.DraftId!.Value, cancellationToken);
                 Assert.NotNull(detail);
                 Assert.Equal(draft.Total, detail.Total);
-                Assert.Equal(baggageServiceId, Assert.Single(detail.Lines).OperationServiceId);
+                Assert.Equal(baggageServiceId, Assert.Single(detail.Lines, item => item.Kind == "Service").OperationServiceId);
+                Assert.Equal("Charge", Assert.Single(detail.Lines, item => item.ParentLineId != null).Kind);
+
+                // Finance edits the surcharge and adds a discount before sending; computed values are kept.
+                var edits = readScope.ServiceProvider.GetRequiredService<IPreinvoiceLineEditStore>();
+                var charge = Assert.Single(detail.Lines, item => item.Kind == "Charge");
+                Assert.Equal(FinanceCatalogFailure.Invalid, (await edits.EditLineAsync(financeAccountId, detail.Id,
+                    charge.Id, new EditPreinvoiceLineInput(10m, false, "", detail.Version!), cancellationToken)).Failure);
+                Assert.Equal(FinanceCatalogFailure.Conflict, (await edits.EditLineAsync(financeAccountId, detail.Id,
+                    charge.Id, new EditPreinvoiceLineInput(10m, false, "Acordado", "c3RhbGU="), cancellationToken)).Failure);
+                Assert.Equal(FinanceCatalogFailure.Forbidden, (await edits.EditLineAsync(occAccountId, detail.Id,
+                    charge.Id, new EditPreinvoiceLineInput(10m, false, "Acordado", detail.Version!), cancellationToken)).Failure);
+                Assert.True((await edits.EditLineAsync(financeAccountId, detail.Id, charge.Id,
+                    new EditPreinvoiceLineInput(10m, false, "Recargo acordado con la aerolínea", detail.Version!),
+                    cancellationToken)).IsSuccess);
+                var edited = (await drafts.GetAsync(financeAccountId, detail.Id, cancellationToken))!;
+                Assert.Equal(FinanceCatalogFailure.Invalid, (await edits.EditLineAsync(financeAccountId, detail.Id,
+                    Assert.Single(edited.Lines, item => item.Kind == "Service").Id,
+                    new EditPreinvoiceLineInput(null, true, "Quitar servicio", edited.Version!), cancellationToken)).Failure);
+                Assert.True((await edits.AddAdjustmentAsync(financeAccountId, detail.Id,
+                    new AddPreinvoiceAdjustmentInput("Descuento por demora propia", -5m, "Compensación comercial",
+                        edited.Version!), cancellationToken)).IsSuccess);
+                edited = (await drafts.GetAsync(financeAccountId, detail.Id, cancellationToken))!;
+                var editedCharge = Assert.Single(edited.Lines, item => item.Kind == "Charge");
+                Assert.Equal(10m, editedCharge.Amount);
+                Assert.Equal(charge.Amount, editedCharge.ComputedAmount);
+                Assert.NotNull(editedCharge.EditedAt);
+                Assert.Equal(-5m, Assert.Single(edited.Lines, item => item.Kind == "Adjustment").Amount);
+                Assert.Equal(line.Amount + 10m - 5m, edited.Total);
                 Assert.Null(await drafts.GetAsync(occAccountId,
                     created.DraftId.Value, cancellationToken));
             }
+            draft = await inspection.Preinvoices.AsNoTracking()
+                .SingleAsync(item => item.PublicId == created.DraftId, cancellationToken);
             await using (var listScope = provider.CreateAsyncScope())
             {
                 var list = listScope.ServiceProvider.GetRequiredService<IFinancePreinvoiceListStore>();
@@ -7240,8 +7279,8 @@ public sealed partial class SqlServerMigrationTests
                 var item = Assert.Single(page.Preinvoices);
                 Assert.Equal(created.DraftId, item.Id);
                 Assert.Equal("Draft", item.Status);
-                Assert.Equal(1, item.LineCount);
-                Assert.Equal(draft.Total, item.Total);
+                Assert.Equal(3, item.LineCount);
+                Assert.Equal(line.Amount + 5m, item.Total);
                 Assert.Null(await list.ListAsync(occAccountId, stationId, 1, 20,
                     cancellationToken));
                 Assert.Null(await list.ListAsync(financeAccountId, Guid.NewGuid(), 1, 20,
@@ -7314,7 +7353,11 @@ public sealed partial class SqlServerMigrationTests
                 Assert.NotNull(published);
                 Assert.Equal("Submitted", published.Status);
                 Assert.Equal(draft.Total, published.Total);
-                var snapshot = Assert.Single(published.Lines);
+                Assert.Equal(3, published.Lines.Count);
+                var snapshot = Assert.Single(published.Lines, item => item.Kind == "Service");
+                Assert.Equal(snapshot.Id, Assert.Single(published.Lines, item => item.Kind == "Charge").ParentLineId);
+                Assert.Equal("Compensación comercial",
+                    Assert.Single(published.Lines, item => item.Kind == "Adjustment").Reason);
                 Assert.Equal(line.OperationCode, snapshot.OperationCode);
                 Assert.Equal(approvedServiceName, snapshot.ServiceName);
                 Assert.Equal(line.Amount, snapshot.Amount);
@@ -7463,7 +7506,7 @@ public sealed partial class SqlServerMigrationTests
                 .Select(AccountChangeOutboxWriter.Decode)
                 .Where(item => item.Resource == "finance_preinvoices" &&
                     item.ResourceId == created.DraftId).ToArray();
-            Assert.Equal(5, financeAcceptanceHints.Length); // draft + submission + dispute + resolution + acceptance
+            Assert.Equal(7, financeAcceptanceHints.Length); // draft + 2 edits + submission + dispute + resolution + acceptance
             Assert.All(financeAcceptanceHints, hint =>
                 Assert.Equal(financeAccountInternalId, hint.RecipientAccountId));
 
@@ -7509,8 +7552,15 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal($"NF-{invoice.PublicId:N}", invoice.Number);
             Assert.Equal(draft.Total, invoice.Total);
             Assert.Equal(draft.CurrencyCode, invoice.CurrencyCode);
-            var invoiceLine = Assert.Single(await inspection.NonFiscalInvoiceLines.AsNoTracking()
-                .Where(item => item.InvoiceId == invoice.Id).ToArrayAsync(cancellationToken));
+            var invoiceLines = await inspection.NonFiscalInvoiceLines.AsNoTracking()
+                .Where(item => item.InvoiceId == invoice.Id).OrderBy(item => item.LineNumber)
+                .ToArrayAsync(cancellationToken);
+            Assert.Equal([PreinvoiceLineKind.Service, PreinvoiceLineKind.Charge, PreinvoiceLineKind.Adjustment],
+                invoiceLines.Select(item => item.Kind));
+            Assert.Equal(invoiceLines[0].LineNumber, invoiceLines[1].ParentLineNumber);
+            Assert.NotNull(invoice.DueDate);
+            Assert.Equal(30, invoice.PaymentTermDays);
+            var invoiceLine = invoiceLines[0];
             Assert.Equal(line.Id, invoiceLine.PreinvoiceLineId);
             Assert.Equal(line.Amount, invoiceLine.Amount);
             Assert.Equal(line.OperationCode, invoiceLine.OperationCode);
@@ -7536,7 +7586,8 @@ public sealed partial class SqlServerMigrationTests
                     financeAccountId, created.DraftId.Value, cancellationToken);
                 Assert.NotNull(financeInvoice);
                 Assert.Equal(invoice.Number, financeInvoice.Number);
-                Assert.Equal(line.Amount, Assert.Single(financeInvoice.Lines).Amount);
+                Assert.Equal(3, financeInvoice.Lines.Count);
+                Assert.Equal(line.Amount, financeInvoice.Lines[0].Amount);
                 var airlineInvoice = await reader.GetForAirlineAsync(
                     airlineOrganizationId, created.DraftId.Value, cancellationToken);
                 Assert.NotNull(airlineInvoice);
@@ -7547,8 +7598,10 @@ public sealed partial class SqlServerMigrationTests
                     occAccountId, created.DraftId.Value, cancellationToken));
             }
 
+            // A first partial payment; the balance is settled later after a credit note.
             var paymentCommand = new RecordNonFiscalPaymentCommand(
-                financeAccountId, invoice.PublicId, Guid.NewGuid(), "DEV-PAY-0002");
+                financeAccountId, invoice.PublicId, Guid.NewGuid(), "DEV-PAY-0002", 50m, PaymentMethod.Check,
+                new DateOnly(2026, 8, 20));
             await using (var unpaidReadScope = provider.CreateAsyncScope())
             {
                 var reader = unpaidReadScope.ServiceProvider
@@ -7578,18 +7631,55 @@ public sealed partial class SqlServerMigrationTests
                 (await PayAsync(paymentCommand with { RequestId = Guid.NewGuid() })).Failure);
             var payment = Assert.Single(await inspection.NonFiscalPayments.AsNoTracking()
                 .Where(item => item.InvoiceId == invoice.Id).ToArrayAsync(cancellationToken));
-            Assert.Equal(invoice.Total, payment.Amount);
+            Assert.Equal(50m, payment.Amount);
+            Assert.Equal(PaymentMethod.Check, payment.Method);
             Assert.Equal(invoice.CurrencyCode, payment.CurrencyCode);
+            Assert.Equal(RecordNonFiscalPaymentFailure.Conflict, (await PayAsync(paymentCommand with
+            {
+                RequestId = Guid.NewGuid(), Reference = "DEV-PAY-TOO-MUCH", Amount = invoice.Total,
+            })).Failure);
+            await using (var ledgerScope = provider.CreateAsyncScope())
+            {
+                var ledger = ledgerScope.ServiceProvider.GetRequiredService<IFinanceInvoiceLedgerStore>();
+                var partial = (await ledger.GetAsync(financeAccountId, invoice.PublicId, cancellationToken))!;
+                Assert.Equal("PartiallyPaid", partial.Summary.Status);
+                Assert.Equal(invoice.Total - 50m, partial.Summary.Balance);
+                var noteRequest = Guid.NewGuid();
+                Assert.Equal(FinanceCatalogFailure.Conflict, (await ledger.IssueCreditNoteAsync(financeAccountId,
+                    invoice.PublicId, new IssueCreditNoteInput(Guid.NewGuid(), invoice.Total, "Excede el saldo"),
+                    cancellationToken)).Failure);
+                var note = await ledger.IssueCreditNoteAsync(financeAccountId, invoice.PublicId,
+                    new IssueCreditNoteInput(noteRequest, 10m, "Bonificación por servicio parcial"), cancellationToken);
+                Assert.True(note.IsSuccess);
+                Assert.Equal(note.Id, (await ledger.IssueCreditNoteAsync(financeAccountId, invoice.PublicId,
+                    new IssueCreditNoteInput(noteRequest, 10m, "Bonificación por servicio parcial"),
+                    cancellationToken)).Id);
+                var settlement = await PayAsync(new RecordNonFiscalPaymentCommand(financeAccountId, invoice.PublicId,
+                    Guid.NewGuid(), "DEV-PAY-0003"));
+                Assert.Equal(invoice.Total - 60m, settlement.Amount);
+                var paid = (await ledger.GetAsync(financeAccountId, invoice.PublicId, cancellationToken))!;
+                Assert.Equal("Paid", paid.Summary.Status);
+                Assert.Equal(0m, paid.Summary.Balance);
+                Assert.Equal(2, paid.Payments.Count);
+                Assert.Single(paid.CreditNotes);
+                Assert.Contains((await ledger.ListAsync(financeAccountId, stationId, null, "Paid", 1, 25,
+                    cancellationToken))!.Invoices, item => item.Id == invoice.PublicId);
+                Assert.Null(await ledger.ListAsync(occAccountId, null, null, null, 1, 25, cancellationToken));
+            }
+            payment = await inspection.NonFiscalPayments.AsNoTracking()
+                .Where(item => item.InvoiceId == invoice.Id).OrderByDescending(item => item.CreatedAt)
+                .FirstAsync(cancellationToken);
             var paidForReconciliation = Assert.Single((await ReadReconciliationAsync(
                 financeAccountId, stationId))!.Rows,
                 item => item.PreinvoiceId == created.DraftId.Value);
             Assert.Equal(payment.PublicId, paidForReconciliation.PaymentId);
-            Assert.Equal(payment.Amount, paidForReconciliation.PaymentAmount);
+            Assert.Equal(invoice.Total - 10m, paidForReconciliation.PaymentAmount);
             Assert.Equal(payment.Reference, paidForReconciliation.PaymentReference);
             Assert.Equal(paymentCommand.RequestId,
                 Assert.Single(await inspection.AuditEntries.AsNoTracking()
-                    .Where(item => item.EntityPublicId == payment.PublicId &&
-                        item.Action == "finance.payment.non_fiscal.recorded")
+                    .Where(item => item.EntityPublicId != payment.PublicId &&
+                        item.Action == "finance.payment.non_fiscal.recorded" &&
+                        item.CorrelationId == paymentCommand.RequestId)
                     .ToArrayAsync(cancellationToken)).CorrelationId);
             await using (var paymentReadScope = provider.CreateAsyncScope())
             {
@@ -7632,9 +7722,9 @@ public sealed partial class SqlServerMigrationTests
             await inspection.SaveChangesAsync(cancellationToken);
             var competingPayments = await Task.WhenAll(
                 PayAsync(paymentCommand with { InvoiceId = secondInvoiceId,
-                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-A" }),
+                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-A", Amount = null }),
                 PayAsync(paymentCommand with { InvoiceId = secondInvoiceId,
-                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-B" }));
+                    RequestId = Guid.NewGuid(), Reference = "DEV-PAY-RACE-B", Amount = null }));
             Assert.Single(competingPayments, result => result.IsSuccess && !result.Replayed);
             Assert.Single(competingPayments, result =>
                 result.Failure == RecordNonFiscalPaymentFailure.Conflict);
@@ -7763,8 +7853,8 @@ public sealed partial class SqlServerMigrationTests
             var rollbackFailure = await Assert.ThrowsAsync<SqlException>(() =>
                 inspection.GetService<IMigrator>().MigrateAsync(
                     "20260928170918_NonFiscalPayments", cancellationToken));
-            Assert.Contains("Resolution history must be retained", rollbackFailure.Message,
-                StringComparison.Ordinal);
+            // The newest guard to meet retained history stops the rollback.
+            Assert.Contains("history must be retained", rollbackFailure.Message, StringComparison.Ordinal);
             Assert.Single(await inspection.PreinvoiceDisputeResolutions.AsNoTracking()
                 .Where(item => item.DisputeId == voidedDispute.Id)
                 .ToArrayAsync(cancellationToken));

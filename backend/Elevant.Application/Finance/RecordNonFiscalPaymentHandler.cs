@@ -5,8 +5,10 @@ using Elevant.Domain.Enumerations;
 
 namespace Elevant.Application.Finance;
 
+/// <summary>A null amount pays the remaining balance; partial payments never exceed it.</summary>
 public sealed record RecordNonFiscalPaymentCommand(
-    Guid AccountId, Guid InvoiceId, Guid RequestId, string Reference);
+    Guid AccountId, Guid InvoiceId, Guid RequestId, string Reference,
+    decimal? Amount = null, PaymentMethod Method = PaymentMethod.Transfer, DateOnly? PaidOn = null);
 
 public enum RecordNonFiscalPaymentFailure
 {
@@ -35,14 +37,21 @@ public sealed record RecordNonFiscalPaymentResult(
 public sealed class RecordNonFiscalPaymentHandler(
     IActorContextResolver actors, INonFiscalPaymentStore store)
 {
-    public async Task<RecordNonFiscalPaymentResult> HandleAsync(
+    public Task<RecordNonFiscalPaymentResult> HandleAsync(
         Guid accountId, Guid invoiceId, Guid requestId, string? reference,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        HandleAsync(accountId, invoiceId, requestId, reference, null, PaymentMethod.Transfer, null, cancellationToken);
+
+    public async Task<RecordNonFiscalPaymentResult> HandleAsync(
+        Guid accountId, Guid invoiceId, Guid requestId, string? reference, decimal? amount,
+        PaymentMethod method, DateOnly? paidOn, CancellationToken cancellationToken = default)
     {
         if (accountId == Guid.Empty)
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Unauthorized);
         if (invoiceId == Guid.Empty || requestId == Guid.Empty ||
-            !ValidReference(reference))
+            !ValidReference(reference) || amount is <= 0 or > 900_000_000_000m ||
+            amount is { } value && decimal.Round(value, 4) != value || !Enum.IsDefined(method) ||
+            paidOn is { } date && date > DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)))
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.InvalidRequest);
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
@@ -53,7 +62,7 @@ public sealed class RecordNonFiscalPaymentHandler(
                 membership.Kind == MembershipKind.InternalStaff))
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Forbidden);
         return await store.RecordAsync(new RecordNonFiscalPaymentCommand(
-            accountId, invoiceId, requestId, reference!), cancellationToken);
+            accountId, invoiceId, requestId, reference!, amount, method, paidOn), cancellationToken);
     }
 
     private static bool ValidReference(string? reference) =>

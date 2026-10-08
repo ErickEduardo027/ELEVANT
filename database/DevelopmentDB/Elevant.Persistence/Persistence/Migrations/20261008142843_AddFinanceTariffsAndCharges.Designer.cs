@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Elevant.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ElevantDbContext))]
-    [Migration("20261008134926_AddFinanceTariffsAndCharges")]
+    [Migration("20261008142843_AddFinanceTariffsAndCharges")]
     partial class AddFinanceTariffsAndCharges
     {
         /// <inheritdoc />
@@ -1447,7 +1447,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("InvoiceId", "Kind")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[kind] = 'Invoice'");
 
                     b.ToTable("financial_documents", "commercial", t =>
                         {
@@ -1862,7 +1863,7 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_non_fiscal_invoice_line_price", "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
 
-                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity", "[executed_quantity] > 0");
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity", "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
                         });
                 });
 
@@ -2494,7 +2495,7 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_preinvoice_line_price", "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
 
-                            t.HasCheckConstraint("ck_preinvoice_line_quantity", "[executed_quantity] > 0");
+                            t.HasCheckConstraint("ck_preinvoice_line_quantity", "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
                         });
                 });
 

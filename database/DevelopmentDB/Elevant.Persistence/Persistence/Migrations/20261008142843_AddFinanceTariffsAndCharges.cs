@@ -21,6 +21,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 schema: "commercial",
                 table: "preinvoice_lines");
 
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_preinvoice_line_quantity",
+                schema: "commercial",
+                table: "preinvoice_lines");
+
             migrationBuilder.DropIndex(
                 name: "IX_non_fiscal_payments_invoice_id",
                 schema: "commercial",
@@ -30,6 +35,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 name: "ck_non_fiscal_invoice_line_price",
                 schema: "commercial",
                 table: "non_fiscal_invoice_lines");
+
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_non_fiscal_invoice_line_quantity",
+                schema: "commercial",
+                table: "non_fiscal_invoice_lines");
+
+            migrationBuilder.DropIndex(
+                name: "IX_financial_documents_invoice_id_kind",
+                schema: "commercial",
+                table: "financial_documents");
 
             migrationBuilder.AlterColumn<long>(
                 name: "operation_service_id",
@@ -699,6 +714,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 table: "preinvoice_lines",
                 sql: "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
 
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_preinvoice_line_quantity",
+                schema: "commercial",
+                table: "preinvoice_lines",
+                sql: "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
+
             migrationBuilder.CreateIndex(
                 name: "IX_non_fiscal_payments_invoice_id",
                 schema: "commercial",
@@ -710,6 +731,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 schema: "commercial",
                 table: "non_fiscal_invoice_lines",
                 sql: "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
+
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_non_fiscal_invoice_line_quantity",
+                schema: "commercial",
+                table: "non_fiscal_invoice_lines",
+                sql: "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_financial_documents_invoice_id_kind",
+                schema: "commercial",
+                table: "financial_documents",
+                columns: new[] { "invoice_id", "kind" },
+                unique: true,
+                filter: "[kind] = 'Invoice'");
 
             migrationBuilder.CreateIndex(
                 name: "IX_airline_billing_profiles_airline_id",
@@ -1041,6 +1076,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM [commercial].[preinvoice_lines] WHERE [kind] <> N'Service')
+                    OR EXISTS (SELECT 1 FROM [ops].[operation_service_charges])
+                    OR EXISTS (SELECT 1 FROM [commercial].[non_fiscal_credit_notes])
+                    OR EXISTS (SELECT 1 FROM [commercial].[non_fiscal_payments] GROUP BY [invoice_id] HAVING COUNT(*) > 1)
+                BEGIN
+                    THROW 51060, 'Finance charge and receivable history must be retained; restore a verified backup instead of reversing this migration.', 1;
+                END
+                """);
+
             migrationBuilder.DropForeignKey(
                 name: "FK_preinvoice_lines_accounts_edited_by_account_id",
                 schema: "commercial",
@@ -1148,6 +1193,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 schema: "commercial",
                 table: "preinvoice_lines");
 
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_preinvoice_line_quantity",
+                schema: "commercial",
+                table: "preinvoice_lines");
+
             migrationBuilder.DropIndex(
                 name: "IX_non_fiscal_payments_invoice_id",
                 schema: "commercial",
@@ -1157,6 +1207,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 name: "ck_non_fiscal_invoice_line_price",
                 schema: "commercial",
                 table: "non_fiscal_invoice_lines");
+
+            migrationBuilder.DropCheckConstraint(
+                name: "ck_non_fiscal_invoice_line_quantity",
+                schema: "commercial",
+                table: "non_fiscal_invoice_lines");
+
+            migrationBuilder.DropIndex(
+                name: "IX_financial_documents_invoice_id_kind",
+                schema: "commercial",
+                table: "financial_documents");
 
             migrationBuilder.DropColumn(
                 name: "adjustment_reason",
@@ -1285,6 +1345,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 table: "preinvoice_lines",
                 sql: "[unit_price] >= 0 AND [amount] >= 0");
 
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_preinvoice_line_quantity",
+                schema: "commercial",
+                table: "preinvoice_lines",
+                sql: "[executed_quantity] > 0");
+
             migrationBuilder.CreateIndex(
                 name: "IX_non_fiscal_payments_invoice_id",
                 schema: "commercial",
@@ -1297,6 +1363,19 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 schema: "commercial",
                 table: "non_fiscal_invoice_lines",
                 sql: "[unit_price] >= 0 AND [amount] >= 0");
+
+            migrationBuilder.AddCheckConstraint(
+                name: "ck_non_fiscal_invoice_line_quantity",
+                schema: "commercial",
+                table: "non_fiscal_invoice_lines",
+                sql: "[executed_quantity] > 0");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_financial_documents_invoice_id_kind",
+                schema: "commercial",
+                table: "financial_documents",
+                columns: new[] { "invoice_id", "kind" },
+                unique: true);
         }
     }
 }

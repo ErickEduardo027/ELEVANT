@@ -76,13 +76,20 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
             }).SingleOrDefaultAsync(cancellationToken);
         if (header is null) return null;
 
-        var lines = await context.PreinvoiceLines.AsNoTracking()
-            .Where(line => line.PreinvoiceId == header.Id)
-            .OrderBy(line => line.LineNumber)
-            .Select(line => new AirlinePreinvoiceLineData(
+        // Lines Finance excluded are not billed and are not shown to the airline.
+        var lines = await (
+            from line in context.PreinvoiceLines.AsNoTracking()
+            join parentCandidate in context.PreinvoiceLines.AsNoTracking()
+                on line.ParentLineId equals (long?)parentCandidate.Id into parents
+            from parent in parents.DefaultIfEmpty()
+            where line.PreinvoiceId == header.Id && !line.IsExcluded
+            orderby line.LineNumber
+            select new AirlinePreinvoiceLineData(
                 line.PublicId, line.OperationCode, line.OperationDate,
                 line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
-                line.BillingUnit, line.UnitPrice, line.Amount))
+                line.BillingUnit, line.UnitPrice, line.Amount, line.Kind.ToString(),
+                parent == null ? null : parent.PublicId,
+                line.Kind == Elevant.Domain.Enumerations.PreinvoiceLineKind.Service ? null : line.AdjustmentReason))
             .ToArrayAsync(cancellationToken);
         return new AirlinePreinvoiceDetailData(header.PublicId,
             header.StationId, header.StationCode, header.From, header.To,
