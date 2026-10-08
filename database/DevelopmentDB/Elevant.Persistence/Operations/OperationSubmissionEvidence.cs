@@ -12,8 +12,15 @@ namespace Elevant.Persistence.Operations;
 internal sealed record OperationSubmissionEvidence(
     int Version,
     OccReviewServiceData[] Services,
-    OccReviewIncidentData[] Incidents)
+    OccReviewIncidentData[] Incidents,
+    ServiceChargeEvidence[]? Charges = null)
 {
+    /// <summary>Version 2 adds the charges the agent marked; version 1 snapshots carry none.</summary>
+    public const int CurrentVersion = 2;
+
+    public IReadOnlyList<ServiceChargeEvidence> ChargesOf(Guid serviceId) =>
+        (Charges ?? []).Where(charge => charge.ServiceId == serviceId).ToArray();
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static async Task<OperationSubmissionEvidence> CaptureAsync(
@@ -38,7 +45,15 @@ internal sealed record OperationSubmissionEvidence(
                 item.PublicId, item.IncidentType, item.Severity.ToString(),
                 item.Status.ToString(), item.Description, item.OccurredAt))
             .ToArrayAsync(cancellationToken);
-        return new OperationSubmissionEvidence(1, services, incidents);
+        var charges = await (
+            from mark in context.OperationServiceCharges.AsNoTracking()
+            join service in context.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
+            join charge in context.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
+            where service.GroundOperationId == operationId && mark.RemovedAt == null
+            orderby service.LineNumber, mark.AppliedAt, mark.Id
+            select new ServiceChargeEvidence(mark.PublicId, service.PublicId, charge.PublicId, charge.Code, mark.AppliedAt))
+            .ToArrayAsync(cancellationToken);
+        return new OperationSubmissionEvidence(CurrentVersion, services, incidents, charges);
     }
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
@@ -46,8 +61,11 @@ internal sealed record OperationSubmissionEvidence(
     public static OperationSubmissionEvidence Parse(string json)
     {
         var evidence = JsonSerializer.Deserialize<OperationSubmissionEvidence>(json, JsonOptions);
-        if (evidence is not { Version: 1, Services: not null, Incidents: not null })
+        if (evidence is not { Version: 1 or 2, Services: not null, Incidents: not null })
             throw new InvalidOperationException("The submitted evidence snapshot is invalid.");
         return evidence;
     }
 }
+
+/// <summary>A charge the agent had marked on a service when the delivery was submitted.</summary>
+internal sealed record ServiceChargeEvidence(Guid MarkId, Guid ServiceId, Guid ChargeId, string Code, DateTimeOffset AppliedAt);
