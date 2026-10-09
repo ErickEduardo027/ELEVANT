@@ -18,8 +18,59 @@ namespace Elevant.Api.Controllers;
 [Authorize]
 [PrivateResponse]
 [Route("api/v{version:apiVersion}/governance")]
-public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore store) : ControllerBase
+public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore store, IEmployeeGovernanceStore employees)
+    : ControllerBase
 {
+    /// <summary>Employees of the department that can be given access (ADR-0017).</summary>
+    [HttpGet("departments/{department}/access-candidates", Name = "ListDepartmentAccessCandidates")]
+    [ProducesResponseType<AccessCandidateData[]>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> AccessCandidates(string department, [FromQuery] string? search = null,
+        CancellationToken cancellationToken = default) =>
+        ReadAsync(actorId => employees.ListAccessCandidatesAsync(actorId, department, search, cancellationToken));
+
+    [HttpGet("departments/{department}/positions", Name = "ListDepartmentPositions")]
+    [ProducesResponseType<JobPositionData[]>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> DepartmentPositions(string department, CancellationToken cancellationToken) =>
+        ReadAsync(actorId => employees.ListPositionsAsync(actorId, department, cancellationToken));
+
+    [HttpPut("departments/{department}/positions/{id:guid}/suggested-access-profile", Name = "SetPositionSuggestedAccessProfile")]
+    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [RequestSizeLimit(4096)]
+    public Task<IActionResult> SetSuggestedProfile(string department, Guid id, [FromBody] SetSuggestedProfileInput input,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => employees.SetSuggestedProfileAsync(actorId, department, id, input, cancellationToken));
+
+    [HttpGet("departments/{department}/requisitions", Name = "ListDepartmentRequisitions")]
+    [ProducesResponseType<RequisitionData[]>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> DepartmentRequisitions(string department, [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default) =>
+        ReadAsync(actorId => employees.ListRequisitionsAsync(actorId, department, status, cancellationToken));
+
+    [HttpPost("departments/{department}/requisitions", Name = "CreatePersonnelRequisition")]
+    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [RequestSizeLimit(8192)]
+    public Task<IActionResult> CreateRequisition(string department, [FromBody] CreateRequisitionInput input,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => employees.CreateRequisitionAsync(actorId, department, input, cancellationToken),
+            StatusCodes.Status201Created);
+
+    [HttpPost("requisitions/{id:guid}/cancel", Name = "CancelPersonnelRequisition")]
+    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [RequestSizeLimit(4096)]
+    public Task<IActionResult> CancelRequisition(Guid id, [FromBody] CancelRequisitionInput input,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => employees.ChangeRequisitionStatusAsync(actorId, id,
+            new ChangeRequisitionStatusInput("Cancelled", input.ExpectedVersion, input.Reason), cancellationToken));
+
+    /// <summary>Audit trail of the department: sign-ins, governance and operational actions of its people.</summary>
+    [HttpGet("departments/{department}/activity", Name = "ListDepartmentActivity")]
+    [ProducesResponseType<ActivityPageData>(StatusCodes.Status200OK, "application/json")]
+    public Task<IActionResult> Activity(string department, [FromQuery] DateTimeOffset from, [FromQuery] DateTimeOffset to,
+        [FromQuery] string? category = null, [FromQuery] Guid? accountId = null, [FromQuery] string? cursor = null,
+        [FromQuery] int limit = 50, CancellationToken cancellationToken = default) =>
+        ReadAsync(actorId => employees.ListActivityAsync(actorId, department, from, to, category, accountId, cursor, limit,
+            cancellationToken));
+
     [HttpGet("me/access", Name = "GetMyDepartmentAccess")]
     [ProducesResponseType<MyDepartmentAccessData>(StatusCodes.Status200OK, "application/json")]
     public Task<IActionResult> MyAccess(CancellationToken cancellationToken) =>
@@ -62,6 +113,8 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         MutateAsync(actorId => store.CreateAdministratorAsync(actorId, department, input, cancellationToken),
             StatusCodes.Status201Created);
 
+    /// <summary>Deprecated (ADR-0017): members are requested for an employee and validated by Human Resources.</summary>
+    [Obsolete("Request access for an employee instead.")]
     [HttpPost("departments/{department}/users", Name = "CreateDepartmentUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(32768)]
@@ -209,17 +262,7 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         int successStatus = StatusCodes.Status200OK)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await command(actorId);
-        return result.Failure switch
-        {
-            null => StatusCode(successStatus, new CommercialIdResponse(result.Id!.Value)),
-            GovernanceFailure.Forbidden => Forbid(),
-            GovernanceFailure.NotFound => Problem(statusCode: 404, title: "Governance record not found."),
-            GovernanceFailure.Invalid => Problem(statusCode: 400, title: "Invalid governance data."),
-            GovernanceFailure.Conflict => Problem(statusCode: 409, title: "Governance record conflicts with current state."),
-            GovernanceFailure.Protected => Problem(statusCode: 409, title: "This protected user or role cannot be changed."),
-            _ => throw new InvalidOperationException(),
-        };
+        return this.ToAction(await command(actorId), successStatus);
     }
 
     private bool TryActor(out Guid accountId) =>
@@ -228,3 +271,5 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
 }
 
 public sealed record ExpectedVersionInput(string ExpectedVersion);
+
+public sealed record CancelRequisitionInput(string ExpectedVersion, string Reason);

@@ -38,3 +38,20 @@ public enum UserAccessRequestKind
     /// <summary>Ramp agent of the Operations department that signs in to the mobile app.</summary>
     RampAgent,
 }
+
+/// <summary>Employment status kept by Human Resources; a terminated employee can hold no active account.</summary>
+public enum EmployeeStatus
+{
+    Active,
+    Terminated,
+}
+
+/// <summary>Lifecycle of a personnel requisition.</summary>
+public enum RequisitionStatus
+{
+    Open,
+    InProgress,
+    Fulfilled,
+    Rejected,
+    Cancelled,
+}

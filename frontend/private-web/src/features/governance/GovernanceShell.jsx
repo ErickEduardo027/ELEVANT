@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ActivityPanel from '../employees/ActivityPanel';
+import { listAudit } from '../../services/humanResourcesEmployeesService';
 import ShellFrame from '../shell/ShellFrame';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
@@ -221,5 +223,6 @@ function GovernanceSettings({ snapshot, run }) {
       <LegacyRoles run={run} />
     </div>
     <section className="rounded-xl border border-black/5 bg-white p-6 dark:bg-surface-dark-card"><h2 className="text-lg font-bold">Auditoría</h2>{auditError && <p role="alert" className="mt-3 text-sm text-status-danger">{auditError}</p>}<div className="mt-4 max-h-[560px] space-y-3 overflow-auto">{(audit?.entries ?? snapshot.recentAudit).length ? (audit?.entries ?? snapshot.recentAudit).map((item, index) => <div key={`${item.at}-${index}`} className="border-b border-black/5 pb-3 text-sm dark:border-white/5"><p className="font-semibold">{item.action}</p><p className="text-xs text-text-secondary-light">{new Date(item.at).toLocaleString('es-DO')} · {item.actor} · {item.entityType}</p>{item.changes?.length > 0 && <ul className="mt-2 space-y-1 text-xs">{item.changes.map(change => <li key={change.field}><strong>{change.field}</strong>: {change.before ?? '—'} → {change.after ?? '—'}</li>)}</ul>}</div>) : <p className="text-sm text-text-secondary-light">No hay cambios registrados.</p>}</div><div className="mt-4 flex items-center gap-3 text-sm"><button type="button" disabled={page <= 1} onClick={() => setPage(current => current - 1)} className="rounded border px-3 py-1 disabled:opacity-50">Anterior</button><span>Página {page}</span><button type="button" disabled={!audit?.hasMore} onClick={() => setPage(current => current + 1)} className="rounded border px-3 py-1 disabled:opacity-50">Siguiente</button></div></section>
+    <section className="rounded-xl border border-black/5 bg-white p-6 dark:bg-surface-dark-card lg:col-span-2"><h2 className="text-lg font-bold">Actividad por departamento</h2><p className="mt-1 text-sm text-text-secondary-light">Inicios de sesión, cambios de acceso y operación del personal, filtrables por departamento.</p><div className="mt-4"><ActivityPanel load={listAudit} departmentFilter /></div></section>
   </div>;
 }

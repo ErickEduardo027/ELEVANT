@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
+using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
@@ -153,6 +154,26 @@ internal sealed class IdentityCredentialVerifier(
                     .SetProperty(account => account.UpdatedAt, now)
                     .SetProperty(account => account.ConcurrencyStamp, concurrencyStamp),
                 cancellationToken);
+        await AuditSignInAsync(accountId, verifiedPublicId, "auth.session.failed", now, cancellationToken);
+    }
+
+    /// <summary>Sign-in trail for department activity (ADR-0017); unknown addresses are never logged.</summary>
+    private async Task AuditSignInAsync(long accountId, Guid accountPublicId, string action, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(),
+            OccurredAt = now,
+            ActorType = AuditActorType.Account,
+            ActorAccountId = accountId,
+            Action = action,
+            EntityType = "iam.accounts",
+            EntityPublicId = accountPublicId,
+            Source = AuditSource.Api,
+            CorrelationId = Guid.CreateVersion7(),
+        });
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<bool> RecordSuccessfulAuthenticationAsync(
@@ -189,6 +210,8 @@ internal sealed class IdentityCredentialVerifier(
                     .SetProperty(account => account.ConcurrencyStamp, concurrencyStamp),
                 cancellationToken);
 
+        if (rows == 1)
+            await AuditSignInAsync(accountId, verifiedPublicId, "auth.session.created", now, cancellationToken);
         return rows == 1;
     }
 }

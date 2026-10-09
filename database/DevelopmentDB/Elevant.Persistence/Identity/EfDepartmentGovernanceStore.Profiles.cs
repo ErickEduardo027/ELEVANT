@@ -82,7 +82,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             if (before is not null) await RevokeProfileMembersAsync(profile.Id, cancellationToken);
             GovernanceSupport.AddAudit(context, actor.Id, before is null
                     ? "governance.access_profile.created" : "governance.access_profile.updated",
-                "iam.access_profiles", profile.PublicId, null, [], now,
+                "iam.access_profiles", profile.PublicId, null, [], now, parsed,
                 new AuditFieldChangeData("profile.name", null, name), new AuditFieldChangeData("profile.permissions", before, string.Join(',', codes)));
             await NotifyDepartmentAsync(parsed, "department_users", profile.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
@@ -116,7 +116,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             profile.UpdatedAt = now;
             await RevokeProfileMembersAsync(profile.Id, cancellationToken);
             GovernanceSupport.AddAudit(context, actor.Id, "governance.access_profile.deactivated",
-                "iam.access_profiles", profile.PublicId, null, [], now, new AuditFieldChangeData("profile.active", "true", "false"));
+                "iam.access_profiles", profile.PublicId, null, [], now, parsed, new AuditFieldChangeData("profile.active", "true", "false"));
             await NotifyDepartmentAsync(parsed, "department_users", profile.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(profile.PublicId);

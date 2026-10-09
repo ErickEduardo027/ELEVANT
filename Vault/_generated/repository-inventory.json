@@ -1125,13 +1125,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "81c46245d9a7c064d44a481d730e0aa73bb0903f3518bdc803daa94f1867793b",
+        "sha256": "3e23ef2cd687bbc1d744051468516efca727cb53a7213351b9d1a53c88c7eda3",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "062b6224a9f7f2e0156997bad3a4a7fae0823323ef8903473e0637b63aecb00d",
+        "sha256": "4f343d72eff98974aae9a48ea6d5e0e506cdda5cff00107f5b5861447d79c8a0",
         "title": null,
         "version": null
       }
@@ -1322,6 +1322,12 @@
         "name": "AddFinanceTariffsAndCharges",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261008142843_AddFinanceTariffsAndCharges.cs",
         "sha256": "40ab204e1ef4cbe04f764c5f703bdbb349a6749f6fa7ff4bf6fe88b6aa233217"
+      },
+      {
+        "id": "20261009172055",
+        "name": "AddEmployeesPositionsRequisitions",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261009172055_AddEmployeesPositionsRequisitions.cs",
+        "sha256": "e0847bdc6e92b7ede0159a515d65880f7c048028e18ff1869779ac345708852a"
       }
     ],
     "manifestContracts": [

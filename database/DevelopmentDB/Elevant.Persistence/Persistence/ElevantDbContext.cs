@@ -71,6 +71,16 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<RampAgent> RampAgents => Set<RampAgent>();
 
+    public DbSet<JobPosition> JobPositions => Set<JobPosition>();
+
+    public DbSet<Employee> Employees => Set<Employee>();
+
+    public DbSet<EmployeeAssignment> EmployeeAssignments => Set<EmployeeAssignment>();
+
+    public DbSet<EmployeeStation> EmployeeStations => Set<EmployeeStation>();
+
+    public DbSet<PersonnelRequisition> PersonnelRequisitions => Set<PersonnelRequisition>();
+
     public DbSet<RampMobileAccessRequest> RampMobileAccessRequests => Set<RampMobileAccessRequest>();
 
     public DbSet<QualificationCycle> QualificationCycles => Set<QualificationCycle>();
@@ -187,6 +197,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigurePlatform();
         builder.ConfigureIdentityAndReference();
         builder.ConfigureDepartmentGovernance();
+        builder.ConfigureEmployeeGovernance();
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigurePreinvoices();
         builder.ConfigureNonFiscalInvoices();

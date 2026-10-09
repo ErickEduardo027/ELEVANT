@@ -74,6 +74,9 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         if (operations && (profileId is null ||
                 input.StationIds.Any(id => actor.StationScopes.All(scope => scope.StationId != id))))
             return RampProfileResult.Failed(profileId is null ? RampProfileFailure.Forbidden : RampProfileFailure.Invalid);
+        // Reading ramp profiles never authorised writing them.
+        if (!operations && !actor.HasPermission("human_resources.ramp_profiles.manage"))
+            return RampProfileResult.Failed(RampProfileFailure.Forbidden);
         var requestedStations = await context.Stations.Where(item =>
             input.StationIds.Contains(item.PublicId) && item.IsActive)
             .ToArrayAsync(cancellationToken);
@@ -91,6 +94,19 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             item => item.PublicId == profileId, cancellationToken);
         if (profileId is not null && profile is null)
             return RampProfileResult.Failed(RampProfileFailure.NotFound);
+        // Agents with an employee record (ADR-0017): identity belongs to Human Resources and a terminated
+        // employee's profile never comes back to life from here.
+        var employee = profile is null ? null : await context.Employees.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.PersonId == profile.PersonId, cancellationToken);
+        if (employee is not null)
+        {
+            var linkedPerson = await context.Persons.AsNoTracking().SingleAsync(item => item.Id == employee.PersonId,
+                cancellationToken);
+            if (input.IsActive && employee.Status == EmployeeStatus.Terminated ||
+                linkedPerson.FirstName != input.FirstName.Trim() || linkedPerson.LastName != input.LastName.Trim() ||
+                employee.EmployeeNumber != input.EmployeeNumber.Trim() || employee.HireDate != input.HireDate)
+                return RampProfileResult.Failed(RampProfileFailure.Conflict);
+        }
         RampAgent? supervisor = null;
         if (input.Supervisor is { Id: Guid supervisorId })
         {

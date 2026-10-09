@@ -2583,7 +2583,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("/assets/airlines/british-airways.png", historicalLogo.LogoObjectKey);
         Assert.Equal("XX", manuallyEditedAirline.CountryCode);
         var rampRole = Assert.Single(snapshot.Roles, role => role.Code == "RAMP_AGENT");
-        Assert.DoesNotContain(snapshot.RampProfiles, profile => profile.AccountId is null);
+        // Employees of a ramp position may wait for their access request (ADR-0017); the seeded agent has one.
+        Assert.Contains(snapshot.RampProfiles, profile => profile.EmployeeNumber == "DEV-RA-001" && profile.AccountId is not null);
         var humanResourcesAccountId = Guid.Parse("40000000-0000-7000-8000-000000000004");
         var rampProfiles = scope.ServiceProvider.GetRequiredService<IRampProfileStore>();
         var supervisorProfile = Assert.Single((await rampProfiles.ListAsync(
@@ -3693,6 +3694,7 @@ public sealed partial class SqlServerMigrationTests
                     select operation.Id)
                 .SingleAsync(cancellationToken);
             var rampAgentId = await setup.RampAgents
+                .Where(agent => agent.EmployeeNumber == "DEV-RA-001")
                 .Select(agent => agent.Id)
                 .SingleAsync(cancellationToken);
             var instant = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);

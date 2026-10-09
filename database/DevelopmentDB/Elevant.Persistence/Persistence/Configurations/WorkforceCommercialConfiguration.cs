@@ -21,7 +21,7 @@ internal static class WorkforceCommercialConfiguration
         {
             builder.ToTable("ramp_agents", "hr");
             builder.Property(agent => agent.EmployeeNumber).HasMaxLength(32).IsRequired();
-            builder.Property(agent => agent.Category).HasMaxLength(64).IsRequired();
+            builder.Property(agent => agent.Category).HasMaxLength(120).IsRequired();
             builder.Property(agent => agent.HireDate).HasColumnType("date");
             builder.HasIndex(agent => agent.PersonId).IsUnique();
             builder.HasIndex(agent => agent.EmployeeNumber).IsUnique();
