@@ -71,6 +71,7 @@ describe('ramp service charges', () => {
     mockApi.getRampOperationCharges.mockResolvedValue(CHARGES);
     await expect(getRampOperationCharges(OPERATION_ID)).resolves.toEqual({ charges: CHARGES, fromCache: false });
     expect(mockWriteCache).toHaveBeenCalledWith(SESSION_ID, ACCOUNT_ID, OPERATION_ID, JSON.stringify(CHARGES));
+    expect(mockApi.getRampOperationCharges).toHaveBeenCalledWith(OPERATION_ID, INSTALLATION_ID, { signal: undefined });
   });
 
   it('falls back to the cached copy only when the network is unavailable', async () => {

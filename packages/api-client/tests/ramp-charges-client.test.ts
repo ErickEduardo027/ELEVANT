@@ -42,12 +42,16 @@ function clientReturning(body: unknown, capture?: (input: string, init?: Request
 describe("ramp service charges", () => {
   it("reads the charge options and marks of an operation without prices", async () => {
     let url = "";
-    await expect(clientReturning(charges, input => { url = input; }).getRampOperationCharges(operationId))
-      .resolves.toEqual(charges);
+    let headers = new Headers();
+    await expect(clientReturning(charges, (input, init) => { url = input; headers = new Headers(init?.headers); })
+      .getRampOperationCharges(operationId, installationId)).resolves.toEqual(charges);
     expect(url).toBe(`https://api.example.test/api/v1/ramp/operations/${operationId}/charges`);
+    expect(headers.get("x-elevant-installation-id")).toBe(installationId);
+    await expect(clientReturning(charges).getRampOperationCharges(operationId, "not-a-device"))
+      .rejects.toBeInstanceOf(TypeError);
     await expect(clientReturning({ ...charges, services: [{ ...service, available: [{ ...service.available[0], unitPrice: 10 }] }] })
-      .getRampOperationCharges(operationId)).rejects.toBeInstanceOf(ElevantApiError);
-    await expect(clientReturning({ ...charges, operationId: serviceId }).getRampOperationCharges(operationId))
+      .getRampOperationCharges(operationId, installationId)).rejects.toBeInstanceOf(ElevantApiError);
+    await expect(clientReturning({ ...charges, operationId: serviceId }).getRampOperationCharges(operationId, installationId))
       .rejects.toBeInstanceOf(ElevantApiError);
   });
 

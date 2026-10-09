@@ -45,6 +45,11 @@ export function VersionList({ versions, selectedId, onSelect }) {
 }
 
 /** Finance base price list: versioned per currency, edited as a draft and published once reviewed. */
+/** Latest start date among non-draft versions; a new version must start after it. */
+export function latestPublishedStart(versions) {
+  return (versions ?? []).filter(item => item.status !== 'Draft').map(item => item.validFrom).sort().at(-1) ?? null;
+}
+
 function BaseTariff() {
   const { access } = useDepartmentAccess();
   const canManage = Boolean(access?.can('finance.tariffs.manage'));
@@ -61,10 +66,14 @@ function BaseTariff() {
   const [confirm, setConfirm] = useState(null);
   const [message, setMessage] = useState({ tone: '', text: '' });
 
+  /** Bumped on every list read so the selected detail and its version are re-read after a save. */
+  const [reloads, setReloads] = useState(0);
+
   const load = useCallback(async (keep) => {
     try {
       const list = await listServiceTariffs(currency);
       setVersions(list);
+      setReloads(value => value + 1);
       const target = keep && list.some(item => item.id === keep) ? keep
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null;
       setSelectedId(target);
@@ -95,7 +104,7 @@ function BaseTariff() {
       setMeta({ validFrom: result.summary.validFrom, validTo: result.summary.validTo ?? '', note: result.summary.note ?? '' });
     }).catch(error => active && setMessage({ tone: 'error', text: error.message }));
     return () => { active = false; };
-  }, [selectedId]);
+  }, [selectedId, reloads]);
 
   const isDraft = detail?.summary.status === 'Draft';
   const editable = canManage && isDraft;
@@ -103,7 +112,7 @@ function BaseTariff() {
     `${rate.serviceCode} ${rate.serviceName}`.toLowerCase().includes(search.trim().toLowerCase())), [rates, search]);
   const missingServices = services.filter(service => !rates.some(rate => rate.serviceId === service.id && !rate.stationId));
 
-  async function run(action, success) {
+  async function run(action, success, conflict = 'La tarifa cambió o ya existe un borrador para esta moneda. Se actualizó la vista.') {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
@@ -112,8 +121,7 @@ function BaseTariff() {
       await load(result?.id ?? selectedId);
       return true;
     } catch (error) {
-      setMessage({ tone: 'error', text: error.status === 409
-        ? 'La tarifa cambió o ya existe un borrador para esta moneda. Se actualizó la vista.' : error.message });
+      setMessage({ tone: 'error', text: error.status === 409 ? conflict : error.message });
       await load(selectedId);
       return false;
     } finally {
@@ -126,6 +134,16 @@ function BaseTariff() {
     rates: rates.map(rate => ({ serviceId: rate.serviceId, stationId: rate.stationId ?? null, billingUnit: rate.billingUnit,
       unitPrice: Number(rate.unitPrice), minimumBillableQuantity: Number(rate.minimumBillableQuantity) })),
   }), 'Borrador guardado.');
+
+  async function publish() {
+    const latest = latestPublishedStart(versions);
+    if (latest && detail.summary.validFrom <= latest) {
+      setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+      return;
+    }
+    await run(() => publishServiceTariff(detail.summary.id, detail.summary.version), 'Tarifa publicada.',
+      `No se pudo publicar: la vigencia debe empezar después de la versión vigente o la tarifa cambió. Se actualizó la vista.`);
+  }
 
   const update = (key, patch) => setRates(current => current.map(rate => (rate.key === key ? { ...rate, ...patch } : rate)));
 
@@ -207,7 +225,7 @@ function BaseTariff() {
       <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifa base"
         description={`La versión pasará a ser la vigente en ${detail?.summary.currencyCode ?? ''} desde ${meta.validFrom}; la anterior quedará como histórica. Guarde antes los cambios pendientes.`}
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
-        onConfirm={async () => { setConfirm(null); await run(() => publishServiceTariff(detail.summary.id, detail.summary.version), 'Tarifa publicada.'); }} />
+        onConfirm={async () => { setConfirm(null); await publish(); }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador y sus precios se eliminarán."
         confirmLabel="Descartar" onClose={() => setConfirm(null)}
         onConfirm={async () => { setConfirm(null); await run(() => deleteServiceTariffDraft(detail.summary.id, detail.summary.version), 'Borrador descartado.'); }} />
