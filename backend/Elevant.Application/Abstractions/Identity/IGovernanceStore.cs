@@ -34,11 +34,12 @@ public sealed record UpdateGovernanceUserInput(string FirstName, string LastName
     string Email, Guid RoleId, bool IsActive, Guid? RampAgentId = null,
     string? AvatarMediaUrl = null);
 public enum GovernanceFailure { Forbidden, NotFound, Invalid, Conflict, Protected }
-public sealed record GovernanceResult(Guid? Id, GovernanceFailure? Failure)
+/// <summary>Outcome of a governance command; <paramref name="Code"/> names the rule a failure broke, for the client.</summary>
+public sealed record GovernanceResult(Guid? Id, GovernanceFailure? Failure, string? Code = null)
 {
     public bool IsSuccess => Id is not null;
     public static GovernanceResult Success(Guid id) => new(id, null);
-    public static GovernanceResult Failed(GovernanceFailure failure) => new(null, failure);
+    public static GovernanceResult Failed(GovernanceFailure failure, string? code = null) => new(null, failure, code);
 }
 public interface IGovernanceStore
 {

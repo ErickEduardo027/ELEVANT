@@ -15,6 +15,32 @@ export interface AcceptAirlinePreinvoiceResponse {
   replayed: boolean;
 }
 
+export interface JobPositionRefData {
+  id: string;
+  name: string;
+  isRampPosition: boolean;
+}
+
+export interface GovernanceStationData {
+  id: string;
+  code: string;
+}
+
+export interface AccessCandidateData {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  employeeNumber: string;
+  position: JobPositionRefData;
+  /** @nullable */
+  suggestedAccessProfileId?: string | null;
+  stations: GovernanceStationData[];
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  accountStatus?: string | null;
+}
+
 export interface AccessProfileData {
   id: string;
   department: string;
@@ -25,11 +51,6 @@ export interface AccessProfileData {
   permissions: string[];
   members: number;
   version: string;
-}
-
-export interface GovernanceStationData {
-  id: string;
-  code: string;
 }
 
 export interface GovernanceTerminalData {
@@ -76,6 +97,8 @@ export interface AccessRequestData {
   /** @nullable */
   createdAccountId?: string | null;
   version: string;
+  /** @nullable */
+  employeeId?: string | null;
 }
 
 export interface AccessRequestPage {
@@ -98,6 +121,32 @@ export interface AccountChangeListResponse {
   /** @nullable */
   nextCursor?: string | null;
   hasMore: boolean;
+}
+
+export interface ActivityEntryData {
+  id: string;
+  occurredAt: string;
+  /** @nullable */
+  actorId?: string | null;
+  /** @nullable */
+  actorName?: string | null;
+  /** @nullable */
+  department?: string | null;
+  action: string;
+  category: string;
+  entityType: string;
+  /** @nullable */
+  entityId?: string | null;
+  /** @nullable */
+  stationCode?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface ActivityPageData {
+  entries: ActivityEntryData[];
+  /** @nullable */
+  nextCursor?: string | null;
 }
 
 export interface AddPreinvoiceAdjustmentInput {
@@ -447,6 +496,11 @@ export interface BillingUnitData {
   version: string;
 }
 
+export interface CancelRequisitionInput {
+  expectedVersion: string;
+  reason: string;
+}
+
 export interface ChangePasswordRequest {
   /**
      * @minLength 1
@@ -463,6 +517,13 @@ export interface ChangePasswordRequest {
      * @maxLength 256
      */
   newPassword: string;
+}
+
+export interface ChangeRequisitionStatusInput {
+  status: string;
+  expectedVersion: string;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ChargeDefinitionData {
@@ -756,9 +817,12 @@ export interface CreateClientUserInput {
 }
 
 export interface CreateDepartmentAccountInput {
-  firstName: string;
-  lastName: string;
-  email: string;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  email?: string | null;
   temporaryPassword: string;
   stationIds: string[];
   /** @nullable */
@@ -767,6 +831,8 @@ export interface CreateDepartmentAccountInput {
   accessProfileId?: string | null;
   /** @nullable */
   permissionCodes?: string[] | null;
+  /** @nullable */
+  employeeId?: string | null;
 }
 
 export interface CreateGovernanceUserInput {
@@ -814,6 +880,17 @@ export interface CreatePreinvoiceDraftRequest {
 export interface CreatePreinvoiceDraftResponse {
   id: string;
   replayed: boolean;
+}
+
+export interface CreateRequisitionInput {
+  requestId: string;
+  positionId: string;
+  quantity: number;
+  reason: string;
+  /** @nullable */
+  stationId?: string | null;
+  /** @nullable */
+  desiredStartOn?: string | null;
 }
 
 export interface CreateServiceClosureRequest {
@@ -1049,6 +1126,118 @@ export interface EditPreinvoiceLineInput {
   exclude: boolean;
   reason: string;
   expectedVersion: string;
+}
+
+export interface EmployeeAccountRefData {
+  id: string;
+  status: string;
+}
+
+export interface EmployeeAssignmentData {
+  department: string;
+  position: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  changedBy: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface EmployeeSummaryData {
+  id: string;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  department: string;
+  position: JobPositionRefData;
+  status: string;
+  hireDate: string;
+  stations: GovernanceStationData[];
+  account?: EmployeeAccountRefData | null;
+  /** @nullable */
+  corporateEmail?: string | null;
+  /** @nullable */
+  requisitionId?: string | null;
+  version: string;
+}
+
+export interface EmployeeDetailData {
+  summary: EmployeeSummaryData;
+  identificationType: string;
+  identificationNumber: string;
+  identificationIsPlaceholder: boolean;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  terminatedOn?: string | null;
+  /** @nullable */
+  terminationReason?: string | null;
+  futureShifts: number;
+  pendingAccessRequests: number;
+  assignments: EmployeeAssignmentData[];
+}
+
+export interface JobPositionData {
+  id: string;
+  department: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isRampPosition: boolean;
+  isActive: boolean;
+  /** @nullable */
+  suggestedAccessProfileId?: string | null;
+  /** @nullable */
+  suggestedAccessProfileName?: string | null;
+  employees: number;
+  version: string;
+}
+
+export interface RequisitionEmployeeData {
+  id: string;
+  name: string;
+  employeeNumber: string;
+}
+
+export interface RequisitionData {
+  id: string;
+  department: string;
+  position: JobPositionRefData;
+  quantity: number;
+  filled: number;
+  reason: string;
+  station?: GovernanceStationData | null;
+  /** @nullable */
+  desiredStartOn?: string | null;
+  status: string;
+  requestedBy: string;
+  requestedAt: string;
+  /** @nullable */
+  attendedBy?: string | null;
+  /** @nullable */
+  closedBy?: string | null;
+  /** @nullable */
+  closedAt?: string | null;
+  /** @nullable */
+  closureReason?: string | null;
+  employees: RequisitionEmployeeData[];
+  version: string;
+}
+
+export interface EmployeeOptionsData {
+  identificationTypes: string[];
+  positions: JobPositionData[];
+  stations: GovernanceStationData[];
+  openRequisitions: RequisitionData[];
+}
+
+export interface EmployeePageData {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  employees: EmployeeSummaryData[];
 }
 
 export interface ExchangeRateData {
@@ -2835,6 +3024,21 @@ export interface RecordNonFiscalPaymentResponse {
   replayed: boolean;
 }
 
+export interface RegisterEmployeeInput {
+  identificationType: string;
+  identificationNumber: string;
+  employeeNumber: string;
+  positionId: string;
+  hireDate: string;
+  stationIds: string[];
+  /** @nullable */
+  accountId?: string | null;
+  /** @nullable */
+  rampAgentId?: string | null;
+  /** @nullable */
+  phoneNumber?: string | null;
+}
+
 export interface RegisterMobileDeviceRequest {
   installationId: string;
   /**
@@ -2904,10 +3108,14 @@ export interface ReportRampIncidentRequest {
 
 export interface RequestUserAccessInput {
   requestId: string;
-  kind: string;
-  firstName: string;
-  lastName: string;
-  email: string;
+  /** @nullable */
+  kind?: string | null;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  email?: string | null;
   stationIds: string[];
   /** @nullable */
   avatarMediaUrl?: string | null;
@@ -2925,6 +3133,8 @@ export interface RequestUserAccessInput {
   hireDate?: string | null;
   /** @nullable */
   supervisorRampAgentId?: string | null;
+  /** @nullable */
+  employeeId?: string | null;
 }
 
 export interface ResetGovernancePasswordRequest {
@@ -3017,12 +3227,43 @@ export interface SaveChargeTariffDraftInput {
   expectedVersion: string;
 }
 
+export interface SaveEmployeeInput {
+  firstName: string;
+  lastName: string;
+  identificationType: string;
+  identificationNumber: string;
+  employeeNumber: string;
+  department: string;
+  positionId: string;
+  stationIds: string[];
+  hireDate: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  corporateEmail?: string | null;
+  /** @nullable */
+  requisitionId?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface SaveGovernanceRoleInput {
   name: string;
   /** @nullable */
   description?: string | null;
   permissionCodes: string[];
   isActive: boolean;
+}
+
+export interface SaveJobPositionInput {
+  department: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  isRampPosition: boolean;
+  isActive: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SaveRampProfileInput {
@@ -3127,6 +3368,12 @@ export interface SetOperationalNotificationReadRequest {
   read: boolean;
 }
 
+export interface SetSuggestedProfileInput {
+  /** @nullable */
+  accessProfileId?: string | null;
+  expectedVersion: string;
+}
+
 export interface SubmitCommercialRequestRequest {
   requestId: string;
   airlineProfileId: string;
@@ -3191,6 +3438,20 @@ export interface SystemPingResponse {
   timestampUtc: string;
 }
 
+export interface TerminateEmployeeInput {
+  terminatedOn: string;
+  reason: string;
+  expectedVersion: string;
+}
+
+export interface TransferEmployeeInput {
+  department: string;
+  positionId: string;
+  stationIds: string[];
+  reason: string;
+  expectedVersion: string;
+}
+
 export interface TransitionRampOperationServiceRequest {
   /**
      * @minLength 1
@@ -3205,6 +3466,22 @@ export interface TransitionRampOperationServiceRequest {
      * @nullable
      */
   note?: string | null;
+}
+
+export interface UnregisteredPersonData {
+  /** @nullable */
+  accountId?: string | null;
+  /** @nullable */
+  rampAgentId?: string | null;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  department?: string | null;
+  /** @nullable */
+  employeeNumber?: string | null;
+  stations: GovernanceStationData[];
 }
 
 export interface UpdateDraftRateInput {
@@ -3325,6 +3602,23 @@ export type UploadCommercialMediaBody = {
   file?: Blob;
 };
 
+export type ListDepartmentAccessCandidatesParams = {
+search?: string;
+};
+
+export type ListDepartmentRequisitionsParams = {
+status?: string;
+};
+
+export type ListDepartmentActivityParams = {
+from?: string;
+to?: string;
+category?: string;
+accountId?: string;
+cursor?: string;
+limit?: number;
+};
+
 export type ListDepartmentUsersParams = {
 page?: number;
 limit?: number;
@@ -3438,6 +3732,35 @@ export type ListHumanResourcesAvailabilityRequestsParams = {
 from?: string;
 to?: string;
 page?: number;
+limit?: number;
+};
+
+export type ListEmployeesParams = {
+department?: string;
+status?: string;
+positionId?: string;
+hasAccount?: boolean;
+search?: string;
+page?: number;
+limit?: number;
+};
+
+export type ListJobPositionsParams = {
+department?: string;
+};
+
+export type ListPersonnelRequisitionsParams = {
+department?: string;
+status?: string;
+};
+
+export type ListHumanResourcesAuditParams = {
+from?: string;
+to?: string;
+department?: string;
+category?: string;
+accountId?: string;
+cursor?: string;
 limit?: number;
 };
 
@@ -5072,6 +5395,258 @@ export const activateManagedContractDraft = async (versionId: string, options?: 
 
 
 
+export const getListDepartmentAccessCandidatesUrl = (department: string,
+    params?: ListDepartmentAccessCandidatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/departments/${department}/access-candidates?${stringifiedParams}` : `/api/v1/governance/departments/${department}/access-candidates`
+}
+
+/**
+ * @summary Employees of the department that can be given access (ADR-0017).
+ */
+export const listDepartmentAccessCandidates = async (department: string,
+    params?: ListDepartmentAccessCandidatesParams, options?: RequestInit): Promise<AccessCandidateData[]> => {
+
+  const res = await fetch(getListDepartmentAccessCandidatesUrl(department,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AccessCandidateData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListDepartmentPositionsUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/positions`
+}
+
+export const listDepartmentPositions = async (department: string, options?: RequestInit): Promise<JobPositionData[]> => {
+
+  const res = await fetch(getListDepartmentPositionsUrl(department),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: JobPositionData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetPositionSuggestedAccessProfileUrl = (department: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/positions/${id}/suggested-access-profile`
+}
+
+export const setPositionSuggestedAccessProfile = async (department: string,
+    id: string,
+    setSuggestedProfileInput?: SetSuggestedProfileInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetPositionSuggestedAccessProfileUrl(department,id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setSuggestedProfileInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListDepartmentRequisitionsUrl = (department: string,
+    params?: ListDepartmentRequisitionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/departments/${department}/requisitions?${stringifiedParams}` : `/api/v1/governance/departments/${department}/requisitions`
+}
+
+export const listDepartmentRequisitions = async (department: string,
+    params?: ListDepartmentRequisitionsParams, options?: RequestInit): Promise<RequisitionData[]> => {
+
+  const res = await fetch(getListDepartmentRequisitionsUrl(department,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RequisitionData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreatePersonnelRequisitionUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/requisitions`
+}
+
+export const createPersonnelRequisition = async (department: string,
+    createRequisitionInput?: CreateRequisitionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreatePersonnelRequisitionUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createRequisitionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCancelPersonnelRequisitionUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/requisitions/${id}/cancel`
+}
+
+export const cancelPersonnelRequisition = async (id: string,
+    cancelRequisitionInput?: CancelRequisitionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelPersonnelRequisitionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(cancelRequisitionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListDepartmentActivityUrl = (department: string,
+    params?: ListDepartmentActivityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/departments/${department}/activity?${stringifiedParams}` : `/api/v1/governance/departments/${department}/activity`
+}
+
+/**
+ * @summary Audit trail of the department: sign-ins, governance and operational actions of its people.
+ */
+export const listDepartmentActivity = async (department: string,
+    params?: ListDepartmentActivityParams, options?: RequestInit): Promise<ActivityPageData> => {
+
+  const res = await fetch(getListDepartmentActivityUrl(department,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ActivityPageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetMyDepartmentAccessUrl = () => {
 
 
@@ -5257,6 +5832,10 @@ export const getCreateDepartmentUserUrl = (department: string,) => {
   return `/api/v1/governance/departments/${department}/users`
 }
 
+/**
+ * @deprecated
+ * @summary Deprecated (ADR-0017): members are requested for an employee and validated by Human Resources.
+ */
 export const createDepartmentUser = async (department: string,
     createDepartmentAccountInput?: CreateDepartmentAccountInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8024,6 +8603,510 @@ const res = await fetch(getResolveHumanResourcesAvailabilityRequestUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListEmployeesUrl = (params?: ListEmployeesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/employees?${stringifiedParams}` : `/api/v1/human-resources/employees`
+}
+
+export const listEmployees = async (params?: ListEmployeesParams, options?: RequestInit): Promise<EmployeePageData> => {
+
+  const res = await fetch(getListEmployeesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmployeePageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateEmployeeUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/employees`
+}
+
+export const createEmployee = async (saveEmployeeInput?: SaveEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateEmployeeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveEmployeeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetEmployeeOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/employees/options`
+}
+
+export const getEmployeeOptions = async ( options?: RequestInit): Promise<EmployeeOptionsData> => {
+
+  const res = await fetch(getGetEmployeeOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmployeeOptionsData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListUnregisteredPersonsUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/employees/unregistered`
+}
+
+export const listUnregisteredPersons = async ( options?: RequestInit): Promise<UnregisteredPersonData[]> => {
+
+  const res = await fetch(getListUnregisteredPersonsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: UnregisteredPersonData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetEmployeeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/employees/${id}`
+}
+
+export const getEmployee = async (id: string, options?: RequestInit): Promise<EmployeeDetailData> => {
+
+  const res = await fetch(getGetEmployeeUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmployeeDetailData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateEmployeeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/employees/${id}`
+}
+
+export const updateEmployee = async (id: string,
+    saveEmployeeInput?: SaveEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateEmployeeUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveEmployeeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getTransferEmployeeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/employees/${id}/transfer`
+}
+
+export const transferEmployee = async (id: string,
+    transferEmployeeInput?: TransferEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getTransferEmployeeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(transferEmployeeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getTerminateEmployeeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/employees/${id}/termination`
+}
+
+export const terminateEmployee = async (id: string,
+    terminateEmployeeInput?: TerminateEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getTerminateEmployeeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(terminateEmployeeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRegisterEmployeeUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/employees/registrations`
+}
+
+export const registerEmployee = async (registerEmployeeInput?: RegisterEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRegisterEmployeeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(registerEmployeeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListJobPositionsUrl = (params?: ListJobPositionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/positions?${stringifiedParams}` : `/api/v1/human-resources/positions`
+}
+
+export const listJobPositions = async (params?: ListJobPositionsParams, options?: RequestInit): Promise<JobPositionData[]> => {
+
+  const res = await fetch(getListJobPositionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: JobPositionData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateJobPositionUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/positions`
+}
+
+export const createJobPosition = async (saveJobPositionInput?: SaveJobPositionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateJobPositionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveJobPositionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateJobPositionUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/positions/${id}`
+}
+
+export const updateJobPosition = async (id: string,
+    saveJobPositionInput?: SaveJobPositionInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateJobPositionUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveJobPositionInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListPersonnelRequisitionsUrl = (params?: ListPersonnelRequisitionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/requisitions?${stringifiedParams}` : `/api/v1/human-resources/requisitions`
+}
+
+export const listPersonnelRequisitions = async (params?: ListPersonnelRequisitionsParams, options?: RequestInit): Promise<RequisitionData[]> => {
+
+  const res = await fetch(getListPersonnelRequisitionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RequisitionData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangePersonnelRequisitionStatusUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/requisitions/${id}/status`
+}
+
+export const changePersonnelRequisitionStatus = async (id: string,
+    changeRequisitionStatusInput?: ChangeRequisitionStatusInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangePersonnelRequisitionStatusUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changeRequisitionStatusInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListHumanResourcesAuditUrl = (params?: ListHumanResourcesAuditParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/audit?${stringifiedParams}` : `/api/v1/human-resources/audit`
+}
+
+/**
+ * @summary People-governance audit trail; `human_resources.audit.read` or the super administrator.
+ */
+export const listHumanResourcesAudit = async (params?: ListHumanResourcesAuditParams, options?: RequestInit): Promise<ActivityPageData> => {
+
+  const res = await fetch(getListHumanResourcesAuditUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ActivityPageData = body ? JSON.parse(body) : {}
   return data
 }
 

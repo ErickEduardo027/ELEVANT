@@ -21,6 +21,8 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound);
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Administers(parsed)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (input?.EmployeeId is not null)
+            return await RequestEmployeeAccessAsync(actor, parsed, input, cancellationToken);
         if (input is null || input.RequestId == Guid.Empty ||
             !Enum.TryParse<UserAccessRequestKind>(input.Kind, false, out var kind) ||
             !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
@@ -31,7 +33,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             .SingleOrDefaultAsync(item => item.PublicId == input.RequestId, cancellationToken);
         if (prior is not null)
             return prior.RequestedByAccountId == actor.Id && prior.Department == parsed &&
-                string.Equals(prior.Email, input.Email.Trim(), StringComparison.OrdinalIgnoreCase)
+                string.Equals(prior.Email, input.Email!.Trim(), StringComparison.OrdinalIgnoreCase)
                     ? GovernanceResult.Success(prior.PublicId)
                     : GovernanceResult.Failed(GovernanceFailure.Conflict);
 
@@ -82,13 +84,13 @@ internal sealed partial class EfDepartmentGovernanceStore
         }
         if (!await GovernanceSupport.ValidAvatarAsync(context, input.AvatarMediaUrl, null, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
-        if (await EmailInUseAsync(input.Email, null, cancellationToken))
+        if (await EmailInUseAsync(input.Email!, null, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
 
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
-            var email = input.Email.Trim();
+            var email = input.Email!.Trim();
             if (await context.UserAccessRequests.AnyAsync(request => request.Status == UserAccessRequestStatus.Pending &&
                     request.Email == email, cancellationToken))
                 return GovernanceResult.Failed(GovernanceFailure.Conflict);
@@ -100,8 +102,8 @@ internal sealed partial class EfDepartmentGovernanceStore
                 Status = UserAccessRequestStatus.Pending,
                 RequestedByAccountId = actor.Id,
                 RequestedAt = now,
-                FirstName = input.FirstName.Trim(),
-                LastName = input.LastName.Trim(),
+                FirstName = input.FirstName!.Trim(),
+                LastName = input.LastName!.Trim(),
                 Email = email,
                 AvatarMediaUrl = input.AvatarMediaUrl,
                 AccessProfileId = grants.ProfileId,
@@ -121,7 +123,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             foreach (var terminal in terminals)
                 context.UserAccessRequestTerminals.Add(new UserAccessRequestTerminal { UserAccessRequestId = request.Id, TerminalId = terminal });
             GovernanceSupport.AddAudit(context, actor.Id, "governance.access_request.requested", "iam.user_access_requests",
-                request.PublicId, null, stations.Select(station => (long?)station).ToArray(), now,
+                request.PublicId, null, stations.Select(station => (long?)station).ToArray(), now, parsed,
                 new AuditFieldChangeData("request.department", null, KeyOf(parsed)), new AuditFieldChangeData("request.kind", null, kind.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
@@ -204,6 +206,9 @@ internal sealed partial class EfDepartmentGovernanceStore
                 .ToArrayAsync(cancellationToken))
             .ToLookup(item => item.UserAccessRequestId,
                 item => new GovernanceTerminalData(item.PublicId, item.Code, item.Station));
+        var employeeIds = rows.Where(row => row.EmployeeId != null).Select(row => row.EmployeeId!.Value).ToArray();
+        var employees = await context.Employees.AsNoTracking().Where(employee => employeeIds.Contains(employee.Id))
+            .ToDictionaryAsync(employee => employee.Id, employee => employee.PublicId, cancellationToken);
         var supervisorIds = rows.Where(row => row.SupervisorRampAgentId != null)
             .Select(row => row.SupervisorRampAgentId!.Value).ToArray();
         var supervisors = await (from agent in context.RampAgents.AsNoTracking()
@@ -225,7 +230,8 @@ internal sealed partial class EfDepartmentGovernanceStore
                 supervisor?.PublicId, supervisor?.Name, row.DecisionReason, row.DecidedAt,
                 row.DecidedByAccountId is { } decidedBy ? accounts[decidedBy].Name : null,
                 row.CreatedAccountId is { } created ? accounts[created].PublicId : null,
-                GovernanceSupport.Version(row.RowVersion));
+                GovernanceSupport.Version(row.RowVersion),
+                row.EmployeeId is { } employeeId ? employees[employeeId] : null);
         }).ToArray();
     }
 
@@ -251,7 +257,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             request.DecidedByAccountId = actor.Id;
             request.UpdatedAt = now;
             GovernanceSupport.AddAudit(context, actor.Id, "governance.access_request.cancelled",
-                "iam.user_access_requests", request.PublicId, null, [], now,
+                "iam.user_access_requests", request.PublicId, null, [], now, request.Department,
                 new AuditFieldChangeData("request.status", nameof(UserAccessRequestStatus.Pending), request.Status.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
@@ -285,7 +291,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             request.DecidedByAccountId = actor.Id;
             request.UpdatedAt = now;
             GovernanceSupport.AddAudit(context, actor.Id, "governance.access_request.rejected",
-                "iam.user_access_requests", request.PublicId, request.DecisionReason, [], now,
+                "iam.user_access_requests", request.PublicId, request.DecisionReason, [], now, request.Department,
                 new AuditFieldChangeData("request.status", nameof(UserAccessRequestStatus.Pending), request.Status.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
@@ -325,17 +331,28 @@ internal sealed partial class EfDepartmentGovernanceStore
             if (request.Status != UserAccessRequestStatus.Pending ||
                 GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict);
-            if (await EmailInUseAsync(request.Email, null, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
             var now = timeProvider.GetUtcNow();
             var today = DateOnly.FromDateTime(now.UtcDateTime);
-            var stations = await context.UserAccessRequestStations.Where(item => item.UserAccessRequestId == request.Id)
+            long[] stations;
+            ApplicationUser? account;
+            if (request.EmployeeId is not null)
+            {
+                var (issued, employeeStations, failure) = await ValidateEmployeeRequestAsync(request,
+                    input.TemporaryPassword!, now, cancellationToken);
+                if (failure is not null) return failure;
+                account = issued;
+                stations = employeeStations;
+            }
+            else
+            {
+            if (await EmailInUseAsync(request.Email, null, cancellationToken))
+                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            stations = await context.UserAccessRequestStations.Where(item => item.UserAccessRequestId == request.Id)
                 .Join(context.Stations.Where(station => station.IsActive), item => item.StationId, station => station.Id,
                     (item, station) => station.Id)
                 .ToArrayAsync(cancellationToken);
             if (stations.Length == 0) return GovernanceResult.Failed(GovernanceFailure.Conflict);
 
-            ApplicationUser? account;
             if (request.Kind == UserAccessRequestKind.RampAgent)
             {
                 if (await context.RampAgents.AnyAsync(agent => agent.EmployeeNumber == request.EmployeeNumber,
@@ -396,7 +413,8 @@ internal sealed partial class EfDepartmentGovernanceStore
                     request.FirstName, request.LastName, request.Email, request.AvatarMediaUrl, input.TemporaryPassword!,
                     stations, grants, now, cancellationToken);
             }
-            if (account is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            }
+            if (account is null) return GovernanceResult.Failed(GovernanceFailure.Invalid, "password_policy");
 
             request.Status = UserAccessRequestStatus.Validated;
             request.DecidedAt = now;
@@ -405,10 +423,10 @@ internal sealed partial class EfDepartmentGovernanceStore
             request.UpdatedAt = now;
             GovernanceSupport.AddAudit(context, actor.Id, "governance.access_request.validated",
                 "iam.user_access_requests", request.PublicId, null, stations.Select(station => (long?)station).ToArray(), now,
-                new AuditFieldChangeData("request.status", nameof(UserAccessRequestStatus.Pending), request.Status.ToString()));
+                request.Department, new AuditFieldChangeData("request.status", nameof(UserAccessRequestStatus.Pending), request.Status.ToString()));
             GovernanceSupport.AddAudit(context, actor.Id, "governance.department_user.created", "iam.accounts",
                 account.PublicId, null, stations.Select(station => (long?)station).ToArray(), now,
-                new AuditFieldChangeData("department", null, KeyOf(request.Department)), new AuditFieldChangeData("kind", null, request.Kind.ToString()));
+                request.Department, new AuditFieldChangeData("department", null, KeyOf(request.Department)), new AuditFieldChangeData("kind", null, request.Kind.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
             await NotifyDepartmentAsync(request.Department, "department_users", account.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);

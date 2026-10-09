@@ -36,7 +36,13 @@ internal static class GovernanceSupport
 
     public static void AddAudit(ElevantDbContext context, long actorAccountId, string action, string entityType,
         Guid entityId, string? reason, IReadOnlyCollection<long?> stationIds, DateTimeOffset occurredAt,
-        params AuditFieldChangeData[] changes)
+        params AuditFieldChangeData[] changes) =>
+        AddAudit(context, actorAccountId, action, entityType, entityId, reason, stationIds, occurredAt, null, changes);
+
+    /// <summary>Audit entry attributed to a department, so its administrators can read the activity.</summary>
+    public static void AddAudit(ElevantDbContext context, long actorAccountId, string action, string entityType,
+        Guid entityId, string? reason, IReadOnlyCollection<long?> stationIds, DateTimeOffset occurredAt,
+        Department? department, params AuditFieldChangeData[] changes)
     {
         var correlationId = Guid.CreateVersion7();
         foreach (var stationId in stationIds.Count == 0 ? [null] : stationIds)
@@ -51,6 +57,7 @@ internal static class GovernanceSupport
                 EntityType = entityType,
                 EntityPublicId = entityId,
                 StationId = stationId,
+                Department = department,
                 Source = AuditSource.Api,
                 CorrelationId = correlationId,
                 Reason = reason,

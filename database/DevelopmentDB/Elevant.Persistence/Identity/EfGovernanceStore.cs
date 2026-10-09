@@ -592,6 +592,9 @@ internal sealed class EfGovernanceStore(
             cancellationToken);
         if (!await ValidAvatarAsync(input.AvatarMediaUrl, person.AvatarMediaUrl, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        if (input.IsActive && await context.Employees.AnyAsync(employee =>
+                employee.PersonId == person.Id && employee.Status == EmployeeStatus.Terminated, cancellationToken))
+            return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_terminated");
         var strategy = context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {

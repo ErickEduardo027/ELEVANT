@@ -29,6 +29,10 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound);
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.IsSuper) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (input?.EmployeeId is not null)
+            return kind == DepartmentAssignmentKind.Administrator
+                ? await CreateAdministratorFromEmployeeAsync(actor, parsed, input, cancellationToken)
+                : GovernanceResult.Failed(GovernanceFailure.Invalid, "members_are_requested");
         if (input is null || !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
             !GovernanceSupport.ValidEmail(input.Email) || string.IsNullOrWhiteSpace(input.TemporaryPassword) ||
             input.StationIds is not { Count: > 0 and <= 20 })
@@ -41,18 +45,18 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (grants is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
         if (!await GovernanceSupport.ValidAvatarAsync(context, input.AvatarMediaUrl, null, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
-        if (await EmailInUseAsync(input.Email, null, cancellationToken))
+        if (await EmailInUseAsync(input.Email!, null, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
 
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
-            var account = await CreateBackOfficeAccountAsync(parsed, kind, input.FirstName, input.LastName,
-                input.Email, input.AvatarMediaUrl, input.TemporaryPassword, stations, grants, now, cancellationToken);
+            var account = await CreateBackOfficeAccountAsync(parsed, kind, input.FirstName!, input.LastName!,
+                input.Email!, input.AvatarMediaUrl, input.TemporaryPassword, stations, grants, now, cancellationToken);
             if (account is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
             GovernanceSupport.AddAudit(context, actor.Id, kind == DepartmentAssignmentKind.Administrator
                     ? "governance.department_user.administrator_created" : "governance.department_user.created",
-                "iam.accounts", account.PublicId, null, stations.Select(station => (long?)station).ToArray(), now,
+                "iam.accounts", account.PublicId, null, stations.Select(station => (long?)station).ToArray(), now, parsed,
                 new AuditFieldChangeData("department", null, KeyOf(parsed)), new AuditFieldChangeData("kind", null, kind.ToString()));
             await NotifyDepartmentAsync(parsed, "department_users", account.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
@@ -91,6 +95,11 @@ internal sealed partial class EfDepartmentGovernanceStore
                 return GovernanceResult.Failed(GovernanceFailure.Conflict);
             var person = await context.Persons.SingleAsync(item => item.Id == user.PersonId, cancellationToken);
             var email = input.Email.Trim();
+            // Name and address of an employee are Human Resources data; the department edits access only.
+            if (await context.Employees.AnyAsync(employee => employee.PersonId == person.Id, cancellationToken) &&
+                (person.FirstName != input.FirstName.Trim() || person.LastName != input.LastName.Trim() ||
+                 !string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase)))
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_record_managed_by_hr");
             var changes = new List<AuditFieldChangeData>();
             if (person.FirstName != input.FirstName.Trim() || person.LastName != input.LastName.Trim())
                 changes.Add(new AuditFieldChangeData("user.name", $"{person.FirstName} {person.LastName}",
@@ -124,7 +133,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             }
             await userManager.UpdateSecurityStampAsync(user);
             GovernanceSupport.AddAudit(context, actor.Id, "governance.department_user.updated", "iam.accounts",
-                user.PublicId, null, stations.Select(station => (long?)station).ToArray(), now, [.. changes]);
+                user.PublicId, null, stations.Select(station => (long?)station).ToArray(), now, parsed, [.. changes]);
             await NotifyDepartmentAsync(parsed, "department_users", user.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(user.PublicId);
@@ -144,12 +153,15 @@ internal sealed partial class EfDepartmentGovernanceStore
             var user = await context.Users.SingleAsync(item => item.Id == target.Row!.Id, cancellationToken);
             if (GovernanceSupport.Version(user.RowVersion) != input.ExpectedVersion)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (input.IsActive && await IsTerminatedAccountAsync(user.Id, cancellationToken))
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_terminated");
             var before = user.Status;
             user.Status = input.IsActive ? AccountLifecycleStatus.Active : AccountLifecycleStatus.Disabled;
             await userManager.UpdateSecurityStampAsync(user);
             GovernanceSupport.AddAudit(context, target.Actor!.Id, input.IsActive
                     ? "governance.department_user.reactivated" : "governance.department_user.deactivated",
-                "iam.accounts", user.PublicId, null, [], now, new AuditFieldChangeData("user.status", before.ToString(), user.Status.ToString()));
+                "iam.accounts", user.PublicId, null, [], now, target.Department,
+                new AuditFieldChangeData("user.status", before.ToString(), user.Status.ToString()));
             await NotifyDepartmentAsync(target.Department, "department_users", user.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(user.PublicId);
@@ -170,7 +182,7 @@ internal sealed partial class EfDepartmentGovernanceStore
         await userManager.UpdateSecurityStampAsync(user);
         var now = timeProvider.GetUtcNow();
         GovernanceSupport.AddAudit(context, target.Actor!.Id, "governance.department_user.password_reset",
-            "iam.accounts", user.PublicId, null, [], now);
+            "iam.accounts", user.PublicId, null, [], now, target.Department);
         await context.SaveChangesAsync(cancellationToken);
         return GovernanceResult.Success(user.PublicId);
     }
