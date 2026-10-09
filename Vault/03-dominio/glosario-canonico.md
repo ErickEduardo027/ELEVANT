@@ -105,6 +105,14 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Contrato | Acuerdo de una aerolínea, opcionalmente originado en una solicitud comercial. | Una versión concreta del acuerdo. |
 | Versión de contrato | Vigencia, moneda, términos, estaciones y tarifas aprobables. | El estado general del contrato. |
 | Tarifa de servicio | Precio/unidad/mínimo de un servicio en una versión. | El snapshot guardado en una ejecución. |
+| Tarifa base | Precio de referencia de Finanzas por servicio, moneda y estación opcional; versión publicada e inmutable. | La tarifa negociada de un contrato. |
+| Cargo | Recargo o cargo adicional del catálogo de Finanzas (nocturno, tiempo extra…) con método y regla de cantidad. | Un ajuste manual de Finanzas. |
+| Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la prefactura. |
+| Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
+| Aprobación de Finanzas | Revisión que activa una versión de contrato enviada por Contratos o la devuelve con motivo. | La aprobación de una entrega por OCC. |
+| Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |
+| Nota de crédito | Reducción no fiscal del saldo de una factura, idempotente y nunca mayor que el saldo. | Una anulación de prefactura. |
+| Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
 
 ## Integración y trazabilidad
 

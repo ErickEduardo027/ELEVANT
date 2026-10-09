@@ -1,132 +1,137 @@
-import { useEffect, useMemo, useState } from 'react';
-import KpiCard from '../../../components/KpiCard';
-import { PreInvoiceIcon, ReconciliationIcon, AlertIcon } from '../components/icons';
+import { useCallback, useEffect, useState } from 'react';
+import EmptyState from '../../../components/EmptyState';
+import FilterBar from '../../../components/FilterBar';
+import PageHeader from '../../../components/PageHeader';
+import StackedTable from '../../../components/StackedTable';
+import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
-import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { getFinanceReport } from '../../../services/financeReportsService';
-import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
+import { ReportIcon } from '../components/icons';
+import { downloadFinanceReport, formatMoney, getFinanceReport } from '../../../services/financeBookService';
+
+const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
+
+export const FINANCE_REPORTS = [
+  { key: 'revenue', label: 'Ingresos por período' },
+  { key: 'receivables', label: 'Cuentas por cobrar' },
+  { key: 'collections', label: 'Cobranza' },
+  { key: 'pipeline', label: 'Pipeline de facturación' },
+  { key: 'charges', label: 'Cargos y ajustes' },
+  { key: 'disputes', label: 'Disputas' },
+  { key: 'tariffs', label: 'Uso de tarifas' },
+  { key: 'credit-notes', label: 'Notas de crédito' },
+];
+
+const isoDate = date => date.toISOString().slice(0, 10);
+
+/** Formats an invariant report cell by its column type; money uses the row's currency column when present. */
+export function formatCell(value, column, row, columns) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (column.type === 'money') {
+    const currencyIndex = columns.findIndex(item => item.key === 'currency');
+    const currency = column.key === 'usd' ? 'USD' : currencyIndex >= 0 ? row[currencyIndex] : '';
+    return formatMoney(value, currency);
+  }
+  if (column.type === 'percent') return `${Number(value).toLocaleString('es-DO')} %`;
+  if (column.type === 'number') return Number(value).toLocaleString('es-DO');
+  return value;
+}
 
 export default function FinanceReportsPage({ initialStationId }) {
-  const session = useMemo(() => readSession(), []);
-  const stations = useMemo(() => (session?.stationScopes ?? [])
-    .filter(scope => scope?.stationId && scope?.stationCode), [session]);
-  const [stationId, setStationId] = useState(
-    stations.some(scope => scope.stationId === initialStationId)
-      ? initialStationId : stations[0]?.stationId ?? '');
-  const [airline, setAirline] = useState('all');
-  const [revision, setRevision] = useState(0);
-  const [state, setState] = useState({ status: stationId ? 'loading' : 'forbidden', data: null });
-  const rows = state.data?.rows.filter(item => airline === 'all' || item.airlineName === airline) ?? [];
-  const airlines = [...new Set(state.data?.rows.map(item => item.airlineName) ?? [])];
+  const { access } = useDepartmentAccess();
+  const canExport = Boolean(access?.can('finance.reports.export'));
+  const stations = (readSession()?.stationScopes ?? []).filter(scope => scope?.stationId);
+  const today = new Date();
+  const [reportKey, setReportKey] = useState('revenue');
+  const [filters, setFilters] = useState({
+    from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: isoDate(today),
+    stationId: initialStationId ?? '', currency: '',
+  });
+  const [state, setState] = useState({ status: 'loading', report: null, error: '' });
+  const [exporting, setExporting] = useState('');
 
-  useEffect(() => {
-    if (!stationId) {
-      setState({ status: 'forbidden', data: null });
-      return undefined;
+  const load = useCallback(async () => {
+    setState(current => ({ ...current, status: 'loading' }));
+    try {
+      setState({ status: 'ready', report: await getFinanceReport(reportKey, filters), error: '' });
+    } catch (failure) {
+      setState({ status: 'error', report: null, error: failure.status === 403
+        ? 'No tiene acceso a este reporte o los filtros no son válidos.' : failure.message });
     }
-    const controller = new AbortController();
-    setState({ status: 'loading', data: null });
-    getFinanceReport({ stationId }, { signal: controller.signal })
-      .then(data => {
-        if (!controller.signal.aborted) setState({ status: 'success', data });
-      })
-      .catch(error => {
-        if (controller.signal.aborted || isAbortError(error)) return;
-        setState({ status: error?.status === 403 || error?.status === 404
-          ? 'forbidden' : 'error', data: null });
-      });
-    return () => abortForEffectCleanup(controller);
-  }, [stationId, revision]);
+  }, [reportKey, filters]);
+  useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (!session?.accountId) return undefined;
-    const refresh = () => setRevision(value => value + 1);
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_preinvoices')) refresh();
-    });
-    void observer.start().catch(() => {});
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    const poll = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refresh();
-    }, 25_000);
-    return () => {
-      window.clearInterval(poll);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      void observer.stop();
-    };
-  }, [session?.accountId]);
+  async function exportAs(format) {
+    setExporting(format);
+    try { await downloadFinanceReport(reportKey, format, filters); }
+    catch (failure) { setState(current => ({ ...current, error: failure.message })); }
+    finally { setExporting(''); }
+  }
 
-  return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5">
-    <header className="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
-        <h1 className="mt-1 text-2xl font-bold">Reportes financieros</h1>
-        <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          Estado de prefacturas persistidas de la estación autorizada. No incluye conciliación bancaria.
-        </p>
+  const report = state.report;
+  return (
+    <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
+      <PageHeader eyebrow="Finanzas" title="Reportes financieros" description={report?.description ?? 'Reportes calculados en el servidor sobre sus estaciones.'}
+        actions={canExport && (
+          <>
+            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('csv')} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">{exporting === 'csv' ? 'Generando…' : 'Exportar CSV'}</button>
+            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('pdf')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{exporting === 'pdf' ? 'Generando…' : 'Exportar PDF'}</button>
+          </>
+        )} />
+      <div role="tablist" aria-label="Reportes" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        {FINANCE_REPORTS.map(item => (
+          <button key={item.key} type="button" role="tab" aria-selected={reportKey === item.key} onClick={() => setReportKey(item.key)}
+            className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${reportKey === item.key ? 'bg-accent-600 text-white' : 'text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5'}`}>
+            {item.label}
+          </button>
+        ))}
       </div>
-      {stations.length > 0 && <label className="text-xs font-semibold">Estación
-        <select aria-label="Estación del reporte financiero" value={stationId}
-          onChange={event => { setStationId(event.target.value); setAirline('all'); }}
-          className="mt-1 block rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark-card">
-          {stations.map(scope => <option key={scope.stationId} value={scope.stationId}>{scope.stationCode}</option>)}
-        </select>
-      </label>}
-    </header>
-
-    {(state.status === 'error' || state.status === 'forbidden') && <div role="alert"
-      className="rounded-2xl border border-status-danger/30 bg-white/70 p-5 dark:bg-surface-dark-card">
-      <p className="font-semibold text-status-danger">{state.status === 'forbidden'
-        ? 'No hay una estación financiera autorizada para este reporte.'
-        : 'No se pudo cargar el reporte financiero.'}</p>
-      {state.status === 'error' && <button type="button" onClick={() => setRevision(value => value + 1)}
-        className="mt-3 rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">Reintentar</button>}
-    </div>}
-
-    {state.status === 'loading' && <p role="status" className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">Cargando reporte…</p>}
-
-    {state.status === 'success' && <>
-      {state.data.hasMore && <p role="status" className="rounded-xl border border-accent-600/20 bg-accent-600/5 px-4 py-3 text-sm">
-        Esta vista agrupa hasta 50 prefacturas de la primera página; consulta Pre-facturación para revisar las demás.
-      </p>}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Borradores en consulta" value={state.data.counts.drafts} icon={PreInvoiceIcon} />
-        <KpiCard label="Enviadas en consulta" value={state.data.counts.submitted} icon={PreInvoiceIcon} />
-        <KpiCard label="Disputadas en consulta" value={state.data.counts.disputed} icon={AlertIcon} tone="signal" />
-        <KpiCard label="Facturadas en consulta" value={state.data.counts.invoiced} icon={ReconciliationIcon} />
-      </div>
-      <section className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 p-5">
-          <h2 className="font-semibold">Prefacturas por aerolínea y moneda</h2>
-          <select aria-label="Filtrar reporte por aerolínea" value={airline}
-            onChange={event => setAirline(event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark-card">
-            <option value="all">Todas las aerolíneas</option>
-            {airlines.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </div>
-        {rows.length ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
-          <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]">
-            <tr><th className="px-5 py-3">Aerolínea</th><th className="px-5 py-3">Moneda</th>
-              <th className="px-5 py-3">Borrador</th><th className="px-5 py-3">Enviada</th>
-              <th className="px-5 py-3">Disputada</th><th className="px-5 py-3">Aceptada</th>
-              <th className="px-5 py-3">Facturada</th><th className="px-5 py-3">Anulada</th></tr>
-          </thead><tbody className="divide-y divide-black/5 dark:divide-white/5">
-            {rows.map(row => <tr key={`${row.airlineId}-${row.currencyCode}`}>
-              <td className="px-5 py-4 font-semibold">{row.airlineName}</td>
-              <td className="px-5 py-4">{row.currencyCode}</td>
-              <td className="px-5 py-4">{row.drafts}</td>
-              <td className="px-5 py-4">{row.submitted}</td>
-              <td className="px-5 py-4">{row.disputed}</td>
-              <td className="px-5 py-4">{row.accepted}</td>
-              <td className="px-5 py-4">{row.invoiced}</td>
-              <td className="px-5 py-4">{row.voided}</td>
-            </tr>)}
-          </tbody>
-        </table></div> : <p className="p-5 text-sm text-text-secondary-light">No hay prefacturas en esta consulta.</p>}
-      </section>
-    </>}
-  </div>;
+      <FilterBar>
+        <label className="text-xs font-semibold">Desde<input type="date" value={filters.from} max={filters.to} onChange={event => setFilters(current => ({ ...current, from: event.target.value }))} className={fieldClass} /></label>
+        <label className="text-xs font-semibold">Hasta<input type="date" value={filters.to} min={filters.from} onChange={event => setFilters(current => ({ ...current, to: event.target.value }))} className={fieldClass} /></label>
+        {stations.length > 1 && <label className="text-xs font-semibold">Estación<select value={filters.stationId} onChange={event => setFilters(current => ({ ...current, stationId: event.target.value }))} className={fieldClass}>
+          <option value="">Todas</option>{stations.map(station => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></label>}
+        <label className="text-xs font-semibold">Moneda<select value={filters.currency} onChange={event => setFilters(current => ({ ...current, currency: event.target.value }))} className={fieldClass}>
+          <option value="">Todas</option><option>USD</option><option>DOP</option></select></label>
+      </FilterBar>
+      {state.status === 'loading' && !report && <p role="status" className="text-sm">Calculando reporte…</p>}
+      {state.error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{state.error}</p>}
+      {report && (
+        <>
+          {report.summary.length > 0 && (
+            <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+              {report.summary.map(metric => (
+                <div key={metric.label} className="rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
+                  <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary-light">{metric.label}</dt>
+                  <dd className="mt-1 text-xl font-bold tabular-nums text-accent-600">
+                    {metric.type === 'money' ? formatMoney(metric.value, metric.currencyCode) : metric.type === 'percent' ? `${metric.value} %` : Number(metric.value).toLocaleString('es-DO')}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {report.rows.length === 0 ? (
+            <EmptyState icon={ReportIcon} title="Sin datos" description="No hay movimientos para los filtros elegidos." />
+          ) : (
+            <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
+              <table className="table-stack w-full min-w-[720px] text-left text-sm">
+                <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]">
+                  <tr>{report.columns.map(column => <th key={column.key} className={`p-3 ${['money', 'number', 'percent'].includes(column.type) ? 'text-right' : ''}`}>{column.label}</th>)}</tr>
+                </thead>
+                <tbody>{report.rows.map((row, index) => (
+                  <tr key={index} className="border-t border-black/5 dark:border-white/5">
+                    {report.columns.map((column, cell) => (
+                      <td key={column.key} className={`p-3 ${['money', 'number', 'percent'].includes(column.type) ? 'text-right tabular-nums' : ''}`}>
+                        {formatCell(row[cell], column, row, report.columns)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </StackedTable>
+          )}
+          {report.notes.map(note => <p key={note} className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{note}</p>)}
+        </>
+      )}
+    </div>
+  );
 }

@@ -74,7 +74,9 @@ internal sealed class EfFinanceReconciliationReadStore(
             return null;
 
         var byPreinvoice = invoices.ToDictionary(invoice => invoice.PreinvoiceId);
-        var byInvoice = payments.ToDictionary(payment => payment.InvoiceId);
+        // Several partial payments may settle an invoice: report their sum and the latest one.
+        var byInvoice = payments.GroupBy(payment => payment.InvoiceId).ToDictionary(group => group.Key,
+            group => new { Latest = group.OrderBy(payment => payment.CreatedAt).Last(), Total = group.Sum(payment => payment.Amount) });
         var rows = selected.Select(item =>
         {
             var invoice = byPreinvoice.GetValueOrDefault(item.Id);
@@ -82,8 +84,8 @@ internal sealed class EfFinanceReconciliationReadStore(
             return new FinanceReconciliationData(item.PublicId, item.AirlineId,
                 item.AirlineName, item.From, item.To, item.CurrencyCode,
                 item.Total, item.Status.ToString(), invoice?.PublicId, invoice?.Number,
-                invoice?.Total, invoice?.CreatedAt, payment?.PublicId, payment?.Reference,
-                payment?.Amount, payment?.CreatedAt);
+                invoice?.Total, invoice?.CreatedAt, payment?.Latest.PublicId, payment?.Latest.Reference,
+                payment?.Total, payment?.Latest.CreatedAt);
         }).ToArray();
         return new FinanceReconciliationPageData(stationId, page, limit,
             candidates.Length > limit, rows);

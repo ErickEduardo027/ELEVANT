@@ -115,6 +115,68 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         return output.ToArray();
     }
 
+    public byte[] RenderReport(FinanceReportData report, string filterSummary)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        using var document = new PdfDocument();
+        document.Info.Title = report.Title;
+        document.Info.Subject = "Non-fiscal finance report";
+        document.Info.Author = "ELEVANT";
+        var body = new XFont(Typeface, 8, XFontStyleEx.Regular);
+        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
+        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var generatedAt = DateTimeOffset.UtcNow;
+        var columns = report.Columns.Count == 0 ? 1 : report.Columns.Count;
+        var rowIndex = 0;
+        var first = true;
+        while (first || rowIndex < report.Rows.Count)
+        {
+            var page = document.AddPage();
+            page.Size = PageSize.A4;
+            page.Orientation = PageOrientation.Landscape;
+            using var graphics = XGraphics.FromPdfPage(page);
+            DrawFrame(graphics, page, heading, caption, report.Title,
+                $"{report.From:yyyy-MM-dd} – {report.To:yyyy-MM-dd}", generatedAt, document.PageCount);
+            var y = 160d;
+            if (first)
+            {
+                DrawText(graphics, filterSummary, caption, Muted, Margin, y, page.Width.Point - 2 * Margin);
+                y += 16;
+                var metrics = string.Join("   ·   ", report.Summary.Select(metric =>
+                    $"{metric.Label}: {metric.Value}{(metric.CurrencyCode is null ? string.Empty : " " + metric.CurrencyCode)}"));
+                if (metrics.Length > 0)
+                {
+                    DrawText(graphics, metrics, body, Blue, Margin, y, page.Width.Point - 2 * Margin);
+                    y += 18;
+                }
+                first = false;
+            }
+            var width = (page.Width.Point - 2 * Margin) / columns;
+            for (var column = 0; column < report.Columns.Count; column++)
+                DrawText(graphics, report.Columns[column].Label.ToUpperInvariant(), caption, Muted,
+                    Margin + column * width, y, width - 4);
+            graphics.DrawLine(new XPen(Muted, 0.4), Margin, y + 14, page.Width.Point - Margin, y + 14);
+            y += 20;
+            while (rowIndex < report.Rows.Count && y + 16 < page.Height.Point - 60)
+            {
+                var row = report.Rows[rowIndex++];
+                for (var column = 0; column < row.Count && column < report.Columns.Count; column++)
+                    DrawText(graphics, row[column] ?? "—", body, Navy, Margin + column * width, y, width - 4);
+                y += 16;
+            }
+            if (report.Rows.Count == 0)
+                DrawText(graphics, "Sin datos para los filtros elegidos.", body, Muted, Margin, y, 300);
+            foreach (var note in rowIndex >= report.Rows.Count ? report.Notes : [])
+            {
+                y += 14;
+                if (y < page.Height.Point - 60) DrawText(graphics, note, caption, Muted, Margin, y, page.Width.Point - 2 * Margin);
+            }
+        }
+        using var stream = new MemoryStream();
+        document.Save(stream, false);
+        return stream.ToArray();
+    }
+
     private static void DrawFrame(XGraphics graphics, PdfPage page, XFont heading,
         XFont caption, string title, string reference, DateTimeOffset timestamp, int pageNumber)
     {

@@ -98,6 +98,11 @@ public static class DependencyInjection
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
+        services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
+        services.AddScoped<IPreinvoiceLineEditStore, EfPreinvoiceLineEditStore>();
+        services.AddScoped<IFinanceInvoiceLedgerStore, EfFinanceInvoiceLedgerStore>();
+        services.AddScoped<IFinanceReportStore, EfFinanceReportStore>();
+        services.AddScoped<IFinanceReportExportAudit, EfFinanceReportExportAudit>();
         services.AddScoped<IFinanceReconciliationReadStore, EfFinanceReconciliationReadStore>();
         services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
         services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
@@ -125,6 +130,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
+        services.AddScoped<IRampServiceChargeStore, EfRampServiceChargeStore>();
         services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
         services.AddScoped<IAttendanceDraftStore, EfAttendanceDraftStore>();
         services.AddScoped<IAttendanceValidationStore, EfAttendanceValidationStore>();

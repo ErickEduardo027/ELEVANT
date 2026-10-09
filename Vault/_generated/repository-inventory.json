@@ -246,6 +246,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/03-dominio/finanzas-tarifas-cargos-y-cobros.md",
+        "id": "dominio-finanzas-tarifas-cargos-y-cobros",
+        "title": "Finanzas: tarifarios, cargos de rampa y cuentas por cobrar",
+        "type": "architecture",
+        "area": "domain",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/03-dominio/glosario-canonico.md",
         "id": "dominio-glosario-canonico",
         "title": "Glosario canónico",
@@ -1115,13 +1125,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "8b49c862338cdd00ffbfb7b7c51cae26cd6ce5a21f023d08947c939e8904777e",
+        "sha256": "81c46245d9a7c064d44a481d730e0aa73bb0903f3518bdc803daa94f1867793b",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "0c225b670f107e50452d2ca441287405bf9a769586a525499821f1eefc779c8c",
+        "sha256": "062b6224a9f7f2e0156997bad3a4a7fae0823323ef8903473e0637b63aecb00d",
         "title": null,
         "version": null
       }
@@ -1306,6 +1316,12 @@
         "name": "AddDepartmentGovernance",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261007180310_AddDepartmentGovernance.cs",
         "sha256": "9faedc5399b6565812a7b42e220a30c3fc7e74281e143ce3896b8b5915e0fb70"
+      },
+      {
+        "id": "20261008142843",
+        "name": "AddFinanceTariffsAndCharges",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261008142843_AddFinanceTariffsAndCharges.cs",
+        "sha256": "40ab204e1ef4cbe04f764c5f703bdbb349a6749f6fa7ff4bf6fe88b6aa233217"
       }
     ],
     "manifestContracts": [

@@ -549,6 +549,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 MinimumQuantity = 1m,
             }, DeterministicGuid("contract-rate:DEV-CONTRACT-0001:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
+        await SeedFinanceAsync(financeAccount.Id, airline.Id, [baggageService.Id, passengerBridgeService.Id],
+            cancellationToken);
 
         var turnaround = await GetOrAddAsync(
             context.Turnarounds,
@@ -923,6 +925,101 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 NeededAt = secondArrival.AddMinutes(15),
             }, "73000000-0000-7000-8000-000000000001"),
             cancellationToken);
+    }
+
+    /// <summary>Synthetic Finance reference data: units, base tariffs, charges and one exchange rate.</summary>
+    private async Task SeedFinanceAsync(long financeAccountId, long airlineId, long[] serviceIds,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (code, name, scale) in new[]
+                 {
+                     ("operation", "Operación", (byte)0), ("aircraft", "Aeronave", (byte)0),
+                     ("passenger", "Pasajero", (byte)0), ("ton", "Tonelada", (byte)3), ("hour", "Hora", (byte)2),
+                     ("minute", "Minuto", (byte)0), ("unit", "Unidad", (byte)2), ("service", "Servicio", (byte)0),
+                     ("day", "Día", (byte)0),
+                 })
+            await GetOrAddAsync(context.BillingUnits, unit => unit.Code == code,
+                () => Stamp(new BillingUnit { Code = code, Name = name, QuantityScale = scale, IsActive = true },
+                    DeterministicGuid($"billing-unit:{code}").ToString("D")), cancellationToken);
+
+        var published = FixtureInstant.AddDays(-30);
+        foreach (var (currency, factor) in new[] { ("USD", 1m), ("DOP", 58.5m) })
+        {
+            var tariff = await GetOrAddAsync(context.ServiceTariffVersions,
+                version => version.CurrencyCode == currency && version.ValidFrom == new DateOnly(2026, 1, 1),
+                () => Stamp(new ServiceTariffVersion
+                {
+                    CurrencyCode = currency, ValidFrom = new DateOnly(2026, 1, 1), Status = TariffVersionStatus.Published,
+                    Note = "Synthetic Development base tariff.", CreatedByAccountId = financeAccountId,
+                    PublishedAt = published, PublishedByAccountId = financeAccountId,
+                }, DeterministicGuid($"service-tariff:{currency}:2026").ToString("D")), cancellationToken);
+            foreach (var (serviceId, price) in serviceIds.Zip(new[] { 130m, 100m }))
+                await GetOrAddAsync(context.ServiceTariffRates,
+                    rate => rate.ServiceTariffVersionId == tariff.Id && rate.ServiceDefinitionId == serviceId &&
+                        rate.StationId == null,
+                    () => Stamp(new ServiceTariffRate
+                    {
+                        ServiceTariffVersionId = tariff.Id, ServiceDefinitionId = serviceId, BillingUnit = "operation",
+                        UnitPrice = price * factor, MinimumBillableQuantity = 1m,
+                    }, DeterministicGuid($"service-tariff-rate:{currency}:{serviceId}").ToString("D")), cancellationToken);
+        }
+
+        var charges = new[]
+        {
+            ("NIGHT", "Recargo nocturno", ChargeCategory.Surcharge, ChargeCalculationMethod.PercentOfService,
+                ChargeQuantityRule.One, 0, 0m, 25m, (string?)null),
+            ("HOLIDAY", "Recargo por día festivo", ChargeCategory.Surcharge, ChargeCalculationMethod.PercentOfService,
+                ChargeQuantityRule.One, 0, 0m, 50m, null),
+            ("OVERTIME", "Tiempo extra de operación", ChargeCategory.AdditionalCharge, ChargeCalculationMethod.PerHour,
+                ChargeQuantityRule.OperationOverrun, 15, 0.25m, 45m, "hour"),
+            ("DELAY", "Espera por demora del vuelo", ChargeCategory.AdditionalCharge, ChargeCalculationMethod.PerHour,
+                ChargeQuantityRule.ArrivalDelay, 30, 0.5m, 40m, "hour"),
+            ("ADMIN-FEE", "Cargo administrativo", ChargeCategory.AdditionalCharge, ChargeCalculationMethod.FixedAmount,
+                ChargeQuantityRule.One, 0, 0m, 15m, "service"),
+        };
+        var chargeIds = new List<(long Id, decimal Value, ChargeCalculationMethod Method)>();
+        foreach (var (code, name, category, method, rule, grace, rounding, value, unit) in charges)
+        {
+            var charge = await GetOrAddAsync(context.ChargeDefinitions, item => item.Code == code,
+                () => Stamp(new ChargeDefinition
+                {
+                    Code = code, Name = name, Description = "Synthetic Development charge.", Category = category,
+                    Method = method, QuantityRule = rule, GraceMinutes = grace, RoundingIncrement = rounding,
+                    AppliesToAllServices = true, VisibleToAgents = true, IsActive = true, BillingUnit = unit,
+                }, DeterministicGuid($"charge-definition:{code}").ToString("D")), cancellationToken);
+            chargeIds.Add((charge.Id, value, method));
+        }
+        foreach (var (currency, factor) in new[] { ("USD", 1m), ("DOP", 58.5m) })
+        {
+            var tariff = await GetOrAddAsync(context.ChargeTariffVersions,
+                version => version.CurrencyCode == currency && version.ValidFrom == new DateOnly(2026, 1, 1),
+                () => Stamp(new ChargeTariffVersion
+                {
+                    CurrencyCode = currency, ValidFrom = new DateOnly(2026, 1, 1), Status = TariffVersionStatus.Published,
+                    Note = "Synthetic Development charge tariff.", CreatedByAccountId = financeAccountId,
+                    PublishedAt = published, PublishedByAccountId = financeAccountId,
+                }, DeterministicGuid($"charge-tariff:{currency}:2026").ToString("D")), cancellationToken);
+            foreach (var (id, value, method) in chargeIds)
+                await GetOrAddAsync(context.ChargeRates,
+                    rate => rate.ChargeTariffVersionId == tariff.Id && rate.ChargeDefinitionId == id,
+                    () => Stamp(new ChargeRate
+                    {
+                        ChargeTariffVersionId = tariff.Id, ChargeDefinitionId = id,
+                        Value = method == ChargeCalculationMethod.PercentOfService ? value : value * factor,
+                        MinimumAmount = 0m,
+                    }, DeterministicGuid($"charge-rate:{currency}:{id}").ToString("D")), cancellationToken);
+        }
+
+        await GetOrAddAsync(context.ExchangeRates,
+            rate => rate.RateDate == FixtureDate && rate.FromCurrency == "USD" && rate.ToCurrency == "DOP" && rate.IsCurrent,
+            () => Stamp(new ExchangeRate
+            {
+                RateDate = FixtureDate, FromCurrency = "USD", ToCurrency = "DOP", Rate = 58.5m,
+                Source = "Synthetic Development rate", RecordedByAccountId = financeAccountId, IsCurrent = true,
+            }, DeterministicGuid("exchange-rate:USD:DOP:2026-08-18").ToString("D")), cancellationToken);
+        await GetOrAddAsync(context.AirlineBillingProfiles, profile => profile.AirlineId == airlineId,
+            () => Stamp(new AirlineBillingProfile { AirlineId = airlineId, PaymentTermDays = 30 },
+                DeterministicGuid($"airline-billing-profile:{airlineId}").ToString("D")), cancellationToken);
     }
 
     private async Task SeedPublicCommercialCatalogAsync(CancellationToken cancellationToken)

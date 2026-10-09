@@ -1,4 +1,5 @@
 import KpiCard from '../../../components/KpiCard';
+import FinanceReceivablesStrip from './FinanceReceivablesStrip';
 import { AlertIcon, ApprovedServicesIcon, ArrowIcon,
   PreInvoiceIcon, ReconciliationIcon } from '../components/icons';
 
@@ -75,6 +76,7 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
         <KpiCard label="Borradores en consulta" value={data?.kpis.draftPreinvoices} icon={PreInvoiceIcon} loading={isLoading} />
         <KpiCard label="Disputas en consulta" value={data?.kpis.disputedPreinvoices} icon={ReconciliationIcon} loading={isLoading} tone="signal" />
       </div>
+      <FinanceReceivablesStrip stationId={stationId} onNavigate={onNavigate} revision={data} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <SectionCard title="Servicios aprobados recientes" actionLabel="Ver servicios"
           onAction={() => onNavigate('finance-approved-services')}>

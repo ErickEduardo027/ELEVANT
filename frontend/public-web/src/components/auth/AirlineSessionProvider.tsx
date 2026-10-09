@@ -8,6 +8,7 @@ import { ElevantApiError, type AirlineContractPageResponse,
   type AirlinePreinvoiceDetailResponse,
   type NonFiscalInvoiceResponse,
   type NonFiscalPaymentLookupResponse,
+  type AirlineInvoiceStatementResponse,
   type PreinvoiceDisputeListResponse,
   type DisputeAirlinePreinvoiceRequest,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
@@ -54,6 +55,7 @@ interface AirlineSessionContextValue {
   getPreinvoiceDisputes(preinvoiceId: string): Promise<PreinvoiceDisputeListResponse>;
   getPreinvoiceInvoice(preinvoiceId: string): Promise<NonFiscalInvoiceResponse>;
   getInvoicePayment(invoiceId: string): Promise<NonFiscalPaymentLookupResponse>;
+  getInvoiceStatement(invoiceId: string): Promise<AirlineInvoiceStatementResponse>;
   getInvoiceDocument(preinvoiceId: string): Promise<Blob>;
   getPaymentReceipt(invoiceId: string): Promise<Blob>;
   acceptPreinvoice(preinvoiceId: string): Promise<void>;
@@ -432,6 +434,24 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const getInvoiceStatement = useCallback(async (
+    invoiceId: string): Promise<AirlineInvoiceStatementResponse> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await createPublicWebApiClient({ baseUrl,
+        getAccessToken: () => record.accessToken }).getAirlineInvoiceStatement(
+          invoiceId, { cache: "no-store" });
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError &&
+          (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+
   const getInvoicePayment = useCallback(async (
     invoiceId: string): Promise<NonFiscalPaymentLookupResponse> => {
     const record = stored.current;
@@ -552,7 +572,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

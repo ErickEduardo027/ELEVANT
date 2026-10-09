@@ -27,8 +27,42 @@ public sealed class AirlinePortalController(
     AcceptAirlinePreinvoiceHandler acceptanceHandler,
     DisputeAirlinePreinvoiceHandler disputeHandler,
     GetNonFiscalInvoiceHandler invoiceReader,
-    GetNonFiscalPaymentHandler paymentReader) : ControllerBase
+    GetNonFiscalPaymentHandler paymentReader,
+    GetAirlineInvoiceStatementHandler statementReader) : ControllerBase
 {
+    [HttpGet("invoices/{invoiceId:guid}/statement", Name = "GetAirlineInvoiceStatement")]
+    [ProducesResponseType<AirlineInvoiceStatementResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlineInvoiceStatementResponse>> GetStatement(
+        Guid invoiceId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineInvoiceStatementResponse>(401, "Authentication failed.");
+        }
+        var result = await statementReader.HandleAsync(accountId, invoiceId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            var (statusCode, title) = MapFailure(result.Failure!.Value);
+            if (statusCode == 401) Response.Headers.WWWAuthenticate = "Bearer";
+            return ProblemResult<AirlineInvoiceStatementResponse>(statusCode, title);
+        }
+        var statement = result.Statement!;
+        return Ok(new AirlineInvoiceStatementResponse(statement.InvoiceId, statement.Number, statement.PreinvoiceId,
+            statement.CurrencyCode, statement.Total, statement.Paid, statement.Credited, statement.Balance,
+            statement.IssuedAt, statement.DueDate, statement.Status, statement.DaysOverdue,
+            statement.Lines.Select(line => new AirlineInvoiceStatementLineResponse(line.LineNumber, line.Kind,
+                line.ParentLineNumber, line.OperationCode, line.OperationDate, line.ServiceCode, line.ServiceName,
+                line.Quantity, line.BillingUnit, line.UnitPrice, line.Amount, line.Reason)).ToArray(),
+            statement.Payments.Select(payment => new AirlineInvoiceStatementPaymentResponse(payment.Reference,
+                payment.Method, payment.PaidOn, payment.Amount, payment.RecordedAt)).ToArray(),
+            statement.CreditNotes.Select(note => new AirlineInvoiceStatementCreditNoteResponse(note.Number,
+                note.Amount, note.Reason, note.IssuedAt)).ToArray()));
+    }
+
     [HttpGet("invoices/{invoiceId:guid}/payment", Name = "GetAirlinePaymentByInvoice")]
     [ProducesResponseType<NonFiscalPaymentLookupResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
@@ -221,7 +255,8 @@ public sealed class AirlinePortalController(
             detail.Lines.Select(line => new AirlinePreinvoiceLineResponse(
                 line.Id, line.OperationCode, line.OperationDate,
                 line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
-                line.BillingUnit, line.UnitPrice, line.Amount)).ToArray()));
+                line.BillingUnit, line.UnitPrice, line.Amount, line.Kind, line.ParentLineId,
+                line.Reason)).ToArray()));
     }
 
     [HttpGet("preinvoices", Name = "GetAirlinePreinvoices")]

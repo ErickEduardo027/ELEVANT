@@ -77,7 +77,8 @@ VALUES
     (N'20261005133619_OperationAttendanceContributionRevisions'),
     (N'20261005153623_AddServiceClosureRequests'),
     (N'20261005164319_OperationAttendanceValidation'),
-    (N'20261007180310_AddDepartmentGovernance');
+    (N'20261007180310_AddDepartmentGovernance'),
+    (N'20261008142843_AddFinanceTariffsAndCharges');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

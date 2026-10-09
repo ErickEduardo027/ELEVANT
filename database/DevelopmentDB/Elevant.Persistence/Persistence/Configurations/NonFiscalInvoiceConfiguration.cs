@@ -22,6 +22,7 @@ internal static class NonFiscalInvoiceConfiguration
             builder.Property(item => item.Number).HasMaxLength(35).IsRequired();
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Total).HasPrecision(19, 4);
+            builder.Property(item => item.DueDate).HasColumnType("date");
             builder.HasIndex(item => item.PreinvoiceId).IsUnique();
             builder.HasIndex(item => item.RequestId).IsUnique();
             builder.HasIndex(item => item.Number).IsUnique();
@@ -41,9 +42,10 @@ internal static class NonFiscalInvoiceConfiguration
             builder.ToTable("non_fiscal_invoice_lines", "commercial", table =>
             {
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_number", "[line_number] > 0");
-                table.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity", "[executed_quantity] > 0");
+                table.HasCheckConstraint("ck_non_fiscal_invoice_line_quantity",
+                    "[executed_quantity] > 0 OR ([kind] <> N'Service' AND [executed_quantity] >= 0)");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_price",
-                    "[unit_price] >= 0 AND [amount] >= 0");
+                    "[unit_price] >= 0 AND ([kind] = N'Adjustment' OR [amount] >= 0)");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_line_currency", "LEN([currency_code]) = 3");
             });
             builder.Property(item => item.OperationCode).HasMaxLength(40).IsRequired();
@@ -55,6 +57,9 @@ internal static class NonFiscalInvoiceConfiguration
             builder.Property(item => item.UnitPrice).HasPrecision(19, 4);
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Amount).HasPrecision(19, 4);
+            builder.Property(item => item.Kind).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(Elevant.Domain.Enumerations.PreinvoiceLineKind.Service);
+            builder.Property(item => item.Reason).HasMaxLength(500);
             builder.HasIndex(item => new { item.InvoiceId, item.LineNumber }).IsUnique();
             builder.HasIndex(item => item.PreinvoiceLineId).IsUnique();
             builder.HasOne<NonFiscalInvoice>().WithMany().HasForeignKey(item => item.InvoiceId)

@@ -58,6 +58,11 @@ export function DepartmentAccessProvider({ children, load = getMyDepartmentAcces
   return <DepartmentAccessContext.Provider value={value}>{children}</DepartmentAccessContext.Provider>;
 }
 
+/** Access when a provider is present; null in isolated pages and tests. */
+export function useOptionalDepartmentAccess() {
+  return useContext(DepartmentAccessContext)?.access ?? null;
+}
+
 export function useDepartmentAccess() {
   const context = useContext(DepartmentAccessContext);
   if (!context) throw new Error('useDepartmentAccess must be used inside DepartmentAccessProvider');

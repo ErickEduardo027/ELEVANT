@@ -73,6 +73,7 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 service.LineNumber, service.Id
             select new
             {
+                ServiceInternalId = service.Id,
                 ServiceId = service.PublicId,
                 OperationId = operation.PublicId,
                 TurnaroundId = turnaround.PublicId,
@@ -86,7 +87,8 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                     from line in context.PreinvoiceLines.AsNoTracking()
                     join draft in context.Preinvoices.AsNoTracking()
                         on line.PreinvoiceId equals draft.Id
-                    where line.OperationServiceId == service.Id && line.ReleasedAt == null
+                    where line.OperationServiceId == service.Id && line.ReleasedAt == null &&
+                        line.Kind == PreinvoiceLineKind.Service
                     select (Guid?)draft.PublicId).FirstOrDefault(),
                 FlightNumber = context.FlightLegs.AsNoTracking()
                     .Where(leg => leg.TurnaroundId == turnaround.Id &&
@@ -112,20 +114,28 @@ internal sealed class EfFinanceApprovedServicesReadStore(
             .Take(PageLimit + 1)
             .ToArrayAsync(cancellationToken);
 
+        var internalIds = rows.Take(PageLimit).Select(row => row.ServiceInternalId).ToArray();
+        var liveMarks = (await context.OperationServiceCharges.AsNoTracking()
+                .Where(mark => internalIds.Contains(mark.OperationServiceId) && mark.RemovedAt == null)
+                .Select(mark => new { mark.OperationServiceId, mark.PublicId }).ToArrayAsync(cancellationToken))
+            .ToLookup(mark => mark.OperationServiceId, mark => mark.PublicId);
         var services = rows.Take(PageLimit).Select(row =>
         {
             OccReviewServiceData? evidence = null;
+            IReadOnlyList<ServiceChargeEvidence> frozenCharges = [];
             if (row.EvidenceJson is not null)
             {
                 try
                 {
-                    evidence = OperationSubmissionEvidence.Parse(row.EvidenceJson)
-                        .Services.SingleOrDefault(item => item.Id == row.ServiceId);
+                    var snapshot = OperationSubmissionEvidence.Parse(row.EvidenceJson);
+                    evidence = snapshot.Services.SingleOrDefault(item => item.Id == row.ServiceId);
+                    frozenCharges = snapshot.ChargesOf(row.ServiceId);
                 }
                 catch (System.Text.Json.JsonException) { }
                 catch (InvalidOperationException) { }
             }
             var evidenceMatches = evidence is not null &&
+                liveMarks[row.ServiceInternalId].Order().SequenceEqual(frozenCharges.Select(charge => charge.MarkId).Order()) &&
                 evidence.Status == row.CurrentStatus.ToString() &&
                 evidence.ExecutedQuantity == row.ExecutedQuantity &&
                 evidence.ContractedQuantity == row.ContractedQuantity &&

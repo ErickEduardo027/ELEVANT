@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<GetNonFiscalInvoiceHandler>();
         services.AddScoped<RecordNonFiscalPaymentHandler>();
         services.AddScoped<GetNonFiscalPaymentHandler>();
+        services.AddScoped<GetAirlineInvoiceStatementHandler>();
         services.AddScoped<GetFinancialDocumentHandler>();
         services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
@@ -62,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<GetRampOperationChecklistHandler>();
         services.AddScoped<SubmitRampOperationChecklistHandler>();
         services.AddScoped<TransitionRampOperationServiceHandler>();
+        services.AddScoped<RampServiceChargesHandler>();
         services.AddScoped<RampIncidentHandler>();
         services.AddScoped<RampOperationSubmissionHandler>();
         services.AddScoped<RampOperationCorrectionHandler>();
