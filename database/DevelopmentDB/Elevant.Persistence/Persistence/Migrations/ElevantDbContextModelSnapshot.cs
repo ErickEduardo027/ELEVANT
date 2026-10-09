@@ -90,6 +90,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("correlation_id");
 
+                    b.Property<string>("Department")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
                     b.Property<Guid?>("EntityPublicId")
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("entity_public_id");
@@ -147,6 +152,9 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("ActorAccountId", "OccurredAt");
+
+                    b.HasIndex("Department", "OccurredAt")
+                        .HasFilter("[department] IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "OccurredAt");
 
@@ -3702,8 +3710,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("avatar_media_url");
 
                     b.Property<string>("Category")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
                         .HasColumnName("category");
 
                     b.Property<long?>("CreatedAccountId")
@@ -3742,6 +3750,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)")
                         .HasColumnName("email");
+
+                    b.Property<long?>("EmployeeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("employee_id");
 
                     b.Property<string>("EmployeeNumber")
                         .HasMaxLength(32)
@@ -3820,6 +3832,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasFilter("[status] = N'Pending'");
+
+                    b.HasIndex("EmployeeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_user_access_requests_employee_pending")
+                        .HasFilter("[status] = N'Pending' AND [employee_id] IS NOT NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -7488,6 +7505,432 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.Employee", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("EmployeeNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("employee_number");
+
+                    b.Property<DateOnly>("HireDate")
+                        .HasColumnType("date")
+                        .HasColumnName("hire_date");
+
+                    b.Property<long>("JobPositionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("job_position_id");
+
+                    b.Property<long>("PersonId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("person_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long?>("RequisitionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requisition_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<long?>("TerminatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("terminated_by_account_id");
+
+                    b.Property<DateOnly?>("TerminatedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("terminated_on");
+
+                    b.Property<string>("TerminationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("termination_reason");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("EmployeeNumber")
+                        .IsUnique();
+
+                    b.HasIndex("JobPositionId");
+
+                    b.HasIndex("PersonId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequisitionId");
+
+                    b.HasIndex("TerminatedByAccountId");
+
+                    b.HasIndex("Department", "Status");
+
+                    b.ToTable("employees", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_employee_termination", "([status] = N'Active' AND [terminated_on] IS NULL AND [termination_reason] IS NULL AND [terminated_by_account_id] IS NULL) OR ([status] = N'Terminated' AND [terminated_on] IS NOT NULL AND [termination_reason] IS NOT NULL AND [terminated_by_account_id] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.EmployeeAssignment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ChangedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("changed_by_account_id");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("employee_id");
+
+                    b.Property<long>("JobPositionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("job_position_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("ValidFrom")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("valid_from");
+
+                    b.Property<DateTimeOffset?>("ValidTo")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("valid_to");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangedByAccountId");
+
+                    b.HasIndex("EmployeeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_employee_assignments_open")
+                        .HasFilter("[valid_to] IS NULL");
+
+                    b.HasIndex("JobPositionId");
+
+                    b.HasIndex("Department", "ValidFrom");
+
+                    b.ToTable("employee_assignments", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_employee_assignment_dates", "[valid_to] IS NULL OR [valid_to] >= [valid_from]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.EmployeeStation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("EmployeeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("employee_id");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<DateOnly>("ValidFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_from");
+
+                    b.Property<DateOnly?>("ValidTo")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_to");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("EmployeeId", "StationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_employee_stations_open")
+                        .HasFilter("[valid_to] IS NULL");
+
+                    b.ToTable("employee_stations", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_employee_station_dates", "[valid_to] IS NULL OR [valid_to] >= [valid_from]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.JobPosition", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsRampPosition")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_ramp_position");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long?>("SuggestedAccessProfileId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("suggested_access_profile_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("SuggestedAccessProfileId");
+
+                    b.HasIndex("Department", "Name")
+                        .IsUnique();
+
+                    b.ToTable("job_positions", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_job_position_ramp_department", "[is_ramp_position] = CAST(0 AS bit) OR [department] = N'Operations'");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.PersonnelRequisition", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("AttendedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("attended_by_account_id");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("closed_at");
+
+                    b.Property<long?>("ClosedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("closed_by_account_id");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("closure_reason");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("department");
+
+                    b.Property<DateOnly?>("DesiredStartOn")
+                        .HasColumnType("date")
+                        .HasColumnName("desired_start_on");
+
+                    b.Property<long>("JobPositionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("job_position_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("requested_at");
+
+                    b.Property<long>("RequestedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long?>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttendedByAccountId");
+
+                    b.HasIndex("ClosedByAccountId");
+
+                    b.HasIndex("JobPositionId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedByAccountId");
+
+                    b.HasIndex("StationId");
+
+                    b.HasIndex("Department", "Status");
+
+                    b.ToTable("personnel_requisitions", "hr", t =>
+                        {
+                            t.HasCheckConstraint("ck_personnel_requisition_closure", "([status] IN (N'Open', N'InProgress') AND [closed_at] IS NULL AND [closed_by_account_id] IS NULL) OR ([status] = N'Fulfilled' AND [closed_at] IS NOT NULL AND [closed_by_account_id] IS NOT NULL) OR ([status] IN (N'Rejected', N'Cancelled') AND [closed_at] IS NOT NULL AND [closed_by_account_id] IS NOT NULL AND [closure_reason] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_personnel_requisition_quantity", "[quantity] BETWEEN 1 AND 50");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Workforce.QualificationCycle", b =>
                 {
                     b.Property<long>("Id")
@@ -7610,8 +8053,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Category")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
                         .HasColumnName("category");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -8970,6 +9413,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("DecidedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("Elevant.Domain.Entities.Workforce.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("RequestedByAccountId")
@@ -9627,6 +10075,117 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TerminalId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.Employee", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.JobPosition", null)
+                        .WithMany()
+                        .HasForeignKey("JobPositionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Identity.Person", null)
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.PersonnelRequisition", null)
+                        .WithMany()
+                        .HasForeignKey("RequisitionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("TerminatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.EmployeeAssignment", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.JobPosition", null)
+                        .WithMany()
+                        .HasForeignKey("JobPositionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.EmployeeStation", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Workforce.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.JobPosition", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Identity.AccessProfile", null)
+                        .WithMany()
+                        .HasForeignKey("SuggestedAccessProfileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Workforce.PersonnelRequisition", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AttendedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ClosedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.JobPosition", null)
+                        .WithMany()
+                        .HasForeignKey("JobPositionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Workforce.QualificationCycle", b =>

@@ -96,6 +96,8 @@ internal static class IntegrationAuditConfiguration
             builder.HasIndex(entry => new { entry.EntityType, entry.EntityPublicId, entry.OccurredAt });
             builder.HasIndex(entry => new { entry.OrganizationId, entry.OccurredAt });
             builder.HasIndex(entry => new { entry.StationId, entry.OccurredAt });
+            builder.Property(entry => entry.Department).HasConversion<string>().HasMaxLength(32);
+            builder.HasIndex(entry => new { entry.Department, entry.OccurredAt }).HasFilter("[department] IS NOT NULL");
             builder.HasIndex(entry => new { entry.ActorAccountId, entry.OccurredAt });
             AddReference<ApplicationUser, AuditEntry>(builder, entry => entry.ActorAccountId);
             AddReference<Organization, AuditEntry>(builder, entry => entry.OrganizationId);

@@ -24,6 +24,9 @@ public sealed class AuditEntry : Entity<long>
 
     public long? StationId { get; set; }
 
+    /// <summary>Department the action belongs to, when the writer knows it.</summary>
+    public Department? Department { get; set; }
+
     public AuditSource Source { get; set; }
 
     public Guid CorrelationId { get; set; }

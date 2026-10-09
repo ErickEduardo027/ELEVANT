@@ -78,7 +78,8 @@ VALUES
     (N'20261005153623_AddServiceClosureRequests'),
     (N'20261005164319_OperationAttendanceValidation'),
     (N'20261007180310_AddDepartmentGovernance'),
-    (N'20261008142843_AddFinanceTariffsAndCharges');
+    (N'20261008142843_AddFinanceTariffsAndCharges'),
+    (N'20261009172055_AddEmployeesPositionsRequisitions');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
@@ -290,6 +291,12 @@ SELECT N'ramp-agent', COUNT_BIG(*), 1
 FROM [hr].[ramp_agents]
 WHERE [employee_number] = N'DEV-RA-001'
   AND [public_id] = CONVERT(uniqueidentifier, N'50000000-0000-7000-8000-000000000001');
+
+INSERT INTO @seed_checks
+SELECT N'hr-employees', COUNT_BIG(*), 3
+FROM [hr].[employees]
+WHERE [employee_number] IN (N'DEV-RA-001', N'DEV-EMP-FIN-002', N'DEV-RA-002')
+  AND [status] = N'Active';
 
 INSERT INTO @seed_checks
 SELECT N'commercial-request', COUNT_BIG(*), 1
