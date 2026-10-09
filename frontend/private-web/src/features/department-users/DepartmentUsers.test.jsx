@@ -6,15 +6,21 @@ import DepartmentUsersPage from './DepartmentUsersPage';
 import AccessValidationsPage from './AccessValidationsPage';
 import { togglePermission } from './PermissionMatrix';
 import {
-  getDepartmentOptions, getDepartmentSummary, getPermissionCatalog, listAccessProfiles, listAccessRequests,
-  listDepartmentUsers, rejectAccessRequest, requestDepartmentUserAccess, validateAccessRequest,
+  createDepartmentAdministrator, getDepartmentOptions, getDepartmentSummary, getPermissionCatalog, listAccessProfiles,
+  listAccessRequests, listDepartmentUsers, rejectAccessRequest, requestDepartmentUserAccess, validateAccessRequest,
 } from '../../services/departmentGovernanceService';
+import { listAccessCandidates } from '../../services/humanResourcesEmployeesService';
+import { generateTemporaryPassword } from './temporaryPassword';
 
 vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
   ...(await importOriginal()),
   getDepartmentSummary: vi.fn(), listDepartmentUsers: vi.fn(), listAccessProfiles: vi.fn(), listAccessRequests: vi.fn(),
   getDepartmentOptions: vi.fn(), getPermissionCatalog: vi.fn(), requestDepartmentUserAccess: vi.fn(),
-  validateAccessRequest: vi.fn(), rejectAccessRequest: vi.fn(),
+  validateAccessRequest: vi.fn(), rejectAccessRequest: vi.fn(), createDepartmentAdministrator: vi.fn(),
+}));
+vi.mock('../../services/humanResourcesEmployeesService', async importOriginal => ({
+  ...(await importOriginal()),
+  listAccessCandidates: vi.fn(),
 }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
@@ -35,6 +41,10 @@ const pending = { id: 'req-1', department: 'contracts', kind: 'BackOfficeUser', 
 const admin = { kind: 'Administrator', department: 'contracts', permissions: [], stations: [{ id: 'st-1', code: 'PUJ' }],
   canManageDepartmentUsers: true, canValidateAccessRequests: false };
 
+const candidate = { employeeId: 'emp-1', firstName: 'Luis', lastName: 'Pérez', employeeNumber: 'CON-010',
+  position: { id: 'pos-1', name: 'Analista comercial', isRampPosition: false }, suggestedAccessProfileId: null,
+  stations: [{ id: 'st-1', code: 'PUJ' }], email: 'luis@example.test', accountStatus: null };
+
 function renderWith(access, ui) {
   return render(<DepartmentAccessProvider observe={false} initialAccess={access}>{ui}</DepartmentAccessProvider>);
 }
@@ -46,6 +56,7 @@ beforeEach(() => {
   listAccessRequests.mockResolvedValue({ page: 1, limit: 50, hasMore: false, requests: [pending] });
   getDepartmentOptions.mockResolvedValue({ stations: [{ id: 'st-1', code: 'PUJ' }], terminals: [], supervisors: [] });
   getPermissionCatalog.mockResolvedValue(catalog);
+  listAccessCandidates.mockResolvedValue([candidate]);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -59,32 +70,52 @@ describe('permission matrix', () => {
 });
 
 describe('DepartmentUsersPage', () => {
-  it('lets an administrator request an account with custom permissions and a stable request id', async () => {
+  it('requests access for a registered employee with custom permissions and a stable request id', async () => {
     requestDepartmentUserAccess.mockResolvedValue({ id: 'req-2' });
     renderWith(admin, <DepartmentUsersPage department="contracts" />);
     expect(await screen.findByText('Pendientes de validar')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Crear administrador' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Solicitar alta' }));
-    const form = screen.getByRole('dialog', { name: 'Solicitar alta de usuario' });
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Nombre' }), 'Luis');
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Apellido' }), 'Pérez');
-    await userEvent.type(within(form).getByRole('textbox', { name: 'Correo de acceso' }), 'luis@example.test');
-    await userEvent.click(within(form).getByRole('checkbox', { name: 'PUJ' }));
+    expect(screen.queryByRole('button', { name: 'Nombrar administrador' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Solicitar acceso' }));
+    const form = screen.getByRole('dialog', { name: 'Solicitar acceso para un empleado' });
+    expect(within(form).queryByRole('textbox', { name: 'Nombre' })).not.toBeInTheDocument();
+    await userEvent.click(await within(form).findByRole('button', { name: /Luis Pérez/ }));
+    expect(within(form).getByRole('checkbox', { name: 'PUJ' })).toBeChecked();
     await userEvent.click(within(form).getByRole('radio', { name: 'Permisos personalizados' }));
     await userEvent.click(within(form).getByRole('checkbox', { name: 'Aprobar' }));
     await userEvent.click(screen.getByRole('button', { name: 'Enviar a Gestión Humana' }));
     expect(requestDepartmentUserAccess).toHaveBeenCalledWith('contracts', expect.objectContaining({
-      kind: 'BackOfficeUser', email: 'luis@example.test', stationIds: ['st-1'], accessProfileId: null,
+      employeeId: 'emp-1', stationIds: ['st-1'], accessProfileId: null,
       permissionCodes: ['contracts.requests.approve', 'contracts.requests.read'],
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
     }));
+    expect(requestDepartmentUserAccess.mock.calls[0][1]).not.toHaveProperty('email');
     expect(await screen.findByText(/Gestión Humana la validará/)).toBeInTheDocument();
   });
 
-  it('offers direct creation of administrators only to the super administrator', async () => {
+  it('lets only the super administrator name an administrator from an employee', async () => {
+    createDepartmentAdministrator.mockResolvedValue({ id: 'acc-9' });
     renderWith({ ...admin, kind: 'SuperAdministrator', department: null }, <DepartmentUsersPage department="contracts" />);
-    expect(await screen.findByRole('button', { name: 'Crear administrador' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Solicitar alta' })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Nombrar administrador' }));
+    const form = screen.getByRole('dialog', { name: 'Nombrar administrador' });
+    await userEvent.click(await within(form).findByRole('button', { name: /Luis Pérez/ }));
+    await userEvent.click(within(form).getByRole('button', { name: 'Generar contraseña' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(createDepartmentAdministrator).toHaveBeenCalledWith('contracts', expect.objectContaining({
+      employeeId: 'emp-1', stationIds: ['st-1'],
+      temporaryPassword: expect.stringMatching(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{16}$/),
+    }));
+    expect(screen.queryByRole('button', { name: 'Crear sub-usuario' })).not.toBeInTheDocument();
+  });
+});
+
+describe('temporary password generator', () => {
+  it('always satisfies the policy and avoids look-alike characters', () => {
+    for (let index = 0; index < 200; index += 1) {
+      const password = generateTemporaryPassword();
+      expect(password).toMatch(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{16}$/);
+      expect(password).not.toMatch(/[0O1lI]/);
+    }
+    expect(() => generateTemporaryPassword(10)).toThrow(RangeError);
   });
 });
 

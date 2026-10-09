@@ -24,8 +24,11 @@ export default function AccessRequestCard({ request, catalog, showDepartment = f
         <dt className="text-text-secondary-light">Tipo</dt><dd>{ramp ? 'Agente de rampa' : 'Usuario web'}</dd>
         <dt className="text-text-secondary-light">Solicitado por</dt><dd>{request.requestedBy} · {dateFormat(request.requestedAt)}</dd>
         <dt className="text-text-secondary-light">Estaciones</dt><dd>{request.stations.map(station => station.code).join(', ')}</dd>
-        {ramp && <>
+        {(ramp || request.employeeId) && <>
           <dt className="text-text-secondary-light">Empleado</dt><dd>{request.employeeNumber} · {request.category}</dd>
+        </>}
+        {!request.employeeId && <><dt className="text-text-secondary-light">Expediente</dt><dd className="text-status-warning">Sin expediente de Gestión Humana (solicitud anterior)</dd></>}
+        {ramp && <>
           <dt className="text-text-secondary-light">Ingreso</dt><dd>{request.hireDate}</dd>
           <dt className="text-text-secondary-light">Terminales</dt><dd>{request.terminals.map(terminal => terminal.code).join(', ') || 'Sin terminales'}</dd>
           <dt className="text-text-secondary-light">Supervisor</dt><dd>{request.supervisorName ?? 'Sin supervisor'}</dd>

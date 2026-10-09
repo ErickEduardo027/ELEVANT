@@ -3,7 +3,6 @@ import EmptyState from '../../components/EmptyState';
 import FilterBar from '../../components/FilterBar';
 import Modal from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
-import PasswordField from '../../components/PasswordField';
 import { ShieldCheckIcon } from '../shell/components/icons';
 import { useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
@@ -15,7 +14,8 @@ import {
   validateAccessRequest,
 } from '../../services/departmentGovernanceService';
 import AccessRequestCard from './AccessRequestCard';
-import { PASSWORD_HINT, PASSWORD_PATTERN } from './useDepartmentGovernance';
+import GeneratePasswordField from './GeneratePasswordField';
+import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -91,9 +91,9 @@ export default function AccessValidationsPage() {
         : `Solicitud de ${request.firstName} ${request.lastName} rechazada. El administrador verá el motivo.`);
       await refresh();
     } catch (failure) {
-      setError(failure.status === 409
-        ? 'La solicitud cambió, ya fue resuelta o el correo ya existe. Se actualizó la bandeja.'
-        : failure.status === 403 ? 'No puede resolver una solicitud que usted mismo envió.' : failure.message);
+      setError(failure.status === 403
+        ? 'No puede resolver una solicitud que usted mismo envió.'
+        : governanceMessage(failure, 'La solicitud cambió, ya fue resuelta o el correo ya existe. Se actualizó la bandeja.'));
       await refresh();
     } finally {
       setBusy(false);
@@ -155,8 +155,8 @@ export default function AccessValidationsPage() {
           {deciding?.kind === 'validate' ? (
             <>
               <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">La cuenta se crea con {deciding.request.kind === 'RampAgent' ? 'acceso a la app móvil de rampa y su perfil operativo' : 'los permisos solicitados'}. El usuario deberá cambiar la contraseña en su primer ingreso.</p>
-              <PasswordField fieldClassName="text-sm font-semibold" inputClassName={fieldClass} label="Contraseña temporal" id="access-validation-password"
-                required minLength={14} pattern={PASSWORD_PATTERN} title={PASSWORD_HINT} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} />
+              <GeneratePasswordField fieldClassName="text-sm font-semibold" inputClassName={fieldClass} id="access-validation-password"
+                value={password} onChange={setPassword} />
             </>
           ) : (
             <label className="block text-sm font-semibold">Motivo del rechazo

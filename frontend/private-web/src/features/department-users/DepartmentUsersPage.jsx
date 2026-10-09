@@ -4,7 +4,6 @@ import EmptyState from '../../components/EmptyState';
 import FilterBar from '../../components/FilterBar';
 import Modal from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
-import PasswordField from '../../components/PasswordField';
 import StackedTable from '../../components/StackedTable';
 import StatusBadge from '../../components/StatusBadge';
 import Tabs from '../../components/Tabs';
@@ -21,11 +20,11 @@ import AccessRequestCard from './AccessRequestCard';
 import AccountFormDrawer from './AccountFormDrawer';
 import { permissionLabels } from './PermissionMatrix';
 import ProfilesPanel from './ProfilesPanel';
+import GeneratePasswordField from './GeneratePasswordField';
+import { DepartmentActivityPanel, DepartmentPositionsPanel, DepartmentRequisitionsPanel } from './DepartmentStaffPanels';
 import RampProfilesPanel from '../human-resources/users/RampProfilesPanel';
 import {
   KIND_LABELS,
-  PASSWORD_HINT,
-  PASSWORD_PATTERN,
   STATUS_LABELS,
   useDepartmentGovernance,
 } from './useDepartmentGovernance';
@@ -145,19 +144,19 @@ export default function DepartmentUsersPage({ department }) {
 
   const actions = superAdministrator ? (
     <>
-      <button type="button" onClick={() => setDrawer({ mode: 'administrator' })} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Crear administrador</button>
-      <button type="button" onClick={() => setDrawer({ mode: 'member' })} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Crear sub-usuario</button>
+      <button type="button" onClick={() => setDrawer({ mode: 'administrator' })} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Nombrar administrador</button>
+      <button type="button" onClick={() => setDrawer({ mode: 'request' })} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Solicitar acceso</button>
     </>
   ) : (
-    <button type="button" onClick={() => setDrawer({ mode: 'request' })} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Solicitar alta</button>
+    <button type="button" onClick={() => setDrawer({ mode: 'request' })} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Solicitar acceso</button>
   );
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow={superAdministrator ? 'Usuarios internos' : label} title={superAdministrator ? label : 'Usuarios del departamento'}
         description={superAdministrator
-          ? 'Todos los administradores, sub-usuarios y solicitudes del departamento.'
-          : 'Solicite altas a Gestión Humana, administre permisos y plantillas de su equipo.'}
+          ? 'Administradores, usuarios, solicitudes y actividad del departamento.'
+          : 'Pida personal, solicite el acceso de sus empleados y administre permisos, plantillas y actividad de su equipo.'}
         actions={actions} />
       {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
       {(error || (data.status === 'ready' && data.error)) && <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error || data.error}</div>}
@@ -176,6 +175,9 @@ export default function DepartmentUsersPage({ department }) {
             { id: 'requests', label: 'Solicitudes', count: pendingRequests.length },
             { id: 'profiles', label: 'Plantillas', count: data.profiles.filter(profile => profile.isActive).length },
             ...(department === DEPARTMENTS.OPERATIONS ? [{ id: 'ramp', label: 'Perfiles operativos' }] : []),
+            { id: 'positions', label: 'Puestos' },
+            { id: 'requisitions', label: 'Requisiciones' },
+            { id: 'activity', label: 'Actividad' },
           ]} />
           {tab === 'users' && (
             <section className="space-y-3">
@@ -220,6 +222,9 @@ export default function DepartmentUsersPage({ department }) {
           {tab === 'ramp' && (
             <RampProfilesPanel canEdit embedded stationFilter={superAdministrator ? null : access?.stations.map(station => station.id)} />
           )}
+          {tab === 'positions' && <DepartmentPositionsPanel department={department} profiles={data.profiles} />}
+          {tab === 'requisitions' && <DepartmentRequisitionsPanel department={department} stations={data.options?.stations} />}
+          {tab === 'activity' && <DepartmentActivityPanel department={department} />}
           {tab === 'profiles' && (
             <ProfilesPanel department={department} profiles={data.profiles} catalog={data.catalog} onChanged={done} />
           )}
@@ -244,8 +249,8 @@ export default function DepartmentUsersPage({ department }) {
           const user = resetting;
           if (await act(() => resetDepartmentUserPassword(department, user.id, password), 'Contraseña restablecida. Entréguela por un canal autorizado; se pedirá cambiarla al ingresar.')) setResetting(null);
         }}>
-          <PasswordField fieldClassName="text-sm font-semibold" inputClassName={selectClass} label="Nueva contraseña temporal" id="department-reset-password"
-            required minLength={14} pattern={PASSWORD_PATTERN} title={PASSWORD_HINT} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} />
+          <GeneratePasswordField fieldClassName="text-sm font-semibold" inputClassName={selectClass} label="Nueva contraseña temporal"
+            id="department-reset-password" value={password} onChange={setPassword} />
         </form>
       </Modal>
       <ConfirmDialog open={Boolean(toggling)} title={toggling?.status === 'Active' ? 'Desactivar usuario' : 'Reactivar usuario'}
