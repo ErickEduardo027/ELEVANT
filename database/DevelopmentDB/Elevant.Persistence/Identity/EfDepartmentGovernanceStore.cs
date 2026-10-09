@@ -57,6 +57,9 @@ internal sealed partial class EfDepartmentGovernanceStore(
 
         public bool CanValidate => Access?.Has(ValidateRequestsPermission) == true;
 
+        /// <summary>Human Resources permission (the super administrator holds every one of them).</summary>
+        public bool Can(string permission) => Access?.Has(permission) == true;
+
         public IReadOnlySet<Guid> StationIds { get; } =
             Context.StationScopes.Select(scope => scope.StationId).ToHashSet();
     }

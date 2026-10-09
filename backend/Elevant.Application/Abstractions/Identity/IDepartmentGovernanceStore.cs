@@ -95,7 +95,8 @@ public sealed record AccessRequestData(
     DateTimeOffset? DecidedAt,
     string? DecidedBy,
     Guid? CreatedAccountId,
-    string Version);
+    string Version,
+    Guid? EmployeeId = null);
 
 public sealed record AccessRequestPage(int Page, int Limit, bool HasMore, IReadOnlyList<AccessRequestData> Requests);
 
@@ -108,15 +109,20 @@ public sealed record LegacyRoleData(Guid Id, string Code, string Name, IReadOnly
 public sealed record SaveAccessProfileInput(string Name, string? Description,
     IReadOnlyList<string> PermissionCodes, string? ExpectedVersion = null);
 
+/// <summary>
+/// Direct account creation by the super administrator. New clients send <paramref name="EmployeeId"/>;
+/// the typed person fields remain only for clients released before employees (ADR-0017, expand phase).
+/// </summary>
 public sealed record CreateDepartmentAccountInput(
-    string FirstName,
-    string LastName,
-    string Email,
+    string? FirstName,
+    string? LastName,
+    string? Email,
     string TemporaryPassword,
     IReadOnlyList<Guid> StationIds,
     string? AvatarMediaUrl = null,
     Guid? AccessProfileId = null,
-    IReadOnlyList<string>? PermissionCodes = null);
+    IReadOnlyList<string>? PermissionCodes = null,
+    Guid? EmployeeId = null);
 
 public sealed record UpdateDepartmentUserInput(
     string FirstName,
@@ -130,12 +136,16 @@ public sealed record UpdateDepartmentUserInput(
 
 public sealed record SetDepartmentUserStatusInput(bool IsActive, string ExpectedVersion);
 
+/// <summary>
+/// Access request of a department administrator. New clients send <paramref name="EmployeeId"/> and the
+/// kind follows the employee position; the typed person and ramp fields are the pre-employee shape.
+/// </summary>
 public sealed record RequestUserAccessInput(
     Guid RequestId,
-    string Kind,
-    string FirstName,
-    string LastName,
-    string Email,
+    string? Kind,
+    string? FirstName,
+    string? LastName,
+    string? Email,
     IReadOnlyList<Guid> StationIds,
     string? AvatarMediaUrl = null,
     Guid? AccessProfileId = null,
@@ -144,7 +154,8 @@ public sealed record RequestUserAccessInput(
     string? EmployeeNumber = null,
     string? Category = null,
     DateOnly? HireDate = null,
-    Guid? SupervisorRampAgentId = null);
+    Guid? SupervisorRampAgentId = null,
+    Guid? EmployeeId = null);
 
 public sealed record DecideUserAccessInput(string ExpectedVersion, string? TemporaryPassword = null, string? Reason = null);
 
