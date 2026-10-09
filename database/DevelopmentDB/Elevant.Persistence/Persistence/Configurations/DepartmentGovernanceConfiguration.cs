@@ -87,7 +87,13 @@ internal static class DepartmentGovernanceConfiguration
             builder.Property(request => request.Email).HasMaxLength(256);
             builder.Property(request => request.AvatarMediaUrl).HasMaxLength(512);
             builder.Property(request => request.EmployeeNumber).HasMaxLength(32);
-            builder.Property(request => request.Category).HasMaxLength(64);
+            builder.Property(request => request.Category).HasMaxLength(120);
+            builder.HasIndex(request => request.EmployeeId)
+                .HasDatabaseName("ux_user_access_requests_employee_pending")
+                .HasFilter("[status] = N'Pending' AND [employee_id] IS NOT NULL")
+                .IsUnique();
+            builder.HasOne<Employee>().WithMany().HasForeignKey(request => request.EmployeeId)
+                .OnDelete(DeleteBehavior.NoAction);
             builder.Property(request => request.HireDate).HasColumnType("date");
             builder.Property(request => request.DecisionReason).HasMaxLength(500);
             builder.HasIndex(request => request.PublicId).IsUnique();

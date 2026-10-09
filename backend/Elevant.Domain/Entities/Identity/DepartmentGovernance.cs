@@ -62,6 +62,9 @@ public sealed class UserAccessRequest : AuditableEntity
 
     public DateTimeOffset RequestedAt { get; set; }
 
+    /// <summary>Employee the access is requested for; null only for requests made before employees existed.</summary>
+    public long? EmployeeId { get; set; }
+
     public string FirstName { get; set; } = string.Empty;
 
     public string LastName { get; set; } = string.Empty;

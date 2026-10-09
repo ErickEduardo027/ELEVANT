@@ -36,7 +36,11 @@ public static class DepartmentPermissionCatalog
             [Department.HumanResources] =
             [
                 Module("human_resources", "dashboard", "Dashboard", ("read", "Ver")),
-                Module("human_resources", "ramp_profiles", "Agentes de rampa", ("read", "Ver")),
+                Module("human_resources", "employees", "Empleados", ("read", "Ver"), ("manage", "Registrar y editar expedientes"),
+                    ("terminate", "Dar de baja y trasladar")),
+                Module("human_resources", "positions", "Puestos", ("read", "Ver"), ("manage", "Crear y editar puestos")),
+                Module("human_resources", "requisitions", "Requisiciones de personal", ("read", "Ver"), ("attend", "Atender requisiciones")),
+                Module("human_resources", "ramp_profiles", "Agentes de rampa", ("read", "Ver"), ("manage", "Editar perfiles operativos")),
                 Module("human_resources", "qualifications", "Habilitaciones y certificaciones", ("read", "Ver"), ("manage", "Registrar y renovar")),
                 Module("human_resources", "permits", "Carnets y permisos aeroportuarios", ("read", "Ver"), ("manage", "Registrar y renovar")),
                 Module("human_resources", "schedules", "Horarios y disponibilidad", ("read", "Ver"), ("manage", "Programar turnos")),

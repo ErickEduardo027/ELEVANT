@@ -422,6 +422,16 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             cancellationToken);
 
         await EnsureAgentScopesAsync(rampAgent.Id, station.Id, terminal.Id, cancellationToken);
+        await SeedEmployeesAsync(humanResourcesAccount.Id, financeAccount.Id, station.Id,
+            [
+                (adminPerson, "DEV-EMP-OCC-001", Department.Operations, "Coordinador OCC"),
+                (agentPerson, "DEV-RA-001", Department.Operations, "Agente de rampa"),
+                (humanResourcesPerson, "DEV-EMP-HR-001", Department.HumanResources, "Analista de Gestión Humana"),
+                (contractsPerson, "DEV-EMP-CON-001", Department.Contracts, "Analista comercial"),
+                (financePerson, "DEV-EMP-FIN-001", Department.Finance, "Analista de facturación"),
+                .. superAdminPerson is null ? Array.Empty<(Person, string, Department, string)>()
+                    : [(superAdminPerson, "DEV-EMP-TI-001", Department.HumanResources, "Analista de Gestión Humana")],
+            ], cancellationToken);
         await GetOrAddAsync(
             context.QualificationCycles,
             cycle => cycle.RampAgentId == rampAgent.Id && cycle.EquipmentTypeId == gpuType.Id && cycle.CycleNumber == 1,
@@ -1087,6 +1097,149 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 }, DeterministicGuid($"aviam-client:{name}").ToString("D")),
                 cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Synthetic HR records (ADR-0017): one position per department, an employee for every seeded internal
+    /// person, two employees without an account to exercise the access request flow, a Finance access
+    /// profile suggested for its analyst position and one open requisition.
+    /// </summary>
+    private async Task SeedEmployeesAsync(long humanResourcesAccountId, long financeAccountId, long stationId,
+        IReadOnlyList<(Person Person, string Number, Department Department, string Position)> staff,
+        CancellationToken cancellationToken)
+    {
+        var financeProfile = await GetOrAddAsync(context.AccessProfiles,
+            profile => profile.PublicId == Guid.Parse("44000000-0000-7000-8000-000000000001"),
+            () => Stamp(new AccessProfile
+            {
+                Department = Department.Finance,
+                Name = "Analista de facturación",
+                Description = "Prefactura y consulta de facturas y cobros.",
+                IsActive = true,
+                CreatedByAccountId = financeAccountId,
+            }, "44000000-0000-7000-8000-000000000001"),
+            cancellationToken);
+        foreach (var code in new[]
+                 {
+                     "finance.home.read", "finance.approved_services.read", "finance.approved_services.preinvoice",
+                     "finance.preinvoices.read", "finance.preinvoices.manage", "finance.reconciliation.read",
+                 })
+        {
+            await GetOrAddAsync(context.AccessProfileGrants,
+                grant => grant.AccessProfileId == financeProfile.Id && grant.PermissionCode == code,
+                () => new AccessProfileGrant { AccessProfileId = financeProfile.Id, PermissionCode = code },
+                cancellationToken);
+        }
+
+        var positions = new Dictionary<string, JobPosition>(StringComparer.Ordinal);
+        foreach (var (department, name, isRamp, suggested, publicId) in new[]
+                 {
+                     (Department.HumanResources, "Analista de Gestión Humana", false, (long?)null, "45000000-0000-7000-8000-000000000001"),
+                     (Department.Operations, "Coordinador OCC", false, null, "45000000-0000-7000-8000-000000000002"),
+                     (Department.Operations, "Agente de rampa", true, null, "45000000-0000-7000-8000-000000000003"),
+                     (Department.Contracts, "Analista comercial", false, null, "45000000-0000-7000-8000-000000000004"),
+                     (Department.Finance, "Analista de facturación", false, financeProfile.Id, "45000000-0000-7000-8000-000000000005"),
+                 })
+        {
+            positions[name] = await GetOrAddAsync(context.JobPositions,
+                position => position.Department == department && position.Name == name,
+                () => Stamp(new JobPosition
+                {
+                    Department = department,
+                    Name = name,
+                    IsRampPosition = isRamp,
+                    IsActive = true,
+                    SuggestedAccessProfileId = suggested,
+                    CreatedByAccountId = humanResourcesAccountId,
+                }, publicId),
+                cancellationToken);
+        }
+
+        var index = 0;
+        foreach (var (person, number, department, position) in staff)
+        {
+            index++;
+            await SeedEmployeeAsync(person.Id, number, department, positions[position].Id, stationId,
+                humanResourcesAccountId, $"46000000-0000-7000-8000-{index:D12}", null, cancellationToken);
+        }
+
+        var requisition = await GetOrAddAsync(context.PersonnelRequisitions,
+            item => item.PublicId == Guid.Parse("47000000-0000-7000-8000-000000000001"),
+            () => Stamp(new PersonnelRequisition
+            {
+                Department = Department.Finance,
+                JobPositionId = positions["Analista de facturación"].Id,
+                Quantity = 1,
+                Reason = "Cobertura de facturación de la estación PUJ.",
+                StationId = stationId,
+                Status = RequisitionStatus.Open,
+                RequestedByAccountId = financeAccountId,
+                RequestedAt = FixtureInstant,
+            }, "47000000-0000-7000-8000-000000000001"),
+            cancellationToken);
+
+        // Employees with no account yet: the department administrators request their access.
+        var candidates = new[]
+        {
+            ("30000000-0000-7000-8000-000000000011", "Valeria", "Candidata", "valeria.candidata@dev.elevant.test",
+                "DEV-CANDIDATE-001", "DEV-EMP-FIN-002", Department.Finance, "Analista de facturación", (long?)requisition.Id),
+            ("30000000-0000-7000-8000-000000000012", "Mateo", "Candidato", "mateo.candidato@dev.elevant.test",
+                "DEV-CANDIDATE-002", "DEV-RA-002", Department.Operations, "Agente de rampa", null),
+        };
+        foreach (var (personId, firstName, lastName, email, identification, number, department, position, requisitionId) in candidates)
+        {
+            index++;
+            var person = await SeedPersonAsync(personId, firstName, lastName, email, identification, cancellationToken);
+            await SeedEmployeeAsync(person.Id, number, department, positions[position].Id, stationId,
+                humanResourcesAccountId, $"46000000-0000-7000-8000-{index:D12}", requisitionId, cancellationToken);
+            if (positions[position].IsRampPosition)
+            {
+                await GetOrAddAsync(context.RampAgents, agent => agent.PersonId == person.Id,
+                    () => Stamp(new RampAgent
+                    {
+                        PersonId = person.Id,
+                        EmployeeNumber = number,
+                        Category = position,
+                        HireDate = new DateOnly(2026, 1, 1),
+                        IsActive = true,
+                    }, "50000000-0000-7000-8000-000000000101"),
+                    cancellationToken);
+            }
+        }
+    }
+
+    private async Task SeedEmployeeAsync(long personId, string number, Department department, long positionId,
+        long stationId, long createdByAccountId, string publicId, long? requisitionId, CancellationToken cancellationToken)
+    {
+        var employee = await GetOrAddAsync(context.Employees, candidate => candidate.PersonId == personId,
+            () => Stamp(new Employee
+            {
+                PersonId = personId,
+                EmployeeNumber = number,
+                Department = department,
+                JobPositionId = positionId,
+                HireDate = new DateOnly(2026, 1, 1),
+                Status = EmployeeStatus.Active,
+                RequisitionId = requisitionId,
+                CreatedByAccountId = createdByAccountId,
+            }, publicId),
+            cancellationToken);
+        await GetOrAddAsync(context.EmployeeAssignments,
+            assignment => assignment.EmployeeId == employee.Id && assignment.ValidTo == null,
+            () => new EmployeeAssignment
+            {
+                EmployeeId = employee.Id,
+                Department = department,
+                JobPositionId = positionId,
+                ValidFrom = FixtureInstant,
+                ChangedByAccountId = createdByAccountId,
+                Reason = "Alta inicial de Development",
+            },
+            cancellationToken);
+        await GetOrAddAsync(context.EmployeeStations,
+            item => item.EmployeeId == employee.Id && item.StationId == stationId && item.ValidTo == null,
+            () => new EmployeeStation { EmployeeId = employee.Id, StationId = stationId, ValidFrom = new DateOnly(2026, 1, 1) },
+            cancellationToken);
     }
 
     private async Task<Person> SeedPersonAsync(
