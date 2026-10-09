@@ -110,11 +110,12 @@ it('shows an inactive linked supervisor and keeps that relationship on an unrela
   const supervisor = screen.getByRole('combobox', { name: 'Supervisor' });
   expect(supervisor).toHaveValue('supervisor-1');
   expect(screen.getByRole('option', { name: /Ana Pérez.*inactiva/i })).toBeInTheDocument();
-  await userEvent.clear(screen.getByRole('textbox', { name: 'Categoría' }));
-  await userEvent.type(screen.getByRole('textbox', { name: 'Categoría' }), 'Agente líder');
+  // Identity comes from the HR employee record; the operational edit is the active flag.
+  expect(screen.getByRole('textbox', { name: 'Categoría' })).toHaveAttribute('readonly');
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   await waitFor(() => expect(saveRampProfile).toHaveBeenCalledWith('agent-1',
-    expect.objectContaining({ category: 'Agente líder', supervisor: { id: 'supervisor-1' } })));
+    expect.objectContaining({ category: 'Agente', isActive: false, supervisor: { id: 'supervisor-1' } })));
 });
 
 it('hides a previously visible profile after an authorized revalidation fails', async () => {
@@ -168,10 +169,9 @@ it('keeps an unsaved edit without exposing a server exception', async () => {
   render(<RampProfilesPanel canEdit />);
   await screen.findByText('Lucia Ramos');
   await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
-  await userEvent.clear(screen.getByRole('textbox', { name: 'Nombre' }));
-  await userEvent.type(screen.getByRole('textbox', { name: 'Nombre' }), 'Lucía');
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/No fue posible guardar el perfil/);
   expect(screen.queryByText(/SQL connection string/)).not.toBeInTheDocument();
-  expect(screen.getByRole('textbox', { name: 'Nombre' })).toHaveValue('Lucía');
+  expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
 });

@@ -22,6 +22,10 @@ export default function HumanResourcesLayout({
       allowedNavigation(HUMAN_RESOURCES_NAVIGATION, access)
         .filter(item => !dashboardReadOnlyDemo ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.EMPLOYEES ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.POSITIONS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.REQUISITIONS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.USERS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.PERMITS ||

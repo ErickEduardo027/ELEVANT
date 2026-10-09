@@ -25,7 +25,10 @@ export async function commercialApi(path, options = {}) {
   if (!response.ok) {
     const problem = await response.json().catch(() => ({}));
     const title = typeof problem.title === 'string' ? problem.title : 'No se pudo completar la acción.';
-    throw Object.assign(new Error(title), { status: response.status });
+    throw Object.assign(new Error(title), {
+      status: response.status,
+      code: typeof problem.code === 'string' ? problem.code : undefined,
+    });
   }
   if (response.status === 204) return null;
   return response.json();
