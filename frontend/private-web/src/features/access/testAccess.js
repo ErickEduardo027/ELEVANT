@@ -10,7 +10,8 @@ export const DepartmentPermissionCodes = {
     chat: ['read', 'send'], service_closures: ['read', 'request'],
   }),
   humanResources: codes('human_resources', {
-    dashboard: ['read'], ramp_profiles: ['read'], qualifications: ['read', 'manage'], permits: ['read', 'manage'],
+    dashboard: ['read'], employees: ['read', 'manage', 'terminate'], positions: ['read', 'manage'],
+    requisitions: ['read', 'attend'], ramp_profiles: ['read', 'manage'], qualifications: ['read', 'manage'], permits: ['read', 'manage'],
     schedules: ['read', 'manage'], availability: ['read', 'decide'], attendance: ['read', 'validate'],
     reports: ['read', 'export'], audit: ['read'], notifications: ['read'], access_requests: ['read', 'validate'],
   }),

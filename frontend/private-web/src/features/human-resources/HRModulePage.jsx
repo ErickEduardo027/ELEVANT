@@ -11,7 +11,10 @@ import AttendanceReviewPage from './attendance/AttendanceReviewPage';
 import PermitsPage from './permits/PermitsPage';
 import SchedulesPage from './schedules/SchedulesPage';
 import CurrentReportsPage from './reports/CurrentReportsPage';
-import AuditRoute from './audit/AuditRoute';
+import HumanResourcesAuditPage from '../employees/HumanResourcesAuditPage';
+import EmployeesPage from '../employees/EmployeesPage';
+import PositionsPage from '../employees/PositionsPage';
+import RequisitionsPage from '../employees/RequisitionsPage';
 import NotificationsRoute from './notifications/NotificationsRoute';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import DepartmentUsersPage from '../department-users/DepartmentUsersPage';
@@ -24,7 +27,7 @@ import { useEffect } from 'react';
 export default function HRModulePage({ moduleId }) {
   const router = useRouter();
   const unavailableInRestrictedRelease = HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO
-    && ['audit', 'notifications'].includes(moduleId);
+    && moduleId === 'notifications';
 
   useEffect(() => {
     if (unavailableInRestrictedRelease) router.replace('/gestion-humana/dashboard');
@@ -32,13 +35,16 @@ export default function HRModulePage({ moduleId }) {
 
   if (unavailableInRestrictedRelease) return null;
   if (moduleId === 'dashboard') return <HumanResourcesDashboardPage dashboardReadOnlyDemo={HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO} />;
+  if (moduleId === 'employees') return <EmployeesPage />;
+  if (moduleId === 'positions') return <PositionsPage />;
+  if (moduleId === 'requisitions') return <RequisitionsPage />;
   if (moduleId === 'users') return <RampProfilesPanel />;
   if (moduleId === 'certifications') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentQualificationsPage /> : <CertificationsPage />;
   if (moduleId === 'permits') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentPermitsPage /> : <PermitsPage />;
   if (moduleId === 'schedules') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentShiftsPage /> : <SchedulesPage />;
   if (moduleId === 'attendance') return <AttendanceReviewPage />;
   if (moduleId === 'reports') return <CurrentReportsPage />;
-  if (moduleId === 'audit') return <AuditRoute />;
+  if (moduleId === 'audit') return <HumanResourcesAuditPage />;
   if (moduleId === 'notifications') return <NotificationsRoute />;
   if (moduleId === 'access-requests') return <AccessValidationsPage />;
   if (moduleId === 'department-users') return <DepartmentUsersPage department={DEPARTMENTS.HUMAN_RESOURCES} />;

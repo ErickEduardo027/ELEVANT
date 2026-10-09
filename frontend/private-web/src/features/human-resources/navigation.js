@@ -1,6 +1,7 @@
 import {
   BarChartIcon,
   BellIcon,
+  BriefcaseIcon,
   CalendarIcon,
   ChecklistIcon,
   IdCardIcon,
@@ -19,6 +20,9 @@ export const HUMAN_RESOURCES_BASE_PATH = '/gestion-humana';
 
 export const HUMAN_RESOURCES_MODULE_IDS = {
   DASHBOARD: 'dashboard',
+  EMPLOYEES: 'employees',
+  POSITIONS: 'positions',
+  REQUISITIONS: 'requisitions',
   USERS: 'users',
   CERTIFICATIONS: 'certifications',
   PERMITS: 'permits',
@@ -46,11 +50,32 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     description: 'Resumen general de la operación de Gestión Humana.',
   },
   {
+    id: HUMAN_RESOURCES_MODULE_IDS.EMPLOYEES, permission: 'human_resources.employees.read',
+    label: 'Empleados',
+    path: `${HUMAN_RESOURCES_BASE_PATH}/employees`,
+    icon: IdCardIcon,
+    description: 'Expedientes del personal; solo los empleados registrados reciben acceso.',
+  },
+  {
+    id: HUMAN_RESOURCES_MODULE_IDS.POSITIONS, permission: 'human_resources.positions.read',
+    label: 'Puestos',
+    path: `${HUMAN_RESOURCES_BASE_PATH}/positions`,
+    icon: BriefcaseIcon,
+    description: 'Cargos del organigrama de cada departamento.',
+  },
+  {
+    id: HUMAN_RESOURCES_MODULE_IDS.REQUISITIONS, permission: 'human_resources.requisitions.read',
+    label: 'Requisiciones',
+    path: `${HUMAN_RESOURCES_BASE_PATH}/requisitions`,
+    icon: BriefcaseIcon,
+    description: 'Personal que piden los departamentos.',
+  },
+  {
     id: HUMAN_RESOURCES_MODULE_IDS.USERS, permission: 'human_resources.ramp_profiles.read',
     label: 'Agentes de rampa',
     path: `${HUMAN_RESOURCES_BASE_PATH}/users`,
     icon: UsersIcon,
-    description: 'Perfiles operativos y estaciones; las cuentas se vinculan en Superadministración.',
+    description: 'Perfil operativo de los empleados de rampa: estaciones, terminales y supervisor.',
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS, permission: 'human_resources.qualifications.read',
