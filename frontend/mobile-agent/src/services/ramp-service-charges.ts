@@ -72,8 +72,11 @@ export async function getRampOperationCharges(
   const context = await getMobileSessionRequestContext();
   const accountId = context.session.actor.accountId;
   try {
+    // The read is bound to this installation, like the charge commands.
+    const device = await registerCurrentMobileDevice({ accessToken: context.accessToken }, options);
     const charges = await apiClient(context.accessToken).getRampOperationCharges(
       operationId,
+      device.installationId,
       { signal: options.signal },
     );
     await confirmSameSession(context.sessionId);

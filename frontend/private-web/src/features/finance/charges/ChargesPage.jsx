@@ -8,7 +8,7 @@ import StatusBadge from '../../../components/StatusBadge';
 import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
-import { VersionList } from '../tariffs/ServiceTariffsPage';
+import { latestPublishedStart, VersionList } from '../tariffs/ServiceTariffsPage';
 import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
@@ -211,7 +211,7 @@ function ChargeTariff({ canManage }) {
   }, [selectedId, reloads]);
 
   const editable = canManage && detail?.summary.status === 'Draft';
-  async function run(action, success) {
+  async function run(action, success, conflict = 'La tarifa cambió. Se actualizó la vista.') {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
@@ -219,7 +219,7 @@ function ChargeTariff({ canManage }) {
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
     } catch (failure) {
-      setMessage({ tone: 'error', text: failure.status === 409 ? 'La tarifa cambió. Se actualizó la vista.' : failure.message });
+      setMessage({ tone: 'error', text: failure.status === 409 ? conflict : failure.message });
       await load(selectedId);
     } finally {
       setBusy(false);
@@ -286,7 +286,16 @@ function ChargeTariff({ canManage }) {
       )}
       <ConfirmDialog open={confirm === 'publish'} title="Publicar tarifario de cargos" description="La versión pasa a ser la vigente y la anterior queda como histórica. Guarde antes los cambios pendientes."
         confirmLabel="Publicar" onClose={() => setConfirm(null)}
-        onConfirm={async () => { setConfirm(null); await run(() => publishChargeTariff(detail.summary.id, detail.summary.version), 'Tarifario publicado.'); }} />
+        onConfirm={async () => {
+          setConfirm(null);
+          const latest = latestPublishedStart(versions);
+          if (latest && detail.summary.validFrom <= latest) {
+            setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
+            return;
+          }
+          await run(() => publishChargeTariff(detail.summary.id, detail.summary.version), 'Tarifario publicado.',
+            'No se pudo publicar: la vigencia debe empezar después de la versión vigente o la tarifa cambió. Se actualizó la vista.');
+        }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador se eliminará." confirmLabel="Descartar"
         onClose={() => setConfirm(null)}
         onConfirm={async () => { setConfirm(null); await run(() => deleteChargeTariffDraft(detail.summary.id, detail.summary.version), 'Borrador descartado.'); }} />

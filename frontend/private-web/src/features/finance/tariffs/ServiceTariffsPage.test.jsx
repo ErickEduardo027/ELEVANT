@@ -46,3 +46,12 @@ describe('ServiceTariffsPage', () => {
     expect(publishServiceTariff).toHaveBeenCalledWith('tv-2', 'v2');
   });
 });
+
+describe('latestPublishedStart', () => {
+  it('ignores drafts and returns the latest published or superseded start', async () => {
+    const { latestPublishedStart } = await import('./ServiceTariffsPage');
+    expect(latestPublishedStart([{ status: 'Draft', validFrom: '2026-12-01' }, { status: 'Superseded', validFrom: '2026-01-01' },
+      { status: 'Published', validFrom: '2026-10-09' }])).toBe('2026-10-09');
+    expect(latestPublishedStart([{ status: 'Draft', validFrom: '2026-12-01' }])).toBeNull();
+  });
+});

@@ -760,6 +760,7 @@ export interface ElevantApiClient {
   ): Promise<RampOperationServiceTransitionResponse>;
   getRampOperationCharges(
     operationId: string,
+    installationId: string,
     options?: GetRampOperationChargesOptions,
   ): Promise<RampOperationChargesResponse>;
   applyRampServiceCharge(
@@ -5468,12 +5469,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     async getRampOperationCharges(
       operationId: string,
+      installationId: string,
       options?: GetRampOperationChargesOptions,
     ) {
       const operation = validatedUuid(operationId, "operationId");
+      const installation = validatedUuid(installationId, "installationId");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("x-elevant-installation-id", installation);
       const result = await execute(
         getGetRampOperationChargesUrl(operation),
-        { ...options, method: "GET" },
+        { ...options, method: "GET", headers },
         true,
       );
       if (!isRampOperationChargesResponse(result.data, operation)) {
