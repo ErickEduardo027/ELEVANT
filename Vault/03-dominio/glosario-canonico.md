@@ -55,6 +55,10 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Rol | Agrupación de acceso asociada a un portal y `userType`. | No equivale a departamento, posición operativa o cargo. |
 | Permiso | Capacidad autorizable asignada a roles. | Un texto de botón o menú no concede permiso. |
 | Scope de estación | Concesión revocable de una cuenta sobre una estación. | El scope laboral del agente usa tablas separadas. |
+| Empleado | Expediente de Gestión Humana de una persona de AVIAM: departamento, puesto, estaciones, ingreso y baja. | Solo un empleado activo recibe cuenta interna; la baja la desactiva para siempre. |
+| Puesto | Cargo del organigrama de un departamento, mantenido por Gestión Humana. | No es un perfil de acceso ni una posición operativa de rampa. |
+| Perfil de acceso | Plantilla de permisos de un departamento que decide qué ve una cuenta en ELEVANT. | Lo administra el departamento; no cambia el puesto. |
+| Requisición de personal | Petición de un departamento a Gestión Humana de N personas para un puesto. | Lo cubierto es una proyección de los empleados enlazados. |
 
 ## Geografía y catálogos
 

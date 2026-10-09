@@ -7,10 +7,16 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-07"
-verified_commit: "611180fd3e57b31666002778fa7611da7638a227"
+last_verified: "2026-10-09"
+verified_commit: "985262110e96cf0879af7897563dcfbd9724d432"
 sources:
   - docs/adr/0015-department-user-governance.md
+  - docs/adr/0017-employees-positions-and-access.md
+  - backend/Elevant.Domain/Entities/Workforce/Employees.cs
+  - backend/Elevant.Application/Abstractions/Identity/IEmployeeGovernanceStore.cs
+  - backend/Elevant.Api/Controllers/HumanResourcesEmployeesController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.EmployeeAccess.cs
+  - frontend/private-web/src/features/employees/EmployeesPage.jsx
   - backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs
   - backend/Elevant.Domain/Entities/Identity/DepartmentGovernance.cs
   - backend/Elevant.Application/Identity/DepartmentAccess.cs
@@ -33,26 +39,36 @@ tags:
 
 Las cuentas internas de AVIAM se administran en dos niveles: un
 superadministrador único y administradores por departamento. Gestión Humana
-valida cada alta que piden los administradores. La decisión está en
-[ADR-0015](../../docs/adr/0015-department-user-governance.md).
+es dueña de las personas: solo un empleado registrado por ella puede recibir
+acceso, y valida cada alta que piden los administradores. Las decisiones están
+en [ADR-0015](../../docs/adr/0015-department-user-governance.md) y
+[ADR-0017](../../docs/adr/0017-employees-positions-and-access.md).
+
+| Concepto | Dueño | Qué es |
+| --- | --- | --- |
+| Empleado | Gestión Humana | Expediente de la persona: identificación, departamento, puesto, estaciones, ingreso y baja. |
+| Puesto | Gestión Humana | Cargo del organigrama de un departamento; los de rampa existen solo en Operaciones. |
+| Perfil de acceso | Administrador del departamento | Plantilla o permisos que definen qué ve la persona en ELEVANT. |
 
 ## Niveles
 
 ```mermaid
 flowchart TD
-    SA[Superadministrador único] -->|crea al instante| ADM[Administrador de departamento]
-    SA -->|crea al instante| MEM[Sub-usuario]
-    ADM -->|solicita alta| REQ[Solicitud de acceso]
-    REQ -->|Validar con contraseña temporal| GH[Gestión Humana]
-    GH -->|crea| MEM
-    GH -->|crea perfil y cuenta móvil| RA[Agente de rampa de Operaciones]
-    ADM -->|plantillas y permisos| MEM
+    ADM[Administrador de departamento] -->|requisición de personal| GH[Gestión Humana]
+    GH -->|registra| EMP[Empleado con puesto y estaciones]
+    SA[Superadministrador único] -->|nombra desde un empleado| ADMIN2[Administrador]
+    ADM -->|solicita acceso para un empleado| REQ[Solicitud de acceso]
+    EMP --> REQ
+    REQ -->|valida con contraseña temporal| GH
+    GH -->|cuenta de la misma persona| MEM[Usuario del departamento o agente de rampa]
+    ADM -->|plantillas, puesto sugerido y permisos| MEM
+    GH -->|traslado o baja| OFF[Cuenta desactivada]
 ```
 
 | Nivel | Puede | No puede |
 | --- | --- | --- |
-| Superadministrador | Ver todos los departamentos y solicitudes; crear administradores y sub-usuarios sin validación; gestionar usuarios de aerolíneas; convertir roles heredados. | Transferirse ni ser duplicado (índice único filtrado). Operar Finanzas u OCC. |
-| Administrador | Todos los módulos de su departamento; solicitar altas; editar permisos, plantilla, datos y estaciones; desactivar, reactivar y restablecer claves de sus miembros. | Crear administradores; gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene o permisos de otro departamento. |
+| Superadministrador | Ver todos los departamentos, solicitudes y actividad; nombrar administradores desde un empleado registrado sin validación; gestionar usuarios de aerolíneas; convertir roles heredados. | Transferirse ni ser duplicado (índice único filtrado). Operar Finanzas u OCC. |
+| Administrador | Todos los módulos de su departamento; pedir personal; solicitar acceso para sus empleados; elegir la plantilla sugerida de sus puestos; editar permisos y estaciones; desactivar, reactivar y restablecer claves de sus miembros; leer la actividad del departamento. | Crear administradores, personas o puestos; editar nombre o correo (son del expediente); gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene el empleado o él mismo. |
 | Miembro | Lo que su plantilla o sus permisos explícitos conceden. | Nada fuera de su departamento. |
 
 ## Permisos
@@ -67,18 +83,37 @@ seguridad.
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
 
-## Altas y validación
+## Empleados, altas, traslados y bajas
 
-1. El administrador envía una solicitud con un UUID propio (repetirla con el
-   mismo UUID devuelve la misma solicitud).
-2. Gestión Humana o el superadministrador la valida definiendo la contraseña
-   temporal, o la rechaza con motivo. Quien la envió no puede resolverla.
-3. Al validar se crea la cuenta con cambio de contraseña obligatorio. Para un
-   agente de rampa se crean además la persona, el perfil `RampAgent`, sus scopes
-   de estación y terminal y la cuenta `RAMP_AGENT`.
+1. El departamento puede pedir personal con una requisición (puesto, cantidad y
+   motivo). Gestión Humana la atiende, la cubre o la rechaza con motivo.
+2. Gestión Humana registra al empleado (`employees.manage`): identificación
+   real normalizada y única, número de empleado único, correo corporativo,
+   departamento, puesto y estaciones. Un puesto de rampa crea su `RampAgent`.
+3. El administrador elige un empleado de su departamento sin cuenta activa y
+   solicita el acceso con un UUID propio. El tipo (web o rampa) sale del puesto,
+   la plantilla viene precargada desde el puesto y las estaciones deben estar
+   entre las del empleado y las del administrador.
+4. Gestión Humana o el superadministrador la valida definiendo (o generando) la
+   contraseña temporal, o la rechaza con motivo. Quien la envió no puede
+   resolverla. La cuenta se emite para la misma persona del empleado y exige
+   cambio de contraseña.
+5. Un traslado (`employees.terminate`) desactiva la cuenta, invalida sesiones,
+   revoca estaciones y cancela solicitudes; el nuevo departamento solicita el
+   acceso y la misma cuenta se reaprovisiona.
+6. Una baja hace lo mismo y desactiva el agente de rampa; ninguna ruta reactiva
+   la cuenta de un empleado dado de baja.
 
-Gestión Humana consulta los perfiles de rampa en modo lectura; Operaciones los
-mantiene después del alta dentro de sus estaciones.
+Las cuentas creadas antes de los expedientes aparecen en **Expedientes
+pendientes**: Gestión Humana registra su identificación real y su puesto.
+
+## Actividad
+
+Los inicios de sesión se auditan. Cada departamento lee su actividad
+(inicios de sesión, accesos y operación de su gente según el historial de
+asignaciones); Gestión Humana con `human_resources.audit.read` lee la
+trazabilidad de personas de todos los departamentos y el superadministrador
+lee todo, por periodos de hasta 92 días.
 
 ## Compatibilidad
 
@@ -88,6 +123,9 @@ mantiene después del alta dentro de sus estaciones.
   superadministrador los convierte en plantilla.
 - Los endpoints `ramp-mobile-access-requests` siguen respondiendo pero están
   deprecados.
+- La API acepta todavía la solicitud con persona escrita a mano y la creación
+  directa de miembros (obsoleta); una entrega posterior las retirará
+  (expand/contract, ADR-0017).
 
 ## Relacionados
 
@@ -97,6 +135,9 @@ mantiene después del alta dentro de sus estaciones.
 ## Fuentes
 
 - [ADR-0015](../../docs/adr/0015-department-user-governance.md)
+- [ADR-0017](../../docs/adr/0017-employees-positions-and-access.md)
+- [API de empleados](../../backend/Elevant.Api/Controllers/HumanResourcesEmployeesController.cs)
+- [Acceso por empleado](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.EmployeeAccess.cs)
 - [Catálogo de permisos](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs)
 - [Resolución de acceso](../../backend/Elevant.Application/Identity/DepartmentAccess.cs)
 - [Store de gobernanza](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.cs)

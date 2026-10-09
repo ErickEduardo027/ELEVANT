@@ -321,6 +321,15 @@ y notas de crédito. Reportes lee ocho reportes calculados por la API y exporta
 CSV o PDF no fiscal con `finance.reports.export`. Los adaptadores están en
 `src/services/financeBookService.js`. Nada de esto es facturación fiscal.
 
+### Empleados, puestos y accesos (ADR-0017)
+
+Gestión Humana registra a los empleados (`/gestion-humana/employees`), los
+puestos y las requisiciones. Los administradores de departamento solicitan el
+acceso eligiendo un empleado de su departamento en **Usuarios del departamento**
+y tienen las pestañas Puestos, Requisiciones y Actividad. Las contraseñas
+temporales se generan en el navegador (`temporaryPassword.js`) y no se guardan.
+Los adaptadores están en `src/services/humanResourcesEmployeesService.js`.
+
 ## Imagen de Development
 
 La imagen se construye desde la raíz del monorepo porque consume `packages/api-client`:

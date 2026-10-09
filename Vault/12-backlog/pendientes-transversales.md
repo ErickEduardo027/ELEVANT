@@ -40,6 +40,7 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Protección técnica de ramas | Plan y permisos GitHub compatibles, checks estables y política de excepción | Push directo, PR sin aprobación y check fallido efectivamente bloqueados | [Protección de ramas](../../.github/BRANCH_PROTECTION.md) |
 | Simulacros periódicos de recuperación | Política de frecuencia, alcance, custodio y entorno seguro | Ensayo fechado con restauración, RPO/RTO medidos y acciones correctivas | [Backups](../09-operaciones/backups-y-restore-check.md) y [recuperación](../09-operaciones/mantenimiento-reboot-y-recuperacion.md) |
 | Production | Plan independiente, secretos, datos, red, backup, monitoreo y aprobación | Infraestructura y gates propios, aceptación de seguridad y restauración; jamás inferirla de Development | [Ambientes](../../docs/deployment/environments.md) |
+| Contract de empleados (ADR-0017) | Todas las cuentas internas con expediente y clientes web publicados que envían `employeeId` | Solicitudes escritas a mano rechazadas, creación directa de miembros y alta móvil heredada retiradas, `employee_id` obligatorio en solicitudes nuevas | [ADR-0017](../../docs/adr/0017-employees-positions-and-access.md) |
 | Historia anterior a Git | Entrevista consentida y fuente contemporánea si existe | Testimonio fechado atribuido por rol, incertidumbres separadas de hechos | [Orígenes](../01-historia/origenes-y-limites-de-evidencia.md) |
 
 ## Cómo convertir una fila en trabajo
