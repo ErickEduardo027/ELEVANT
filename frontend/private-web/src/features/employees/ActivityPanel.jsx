@@ -7,6 +7,7 @@ import { fieldClass } from './EmployeeForms';
 
 const ACTION_LABELS = {
   'auth.session.created': 'Inició sesión',
+  'identity.password.changed': 'Cambió su contraseña',
   'auth.session.failed': 'Intento de inicio de sesión fallido',
   'hr.employee.created': 'Registró un empleado',
   'hr.employee.updated': 'Actualizó un expediente',
