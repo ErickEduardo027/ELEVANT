@@ -61,10 +61,14 @@ function BaseTariff() {
   const [confirm, setConfirm] = useState(null);
   const [message, setMessage] = useState({ tone: '', text: '' });
 
+  /** Bumped on every list read so the selected detail and its version are re-read after a save. */
+  const [reloads, setReloads] = useState(0);
+
   const load = useCallback(async (keep) => {
     try {
       const list = await listServiceTariffs(currency);
       setVersions(list);
+      setReloads(value => value + 1);
       const target = keep && list.some(item => item.id === keep) ? keep
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null;
       setSelectedId(target);
@@ -95,7 +99,7 @@ function BaseTariff() {
       setMeta({ validFrom: result.summary.validFrom, validTo: result.summary.validTo ?? '', note: result.summary.note ?? '' });
     }).catch(error => active && setMessage({ tone: 'error', text: error.message }));
     return () => { active = false; };
-  }, [selectedId]);
+  }, [selectedId, reloads]);
 
   const isDraft = detail?.summary.status === 'Draft';
   const editable = canManage && isDraft;

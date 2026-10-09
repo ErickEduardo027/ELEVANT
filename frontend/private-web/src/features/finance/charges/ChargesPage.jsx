@@ -181,11 +181,14 @@ function ChargeTariff({ canManage }) {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
+  /** Bumped on every list read so the selected detail and its version are re-read after a save. */
+  const [reloads, setReloads] = useState(0);
 
   const load = useCallback(async keep => {
     try {
       const list = await listChargeTariffs(currency);
       setVersions(list);
+      setReloads(value => value + 1);
       setSelectedId(keep && list.some(item => item.id === keep) ? keep
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null);
     } catch (failure) {
@@ -205,7 +208,7 @@ function ChargeTariff({ canManage }) {
       setValidFrom(result.summary.validFrom);
     }).catch(failure => active && setMessage({ tone: 'error', text: failure.message }));
     return () => { active = false; };
-  }, [selectedId]);
+  }, [selectedId, reloads]);
 
   const editable = canManage && detail?.summary.status === 'Draft';
   async function run(action, success) {
