@@ -177,6 +177,11 @@ de rampa** de Gestión Humana es una consulta; Operaciones mantiene los perfiles
 El superadministrador ve **Usuarios** con **Clientes** (usuarios del portal por
 aerolínea) y **Usuarios internos** (recuentos globales y por departamento).
 Cada shell muestra sólo los módulos que concede `GET governance/me/access`.
+Con ADR-0017, Gestión Humana tiene **Empleados** (expedientes, traslados,
+bajas y expedientes pendientes), **Puestos**, **Requisiciones** y una
+**Auditoría** leída de la API; los administradores solicitan el acceso eligiendo
+un empleado y cuentan con las pestañas **Puestos**, **Requisiciones** y
+**Actividad**; las contraseñas temporales pueden generarse en el navegador.
 Fuentes: [gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md),
 [usuarios del departamento](../../frontend/private-web/src/features/department-users/DepartmentUsersPage.jsx),
 [validaciones](../../frontend/private-web/src/features/department-users/AccessValidationsPage.jsx)

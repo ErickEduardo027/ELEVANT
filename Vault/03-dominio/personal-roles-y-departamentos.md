@@ -52,6 +52,7 @@ flowchart LR
 | Posición operativa | Función de rampa que puede exigir equipo/habilitación. | Catálogo `OperationalPosition`. |
 | Rol de asignación | Papel contextual dentro de una operación concreta. | `OperationAgentAssignment.AssignmentRole`, hoy string. |
 | Departamento | Gestión Humana, Contratos, Centro de Operaciones o Finanzas; agrupa cuentas y permisos. | Enum `Department` y `iam.department_assignments`; ver [gobernanza por departamento](gobernanza-por-departamento.md). |
+| Empleado y puesto | Expediente de la persona y su cargo en el organigrama. | `hr.employees` y `hr.job_positions` (Gestión Humana); un puesto no es una posición operativa de rampa. |
 
 ## Actores comprobados
 
