@@ -3,13 +3,10 @@
 import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
 import HumanResourcesDashboardPage from './dashboard/DashboardPage';
 import RampProfilesPanel from './users/RampProfilesPanel';
-import CertificationsPage from './certifications/CertificationsPage';
 import CurrentQualificationsPage from './certifications/CurrentQualificationsPage';
 import CurrentPermitsPage from './permits/CurrentPermitsPage';
 import CurrentShiftsPage from './schedules/CurrentShiftsPage';
 import AttendanceReviewPage from './attendance/AttendanceReviewPage';
-import PermitsPage from './permits/PermitsPage';
-import SchedulesPage from './schedules/SchedulesPage';
 import CurrentReportsPage from './reports/CurrentReportsPage';
 import HumanResourcesAuditPage from '../employees/HumanResourcesAuditPage';
 import EmployeesPage from '../employees/EmployeesPage';
@@ -39,9 +36,9 @@ export default function HRModulePage({ moduleId }) {
   if (moduleId === 'positions') return <PositionsPage />;
   if (moduleId === 'requisitions') return <RequisitionsPage />;
   if (moduleId === 'users') return <RampProfilesPanel />;
-  if (moduleId === 'certifications') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentQualificationsPage /> : <CertificationsPage />;
-  if (moduleId === 'permits') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentPermitsPage /> : <PermitsPage />;
-  if (moduleId === 'schedules') return HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO ? <CurrentShiftsPage /> : <SchedulesPage />;
+  if (moduleId === 'certifications') return <CurrentQualificationsPage />;
+  if (moduleId === 'permits') return <CurrentPermitsPage />;
+  if (moduleId === 'schedules') return <CurrentShiftsPage />;
   if (moduleId === 'attendance') return <AttendanceReviewPage />;
   if (moduleId === 'reports') return <CurrentReportsPage />;
   if (moduleId === 'audit') return <HumanResourcesAuditPage />;
