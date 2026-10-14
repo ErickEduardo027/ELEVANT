@@ -22,6 +22,10 @@ import {
   getListHumanResourcesQualificationsUrl,
   getListHumanResourcesQualificationEquipmentTypesUrl,
   getRecordHumanResourcesQualificationUrl,
+  getSummarizeHumanResourcesQualificationsUrl,
+  getGetHumanResourcesQualificationHistoryUrl,
+  getSummarizeHumanResourcesPermitsUrl,
+  getGetHumanResourcesPermitHistoryUrl,
   getListHumanResourcesShiftsUrl,
   getListHumanResourcesAvailabilityRequestsUrl,
   getRecordHumanResourcesAvailabilityRequestUrl,
@@ -131,6 +135,11 @@ import {
   type HumanResourcesQualificationRecorded,
   type RecordHumanResourcesQualificationInput,
   type ListHumanResourcesQualificationsParams,
+  type SummarizeHumanResourcesQualificationsParams,
+  type SummarizeHumanResourcesPermitsParams,
+  type HumanResourcesDocumentSummary,
+  type HumanResourcesQualificationHistory,
+  type HumanResourcesPermitHistory,
   type HumanResourcesShiftPage,
   type HumanResourcesScheduleWarningPageResponse,
   type ListHumanResourcesScheduleWarningsParams,
@@ -290,6 +299,8 @@ export type RecordHumanResourcesPermitOptions = Omit<ElevantRequestInit, "body" 
 export type GetHumanResourcesQualificationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesQualificationEquipmentTypesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesQualificationOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesDocumentSummaryOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetHumanResourcesDocumentHistoryOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesShiftsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesScheduleWarningsOptions =
   Omit<ElevantRequestInit, "body" | "method">;
@@ -482,6 +493,22 @@ export interface ElevantApiClient {
   getHumanResourcesQualificationEquipmentTypes(
     options?: GetHumanResourcesQualificationEquipmentTypesOptions,
   ): Promise<HumanResourcesQualificationEquipmentType[]>;
+  getHumanResourcesQualificationSummary(
+    query?: SummarizeHumanResourcesQualificationsParams,
+    options?: GetHumanResourcesDocumentSummaryOptions,
+  ): Promise<HumanResourcesDocumentSummary>;
+  getHumanResourcesQualificationHistory(
+    id: string,
+    options?: GetHumanResourcesDocumentHistoryOptions,
+  ): Promise<HumanResourcesQualificationHistory>;
+  getHumanResourcesPermitSummary(
+    query?: SummarizeHumanResourcesPermitsParams,
+    options?: GetHumanResourcesDocumentSummaryOptions,
+  ): Promise<HumanResourcesDocumentSummary>;
+  getHumanResourcesPermitHistory(
+    id: string,
+    options?: GetHumanResourcesDocumentHistoryOptions,
+  ): Promise<HumanResourcesPermitHistory>;
   recordHumanResourcesQualification(
     id: string,
     request: RecordHumanResourcesQualificationInput,
@@ -2743,10 +2770,10 @@ function validatedHumanResourcesQualificationQuery(
 ): ListHumanResourcesQualificationsParams {
   if (query === undefined) return {};
   if (!isRecord(query) || !hasOnlyKeys(query,
-    ["page", "limit", "rampProfileId", "equipmentTypeId"]) ||
-      (query.rampProfileId === undefined) !== (query.equipmentTypeId === undefined) ||
+    ["page", "limit", "rampProfileId", "equipmentTypeId", "search", "validity", "asOf"]) ||
       (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
-      (query.equipmentTypeId !== undefined && !isUuid(query.equipmentTypeId)))
+      (query.equipmentTypeId !== undefined && !isUuid(query.equipmentTypeId)) ||
+      !isValidHumanResourcesDocumentFilter(query))
     throw new TypeError("Human Resources qualification filter is invalid.");
   const paging = validatedHumanResourcesPaging({
     ...(query.page === undefined ? {} : { page: query.page }),
@@ -2754,7 +2781,80 @@ function validatedHumanResourcesQualificationQuery(
   });
   return { ...paging,
     ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
-    ...(query.equipmentTypeId === undefined ? {} : { equipmentTypeId: query.equipmentTypeId }) };
+    ...(query.equipmentTypeId === undefined ? {} : { equipmentTypeId: query.equipmentTypeId }),
+    ...documentFilterParams(query) };
+}
+
+const HUMAN_RESOURCES_DOCUMENT_VALIDITIES = ["Upcoming", "Valid", "ExpiringSoon", "Expired"];
+
+function isValidHumanResourcesDocumentFilter(
+  query: { search?: unknown; validity?: unknown; asOf?: unknown },
+): boolean {
+  return (query.search === undefined ||
+      (typeof query.search === "string" && query.search.trim().length <= 100)) &&
+    (query.validity === undefined || (typeof query.validity === "string" &&
+      HUMAN_RESOURCES_DOCUMENT_VALIDITIES.includes(query.validity))) &&
+    (query.asOf === undefined || isDateOnly(query.asOf));
+}
+
+function documentFilterParams(
+  query: { search?: string; validity?: string; asOf?: string },
+): { search?: string; validity?: string; asOf?: string } {
+  const search = query.search?.trim();
+  return {
+    ...(search ? { search } : {}),
+    ...(query.validity === undefined ? {} : { validity: query.validity }),
+    ...(query.asOf === undefined ? {} : { asOf: query.asOf }),
+  };
+}
+
+function validatedHumanResourcesDocumentSummaryQuery<T extends {
+  search?: string; asOf?: string; equipmentTypeId?: string; documentType?: string;
+}>(query: T | undefined, key: "equipmentTypeId" | "documentType"): T {
+  if (query === undefined) return {} as T;
+  if (!isRecord(query) || !hasOnlyKeys(query, [key, "search", "asOf"]) ||
+      !isValidHumanResourcesDocumentFilter(query) ||
+      (key === "equipmentTypeId" && query.equipmentTypeId !== undefined &&
+        !isUuid(query.equipmentTypeId)) ||
+      (key === "documentType" && query.documentType !== undefined &&
+        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+    throw new TypeError("Human Resources document summary filter is invalid.");
+  return { ...(query[key] === undefined ? {} : { [key]: query[key] }),
+    ...documentFilterParams(query) } as T;
+}
+
+function isHumanResourcesDocumentSummary(
+  value: unknown, asOf: string | undefined,
+): value is HumanResourcesDocumentSummary {
+  if (!isRecord(value) || !hasOnlyKeys(value,
+    ["asOf", "expiringSoonDays", "total", "valid", "expiringSoon", "expired", "upcoming"]) ||
+      !isDateOnly(value.asOf) || (asOf !== undefined && value.asOf !== asOf) ||
+      !isInt32(value.expiringSoonDays) || value.expiringSoonDays < 1) return false;
+  const counts = [value.total, value.valid, value.expiringSoon, value.expired, value.upcoming];
+  return counts.every(count => isInt32(count) && count >= 0) &&
+    (value.total as number) === (value.valid as number) + (value.expiringSoon as number) +
+      (value.expired as number) + (value.upcoming as number);
+}
+
+function isHumanResourcesDocumentCycles(
+  cycles: unknown, keys: string[], valid: (item: Record<string, unknown>) => boolean,
+): boolean {
+  if (!Array.isArray(cycles) || cycles.length === 0) return false;
+  const ids = new Set<string>();
+  let previous = Number.MAX_SAFE_INTEGER;
+  let currentCount = 0;
+  const ok = cycles.every(item => {
+    if (!isRecord(item) || !hasOnlyKeys(item, keys) || !isUuid(item.id) || ids.has(item.id) ||
+        !isInt32(item.cycleNumber) || item.cycleNumber < 1 || item.cycleNumber >= previous ||
+        typeof item.isCurrent !== "boolean" || !isDateTimeOffset(item.recordedAt) ||
+        (item.recordedByName != null && !isNonEmptyString(item.recordedByName)) ||
+        !valid(item)) return false;
+    ids.add(item.id);
+    previous = item.cycleNumber;
+    if (item.isCurrent) currentCount += 1;
+    return true;
+  });
+  return ok && currentCount <= 1;
 }
 
 function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPermitPage {
@@ -2768,7 +2868,9 @@ function isHumanResourcesPermitPage(value: unknown): value is HumanResourcesPerm
   return value.permits.every(item => {
     if (!isRecord(item) || !hasOnlyKeys(item,
       ["id", "rampProfileId", "agentName", "employeeNumber", "documentType",
-        "cycleNumber", "documentNumber", "issuedOn", "expiresOn"]) ||
+        "cycleNumber", "documentNumber", "issuedOn", "expiresOn", "recordedAt", "validity"]) ||
+        !isDateTimeOffset(item.recordedAt) || typeof item.validity !== "string" ||
+        !HUMAN_RESOURCES_DOCUMENT_VALIDITIES.includes(item.validity) ||
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         typeof item.documentType !== "string" ||
@@ -2787,11 +2889,11 @@ function validatedHumanResourcesPermitQuery(
 ): ListHumanResourcesPermitsParams {
   if (query === undefined) return {};
   if (!isRecord(query) || !hasOnlyKeys(query,
-    ["page", "limit", "rampProfileId", "documentType"]) ||
-      (query.rampProfileId === undefined) !== (query.documentType === undefined) ||
+    ["page", "limit", "rampProfileId", "documentType", "search", "validity", "asOf"]) ||
       (query.rampProfileId !== undefined && !isUuid(query.rampProfileId)) ||
       (query.documentType !== undefined &&
-        !["AirportId", "RampDriverLicense"].includes(query.documentType)))
+        !["AirportId", "RampDriverLicense"].includes(query.documentType)) ||
+      !isValidHumanResourcesDocumentFilter(query))
     throw new TypeError("Human Resources permit filter is invalid.");
   const paging = validatedHumanResourcesPaging({
     ...(query.page === undefined ? {} : { page: query.page }),
@@ -2799,7 +2901,8 @@ function validatedHumanResourcesPermitQuery(
   });
   return { ...paging,
     ...(query.rampProfileId === undefined ? {} : { rampProfileId: query.rampProfileId }),
-    ...(query.documentType === undefined ? {} : { documentType: query.documentType }) };
+    ...(query.documentType === undefined ? {} : { documentType: query.documentType }),
+    ...documentFilterParams(query) };
 }
 
 function validatedHumanResourcesShiftsQuery(query: HumanResourcesShiftsQuery): HumanResourcesShiftsQuery {
@@ -2951,7 +3054,7 @@ function validatedHumanResourcesAvailabilityResolution(
   input: ResolveHumanResourcesAvailabilityInput,
 ): ResolveHumanResourcesAvailabilityInput {
   if (!isRecord(input) || !hasOnlyKeys(input, ["decision", "note"]) ||
-      !["Approve", "Reject"].includes(input.decision) ||
+      !["Approve", "Reject", "Cancel"].includes(input.decision) ||
       (input.note != null && (typeof input.note !== "string" ||
         input.note.trim().length > 1000)))
     throw new TypeError("Human Resources availability resolution is invalid.");
@@ -3017,7 +3120,10 @@ function isHumanResourcesQualificationPage(value: unknown): value is HumanResour
     if (!isRecord(item) || !hasOnlyKeys(item,
       ["id", "rampProfileId", "agentName", "employeeNumber", "equipmentTypeId",
         "equipmentCode", "equipmentName", "cycleNumber", "trainingDate", "obtainedOn",
-        "expiresOn", "certifyingEntity", "instructorName"]) ||
+        "expiresOn", "certifyingEntity", "instructorName", "notes", "recordedAt", "validity"]) ||
+        (item.notes != null && typeof item.notes !== "string") ||
+        !isDateTimeOffset(item.recordedAt) || typeof item.validity !== "string" ||
+        !HUMAN_RESOURCES_DOCUMENT_VALIDITIES.includes(item.validity) ||
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         !isUuid(item.equipmentTypeId) || !isNonEmptyString(item.equipmentCode) ||
@@ -4502,11 +4608,14 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isHumanResourcesQualificationPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 50) ||
-          (paging.rampProfileId !== undefined &&
-            (result.data.hasMore || result.data.qualifications.length > 1 ||
-             result.data.qualifications.some(item =>
-               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
-               item.equipmentTypeId.toLowerCase() !== paging.equipmentTypeId!.toLowerCase()))))
+          (paging.rampProfileId !== undefined && paging.equipmentTypeId !== undefined &&
+            (result.data.hasMore || result.data.qualifications.length > 1)) ||
+          result.data.qualifications.some(item =>
+            (paging.rampProfileId !== undefined &&
+              item.rampProfileId.toLowerCase() !== paging.rampProfileId.toLowerCase()) ||
+            (paging.equipmentTypeId !== undefined &&
+              item.equipmentTypeId.toLowerCase() !== paging.equipmentTypeId.toLowerCase()) ||
+            (paging.validity !== undefined && item.validity !== paging.validity)))
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -4518,6 +4627,43 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isHumanResourcesQualificationEquipmentTypes(result.data))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async getHumanResourcesQualificationSummary(
+      query?: SummarizeHumanResourcesQualificationsParams,
+      options?: GetHumanResourcesDocumentSummaryOptions,
+    ) {
+      const scope = validatedHumanResourcesDocumentSummaryQuery(query, "equipmentTypeId");
+      const result = await execute(getSummarizeHumanResourcesQualificationsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesDocumentSummary(result.data, scope.asOf))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesQualificationHistory(
+      id: string,
+      options?: GetHumanResourcesDocumentHistoryOptions,
+    ) {
+      const qualificationId = validatedUuid(id, "Qualification ID");
+      const result = await execute(getGetHumanResourcesQualificationHistoryUrl(qualificationId),
+        { ...options, method: "GET" }, true);
+      const data = result.data;
+      if (!isRecord(data) || !hasOnlyKeys(data, ["rampProfileId", "agentName", "employeeNumber",
+        "equipmentTypeId", "equipmentCode", "equipmentName", "cycles"]) ||
+          !isUuid(data.rampProfileId) || !isNonEmptyString(data.agentName) ||
+          !isNonEmptyString(data.employeeNumber) || !isUuid(data.equipmentTypeId) ||
+          !isNonEmptyString(data.equipmentCode) || !isNonEmptyString(data.equipmentName) ||
+          !isHumanResourcesDocumentCycles(data.cycles, ["id", "cycleNumber", "isCurrent",
+            "trainingDate", "obtainedOn", "expiresOn", "certifyingEntity", "instructorName",
+            "notes", "recordedAt", "recordedByName"], item =>
+            isDateOnly(item.trainingDate) && isDateOnly(item.obtainedOn) &&
+            isDateOnly(item.expiresOn) && item.trainingDate <= item.obtainedOn &&
+            item.obtainedOn <= item.expiresOn && isNonEmptyString(item.certifyingEntity) &&
+            isNonEmptyString(item.instructorName) &&
+            (item.notes == null || typeof item.notes === "string")) ||
+          !(data.cycles as Array<{ id: string }>).some(cycle =>
+            cycle.id.toLowerCase() === qualificationId))
+        throw malformedResponse(result.status);
+      return data as unknown as HumanResourcesQualificationHistory;
     },
     async recordHumanResourcesQualification(
       id: string,
@@ -4547,13 +4693,47 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isHumanResourcesPermitPage(result.data) ||
           result.data.page !== (paging.page ?? 1) ||
           result.data.limit !== (paging.limit ?? 50) ||
-          (paging.rampProfileId !== undefined &&
-            (result.data.hasMore || result.data.permits.length > 1 ||
-             result.data.permits.some(item =>
-               item.rampProfileId.toLowerCase() !== paging.rampProfileId!.toLowerCase() ||
-               item.documentType !== paging.documentType))))
+          (paging.rampProfileId !== undefined && paging.documentType !== undefined &&
+            (result.data.hasMore || result.data.permits.length > 1)) ||
+          result.data.permits.some(item =>
+            (paging.rampProfileId !== undefined &&
+              item.rampProfileId.toLowerCase() !== paging.rampProfileId.toLowerCase()) ||
+            (paging.documentType !== undefined && item.documentType !== paging.documentType) ||
+            (paging.validity !== undefined && item.validity !== paging.validity)))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async getHumanResourcesPermitSummary(
+      query?: SummarizeHumanResourcesPermitsParams,
+      options?: GetHumanResourcesDocumentSummaryOptions,
+    ) {
+      const scope = validatedHumanResourcesDocumentSummaryQuery(query, "documentType");
+      const result = await execute(getSummarizeHumanResourcesPermitsUrl(scope),
+        { ...options, method: "GET" }, true);
+      if (!isHumanResourcesDocumentSummary(result.data, scope.asOf))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getHumanResourcesPermitHistory(
+      id: string,
+      options?: GetHumanResourcesDocumentHistoryOptions,
+    ) {
+      const permitId = validatedUuid(id, "Permit ID");
+      const result = await execute(getGetHumanResourcesPermitHistoryUrl(permitId),
+        { ...options, method: "GET" }, true);
+      const data = result.data;
+      if (!isRecord(data) || !hasOnlyKeys(data,
+        ["rampProfileId", "agentName", "employeeNumber", "documentType", "cycles"]) ||
+          !isUuid(data.rampProfileId) || !isNonEmptyString(data.agentName) ||
+          !isNonEmptyString(data.employeeNumber) || typeof data.documentType !== "string" ||
+          !["AirportId", "RampDriverLicense"].includes(data.documentType) ||
+          !isHumanResourcesDocumentCycles(data.cycles, ["id", "cycleNumber", "isCurrent",
+            "documentNumber", "issuedOn", "expiresOn", "recordedAt", "recordedByName"], item =>
+            isNonEmptyString(item.documentNumber) && isDateOnly(item.issuedOn) &&
+            isDateOnly(item.expiresOn) && item.issuedOn <= item.expiresOn) ||
+          !(data.cycles as Array<{ id: string }>).some(cycle => cycle.id.toLowerCase() === permitId))
+        throw malformedResponse(result.status);
+      return data as unknown as HumanResourcesPermitHistory;
     },
     async recordHumanResourcesPermit(
       id: string,
@@ -4640,7 +4820,8 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getResolveHumanResourcesAvailabilityRequestUrl(requestId),
         { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
       if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
-        requestId, [body.decision === "Approve" ? "Approved" : "Rejected"]))
+        requestId, [{ Approve: "Approved", Reject: "Rejected", Cancel: "Cancelled" }[
+          body.decision as "Approve" | "Reject" | "Cancel"]]))
         throw malformedResponse(result.status);
       return result.data;
     },

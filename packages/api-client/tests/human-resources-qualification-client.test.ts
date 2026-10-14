@@ -15,6 +15,9 @@ const qualification: HumanResourcesQualificationPage["qualifications"][number] =
   expiresOn: "2099-12-31",
   certifyingEntity: "Synthetic Training Center",
   instructorName: "Development Instructor",
+  notes: null,
+  recordedAt: "2026-01-03T12:00:00.000+00:00",
+  validity: "Valid",
 };
 
 it("reads a bounded authorized qualification page using a fresh token", async () => {
@@ -69,8 +72,10 @@ it("looks up one authorized agent/equipment pair without scanning a global page"
   await expect(client.getHumanResourcesQualifications(scope))
     .resolves.toMatchObject({ qualifications: [qualification] });
   await expect(client.getHumanResourcesQualifications({
-    rampProfileId: qualification.rampProfileId,
+    rampProfileId: qualification.rampProfileId, validity: "valid",
   })).rejects.toBeInstanceOf(TypeError);
+  await expect(client.getHumanResourcesQualifications({ search: "x".repeat(101) }))
+    .rejects.toBeInstanceOf(TypeError);
   const foreign = createElevantApiClient({ baseUrl: "https://api.example.test",
     fetch: async () => new Response(JSON.stringify({ page: 1, limit: 1,
       hasMore: false, qualifications: [{ ...qualification, rampProfileId:

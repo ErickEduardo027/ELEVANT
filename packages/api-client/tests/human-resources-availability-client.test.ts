@@ -81,7 +81,7 @@ it("records and resolves HR availability with explicit UUID, fresh auth and guar
   await expect(client.recordHumanResourcesAvailabilityRequest(id,
     { ...intent, endsOn: "2026-11-03" })).rejects.toBeInstanceOf(TypeError);
   await expect(client.resolveHumanResourcesAvailabilityRequest(id,
-    { decision: "Cancel" })).rejects.toBeInstanceOf(TypeError);
+    { decision: "Withdraw" } as never)).rejects.toBeInstanceOf(TypeError);
   expect(calls).toHaveLength(2);
 });
 

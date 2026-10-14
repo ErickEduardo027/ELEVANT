@@ -87,7 +87,8 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             [new HumanResourcesQualificationData(qualificationId, Guid.NewGuid(),
                 "Riley Ramp", "DEV-RA-001", Guid.NewGuid(), "GPU", "Ground power unit",
                 1, new DateOnly(2026, 1, 2), new DateOnly(2026, 1, 3),
-                new DateOnly(2099, 12, 31), "Synthetic Training Center", "Development Instructor")]),
+                new DateOnly(2099, 12, 31), "Synthetic Training Center", "Development Instructor",
+                "Synthetic note", DateTimeOffset.UnixEpoch, "Valid")]),
         };
         await using var application = CreateApplication(stub);
         using var client = application.CreateClient();
@@ -101,10 +102,14 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             "/api/v1/human-resources/qualifications?limit=101",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooLarge.StatusCode);
-        using var incompleteFilter = await client.GetAsync(
-            $"/api/v1/human-resources/qualifications?rampProfileId={Guid.NewGuid():D}",
+        using var invalidValidity = await client.GetAsync(
+            "/api/v1/human-resources/qualifications?validity=Unknown",
             TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, incompleteFilter.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidValidity.StatusCode);
+        using var longSearch = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications?search={new string('a', 101)}",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, longSearch.StatusCode);
         using var response = await client.GetAsync(
             "/api/v1/human-resources/qualifications?page=2&limit=1",
             TestContext.Current.CancellationToken);
@@ -124,6 +129,45 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
         Assert.Equal((AccountId, 1, 1, filteredAgentId, filteredEquipmentId), stub.FilterRequest);
+
+        using var searched = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications?equipmentTypeId={filteredEquipmentId:D}&search=Riley&validity=ExpiringSoon&asOf=2026-10-13",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, searched.StatusCode);
+        Assert.Equal(new HumanResourcesQualificationQuery(new DateOnly(2026, 10, 13), "Riley",
+            null, filteredEquipmentId, Elevant.Domain.Governance.DocumentValidity.ExpiringSoon),
+            stub.Query);
+    }
+
+    [Fact]
+    public async Task QualificationSummaryAndHistoryRespectStoreOutcomes()
+    {
+        var stub = new Stub
+        {
+            Summary = new HumanResourcesDocumentSummary(new DateOnly(2026, 10, 13), 30, 4, 1, 1, 1, 1),
+        };
+        await using var application = CreateApplication(stub);
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+
+        using var summary = await client.GetAsync(
+            "/api/v1/human-resources/qualifications/summary?asOf=2026-10-13",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, summary.StatusCode);
+        using var summaryJson = JsonDocument.Parse(await summary.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, summaryJson.RootElement.GetProperty("expiringSoon").GetInt32());
+
+        using var missing = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications/{Guid.NewGuid():D}/history",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        stub.HistoryResult = HumanResourcesReadResult<HumanResourcesQualificationHistory>.Denied();
+        using var denied = await client.GetAsync(
+            $"/api/v1/human-resources/qualifications/{Guid.NewGuid():D}/history",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
     [Fact]
@@ -175,6 +219,10 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
     private sealed class Stub : IHumanResourcesQualificationReadStore
     {
         public HumanResourcesQualificationPage? Data { get; init; }
+        public HumanResourcesDocumentSummary? Summary { get; init; }
+        public HumanResourcesReadResult<HumanResourcesQualificationHistory> HistoryResult { get; set; } =
+            HumanResourcesReadResult<HumanResourcesQualificationHistory>.Missing();
+        public HumanResourcesQualificationQuery? Query { get; private set; }
         public (Guid AccountId, int Page, int Limit)? Request { get; private set; }
         public (Guid AccountId, int Page, int Limit, Guid AgentId, Guid EquipmentId)?
             FilterRequest { get; private set; }
@@ -194,6 +242,25 @@ public sealed class HumanResourcesQualificationEndpointsTests(ElevantApiFactory 
             FilterRequest = (actorId, page, limit, rampProfileId, equipmentTypeId);
             return Task.FromResult(Data);
         }
+
+        public Task<HumanResourcesQualificationPage?> ListCurrentAsync(Guid actorId, int page,
+            int limit, HumanResourcesQualificationQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            Request = (actorId, page, limit);
+            Query = query;
+            if (query.RampProfileId is Guid agentId && query.EquipmentTypeId is Guid equipmentId)
+                FilterRequest = (actorId, page, limit, agentId, equipmentId);
+            return Task.FromResult(Data);
+        }
+
+        public Task<HumanResourcesDocumentSummary?> SummarizeAsync(Guid actorId,
+            HumanResourcesQualificationQuery query, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Summary);
+
+        public Task<HumanResourcesReadResult<HumanResourcesQualificationHistory>> GetHistoryAsync(
+            Guid actorId, Guid qualificationId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(HistoryResult);
 
         public Task<IReadOnlyList<HumanResourcesQualificationEquipmentType>?>
             ListEquipmentTypesAsync(Guid actorId, CancellationToken cancellationToken = default) =>
