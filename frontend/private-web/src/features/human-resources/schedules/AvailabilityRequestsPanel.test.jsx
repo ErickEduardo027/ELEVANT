@@ -1,5 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
 import { getHumanResourcesAvailabilityRequests,
@@ -7,6 +7,7 @@ import { getHumanResourcesAvailabilityRequests,
   resolveHumanResourcesAvailabilityRequest } from
   '../../../services/humanResourcesAvailabilityService';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 
 vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
   getHumanResourcesAvailabilityRequests: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
   resolveHumanResourcesAvailabilityRequest: vi.fn(),
 }));
 vi.mock('../../../services/commercialGovernanceApi', () => ({ getRampProfiles: vi.fn() }));
+vi.mock('../../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: vi.fn() }));
 
 const id = '50000000-0000-7000-8000-000000000081';
 const agentId = '50000000-0000-7000-8000-000000000001';
@@ -25,6 +27,10 @@ const row = { id, rampProfileId: agentId, agentName: 'Riley Ramp',
   requestedAt: '2026-09-30T12:00:00Z', resolvedAt: null, resolutionNote: null };
 const page = (requests, number = 1, hasMore = false) =>
   ({ from, to, page: number, limit: 20, hasMore, requests });
+
+beforeEach(() => {
+  useOptionalDepartmentAccess.mockReturnValue({ can: code => code === 'human_resources.availability.decide' });
+});
 
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
@@ -179,4 +185,28 @@ it('reconciles an uncertain decision when a later read confirms approval', async
   expect(await screen.findByText('Aprobada')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reintentar misma decisión' }))
     .not.toBeInTheDocument();
+});
+it('cancels a pending request with a reason and hides decisions without the decide permission', async () => {
+  getHumanResourcesAvailabilityRequests.mockResolvedValueOnce(page([row]))
+    .mockResolvedValueOnce(page([{ ...row, status: 'Cancelled', resolutionNote: 'El agente desistió' }]));
+  resolveHumanResourcesAvailabilityRequest.mockResolvedValue({ id, status: 'Cancelled' });
+  const user = userEvent.setup();
+  const { unmount } = render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+  await user.click(await screen.findByRole('button', { name: 'Cancelar solicitud' }));
+  const form = screen.getByRole('form', { name: 'Cancelar solicitud de Riley Ramp' });
+  await user.type(within(form).getByRole('textbox', { name: 'Motivo de la cancelación' }), '  El agente desistió ');
+  await user.click(within(form).getByRole('button', { name: 'Confirmar cancelación' }));
+  expect(resolveHumanResourcesAvailabilityRequest).toHaveBeenCalledWith(id,
+    { decision: 'Cancel', note: 'El agente desistió' });
+  expect(await screen.findByText('Solicitud cancelada.')).toBeInTheDocument();
+  expect(await screen.findByText('Cancelada')).toBeInTheDocument();
+  unmount();
+
+  useOptionalDepartmentAccess.mockReturnValue({ can: () => false });
+  getHumanResourcesAvailabilityRequests.mockResolvedValueOnce(page([row]));
+  render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+  expect(await screen.findByText('Synthetic planned leave')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cancelar solicitud' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Nueva solicitud' })).not.toBeInTheDocument();
 });

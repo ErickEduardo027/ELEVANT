@@ -33,3 +33,25 @@ export async function recordHumanResourcesQualification(id, request, options = {
     throw error;
   }
 }
+
+export async function getHumanResourcesQualificationSummary(query, { signal } = {}) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getHumanResourcesQualificationSummary(query, { signal });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+export async function getHumanResourcesQualificationHistory(id, { signal } = {}) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getHumanResourcesQualificationHistory(id, { signal });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

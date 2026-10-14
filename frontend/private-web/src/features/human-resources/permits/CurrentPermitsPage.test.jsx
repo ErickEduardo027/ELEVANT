@@ -1,12 +1,17 @@
-import { afterEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CurrentPermitsPage from './CurrentPermitsPage';
-import { getHumanResourcesPermits } from '../../../services/humanResourcesPermitsReadService';
+import { getHumanResourcesPermitHistory, getHumanResourcesPermits, getHumanResourcesPermitSummary }
+  from '../../../services/humanResourcesPermitsReadService';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 
 vi.mock('../../../services/humanResourcesPermitsReadService', () => ({
   getHumanResourcesPermits: vi.fn(),
+  getHumanResourcesPermitSummary: vi.fn(),
+  getHumanResourcesPermitHistory: vi.fn(),
 }));
+vi.mock('../../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: vi.fn() }));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({
     start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +33,7 @@ const permit = {
   agentName: 'Riley Ramp', employeeNumber: 'DEV-RA-001',
   documentType: 'AirportId', cycleNumber: 1,
   documentNumber: 'DEV-AIRPORT-ID', issuedOn: '2026-01-01', expiresOn: '2099-12-31',
+  recordedAt: '2026-01-01T12:00:00Z', validity: 'Valid',
 };
 const fullPage = [permit, ...Array.from({ length: 19 }, (_, index) => ({
   ...permit, id: `50000000-0000-7000-8000-${String(index + 10).padStart(12, '0')}`,
@@ -35,6 +41,12 @@ const fullPage = [permit, ...Array.from({ length: 19 }, (_, index) => ({
   agentName: `Agent ${index + 1}`,
   employeeNumber: `DEV-RA-${String(index + 2).padStart(3, '0')}`,
 }))];
+
+beforeEach(() => {
+  useOptionalDepartmentAccess.mockReturnValue({ can: code => code.startsWith('human_resources.permits.') });
+  getHumanResourcesPermitSummary.mockResolvedValue({ asOf: '2026-10-13', expiringSoonDays: 30,
+    total: 21, valid: 20, expiringSoon: 0, expired: 1, upcoming: 0 });
+});
 
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
@@ -44,17 +56,17 @@ it('shows authorized current permits with real recording entry points and pages 
     .mockResolvedValueOnce({ page: 2, limit: 20, hasMore: false,
       permits: [{ ...permit, id: '50000000-0000-7000-8000-000000000004',
         agentName: 'Ana Example', documentType: 'RampDriverLicense',
-        issuedOn: '2019-01-01', expiresOn: '2020-01-01' }] });
+        issuedOn: '2019-01-01', expiresOn: '2020-01-01', validity: 'Expired' }] });
   render(<CurrentPermitsPage />);
   expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
-  expect(screen.getAllByText('Carnet aeroportuario')).toHaveLength(20);
-  expect(screen.getAllByText('Vigente')).toHaveLength(20);
+  expect(within(screen.getByRole('table')).getAllByText('Carnet aeroportuario')).toHaveLength(20);
+  expect(within(screen.getByRole('table')).getAllByText('Vigente')).toHaveLength(20);
   expect(screen.getByRole('button', { name: 'Registrar permiso' })).toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: 'Renovar' })).toHaveLength(20);
   await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
   expect(await screen.findByText('Ana Example')).toBeInTheDocument();
-  expect(screen.getByText('Licencia de conducir en rampa')).toBeInTheDocument();
-  expect(screen.getByText('Vencido')).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByText('Licencia de conducir en rampa')).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByText('Vencido')).toBeInTheDocument();
   expect(screen.queryByText('Riley Ramp')).not.toBeInTheDocument();
 });
 
@@ -111,8 +123,28 @@ it('distinguishes an empty authorized page from a forbidden response', async () 
   getHumanResourcesPermits.mockResolvedValueOnce({ page: 1, limit: 20,
     hasMore: false, permits: [] }).mockRejectedValueOnce({ status: 403 });
   render(<CurrentPermitsPage />);
-  expect(await screen.findByText(/No hay permisos registrados/)).toBeInTheDocument();
+  expect(await screen.findByText(/No hay permisos con estos filtros/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Actualizar permisos' }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/No tienes acceso/));
-  expect(screen.queryByText(/No hay permisos registrados/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/No hay permisos con estos filtros/)).not.toBeInTheDocument();
+});
+it('shows the permit history and hides recording entry points for read-only users', async () => {
+  useOptionalDepartmentAccess.mockReturnValue({ can: code => code === 'human_resources.permits.read' });
+  getHumanResourcesPermits.mockResolvedValue({ page: 1, limit: 20, hasMore: false, permits: [permit] });
+  getHumanResourcesPermitHistory.mockResolvedValue({ rampProfileId: permit.rampProfileId,
+    agentName: permit.agentName, employeeNumber: permit.employeeNumber, documentType: 'AirportId',
+    cycles: [{ id: permit.id, cycleNumber: 1, isCurrent: true, documentNumber: 'DEV-AIRPORT-ID',
+      issuedOn: '2026-01-01', expiresOn: '2099-12-31', recordedAt: '2026-01-01T12:00:00Z',
+      recordedByName: null }] });
+  const user = userEvent.setup();
+  render(<CurrentPermitsPage />);
+  expect(await screen.findByText('Riley Ramp')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Registrar permiso' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Renovar' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Historial de Riley Ramp · Carnet aeroportuario' }));
+  const drawer = screen.getByRole('dialog', { name: 'Historial · Carnet aeroportuario' });
+  expect(await within(drawer).findByText('DEV-AIRPORT-ID')).toBeInTheDocument();
+  await user.type(screen.getByRole('searchbox'), 'DEV-AIRPORT');
+  await waitFor(() => expect(getHumanResourcesPermits).toHaveBeenLastCalledWith(
+    expect.objectContaining({ search: 'DEV-AIRPORT', page: 1 }), expect.anything()));
 });
