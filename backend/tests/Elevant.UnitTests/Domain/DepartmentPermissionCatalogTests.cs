@@ -43,6 +43,15 @@ public sealed class DepartmentPermissionCatalogTests
     }
 
     [Fact]
+    public void HumanResourcesCannotProgramShiftsBecauseOperationsOwnsThem()
+    {
+        Assert.True(DepartmentPermissionCatalog.IsKnown("human_resources.schedules.read"));
+        Assert.False(DepartmentPermissionCatalog.IsKnown("human_resources.schedules.manage"));
+        Assert.DoesNotContain("human_resources.schedules.manage",
+            DepartmentPermissionCatalog.Normalize(["human_resources.schedules.manage"]));
+    }
+
+    [Fact]
     public void RejectsUnknownCodesIncludingLegacyCommercialOnes()
     {
         Assert.False(DepartmentPermissionCatalog.IsKnown("commercial.requests.full"));

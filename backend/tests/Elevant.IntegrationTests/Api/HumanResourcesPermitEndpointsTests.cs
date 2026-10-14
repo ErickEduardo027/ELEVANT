@@ -100,7 +100,7 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
             Data = new HumanResourcesPermitPage(2, 1, false,
             [new HumanResourcesPermitData(permitId, Guid.NewGuid(), "Riley Ramp",
                 "DEV-RA-001", "AirportId", 1, "DEV-AIRPORT-ID",
-                new DateOnly(2026, 1, 1), new DateOnly(2099, 12, 31))]),
+                new DateOnly(2026, 1, 1), new DateOnly(2099, 12, 31), DateTimeOffset.UnixEpoch, "Valid")]),
         };
         await using var application = factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
@@ -117,10 +117,14 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
         using var tooLarge = await client.GetAsync("/api/v1/human-resources/permits?limit=101",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, tooLarge.StatusCode);
-        using var incompleteFilter = await client.GetAsync(
-            $"/api/v1/human-resources/permits?rampProfileId={Guid.NewGuid():D}",
+        using var invalidType = await client.GetAsync(
+            "/api/v1/human-resources/permits?documentType=Passport",
             TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, incompleteFilter.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidType.StatusCode);
+        using var invalidValidity = await client.GetAsync(
+            "/api/v1/human-resources/permits?validity=expired",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidValidity.StatusCode);
         using var response = await client.GetAsync("/api/v1/human-resources/permits?page=2&limit=1",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -204,6 +208,23 @@ public sealed class HumanResourcesPermitEndpointsTests(ElevantApiFactory factory
             FilterRequest = (actorId, page, limit, rampProfileId, documentType);
             return Task.FromResult(Data);
         }
+
+        public Task<HumanResourcesPermitPage?> ListCurrentAsync(Guid actorId, int page,
+            int limit, HumanResourcesPermitQuery query, CancellationToken cancellationToken = default)
+        {
+            Request = (actorId, page, limit);
+            if (query.RampProfileId is Guid agentId && query.DocumentType is PermitDocumentType type)
+                FilterRequest = (actorId, page, limit, agentId, type);
+            return Task.FromResult(Data);
+        }
+
+        public Task<HumanResourcesDocumentSummary?> SummarizeAsync(Guid actorId,
+            HumanResourcesPermitQuery query, CancellationToken cancellationToken = default) =>
+            Task.FromResult<HumanResourcesDocumentSummary?>(null);
+
+        public Task<HumanResourcesReadResult<HumanResourcesPermitHistory>> GetHistoryAsync(
+            Guid actorId, Guid permitId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(HumanResourcesReadResult<HumanResourcesPermitHistory>.Missing());
     }
 
     private sealed class WriteStub : IHumanResourcesPermitWriteStore

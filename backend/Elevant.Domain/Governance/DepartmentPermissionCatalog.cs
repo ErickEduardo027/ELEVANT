@@ -43,7 +43,7 @@ public static class DepartmentPermissionCatalog
                 Module("human_resources", "ramp_profiles", "Agentes de rampa", ("read", "Ver"), ("manage", "Editar perfiles operativos")),
                 Module("human_resources", "qualifications", "Habilitaciones y certificaciones", ("read", "Ver"), ("manage", "Registrar y renovar")),
                 Module("human_resources", "permits", "Carnets y permisos aeroportuarios", ("read", "Ver"), ("manage", "Registrar y renovar")),
-                Module("human_resources", "schedules", "Horarios y disponibilidad", ("read", "Ver"), ("manage", "Programar turnos")),
+                Module("human_resources", "schedules", "Horarios y disponibilidad", ("read", "Ver")),
                 Module("human_resources", "availability", "Solicitudes de disponibilidad", ("read", "Ver"), ("decide", "Aprobar o rechazar")),
                 Module("human_resources", "attendance", "Revisión de asistencia", ("read", "Ver"), ("validate", "Validar asistencia")),
                 Module("human_resources", "reports", "Reportes", ("read", "Ver"), ("export", "Exportar")),
