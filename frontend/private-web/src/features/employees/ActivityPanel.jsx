@@ -7,6 +7,12 @@ import { fieldClass } from './EmployeeForms';
 
 const ACTION_LABELS = {
   'auth.session.created': 'Inició sesión',
+  'hr.qualification.recorded': 'Registró una habilitación',
+  'hr.permit.recorded': 'Registró un carnet o permiso',
+  'hr.availability.recorded': 'Registró una solicitud de disponibilidad',
+  'hr.availability.approved': 'Aprobó una solicitud de disponibilidad',
+  'hr.availability.rejected': 'Rechazó una solicitud de disponibilidad',
+  'hr.availability.cancelled': 'Canceló una solicitud de disponibilidad',
   'identity.password.changed': 'Cambió su contraseña',
   'auth.session.failed': 'Intento de inicio de sesión fallido',
   'hr.employee.created': 'Registró un empleado',

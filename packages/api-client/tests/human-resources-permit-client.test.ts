@@ -11,6 +11,8 @@ const permit: HumanResourcesPermitPage["permits"][number] = {
   documentNumber: "DEV-AIRPORT-ID",
   issuedOn: "2026-01-01",
   expiresOn: "2099-12-31",
+  recordedAt: "2026-01-01T12:00:00.000+00:00",
+  validity: "Valid",
 };
 
 it("reads a bounded authorized permit page using a fresh token", async () => {
@@ -71,8 +73,8 @@ it("looks up the current document cycle for exactly one agent and type", async (
   });
   await expect(client.getHumanResourcesPermits(scope))
     .resolves.toMatchObject({ permits: [permit] });
-  await expect(client.getHumanResourcesPermits({ rampProfileId: permit.rampProfileId }))
-    .rejects.toBeInstanceOf(TypeError);
+  await expect(client.getHumanResourcesPermits({ rampProfileId: permit.rampProfileId,
+    asOf: "2026-13-01" })).rejects.toBeInstanceOf(TypeError);
   const foreign = createElevantApiClient({ baseUrl: "https://api.example.test",
     fetch: async () => new Response(JSON.stringify({ page: 1, limit: 1,
       hasMore: false, permits: [{ ...permit, rampProfileId:

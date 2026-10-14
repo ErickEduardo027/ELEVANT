@@ -1713,6 +1713,16 @@ export interface HumanResourcesAvailabilityWritten {
   status: string;
 }
 
+export interface HumanResourcesDocumentSummary {
+  asOf: string;
+  expiringSoonDays: number;
+  total: number;
+  valid: number;
+  expiringSoon: number;
+  expired: number;
+  upcoming: number;
+}
+
 export interface HumanResourcesExpirationResponse {
   id: string;
   rampProfileId: string;
@@ -1738,6 +1748,18 @@ export interface HumanResourcesExpirationResponseHumanResourcesReportPageRespons
   validity?: string | null;
 }
 
+export interface HumanResourcesPermitCycle {
+  id: string;
+  cycleNumber: number;
+  isCurrent: boolean;
+  documentNumber: string;
+  issuedOn: string;
+  expiresOn: string;
+  recordedAt: string;
+  /** @nullable */
+  recordedByName?: string | null;
+}
+
 export interface HumanResourcesPermitData {
   id: string;
   rampProfileId: string;
@@ -1748,6 +1770,16 @@ export interface HumanResourcesPermitData {
   documentNumber: string;
   issuedOn: string;
   expiresOn: string;
+  recordedAt: string;
+  validity: string;
+}
+
+export interface HumanResourcesPermitHistory {
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  documentType: string;
+  cycles: HumanResourcesPermitCycle[];
 }
 
 export interface HumanResourcesPermitPage {
@@ -1785,6 +1817,22 @@ export interface HumanResourcesQualificationCoverageResponseHumanResourcesReport
   validity?: string | null;
 }
 
+export interface HumanResourcesQualificationCycle {
+  id: string;
+  cycleNumber: number;
+  isCurrent: boolean;
+  trainingDate: string;
+  obtainedOn: string;
+  expiresOn: string;
+  certifyingEntity: string;
+  instructorName: string;
+  /** @nullable */
+  notes?: string | null;
+  recordedAt: string;
+  /** @nullable */
+  recordedByName?: string | null;
+}
+
 export interface HumanResourcesQualificationData {
   id: string;
   rampProfileId: string;
@@ -1799,12 +1847,26 @@ export interface HumanResourcesQualificationData {
   expiresOn: string;
   certifyingEntity: string;
   instructorName: string;
+  /** @nullable */
+  notes?: string | null;
+  recordedAt: string;
+  validity: string;
 }
 
 export interface HumanResourcesQualificationEquipmentType {
   id: string;
   code: string;
   name: string;
+}
+
+export interface HumanResourcesQualificationHistory {
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  equipmentTypeId: string;
+  equipmentCode: string;
+  equipmentName: string;
+  cycles: HumanResourcesQualificationCycle[];
 }
 
 export interface HumanResourcesQualificationPage {
@@ -3769,6 +3831,15 @@ page?: number;
 limit?: number;
 rampProfileId?: string;
 documentType?: string;
+search?: string;
+validity?: string;
+asOf?: string;
+};
+
+export type SummarizeHumanResourcesPermitsParams = {
+documentType?: string;
+search?: string;
+asOf?: string;
 };
 
 export type ListHumanResourcesQualificationsParams = {
@@ -3776,6 +3847,15 @@ page?: number;
 limit?: number;
 rampProfileId?: string;
 equipmentTypeId?: string;
+search?: string;
+validity?: string;
+asOf?: string;
+};
+
+export type SummarizeHumanResourcesQualificationsParams = {
+equipmentTypeId?: string;
+search?: string;
+asOf?: string;
 };
 
 export type ListHumanResourcesExpirationsParams = {
@@ -9147,6 +9227,69 @@ export const listHumanResourcesPermits = async (params?: ListHumanResourcesPermi
 
 
 
+export const getSummarizeHumanResourcesPermitsUrl = (params?: SummarizeHumanResourcesPermitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/permits/summary?${stringifiedParams}` : `/api/v1/human-resources/permits/summary`
+}
+
+export const summarizeHumanResourcesPermits = async (params?: SummarizeHumanResourcesPermitsParams, options?: RequestInit): Promise<HumanResourcesDocumentSummary> => {
+
+  const res = await fetch(getSummarizeHumanResourcesPermitsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesDocumentSummary = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesPermitHistoryUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/permits/${id}/history`
+}
+
+export const getHumanResourcesPermitHistory = async (id: string, options?: RequestInit): Promise<HumanResourcesPermitHistory> => {
+
+  const res = await fetch(getGetHumanResourcesPermitHistoryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesPermitHistory = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getRecordHumanResourcesPermitUrl = (id: string,) => {
 
 
@@ -9212,6 +9355,69 @@ export const listHumanResourcesQualifications = async (params?: ListHumanResourc
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesQualificationPage = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSummarizeHumanResourcesQualificationsUrl = (params?: SummarizeHumanResourcesQualificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/qualifications/summary?${stringifiedParams}` : `/api/v1/human-resources/qualifications/summary`
+}
+
+export const summarizeHumanResourcesQualifications = async (params?: SummarizeHumanResourcesQualificationsParams, options?: RequestInit): Promise<HumanResourcesDocumentSummary> => {
+
+  const res = await fetch(getSummarizeHumanResourcesQualificationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesDocumentSummary = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetHumanResourcesQualificationHistoryUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/qualifications/${id}/history`
+}
+
+export const getHumanResourcesQualificationHistory = async (id: string, options?: RequestInit): Promise<HumanResourcesQualificationHistory> => {
+
+  const res = await fetch(getGetHumanResourcesQualificationHistoryUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesQualificationHistory = body ? JSON.parse(body) : {}
   return data
 }
 

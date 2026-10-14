@@ -22,3 +22,25 @@ export async function recordHumanResourcesPermit(id, request, options = {}) {
     throw error;
   }
 }
+
+export async function getHumanResourcesPermitSummary(query, { signal } = {}) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getHumanResourcesPermitSummary(query, { signal });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+export async function getHumanResourcesPermitHistory(id, { signal } = {}) {
+  try {
+    return await createPrivateWebApiClient({
+      getAccessToken: () => readSession()?.token,
+    }).getHumanResourcesPermitHistory(id, { signal });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}

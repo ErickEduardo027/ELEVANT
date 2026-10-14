@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-06"
-verified_commit: "c2c66bca855778021e1b42aad86ecdad1ecf1c93"
+last_verified: "2026-10-13"
+verified_commit: "0061b13b349f777e886889da28241e0e41efc589"
 sources:
   - frontend/AGENTS.md
   - frontend/private-web/README.md
@@ -189,6 +189,32 @@ y [vista de perfiles](../../frontend/private-web/src/features/human-resources/us
 
 Bajo `/gestion-humana` existen dashboard, usuarios/cuentas, habilitaciones, permisos aeroportuarios, horarios/disponibilidad, reportes, auditoría y notificaciones. El código navega y prueba estas vistas, pero sus datos prototípicos no demuestran que la API ya gestione cuentas o permisos.
 
+**Habilitaciones, carnets y horarios usan siempre la API.** Antes, el
+navegador leía `NEXT_PUBLIC_HR_DEMO_MODE` como `process.env` completo. Next no
+lo incrusta así en el cliente, de modo que el flag valía `false` en el
+navegador y se montaban las páginas del prototipo que llamaban a `/api/hr`
+(«No fue posible cargar…»). Ahora `hrDemoMode.js` lee la expresión literal.
+Las tres rutas montan siempre `Current*Page`, y se eliminaron las páginas,
+hooks y servicios del prototipo de esas secciones.
+
+En habilitaciones y carnets:
+- totales por vigencia calculados por el servidor (`.../summary`); cada
+  tarjeta filtra la lista;
+- búsqueda y filtros por equipo o tipo de documento y por vigencia, evaluada en
+  la fecha local del navegador; «por vencer» significa 30 días o menos;
+- un panel de **historial** con todos los ciclos y quién registró cada uno,
+  según la auditoría de escritura (los ciclos sembrados aparecen como «Carga
+  inicial»).
+
+Registrar y renovar solo aparecen con `human_resources.*.manage`. En horarios,
+Gestión Humana consulta los turnos y alertas, y decide sobre la disponibilidad
+(aprobar, rechazar o **cancelar con motivo** una solicitud pendiente) con
+`human_resources.availability.decide`. Fuentes:
+[habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx),
+[carnets](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
+[componentes compartidos](../../frontend/private-web/src/features/human-resources/documents/DocumentHistoryDrawer.jsx)
+y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesQualificationReadStore.cs).
+
 En el worktree local posterior a esta fotografía, el dashboard consulta los
 perfiles de rampa autorizados de la API para contar agentes activos y perfiles
 sin cuenta vinculada. Ya no presenta como hechos las cifras fijas del prototipo
@@ -233,14 +259,14 @@ exacto antes de guardar, envía el identificador del ciclo observado como
 precondición y conserva el UUID de intención para un reintento incierto. Un
 conflicto obliga a releer el ciclo. La API conserva historial, auditoría y
 señal durable `hr_qualifications` y una invalidación OCC por estación en la
-transacción; no hay archivos adjuntos ni promociones al
-VPS demostradas para esta rama. La vista heredada sigue separada fuera del
-modo restringido. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [servicio](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs) y [README del backend](../../backend/README.md).
+transacción. `GET .../qualifications/{id}/history` expone la línea de ciclos.
+No hay archivos adjuntos ni promociones al VPS demostradas para esta rama. Fuentes: [ruta de habilitaciones](../../frontend/private-web/src/features/human-resources/certifications/CurrentQualificationsPage.jsx), [servicio](../../frontend/private-web/src/services/humanResourcesQualificationsReadService.js), [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesQualificationsController.cs) y [README del backend](../../backend/README.md).
 
 La API también ofrece ciclos actuales de carnet aeroportuario y licencia de
 rampa, paginados y reservados a Gestión Humana o Superadministración internas.
-En la rama local, la lectura admite un filtro conjunto de agente y tipo para
-encontrar el ciclo exacto sin recorrer páginas globales. La API ya ofrece
+La lectura admite filtros independientes por agente, tipo de documento,
+búsqueda y vigencia. Con agente y tipo a la vez, devuelve el ciclo exacto sin
+recorrer páginas globales. La API ya ofrece
 `PUT /api/v1/human-resources/permits/{id}` para registrar el primer ciclo o
 renovarlo con UUID de intención estable y `expectedCurrentId`. Conserva el
 historial, audita y emite `hr_permits` y `occ_planning` de forma durable; el feed vuelve a
@@ -250,8 +276,8 @@ foco/conexión y cada 25 segundos, y ya ofrece captura del primer ciclo y
 renovación después de consultar el par exacto. Reutiliza el UUID ante una
 respuesta incierta y relee el ciclo tras 409; no permite archivos. El documento
 puede estar vencido aunque su ciclo siga marcado como
-actual. La API conserva los ciclos anteriores, pero la vista de historial sigue
-pendiente. Fuentes:
+actual. La API conserva los ciclos anteriores y `GET .../permits/{id}/history`
+los muestra en el panel de historial. Fuentes:
 [vista](../../frontend/private-web/src/features/human-resources/permits/CurrentPermitsPage.jsx),
 [formulario](../../frontend/private-web/src/features/human-resources/permits/PermitRecordForm.jsx),
 [controlador](../../backend/Elevant.Api/Controllers/HumanResourcesPermitsController.cs)
@@ -261,7 +287,8 @@ La ruta restringida de horarios lee turnos reales por semana local, ventana
 de 15 días o mes calendario, siempre en páginas de 20. No presenta una página
 como total del período. Muestra agente, estación, terminal, posición y horas registradas, sin
 inferir disponibilidad. Gestión Humana ya no ofrece
-«Nuevo turno»: OCC es el único rol autorizado para registrar turnos. El
+«Nuevo turno»: OCC es el único rol autorizado para registrar turnos, y el
+catálogo ya no ofrece `human_resources.schedules.manage`. El
 `PUT /api/v1/human-resources/shifts/{id}` sigue disponible de forma transitoria
 para OCC, con UUID estable, jornada máxima de 16 horas, scopes de agente
 vigentes en estación y terminal, auditoría y señales `hr_shifts` y

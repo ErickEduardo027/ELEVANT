@@ -106,6 +106,7 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         {
             "Approve" => AvailabilityRequestStatus.Approved,
             "Reject" => AvailabilityRequestStatus.Rejected,
+            "Cancel" => AvailabilityRequestStatus.Cancelled,
             _ => (AvailabilityRequestStatus?)null,
         };
         if (requestId == Guid.Empty || targetStatus is null || input!.Note?.Trim().Length > 1000)
@@ -168,9 +169,7 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
                 request.ResolvedByAccountId = actorKey.Value;
                 request.ResolutionNote = note;
                 request.UpdatedAt = now;
-                AddAudit(actorKey.Value, requestId,
-                    targetStatus == AvailabilityRequestStatus.Approved
-                        ? "hr.availability.approved" : "hr.availability.rejected", now);
+                AddAudit(actorKey.Value, requestId, ResolutionAction(targetStatus.Value), now);
                 await AddHumanResourcesHintsAsync(requestId, now, cancellationToken);
                 if (targetStatus == AvailabilityRequestStatus.Approved &&
                     request.Type is AvailabilityRequestType.DayOff or
@@ -229,8 +228,7 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         AvailabilityRequestStatus status, string? note,
         CancellationToken cancellationToken)
     {
-        var action = status == AvailabilityRequestStatus.Approved
-            ? "hr.availability.approved" : "hr.availability.rejected";
+        var action = ResolutionAction(status);
         var matches = existing.Status == status &&
             existing.ResolvedByAccountId == actorKey &&
             existing.ResolutionNote == note &&
@@ -243,6 +241,13 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
                 status.ToString())
             : Fail(HumanResourcesAvailabilityWriteFailure.Conflict);
     }
+
+    private static string ResolutionAction(AvailabilityRequestStatus status) => status switch
+    {
+        AvailabilityRequestStatus.Approved => "hr.availability.approved",
+        AvailabilityRequestStatus.Cancelled => "hr.availability.cancelled",
+        _ => "hr.availability.rejected",
+    };
 
     private void AddAudit(long actorKey, Guid id, string action, DateTimeOffset now) =>
         context.AuditEntries.Add(new AuditEntry

@@ -9907,6 +9907,28 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "validity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asOf",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
           }
         ],
         "responses": {
@@ -9942,6 +9964,161 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/permits/summary": {
+      "get": {
+        "tags": [
+          "HumanResourcesPermits"
+        ],
+        "operationId": "SummarizeHumanResourcesPermits",
+        "parameters": [
+          {
+            "name": "documentType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asOf",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesDocumentSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/permits/{id}/history": {
+      "get": {
+        "tags": [
+          "HumanResourcesPermits"
+        ],
+        "operationId": "GetHumanResourcesPermitHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesPermitHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10115,6 +10292,28 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "validity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asOf",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
           }
         ],
         "responses": {
@@ -10150,6 +10349,162 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/qualifications/summary": {
+      "get": {
+        "tags": [
+          "HumanResourcesQualifications"
+        ],
+        "operationId": "SummarizeHumanResourcesQualifications",
+        "parameters": [
+          {
+            "name": "equipmentTypeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asOf",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesDocumentSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/qualifications/{id}/history": {
+      "get": {
+        "tags": [
+          "HumanResourcesQualifications"
+        ],
+        "operationId": "GetHumanResourcesQualificationHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesQualificationHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20697,6 +21052,49 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesDocumentSummary": {
+        "required": [
+          "asOf",
+          "expired",
+          "expiringSoon",
+          "expiringSoonDays",
+          "total",
+          "upcoming",
+          "valid"
+        ],
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiringSoonDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "valid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiringSoon": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "expired": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "upcoming": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesExpirationResponse": {
         "required": [
           "agentName",
@@ -20793,6 +21191,51 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesPermitCycle": {
+        "required": [
+          "cycleNumber",
+          "documentNumber",
+          "expiresOn",
+          "id",
+          "isCurrent",
+          "issuedOn",
+          "recordedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cycleNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "documentNumber": {
+            "type": "string"
+          },
+          "issuedOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recordedByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesPermitData": {
         "required": [
           "agentName",
@@ -20803,7 +21246,9 @@
           "expiresOn",
           "id",
           "issuedOn",
-          "rampProfileId"
+          "rampProfileId",
+          "recordedAt",
+          "validity"
         ],
         "type": "object",
         "properties": {
@@ -20838,6 +21283,45 @@
           "expiresOn": {
             "type": "string",
             "format": "date"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validity": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesPermitHistory": {
+        "required": [
+          "agentName",
+          "cycles",
+          "documentType",
+          "employeeNumber",
+          "rampProfileId"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "cycles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesPermitCycle"
+            }
           }
         },
         "additionalProperties": false
@@ -20977,6 +21461,64 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesQualificationCycle": {
+        "required": [
+          "certifyingEntity",
+          "cycleNumber",
+          "expiresOn",
+          "id",
+          "instructorName",
+          "isCurrent",
+          "obtainedOn",
+          "recordedAt",
+          "trainingDate"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cycleNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "trainingDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "obtainedOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "certifyingEntity": {
+            "type": "string"
+          },
+          "instructorName": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recordedByName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesQualificationData": {
         "required": [
           "agentName",
@@ -20991,7 +21533,9 @@
           "instructorName",
           "obtainedOn",
           "rampProfileId",
-          "trainingDate"
+          "recordedAt",
+          "trainingDate",
+          "validity"
         ],
         "type": "object",
         "properties": {
@@ -21040,6 +21584,17 @@
           },
           "instructorName": {
             "type": "string"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validity": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -21061,6 +21616,47 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesQualificationHistory": {
+        "required": [
+          "agentName",
+          "cycles",
+          "employeeNumber",
+          "equipmentCode",
+          "equipmentName",
+          "equipmentTypeId",
+          "rampProfileId"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "equipmentTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "equipmentCode": {
+            "type": "string"
+          },
+          "equipmentName": {
+            "type": "string"
+          },
+          "cycles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HumanResourcesQualificationCycle"
+            }
           }
         },
         "additionalProperties": false

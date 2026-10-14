@@ -2,7 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { readSession } from '../features/auth/authService';
 import { getHumanResourcesQualifications, getHumanResourcesQualificationEquipmentTypes,
+  getHumanResourcesQualificationHistory, getHumanResourcesQualificationSummary,
   recordHumanResourcesQualification } from './humanResourcesQualificationsReadService';
+import { handleUnauthorizedResponse } from '../features/auth/authService';
 
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
 vi.mock('../features/auth/authService', () => ({ readSession: vi.fn(), handleUnauthorizedResponse: vi.fn() }));
@@ -36,4 +38,18 @@ it('loads equipment options and sends an idempotent qualification record through
   expect(createPrivateWebApiClient.mock.calls.at(-1)[0].getAccessToken()).toBe('fresh-hr-token');
   expect(options).toHaveBeenCalledWith({ signal });
   expect(record).toHaveBeenCalledWith('record-id', request, {});
+});
+it('reads the qualification summary and history and reports an expired session', async () => {
+  readSession.mockReturnValue({ token: 'hr-token' });
+  const summary = vi.fn().mockResolvedValue({ total: 0 });
+  const history = vi.fn().mockRejectedValue(Object.assign(new Error('expired'), { status: 401 }));
+  createPrivateWebApiClient.mockReturnValue({ getHumanResourcesQualificationSummary: summary,
+    getHumanResourcesQualificationHistory: history });
+  const signal = new AbortController().signal;
+  await expect(getHumanResourcesQualificationSummary({ asOf: '2026-10-13' }, { signal }))
+    .resolves.toEqual({ total: 0 });
+  expect(summary).toHaveBeenCalledWith({ asOf: '2026-10-13' }, { signal });
+  await expect(getHumanResourcesQualificationHistory('cycle-id', { signal })).rejects.toMatchObject({ status: 401 });
+  expect(history).toHaveBeenCalledWith('cycle-id', { signal });
+  expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
 });

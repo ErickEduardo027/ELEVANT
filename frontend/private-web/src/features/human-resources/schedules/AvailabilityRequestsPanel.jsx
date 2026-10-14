@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { getHumanResourcesAvailabilityRequests,
   resolveHumanResourcesAvailabilityRequest } from
   '../../../services/humanResourcesAvailabilityService';
@@ -9,10 +10,15 @@ const TYPE_LABELS = { DayOff: 'Día libre', Restriction: 'Restricción',
   ShiftChange: 'Cambio de turno' };
 const STATUS_LABELS = { Pending: 'Pendiente', Approved: 'Aprobada',
   Rejected: 'Rechazada', Cancelled: 'Cancelada' };
+const DECISION_NOTICES = { Approve: 'Solicitud aprobada.', Reject: 'Solicitud rechazada.',
+  Cancel: 'Solicitud cancelada.' };
 
 export default function AvailabilityRequestsPanel({ from, to, revision = 0,
   onDenied = () => {} }) {
+  const access = useOptionalDepartmentAccess();
+  const canDecide = Boolean(access?.can('human_resources.availability.decide'));
   const [page, setPage] = useState(1);
+  const [cancelling, setCancelling] = useState({ id: null, note: '' });
   const [localRevision, setLocalRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', data: null });
   const [formOpen, setFormOpen] = useState(false);
@@ -36,6 +42,7 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
     setNotice('');
     setActionError('');
     setPendingResolution(null);
+    setCancelling({ id: null, note: '' });
   }, [from, to]);
 
   useEffect(() => {
@@ -70,11 +77,11 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
     setLocalRevision(value => value + 1);
   }
 
-  async function decide(id, decision) {
+  async function decide(id, decision, note = null) {
     if (busyId || state.status !== 'success') return;
     const intent = pendingResolution?.id === id &&
       pendingResolution.decision === decision
-      ? pendingResolution : { id, decision, note: null };
+      ? pendingResolution : { id, decision, note };
     setPendingResolution(intent);
     setBusyId(id);
     setActionError('');
@@ -83,7 +90,8 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
         { decision: intent.decision, note: intent.note });
       if (!mounted.current) return;
       setPendingResolution(null);
-      setNotice(decision === 'Approve' ? 'Solicitud aprobada.' : 'Solicitud rechazada.');
+      setCancelling({ id: null, note: '' });
+      setNotice(DECISION_NOTICES[decision]);
       refresh();
     } catch (failure) {
       if (!mounted.current) return;
@@ -126,7 +134,7 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
         </p>
       </div>
       <div className="flex gap-2">
-        {state.status === 'success' && !formOpen && <button type="button"
+        {state.status === 'success' && canDecide && !formOpen && <button type="button"
           onClick={() => { setFormOpen(true); setNotice(''); }}
           className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
           Nueva solicitud</button>}
@@ -176,7 +184,7 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
           <p className="mt-3 whitespace-pre-wrap text-sm">{item.reason}</p>
           {item.resolutionNote && <p className="mt-2 text-xs text-text-secondary-light">
             Resolución: {item.resolutionNote}</p>}
-          {item.status === 'Pending' && <div className="mt-4 flex flex-wrap gap-2">
+          {item.status === 'Pending' && canDecide && <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" disabled={!!busyId || !!pendingResolution}
               onClick={() => void decide(item.id, 'Approve')}
               className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">
@@ -185,11 +193,32 @@ export default function AvailabilityRequestsPanel({ from, to, revision = 0,
               onClick={() => void decide(item.id, 'Reject')}
               className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-40">
               Rechazar</button>
+            <button type="button" disabled={!!busyId || !!pendingResolution}
+              onClick={() => setCancelling({ id: item.id, note: '' })}
+              className="rounded-lg border border-status-danger/40 px-3 py-2 text-sm font-semibold text-status-danger disabled:opacity-40">
+              Cancelar solicitud</button>
             {pendingResolution?.id === item.id && <button type="button"
               disabled={!!busyId} onClick={() => void decide(item.id, pendingResolution.decision)}
               className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-40">
               Reintentar misma decisión</button>}
           </div>}
+          {item.status === 'Pending' && canDecide && cancelling.id === item.id && !pendingResolution &&
+            <form className="mt-3 space-y-2 rounded-xl border border-status-danger/30 p-3"
+              aria-label={`Cancelar solicitud de ${item.agentName}`}
+              onSubmit={event => { event.preventDefault(); void decide(item.id, 'Cancel', cancelling.note.trim()); }}>
+              <label className="block text-xs font-semibold">Motivo de la cancelación
+                <textarea required minLength={3} maxLength={1000} rows={2} value={cancelling.note}
+                  onChange={event => setCancelling({ id: item.id, note: event.target.value })}
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm font-normal" />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" disabled={!!busyId}
+                  className="rounded-lg bg-status-danger px-3 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                  Confirmar cancelación</button>
+                <button type="button" onClick={() => setCancelling({ id: null, note: '' })}
+                  className="rounded-lg border px-3 py-2 text-sm font-semibold">Volver</button>
+              </div>
+            </form>}
         </article>)}
       </div> : <p className="rounded-xl border p-8 text-center">
         No hay solicitudes en esta semana y página.</p>}
