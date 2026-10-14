@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-09"
-verified_commit: "985262110e96cf0879af7897563dcfbd9724d432"
+last_verified: "2026-10-13"
+verified_commit: "0061b13b349f777e886889da28241e0e41efc589"
 sources:
   - docs/adr/0015-department-user-governance.md
   - docs/adr/0017-employees-positions-and-access.md
@@ -72,6 +72,10 @@ flowchart TD
 | Miembro | Lo que su plantilla o sus permisos explícitos conceden. | Nada fuera de su departamento. |
 
 ## Permisos
+
+Gestión Humana no programa turnos. `human_resources.schedules` solo concede
+lectura, porque el OCC programa los turnos con `operations.planning.assign`.
+Gestión Humana decide la disponibilidad con `human_resources.availability.decide`.
 
 El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
 `<departamento>.<módulo>.<acción>`, por ejemplo `contracts.requests.approve` u
