@@ -17,10 +17,43 @@ import {
   MobileServiceError,
 } from './mobile-service-error';
 import { registerCurrentMobileDevice } from './mobile-device';
+import {
+  authenticateLocalDevelopmentAgent,
+  changeLocalDevelopmentPassword,
+  isLocalDevelopmentAuthEnabled,
+  isLocalDevelopmentAccessToken,
+  LOCAL_DEVELOPMENT_ACCESS_TOKEN,
+  LOCAL_DEVELOPMENT_EMAIL,
+} from './local-development-auth';
 
 const SESSION_SCHEMA_VERSION = 1 as const;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const LOCAL_DEVELOPMENT_ACTOR: MobileAgentActor = {
+  accountId: '10000000-0000-4000-8000-000000000001',
+  email: LOCAL_DEVELOPMENT_EMAIL,
+  displayName: 'Agente Demo ELEVANT',
+  role: {
+    roleId: '10000000-0000-4000-8000-000000000002',
+    code: 'RAMP_AGENT',
+    name: 'Agente de rampa',
+    portal: 'ramp_mobile_app',
+    userType: 'Internal',
+  },
+  membership: {
+    membershipId: '10000000-0000-4000-8000-000000000003',
+    organizationId: '10000000-0000-4000-8000-000000000004',
+    organizationCode: 'AVIAM',
+    organizationName: 'AVIAM (desarrollo local)',
+    organizationType: 'aviam_operator',
+    kind: 'internal_staff',
+  },
+  stationScopes: [{
+    stationId: '10000000-0000-4000-8000-000000000005',
+    stationCode: 'SDQ',
+  }],
+};
 
 /**
  * @deprecated Historical prototype adapters are retained only as Vault
@@ -324,6 +357,29 @@ export async function loginMobileAgent(
   }
 
   try {
+    const localResult = await authenticateLocalDevelopmentAgent(
+      normalizedEmail,
+      password,
+    );
+    if (localResult === 'password_change_required') {
+      throw new MobileServiceError('password_change_required');
+    }
+    if (localResult === 'authenticated') {
+      const metadata: StoredMobileSession = {
+        schemaVersion: SESSION_SCHEMA_VERSION,
+        actor: LOCAL_DEVELOPMENT_ACTOR,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
+      };
+      await writeStoredMobileSession(LOCAL_DEVELOPMENT_ACCESS_TOKEN, metadata);
+      return publicSession(metadata);
+    }
+    if (
+      isLocalDevelopmentAuthEnabled() &&
+      normalizedEmail.toLowerCase() === LOCAL_DEVELOPMENT_EMAIL
+    ) {
+      throw new MobileServiceError('authentication_failed');
+    }
+
     const api = createMobileAgentApiClient();
     const issued = await api.createSession(
       { email: normalizedEmail, password },
@@ -375,6 +431,42 @@ export async function loginMobileAgent(
       throw normalized;
     }
     return publicSession(metadata);
+  } catch (error) {
+    throw asMobileServiceError(error, 'login');
+  }
+}
+
+export async function changeMobileAgentPassword(
+  email: string,
+  currentPassword: string,
+  newPassword: string,
+  options: MobileAuthRequestOptions = {},
+): Promise<MobileSession> {
+  const normalizedEmail = email.trim();
+  if (!normalizedEmail || !currentPassword || !newPassword) {
+    throw new MobileServiceError('authentication_failed');
+  }
+
+  try {
+    if (
+      isLocalDevelopmentAuthEnabled() &&
+      normalizedEmail.toLowerCase() === LOCAL_DEVELOPMENT_EMAIL
+    ) {
+      if (!await changeLocalDevelopmentPassword(
+        normalizedEmail,
+        currentPassword,
+        newPassword,
+      )) {
+        throw new MobileServiceError('authentication_failed');
+      }
+      return loginMobileAgent(normalizedEmail, newPassword, options);
+    }
+
+    await createMobileAgentApiClient().changePassword(
+      { email: normalizedEmail, currentPassword, newPassword },
+      { signal: options.signal },
+    );
+    return loginMobileAgent(normalizedEmail, newPassword, options);
   } catch (error) {
     throw asMobileServiceError(error, 'login');
   }
@@ -432,6 +524,9 @@ export async function refreshMobileSession(
   }
 
   try {
+    if (isLocalDevelopmentAccessToken(state.accessToken)) {
+      return state.session;
+    }
     const current = await createMobileAgentApiClient({
       getAccessToken: () => state.accessToken,
     }).getCurrentSession({ signal: options.signal });

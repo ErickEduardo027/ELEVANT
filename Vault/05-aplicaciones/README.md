@@ -55,7 +55,7 @@ ELEVANT es un sistema con tres clientes especializados, una API compartida y una
 | --- | --- | --- | --- |
 | Private Web / AVIAM | OCC, administración, contratos, finanzas, Gestión Humana y departamentos operativos | SPA React ejecutable y extensa; integración de negocio todavía depende de adaptadores prototípicos | [Private Web / AVIAM](private-web-aviam.md) |
 | Public Web / portal | Visitantes y usuarios de aerolíneas/clientes | Landing y portal ejecutables; sesión, autorización y la mayoría de datos son mock/locales | [Public Web / portal](public-web-portal.md) |
-| Mobile Agent | Agentes de rampa en tablet | Aplicación Expo ejecutable con flujos y outbox prototípicos; no consume aún los contratos de negocio de la API .NET | [Mobile Agent](mobile-agent.md) |
+| Mobile Agent | Agentes de rampa en tablet | Aplicación Expo 57 integrada con autenticación, asignaciones y ejecución canónicas; firma APK, evidencia binaria y push siguen pendientes | [Mobile Agent](mobile-agent.md) |
 | API compartida | Única puerta a reglas, datos e integraciones para los tres clientes | Host .NET funcional con diagnóstico, health, OpenAPI y hubs reservados; sin autenticación ni endpoints de negocio | [API compartida](api-compartida.md) |
 | DevelopmentDB | Esquema y persistencia compartidos de Development | Modelo EF y cadena de migraciones ejecutables; solo la API es dependencia de aplicación autorizada | [DevelopmentDB compartida](developmentdb-compartida.md) |
 

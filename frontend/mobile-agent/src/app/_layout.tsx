@@ -3,11 +3,20 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { startMobileChangeFeed, stopMobileChangeFeed } from '../services/mobile-change-feed';
 import { colors } from '../theme/colors';
+import { ConnectivityIndicator } from '../components/connectivity-indicator';
+import {
+  startAutomaticMobileSync,
+  stopAutomaticMobileSync,
+} from '../services/automatic-mobile-sync';
 
 export default function RootLayout() {
   useEffect(() => {
     startMobileChangeFeed();
-    return stopMobileChangeFeed;
+    startAutomaticMobileSync();
+    return () => {
+      stopMobileChangeFeed();
+      stopAutomaticMobileSync();
+    };
   }, []);
   return <>
     <StatusBar style="dark" />
@@ -21,5 +30,6 @@ export default function RootLayout() {
       <Stack.Screen name="chat" options={{ title: 'Chat con OCC' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificaciones' }} />
     </Stack>
+    <ConnectivityIndicator />
   </>;
 }

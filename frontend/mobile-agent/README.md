@@ -1,6 +1,6 @@
 # Elevant Mobile Agent
 
-Aplicación nativa para agentes de rampa en tablets Android/iOS. Usa Expo 54, Expo Router y React Native. La primera distribución prevista es una APK firmada para pruebas; posteriormente se prepararán canales de Play Store y, cuando corresponda, App Store. No se aloja como aplicación web en el VPS.
+Aplicación nativa para agentes de rampa en tablets Android/iOS. Usa Expo 57, Expo Router y React Native. La primera distribución prevista es una APK firmada para pruebas; posteriormente se prepararán canales de Play Store y, cuando corresponda, App Store. No se aloja como aplicación web en el VPS.
 
 ## Estado actual
 
@@ -8,6 +8,7 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
 `@elevant/api-client`:
 
 - inicio de sesión y revalidación de la cuenta actual;
+- activación obligatoria al recibir `password_change_required`;
 - operaciones/turnarounds y servicios asignados al agente autenticado;
 - caché de solo lectura por cuenta para conectividad intermitente;
 - registro estable de la instalación y comienzo idempotente de la operación;
@@ -17,8 +18,9 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
   idempotente y conciliación contra la lectura canónica de la API.
 
 La entrega final a OCC y el chat por operación ya usan contratos canónicos e
-idempotencia. Las evidencias binarias y una outbox general permanecen
-deshabilitadas; la aplicación no convierte datos del prototipo en contratos.
+idempotencia. Las evidencias binarias permanecen deshabilitadas. El centro de
+sincronización enumera las reservas existentes y reintenta incidencias y
+mensajes; la aplicación no convierte datos del prototipo en contratos.
 
 En esta rama de integración, la app reconcilia `GET /api/v1/changes` mientras
 está en primer plano: al volver de segundo plano y cada 25 segundos. El cursor
@@ -76,6 +78,20 @@ Copie `.env.example` a su archivo local y use una URL alcanzable desde la tablet
 EXPO_PUBLIC_ELEVANT_API_URL=https://<PRIVATE_API_SERVICE>.<TAILNET_DNS_NAME>.ts.net
 ```
 
+Mientras la API Development no esté disponible puede habilitarse, únicamente
+en Metro/desarrollo, una cuenta local para revisar el flujo de activación:
+
+```text
+EXPO_PUBLIC_ENABLE_LOCAL_AUTH=true
+correo: agente.demo@elevant.local
+contraseña temporal: ElevantDemo2026!
+```
+
+El primer acceso obliga a elegir una contraseña nueva de al menos 14 caracteres.
+La credencial nueva se conserva como hash en SecureStore. El modo también exige
+`__DEV__`, por lo que no sustituye la cuenta del servidor ni funciona en una
+compilación de producción.
+
 `EXPO_PUBLIC_ELEVANT_API_URL` configura autenticación y asignaciones mediante el
 cliente OpenAPI compartido. `localhost` desde la tablet se refiere a la propia
 tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API
@@ -122,7 +138,7 @@ evitar que la interfaz quede bloqueada cuando una ruta privada deja de responder
 
 Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-compatible, tamaño/tipos, retención y autorización. SQL Server no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
 
-## Escrituras idempotentes y próxima sincronización offline
+## Escrituras idempotentes y sincronización offline
 
 El inicio de operación, el envío del checklist, cada transición de servicio y
 la entrega final a OCC
@@ -147,7 +163,12 @@ respuesta se perdió. Un rechazo determinístico queda visible como bloqueado,
 sin descartar un posible evento de seguridad. La cola se borra al cerrar o
 revocar la sesión; no incluye fotos ni otras evidencias binarias.
 
-Una futura outbox general para nuevas escrituras offline deberá conservar:
+La pantalla `/sync` muestra reservas pendientes y casos que requieren volver a
+su operación. Reintenta automáticamente incidencias y mensajes conservando la
+clave original. Checklist, servicios, cargos, cierre, corrección y asistencia
+mantienen su comando congelado para conciliación desde su pantalla canónica.
+
+Toda nueva escritura offline deberá conservar:
 
 - un identificador estable del dispositivo registrado;
 - una clave de idempotencia estable por comando;

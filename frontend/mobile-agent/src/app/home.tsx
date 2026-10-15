@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -32,6 +33,7 @@ import { resetToLogin } from '../utils/session-navigation';
 import { useLayoutClass } from '../utils/layout-class';
 import { OperationDetail } from './flight/[id]';
 import { dateTimeFormat } from '../utils/date-format';
+import { hasPendingWork } from '../services/mobile-sync-center';
 
 type BlockingState = 'offline' | 'unavailable' | null;
 
@@ -125,7 +127,7 @@ export default function HomeScreen() {
     return () => requestRef.current?.abort();
   }, [load]));
 
-  const closeSession = useCallback(async () => {
+  const performLogout = useCallback(async () => {
     requestRef.current?.abort();
     setProfileVisible(false);
     setSessionClosing(true);
@@ -140,6 +142,25 @@ export default function HomeScreen() {
       setSessionClosing(false);
     }
   }, []);
+
+  const closeSession = useCallback(async () => {
+    if (await hasPendingWork()) {
+      Alert.alert(
+        'Hay información pendiente',
+        'Cerrar sesión eliminará la cola local que todavía no ha sido confirmada por ELEVANT.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Revisar sincronización', onPress: () => {
+            setProfileVisible(false);
+            router.push('/sync');
+          } },
+          { text: 'Cerrar y eliminar', style: 'destructive', onPress: () => void performLogout() },
+        ],
+      );
+      return;
+    }
+    await performLogout();
+  }, [performLogout]);
 
   // En tablet horizontal el manifiesto se abre junto a la lista; en el resto, en su propia pantalla.
   const openOperation = useCallback((operationId: string) => {
@@ -201,9 +222,20 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {source === 'local' && (
+        <View accessibilityLiveRegion="polite" style={styles.offlineBanner}>
+          <Ionicons name="construct-outline" size={20} color={colors.warning} />
+          <View style={styles.bannerCopy}>
+            <Text style={styles.bannerTitle}>Modo local de desarrollo</Text>
+            <Text style={styles.bannerText}>La cuenta permite revisar la aplicación; las operaciones reales requieren la API Development.</Text>
+          </View>
+        </View>
+      )}
+
       <View style={styles.quickActions}>
         <Pressable accessibilityLabel="Abrir chat con OCC" accessibilityRole="button" onPress={() => router.push('/chat')} style={styles.quickAction}><Ionicons name="chatbubbles-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Chat con OCC</Text></Pressable>
         <Pressable accessibilityLabel="Abrir notificaciones" accessibilityRole="button" onPress={() => router.push('/notifications')} style={styles.quickAction}><Ionicons name="notifications-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Notificaciones</Text></Pressable>
+        <Pressable accessibilityLabel="Abrir sincronización" accessibilityRole="button" onPress={() => router.push('/sync')} style={styles.quickAction}><Ionicons name="sync-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Sincronización</Text></Pressable>
       </View>
 
       <View style={styles.sectionHeader}>
@@ -467,7 +499,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(8, 28, 58, 0.56)',
   },
   profileCard: {

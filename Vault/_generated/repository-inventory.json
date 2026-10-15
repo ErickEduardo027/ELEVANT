@@ -481,7 +481,7 @@
         "title": "Mobile Agent",
         "type": "architecture",
         "area": "mobile",
-        "status": "verified",
+        "status": "draft",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },

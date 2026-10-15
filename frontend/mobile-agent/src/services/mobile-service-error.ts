@@ -6,6 +6,7 @@ import { MobileSessionStorageError } from '../storage/mobile-session';
 
 export type MobileServiceErrorCode =
   | 'authentication_failed'
+  | 'password_change_required'
   | 'unauthenticated'
   | 'forbidden'
   | 'session_expired'
@@ -21,6 +22,7 @@ export type MobileServiceErrorCode =
 
 const messages: Record<MobileServiceErrorCode, string> = {
   authentication_failed: 'Las credenciales no son válidas.',
+  password_change_required: 'Debes cambiar la contraseña temporal para continuar.',
   unauthenticated: 'Inicia sesión para continuar.',
   forbidden: 'La cuenta no tiene acceso a Mobile Agent.',
   session_expired: 'La sesión expiró. Inicia sesión nuevamente.',
@@ -126,6 +128,13 @@ export function asMobileServiceError(
       });
     }
     if (error.status === 409) {
+      if (error.code === 'password_change_required') {
+        return new MobileServiceError('password_change_required', {
+          status: error.status,
+          traceId: error.traceId,
+          retryable: false,
+        });
+      }
       return new MobileServiceError('conflict', {
         status: error.status,
         traceId: error.traceId,

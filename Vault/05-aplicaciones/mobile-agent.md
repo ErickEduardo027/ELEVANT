@@ -3,12 +3,12 @@ id: aplicaciones-mobile-agent
 title: "Mobile Agent"
 type: architecture
 area: mobile
-status: verified
+status: draft
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
+last_verified: "2026-10-15"
+verified_commit: "pending"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
@@ -16,170 +16,97 @@ sources:
   - frontend/mobile-agent/app.json
   - .github/workflows/mobile-ci.yml
   - frontend/mobile-agent/src/services/mobile-auth.ts
+  - frontend/mobile-agent/src/services/mobile-sync-center.ts
 tags:
   - aplicaciones
   - mobile-agent
   - expo
   - offline
-  - prototipo
 ---
 
 # Mobile Agent
 
-Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/iOS. Su destino inicial es una APK Development firmada, no un servicio web del VPS. El repositorio contiene una app Expo ejecutable y un prototipo de trabajo intermitente, pero todavía no una integración de negocio con `Elevant.Api` ni una cadena de distribución firmada.
+Mobile Agent es la aplicación nativa para agentes de rampa en tablets
+Android/iOS. Consume exclusivamente `Elevant.Api`; no se conecta a SQL Server
+ni se despliega como servicio web en el VPS. Su primer artefacto distribuible
+seguirá siendo una APK Development firmada.
 
-## Ficha de frontera
+## Estado verificado
 
-| Dimensión | Estado verificado |
+| Dimensión | Estado |
 | --- | --- |
-| Usuario | Agente de rampa operando en tablet. |
-| Contexto | Atención de vuelos/turnarounds, checklist, incidencias, sincronización y coordinación con OCC. |
-| Responsabilidad local | UI nativa, caché temporal, outbox y captura controlada cuando no hay conectividad. |
-| Autoridad real | API para identidad, perfil de agente, estaciones, asignaciones, comandos y resultado canónico. |
-| Distribución | APK Development firmada es objetivo; no existe script/configuración de build firmado en el commit verificado. |
-| Madurez | Prototipo nativo ejecutable, con servicios heredados y almacenamiento local no apto aún para credenciales reales. |
+| Runtime | Expo SDK 57, Expo Router, React 19.2 y React Native 0.86. |
+| Identidad | Sesión canónica con bearer en SecureStore, metadata no secreta en AsyncStorage, rol `RAMP_AGENT`, membresía AVIAM y scopes de estación. |
+| Activación | Mobile maneja `409 password_change_required`, cambia la contraseña temporal y crea una sesión nueva. |
+| OCC → agente | Operaciones, asignaciones, servicios, estados y correcciones mediante contratos del cliente OpenAPI compartido. |
+| Agente → OCC | Inicio, checklist, servicios, cargos, incidencias, asistencia, chat y cierre mediante comandos idempotentes. |
+| Offline | Cachés de lectura, borradores y reservas de comandos por sesión/cuenta/operación. `/sync` enumera las reservas y reintenta incidencias y mensajes. |
+| Tiempo real | Feed REST en primer plano; no existe push nativo con la app cerrada. |
+| Evidencias | Fotos, firma y uploads binarios siguen deshabilitados hasta definir object storage y contratos autorizados. |
+| Distribución | El export Android pasa; firma, `eas.json` y canal interno aún están pendientes. |
 
-## Stack actual
+## Rutas principales
 
-- Expo SDK 54 con Expo Router 6 y typed routes experimentales.
-- React 19.1 y React Native 0.81.
-- TypeScript 5.9.
-- React Navigation y componentes Expo para imagen, picker, red, assets, haptics, linking y sistema.
-- AsyncStorage para sesión/caché/outbox del prototipo.
-- `@elevant/api-client` observado por Metro como dependencia fuente externa del subproyecto.
-- Identificadores nativos declarados en `app.json` para Android e iOS; esto no prueba firma ni publicación.
-
-## Estructura útil para desarrollar
-
-| Ruta | Responsabilidad observada |
+| Ruta | Responsabilidad |
 | --- | --- |
-| `src/app/` | Pantallas y navegación file-based de Expo Router. |
-| `src/services/` | Autenticación, vuelos asignados, sincronización y chat contra endpoints prototípicos. |
-| `src/hooks/use-automatic-sync.ts` | Intento de sincronización al iniciar, por intervalo y al volver a estado activo. |
-| `src/config/elevant-api.ts` | Fábrica del cliente OpenAPI compartido, todavía separada de los servicios prototípicos. |
-| `tests/api-client.metro-smoke.ts` | Smoke de bundle del cliente compartido en Android. |
+| `/` | Acceso y activación de contraseña temporal. |
+| `/home` | Perfil autorizado y operaciones asignadas. |
+| `/flight/[id]` | Manifiesto, servicios, asistencia, cargos y cierre. |
+| `/checklist/[id]` | Checklist canónico con borrador local y envío idempotente. |
+| `/incident/[id]` | Incidencias estructuradas con cola FIFO. |
+| `/chat` | Mensajería operacional por operación. |
+| `/notifications` | Notificaciones operativas de la cuenta. |
+| `/sync` | Conectividad, pendientes, bloqueados y reintento seguro. |
 
-## Pantallas y recorrido prototípico
+## Cuenta local de desarrollo
 
-| Ruta Expo | Comportamiento observable |
-| --- | --- |
-| `/` | Inicio de sesión contra el endpoint heredado del Mobile prototype. |
-| `/home` | Perfil, vuelos asignados, conteo de pendientes y acceso a chat. |
-| `/flight/[id]` | Detalle, servicios e inicio/cierre local de atención. |
-| `/checklist/[id]` | Respuestas y cierre de checklist asociado a la operación local. |
-| `/incident/[id]` | Registro de incidencia y selección de imagen dentro del prototipo. |
-| `/sync` | Consulta e intento de envío de elementos de outbox. |
-| `/chat` | Mensajes con OCC y conciliación básica de mensajes pendientes. |
+`EXPO_PUBLIC_ENABLE_LOCAL_AUTH=true` habilita una cuenta temporal únicamente
+cuando `__DEV__` es verdadero. Sirve para revisar la activación y la navegación
+mientras la API Development no está accesible. No crea autoridad, operaciones
+ni datos canónicos, no envía la cola y queda inhabilitada en builds de
+producción. La contraseña nueva se conserva como hash en SecureStore.
 
-El cierre de atención exige un checklist completo en el estado local. Esa regla de interfaz no es todavía una invariante del servidor ni un contrato público.
+## Frontera offline
 
-> [!note] Rama `feat/finance-refinement`
-> El detalle de operación añade «Cargos aplicados»: el agente marca solo el tipo de cargo (nocturno, tiempo extra…) en servicios en curso, completados o en excepción, sin ver precios. Usa `GET/POST /api/v1/ramp/operations/{id}/…/charges` con clave idempotente estable por servicio, cargo y acción y conserva la última lista como caché sin conexión. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+Cada escritura incierta conserva la sesión, cuenta, operación, payload y clave
+de idempotencia originales. Incidencias y mensajes pueden reintentarse desde el
+centro de sincronización. Checklist, transiciones de servicio, cargos, cierre,
+corrección y asistencia vuelven a su pantalla para consultar el estado canónico
+antes de decidir el siguiente envío. La presencia de un comando local nunca se
+presenta como confirmación del servidor.
 
-## Estado offline actual
+Logout, revocación y expiración eliminan credenciales, cachés y comandos de la
+sesión. SignalR o push podrán acelerar avisos, pero no reemplazarán REST,
+idempotencia ni conciliación.
 
-La implementación guarda con AsyncStorage:
-
-- sesión prototípica;
-- caché de vuelos asignados;
-- inicio/fin de atención y checklist por vuelo;
-- incidencias/comandos pendientes en una outbox;
-- mensajes de chat.
-
-Cada elemento de outbox obtiene una clave local que permanece estable mientras el elemento siga almacenado, y el cliente elimina únicamente claves que el endpoint de sync declara aceptadas. Sin embargo:
-
-- no existe un identificador de dispositivo registrado incluido sistemáticamente en cada comando;
-- la clave se genera con reloj y aleatoriedad de JavaScript, no mediante un contrato de idempotencia aprobado;
-- no están documentadas/implementadas migraciones de storage, cifrado, retención ni limpieza para datos reales;
-- la API .NET no expone `/api/mobile/sync`, así que la reconciliación canónica no está integrada.
-
-Por tanto, la outbox demuestra el recorrido de UX, no garantías de entrega exactly-once ni seguridad offline.
-
-## Estado de integración
-
-| Capa | Actual | Objetivo |
-| --- | --- | --- |
-| Autenticación | Servicio prototípico y token en AsyncStorage. | Autenticación real; tokens en almacenamiento seguro de plataforma. |
-| Vuelos | Endpoint heredado con fallback a caché. | Contrato OpenAPI y scope derivado por cuenta/agente/estación. |
-| Comandos offline | Outbox local y endpoint heredado de sync. | Device ID registrado + idempotency key estable + recibo almacenado por servidor. |
-| Chat | Poll/merge contra ruta prototípica. | Contrato autorizado; REST confirma estado y tiempo real solo avisa. |
-| Cliente compartido | La fábrica y el smoke Metro existen. | Sustituir gradualmente servicios heredados por operaciones generadas. |
-| Evidencias | Selección de foto prototípica. | Upload seguro a object storage con metadatos, permisos y retención. |
-
-Las peticiones nativas no usan CORS del navegador, pero sí requieren autenticación, autorización y transporte HTTPS. Acceso de red privado no sustituye esos controles.
-
-## Fluidez y tablet
-
-Inicio, manifiesto, chat, notificaciones e incidencias revalidan en segundo
-plano tras la primera carga, en lugar de volver a mostrar un spinner a pantalla
-completa. Los sondeos se pausan con la app en segundo plano
-([utilidad](../../frontend/mobile-agent/src/utils/foreground-interval.ts)).
-Chat y notificaciones usan `FlatList` y las fechas reutilizan formateadores
-`Intl` en caché.
-
-La app sigue la orientación del dispositivo. Según la
-[clase de layout](../../frontend/mobile-agent/src/utils/layout-class.ts):
-
-- desde 900 dp el inicio muestra la lista de operaciones junto al manifiesto
-  seleccionado;
-- entre 600 y 899 dp, la lista usa dos columnas.
-
-Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
-lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
-
-## Desarrollo local
+## Validación y distribución
 
 Desde `frontend/mobile-agent`:
 
 ```powershell
-npm install
-npm run start
+npm ci
 npm run lint
 npm run typecheck
+npm run test:unit
 npm run test:api-client-bundle
 npm run test:app-bundle
 ```
 
-También existen `npm run android`, `npm run ios` y `npm run web` para exploración. Una tablet interpreta `localhost` como la propia tablet: configura una URL alcanzable y autorizada. Expo Go sirve para exploración temprana; permisos y capacidades finales deben validarse en un development build o aplicación firmada.
+El CI verifica fuente y bundles; todavía no firma ni publica una APK. Antes de
+distribuir deben definirse custodia de claves, perfiles Development/Preview/
+Production, `android.versionCode`, endpoint por ambiente y pruebas en tablet.
 
-## Cobertura de pruebas actual
+## Brechas vigentes
 
-El `package.json` no declara una suite unitaria/E2E general. Sí declara lint,
-typecheck, un smoke que empaqueta el cliente API compartido y un export Android
-completo mediante Metro/Expo. `Mobile Agent CI` ejecuta esos cuatro gates desde
-el lockfile para cambios Mobile o del cliente compartido. No produce una APK ni
-prueba comportamiento nativo. Antes de distribuir una APK faltan pruebas
-verificables de:
-
-- reconexión, reintentos, duplicados y orden fuera de secuencia;
-- permisos de cámara/fotos rechazados y falta de espacio;
-- cierre/reinicio de la app y migración de storage;
-- expiración/revocación de sesión y acceso fuera del scope;
-- comportamiento en una tablet representativa, no solo web/emulador.
-
-## Configuración segura
-
-- `EXPO_PUBLIC_ELEVANT_API_URL` alimenta la fábrica del cliente OpenAPI.
-- `EXPO_PUBLIC_API_URL` y `EXPO_PUBLIC_SIGNALR_URL` pertenecen a adaptadores heredados durante la migración.
-- Todo `EXPO_PUBLIC_*` queda visible en el binario y nunca contiene secretos ni tokens.
-- El archivo local de entorno no se versiona; usa `.env.example` solo como forma.
-- Claves de firma, credenciales de tienda y tokens permanecen fuera de Git.
-- Development y Production necesitarán identificadores, firma, endpoint y almacenamiento separados.
-
-## Brechas y desconocidos
-
-- **Brecha actual:** endpoints de autenticación, asignaciones, sync y chat no existen en OpenAPI.
-- **Brecha actual:** token prototípico en AsyncStorage; falta almacenamiento seguro de credenciales.
-- **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo.
-- **Brecha actual:** no hay configuración EAS ni comando para producir la APK firmada.
-- **Brecha actual:** uploads reales están deshabilitados hasta diseñar object storage.
-- **Desconocido:** tablets objetivo, versión mínima de OS, MDM/distribución interna, custodia de firma y política de actualización.
-- **Desconocido:** contrato final de checklist, incidencia, chat y evidencia.
+- outbox automática para todos los tipos de comando al recuperar conexión;
+- fotografías, firma y almacenamiento S3-compatible;
+- push nativo, deep links desde notificación y presencia;
+- configuración EAS y APK firmada reproducible;
+- pruebas integrales contra la API y DevelopmentDB vivas.
 
 ## Fuentes y relaciones
 
 - [README del cliente](../../frontend/mobile-agent/README.md)
-- Storage prototípico
 - [Flujo Mobile](../../docs/workflows/mobile-workflow.md)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)

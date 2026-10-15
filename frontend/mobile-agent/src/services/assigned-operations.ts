@@ -16,6 +16,7 @@ import {
   type MobileSessionRequestContext,
 } from './mobile-auth';
 import { asMobileServiceError } from './mobile-service-error';
+import { isLocalDevelopmentAccessToken } from './local-development-auth';
 
 const CACHE_SCHEMA_VERSION = 1 as const;
 export const ASSIGNED_OPERATIONS_CACHE_MAX_AGE_MS = 15 * 60 * 1_000;
@@ -24,7 +25,7 @@ const MAX_ASSIGNED_OPERATIONS = 100;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type AssignedOperationsSource = 'network' | 'cache';
+export type AssignedOperationsSource = 'network' | 'cache' | 'local';
 
 export type AssignedOperationsSnapshot = Readonly<{
   operations: readonly RampAssignedOperationResponse[];
@@ -498,6 +499,14 @@ export async function getAssignedOperations(
   options: GetAssignedOperationsOptions = {},
 ): Promise<AssignedOperationsSnapshot> {
   const context = await getMobileSessionRequestContext();
+
+  if (isLocalDevelopmentAccessToken(context.accessToken)) {
+    return {
+      operations: [],
+      source: 'local',
+      updatedAt: new Date().toISOString(),
+    };
+  }
 
   try {
     const response = await createMobileAgentApiClient({
