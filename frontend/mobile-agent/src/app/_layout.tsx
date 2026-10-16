@@ -26,6 +26,7 @@ export default function RootLayout() {
       <Stack.Screen name="flight/[id]" options={{ title: 'Manifiesto operativo' }} />
       <Stack.Screen name="checklist/[id]" options={{ title: 'Checklist operativo' }} />
       <Stack.Screen name="incident/[id]" options={{ title: 'Registrar incidencia' }} />
+      <Stack.Screen name="evidence/[id]" options={{ title: 'Evidencias y firma' }} />
       <Stack.Screen name="sync" options={{ title: 'Sincronización' }} />
       <Stack.Screen name="chat" options={{ title: 'Chat con OCC' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificaciones' }} />

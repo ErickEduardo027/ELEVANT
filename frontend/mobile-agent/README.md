@@ -18,9 +18,10 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
   idempotente y conciliación contra la lectura canónica de la API.
 
 La entrega final a OCC y el chat por operación ya usan contratos canónicos e
-idempotencia. Las evidencias binarias permanecen deshabilitadas. El centro de
-sincronización enumera las reservas existentes y reintenta incidencias y
-mensajes; la aplicación no convierte datos del prototipo en contratos.
+idempotencia. El móvil captura fotografías, firma, responsable, entrega de
+llave y observaciones en almacenamiento local por cuenta y operación. El centro
+de sincronización enumera las reservas existentes y reintenta los comandos
+soportados; la aplicación no convierte datos del prototipo en contratos.
 
 En esta rama de integración, la app reconcilia `GET /api/v1/changes` mientras
 está en primer plano: al volver de segundo plano y cada 25 segundos. El cursor
@@ -136,7 +137,10 @@ caché vencida o contrato malformado se entrega como error tipado y nunca se
 disfraza con datos cacheados. Las solicitudes expiran a los 15 segundos para
 evitar que la interfaz quede bloqueada cuando una ruta privada deja de responder.
 
-Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-compatible, tamaño/tipos, retención y autorización. SQL Server no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
+La captura local de evidencias está habilitada y se muestra como pendiente en
+`/sync`. Su carga remota permanece deshabilitada hasta definir almacenamiento
+S3-compatible, tamaño/tipos, retención, autorización y contrato API. SQL Server
+no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
 
 ## Escrituras idempotentes y sincronización offline
 
@@ -161,7 +165,8 @@ clave estable. Se envía en orden y se conserva si falla la red, hay timeout o
 una respuesta incierta; la lectura canónica puede confirmar un envío cuya
 respuesta se perdió. Un rechazo determinístico queda visible como bloqueado,
 sin descartar un posible evento de seguridad. La cola se borra al cerrar o
-revocar la sesión; no incluye fotos ni otras evidencias binarias.
+revocar la sesión. Las evidencias se administran en una cola local separada y
+no se presentan como cargadas mientras no exista un recibo del backend.
 
 La pantalla `/sync` muestra reservas pendientes y casos que requieren volver a
 su operación. Reintenta automáticamente incidencias y mensajes conservando la

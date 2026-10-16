@@ -809,6 +809,28 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       {operation.operation.status === 'InProgress' && (
         <View style={styles.nextPhase}>
           <View style={styles.nextPhaseIcon}>
+            <Ionicons name="document-attach-outline" size={26} color={colors.navy} />
+          </View>
+          <View style={styles.nextPhaseCopy}>
+            <Text style={styles.nextPhaseTitle}>Evidencias y conformidad</Text>
+            <Text style={styles.nextPhaseText}>
+              Adjunta fotografías, responsable, entrega de llave, observaciones y firma manuscrita.
+            </Text>
+            <PrimaryButton
+              icon="camera-outline"
+              onPress={() => router.push({
+                pathname: '/evidence/[id]',
+                params: { id: operation.operation.id },
+              } as never)}
+              title="ABRIR EVIDENCIAS"
+            />
+          </View>
+        </View>
+      )}
+
+      {operation.operation.status === 'InProgress' && (
+        <View style={styles.nextPhase}>
+          <View style={styles.nextPhaseIcon}>
             <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
           </View>
           <View style={styles.nextPhaseCopy}>

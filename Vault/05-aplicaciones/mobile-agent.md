@@ -40,9 +40,9 @@ seguirá siendo una APK Development firmada.
 | Activación | Mobile maneja `409 password_change_required`, cambia la contraseña temporal y crea una sesión nueva. |
 | OCC → agente | Operaciones, asignaciones, servicios, estados y correcciones mediante contratos del cliente OpenAPI compartido. |
 | Agente → OCC | Inicio, checklist, servicios, cargos, incidencias, asistencia, chat y cierre mediante comandos idempotentes. |
-| Offline | Cachés de lectura, borradores y reservas de comandos por sesión/cuenta/operación. `/sync` enumera las reservas y reintenta incidencias y mensajes. |
+| Offline | Cachés, borradores y comandos por sesión/cuenta/operación. `/sync` reintenta automáticamente al reconectar, abrir o volver al primer plano. |
 | Tiempo real | Feed REST en primer plano; no existe push nativo con la app cerrada. |
-| Evidencias | Fotos, firma y uploads binarios siguen deshabilitados hasta definir object storage y contratos autorizados. |
+| Evidencias | Captura local de fotos, firma manuscrita, responsable, llave y observaciones; el upload espera object storage y contrato autorizado. |
 | Distribución | El export Android pasa; firma, `eas.json` y canal interno aún están pendientes. |
 
 ## Rutas principales
@@ -98,8 +98,7 @@ Production, `android.versionCode`, endpoint por ambiente y pruebas en tablet.
 
 ## Brechas vigentes
 
-- outbox automática para todos los tipos de comando al recuperar conexión;
-- fotografías, firma y almacenamiento S3-compatible;
+- endpoint autorizado y almacenamiento S3-compatible para cargar evidencias;
 - push nativo, deep links desde notificación y presencia;
 - configuración EAS y APK firmada reproducible;
 - pruebas integrales contra la API y DevelopmentDB vivas.

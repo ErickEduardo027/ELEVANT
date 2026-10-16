@@ -40,6 +40,7 @@ const definitions = [
   ['elevant:mobile:ramp-correction-command:v1:', 'Corrección por confirmar'],
   ['elevant:mobile:operation-chat-command:v1:', 'Mensaje por enviar'],
   ['elevant:mobile:attendance-draft-pending:v1:', 'Asistencia por confirmar'],
+  ['elevant:mobile:operation-evidence:v1:', 'Evidencias pendientes de carga'],
 ] as const;
 const incidentPrefix = 'elevant:mobile:ramp-incident-outbox:v1:';
 
