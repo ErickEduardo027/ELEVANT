@@ -1,4 +1,4 @@
-# Elevant Mobile Agent
+# ELEVANT Mobile Agent
 
 Aplicación nativa para agentes de rampa en tablets Android/iOS. Usa Expo 57, Expo Router y React Native. La primera distribución prevista es una APK firmada para pruebas; posteriormente se prepararán canales de Play Store y, cuando corresponda, App Store. No se aloja como aplicación web en el VPS.
 
@@ -84,8 +84,8 @@ en Metro/desarrollo, una cuenta local para revisar el flujo de activación:
 
 ```text
 EXPO_PUBLIC_ENABLE_LOCAL_AUTH=true
-correo: agente.demo@elevant.local
-contraseña temporal: ElevantDemo2026!
+correo: agente.puj@elevant.local
+contraseña temporal: ElevantPUJ2026!
 ```
 
 El primer acceso obliga a elegir una contraseña nueva de al menos 14 caracteres.
@@ -98,6 +98,31 @@ cliente OpenAPI compartido. `localhost` desde la tablet se refiere a la propia
 tablet. La tablet de prueba deberá poder acceder al tailnet para alcanzar la API
 privada de Development. `EXPO_PUBLIC_*` se incluye en el binario y nunca
 contiene secretos.
+
+## Compilaciones EAS
+
+`eas.json` define tres perfiles Android:
+
+- `development`: APK interna para validación técnica;
+- `preview`: APK interna para el equipo de pruebas;
+- `production`: Android App Bundle para Google Play, con incremento remoto
+  del código de versión.
+
+La primera vez, después de recibir la cuenta Expo del equipo:
+
+```powershell
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest env:create --environment development --name EXPO_PUBLIC_ELEVANT_API_URL --value https://elevant-dev-api.taild2f562.ts.net --visibility plaintext
+npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_ELEVANT_API_URL --value https://elevant-dev-api.taild2f562.ts.net --visibility plaintext
+npx eas-cli@latest build --platform android --profile preview
+```
+
+La URL de producción se registra por separado en el ambiente `production`.
+No se debe activar la cuenta temporal en Preview ni Production. La primera
+ejecución de EAS añadirá el identificador remoto del proyecto y solicitará
+definir la custodia de la clave de firma; ninguno de esos valores se inventa
+en el repositorio.
 
 ## Fluidez y tablet
 

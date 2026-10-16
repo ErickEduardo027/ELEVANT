@@ -4,8 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 const LOCAL_PASSWORD_KEY = 'elevant.mobile.local-development-password.v1';
 const LOCAL_PASSWORD_SALT = 'elevant-mobile-local-development-v1';
 
-export const LOCAL_DEVELOPMENT_EMAIL = 'agente.demo@elevant.local';
-export const LOCAL_DEVELOPMENT_TEMPORARY_PASSWORD = 'ElevantDemo2026!';
+export const LOCAL_DEVELOPMENT_EMAIL = 'agente.puj@elevant.local';
+export const LOCAL_DEVELOPMENT_TEMPORARY_PASSWORD = 'ElevantPUJ2026!';
 export const LOCAL_DEVELOPMENT_ACCESS_TOKEN = 'local-development-session';
 
 export function isLocalDevelopmentAuthEnabled() {

@@ -49,7 +49,7 @@ function assigned(assignment = assignmentId) {
     assignedAt: '2026-10-05T10:00:00Z' }, services: [], review: null,
   turnaround: { operationCode: 'EV-001', operationDate: '2026-10-05',
     station: { code: 'PUJ', name: 'Punta Cana', ianaTimeZone: 'America/Santo_Domingo' },
-    airline: { name: 'ELEVANT Demo Airlines' }, arrival: null, departure: null,
+    airline: { name: 'Aerolínea de prueba PUJ' }, arrival: null, departure: null,
     stand: null, aircraft: null } };
 }
 

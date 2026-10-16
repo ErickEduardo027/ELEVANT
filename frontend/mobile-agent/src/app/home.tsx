@@ -226,8 +226,8 @@ export default function HomeScreen() {
         <View accessibilityLiveRegion="polite" style={styles.offlineBanner}>
           <Ionicons name="construct-outline" size={20} color={colors.warning} />
           <View style={styles.bannerCopy}>
-            <Text style={styles.bannerTitle}>Modo local de desarrollo</Text>
-            <Text style={styles.bannerText}>La cuenta permite revisar la aplicación; las operaciones reales requieren la API Development.</Text>
+            <Text style={styles.bannerTitle}>Cuenta temporal activa</Text>
+            <Text style={styles.bannerText}>Estación PUJ · las operaciones reales se habilitarán al conectar la cuenta del servidor.</Text>
           </View>
         </View>
       )}

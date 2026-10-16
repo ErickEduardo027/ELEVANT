@@ -81,7 +81,7 @@ export default function SyncScreen() {
           <View style={styles.localNotice}>
             <Ionicons name="construct-outline" size={19} color={colors.warning} />
             <Text style={styles.localNoticeText}>
-              Sesión local activa. La cola puede inspeccionarse, pero no se enviará hasta usar una cuenta del servidor.
+              Cuenta temporal activa. La cola se conserva en el dispositivo y se enviará al conectar una cuenta del servidor.
             </Text>
           </View>
         )}

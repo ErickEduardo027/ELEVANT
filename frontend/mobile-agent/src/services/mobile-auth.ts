@@ -33,7 +33,7 @@ const uuidPattern =
 const LOCAL_DEVELOPMENT_ACTOR: MobileAgentActor = {
   accountId: '10000000-0000-4000-8000-000000000001',
   email: LOCAL_DEVELOPMENT_EMAIL,
-  displayName: 'Agente Demo ELEVANT',
+  displayName: 'Agente de Rampa PUJ',
   role: {
     roleId: '10000000-0000-4000-8000-000000000002',
     code: 'RAMP_AGENT',
@@ -45,13 +45,13 @@ const LOCAL_DEVELOPMENT_ACTOR: MobileAgentActor = {
     membershipId: '10000000-0000-4000-8000-000000000003',
     organizationId: '10000000-0000-4000-8000-000000000004',
     organizationCode: 'AVIAM',
-    organizationName: 'AVIAM (desarrollo local)',
+    organizationName: 'AVIAM',
     organizationType: 'aviam_operator',
     kind: 'internal_staff',
   },
   stationScopes: [{
     stationId: '10000000-0000-4000-8000-000000000005',
-    stationCode: 'SDQ',
+    stationCode: 'PUJ',
   }],
 };
 

@@ -188,7 +188,7 @@ export default function LoginScreen() {
 
           {localDevelopment && !activationRequired && (
             <Pressable
-              accessibilityLabel="Completar acceso local de desarrollo"
+              accessibilityLabel="Completar acceso temporal de Mobile Agent"
               accessibilityRole="button"
               onPress={() => {
                 setEmail(LOCAL_DEVELOPMENT_EMAIL);
@@ -199,8 +199,8 @@ export default function LoginScreen() {
             >
               <Ionicons name="construct-outline" size={19} color={colors.warning} />
               <View style={styles.localAccessCopy}>
-                <Text style={styles.localAccessTitle}>Acceso local de desarrollo</Text>
-                <Text style={styles.localAccessText}>Toca aquí para completar la cuenta temporal.</Text>
+                <Text style={styles.localAccessTitle}>Acceso temporal de Mobile Agent</Text>
+                <Text style={styles.localAccessText}>Completa la cuenta provisional de Punta Cana.</Text>
               </View>
             </Pressable>
           )}

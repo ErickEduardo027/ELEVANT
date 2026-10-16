@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ELEVANT Mobile",
+    "name": "ELEVANT Mobile Agent",
     "slug": "elevant-mobile-agent",
     "version": "1.0.0",
     "orientation": "default",
@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.elevant.mobileagent"
+      "bundleIdentifier": "com.elevant.mobileagent",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +18,8 @@
         "foregroundImage": "./assets/images/elevant-symbol.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.elevant.mobileagent"
+      "package": "com.elevant.mobileagent",
+      "versionCode": 1
     },
     "web": {
       "output": "static",

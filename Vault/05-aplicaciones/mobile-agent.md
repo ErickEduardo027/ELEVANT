@@ -43,7 +43,7 @@ seguirá siendo una APK Development firmada.
 | Offline | Cachés, borradores y comandos por sesión/cuenta/operación. `/sync` reintenta automáticamente al reconectar, abrir o volver al primer plano. |
 | Tiempo real | Feed REST en primer plano; no existe push nativo con la app cerrada. |
 | Evidencias | Captura local de fotos, firma manuscrita, responsable, llave y observaciones; el upload espera object storage y contrato autorizado. |
-| Distribución | El export Android pasa; firma, `eas.json` y canal interno aún están pendientes. |
+| Distribución | El export Android pasa; `eas.json`, `versionCode` y perfiles APK/AAB están definidos. Faltan cuenta/proyecto EAS, firma y primer build interno. |
 
 ## Rutas principales
 
@@ -92,15 +92,16 @@ npm run test:api-client-bundle
 npm run test:app-bundle
 ```
 
-El CI verifica fuente y bundles; todavía no firma ni publica una APK. Antes de
-distribuir deben definirse custodia de claves, perfiles Development/Preview/
-Production, `android.versionCode`, endpoint por ambiente y pruebas en tablet.
+El CI verifica fuente y bundles; todavía no firma ni publica una APK. Los
+perfiles Development/Preview/Production y `android.versionCode` ya están
+definidos. Antes de distribuir faltan cuenta/proyecto EAS, custodia de claves,
+variables del endpoint por ambiente y pruebas en tablet.
 
 ## Brechas vigentes
 
 - endpoint autorizado y almacenamiento S3-compatible para cargar evidencias;
 - push nativo, deep links desde notificación y presencia;
-- configuración EAS y APK firmada reproducible;
+- vinculación con la cuenta EAS y primera APK firmada reproducible;
 - pruebas integrales contra la API y DevelopmentDB vivas.
 
 ## Fuentes y relaciones
