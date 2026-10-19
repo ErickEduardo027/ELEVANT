@@ -41,6 +41,33 @@ async function moving(page) {
   await page.waitForFunction(({ selector, before }) => Math.abs(new DOMMatrixReadOnly(getComputedStyle(document.querySelector(selector)).transform).m41 - before) > 2, { selector, before });
 }
 
+async function pauseAndVerify(page) {
+  await page.locator('.elv-carousel-toggle').waitFor({ state: 'visible' });
+  const samples = await page.locator('.elv-showcase').evaluate(async showcase => {
+    // Activate the real handler and sample in the same browser task, including
+    // a pending CSS pause instead of depending on automation/network timing.
+    showcase.querySelector('.elv-carousel-toggle').click();
+    await Promise.resolve();
+    const track = showcase.querySelector('.elv-marquee-track');
+    const animation = track.getAnimations().find(value => value.animationName === 'elv-marquee');
+    // CSS reports "paused" before its pending pause task has committed. The
+    // engine may advance one last frame; measure only after it confirms ready.
+    await animation.ready;
+    const sample = () => ({
+      state: animation.playState,
+      pending: animation.pending,
+      time: animation.currentTime,
+      transform: getComputedStyle(track).transform,
+    });
+    const before = sample();
+    for (let frame = 0; frame < 4; frame++) await new Promise(requestAnimationFrame);
+    return { before, after: sample() };
+  });
+  assert.equal(samples.before.state, 'paused', 'Voluntary pause must be confirmed by the animation engine');
+  assert.equal(samples.before.pending, false, 'Pause must have settled before measuring movement');
+  assert.deepEqual(samples.after, samples.before, 'Voluntary pause must actually stop movement');
+}
+
 async function originalStrip(page) {
   const geometry = await page.locator('.elv-airline-set').evaluateAll(groups => groups.map(group => ({
     width: group.getBoundingClientRect().width,
@@ -68,7 +95,8 @@ async function loopBoundary(page) {
     const groups = track.querySelectorAll('.elv-airline-set');
     const positions = group => [...group.querySelectorAll('img')].map(image => image.getBoundingClientRect().left);
     try {
-      animation.pause();
+      // Sampling is synchronous. Do not call play()/pause(): those methods
+      // override the CSS play-state and would invalidate later button checks.
       animation.currentTime = 0;
       const first = positions(groups[0]);
       animation.currentTime = duration - 0.001;
@@ -76,7 +104,6 @@ async function loopBoundary(page) {
       return { duration, maximum: Math.max(...first.map((left, index) => Math.abs(left - repeated[index]))) };
     } finally {
       animation.currentTime = time;
-      animation.play();
     }
   });
   assert.equal(difference.duration, 38000, 'Preserve the original carousel speed');
@@ -109,6 +136,11 @@ try {
   await moving(page);
   await originalStrip(page);
   await loopBoundary(page);
+  await pauseAndVerify(page);
+  // Clicking again resumes the real carousel. A running animation must never
+  // satisfy the pause verifier, even after synchronizing with the engine.
+  await assert.rejects(pauseAndVerify(page), /Voluntary pause must be confirmed by the animation engine/);
+  await moving(page);
   await page.getByRole('button', { name: 'Pausar carrusel de aerolíneas' }).click();
   assert.equal(await page.locator('.elv-marquee-track').evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
   await page.getByRole('button', { name: 'Reanudar carrusel de aerolíneas' }).click();
@@ -146,14 +178,7 @@ try {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Login overflows the viewport');
       await originalStrip(page);
       await moving(page);
-      await page.getByRole('button', { name: 'Pausar carrusel de aerolíneas' }).click();
-      assert.equal(await page.locator('.elv-marquee-track').evaluate(el => getComputedStyle(el).animationPlayState), 'paused');
-      const still = await page.locator('.elv-marquee-track').evaluate(async el => {
-        const start = getComputedStyle(el).transform;
-        for (let frame = 0; frame < 4; frame++) await new Promise(requestAnimationFrame);
-        return start === getComputedStyle(el).transform;
-      });
-      assert(still, 'Voluntary pause must actually stop movement');
+      await pauseAndVerify(page);
       await page.getByRole('button', { name: 'English' }).click();
       await page.getByRole('button', { name: 'Switch to dark theme' }).click();
       assert(await page.locator('.elv-brand .elv-logo--dark').isVisible());
