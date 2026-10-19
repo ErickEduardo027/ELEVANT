@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuthLanguage } from '../i18n/useAuthLanguage';
 
 const base = '/';
@@ -35,6 +36,7 @@ function AirlineSet({ decorative = false }) {
 
 export default function AirportShowcase() {
   const { t } = useAuthLanguage();
+  const [paused, setPaused] = useState(false);
 
   return (
     <aside className="elv-showcase" aria-label={t('showcase.airlines')}>
@@ -48,9 +50,16 @@ export default function AirportShowcase() {
       </div>
       <div className="elv-showcase-shade" />
 
-      <p className="elv-showcase-caption">{t('showcase.caption')}</p>
+      <div className="elv-showcase-caption">
+        <p>{t('showcase.caption')}</p>
+        <button type="button" className="elv-carousel-toggle" aria-label={t(paused ? 'showcase.resume' : 'showcase.pause')} aria-pressed={paused} onClick={() => setPaused(current => !current)}>
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            {paused ? <path d="m8 5 11 7-11 7Z" /> : <path d="M7 5h4v14H7zm6 0h4v14h-4z" />}
+          </svg>
+        </button>
+      </div>
 
-      <div className="elv-marquee">
+      <div className="elv-marquee" data-paused={paused}>
         <div className="elv-marquee-track">
           <AirlineSet />
           <AirlineSet decorative />

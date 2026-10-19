@@ -382,6 +382,11 @@ jobs:
             npm run build
           fi
 
+      - name: Install Chromium for AVIAM production motion certification
+        if: matrix.application == 'aviam-web'
+        working-directory: frontend/private-web
+        run: npx playwright install --with-deps --no-shell chromium
+
       - name: Build the deployable image
         shell: bash
         env:
@@ -590,7 +595,9 @@ jobs:
       - name: Install locked AVIAM certification dependencies
         if: matrix.application == 'aviam-web'
         working-directory: frontend/private-web
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps --no-shell chromium
 
       - name: Re-certify, publish and verify the immutable web image
         id: web_image

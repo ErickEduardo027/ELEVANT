@@ -12,8 +12,8 @@ const markDark = `${base}brand/elevant-mark-dark.png`;
 function Isotype({ className }) {
   return (
     <>
-      <img src={markLight} alt="" className={`${className} elv-logo--light`} decoding="async" />
-      <img src={markDark} alt="" className={`${className} elv-logo--dark`} decoding="async" />
+      <img src={markLight} alt="" className={`${className} elv-logo--light`} decoding="async" fetchPriority="high" width="560" height="390" />
+      <img src={markDark} alt="" className={`${className} elv-logo--dark`} decoding="async" fetchPriority="high" width="560" height="401" />
     </>
   );
 }
