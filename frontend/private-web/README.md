@@ -1,5 +1,33 @@
 # ELEVANT AVIAM Web
 
+## Introducción y carrusel del acceso
+
+El acceso conserva la marca ELEVANT en ambas paletas. La introducción se
+reproduce una vez por carga completa de página (también al recargar), cuando
+sus dos imágenes están listas; no utiliza un indicador persistido en la
+sesión. Mientras carga el logo el formulario sigue disponible: un clic,
+tecla o foco cancela la introducción pendiente. Una imagen fallida o una
+espera de 20 segundos la omite; nunca demora el inicio de sesión.
+
+El carrusel tiene pausa/reanudación explícita y dos grupos de igual ancho
+para unir el bucle sin saltos. `prefers-reduced-motion: reduce` omite la
+introducción y presenta los seis logos estáticos, también en móvil.
+
+La certificación de la imagen de producción comprueba los bytes de los
+logos/fotografías y ejecuta `scripts/verify-auth-motion.mjs` con Chromium
+contra el contenedor exacto, antes de publicarlo. Se prueba una carga lenta,
+recarga, interacción con el formulario, pausa, tema oscuro y móvil con/sin
+movimiento reducido. Para repetirla con un servidor de producción local:
+
+```powershell
+npx playwright install chromium
+node scripts/verify-auth-motion.mjs http://127.0.0.1:3022
+```
+
+La prueba no requiere credenciales ni acceso a la API. El servidor debe
+haber sido compilado con las variables documentadas más abajo. La presencia
+de estos checks en un PR no acredita que su imagen ya esté promovida al VPS.
+
 ## Alertas preliminares de turnos (rama local)
 
 En **Gestión Humana → Turnos de rampa**, el panel «Alertas de programación»

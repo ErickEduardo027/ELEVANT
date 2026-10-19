@@ -7,6 +7,8 @@ export const messages = {
     showcase: {
       caption: 'Operamos con las mejores aerolíneas',
       airlines: 'Aerolíneas con las que operamos',
+      pause: 'Pausar carrusel de aerolíneas',
+      resume: 'Reanudar carrusel de aerolíneas',
     },
     controls: {
       language: 'Idioma',
@@ -65,6 +67,8 @@ export const messages = {
     showcase: {
       caption: 'We operate with the best airlines',
       airlines: 'Airlines we operate with',
+      pause: 'Pause airline carousel',
+      resume: 'Resume airline carousel',
     },
     controls: {
       language: 'Language',

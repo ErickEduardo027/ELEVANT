@@ -1,52 +1,81 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-const SEEN_KEY = 'elevant-private-intro-seen';
 const INTRO_MS = 2700;
+const ASSET_WAIT_MS = 20000;
 
 let playedInThisPage = false;
 
-function shouldPlay() {
-  if (playedInThisPage || typeof window === 'undefined') return false;
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
-  try {
-    return window.sessionStorage?.getItem(SEEN_KEY) !== '1';
-  } catch {
-    return true;
-  }
-}
-
-function markPlayed() {
-  playedInThisPage = true;
-  try { window.sessionStorage?.setItem(SEEN_KEY, '1'); } catch { /* storage unavailable */ }
-}
-
 export function resetLoginIntroForTests() {
   playedInThisPage = false;
-  try { window.sessionStorage?.removeItem(SEEN_KEY); } catch { /* storage unavailable */ }
 }
 
-// Brief brand welcome shown once per browser session before the login. It is
-// an overlay: the login underneath is already laid out and usable, so the
-// animation never moves the final composition. Any click or key skips it.
+// One welcome per document, including reloads. Slow images never consume its
+// animation time or block the form. Any interaction cancels even a pending intro.
 export default function LoginIntro({ marks }) {
-  const [visible, setVisible] = useState(shouldPlay);
+  const [phase, setPhase] = useState('preparing');
+  const root = useRef(null);
+  const claimed = useRef(false);
 
   useEffect(() => {
-    if (!visible) return undefined;
-    markPlayed();
-    const done = () => setVisible(false);
-    const timer = setTimeout(done, INTRO_MS);
-    window.addEventListener('keydown', done, { once: true });
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('keydown', done);
+    if ((playedInThisPage && !claimed.current) || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setPhase('done');
+      return undefined;
+    }
+    let finished = false;
+    let started = false;
+    let animationTimer;
+    const images = [...root.current.querySelectorAll('img')];
+    const ready = new Set(images.filter(image => image.complete && image.naturalWidth > 0));
+    const done = () => {
+      finished = true;
+      playedInThisPage = true;
+      claimed.current = true;
+      clearTimeout(animationTimer);
+      clearTimeout(assetTimer);
+      setPhase('done');
     };
-  }, [visible]);
+    const start = () => {
+      if (finished || started || ready.size !== images.length) return;
+      started = true;
+      playedInThisPage = true;
+      claimed.current = true;
+      clearTimeout(assetTimer);
+      setPhase('playing');
+      animationTimer = setTimeout(done, INTRO_MS);
+    };
+    const loaded = event => {
+      if (event.currentTarget.naturalWidth > 0) ready.add(event.currentTarget);
+      start();
+    };
+    const assetTimer = setTimeout(done, ASSET_WAIT_MS);
+    images.forEach(image => {
+      image.addEventListener('load', loaded);
+      image.addEventListener('error', done);
+    });
+    window.addEventListener('keydown', done, { once: true });
+    window.addEventListener('pointerdown', done, { once: true });
+    window.addEventListener('click', done, { once: true });
+    window.addEventListener('focusin', done, { once: true });
+    start();
+    return () => {
+      finished = true;
+      clearTimeout(animationTimer);
+      clearTimeout(assetTimer);
+      images.forEach(image => {
+        image.removeEventListener('load', loaded);
+        image.removeEventListener('error', done);
+      });
+      window.removeEventListener('keydown', done);
+      window.removeEventListener('pointerdown', done);
+      window.removeEventListener('click', done);
+      window.removeEventListener('focusin', done);
+    };
+  }, []);
 
-  if (!visible) return null;
+  if (phase === 'done') return null;
 
   return (
-    <div className="elv-intro-screen" aria-hidden="true" onPointerDown={() => setVisible(false)}>
+    <div ref={root} className="elv-intro-screen" aria-hidden="true" hidden={phase !== 'playing'}>
       <div className="elv-intro-glow" />
       <div className="elv-intro-lockup">
         <span className="elv-intro-mark">{marks}</span>

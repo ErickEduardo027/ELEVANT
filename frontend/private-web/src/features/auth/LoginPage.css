@@ -439,8 +439,13 @@
 
 .elv-showcase-caption {
   position: absolute; left: calc(34 * var(--u)); right: calc(34 * var(--u)); bottom: calc(86 * var(--u)); margin: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
   font-size: max(12px, calc(13 * var(--u))); font-weight: 400; color: rgba(255, 255, 255, .88); text-shadow: 0 1px 8px rgba(0, 20, 60, .5);
 }
+.elv-showcase-caption p { margin: 0; }
+.elv-carousel-toggle { display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 8px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 50%; color: #fff; background: rgba(5, 20, 48, .45); cursor: pointer; }
+.elv-carousel-toggle svg { width: 18px; height: 18px; }
+.elv-carousel-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 .elv-marquee {
   position: absolute; left: 0; right: 0; bottom: calc(34 * var(--u)); height: calc(40 * var(--u)); overflow: hidden;
@@ -448,11 +453,11 @@
   mask-image: linear-gradient(90deg, transparent 0, #000 calc(34 * var(--u)), #000 calc(100% - 34 * var(--u)), transparent 100%);
 }
 .elv-marquee-track {
-  display: flex; width: max-content; height: 100%; padding-left: calc(34 * var(--u));
+  display: flex; width: max-content; height: 100%;
   animation: elv-marquee 38s linear infinite; will-change: transform;
 }
-.elv-marquee:hover .elv-marquee-track { animation-play-state: paused; }
-.elv-airline-set { display: flex; flex: none; align-items: center; margin: 0; padding: 0; list-style: none; }
+.elv-marquee[data-paused='true'] .elv-marquee-track { animation-play-state: paused; }
+.elv-airline-set { display: flex; flex: none; align-items: center; margin: 0; padding: 0 0 0 calc(34 * var(--u)); list-style: none; }
 .elv-airline { flex: none; display: flex; align-items: center; padding-right: calc(40 * var(--u)); }
 .elv-airline img { display: block; width: calc(var(--elv-logo-w) * .235 * var(--u)); height: auto; opacity: .95; filter: drop-shadow(0 1px 6px rgba(0, 20, 60, .35)); }
 
@@ -461,6 +466,7 @@
   position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; cursor: pointer;
   background: var(--elv-intro-bg); animation: elv-intro-bg 2.7s ease both;
 }
+.elv-intro-screen[hidden] { display: none; }
 .elv-intro-glow {
   position: absolute; inset: 0;
   background: radial-gradient(34% 30% at 50% 48%, rgba(40, 110, 230, .2), transparent 72%);
@@ -515,7 +521,7 @@
   .elv-marquee { height: 34px; bottom: 18px; }
   .elv-airline { padding-right: 28px; }
   .elv-airline img { width: calc(var(--elv-logo-w) * .2px); }
-  .elv-marquee-track { padding-left: 20px; }
+  .elv-airline-set { padding-left: 20px; }
   .elv-marquee { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%); }
 }
 @media (max-width: 700px) {
@@ -533,14 +539,18 @@
 
 @media (prefers-reduced-motion: reduce) {
   .elv-bg-glow { animation: none; }
+  .elv-intro-screen, .elv-carousel-toggle { display: none; }
   .elv-field-error, .elv-error, .elv-notice, .elv-recovery-help { animation: none; }
   .elv-submit:hover:not(:disabled), .elv-submit:active:not(:disabled) { transform: none; }
   .elv-submit-spinner { animation-duration: 1.6s; }
   .elv-bg-layer, .elv-glass::before, .elv-glass::after, .elv-photo-stack, .elv-input, .elv-lang-thumb { transition-duration: .01ms; }
 
   /* Static logo strip: one set, spread across the panel, no movement. */
-  .elv-marquee-track { animation: none; width: 100%; padding-left: calc(34 * var(--u)); padding-right: calc(34 * var(--u)); box-sizing: border-box; }
+  .elv-marquee { height: 78px; mask-image: none; -webkit-mask-image: none; }
+  .elv-showcase-caption { bottom: 112px; }
+  .elv-marquee-track { animation: none; width: 100%; padding: 0 20px; box-sizing: border-box; }
   .elv-airline-set[aria-hidden='true'] { display: none; }
-  .elv-airline-set { width: 100%; justify-content: space-between; }
-  .elv-airline { padding-right: 0; }
+  .elv-airline-set { width: 100%; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .elv-airline { padding-right: 0; justify-content: center; }
+  .elv-airline img { max-width: 100%; max-height: 26px; object-fit: contain; }
 }

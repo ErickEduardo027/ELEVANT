@@ -99,6 +99,7 @@ En el commit verificado, las piezas técnicas de los pasos 2 a 4 existen por sep
 
 ## Extensiones de la rama de trabajo
 
+- [Acceso animado y certificación](acceso-animado-y-certificacion.md): introducción y carrusel verificados contra la imagen de producción, con límites explícitos de aceptación en el VPS.
 - [Cobros, aplicaciones y consulta de aerolínea](tesoreria-cobros-y-portal.md): implementación local de Tesorería y consultas financieras del portal.
 
 ## Fuentes verificadas

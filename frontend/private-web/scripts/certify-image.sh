@@ -141,6 +141,18 @@ cmp -s "$response_root/favicon.png" \
   "$REPOSITORY_ROOT/frontend/private-web/public/brand/elevant-logo.png" || {
   echo "AVIAM Web brand icon did not match the reviewed asset." >&2; exit 1;
 }
+for asset in brand/elevant-mark-light.png brand/elevant-mark-dark.png \
+  brand/airlines/{american-airlines,united,delta,jetblue,avianca,iberia}.png \
+  images/login-airport-{light,dark}{,-sky}.webp; do
+  curl --silent --show-error --fail --max-time 10 \
+    --output "$response_root/auth-asset" "$base_url/$asset" || {
+    echo "AVIAM Web login asset $asset could not be loaded." >&2; exit 1;
+  }
+  cmp -s "$response_root/auth-asset" "$REPOSITORY_ROOT/frontend/private-web/public/$asset" || {
+    echo "AVIAM Web login asset $asset differs from the reviewed source." >&2; exit 1;
+  }
+done
+node "$SCRIPT_DIR/verify-auth-motion.mjs" "$base_url"
 for asset in maplibre-gl-worker.mjs maplibre-gl-shared.mjs; do
   curl --silent --show-error --fail --max-time 10 \
     --dump-header "$response_root/$asset.headers" \

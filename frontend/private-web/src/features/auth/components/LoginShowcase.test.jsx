@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginPage from '../LoginPage';
 import LoginIntro, { resetLoginIntroForTests } from './LoginIntro';
 
@@ -13,14 +13,25 @@ describe('airline carousel', () => {
     names.forEach(name => expect(screen.getAllByRole('img', { name })).toHaveLength(1));
     expect(region.querySelectorAll('ul')).toHaveLength(2);
     expect(region.querySelectorAll('ul[aria-hidden="true"] img[alt=""]')).toHaveLength(names.length);
-    expect(region.querySelector('a, button, [tabindex]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pausar carrusel de aerolíneas' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('lets the user pause and resume the logo movement explicitly', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<LoginPage />);
+    await user.click(screen.getByRole('button', { name: 'Pausar carrusel de aerolíneas' }));
+    expect(container.querySelector('.elv-marquee')).toHaveAttribute('data-paused', 'true');
+    expect(screen.getByRole('button', { name: 'Reanudar carrusel de aerolíneas' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Reanudar carrusel de aerolíneas' }));
+    expect(container.querySelector('.elv-marquee')).toHaveAttribute('data-paused', 'false');
   });
 });
 
 describe('login intro', () => {
   beforeEach(resetLoginIntroForTests);
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  it('plays once per session and can be skipped by clicking', async () => {
+  it('plays once per page and can be skipped by clicking', async () => {
     const user = userEvent.setup();
     const { container, unmount } = render(<LoginIntro marks={<span />} />);
     const screenEl = container.querySelector('.elv-intro-screen');
@@ -33,5 +44,53 @@ describe('login intro', () => {
 
     const again = render(<LoginIntro marks={<span />} />);
     expect(again.container.querySelector('.elv-intro-screen')).toBeNull();
+  });
+
+  it('waits for the logo before starting its visible animation', () => {
+    vi.useFakeTimers();
+    const { container } = render(<LoginIntro marks={<img src="/delayed-logo.png" alt="" />} />);
+    expect(container.querySelector('.elv-intro-screen')).not.toBeVisible();
+    act(() => vi.advanceTimersByTime(4000));
+    const image = container.querySelector('img');
+    Object.defineProperty(image, 'naturalWidth', { value: 560 });
+    fireEvent.load(image);
+    expect(container.querySelector('.elv-intro-screen')).toBeVisible();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(container.querySelector('.elv-intro-screen')).toBeVisible();
+    act(() => vi.advanceTimersByTime(2000));
+    expect(container.querySelector('.elv-intro-screen')).toBeNull();
+  });
+
+  it('does not interrupt someone already interacting while the logo loads', () => {
+    const { container } = render(<LoginIntro marks={<img src="/delayed-logo.png" alt="" />} />);
+    fireEvent.pointerDown(document.body);
+    const image = container.querySelector('img');
+    if (image) fireEvent.load(image);
+    expect(container.querySelector('.elv-intro-screen')).toBeNull();
+  });
+
+  it('does not interrupt click-only assistive technology activation', () => {
+    const { container } = render(<LoginIntro marks={<img src="/delayed-logo.png" alt="" />} />);
+    fireEvent.click(document.body);
+    expect(container.querySelector('.elv-intro-screen')).toBeNull();
+  });
+
+  it('ignores the previous release session flag on a fresh page', () => {
+    sessionStorage.setItem('elevant-private-intro-seen', '1');
+    const { container } = render(<LoginIntro marks={<span />} />);
+    expect(container.querySelector('.elv-intro-screen')).toBeVisible();
+    sessionStorage.removeItem('elevant-private-intro-seen');
+  });
+
+  it('skips the intro when reduced motion is requested', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const { container } = render(<LoginIntro marks={<span />} />);
+    expect(container.querySelector('.elv-intro-screen')).toBeNull();
+  });
+
+  it('leaves the login available if the brand image fails', () => {
+    const { container } = render(<LoginIntro marks={<img src="/missing-logo.png" alt="" />} />);
+    fireEvent.error(container.querySelector('img'));
+    expect(container.querySelector('.elv-intro-screen')).toBeNull();
   });
 });

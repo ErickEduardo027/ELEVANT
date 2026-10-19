@@ -426,6 +426,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/05-aplicaciones/acceso-animado-y-certificacion.md",
+        "id": "aplicaciones-acceso-animado-certificacion",
+        "title": "Acceso animado y certificación de AVIAM Web",
+        "type": "architecture",
+        "area": "private-web",
+        "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/api-compartida.md",
         "id": "aplicaciones-api-compartida",
         "title": "API compartida",
@@ -1129,7 +1139,7 @@
       },
       {
         "path": ".github/workflows/web-ci.yml",
-        "sha256": "c8710dedc30477b598aa61904c724e50e3f00ba85a2d6f655ca4e130bf6cc014"
+        "sha256": "096bbca785ffaba416a2ed4e98e6ac5f1660679830f9942c4269eb2c876886e6"
       }
     ],
     "openapi": [
