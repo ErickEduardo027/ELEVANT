@@ -14,6 +14,7 @@ export default function AppShell({
   notificationsEnabled = true,
   notificationsSource = 'legacy',
   profileActionsEnabled = true,
+  frameProps,
   children,
 }) {
   const pathname = usePathname();
@@ -26,6 +27,7 @@ export default function AppShell({
 
   return (
     <ShellFrame
+      {...frameProps}
       mainKey={pathname}
       sidebarProps={{
         navigation, user, onLogout, profileActionsEnabled,
@@ -34,7 +36,7 @@ export default function AppShell({
       }}
       topbarProps={{
         roleLabel, station, notificationsCount: notifications.count, notificationsEnabled, profileActionsEnabled,
-        theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout,
+        theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout, navigation,
         onOpenNotifications: () => (notificationsPath ? router.push(notificationsPath) : notifications.refresh()),
       }}
     >

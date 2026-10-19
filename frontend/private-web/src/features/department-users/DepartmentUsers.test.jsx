@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DepartmentAccessProvider } from '../access/DepartmentAccessContext';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 import DepartmentUsersPage from './DepartmentUsersPage';
 import AccessValidationsPage from './AccessValidationsPage';
 import { togglePermission } from './PermissionMatrix';
@@ -9,7 +11,7 @@ import {
   createDepartmentAdministrator, getDepartmentOptions, getDepartmentSummary, getPermissionCatalog, listAccessProfiles,
   listAccessRequests, listDepartmentUsers, rejectAccessRequest, requestDepartmentUserAccess, validateAccessRequest,
 } from '../../services/departmentGovernanceService';
-import { listAccessCandidates } from '../../services/humanResourcesEmployeesService';
+import { listAccessCandidates, listDepartmentActivity } from '../../services/humanResourcesEmployeesService';
 import { generateTemporaryPassword } from './temporaryPassword';
 
 vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
@@ -20,7 +22,7 @@ vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
 }));
 vi.mock('../../services/humanResourcesEmployeesService', async importOriginal => ({
   ...(await importOriginal()),
-  listAccessCandidates: vi.fn(),
+  listAccessCandidates: vi.fn(), listDepartmentActivity: vi.fn(),
 }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
@@ -57,8 +59,9 @@ beforeEach(() => {
   getDepartmentOptions.mockResolvedValue({ stations: [{ id: 'st-1', code: 'PUJ' }], terminals: [], supervisors: [] });
   getPermissionCatalog.mockResolvedValue(catalog);
   listAccessCandidates.mockResolvedValue([candidate]);
+  listDepartmentActivity.mockResolvedValue({ entries: [], nextCursor: null });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); act(() => resetLanguageForTests('es')); });
 
 describe('permission matrix', () => {
   it('grants read with any action and clears the module when read is removed', () => {
@@ -105,6 +108,35 @@ describe('DepartmentUsersPage', () => {
       temporaryPassword: expect.stringMatching(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{16}$/),
     }));
     expect(screen.queryByRole('button', { name: 'Crear sub-usuario' })).not.toBeInTheDocument();
+  });
+});
+
+describe('DepartmentUsersPage language', () => {
+  it('follows English inside a language scope', async () => {
+    act(() => resetLanguageForTests('en'));
+    renderWith(admin, <LanguageScope><DepartmentUsersPage department="contracts" /></LanguageScope>);
+    expect(await screen.findByRole('heading', { name: 'Department users' })).toBeInTheDocument();
+    expect(screen.getByText('Pending validation')).toBeInTheDocument();
+    expect(screen.getByText('No users')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: /Requests/ }));
+    expect(screen.getByText('Requested by')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel request' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    expect(await screen.findByText('No activity')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Sign-ins' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Request access' }));
+    const form = screen.getByRole('dialog', { name: 'Request access for an employee' });
+    await userEvent.click(await within(form).findByRole('button', { name: /Luis Pérez/ }));
+    expect(within(form).getByRole('radio', { name: 'Custom permissions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send to Human Resources' })).toBeInTheDocument();
+  });
+
+  it('stays in Spanish outside a language scope even when English was chosen', async () => {
+    act(() => resetLanguageForTests('en'));
+    renderWith(admin, <DepartmentUsersPage department="contracts" />);
+    expect(await screen.findByRole('heading', { name: 'Usuarios del departamento' })).toBeInTheDocument();
+    expect(screen.getByText('Pendientes de validar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Solicitar acceso' })).toBeInTheDocument();
   });
 });
 

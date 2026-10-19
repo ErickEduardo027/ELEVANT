@@ -154,7 +154,8 @@ test('request nonce policy confines client traffic to the certified API and map 
   const { buildContentSecurityPolicy } = await import('../src/config/securityHeaders.mjs');
   const policy = buildContentSecurityPolicy('https://api.elevant.test', 'nonce-123');
   assert.match(policy, /script-src 'self' 'nonce-nonce-123' 'strict-dynamic'/);
-  assert.match(policy, /connect-src 'self' https:\/\/api\.elevant\.test wss:\/\/api\.elevant\.test https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org/);
+  assert.match(policy, /connect-src 'self' https:\/\/api\.elevant\.test wss:\/\/api\.elevant\.test https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org https:\/\/mesonet\.agron\.iastate\.edu https:\/\/gibs\.earthdata\.nasa\.gov;/);
+  assert.match(policy, /img-src [^;]*https:\/\/gibs\.earthdata\.nasa\.gov/);
   assert.match(policy, /frame-ancestors 'none'/);
   assert.doesNotMatch(policy, /script-src[^;]*'unsafe-inline'/);
   assert.throws(() => buildContentSecurityPolicy('http://api.elevant.test', 'nonce-123'));

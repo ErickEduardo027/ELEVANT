@@ -1,6 +1,8 @@
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { XIcon } from '../features/shell/components/icons';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import { useTranslation } from '../i18n/LanguageScope';
+import { commonMessages } from '../i18n/commonMessages';
 
 // Drawer lateral genérico, generalizado a partir del patrón repetido en
 // `feat/adminocc` (overlay + <aside role="dialog"> deslizante). Permanece
@@ -9,6 +11,7 @@ import { useDialogFocus } from '../hooks/useDialogFocus';
 export default function Drawer({ open, onClose, title, description, widthClassName = 'lg:w-[480px]', children, footer }) {
   useEscapeToClose(open, onClose);
   const dialogRef = useDialogFocus(open);
+  const { t } = useTranslation(commonMessages);
 
   return (
     <div className={`fixed inset-0 z-drawer ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
@@ -38,7 +41,7 @@ export default function Drawer({ open, onClose, title, description, widthClassNa
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar"
+            aria-label={t('close')}
             className="shrink-0 rounded-lg p-1.5 text-text-secondary-light hover:bg-black/5 hover:text-ink-900 dark:text-text-secondary-dark dark:hover:bg-white/5 dark:hover:text-text-primary-dark"
           >
             <XIcon className="h-4 w-4" />

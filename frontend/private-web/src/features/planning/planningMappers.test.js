@@ -360,6 +360,13 @@ describe('timeline helpers', () => {
     expect(formatCountdown('2026-08-19T12:00:00Z', '2026-08-19T10:00:00Z')).toBe('En 2 h');
     expect(formatCountdown('2026-08-19T12:00:00Z', '2026-09-16T12:00:00Z')).toBe('Hace 28 días');
   });
+
+  it('formats the countdown and missing hour in English when requested', () => {
+    expect(formatCountdown('2026-08-19T08:05:00-04:00', '2026-08-19T07:20:00-04:00', 'en')).toBe('In 45 min');
+    expect(formatCountdown('2026-08-19T12:00:00Z', '2026-08-20T12:00:00Z', 'en')).toBe('1 day ago');
+    expect(formatCountdown(null, '2026-08-19T08:50:00-04:00', 'en')).toBe('No time');
+    expect(groupFlightsByHour([{ id: 'none', timelineTime: null }], STATION.ianaTimeZone, 'en')[0].hourLabel).toBe('No time');
+  });
 });
 
 describe('getFilterOptions', () => {

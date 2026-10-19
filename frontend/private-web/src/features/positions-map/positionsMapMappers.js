@@ -1,4 +1,8 @@
 import { PUJ_COORDINATES } from '../flight-monitoring/flightMonitoringMappers';
+import { createTranslator } from '../../i18n/languageStore';
+import { positionsMapMessages } from './positionsMapMessages';
+
+const spanish = createTranslator(positionsMapMessages, 'es');
 
 export { PUJ_COORDINATES };
 
@@ -50,21 +54,68 @@ export function computePositionsSummary(positions) {
 // Deriva el texto explicativo de una posición inhabilitada por configuración combinada
 // exclusivamente a partir del modelo de datos (combinedConfiguration/linkedPositionId) — nunca
 // inventa la relación en el cliente.
-export function getCombinedConfigExplanation(position) {
+export function getCombinedConfigExplanation(position, t = spanish) {
   if (position.status !== 'disabled' || !position.combinedConfiguration) return null;
   return {
-    reason: `Configuración ${position.combinedConfiguration} activa.`,
+    reason: t('combined.reason', { configuration: position.combinedConfiguration }),
     relation: position.linkedPositionId
-      ? `Esta configuración utiliza ${position.linkedPositionId} y bloquea temporalmente ${position.id}.`
-      : `Esta configuración bloquea temporalmente ${position.id}.`,
+      ? t('combined.relationLinked', { linked: position.linkedPositionId, position: position.id })
+      : t('combined.relation', { position: position.id }),
   };
 }
 
-export function buildDisabledToast(position) {
+export function buildDisabledToast(position, t = spanish) {
   return {
-    title: `Posición ${position.id} inhabilitada`,
+    title: t('toast.disabledTitle', { position: position.id }),
     description: position.combinedConfiguration
-      ? `Configuración ${position.combinedConfiguration} activa.`
-      : 'Posición inhabilitada por configuración combinada.',
+      ? t('combined.reason', { configuration: position.combinedConfiguration })
+      : t('toast.disabledFallback'),
   };
+}
+
+function plannedTurnaroundSummary(turnaround) {
+  return {
+    id: turnaround.id,
+    operationCode: turnaround.operationCode,
+    status: turnaround.status,
+    airline: turnaround.airline?.name ?? null,
+    arrivalFlight: turnaround.arrival?.flightNumber ?? null,
+    departureFlight: turnaround.departure?.flightNumber ?? null,
+    agents: (turnaround.agents ?? []).map(agent => agent.displayName).filter(Boolean),
+  };
+}
+
+// Convierte las escalas planificadas de PUJ en el catálogo de posiciones del
+// mapa. Varias escalas pueden compartir posición en el mismo día: todas se
+// conservan en `plannedTurnarounds` y los campos sueltos describen la primera,
+// por compatibilidad con el detalle existente. `planned` significa asignación
+// planificada, nunca ocupación física verificada.
+export function mapTurnaroundsToRampPositions(rampPositions, turnarounds = [], nowIso = new Date().toISOString()) {
+  const plannedByStand = new Map();
+  for (const turnaround of turnarounds) {
+    const code = turnaround.stand?.code?.toUpperCase();
+    if (!code) continue;
+    if (!plannedByStand.has(code)) plannedByStand.set(code, []);
+    plannedByStand.get(code).push(turnaround);
+  }
+  return rampPositions.map(coords => {
+    const planned = plannedByStand.get(coords.id) ?? [];
+    const first = planned[0];
+    return {
+      id: coords.id, terminal: coords.terminal,
+      latitude: coords.lat, longitude: coords.lon,
+      status: first ? 'planned' : 'unverified',
+      flightId: first?.arrival?.id ?? first?.departure?.id ?? null,
+      flightNumber: first?.arrival?.flightNumber ?? first?.departure?.flightNumber ?? null,
+      airline: first?.airline?.name ?? null,
+      aircraftRegistration: first?.aircraft?.registration ?? null,
+      aircraftType: first?.aircraft?.model ?? null,
+      assignedAgent: first?.agents?.[0]?.displayName ?? null,
+      plannedTurnarounds: planned.map(plannedTurnaroundSummary),
+      estimatedReleaseTime: null,
+      updatedAt: nowIso,
+      combinedConfiguration: null,
+      linkedPositionId: null,
+    };
+  });
 }

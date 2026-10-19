@@ -1,17 +1,21 @@
 import { AlertTriangleIcon, RefreshCwIcon } from '../../dashboard/components/icons';
 import { formatClockTime } from '../../dashboard/mappers';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 const STATUS_META = {
-  connected: { title: 'FlyAware conectado', colorClass: 'text-status-success', dotClass: 'bg-status-success' },
-  syncing: { title: 'FlyAware sincronizando', colorClass: 'text-status-warning', dotClass: 'bg-status-warning' },
-  disconnected: { title: 'FlyAware desconectado', colorClass: 'text-status-danger', dotClass: 'bg-status-danger' },
+  connected: { colorClass: 'text-status-success', dotClass: 'bg-status-success' },
+  syncing: { colorClass: 'text-status-warning', dotClass: 'bg-status-warning' },
+  disconnected: { colorClass: 'text-status-danger', dotClass: 'bg-status-danger' },
 };
 
 export default function FlightConnectionStatus({ source, connection, lastUpdatedAt, onRefresh }) {
-  const meta = STATUS_META[connection] ?? STATUS_META.disconnected;
+  const { t, locale } = useTranslation(flightMonitoringMessages);
+  const known = STATUS_META[connection] ? connection : null;
+  const meta = STATUS_META[known ?? 'disconnected'];
   const title = source === 'planning'
-    ? { connected: 'API operativa conectada', syncing: 'API operativa sincronizando', disconnected: 'API operativa desconectada' }[connection]
-    : meta.title;
+    ? known && t(`connection.planning.${known}`)
+    : t(`connection.flyAware.${known ?? 'disconnected'}`);
   const Icon = connection === 'disconnected' ? AlertTriangleIcon : RefreshCwIcon;
 
   return (
@@ -25,7 +29,7 @@ export default function FlightConnectionStatus({ source, connection, lastUpdated
       <Icon className={`h-4 w-4 shrink-0 ${meta.colorClass}`} />
       <span className={`text-sm font-medium ${meta.colorClass}`}>{title}</span>
       <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        {lastUpdatedAt ? `Última actualización ${formatClockTime(lastUpdatedAt)}` : 'Sin actualizaciones aún'}
+        {lastUpdatedAt ? t('connection.lastUpdate', { time: formatClockTime(lastUpdatedAt, locale) }) : t('connection.noUpdates')}
       </span>
       <button
         type="button"
@@ -33,7 +37,7 @@ export default function FlightConnectionStatus({ source, connection, lastUpdated
         className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-accent-600/30 px-3 py-1.5 text-xs font-semibold text-accent-600 hover:bg-accent-600/10"
       >
         <RefreshCwIcon className="h-3.5 w-3.5" />
-        Actualizar
+        {t('connection.refresh')}
       </button>
     </div>
   );

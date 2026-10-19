@@ -1,5 +1,7 @@
 import { AlertTriangleIcon, RefreshCwIcon } from '../../dashboard/components/icons';
 import { XIcon } from './icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 const KIND_META = {
   delayed: { colorClass: 'text-status-warning', icon: RefreshCwIcon },
@@ -9,6 +11,7 @@ const KIND_META = {
 };
 
 function Toast({ toast, onDismiss }) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const meta = KIND_META[toast.kind] ?? KIND_META.delayed;
   const Icon = meta.icon;
 
@@ -21,7 +24,7 @@ function Toast({ toast, onDismiss }) {
       <span className="text-ink-900 dark:text-text-primary-dark">{toast.message}</span>
       <button
         type="button"
-        aria-label="Descartar aviso"
+        aria-label={t('alerts.dismiss')}
         onClick={() => onDismiss(toast.id)}
         className="ml-auto rounded-md p-0.5 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
       >

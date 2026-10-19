@@ -1,8 +1,10 @@
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PositionsMapPage from './PositionsMapPage';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 
 beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
 afterEach(() => vi.unstubAllEnvs());
@@ -191,5 +193,56 @@ describe('PositionsMapPage', () => {
     );
     // Summary panel still renders with all-zero totals; the side panel empty state only shows once opened.
     expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+  });
+});
+
+describe('PositionsMapPage in English', () => {
+  beforeEach(() => act(() => resetLanguageForTests('en')));
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  function renderEnglish(props = {}) {
+    return render(
+      <LanguageScope>
+        <PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} {...props} />
+      </LanguageScope>
+    );
+  }
+
+  it('renders the toolbar, controls, legend and summary in English', () => {
+    renderEnglish();
+    expect(screen.getByRole('heading', { name: 'Positions map' })).toBeInTheDocument();
+    expect(screen.getByText('PUJ · Punta Cana International Airport')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Filter by terminal' })).toHaveTextContent('All');
+    expect(screen.getByPlaceholderText('Search stand, flight or registration...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
+    expect(screen.getByText('Combined configuration')).toBeInTheDocument();
+    expect(screen.getByText('Stands')).toBeInTheDocument();
+    expect(screen.getAllByText('Available').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
+  });
+
+  it('shows the side panel and the combined-configuration drawer in English', async () => {
+    renderEnglish();
+    await userEvent.click(screen.getByRole('button', { name: 'Stand list' }));
+    const panel = screen.getByTestId('positions-side-panel');
+    expect(within(panel).getAllByText('Terminal A')).toHaveLength(3);
+    expect(within(panel).getAllByText('No flight assigned').length).toBeGreaterThan(0);
+
+    await userEvent.click(within(panel).getByText('A10'));
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByText('Stand disabled')).toBeInTheDocument();
+    expect(within(drawer).getByText('Configuration 9-Alfa active.')).toBeInTheDocument();
+    expect(within(drawer).getByText('This configuration uses A9 and temporarily blocks A10.')).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Close details' })).toBeInTheDocument();
+  });
+
+  it('shows the not-found search message and the disconnected banner in English', async () => {
+    renderEnglish({ forceState: 'positionsMapDisconnected' });
+    expect(screen.getByText('Stale data — no connection with the positions provider.')).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText('Search stand, flight or registration...'), 'ZZZ99{enter}');
+    expect(screen.getByText('Stand not found.')).toBeInTheDocument();
   });
 });

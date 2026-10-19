@@ -1,17 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PlanningPage from './PlanningPage';
 import { usePlanningData } from './usePlanningData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
-import { useAuth } from '../auth/AuthContext';
+import { useOccStation } from '../admin-occ/useOccStation';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 
 export default function PlanningRoute() {
-  const { session } = useAuth();
-  const stationScopes = useMemo(
-    () => (Array.isArray(session?.stationScopes) ? session.stationScopes : [])
-      .filter(scope => scope?.stationId && scope?.stationCode),
-    [session?.stationScopes]
-  );
+  const { stationScopes } = useOccStation();
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const [requestedDate, setRequestedDate] = useState('');
   const [resolvedScope, setResolvedScope] = useState({ stationId: '', date: '' });
@@ -57,12 +52,6 @@ export default function PlanningRoute() {
     setResolvedScope({ stationId: '', date: '' });
   }, [stationId, stationScopes]);
 
-  function selectStation(nextStationId) {
-    setStationId(nextStationId);
-    setRequestedDate('');
-    setResolvedScope({ stationId: '', date: '' });
-  }
-
   function selectDate(nextDate) {
     setRequestedDate(nextDate);
     if (!nextDate) setResolvedScope({ stationId: '', date: '' });
@@ -76,7 +65,6 @@ export default function PlanningRoute() {
       onRetry={() => setRetryToken(token => token + 1)}
       stationScopes={stationScopes}
       selectedStationId={stationId}
-      onStationChange={selectStation}
       selectedDate={effectiveDate}
       onDateChange={selectDate}
       filterScopeKey={`${stationId}|${effectiveDate}`}

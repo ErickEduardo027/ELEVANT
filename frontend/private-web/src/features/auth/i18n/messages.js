@@ -1,5 +1,4 @@
-export const SUPPORTED_LANGUAGES = ['es', 'en'];
-export const DEFAULT_LANGUAGE = 'es';
+export { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, resolveInitialLanguage } from '../../../i18n/languageStore';
 
 export const messages = {
   es: {
@@ -134,8 +133,4 @@ const LEGACY_MESSAGE_CODES = {
 export function resolveErrorCode(error, fallback = 'generic') {
   if (error?.code && error.code in messages.es.errors) return error.code;
   return LEGACY_MESSAGE_CODES[error?.message] ?? fallback;
-}
-
-export function resolveInitialLanguage(storedValue) {
-  return SUPPORTED_LANGUAGES.includes(storedValue) ? storedValue : DEFAULT_LANGUAGE;
 }

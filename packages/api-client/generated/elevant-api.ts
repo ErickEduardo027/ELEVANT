@@ -3172,6 +3172,45 @@ export interface OccAircraftResponse {
   registration?: string | null;
 }
 
+export interface OccAircraftStateResponse {
+  icao24: string;
+  /** @nullable */
+  callsign?: string | null;
+  /** @nullable */
+  originCountry?: string | null;
+  latitude: number;
+  longitude: number;
+  /** @nullable */
+  lastPositionAt?: string | null;
+  /** @nullable */
+  lastContactAt?: string | null;
+  /** @nullable */
+  barometricAltitudeMeters?: number | null;
+  /** @nullable */
+  geometricAltitudeMeters?: number | null;
+  /** @nullable */
+  groundSpeedMetersPerSecond?: number | null;
+  /** @nullable */
+  trueTrackDegrees?: number | null;
+  /** @nullable */
+  verticalRateMetersPerSecond?: number | null;
+  onGround: boolean;
+  /** @nullable */
+  squawk?: string | null;
+  /** @nullable */
+  positionSource?: number | null;
+  /** @nullable */
+  category?: number | null;
+}
+
+export interface OccAircraftTrafficResponse {
+  source: string;
+  providerTime: string;
+  retrievedAt: string;
+  stale: boolean;
+  aircraft: OccAircraftStateResponse[];
+}
+
 export interface OccAirlineResponse {
   id: string;
   iataCode: string;
@@ -4975,6 +5014,10 @@ date: string;
 };
 
 export type GetOccReviewQueueParams = {
+stationId: string;
+};
+
+export type GetOccAircraftTrafficParams = {
 stationId: string;
 };
 
@@ -13273,6 +13316,41 @@ const res = await fetch(getDecideOccReviewUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: DecideOccReviewResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAircraftTrafficUrl = (params: GetOccAircraftTrafficParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/traffic/aircraft?${stringifiedParams}` : `/api/v1/occ/traffic/aircraft`
+}
+
+export const getOccAircraftTraffic = async (params: GetOccAircraftTrafficParams, options?: RequestInit): Promise<OccAircraftTrafficResponse> => {
+
+  const res = await fetch(getGetOccAircraftTrafficUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAircraftTrafficResponse = body ? JSON.parse(body) : {}
   return data
 }
 

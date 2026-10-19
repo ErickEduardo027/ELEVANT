@@ -1,3 +1,6 @@
+import { useTranslation } from '../../i18n/LanguageScope';
+import { departmentUsersMessages } from './departmentUsersMessages';
+
 /**
  * Module × action grid built from the server catalog. Choosing any action also
  * grants the module's `read`; clearing `read` clears the whole module, matching
@@ -27,7 +30,8 @@ export function permissionLabels(catalog, codes) {
 }
 
 export default function PermissionMatrix({ catalog, value, onChange, disabled = false, idPrefix = 'perm' }) {
-  if (!catalog) return <p className="text-sm text-text-secondary-light">Cargando catálogo de permisos…</p>;
+  const { t } = useTranslation(departmentUsersMessages);
+  if (!catalog) return <p className="text-sm text-text-secondary-light">{t('matrix.loading')}</p>;
   return (
     <div className="space-y-2">
       {catalog.modules.map(module => (

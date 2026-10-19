@@ -515,6 +515,12 @@ Development debe permanecer dentro
 del tailnet; el secreto real de firma se guarda junto con los demás valores
 root-only del ambiente y nunca en Git.
 
+## Telemetría regional OCC (rama local)
+
+`GET /api/v1/occ/traffic/aircraft?stationId=<uuid>` devuelve aeronaves con posición en el recuadro fijo 17–21° N y 73–67° O. Exige sesión interna AVIAM, `operations.planning.read` y alcance exacto de PUJ; otros alcances no consultan el proveedor. No acepta URL ni límites del cliente. La respuesta informa fuente, hora del proveedor, hora de consulta, estado desactualizado y solo los campos OpenSky presentes. No relaciona callsign, vuelos, aterrizajes ni stands de AVIAM.
+
+La integración está desactivada por defecto. El operador debe aportar por configuración privada `OpenSky__Enabled=true`, `OpenSky__ClientId` y `OpenSky__ClientSecret` solo después de verificar que el acuerdo escrito cubre el uso operacional. Nunca se agregan al cliente ni a Git. El servidor obtiene un token OAuth2 y lo renueva antes del vencimiento; reintenta una vez tras 401. Comparte una consulta entre solicitudes concurrentes y no vuelve a consultar `/states/all` antes de 120 segundos por instancia, incluso tras un fallo ordinario. Respeta `X-Rate-Limit-Retry-After-Seconds` o `Retry-After` tras 429 y conserva la última lectura como desactualizada durante hasta 10 minutos. Un 403 impone cinco minutos de espera; respuestas 503 no incluyen secretos ni cuerpo del proveedor. Cada instancia consume su propio presupuesto de consultas: varias réplicas no comparten caché ni cuota. Sin credenciales o con el proveedor inaccesible la API devuelve 503. Esta rama no altera esquema ni permisos de negocio y no ha sido desplegada.
+
 ## Entorno local completo
 
 ```powershell

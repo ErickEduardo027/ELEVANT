@@ -1,8 +1,11 @@
 import StatusBadge from '../../../components/StatusBadge';
-import { STATUS_COLORS, getStatusMeta } from '../../dashboard/statusMeta';
+import { STATUS_COLORS, getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 export default function FlightListItem({ flight, selected, onSelect }) {
+  const { t, language, locale } = useTranslation(flightMonitoringMessages);
   const meta = getStatusMeta('flight', flight.status);
   const accentColor = STATUS_COLORS[meta.color];
 
@@ -21,7 +24,7 @@ export default function FlightListItem({ flight, selected, onSelect }) {
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge tone={meta.color} label={meta.label} />
+        <StatusBadge tone={meta.color} label={getStatusLabel('flight', flight.status, language)} />
         <span className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
           {flight.flightNumber}
         </span>
@@ -31,8 +34,8 @@ export default function FlightListItem({ flight, selected, onSelect }) {
         <span>
           {flight.origin} → {flight.destination}
         </span>
-        <span className="font-mono">{flight.direction === 'departure' ? 'ETD' : 'ETA'} {formatClockTime(flight.eta ?? flight.etd)}</span>
-        <span className="font-mono">{flight.stand ?? 'Sin stand'}</span>
+        <span className="font-mono">{flight.direction === 'departure' ? 'ETD' : 'ETA'} {formatClockTime(flight.eta ?? flight.etd, locale)}</span>
+        <span className="font-mono">{flight.stand ?? t('list.noStand')}</span>
         {flight.supervisor && <span className="ml-auto">{flight.supervisor}</span>}
       </div>
     </div>

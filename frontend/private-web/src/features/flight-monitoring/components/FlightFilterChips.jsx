@@ -1,9 +1,12 @@
 import { FLIGHT_FILTER_CHIPS } from '../flightMonitoringMappers';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 export default function FlightFilterChips({ active, onChange }) {
+  const { t } = useTranslation(flightMonitoringMessages);
   return (
     <div className="flex flex-wrap gap-1.5">
-      {FLIGHT_FILTER_CHIPS.map(({ id, label }) => (
+      {FLIGHT_FILTER_CHIPS.map(({ id }) => (
         <button
           key={id}
           type="button"
@@ -15,7 +18,7 @@ export default function FlightFilterChips({ active, onChange }) {
               : 'border-black/10 text-text-secondary-light hover:border-accent-600/40 dark:border-white/10 dark:text-text-secondary-dark'
           }`}
         >
-          {label}
+          {t(`chips.${id}`)}
         </button>
       ))}
     </div>

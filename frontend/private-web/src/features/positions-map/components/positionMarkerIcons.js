@@ -1,17 +1,22 @@
-// Genera los íconos de posición (rectángulo redondeado tipo "stand") como bitmaps de canvas y los
-// registra en la instancia de MapLibre vía map.addImage. Nunca se usan pines genéricos: cada
-// estado tiene su propio color de token existente y, en el caso de "disabled", un borde
-// discontinuo horneado directamente en el bitmap — así la diferencia nunca depende solo del color.
+import { paintAircraftSilhouette } from '../../maps/aircraftSilhouette';
+
+// Genera los íconos de posición como bitmaps de canvas y los registra en la instancia de
+// MapLibre vía map.addImage. El stand es siempre una ubicación fija (contorno con su marca de
+// eje); solo cuando una escala lo tiene asignado aparece la silueta de aeronave dentro. Con
+// "planned" el contorno es discontinuo: la asignación está planificada, no confirmada. La
+// diferencia entre estados nunca depende solo del color.
 const STATUS_COLORS = {
   planned: '#145DC4',
-  unverified: '#D9A441',
+  unverified: '#7C8A9E',
   available: '#1E9E6B',
   occupied: '#145DC4',
   disabled: '#C4453C',
   releasing: '#D9A441',
 };
 
-const ICON_SIZE = 24;
+const ICON_SIZE = 30;
+const AIRCRAFT_STATUSES = new Set(['planned', 'occupied', 'releasing']);
+const DASHED_STATUSES = new Set(['planned', 'disabled']);
 const SELECTION_RING_COLOR = '#145DC4';
 
 function hexToRgb(hex) {
@@ -61,20 +66,31 @@ function drawStandIcon(status) {
   ctx.scale(ratio, ratio);
 
   const color = STATUS_COLORS[status] ?? STATUS_COLORS.available;
-  const pad = 3;
-  const w = ICON_SIZE - pad * 2;
-  const h = ICON_SIZE - pad * 2;
+  const pad = 2.5;
+  const side = ICON_SIZE - pad * 2;
+  const hasAircraft = AIRCRAFT_STATUSES.has(status);
 
-  roundedRectPath(ctx, pad, pad, w, h, 3);
-  ctx.fillStyle = rgba(color, 0.18);
+  roundedRectPath(ctx, pad, pad, side, side, 4);
+  ctx.fillStyle = hasAircraft ? 'rgba(255, 255, 255, 0.92)' : rgba(color, 0.16);
   ctx.fill();
 
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 1.6;
   ctx.strokeStyle = color;
-  if (status === 'disabled') ctx.setLineDash([3, 2.2]);
-  roundedRectPath(ctx, pad, pad, w, h, 3);
+  if (DASHED_STATUSES.has(status)) ctx.setLineDash([3, 2.2]);
+  roundedRectPath(ctx, pad, pad, side, side, 4);
   ctx.stroke();
   ctx.setLineDash([]);
+
+  if (hasAircraft) {
+    paintAircraftSilhouette(ctx, { cx: ICON_SIZE / 2, cy: ICON_SIZE / 2, size: side - 3, fill: color });
+  } else {
+    // Marca de eje del stand: identifica una ubicación vacía sin sugerir una aeronave.
+    ctx.beginPath();
+    ctx.moveTo(ICON_SIZE / 2, pad + 5);
+    ctx.lineTo(ICON_SIZE / 2, ICON_SIZE - pad - 5);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
 
   return { imageData: canvasToImageData(canvas), ratio };
 }

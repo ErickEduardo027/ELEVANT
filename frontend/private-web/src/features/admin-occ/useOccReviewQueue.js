@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { loadOccReviewQueue } from '../../services/occReviewService';
+import { selectOccStationScopes } from './useOccStation';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function useOccReviewQueue() {
   const { session } = useAuth();
-  const stationScopes = useMemo(() => (Array.isArray(session?.stationScopes) ? session.stationScopes : [])
-    .filter(scope => UUID.test(scope?.stationId ?? '') && typeof scope.stationCode === 'string'),
+  const stationScopes = useMemo(() => selectOccStationScopes(session?.stationScopes)
+    .filter(scope => UUID.test(scope.stationId)),
   [session?.stationScopes]);
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const [retry, setRetry] = useState(0);

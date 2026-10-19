@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import StatusBadge from '../../../components/StatusBadge';
-import { getStatusMeta } from '../../dashboard/statusMeta';
+import { getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { formatRemaining } from '../flightMonitoringMappers';
 import { XIcon } from './icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 const EDITABLE_STATUSES = [
-  ['scheduled', 'Programado'], ['delayed', 'Programado / Retrasado'],
-  ['enRoute', 'En ruta'], ['landed', 'Aterrizó'], ['taxiing', 'Aterrizó / En rodaje'],
-  ['arrived', 'Llegó al aeropuerto'], ['gateArrival', 'Llegó a la puerta'],
-  ['cancelled', 'Cancelado'], ['diverted', 'Desviado'], ['unknown', 'Resultado desconocido'],
+  'scheduled', 'delayed', 'enRoute', 'landed', 'taxiing',
+  'arrived', 'gateArrival', 'cancelled', 'diverted', 'unknown',
 ];
 
 export default function FlightDetailPopover({ flight, now, style, onClose, onStatusChange }) {
+  const { t, language, locale } = useTranslation(flightMonitoringMessages);
   const [selectedStatus, setSelectedStatus] = useState(flight?.status ?? 'scheduled');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +27,7 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
     <div
       data-testid="flight-detail-popover"
       role="dialog"
-      aria-label={`Detalle del vuelo ${flight.flightNumber}`}
+      aria-label={t('detail.dialog', { flight: flight.flightNumber })}
       style={style}
       className="absolute z-20 w-72 space-y-2 rounded-2xl border border-black/10 bg-white/95 p-4 text-sm shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
     >
@@ -35,11 +36,11 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
           <p className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">
             {flight.flightNumber} · {flight.airline}
           </p>
-          <StatusBadge tone={meta.color} label={meta.label} />
+          <StatusBadge tone={meta.color} label={getStatusLabel('flight', flight.status, language)} />
         </div>
         <button
           type="button"
-          aria-label="Cerrar detalle"
+          aria-label={t('detail.close')}
           onClick={onClose}
           className="rounded-md p-1 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
         >
@@ -53,49 +54,49 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
 
       <dl className="grid grid-cols-2 gap-x-2 gap-y-1 font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
         <dt>ETA</dt>
-        <dd>{flight.eta ? formatClockTime(flight.eta) : '—'}</dd>
+        <dd>{flight.eta ? formatClockTime(flight.eta, locale) : '—'}</dd>
         <dt>ETD</dt>
-        <dd>{flight.etd ? formatClockTime(flight.etd) : '—'}</dd>
-        <dt>Hora real</dt>
+        <dd>{flight.etd ? formatClockTime(flight.etd, locale) : '—'}</dd>
+        <dt>{t('detail.actual')}</dt>
         <dd>
           {flight.actualArrival ?? flight.actualDeparture
-            ? formatClockTime(flight.actualArrival ?? flight.actualDeparture)
-            : 'Pendiente'}
+            ? formatClockTime(flight.actualArrival ?? flight.actualDeparture, locale)
+            : t('detail.pending')}
         </dd>
-        <dt>Altitud</dt>
-        <dd>{flight.altitude == null ? 'Sin telemetría' : `${flight.altitude.toLocaleString('en-US')} ft`}</dd>
-        <dt>Velocidad</dt>
+        <dt>{t('detail.altitude')}</dt>
+        <dd>{flight.altitude == null ? t('detail.noTelemetry') : `${flight.altitude.toLocaleString('en-US')} ft`}</dd>
+        <dt>{t('detail.speed')}</dt>
         <dd>{flight.speed == null ? '—' : `${flight.speed} kt`}</dd>
-        <dt>Heading</dt>
+        <dt>{t('detail.heading')}</dt>
         <dd>{flight.heading == null ? '—' : `${flight.heading}°`}</dd>
-        <dt>Stand</dt>
-        <dd>{flight.stand ?? 'Sin asignar'}</dd>
-        <dt>Supervisor</dt>
-        <dd>{flight.supervisor ?? 'Sin asignar'}</dd>
-        <dt>Agentes</dt>
+        <dt>{t('detail.stand')}</dt>
+        <dd>{flight.stand ?? t('detail.unassigned')}</dd>
+        <dt>{t('detail.supervisor')}</dt>
+        <dd>{flight.supervisor ?? t('detail.unassigned')}</dd>
+        <dt>{t('detail.agents')}</dt>
         <dd>{flight.agents}</dd>
-        <dt>Tiempo restante</dt>
-        <dd>{formatRemaining(flight.eta ?? flight.etd, now)}</dd>
+        <dt>{t('detail.remaining')}</dt>
+        <dd>{formatRemaining(flight.eta ?? flight.etd, now, t)}</dd>
       </dl>
 
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        Servicios: {flight.services.length > 0 ? flight.services.join(', ') : 'Sin servicios registrados'}
+        {t('detail.services', { services: flight.services.length > 0 ? flight.services.join(', ') : t('detail.noServices') })}
       </p>
 
       {onStatusChange && <div className="space-y-2 rounded-xl bg-accent-600/5 p-3">
-        <label className="block text-xs font-semibold">Actualizar estado del vuelo
+        <label className="block text-xs font-semibold">{t('detail.updateStatus')}
           <select value={selectedStatus} onChange={event => setSelectedStatus(event.target.value)} className="mt-1 w-full rounded-lg border border-black/10 bg-white px-2 py-2 text-xs dark:border-white/10 dark:bg-surface-dark">
-            {EDITABLE_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            {EDITABLE_STATUSES.map(value => <option key={value} value={value}>{t(`detail.editable.${value}`)}</option>)}
           </select>
         </label>
         {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
         <button type="button" disabled={saving || selectedStatus === flight.status} onClick={async () => {
           setSaving(true); setError('');
           try { await onStatusChange(flight.id, selectedStatus); }
-          catch (reason) { setError(reason?.message || 'No fue posible actualizar el estado.'); }
+          catch (reason) { setError(reason?.message || t('detail.saveError')); }
           finally { setSaving(false); }
         }} className="w-full rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
-          {saving ? 'Guardando…' : 'Guardar estado'}
+          {saving ? t('detail.saving') : t('detail.save')}
         </button>
       </div>}
 
@@ -103,18 +104,18 @@ export default function FlightDetailPopover({ flight, now, style, onClose, onSta
         <button
           type="button"
           disabled
-          title="Próximamente"
+          title={t('detail.comingSoon')}
           className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/60 dark:border-white/10 dark:text-text-secondary-dark/60"
         >
-          Ver planificación
+          {t('detail.viewPlanning')}
         </button>
         <button
           type="button"
           disabled
-          title="Próximamente"
+          title={t('detail.comingSoon')}
           className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/60 dark:border-white/10 dark:text-text-secondary-dark/60"
         >
-          Ver mapa de posiciones
+          {t('detail.viewPositions')}
         </button>
       </div>
     </div>

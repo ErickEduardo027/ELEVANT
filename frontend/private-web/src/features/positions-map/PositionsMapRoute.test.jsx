@@ -50,21 +50,19 @@ it('revalidates positions when another OCC session changes planning', async () =
   expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 1, false, 'occ-account');
 });
 
-it('uses the authorized station selection for the active positions read', () => {
+it('reads PUJ even when it is not the first authorized scope and offers no selector', () => {
+  vi.mocked(useAuth).mockReturnValue({ session: { accountId: 'occ-account',
+    stationScopes: [{ stationId: secondId, stationCode: 'SDQ' },
+      { stationId: firstId, stationCode: 'PUJ' }] } });
   render(<MemoryRouter><PositionsMapRoute /></MemoryRouter>);
-  expect(screen.getByLabelText('Estación de posiciones')).toHaveValue(firstId);
   expect(usePositionsMapData).toHaveBeenCalledWith('PUJ', 0, false, 'occ-account');
-  fireEvent.change(screen.getByLabelText('Estación de posiciones'),
-    { target: { value: secondId } });
-  expect(screen.getByLabelText('Estación de posiciones')).toHaveValue(secondId);
-  expect(usePositionsMapData).toHaveBeenCalledWith('SDQ', 0, false, 'occ-account');
+  expect(usePositionsMapData).not.toHaveBeenCalledWith('SDQ', expect.anything(), expect.anything(), expect.anything());
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
 });
 
-it('carries the selected authorized station into the monitoring deep link', () => {
+it('carries the PUJ station into the monitoring deep link', () => {
   render(<MemoryRouter><PositionsMapRoute /><LocationProbe /></MemoryRouter>);
-  fireEvent.change(screen.getByLabelText('Estación de posiciones'),
-    { target: { value: secondId } });
   fireEvent.click(screen.getByRole('button', { name: 'Ver vuelo' }));
-  expect(screen.getByTestId('route-location').textContent).toContain(`stationId=${secondId}`);
+  expect(screen.getByTestId('route-location').textContent).toContain(`stationId=${firstId}`);
   expect(screen.getByTestId('route-location').textContent).toContain('flightId=leg-one');
 });

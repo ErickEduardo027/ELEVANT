@@ -3,6 +3,7 @@ import EmptyState from '../../components/EmptyState';
 import FilterBar from '../../components/FilterBar';
 import Modal from '../../components/Modal';
 import PageHeader from '../../components/PageHeader';
+import { useTranslation } from '../../i18n/LanguageScope';
 import { ShieldCheckIcon } from '../shell/components/icons';
 import { useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
@@ -14,6 +15,7 @@ import {
   validateAccessRequest,
 } from '../../services/departmentGovernanceService';
 import AccessRequestCard from './AccessRequestCard';
+import { departmentUsersMessages } from './departmentUsersMessages';
 import GeneratePasswordField from './GeneratePasswordField';
 import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 
@@ -25,6 +27,7 @@ const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white
  * temporary password typed here; rejecting returns the reason to the requester.
  */
 export default function AccessValidationsPage() {
+  const { t } = useTranslation(departmentUsersMessages);
   const { access } = useDepartmentAccess();
   const canDecide = Boolean(access?.canValidateAccessRequests || access?.isSuperAdministrator);
   const [filters, setFilters] = useState({ status: 'Pending', department: '' });
@@ -86,14 +89,13 @@ export default function AccessValidationsPage() {
       if (kind === 'validate') await validateAccessRequest(request.id, password, request.version);
       else await rejectAccessRequest(request.id, reason.trim(), request.version);
       setDeciding(null);
-      setNotice(kind === 'validate'
-        ? `Cuenta de ${request.firstName} ${request.lastName} creada. Entregue la contraseña temporal por un canal autorizado; se pedirá cambiarla al ingresar.`
-        : `Solicitud de ${request.firstName} ${request.lastName} rechazada. El administrador verá el motivo.`);
+      const name = `${request.firstName} ${request.lastName}`;
+      setNotice(kind === 'validate' ? t('validations.accountCreated', { name }) : t('validations.requestRejected', { name }));
       await refresh();
     } catch (failure) {
       setError(failure.status === 403
-        ? 'No puede resolver una solicitud que usted mismo envió.'
-        : governanceMessage(failure, 'La solicitud cambió, ya fue resuelta o el correo ya existe. Se actualizó la bandeja.'));
+        ? t('validations.ownRequest')
+        : governanceMessage(failure, t('validations.conflict')));
       await refresh();
     } finally {
       setBusy(false);
@@ -105,35 +107,35 @@ export default function AccessValidationsPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1400px] space-y-5 3xl:max-w-[1760px]">
-      <PageHeader eyebrow="Gestión Humana" title="Validaciones de acceso"
-        description="Altas solicitadas por los administradores de cada departamento. Valide definiendo la contraseña temporal o rechace con un motivo." />
+      <PageHeader eyebrow={t('validations.eyebrow')} title={t('validations.title')}
+        description={t('validations.description')} />
       {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
       {state.status === 'ready' && state.error && <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{state.error}</div>}
       <FilterBar>
-        <label className="text-xs font-semibold">Estado<select value={filters.status} onChange={event => setFilters(current => ({ ...current, status: event.target.value }))} className={fieldClass}>
-          <option value="Pending">Pendientes</option><option value="Validated">Validadas</option><option value="Rejected">Rechazadas</option><option value="Cancelled">Canceladas</option><option value="">Todas</option>
+        <label className="text-xs font-semibold">{t('common.status')}<select value={filters.status} onChange={event => setFilters(current => ({ ...current, status: event.target.value }))} className={fieldClass}>
+          <option value="Pending">{t('validations.pending')}</option><option value="Validated">{t('validations.validated')}</option><option value="Rejected">{t('validations.rejected')}</option><option value="Cancelled">{t('validations.cancelled')}</option><option value="">{t('common.allFeminine')}</option>
         </select></label>
-        <label className="text-xs font-semibold">Departamento<select value={filters.department} onChange={event => setFilters(current => ({ ...current, department: event.target.value }))} className={fieldClass}>
-          <option value="">Todos</option>{Object.entries(DEPARTMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        <label className="text-xs font-semibold">{t('common.department')}<select value={filters.department} onChange={event => setFilters(current => ({ ...current, department: event.target.value }))} className={fieldClass}>
+          <option value="">{t('common.all')}</option>{Object.entries(DEPARTMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select></label>
       </FilterBar>
-      {state.status === 'loading' && <p role="status" className="rounded-xl bg-white p-6 text-sm dark:bg-surface-dark-card">Cargando solicitudes…</p>}
+      {state.status === 'loading' && <p role="status" className="rounded-xl bg-white p-6 text-sm dark:bg-surface-dark-card">{t('validations.loading')}</p>}
       {state.status === 'error' && (
         <div role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">
           <p>{state.error}</p>
-          <button type="button" onClick={() => void refresh()} className="mt-3 rounded-lg border px-3 py-1.5">Reintentar</button>
+          <button type="button" onClick={() => void refresh()} className="mt-3 rounded-lg border px-3 py-1.5">{t('common.retry')}</button>
         </div>
       )}
       {state.status === 'ready' && (requests.length === 0 ? (
-        <EmptyState icon={ShieldCheckIcon} title="Sin solicitudes" description="No hay solicitudes con este filtro." />
+        <EmptyState icon={ShieldCheckIcon} title={t('validations.emptyTitle')} description={t('validations.emptyDescription')} />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
           {requests.map(request => (
             <AccessRequestCard key={request.id} request={request} catalog={catalogOf(request.department)} showDepartment>
               {canDecide && request.status === 'Pending' && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => open(request, 'validate')} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Validar</button>
-                  <button type="button" onClick={() => open(request, 'reject')} className="min-h-[40px] rounded-lg border border-status-danger/40 px-4 text-sm font-semibold text-status-danger">Rechazar</button>
+                  <button type="button" onClick={() => open(request, 'validate')} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">{t('validations.validate')}</button>
+                  <button type="button" onClick={() => open(request, 'reject')} className="min-h-[40px] rounded-lg border border-status-danger/40 px-4 text-sm font-semibold text-status-danger">{t('validations.reject')}</button>
                 </div>
               )}
             </AccessRequestCard>
@@ -141,25 +143,24 @@ export default function AccessValidationsPage() {
         </div>
       ))}
       <Modal open={Boolean(deciding)} onClose={() => setDeciding(null)} tone={deciding?.kind === 'reject' ? 'danger' : 'default'}
-        title={deciding?.kind === 'validate'
-          ? `Validar a ${deciding?.request.firstName ?? ''} ${deciding?.request.lastName ?? ''}`
-          : `Rechazar a ${deciding?.request.firstName ?? ''} ${deciding?.request.lastName ?? ''}`}
+        title={t(deciding?.kind === 'validate' ? 'validations.validateTitle' : 'validations.rejectTitle',
+          { name: `${deciding?.request.firstName ?? ''} ${deciding?.request.lastName ?? ''}` })}
         footer={<div className="flex justify-end gap-2">
-          <button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+          <button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">{t('common.cancel')}</button>
           <button type="submit" form="access-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding?.kind === 'reject' ? 'bg-status-danger' : 'bg-accent-600'}`}>
-            {busy ? 'Guardando…' : deciding?.kind === 'validate' ? 'Validar y crear cuenta' : 'Rechazar solicitud'}
+            {busy ? t('common.saving') : deciding?.kind === 'validate' ? t('validations.validateSubmit') : t('validations.rejectSubmit')}
           </button>
         </div>}>
         <form id="access-decision-form" onSubmit={decide} className="space-y-3">
           {error && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
           {deciding?.kind === 'validate' ? (
             <>
-              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">La cuenta se crea con {deciding.request.kind === 'RampAgent' ? 'acceso a la app móvil de rampa y su perfil operativo' : 'los permisos solicitados'}. El usuario deberá cambiar la contraseña en su primer ingreso.</p>
+              <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{deciding.request.kind === 'RampAgent' ? t('validations.createsRamp') : t('validations.createsWeb')}</p>
               <GeneratePasswordField fieldClassName="text-sm font-semibold" inputClassName={fieldClass} id="access-validation-password"
                 value={password} onChange={setPassword} />
             </>
           ) : (
-            <label className="block text-sm font-semibold">Motivo del rechazo
+            <label className="block text-sm font-semibold">{t('validations.rejectReason')}
               <textarea required minLength={3} maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} className={fieldClass} />
             </label>
           )}

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../auth/AuthContext';
+import { useOccStation } from '../admin-occ/useOccStation';
 import PositionsMapPage from './PositionsMapPage';
 import { usePositionsMapData } from './usePositionsMapData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
@@ -12,11 +13,8 @@ import { createPrivateWebAccountChangeObserver } from '../../services/accountCha
 // (mismo criterio que FlightMonitoringRoute).
 export default function PositionsMapRoute() {
   const { session } = useAuth();
-  const stationScopes = useMemo(() => (session?.stationScopes ?? [])
-    .filter(scope => scope?.stationId && scope?.stationCode),
-  [session?.stationScopes]);
-  const [stationId, setStationId] = useState(stationScopes[0]?.stationId ?? '');
-  const selected = stationScopes.find(scope => scope.stationId === stationId);
+  const { stationScopes } = useOccStation();
+  const selected = stationScopes[0];
   const [retryToken, setRetryToken] = useState(0);
   const { forceState } = useAdminOccPreview();
   const { theme } = useTheme();
@@ -43,22 +41,8 @@ export default function PositionsMapRoute() {
   }, [session?.accountId]);
   const router = useRouter();
 
-  useEffect(() => {
-    if (stationScopes.some(scope => scope.stationId === stationId)) return;
-    setStationId(stationScopes[0]?.stationId ?? '');
-  }, [stationId, stationScopes]);
-
   return (
     <div className="space-y-3">
-      {stationScopes.length > 0 && <label className="block w-fit text-xs font-semibold">
-        Estación de posiciones
-        <select aria-label="Estación de posiciones" value={selected?.stationId ?? ''}
-          onChange={event => setStationId(event.target.value)}
-          className="ml-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark-card">
-          {stationScopes.map(scope => <option key={scope.stationId} value={scope.stationId}>
-            {scope.stationCode}</option>)}
-        </select>
-      </label>}
       <PositionsMapPage
         key={`${session?.accountId ?? 'none'}|${selected?.stationId ?? 'none'}`}
         status={positionsMap.status}

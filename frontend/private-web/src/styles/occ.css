@@ -1,0 +1,265 @@
+/* Identidad del espacio OCC (Centro de Operaciones). Solo aplica dentro de
+   `[data-department="occ"]`, que pone ShellFrame cuando AdminOccLayout lo pide;
+   los demás departamentos no ven estas variables. Las clases `*-occ-*` de
+   tailwind.config.js leen estos valores. */
+[data-department='occ'] {
+  --occ-canvas: #eef2f7;
+  --occ-panel: #ffffff;
+  --occ-panel-muted: #f5f7fb;
+  --occ-line: rgba(11, 31, 63, 0.1);
+  --occ-line-strong: rgba(11, 31, 63, 0.2);
+  --occ-text: #0b1f3f;
+  --occ-muted: #566275;
+  --occ-accent: #145dc4;
+  --occ-accent-soft: rgba(20, 93, 196, 0.1);
+  --occ-ok: #13795a;
+  --occ-warn: #8a5d0b;
+  --occ-danger: #b23a31;
+  --occ-signal: #f2661e;
+  /* El riel de navegación es navy en ambos temas: es la firma del espacio. */
+  --occ-nav: #0b1f3f;
+  --occ-nav-line: rgba(255, 255, 255, 0.08);
+  --occ-nav-text: #d3deee;
+  --occ-nav-muted: #8fa2bf;
+  --occ-nav-hover: rgba(255, 255, 255, 0.06);
+  --occ-nav-active: rgba(91, 155, 245, 0.16);
+  --occ-nav-accent: #6aa5f7;
+  color-scheme: light;
+}
+
+.dark [data-department='occ'] {
+  --occ-canvas: #060e1a;
+  --occ-panel: #0b1a2e;
+  --occ-panel-muted: #0f2139;
+  --occ-line: rgba(148, 178, 220, 0.12);
+  --occ-line-strong: rgba(148, 178, 220, 0.24);
+  --occ-text: #e8eef7;
+  --occ-muted: #97a8c0;
+  --occ-accent: #5b9bf5;
+  --occ-accent-soft: rgba(91, 155, 245, 0.14);
+  --occ-ok: #4cc99a;
+  --occ-warn: #e3b65c;
+  --occ-danger: #f07a70;
+  --occ-nav: #040b16;
+  --occ-nav-line: rgba(148, 178, 220, 0.1);
+  color-scheme: dark;
+}
+
+[data-department='occ'] :focus-visible {
+  outline: 2px solid var(--occ-accent);
+  outline-offset: 2px;
+}
+
+[data-department='occ'] [data-occ-nav] :focus-visible {
+  outline-color: var(--occ-nav-accent);
+}
+
+[data-department='occ'] .occ-dashboard {
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  background: radial-gradient(ellipse at 45% -12%, rgba(20, 93, 196, 0.13), transparent 55%);
+}
+
+.dark [data-department='occ'] .occ-dashboard {
+  background: radial-gradient(ellipse at 42% -12%, rgba(54, 113, 183, 0.18), transparent 58%);
+}
+
+[data-department='occ'] .occ-dashboard-map-panel {
+  box-shadow: none;
+}
+
+.dark [data-department='occ'] .occ-dashboard-map-panel {
+  box-shadow: none;
+}
+
+[data-department='occ'] .occ-console-stage {
+  --occ-glass: rgba(249, 252, 255, 0.84);
+  --occ-stage-line: rgba(35, 81, 131, 0.2);
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(315px, 0.83fr);
+  grid-template-rows: 730px auto;
+  overflow: hidden;
+  border: 1px solid var(--occ-stage-line);
+  border-radius: 24px;
+  background: #e5f0fb;
+  box-shadow: 0 28px 60px rgba(9, 31, 63, 0.16), inset 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.dark [data-department='occ'] .occ-console-stage {
+  --occ-glass: rgba(8, 25, 44, 0.78);
+  --occ-stage-line: rgba(150, 200, 255, 0.18);
+  background: radial-gradient(circle at 70% 0, #183d5a, #061424 62%);
+  box-shadow: 0 30px 70px rgba(0, 5, 16, 0.55), inset 0 1px rgba(228, 247, 255, 0.11);
+}
+
+[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > header {
+  position: absolute;
+  z-index: 12;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  width: auto;
+  min-height: 44px;
+  padding: 7px 10px 7px 14px;
+  border: 1px solid var(--occ-stage-line);
+  border-radius: 13px;
+  background: var(--occ-glass);
+  box-shadow: 0 7px 24px rgba(8, 24, 42, 0.12), inset 0 1px rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+
+[data-department='occ'] .occ-stage-primary {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--occ-stage-line) !important;
+}
+
+[data-department='occ'] .occ-stage-aux {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-rows: minmax(0, 1.45fr) minmax(0, 0.9fr);
+}
+
+[data-department='occ'] .occ-stage-weather {
+  border-bottom: 1px solid var(--occ-stage-line) !important;
+}
+
+[data-department='occ'] .occ-stage-weather > header > div:nth-child(2) { display: none; }
+
+[data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > div:last-child:not([role='dialog']) {
+  min-height: 0;
+}
+
+[data-department='occ'] .occ-console-stage .occ-stage-primary > div:nth-child(2) > div:nth-child(2),
+[data-department='occ'] .occ-console-stage .occ-stage-region > div:nth-child(2) > p:nth-child(2),
+[data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(2),
+[data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(3) {
+  background: var(--occ-glass);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  backdrop-filter: blur(16px) saturate(135%);
+}
+
+[data-department='occ'] .occ-stage-primary > div:nth-child(2) > div:nth-child(2),
+[data-department='occ'] .occ-stage-region > div:nth-child(2) > p:nth-child(2) {
+  z-index: 2;
+}
+
+[data-department='occ'] .occ-stage-primary > div:nth-child(2) > div:nth-child(2) {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  right: 12px;
+  border: 1px solid var(--occ-stage-line);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+[data-department='occ'] .occ-stage-region > div:nth-child(2) > p:nth-child(2) {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  border: 1px solid var(--occ-stage-line);
+  border-radius: 12px;
+}
+
+[data-department='occ'] .occ-stage-instruments {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  border-top: 1px solid var(--occ-stage-line);
+  background: var(--occ-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+}
+
+[data-department='occ'] .occ-console-stage .maplibregl-ctrl-top-right { top: 72px; }
+[data-department='occ'] .occ-stage-primary .maplibregl-ctrl-bottom-right,
+[data-department='occ'] .occ-stage-region .maplibregl-ctrl-bottom-right { bottom: 54px; }
+[data-department='occ'] .occ-stage-primary [data-testid='position-map-container'] + div { bottom: 76px; }
+[data-department='occ'] .occ-stage-region [role='status'] { bottom: 56px; }
+
+[data-department='occ'] .occ-summary-strip dl {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+[data-department='occ'] .occ-summary-strip dl > div { padding: 10px 18px; }
+[data-department='occ'] .occ-summary-strip dd { font-variant-numeric: tabular-nums; }
+
+[data-department='occ'] .occ-workbench > section,
+[data-department='occ'] .occ-workbench > div > section {
+  box-shadow: 0 12px 32px rgba(8, 32, 63, 0.06);
+}
+
+@media (max-width: 1199px) {
+  [data-department='occ'] .occ-console-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 520px auto auto;
+  }
+  [data-department='occ'] .occ-stage-primary {
+    grid-column: 1;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--occ-stage-line) !important;
+  }
+  [data-department='occ'] .occ-stage-aux {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 450px;
+  }
+  [data-department='occ'] .occ-stage-weather {
+    border-bottom: 0 !important;
+    border-right: 1px solid var(--occ-stage-line) !important;
+  }
+  [data-department='occ'] .occ-stage-instruments { grid-row: 3; }
+}
+
+@media (max-width: 699px) {
+  [data-department='occ'] .occ-console-stage {
+    grid-template-rows: 440px auto auto;
+    border-radius: 17px;
+  }
+  [data-department='occ'] .occ-stage-aux {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 455px 310px;
+  }
+  [data-department='occ'] .occ-stage-weather {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--occ-stage-line) !important;
+  }
+  [data-department='occ'] .occ-console-stage .occ-dashboard-map-panel > header {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+  }
+  [data-department='occ'] .occ-summary-strip dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  [data-department='occ'] .occ-summary-strip dl > div { padding: 9px 10px; }
+}
+
+[data-department='occ'] .occ-dashboard * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--occ-line-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-department='occ'] *,
+  [data-department='occ'] *::before,
+  [data-department='occ'] *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -11,6 +11,7 @@
 import { RAMP_POSITIONS } from '../features/dashboard/positionsData';
 import { readSession } from '../features/auth/authService';
 import { getPlanningSnapshot } from './planningService';
+import { mapTurnaroundsToRampPositions } from '../features/positions-map/positionsMapMappers';
 
 // --- Estado operativo inicial (mock) ---
 // Las únicas relaciones combinadas Alfa/Bravo son las declaradas aquí explícitamente:
@@ -165,31 +166,10 @@ export async function getPositionsSnapshot(stationCode = 'PUJ') {
         positions: [...plannedByStand.values()],
       };
     }
-    const plannedByStand = new Map(snapshot.turnarounds
-      .filter(turnaround => turnaround.stand?.code)
-      .map(turnaround => [turnaround.stand.code.toUpperCase(), turnaround]));
-    const nowIso = new Date().toISOString();
     return {
       station: { code: snapshot.station.code, localAbbr: 'AST' },
       source: 'planning',
-      positions: RAMP_POSITIONS.map(coords => {
-        const planned = plannedByStand.get(coords.id);
-        return {
-          id: coords.id, terminal: coords.terminal,
-          latitude: coords.lat, longitude: coords.lon,
-          status: planned ? 'planned' : 'unverified',
-          flightId: planned?.arrival?.id ?? planned?.departure?.id ?? null,
-          flightNumber: planned?.arrival?.flightNumber ?? planned?.departure?.flightNumber ?? null,
-          airline: planned?.airline?.name ?? null,
-          aircraftRegistration: planned?.aircraft?.registration ?? null,
-          aircraftType: planned?.aircraft?.model ?? null,
-          assignedAgent: planned?.agents?.[0]?.displayName ?? null,
-          estimatedReleaseTime: null,
-          updatedAt: nowIso,
-          combinedConfiguration: null,
-          linkedPositionId: null,
-        };
-      }),
+      positions: mapTurnaroundsToRampPositions(RAMP_POSITIONS, snapshot.turnarounds),
     };
   }
   const nowIso = new Date().toISOString();

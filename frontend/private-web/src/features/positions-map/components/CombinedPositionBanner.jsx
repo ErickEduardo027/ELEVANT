@@ -1,9 +1,12 @@
 import { getCombinedConfigExplanation } from '../positionsMapMappers';
 import { AlertTriangleIcon } from '../../dashboard/components/icons';
 import { LinkIcon } from './icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 export default function CombinedPositionBanner({ position }) {
-  const explanation = getCombinedConfigExplanation(position);
+  const { t } = useTranslation(positionsMapMessages);
+  const explanation = getCombinedConfigExplanation(position, t);
   if (!explanation) return null;
 
   return (
@@ -14,7 +17,7 @@ export default function CombinedPositionBanner({ position }) {
     >
       <p className="flex items-center gap-1.5 font-semibold text-status-danger">
         <AlertTriangleIcon className="h-3.5 w-3.5" />
-        Posición inhabilitada
+        {t('combined.title')}
       </p>
       <p className="text-status-danger">{explanation.reason}</p>
       <p className="flex items-start gap-1.5 text-status-danger/90">

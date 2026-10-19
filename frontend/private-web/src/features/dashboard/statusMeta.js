@@ -73,7 +73,7 @@ export const CHAT_CONVERSATION_STATUS_META = {
 
 export const POSITION_STATUS_META = {
   planned: { label: 'Planificada', color: 'info' },
-  unverified: { label: 'Sin ocupación verificada', color: 'warning' },
+  unverified: { label: 'Sin ocupación verificada', color: 'neutral' },
   available: { label: 'Libre', color: 'success' },
   occupied: { label: 'Ocupada', color: 'info' },
   disabled: { label: 'Inhabilitada', color: 'danger' },
@@ -95,4 +95,40 @@ const STATUS_TABLES_BY_DOMAIN = {
 export function getStatusMeta(domain, status) {
   const table = STATUS_TABLES_BY_DOMAIN[domain] ?? SERVICE_STATUS_META;
   return table[status] ?? { label: status, color: 'info' };
+}
+
+// Etiquetas en inglés para los espacios OCC traducidos. Las tablas en español
+// de arriba siguen siendo la fuente para los consumidores sin idioma.
+const STATUS_LABELS_EN_BY_DOMAIN = {
+  flight: {
+    scheduled: 'Scheduled',
+    actualRecorded: 'Actual time recorded',
+    boarding: 'Boarding',
+    taxiing: 'Taxiing',
+    leftGate: 'Left gate',
+    enRoute: 'En route',
+    approaching: 'Approaching',
+    landed: 'Landed',
+    taxiingToGate: 'Taxiing to gate',
+    arrived: 'On stand',
+    gateArrival: 'Arrived at gate',
+    enRouteOnTime: 'En route / On time',
+    delayed: 'Delayed',
+    diverted: 'Diverted',
+    cancelled: 'Cancelled',
+    unknown: 'Unknown',
+  },
+  position: {
+    planned: 'Planned',
+    unverified: 'Occupancy not verified',
+    available: 'Available',
+    occupied: 'Occupied',
+    disabled: 'Disabled',
+    releasing: 'Releasing soon',
+  },
+};
+
+export function getStatusLabel(domain, status, language = 'es') {
+  const english = language === 'en' ? STATUS_LABELS_EN_BY_DOMAIN[domain]?.[status] : undefined;
+  return english ?? getStatusMeta(domain, status).label;
 }

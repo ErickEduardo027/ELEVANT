@@ -1,39 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { useTheme } from '../shell/useTheme';
+import { useOccStation } from '../admin-occ/useOccStation';
 import DashboardPage from './DashboardPage';
 import { useDashboardData } from './useDashboardData';
+import { useMdpcWeather } from '../weather/useMdpcWeather';
+import { useRegionalTraffic } from './useRegionalTraffic';
 
 export default function DashboardRoute() {
-  const router = useRouter();
   const { session } = useAuth();
-  const stationScopes = useMemo(() => (session?.stationScopes ?? [])
-    .filter(scope => scope?.stationId && scope?.stationCode),
-  [session?.stationScopes]);
-  const [stationId, setStationId] = useState(stationScopes[0]?.stationId ?? '');
+  const { theme } = useTheme();
+  const station = useOccStation();
   const [retryToken, setRetryToken] = useState(0);
-  const selected = stationScopes.find(scope => scope.stationId === stationId);
   const dashboard = useDashboardData({
     accountId: session?.accountId,
-    stationId: selected?.stationId ?? '',
-    stationCode: selected?.stationCode ?? '',
+    stationId: station.stationId,
+    stationCode: station.stationId ? station.stationCode : '',
     refreshToken: retryToken,
   });
-
-  useEffect(() => {
-    if (stationScopes.some(scope => scope.stationId === stationId)) return;
-    setStationId(stationScopes[0]?.stationId ?? '');
-  }, [stationId, stationScopes]);
+  // La meteorología solo se consulta cuando la cuenta tiene el alcance PUJ.
+  const weather = useMdpcWeather({ enabled: station.status === 'ready' });
+  const traffic = useRegionalTraffic({ stationId: station.stationId, enabled: station.status === 'ready' });
+  const retry = () => setRetryToken(value => value + 1);
 
   return <DashboardPage
-    status={dashboard.status}
+    status={station.status === 'unavailable' ? 'unavailable' : dashboard.status}
     data={dashboard.data}
-    stationScopes={stationScopes}
-    selectedStationId={selected?.stationId ?? ''}
-    onStationChange={setStationId}
-    onRetry={() => setRetryToken(value => value + 1)}
-    onOpenPlanning={() => router.push('/admin-occ/planning')}
-    onOpenReview={() => router.push('/admin-occ/review')}
-    onOpenNotifications={() => router.push('/admin-occ/notifications')}
+    refreshing={dashboard.refreshing}
+    refreshFailed={dashboard.refreshFailed}
+    fetchedAt={dashboard.fetchedAt}
+    theme={theme}
+    weather={weather}
+    traffic={traffic}
+    onRetry={retry}
   />;
 }

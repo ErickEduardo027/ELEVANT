@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { flightMonitoringMessages } from './flightMonitoringMessages';
 
 const MAX_VISIBLE_TOASTS = 3;
 const TOAST_TTL_MS = 6000;
-const ALERT_LABELS = { delayed: 'retrasado', cancelled: 'cancelado', diverted: 'desviado' };
+const ALERT_STATUSES = ['delayed', 'cancelled', 'diverted'];
 
-function buildAlert(previous, next) {
-  if (previous.status !== next.status && ALERT_LABELS[next.status]) {
-    return { kind: next.status, message: `Vuelo ${next.flightNumber} ${ALERT_LABELS[next.status]}` };
+function buildAlert(previous, next, t) {
+  const values = { flight: next.flightNumber };
+  if (previous.status !== next.status && ALERT_STATUSES.includes(next.status)) {
+    return { kind: next.status, message: t(`alerts.${next.status}`, values) };
   }
   if (previous.eta !== next.eta) {
-    return { kind: 'delayed', message: `Vuelo ${next.flightNumber} cambió su ETA` };
+    return { kind: 'delayed', message: t('alerts.etaChanged', values) };
   }
   if (previous.stand && !next.stand) {
-    return { kind: 'diverted', message: `Vuelo ${next.flightNumber} sin stand asignado` };
+    return { kind: 'diverted', message: t('alerts.standLost', values) };
   }
   return null;
 }
 
 export function useFlightAlerts(flights, connection) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const previousRef = useRef(new Map());
   const idCounterRef = useRef(0);
   const mountedRef = useRef(true);
@@ -47,14 +51,14 @@ export function useFlightAlerts(flights, connection) {
       const prevFlight = previous.get(flight.id);
       if (!prevFlight) return;
 
-      const alert = buildAlert(prevFlight, flight);
+      const alert = buildAlert(prevFlight, flight, t);
       if (!alert) return;
 
       enqueueToast(`toast-${flight.id}-${idCounterRef.current++}`, { flightNumber: flight.flightNumber, ...alert });
     });
 
     previousRef.current = next;
-  }, [flights]);
+  }, [flights, t]);
 
   useEffect(() => {
     const wasAlreadyDisconnected = previousConnectionRef.current === 'disconnected';
@@ -63,9 +67,9 @@ export function useFlightAlerts(flights, connection) {
 
     enqueueToast(`toast-connection-${idCounterRef.current++}`, {
       kind: 'error',
-      message: 'API operativa sin conexión — los datos no se están actualizando',
+      message: t('alerts.disconnected'),
     });
-  }, [connection]);
+  }, [connection, t]);
 
   function dismissToast(id) {
     setToasts(current => current.filter(toast => toast.id !== id));

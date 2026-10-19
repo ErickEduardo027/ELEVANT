@@ -1,5 +1,5 @@
-// Source of truth: PUJ ramp position coordinates (surveyed), shared by the
-// dashboard preview and the future full positions-map module.
+// Original internal PUJ planning coordinates. Their survey provenance has not
+// been verified against AIP; do not present them as official stand locations.
 export const RAMP_POSITIONS = [
   { id: 'A1', terminal: 'A', lat: 18.564194, lon: -68.36025 },
   { id: 'A2', terminal: 'A', lat: 18.564194, lon: -68.360861 },

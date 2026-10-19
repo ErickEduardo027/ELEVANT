@@ -1,7 +1,10 @@
 import StatusBadge from '../../../components/StatusBadge';
-import { STATUS_COLORS, getStatusMeta } from '../../dashboard/statusMeta';
+import { STATUS_COLORS, getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 export default function PositionListItem({ position, selected, onSelect }) {
+  const { t, language } = useTranslation(positionsMapMessages);
   const meta = getStatusMeta('position', position.status);
   const accentColor = STATUS_COLORS[meta.color];
 
@@ -22,14 +25,14 @@ export default function PositionListItem({ position, selected, onSelect }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{position.id}</span>
         <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {position.terminal === 'FBO' ? 'FBO' : `Terminal ${position.terminal}`}
+          {position.terminal === 'FBO' ? 'FBO' : t('list.terminal', { terminal: position.terminal })}
         </span>
         <span className="ml-auto">
-          <StatusBadge tone={meta.color} label={meta.label} />
+          <StatusBadge tone={meta.color} label={getStatusLabel('position', position.status, language)} />
         </span>
       </div>
       <div className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        {position.flightNumber ? `${position.flightNumber} · ${position.airline}` : 'Sin vuelo asignado'}
+        {position.flightNumber ? `${position.flightNumber} · ${position.airline}` : t('list.noFlight')}
       </div>
     </div>
   );

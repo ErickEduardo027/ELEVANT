@@ -37,3 +37,12 @@ export const ADMIN_OCC_NAVIGATION = [
   { id: ADMIN_OCC_MODULE_IDS.CHAT, permission: 'operations.chat.read', label: 'Chat interno', path: `${ADMIN_OCC_BASE_PATH}/chat`, icon: MessageCircleIcon, description: 'Comunicación directa con los agentes de rampa, organizada por vuelo.' },
   { id: ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS, administratorsOnly: true, label: 'Usuarios del departamento', path: `${ADMIN_OCC_BASE_PATH}/users`, icon: UsersIcon, description: 'Usuarios, agentes de rampa, plantillas y solicitudes de alta del Centro de Operaciones.' },
 ];
+
+// Agrupación visual del riel OCC. Solo ordena los módulos ya permitidos por
+// `allowedNavigation`; no concede ni oculta acceso.
+export const OCC_NAV_SECTIONS = [
+  { id: 'monitoring', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP] },
+  { id: 'operations', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS] },
+  { id: 'communication', items: [ADMIN_OCC_MODULE_IDS.NOTIFICATIONS, ADMIN_OCC_MODULE_IDS.CHAT] },
+  { id: 'administration', items: [ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS] },
+];

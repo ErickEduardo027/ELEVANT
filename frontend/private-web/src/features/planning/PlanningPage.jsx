@@ -20,6 +20,8 @@ import {
 } from './planningMappers';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { planningMessages } from './planningMessages';
 
 const EMPTY_OPTIONS_STATE = {
   status: 'idle',
@@ -31,37 +33,39 @@ const EMPTY_OPTIONS_STATE = {
 };
 
 function StatePanel({ kind, onRetry }) {
+  const { t } = useTranslation(planningMessages);
   const unauthorized = kind === 'unauthorized';
   const forbidden = kind === 'forbidden';
   return (
     <div role={unauthorized ? 'status' : 'alert'} className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card">
       <p className="text-sm font-semibold text-status-danger">
         {unauthorized
-          ? 'La sesión ya no está disponible.'
+          ? t('states.unauthorizedTitle')
           : forbidden
-            ? 'No tiene permiso para consultar esta planificación.'
-            : 'No se pudo cargar la planificación operativa.'}
+            ? t('states.forbiddenTitle')
+            : t('states.errorTitle')}
       </p>
       <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
         {unauthorized
-          ? 'Será redirigido al acceso para iniciar una sesión nueva.'
+          ? t('states.unauthorizedHint')
           : forbidden
-            ? 'Solicite al administrador que revise su rol y alcance de estación.'
-            : 'Compruebe la conexión e intente nuevamente.'}
+            ? t('states.forbiddenHint')
+            : t('states.errorHint')}
       </p>
       {!unauthorized && !forbidden && (
-        <button type="button" onClick={onRetry} className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90">Reintentar</button>
+        <button type="button" onClick={onRetry} className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90">{t('states.retry')}</button>
       )}
     </div>
   );
 }
 
 function NoStationScope() {
+  const { t } = useTranslation(planningMessages);
   return (
     <div role="status" className="rounded-2xl border border-status-warning/30 bg-status-warning/10 p-6">
-      <p className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">Sin estaciones habilitadas</p>
+      <p className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{t('states.noScopeTitle')}</p>
       <p className="mt-2 max-w-2xl text-xs text-text-secondary-light dark:text-text-secondary-dark">
-        Su cuenta no tiene un alcance de estación activo. Solicite al administrador que revise sus permisos antes de consultar la operación.
+        {t('states.noScopeHint')}
       </p>
     </div>
   );
@@ -89,6 +93,7 @@ export default function PlanningPage({
   const [showCreate, setShowCreate] = useState(false);
   const assignment = usePlanningAssignment();
   const { toasts, showToast, dismissToast } = useToast();
+  const { t } = useTranslation(planningMessages);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date().toISOString()), 30000);
@@ -155,11 +160,11 @@ export default function PlanningPage({
     if (outcome.detached) return;
 
     if (outcome.ok) {
-      const agentName = selectedAgent?.displayName ?? 'el agente seleccionado';
+      const agentName = selectedAgent?.displayName ?? t('page.selectedAgent');
       setSelectedFlightId(null);
       assignment.reset();
       onRetry();
-      showToast(`Operación asignada a ${agentName}.`, 'success');
+      showToast(t('page.assigned', { agent: agentName }), 'success');
       return;
     }
 
@@ -210,7 +215,7 @@ export default function PlanningPage({
           {isLoading ? (
             <PlanningSkeleton />
           ) : activeView !== 'timeline' ? (
-            <ModulePlaceholder icon={CalendarIcon} label={activeView === 'table' ? 'Vista de tabla' : 'Vista de calendario'} description="Esta vista estará disponible en una próxima iteración del módulo." />
+            <ModulePlaceholder icon={CalendarIcon} label={t(activeView === 'table' ? 'page.tableView' : 'page.calendarView')} description={t('page.viewComingSoon')} />
           ) : displayedFlights.length === 0 ? (
             <EmptyPlanningState reason={flights.length === 0 ? 'no-flights' : 'no-results'} />
           ) : (
@@ -237,7 +242,7 @@ export default function PlanningPage({
         onShiftProgrammed={() => {
           assignment.reset();
           setOptionsRetryToken(token => token + 1);
-          showToast('Turno programado. Actualizando elegibilidad antes de asignar.', 'success');
+          showToast(t('page.shiftProgrammed'), 'success');
         }}
       />
       {showCreate && canCreate && (
@@ -247,7 +252,7 @@ export default function PlanningPage({
             setShowCreate(false);
             if (date === selectedDate) onRetry();
             else onDateChange?.(date);
-            showToast(`Vuelo ${operationCode} creado. Puede asignar la operación desde esta planificación.`, 'success');
+            showToast(t('page.flightCreated', { code: operationCode }), 'success');
           }} />
       )}
       <Toast toasts={toasts} onDismiss={dismissToast} />

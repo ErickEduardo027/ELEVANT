@@ -6,6 +6,8 @@ using Elevant.Infrastructure.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Integrations.FlightAware;
+using Elevant.Infrastructure.Integrations.OpenSky;
+using Elevant.Application.Abstractions.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -41,6 +43,13 @@ public static class DependencyInjection
         services.AddSingleton<IFiscalCallbackAuthenticator, FinanceFiscalRejectCallbacks>();
         services.AddSingleton<IFiscalArtifactBuilder, FinanceFiscalArtifactBuilder>();
         services.AddFlightAwareShell(configuration);
+        var openSky = configuration.GetSection(OpenSkyOptions.SectionName).Get<OpenSkyOptions>() ?? new OpenSkyOptions();
+        services.AddSingleton<IOccAircraftTrafficSource>(provider =>
+            new OpenSkyAircraftTrafficSource(
+                new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+                { Timeout = TimeSpan.FromSeconds(10) },
+                openSky,
+                provider.GetRequiredService<TimeProvider>()));
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();

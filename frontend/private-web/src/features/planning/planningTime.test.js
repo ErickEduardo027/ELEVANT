@@ -17,4 +17,8 @@ describe('planning time formatting', () => {
     expect(formatPlanningDate('2026-8-19')).toBe('—');
     expect(formatPlanningDate(null)).toBe('—');
   });
+
+  it('formats civil dates with the requested locale', () => {
+    expect(formatPlanningDate('2026-08-19', 'en-US')).toBe('08/19/2026');
+  });
 });

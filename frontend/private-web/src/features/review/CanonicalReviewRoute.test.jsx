@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from '../../../tests/MemoryRouter.jsx';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 
 const mocks = vi.hoisted(() => ({
   useAuth: vi.fn(), queue: vi.fn(), detail: vi.fn(), decide: vi.fn(),
@@ -148,5 +150,26 @@ describe('CanonicalReviewRoute', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar decisión' }));
     await waitFor(() => expect(mocks.detail).toHaveBeenCalledTimes(2));
     expect(mocks.decide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CanonicalReviewRoute in English', () => {
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the queue, evidence and decision confirmation in English inside the OCC scope', async () => {
+    const user = userEvent.setup();
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><MemoryRouter initialEntries={['/admin-occ/review']}><CanonicalReviewRoute /></MemoryRouter></LanguageScope>);
+    expect(await screen.findByRole('heading', { name: 'OCC review' })).toBeInTheDocument();
+    expect(await screen.findByText('Visible submissions')).toBeInTheDocument();
+    expect(screen.getByText('1 services · 1 incidents')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View details' }));
+    const panel = await screen.findByRole('region', { name: 'Submission details' });
+    expect(await within(panel).findByRole('region', { name: 'Submission history' })).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Return for corrections' }));
+    expect(within(panel).getByText('Confirm return of this submission?')).toBeInTheDocument();
+    expect(within(panel).getByRole('textbox', { name: /Required corrections/ })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Confirm decision' })).toBeDisabled();
+    expect(screen.queryByText('Ver detalle')).not.toBeInTheDocument();
   });
 });

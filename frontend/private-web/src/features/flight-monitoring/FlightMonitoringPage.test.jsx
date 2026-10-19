@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FlightMonitoringPage from './FlightMonitoringPage';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 
 beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
 afterEach(() => vi.unstubAllEnvs());
@@ -200,5 +202,38 @@ describe('FlightMonitoringPage — tablet layout', () => {
 
     await userEvent.click(screen.getByTestId('flight-list-drawer-backdrop'));
     expect(screen.queryByTestId('flight-list-drawer')).not.toBeInTheDocument();
+  });
+});
+
+describe('FlightMonitoringPage in English', () => {
+  beforeEach(() => act(() => resetLanguageForTests('en')));
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the toolbar, list, legend and statuses in English', () => {
+    render(
+      <LanguageScope>
+        <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt="2026-08-06T14:00:00-04:00" onRetry={() => {}} />
+      </LanguageScope>
+    );
+    expect(screen.getByText('FlyAware connected')).toBeInTheDocument();
+    expect(screen.getByText(/^Last update \d{2}:\d{2}$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
+    expect(screen.getByText('Only flights related to PUJ')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delayed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
+    expect(screen.getAllByText('Approaching').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
+  });
+
+  it('renders the error state in English', () => {
+    render(
+      <LanguageScope>
+        <FlightMonitoringPage status="error" data={null} error={null} connection="disconnected" lastUpdatedAt={null} onRetry={() => {}} />
+      </LanguageScope>
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Station flight monitoring could not be loaded.');
+    expect(screen.getByText('Check the connection and try again.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 });

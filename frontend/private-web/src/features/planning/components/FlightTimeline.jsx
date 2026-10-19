@@ -1,9 +1,11 @@
 import FlightCard from './FlightCard';
 import { groupFlightsByHour } from '../planningMappers';
+import { useLanguage } from '../../../i18n/LanguageScope';
 
 export default function FlightTimeline({ flights, now, timeZone, onSelectFlight }) {
+  const { language } = useLanguage();
   const effectiveTimeZone = timeZone ?? flights.find(flight => flight.station?.ianaTimeZone)?.station.ianaTimeZone;
-  const groups = groupFlightsByHour(flights, effectiveTimeZone);
+  const groups = groupFlightsByHour(flights, effectiveTimeZone, language);
 
   return (
     <div data-testid="flight-timeline" className="space-y-4">

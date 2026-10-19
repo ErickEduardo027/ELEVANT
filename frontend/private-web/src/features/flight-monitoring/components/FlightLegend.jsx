@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { FLIGHT_STATUS_META, STATUS_COLORS } from '../../dashboard/statusMeta';
+import { FLIGHT_STATUS_META, STATUS_COLORS, getStatusLabel } from '../../dashboard/statusMeta';
 import { ChevronDownIcon } from '../../dashboard/components/icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 export default function FlightLegend() {
+  const { t, language } = useTranslation(flightMonitoringMessages);
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -13,7 +16,7 @@ export default function FlightLegend() {
         aria-expanded={!collapsed}
         className="flex w-full items-center justify-between font-semibold text-ink-900 dark:text-text-primary-dark"
       >
-        Leyenda
+        {t('legend.title')}
         <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
       </button>
       {!collapsed && (
@@ -25,7 +28,7 @@ export default function FlightLegend() {
                 style={{ backgroundColor: STATUS_COLORS[meta.color] }}
                 aria-hidden="true"
               />
-              {meta.label}
+              {getStatusLabel('flight', status, language)}
             </li>
           ))}
         </ul>
