@@ -62,21 +62,28 @@ it('keeps the newest message when periodic chat reads finish out of order', asyn
 });
 
 it('renders conversations and messages in English inside the OCC scope', async () => {
+  const conversationsRead = deferred();
+  const messagesRead = deferred();
   mocks.useAuth.mockReturnValue({ session: {
     accountId: '10000000-0000-0000-0000-000000000001',
     stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }],
   } });
   mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
-  mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation], hasMore: false });
-  mocks.messages.mockReset().mockResolvedValue({ messages: [{ ...message('agent', 'Ready'), senderName: 'Ramp', senderRole: 'agent' }], hasMore: false });
+  mocks.conversations.mockReset().mockReturnValue(conversationsRead.promise);
+  mocks.messages.mockReset().mockReturnValue(messagesRead.promise);
   window.history.replaceState({}, '', '/admin-occ/chat');
   act(() => resetLanguageForTests('en'));
 
   render(<LanguageScope><CanonicalChatRoute /></LanguageScope>);
   expect(await screen.findByRole('heading', { name: 'Operational chat' })).toBeInTheDocument();
-  expect(screen.getByText('Airline · No messages')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Loading conversations…');
+  const preview = screen.findByText('Airline · No messages');
+  await act(async () => conversationsRead.resolve({ conversations: [operation], hasMore: false }));
+  expect(await preview).toBeInTheDocument();
   expect(screen.getByText('Select an operation to see its messages.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /DEV-CHAT-01/ }));
+  expect(screen.getByText('Loading messages…')).toBeInTheDocument();
+  await act(async () => messagesRead.resolve({ messages: [{ ...message('agent', 'Ready'), senderName: 'Ramp', senderRole: 'agent' }], hasMore: false }));
   expect(await screen.findByText(/Ramp · Agent ·/)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View operation' })).toBeInTheDocument();
   expect(screen.getByLabelText('Message')).toBeInTheDocument();
