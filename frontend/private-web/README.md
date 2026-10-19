@@ -9,15 +9,22 @@ sesión. Mientras carga el logo el formulario sigue disponible: un clic,
 tecla o foco cancela la introducción pendiente. Una imagen fallida o una
 espera de 20 segundos la omite; nunca demora el inicio de sesión.
 
-El carrusel tiene pausa/reanudación explícita y dos grupos de igual ancho
-para unir el bucle sin saltos. `prefers-reduced-motion: reduce` omite la
-introducción y presenta los seis logos estáticos, también en móvil.
+El carrusel conserva los seis logos originales en una franja horizontal, con
+desplazamiento automático de 38 segundos por vuelta, pausa/reanudación explícita
+y dos grupos de igual ancho para unir el bucle sin saltos. Por decisión de
+producto, la introducción ELEVANT y el carrusel arrancan también cuando el
+sistema declara `prefers-reduced-motion: reduce`: esa preferencia no los
+oculta ni convierte la franja en cuadrícula. La pausa es voluntaria y su
+control permanece visible; una recarga inicia el carrusel de nuevo.
 
 La certificación de la imagen de producción comprueba los bytes de los
 logos/fotografías y ejecuta `scripts/verify-auth-motion.mjs` con Chromium
 contra el contenedor exacto, antes de publicarlo. Se prueba una carga lenta,
-recarga, interacción con el formulario, pausa, tema oscuro y móvil con/sin
-movimiento reducido. Para repetirla con un servidor de producción local:
+recarga, interacción con el formulario y unión del bucle. La matriz de escritorio,
+tablet y móvil exige desplazamiento real en ambos temas e idiomas, con movimiento
+reducido, sin él y sin emular la preferencia del sistema. También comprueba que
+pausar realmente detenga los logos y conserve la pausa al cambiar idioma o tema.
+Para repetirla con un servidor de producción local:
 
 ```powershell
 npx playwright install chromium

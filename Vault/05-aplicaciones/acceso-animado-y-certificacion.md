@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-19"
-verified_commit: "33b7b21984fab2c91a0eb03b98d44404557c7991"
+verified_commit: "cc4bdeb12b66f74c957e810f9b84fdf543f5e3e4"
 sources:
   - frontend/private-web/src/features/auth/components/LoginIntro.jsx
   - frontend/private-web/src/features/auth/components/AirportShowcase.jsx
@@ -50,20 +50,38 @@ añade una espera a la autenticación ni se modifica su contrato.
 
 ## Carrusel y accesibilidad
 
-Dos grupos idénticos comparten ancho y espaciado para que el desplazamiento
-continuo se una sin saltos. Un botón traducido a español/inglés pausa o reanuda
-el movimiento y comunica el estado con `aria-pressed`; el grupo duplicado es
-decorativo. Al solicitar movimiento reducido se omite la introducción y se
-muestran los seis logos estáticos en una cuadrícula, también en móvil.
+Se conservan los seis PNG originales, su orden, sus proporciones y la franja
+horizontal. Dos grupos idénticos comparten ancho y espaciado para que el
+desplazamiento automático de 38 segundos por vuelta se una sin saltos.
+Un botón traducido a español/inglés pausa o reanuda el movimiento y comunica
+el estado con `aria-pressed`; el grupo duplicado es decorativo.
+
+Por decisión explícita de producto, la introducción y el carrusel arrancan
+automáticamente incluso cuando el sistema declara movimiento reducido.
+Esa preferencia no oculta la introducción ni el control y no convierte los
+logos en una cuadrícula. La pausa es voluntaria, se conserva al cambiar tema
+o idioma y se reinicia al recargar el documento. Esta regla se limita al logo
+de bienvenida y al carrusel del acceso; no establece la política de movimiento
+de los demás módulos.
 
 ## Evidencia exigida antes de publicar
 
 `certify-image.sh` descarga y compara los bytes del isotipo, los seis logos
 y las fotografías con el código revisado. Después ejecuta Chromium contra el
 contenedor exacto: comprueba carga lenta, recarga aun con el indicador heredado,
-entrada de credenciales sin interrupción, pausa/reanudación, unión del bucle,
-tema oscuro y móvil con/sin movimiento reducido. No necesita credenciales ni
-una API disponible y no permite peticiones a servicios externos.
+entrada de credenciales sin interrupción y unión del último fotograma con el
+siguiente ciclo. La matriz cubre escritorio, tablet y móvil, ambos temas e
+idiomas, y tres preferencias: sistema sin emulación, `no-preference` y `reduce`.
+En todas exige una sola fila, proporciones originales y desplazamiento real;
+una cuadrícula estática hace fallar la certificación. Comprueba asimismo que
+la pausa detenga el movimiento y se conserve al cambiar tema o idioma.
+La medición espera a que el motor confirme la pausa mediante `Animation.ready`;
+después exige tiempo y transformación inmutables durante varios fotogramas.
+Una comprobación negativa rechaza un carrusel reanudado. La prueba del límite
+del bucle conserva el control CSS de la reproducción para no interferir con
+las comprobaciones posteriores del botón.
+No necesita credenciales ni una API disponible y no permite peticiones a
+servicios externos.
 
 El workflow instala la versión de Chromium fijada por el lockfile tanto en
 construcción como en publicación. La imagen transferida se vuelve a certificar

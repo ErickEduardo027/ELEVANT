@@ -82,10 +82,10 @@ describe('login intro', () => {
     sessionStorage.removeItem('elevant-private-intro-seen');
   });
 
-  it('skips the intro when reduced motion is requested', () => {
-    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  it.each([true, false])('plays the welcome automatically when reduced motion is %s', reduced => {
+    vi.stubGlobal('matchMedia', () => ({ matches: reduced }));
     const { container } = render(<LoginIntro marks={<span />} />);
-    expect(container.querySelector('.elv-intro-screen')).toBeNull();
+    expect(container.querySelector('.elv-intro-screen')).toBeVisible();
   });
 
   it('leaves the login available if the brand image fails', () => {

@@ -17,7 +17,7 @@ export default function LoginIntro({ marks }) {
   const claimed = useRef(false);
 
   useEffect(() => {
-    if ((playedInThisPage && !claimed.current) || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (playedInThisPage && !claimed.current) {
       setPhase('done');
       return undefined;
     }

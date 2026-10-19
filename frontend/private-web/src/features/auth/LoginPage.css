@@ -538,19 +538,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* The login welcome and airline strip start automatically by product policy.
+     The visible carousel control remains available for a voluntary pause. */
   .elv-bg-glow { animation: none; }
-  .elv-intro-screen, .elv-carousel-toggle { display: none; }
   .elv-field-error, .elv-error, .elv-notice, .elv-recovery-help { animation: none; }
   .elv-submit:hover:not(:disabled), .elv-submit:active:not(:disabled) { transform: none; }
   .elv-submit-spinner { animation-duration: 1.6s; }
   .elv-bg-layer, .elv-glass::before, .elv-glass::after, .elv-photo-stack, .elv-input, .elv-lang-thumb { transition-duration: .01ms; }
-
-  /* Static logo strip: one set, spread across the panel, no movement. */
-  .elv-marquee { height: 78px; mask-image: none; -webkit-mask-image: none; }
-  .elv-showcase-caption { bottom: 112px; }
-  .elv-marquee-track { animation: none; width: 100%; padding: 0 20px; box-sizing: border-box; }
-  .elv-airline-set[aria-hidden='true'] { display: none; }
-  .elv-airline-set { width: 100%; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .elv-airline { padding-right: 0; justify-content: center; }
-  .elv-airline img { max-width: 100%; max-height: 26px; object-fit: contain; }
 }
