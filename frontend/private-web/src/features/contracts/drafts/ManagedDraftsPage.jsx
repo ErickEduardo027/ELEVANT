@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import ContractPackagesPanel from './ContractPackagesPanel';
 import { activateManagedDraft, getManagedDrafts, updateManagedDraft } from '../../../services/commercialGovernanceApi';
 
 export default function ManagedDraftsPage({ canEdit = true, canActivate = true }) {
@@ -11,8 +12,8 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true }
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const reload = useCallback(async () => {
-    try { setDrafts(await getManagedDrafts()); setError(''); }
-    catch (failure) { setError(failure.message); }
+    try { setDrafts(await getManagedDrafts()); setError(''); return true; }
+    catch (failure) { setError(failure.message); return false; }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
@@ -34,7 +35,7 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true }
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_500px]"><section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Versiones pendientes</h2>{loading ? <p className="mt-5 text-sm">Cargando…</p> : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => <button type="button" key={item.id} onClick={() => setSelectedId(item.id)} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="text-xs text-text-secondary-light">{item.contractCode} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>)}</div> : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
-    <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} act={act} canEdit={canEdit} canActivate={canActivate} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
+    <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} act={act} canEdit={canEdit} canActivate={canActivate} onPackagesSaved={async () => { if (!await reload()) throw new Error('No se pudo actualizar el borrador.'); }} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
   </div>;
 }
 
@@ -55,7 +56,7 @@ const VERSION_STATUS = {
  * negotiated; charges can be excluded or negotiated per contract. Submitting sends
  * the draft to Finance, whose approval activates the contract.
  */
-function DraftEditor({ draft, act, canEdit, canActivate }) {
+function DraftEditor({ draft, act, canEdit, canActivate, onPackagesSaved }) {
   const pending = draft.versionStatus === 'PendingFinanceApproval';
   const editable = canEdit && !pending;
   const [terms, setTerms] = useState(draft.terms ?? '');
@@ -66,6 +67,8 @@ function DraftEditor({ draft, act, canEdit, canActivate }) {
   const [charges, setCharges] = useState((draft.charges ?? []).map(charge => ({ ...charge,
     mode: charge.isExcluded ? 'excluded' : charge.value !== null && charge.value !== undefined ? 'negotiated' : 'base' })));
   const [busy, setBusy] = useState(false);
+  const [packagesBusy, setPackagesBusy] = useState(false);
+  const [packagesDirty, setPackagesDirty] = useState(false);
   const [saved, setSaved] = useState(true);
   const [pendingActivation, setPendingActivation] = useState(false);
   async function save(event) {
@@ -93,7 +96,7 @@ function DraftEditor({ draft, act, canEdit, canActivate }) {
     {draft.financeDecision === 'Returned' && !pending && <p role="alert" className="mt-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">Finanzas devolvió el contrato: {draft.financeReason}</p>}
     <section className="mt-5 rounded-lg bg-black/[.03] p-4 dark:bg-white/[.04]"><h3 className="text-sm font-bold">Observaciones de la aerolínea</h3>{draft.comments.length ? <ul className="mt-3 space-y-2">{draft.comments.map(comment => <li key={comment.id} className="border-b border-black/5 pb-2 text-sm"><strong>{comment.author}</strong><p>{comment.body}</p><time className="text-xs text-text-secondary-light">{new Date(comment.at).toLocaleString('es-DO')}</time></li>)}</ul> : <p className="mt-2 text-xs text-text-secondary-light">Aún no hay comentarios.</p>}</section>
     {canEdit && <form onSubmit={save} onChange={() => setSaved(false)} className="mt-5 space-y-4">
-      <fieldset disabled={!editable} className="space-y-4">
+      <fieldset disabled={!editable || busy || packagesBusy || packagesDirty} className="space-y-4">
         <label className="block text-xs font-semibold">Condiciones del contrato<textarea required maxLength={10000} rows={4} value={terms} onChange={event => setTerms(event.target.value)} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs font-semibold">Vigente desde<input type="date" required value={validFrom} onChange={event => setValidFrom(event.target.value)} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
@@ -119,9 +122,10 @@ function DraftEditor({ draft, act, canEdit, canActivate }) {
             {charge.mode === 'negotiated' ? <label>Importe<input aria-label={`Importe de ${charge.code}`} type="number" min="0" step="0.01" required value={charge.value ?? ''} onChange={event => updateCharge(charge.chargeId, { value: event.target.value })} className={fieldClass} /></label> : <span />}
           </div>)}</div>}
       </fieldset>
-      {editable && <button disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar borrador</button>}
+      {editable && <button disabled={busy || packagesBusy || packagesDirty} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Guardar borrador</button>}
     </form>}
-    {canActivate && !pending && <div className="mt-6 border-t border-black/10 pt-4 dark:border-white/10"><p className="text-xs text-text-secondary-light">Requiere cuenta creada, condiciones y servicios confirmados. Finanzas aprobará el contrato antes de activarlo.</p><button type="button" disabled={busy || !saved || !draft.terms?.trim() || rates.length === 0 || rates.some(rate => !rate.isConfirmed)} onClick={() => setPendingActivation(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
+    {draft.version ? <ContractPackagesPanel draft={draft} canEdit={canEdit} disabled={busy || !saved} onSaved={onPackagesSaved} onBusyChange={setPackagesBusy} onDirtyChange={setPackagesDirty} /> : <p className="mt-5 text-xs text-text-secondary-light">Actualice el borrador para consultar sus paquetes y obtener su versión vigente.</p>}
+    {canActivate && !pending && <div className="mt-6 border-t border-black/10 pt-4 dark:border-white/10"><p className="text-xs text-text-secondary-light">Requiere cuenta creada, condiciones y servicios confirmados. Finanzas aprobará el contrato antes de activarlo.</p><button type="button" disabled={busy || packagesBusy || packagesDirty || !saved || !draft.terms?.trim() || rates.length === 0 || rates.some(rate => !rate.isConfirmed)} onClick={() => setPendingActivation(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
     {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrá editarlo de nuevo.</p>}
     <ConfirmDialog open={pendingActivation} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas? El contrato se activará cuando Finanzas lo apruebe.`} confirmLabel="Enviar" onClose={() => setPendingActivation(false)} onConfirm={() => void submitToFinance()} busy={busy} />
   </div>;

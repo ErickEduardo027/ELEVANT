@@ -19,7 +19,7 @@ export default function FinanceReceivablesStrip({ stationId, onNavigate, revisio
   useEffect(() => {
     if (!canReports || !stationId) return undefined;
     let active = true;
-    getFinanceReport('receivables', { from: '2000-01-01', to: today(), stationId, currency: '' })
+    getFinanceReport('receivables', { from: today(), to: today(), stationId, currency: '' })
       .then(report => active && setMetrics(report.summary.filter(metric =>
         metric.label.startsWith('Por cobrar') || metric.label.startsWith('Vencido'))))
       .catch(() => active && setMetrics([]));

@@ -19,6 +19,10 @@ vi.mock('../../services/financeBookService', async importOriginal => ({
   listCharges: vi.fn(), saveCharge: vi.fn(), listFinanceServices: vi.fn(), listBillingUnits: vi.fn(),
   listChargeTariffs: vi.fn().mockResolvedValue([]), editPreinvoiceLine: vi.fn(), addPreinvoiceAdjustment: vi.fn(),
 }));
+vi.mock('../../services/financeTreasuryService', async original => ({ ...(await original()),
+  getTreasuryStatement: vi.fn().mockResolvedValue({ invoices: [], receipts: [] }),
+  getTreasuryAdjustments: vi.fn().mockResolvedValue({ invoiceId: 'inv-1', legacyCredited: 0, notes: [], lines: [], version: '0' }),
+}));
 vi.mock('../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 'st-1', stationCode: 'PUJ' }] }) }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
@@ -66,7 +70,7 @@ describe('ContractApprovalsPage', () => {
 });
 
 describe('InvoicesPage', () => {
-  it('records a partial payment against the balance with a stable request id', async () => {
+  it('opens the receipt and application flow instead of writing a legacy payment', async () => {
     const invoice = { id: 'inv-1', number: 'NF-0123456789abcdef', preinvoiceId: 'p-1', airlineId: 'a-1', airline: 'Demo Airlines',
       stationId: 'st-1', stationCode: 'PUJ', currencyCode: 'USD', total: 135.5, paid: 0, credited: 0, balance: 135.5,
       issuedAt: '2026-10-08T10:00:00Z', dueDate: '2026-11-07', status: 'Pending', daysOverdue: 0 };
@@ -77,19 +81,14 @@ describe('InvoicesPage', () => {
       { lineNumber: 2, kind: 'Charge', parentLineNumber: 1, operationCode: 'OP', operationDate: '2026-10-08', serviceCode: 'NIGHT',
         serviceName: 'Nocturno', quantity: 1, billingUnit: 'operation', unitPrice: 10, amount: 10, reason: 'Acordado' }] });
     recordPartialPayment.mockResolvedValue({ id: 'pay-1' });
-    renderWith(<InvoicesPage initialStationId="st-1" />);
+    const onOpenReceipt = vi.fn();
+    renderWith(<InvoicesPage initialStationId="st-1" onOpenReceipt={onOpenReceipt} />);
     await userEvent.click(await screen.findByRole('button', { name: /NF-0123456789ab/ }));
     const drawer = await screen.findByRole('dialog', { name: /Factura Demo Airlines/ });
     expect(within(drawer).getByText('Acordado')).toBeInTheDocument();
-    await userEvent.click(within(drawer).getByRole('button', { name: 'Registrar pago' }));
-    const amount = screen.getByRole('spinbutton', { name: /Importe/ });
-    await userEvent.clear(amount);
-    await userEvent.type(amount, '50');
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Método' }), 'Check');
-    await userEvent.type(screen.getByRole('textbox', { name: 'Referencia' }), 'CHK-000123');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
-    expect(recordPartialPayment).toHaveBeenCalledWith(expect.objectContaining({ invoiceId: 'inv-1', amount: 50, method: 'Check',
-      reference: 'CHK-000123', requestId: expect.stringMatching(/^[0-9a-f-]{36}$/i) }));
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Gestionar cobros y aplicaciones' }));
+    expect(onOpenReceipt).toHaveBeenCalledWith(null, expect.objectContaining({ invoiceId: 'inv-1', airlineId: 'a-1', stationId: 'st-1' }));
+    expect(recordPartialPayment).not.toHaveBeenCalled();
   });
 });
 

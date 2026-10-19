@@ -10,6 +10,7 @@ export const CONTRACT_MODULE_IDS = {
   CATALOG: 'contracts-catalog',
   REPORTS: 'contracts-reports',
   USERS: 'contracts-users',
+  EXPENSES: 'contracts-expenses',
 };
 
 export const CONTRACT_MODULES = [
@@ -55,6 +56,7 @@ export const CONTRACT_MODULES = [
     icon: BarChartIcon,
     description: 'Indicadores y consultas contractuales autorizadas.',
   },
+  { id: CONTRACT_MODULE_IDS.EXPENSES, label: 'Mis gastos', icon: BarChartIcon, description: 'Gastos propios y revisiones del departamento.' },
   {
     id: CONTRACT_MODULE_IDS.USERS,
     administratorsOnly: true,

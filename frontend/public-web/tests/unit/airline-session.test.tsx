@@ -279,8 +279,11 @@ it("invalidates the airline Finance read model on a published preinvoice hint", 
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
   await screen.findByText("Demo Airlines");
   expect(screen.getByTestId("finance-revision")).toHaveTextContent("0");
+  await waitFor(() => expect(observe).toHaveBeenCalledOnce());
   act(() => observe.mock.calls[0][0].onChanges(["airline_preinvoices"]));
   expect(screen.getByTestId("finance-revision")).toHaveTextContent("1");
+  act(() => observe.mock.calls[0][0].onChanges(["airline_treasury"]));
+  expect(screen.getByTestId("finance-revision")).toHaveTextContent("2");
 });
 
 it("accepts with a stable key and refreshes Finance without storing business state", async () => {

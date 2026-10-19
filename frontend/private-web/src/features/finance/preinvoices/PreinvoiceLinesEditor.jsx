@@ -3,7 +3,7 @@ import Modal from '../../../components/Modal';
 import { addPreinvoiceAdjustment, editPreinvoiceLine, formatMoney } from '../../../services/financeBookService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste' };
+const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste', Package: 'Paquete', Excess: 'Excedente', Minimum: 'Mínimo' };
 
 /**
  * Lines of a preinvoice: each service with the charges the agent marked and any

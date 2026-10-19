@@ -21,6 +21,10 @@ export const DepartmentPermissionCodes = {
     service_closures: ['read', 'decide', 'reopen'], reports: ['read'],
   }),
   finance: codes('finance', {
+    catalog: ['read', 'manage'], packages: ['read', 'manage'], taxes: ['read', 'manage'],
+    receipts: ['read', 'manage', 'apply', 'reverse', 'refund'], adjustments: ['read', 'issue'],
+    suppliers: ['read', 'manage'], payables: ['read', 'manage', 'approve', 'pay'],
+    expenses: ['read', 'manage', 'approve', 'pay'], fiscal: ['read', 'manage', 'simulate'],
     home: ['read'], approved_services: ['read', 'preinvoice'], preinvoices: ['read', 'manage'],
     reconciliation: ['read', 'record'], tariffs: ['read', 'manage'], charges: ['read', 'manage'],
     exchange_rates: ['read', 'manage'], contract_approvals: ['read', 'decide'], reports: ['read', 'export'],

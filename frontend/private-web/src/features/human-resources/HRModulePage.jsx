@@ -14,6 +14,7 @@ import PositionsPage from '../employees/PositionsPage';
 import RequisitionsPage from '../employees/RequisitionsPage';
 import NotificationsRoute from './notifications/NotificationsRoute';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
+import DepartmentExpensesPage from '../finance/payables/DepartmentExpensesPage';
 import DepartmentUsersPage from '../department-users/DepartmentUsersPage';
 import AccessValidationsPage from '../department-users/AccessValidationsPage';
 import { DEPARTMENTS } from '../../services/departmentGovernanceService';
@@ -32,6 +33,7 @@ export default function HRModulePage({ moduleId }) {
 
   if (unavailableInRestrictedRelease) return null;
   if (moduleId === 'dashboard') return <HumanResourcesDashboardPage dashboardReadOnlyDemo={HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO} />;
+  if (moduleId === 'expenses') return <DepartmentExpensesPage />;
   if (moduleId === 'employees') return <EmployeesPage />;
   if (moduleId === 'positions') return <PositionsPage />;
   if (moduleId === 'requisitions') return <RequisitionsPage />;

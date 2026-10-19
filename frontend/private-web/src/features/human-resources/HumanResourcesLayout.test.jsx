@@ -29,7 +29,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
   it('exposes connected HR reads without a synthetic qualification badge', () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo /></DepartmentAccessProvider>);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['dashboard', 'employees', 'positions', 'requisitions',
+    expect(shellProps.navigation.map(item => item.id)).toEqual(['expenses', 'dashboard', 'employees', 'positions', 'requisitions',
       'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', 'audit', 'access-requests',
       'department-users']);
     expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
@@ -46,6 +46,7 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
 
     expect(shellProps.navigation.map(item => item.id)).toEqual([
+      'expenses',
       'dashboard',
       'employees',
       'positions',
@@ -75,6 +76,6 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       permissions: ['human_resources.access_requests.read', 'human_resources.access_requests.validate'], stations: [],
       canManageDepartmentUsers: false, canValidateAccessRequests: true }}><HumanResourcesLayout dashboardReadOnlyDemo={false} /></DepartmentAccessProvider>);
 
-    expect(shellProps.navigation.map(item => item.id)).toEqual(['access-requests']);
+    expect(shellProps.navigation.map(item => item.id)).toEqual(['expenses', 'access-requests']);
   });
 });

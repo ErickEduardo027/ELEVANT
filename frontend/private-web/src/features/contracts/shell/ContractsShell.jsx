@@ -16,6 +16,7 @@ import { getServiceClosures } from '../../../services/commercialGovernanceApi';
 import { allowedNavigation, useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import NoModulesNotice from '../../access/NoModulesNotice';
 import DepartmentUsersPage from '../../department-users/DepartmentUsersPage';
+import DepartmentExpensesPage from '../../finance/payables/DepartmentExpensesPage';
 import { DEPARTMENTS } from '../../../services/departmentGovernanceService';
 
 const CURRENT_USER = { name: 'Usuario de Contratos', role: 'Departamento de Contratos' };
@@ -99,11 +100,13 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
             <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
-            <CommercialCatalogPage canCreate={can('contracts.catalog.create')} canEdit={can('contracts.catalog.edit')} canRetire={can('contracts.catalog.retire')} canSeeClosures={can('contracts.service_closures.read')} />
+            <CommercialCatalogPage canCreate={false} canEdit={false} canRetire={false} canSeeClosures={can('contracts.service_closures.read')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (
             <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
             <ManagedAgreementsPage mode="reports" />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.EXPENSES ? (
+            <DepartmentExpensesPage />
           ) : activeModule.id === CONTRACT_MODULE_IDS.USERS ? (
             <DepartmentUsersPage department={DEPARTMENTS.CONTRACTS} />
           ) : (

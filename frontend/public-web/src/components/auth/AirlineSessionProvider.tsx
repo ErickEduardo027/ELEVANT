@@ -13,6 +13,7 @@ import { ElevantApiError, type AirlineContractPageResponse,
   type DisputeAirlinePreinvoiceRequest,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
   type SessionActorResponse } from "@elevant/api-client";
+import { createAirlineTreasuryService, type AirlineTreasuryService, type AirlineTreasuryStatement, type AirlineTreasuryInvoiceDetail, type AirlineTreasuryReceipt, type AirlineTreasuryNotes } from "@/lib/airline-treasury-service";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
@@ -54,6 +55,10 @@ interface AirlineSessionContextValue {
   getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
   getPreinvoiceDisputes(preinvoiceId: string): Promise<PreinvoiceDisputeListResponse>;
   getPreinvoiceInvoice(preinvoiceId: string): Promise<NonFiscalInvoiceResponse>;
+  getTreasuryStatement(asOf: string, stationId?: string, signal?: AbortSignal): Promise<AirlineTreasuryStatement>;
+  getTreasuryInvoice(invoiceId: string, signal?: AbortSignal): Promise<AirlineTreasuryInvoiceDetail>;
+  getTreasuryReceipt(receiptId: string, signal?: AbortSignal): Promise<AirlineTreasuryReceipt>;
+  getTreasuryNotes(invoiceId: string, signal?: AbortSignal): Promise<AirlineTreasuryNotes>;
   getInvoicePayment(invoiceId: string): Promise<NonFiscalPaymentLookupResponse>;
   getInvoiceStatement(invoiceId: string): Promise<AirlineInvoiceStatementResponse>;
   getInvoiceDocument(preinvoiceId: string): Promise<Blob>;
@@ -230,7 +235,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       onChanges: resources => {
         if (resources.includes("airline_operations")) void refreshLive();
         if (resources.includes("airline_contracts")) setDraftRevision(current => current + 1);
-        if (resources.includes("airline_preinvoices")) setFinanceRevision(current => current + 1);
+        if (resources.includes("airline_preinvoices") || resources.includes("airline_treasury")) setFinanceRevision(current => current + 1);
       } });
     void observer.start();
     return () => { void observer.stop(); };
@@ -434,6 +439,28 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
+  const readTreasury = useCallback(async <T,>(read: (service: AirlineTreasuryService) => Promise<T>): Promise<T> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await read(createAirlineTreasuryService({ baseUrl, getAccessToken: () => record.accessToken }));
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError && (error.status === 401 || error.status === 403)) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+  const getTreasuryStatement = useCallback((asOf: string, stationId?: string, signal?: AbortSignal) =>
+    readTreasury(service => service.getStatement(asOf, stationId, signal)), [readTreasury]);
+  const getTreasuryInvoice = useCallback((invoiceId: string, signal?: AbortSignal) =>
+    readTreasury(service => service.getInvoice(invoiceId, signal)), [readTreasury]);
+  const getTreasuryReceipt = useCallback((receiptId: string, signal?: AbortSignal) =>
+    readTreasury(service => service.getReceipt(receiptId, signal)), [readTreasury]);
+  const getTreasuryNotes = useCallback((invoiceId: string, signal?: AbortSignal) =>
+    readTreasury(service => service.getNotes(invoiceId, signal)), [readTreasury]);
+
   const getInvoiceStatement = useCallback(async (
     invoiceId: string): Promise<AirlineInvoiceStatementResponse> => {
     const record = stored.current;
@@ -572,7 +599,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

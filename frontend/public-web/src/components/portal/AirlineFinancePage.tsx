@@ -9,6 +9,7 @@ import { ElevantApiError, type AirlinePreinvoiceDetailResponse,
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import styles from "./AirlinePortalPage.module.css";
+import { AirlineTreasuryPanel } from "./AirlineTreasuryPanel";
 
 const STATUS: Record<string, string> = {
   Submitted: "Pendiente de respuesta",
@@ -24,7 +25,10 @@ function amount(currency: string, total: number) {
   }).format(total)}`;
 }
 
-const KIND: Record<string, string> = { Service: "Servicio", Charge: "Cargo", Adjustment: "Ajuste" };
+const KIND: Record<string, string> = {
+  Service: "Servicio", Charge: "Cargo", Adjustment: "Ajuste",
+  Package: "Paquete", Excess: "Exceso", Minimum: "Mínimo",
+};
 const INVOICE_STATUS: Record<string, string> = {
   Pending: "Pendiente de pago", PartiallyPaid: "Pago parcial", Paid: "Pagada", Overdue: "Vencida",
 };
@@ -55,7 +59,7 @@ function InvoiceSummary({ invoice, statement }: { invoice: NonFiscalInvoiceRespo
     {statement ? <>
       <p>{INVOICE_STATUS[statement.status] ?? statement.status} · Saldo {amount(currency, statement.balance)}
         {statement.daysOverdue > 0 ? ` · ${statement.daysOverdue} días de atraso` : ""}</p>
-      {statement.payments.length === 0 && <p>Sin pago registrado.</p>}
+      {statement.payments.length === 0 && <p>Sin pagos históricos registrados.</p>}
       {statement.payments.map(payment => <p key={payment.reference}>
         Pago {METHOD[payment.method] ?? payment.method} {payment.reference}
         {payment.paidOn ? ` · ${payment.paidOn}` : ""} · {amount(currency, payment.amount)}
@@ -64,6 +68,7 @@ function InvoiceSummary({ invoice, statement }: { invoice: NonFiscalInvoiceRespo
         Nota de crédito {note.number} · {amount(currency, note.amount)} · {note.reason}
       </p>)}
     </> : <p>No se pudo consultar el estado de cuenta de la factura.</p>}
+    <AirlineTreasuryPanel key={invoice.id} invoiceId={invoice.id} />
   </section>;
 }
 
@@ -220,6 +225,7 @@ export function AirlineFinancePage({ airlineName }: { airlineName: string }) {
       <p role="status">Disputa registrada para la prefactura {dispute.id}. Finanzas puede revisar las líneas indicadas.</p>}
     {dispute.status === "conflict" &&
       <p role="alert">La prefactura cambió antes de registrar la disputa. Revisa el estado actualizado.</p>}
+    <AirlineTreasuryPanel />
     <div className={styles.metrics} aria-label="Estado de las prefacturas cargadas">
       <div><span>Prefacturas cargadas</span><strong>{loadedPreinvoices.length}</strong></div>
       <div><span>Pendientes de respuesta</span><strong>{loadedPreinvoices.filter(item => item.status === "Submitted").length}</strong></div>

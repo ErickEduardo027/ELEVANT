@@ -31,7 +31,10 @@ describe('FinanceReceivablesStrip', () => {
     expect(await screen.findByText('Por cobrar USD')).toBeInTheDocument();
     expect(screen.getByText('Vencido USD')).toBeInTheDocument();
     expect(screen.queryByText('Facturas')).not.toBeInTheDocument();
-    expect(getFinanceReport).toHaveBeenCalledWith('receivables', expect.objectContaining({ stationId: 'st-1' }));
+    const cutoff = new Date().toISOString().slice(0, 10);
+    expect(getFinanceReport).toHaveBeenCalledWith('receivables', {
+      stationId: 'st-1', from: cutoff, to: cutoff, currency: '',
+    });
     await userEvent.click(await screen.findByRole('button', { name: /Contratos por aprobar/ }));
     expect(onNavigate).toHaveBeenCalledWith('finance-contract-approvals');
   });

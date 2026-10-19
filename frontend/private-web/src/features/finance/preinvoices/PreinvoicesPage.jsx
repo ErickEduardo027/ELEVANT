@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PreinvoiceLinesEditor from './PreinvoiceLinesEditor';
+import PreinvoiceReviewPanel from './PreinvoiceReviewPanel';
+import PreinvoiceTaxesPanel from '../taxes/PreinvoiceTaxesPanel';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
@@ -385,8 +387,10 @@ export default function PreinvoicesPage({ initialStationId }) {
       <h2 className="font-semibold">{detail.value.airlineName} · {detail.value.id}</h2>
       <p className="mt-1 text-sm">{STATUS[detail.value.status] ?? detail.value.status} · {money(detail.value.total, detail.value.currencyCode)}</p>
       <PreinvoiceLinesEditor preinvoice={detail.value} canEdit={canManage}
-        onChanged={message => { setLineNotice(message); void openDetail(detail.value.id, { preserveAttempts: true }); }} />
+        onChanged={message => { if (selectedPreinvoiceId.current === detail.value.id) { setLineNotice(message); void openDetail(detail.value.id, { preserveAttempts: true }); } }} />
       {lineNotice && <p role="status" className="mt-2 text-sm">{lineNotice}</p>}
+      {access?.can('finance.taxes.read') && <PreinvoiceTaxesPanel key={detail.value.id + detail.value.version} preinvoiceId={detail.value.id} status={detail.value.status} onChanged={() => { if (selectedPreinvoiceId.current === detail.value.id) void openDetail(detail.value.id, { preserveAttempts: true }); }} />}
+      <PreinvoiceReviewPanel key={detail.value.id + detail.value.version} preinvoice={detail.value} canManage={canManage} onChanged={message => { setLineNotice(message); setRevision(value => value + 1); }} />
       {detail.value.disputes?.length > 0 && <section className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
         aria-label="Disputas de la aerolínea">
         <h3 className="text-sm font-semibold">Disputas registradas</h3>
