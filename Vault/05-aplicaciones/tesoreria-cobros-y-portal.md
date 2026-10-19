@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-19"
-verified_commit: pending
+verified_commit: "2f57941912f4dffe40355dc75aea8f63af7f26d4"
 sources:
   - backend/Elevant.Api/Controllers/AirlineTreasuryController.cs
   - backend/Elevant.Application/Abstractions/Finance/FinanceTreasuryPortalAccess.cs
