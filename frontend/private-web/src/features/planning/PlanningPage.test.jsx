@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PlanningPage from './PlanningPage';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 import { usePlanningOptions } from './usePlanningOptions';
 import { usePlanningAssignment } from './usePlanningAssignment';
 
@@ -74,7 +76,6 @@ const DEFAULT_PROPS = {
   onRetry: () => {},
   stationScopes: STATION_SCOPES,
   selectedStationId: STATION_ID,
-  onStationChange: () => {},
   selectedDate: SNAPSHOT.date,
   onDateChange: () => {},
 };
@@ -98,7 +99,7 @@ describe('PlanningPage', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Planificación Operativa' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Estación')).toHaveValue(STATION_ID);
+    expect(screen.getByRole('group', { name: 'Estación' })).toHaveTextContent('PUJ');
     expect(screen.getByLabelText('Fecha operativa')).toHaveValue('2026-08-19');
     expect(screen.getByText('Escalas operativas')).toBeInTheDocument();
     expect(screen.getByText('Tramos de vuelo')).toBeInTheDocument();
@@ -112,7 +113,7 @@ describe('PlanningPage', () => {
     expect(screen.getByTestId('planning-skeleton')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Cargando planificación operativa' })).toBeInTheDocument();
     expect(screen.getAllByTestId('kpi-skeleton')).toHaveLength(4);
-    expect(screen.getByLabelText('Estación')).toBeEnabled();
+    expect(screen.getByRole('group', { name: 'Estación' })).toBeInTheDocument();
     expect(screen.getByLabelText('Fecha operativa')).toBeEnabled();
   });
 
@@ -328,5 +329,34 @@ describe('PlanningPage', () => {
 
     rerender(<PlanningPage {...DEFAULT_PROPS} forceState="loading" />);
     expect(screen.getByTestId('planning-skeleton')).toBeInTheDocument();
+  });
+});
+
+describe('PlanningPage in English', () => {
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the planning chrome, filters and turnaround cards in English inside the OCC scope', async () => {
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><PlanningPage {...DEFAULT_PROPS} /></LanguageScope>);
+
+    expect(screen.getByRole('heading', { name: 'Operational Planning' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Station' })).toHaveTextContent('PUJ');
+    expect(screen.getByLabelText('Operational date')).toHaveValue('2026-08-19');
+    expect(screen.getByText('Operational turnarounds')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Confirmed' })).toBeInTheDocument();
+    expect(screen.getAllByText('Needs resources').length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delayed' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Table' }));
+    expect(screen.getByText('Table view')).toBeInTheDocument();
+  });
+
+  it('renders the empty state in English', () => {
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><PlanningPage {...DEFAULT_PROPS} status="empty" data={createPlanningSnapshot([])} /></LanguageScope>);
+
+    expect(screen.getByText('No scheduled flights')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New flight' })).toBeEnabled();
   });
 });

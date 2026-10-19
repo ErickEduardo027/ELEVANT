@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import StatusBadge from '../../../components/StatusBadge';
-import { getStatusMeta } from '../../dashboard/statusMeta';
+import { getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
 import { XIcon } from '../../flight-monitoring/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 function Field({ label, children }) {
   return (
@@ -16,6 +18,7 @@ function Field({ label, children }) {
 }
 
 export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring }) {
+  const { t, language, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
     function handleKeyDown(event) {
@@ -46,15 +49,15 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
               {position.id}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone={meta.color} label={meta.label} />
+              <StatusBadge tone={meta.color} label={getStatusLabel('position', position.status, language)} />
               <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {TERMINAL_LABELS[position.terminal] ?? position.terminal}
+                {TERMINAL_LABELS[position.terminal] ? t(`terminals.labels.${position.terminal}`) : position.terminal}
               </span>
             </div>
           </div>
           <button
             type="button"
-            aria-label="Cerrar detalle"
+            aria-label={t('detail.close')}
             onClick={onClose}
             className="rounded-md p-1.5 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
           >
@@ -67,21 +70,21 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
 
           {hasFlight ? (
             <dl className="grid grid-cols-2 gap-x-3 gap-y-3 text-xs">
-              <Field label="Vuelo">{position.flightNumber}</Field>
-              <Field label="Aerolínea">{position.airline}</Field>
-              <Field label="Matrícula">{position.aircraftRegistration}</Field>
-              <Field label="Tipo de aeronave">{position.aircraftType}</Field>
-              <Field label="Agente">{position.assignedAgent ?? 'Sin asignar'}</Field>
-              <Field label={position.status === 'planned' ? 'Liberación no verificada' : 'Hora estimada de liberación'}>
-                {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime) : '—'}
+              <Field label={t('detail.flight')}>{position.flightNumber}</Field>
+              <Field label={t('detail.airline')}>{position.airline}</Field>
+              <Field label={t('detail.registration')}>{position.aircraftRegistration}</Field>
+              <Field label={t('detail.aircraftType')}>{position.aircraftType}</Field>
+              <Field label={t('detail.agent')}>{position.assignedAgent ?? t('detail.unassigned')}</Field>
+              <Field label={position.status === 'planned' ? t('detail.releaseUnverified') : t('detail.estimatedRelease')}>
+                {position.estimatedReleaseTime ? formatClockTime(position.estimatedReleaseTime, locale) : '—'}
               </Field>
             </dl>
           ) : (
-            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? 'Sin asignación visible en la planificación. Ocupación física no verificada.' : 'Sin vuelo asignado'}</p>
+            <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? t('detail.unverifiedNote') : t('detail.noFlight')}</p>
           )}
 
           <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            Última actualización: {position.updatedAt ? formatClockTime(position.updatedAt) : '—'}
+            {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}
           </p>
         </div>
 
@@ -92,7 +95,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
               onClick={() => onViewFlightInMonitoring(position.flightId)}
               className="w-full rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white hover:bg-accent-600/90"
             >
-              Ver vuelo en Monitoreo
+              {t('detail.viewFlight')}
             </button>
           </div>
         )}

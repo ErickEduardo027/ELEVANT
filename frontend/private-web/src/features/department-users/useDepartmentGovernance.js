@@ -82,23 +82,9 @@ export function newRequestId() {
 export const PASSWORD_PATTERN = '(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{14,}';
 export const PASSWORD_HINT = 'Al menos 14 caracteres con mayúscula, minúscula, número y símbolo.';
 
-export const KIND_LABELS = {
-  Administrator: 'Administrador',
-  Member: 'Sub-usuario',
-  RampAgent: 'Agente de rampa',
-};
-
-export const STATUS_LABELS = {
-  Active: 'Activo',
-  Disabled: 'Inactivo',
-  Blocked: 'Bloqueado',
-  PendingActivation: 'Pendiente de activación',
-  InvitationSent: 'Invitación enviada',
-};
-
-export const REQUEST_STATUS = {
-  Pending: { label: 'Pendiente de validar', tone: 'warning' },
-  Validated: { label: 'Validada', tone: 'success' },
-  Rejected: { label: 'Rechazada', tone: 'danger' },
-  Cancelled: { label: 'Cancelada', tone: 'neutral' },
+export const REQUEST_STATUS_TONES = {
+  Pending: 'warning',
+  Validated: 'success',
+  Rejected: 'danger',
+  Cancelled: 'neutral',
 };

@@ -1,3 +1,6 @@
+import { createTranslator } from '../../i18n/languageStore';
+import { planningMessages } from './planningMessages';
+
 function copyAirport(airport) {
   return airport ? { ...airport } : null;
 }
@@ -182,8 +185,8 @@ export function extractDateFromIso(iso) {
   return match ? match[1] : '';
 }
 
-function hourLabel(iso, timeZone) {
-  if (typeof iso !== 'string' || Number.isNaN(Date.parse(iso))) return 'Sin hora';
+function hourLabel(iso, timeZone, t) {
+  if (typeof iso !== 'string' || Number.isNaN(Date.parse(iso))) return t('time.none');
 
   try {
     const hour = new Intl.DateTimeFormat('en-GB', {
@@ -193,7 +196,7 @@ function hourLabel(iso, timeZone) {
     }).format(new Date(iso));
     return `${hour}:00`;
   } catch {
-    return 'Sin hora';
+    return t('time.none');
   }
 }
 
@@ -206,12 +209,13 @@ function compareTimelineTime(left, right) {
   return leftTime.localeCompare(rightTime);
 }
 
-export function groupFlightsByHour(flights, timeZone) {
+export function groupFlightsByHour(flights, timeZone, language = 'es') {
+  const t = createTranslator(planningMessages, language);
   const sorted = [...flights].sort(compareTimelineTime);
   const groups = [];
 
   for (const flight of sorted) {
-    const label = hourLabel(flight.timelineTime ?? flight.scheduledTime, timeZone);
+    const label = hourLabel(flight.timelineTime ?? flight.scheduledTime, timeZone, t);
     const currentGroup = groups[groups.length - 1];
     if (currentGroup && currentGroup.hourLabel === label) {
       currentGroup.flights.push(flight);
@@ -223,21 +227,22 @@ export function groupFlightsByHour(flights, timeZone) {
   return groups;
 }
 
-export function formatCountdown(scheduledIso, nowIso) {
+export function formatCountdown(scheduledIso, nowIso, language = 'es') {
+  const t = createTranslator(planningMessages, language);
   const scheduled = validTimestamp(scheduledIso);
   const now = validTimestamp(nowIso);
-  if (scheduled === null || now === null) return 'Sin hora';
+  if (scheduled === null || now === null) return t('time.none');
 
   const diffMinutes = Math.round((scheduled - now) / 60000);
-  if (diffMinutes === 0) return 'Ahora';
+  if (diffMinutes === 0) return t('time.now');
   const absoluteMinutes = Math.abs(diffMinutes);
-  const direction = diffMinutes > 0 ? 'En' : 'Hace';
+  const direction = diffMinutes > 0 ? 'time.in' : 'time.ago';
 
-  if (absoluteMinutes < 60) return `${direction} ${absoluteMinutes} min`;
-  if (absoluteMinutes < 1440) return `${direction} ${Math.round(absoluteMinutes / 60)} h`;
+  if (absoluteMinutes < 60) return t(direction, { value: `${absoluteMinutes} min` });
+  if (absoluteMinutes < 1440) return t(direction, { value: `${Math.round(absoluteMinutes / 60)} h` });
 
   const days = Math.round(absoluteMinutes / 1440);
-  return `${direction} ${days} ${days === 1 ? 'día' : 'días'}`;
+  return t(direction, { value: `${days} ${t(days === 1 ? 'time.day' : 'time.days')}` });
 }
 
 function uniqueSorted(values) {

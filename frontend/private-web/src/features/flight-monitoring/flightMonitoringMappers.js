@@ -1,3 +1,8 @@
+import { createTranslator } from '../../i18n/languageStore';
+import { flightMonitoringMessages } from './flightMonitoringMessages';
+
+const spanish = createTranslator(flightMonitoringMessages, 'es');
+
 export const PUJ_COORDINATES = { latitude: 18.5674, longitude: -68.3634 };
 
 export function isStationRelated(flight, stationCode = 'PUJ') {
@@ -48,10 +53,10 @@ export function getFilterOptions(flights) {
   };
 }
 
-export function formatRemaining(etaIso, nowIso) {
+export function formatRemaining(etaIso, nowIso, t = spanish) {
   if (!etaIso) return '—';
   const diffMinutes = Math.round((new Date(etaIso).getTime() - new Date(nowIso).getTime()) / 60000);
-  if (diffMinutes === 0) return 'Ahora';
-  if (diffMinutes > 0) return `En ${diffMinutes} min`;
-  return `Hace ${Math.abs(diffMinutes)} min`;
+  if (diffMinutes === 0) return t('remaining.now');
+  if (diffMinutes > 0) return t('remaining.in', { minutes: diffMinutes });
+  return t('remaining.ago', { minutes: Math.abs(diffMinutes) });
 }

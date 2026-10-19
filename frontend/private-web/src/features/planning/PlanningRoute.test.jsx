@@ -82,42 +82,33 @@ describe('PlanningRoute', () => {
     expect(pageCapture.props.hasStationScope).toBe(false);
   });
 
-  it('sends an explicit date and clears it when the operator changes station', () => {
-    setSession([...STATION_SCOPES, SECOND_STATION]);
+  it('only exposes the PUJ scope, even when it is not the first authorized station', () => {
+    setSession([SECOND_STATION, ...STATION_SCOPES]);
     render(<PlanningRoute />);
 
+    expect(pageCapture.props.stationScopes).toEqual(STATION_SCOPES);
+    expect(pageCapture.props.selectedStationId).toBe(STATION_ID);
+    expect(pageCapture.props).not.toHaveProperty('onStationChange');
     act(() => pageCapture.props.onDateChange('2026-08-20'));
     expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
       stationId: STATION_ID,
       date: '2026-08-20',
     }));
-
-    act(() => pageCapture.props.onStationChange(SECOND_STATION.stationId));
-    expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
-      stationId: SECOND_STATION.stationId,
-      date: undefined,
-    }));
-    expect(pageCapture.props.selectedStationId).toBe(SECOND_STATION.stationId);
-    expect(pageCapture.props.filterScopeKey).toBe(`${SECOND_STATION.stationId}|`);
   });
 
-  it('falls back to the first authorized station when the session loses the current scope', async () => {
-    const scopes = [...STATION_SCOPES, SECOND_STATION];
-    setSession(scopes);
+  it('stops reading and clears the date scope when the session loses PUJ', async () => {
     const { rerender } = render(<PlanningRoute />);
-
-    act(() => pageCapture.props.onStationChange(SECOND_STATION.stationId));
     act(() => pageCapture.props.onDateChange('2026-08-20'));
-    expect(pageCapture.props.selectedStationId).toBe(SECOND_STATION.stationId);
 
-    setSession(STATION_SCOPES);
+    setSession([SECOND_STATION]);
     rerender(<PlanningRoute />);
 
     await waitFor(() => {
-      expect(pageCapture.props.selectedStationId).toBe(STATION_ID);
+      expect(pageCapture.props.hasStationScope).toBe(false);
       expect(vi.mocked(usePlanningData)).toHaveBeenLastCalledWith(expect.objectContaining({
-        stationId: STATION_ID,
+        stationId: undefined,
         date: undefined,
+        enabled: false,
       }));
     });
   });

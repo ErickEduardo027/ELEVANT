@@ -1,6 +1,8 @@
 import PositionSearchBar from './PositionSearchBar';
 import TerminalSelector from './TerminalSelector';
 import { ListIcon } from './icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 export default function PositionsToolbar({
   search,
@@ -12,13 +14,14 @@ export default function PositionsToolbar({
   onToggleSidePanel,
   sidePanelOpen,
 }) {
+  const { t } = useTranslation(positionsMapMessages);
   return (
     <div className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-base font-semibold text-ink-900 dark:text-text-primary-dark">Mapa de posiciones</h1>
+          <h1 className="text-base font-semibold text-ink-900 dark:text-text-primary-dark">{t('toolbar.title')}</h1>
           <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            PUJ · Aeropuerto Internacional de Punta Cana
+            {t('toolbar.subtitle')}
           </p>
         </div>
         <button
@@ -32,7 +35,7 @@ export default function PositionsToolbar({
           }`}
         >
           <ListIcon className="h-3.5 w-3.5" />
-          Lista de posiciones
+          {t('toolbar.list')}
         </button>
       </div>
 

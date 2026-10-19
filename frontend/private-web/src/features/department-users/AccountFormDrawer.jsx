@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../components/Drawer';
 import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
+import { useTranslation } from '../../i18n/LanguageScope';
 import { uploadCommercialMedia } from '../../services/commercialGovernanceApi';
 import {
   createDepartmentAdministrator,
@@ -9,24 +10,13 @@ import {
   updateDepartmentUser,
 } from '../../services/departmentGovernanceService';
 import { governanceMessage, listAccessCandidates } from '../../services/humanResourcesEmployeesService';
+import { departmentUsersMessages } from './departmentUsersMessages';
 import GeneratePasswordField from './GeneratePasswordField';
 import PermissionMatrix from './PermissionMatrix';
 import { newRequestId } from './useDepartmentGovernance';
 
 const inputClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const labelClass = 'block text-xs font-semibold text-ink-900 dark:text-text-primary-dark';
-
-const TITLES = {
-  request: 'Solicitar acceso para un empleado',
-  administrator: 'Nombrar administrador',
-  edit: 'Editar acceso',
-};
-
-const DESCRIPTIONS = {
-  request: 'Elija un empleado registrado por Gestión Humana. Gestión Humana validará la solicitud.',
-  administrator: 'Elija un empleado del departamento. Tendrá todos los módulos y gestionará a su equipo.',
-  edit: 'Cambie permisos o estaciones. Nombre y correo los mantiene Gestión Humana en el expediente.',
-};
 
 function blank(user) {
   return {
@@ -43,6 +33,7 @@ function blank(user) {
 
 /** Employees of the department that can receive access (registered by Human Resources, no active account). */
 function EmployeePicker({ department, value, onChange, excludeRamp }) {
+  const { t } = useTranslation(departmentUsersMessages);
   const [search, setSearch] = useState('');
   const [candidates, setCandidates] = useState(null);
   const [error, setError] = useState('');
@@ -61,21 +52,21 @@ function EmployeePicker({ department, value, onChange, excludeRamp }) {
       <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-accent-600/40 bg-accent-600/5 p-3">
         <div className="min-w-0 text-sm">
           <strong>{value.firstName} {value.lastName}</strong>
-          <span className="block text-xs text-text-secondary-light">{value.employeeNumber} · {value.position.name}{value.position.isRampPosition ? ' (rampa)' : ''}</span>
-          <span className="block text-xs">{value.email ?? 'Sin correo corporativo'}{value.accountStatus === 'Disabled' ? ' · tenía una cuenta inactiva: se reutilizará' : ''}</span>
+          <span className="block text-xs text-text-secondary-light">{value.employeeNumber} · {value.position.name}{value.position.isRampPosition ? t('account.rampSuffix') : ''}</span>
+          <span className="block text-xs">{value.email ?? t('account.noCorporateEmail')}{value.accountStatus === 'Disabled' ? t('account.reusesDisabledAccount') : ''}</span>
         </div>
-        <button type="button" onClick={() => onChange(null)} className="min-h-[32px] text-xs font-semibold text-accent-600">Cambiar</button>
+        <button type="button" onClick={() => onChange(null)} className="min-h-[32px] text-xs font-semibold text-accent-600">{t('account.change')}</button>
       </div>
     );
   }
   return (
     <fieldset className="space-y-2">
-      <legend className={labelClass}>Empleado</legend>
-      <input type="search" aria-label="Buscar empleado" placeholder="Nombre o número de empleado" value={search}
+      <legend className={labelClass}>{t('account.employee')}</legend>
+      <input type="search" aria-label={t('account.searchEmployee')} placeholder={t('account.searchEmployeePlaceholder')} value={search}
         onChange={event => setSearch(event.target.value)} className={inputClass} />
       {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
-      {!candidates ? <p role="status" className="text-xs">Buscando empleados…</p> : visible.length === 0 ? (
-        <p className="text-xs text-text-secondary-light">No hay empleados sin acceso en el departamento. Gestión Humana debe registrarlos primero.</p>
+      {!candidates ? <p role="status" className="text-xs">{t('account.searchingEmployees')}</p> : visible.length === 0 ? (
+        <p className="text-xs text-text-secondary-light">{t('account.noCandidates')}</p>
       ) : (
         <ul className="max-h-64 space-y-1 overflow-y-auto">
           {visible.map(candidate => (
@@ -84,7 +75,7 @@ function EmployeePicker({ department, value, onChange, excludeRamp }) {
                 className="flex min-h-[44px] w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-3 py-2 text-left text-sm hover:border-accent-600 dark:border-white/10">
                 <span><strong>{candidate.firstName} {candidate.lastName}</strong>
                   <span className="block text-xs text-text-secondary-light">{candidate.employeeNumber} · {candidate.position.name}</span></span>
-                {!candidate.email && <span className="text-xs text-status-warning">Sin correo</span>}
+                {!candidate.email && <span className="text-xs text-status-warning">{t('account.noEmail')}</span>}
               </button>
             </li>
           ))}
@@ -100,6 +91,7 @@ function EmployeePicker({ department, value, onChange, excludeRamp }) {
  * comes from the Human Resources record (ADR-0017).
  */
 export default function AccountFormDrawer({ open, mode, department, user, profiles, options, catalog, onClose, onSaved }) {
+  const { t } = useTranslation(departmentUsersMessages);
   const [form, setForm] = useState(() => blank(user));
   const [employee, setEmployee] = useState(null);
   const [avatar, setAvatar] = useState(null);
@@ -144,11 +136,11 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
   async function submit(event) {
     event.preventDefault();
     setError('');
-    if (!isEdit && !employee) { setError('Elija un empleado.'); return; }
-    if (!isEdit && !employee.email) { setError('El empleado no tiene correo corporativo; Gestión Humana debe registrarlo.'); return; }
-    if (form.stationIds.length === 0) { setError('Seleccione al menos una estación.'); return; }
-    if (editsGrants && form.grantMode === 'profile' && !form.accessProfileId) { setError('Seleccione una plantilla.'); return; }
-    if (editsGrants && form.grantMode === 'custom' && form.permissionCodes.length === 0) { setError('Seleccione al menos un permiso.'); return; }
+    if (!isEdit && !employee) { setError(t('account.errors.chooseEmployee')); return; }
+    if (!isEdit && !employee.email) { setError(t('account.errors.noEmail')); return; }
+    if (form.stationIds.length === 0) { setError(t('account.errors.noStation')); return; }
+    if (editsGrants && form.grantMode === 'profile' && !form.accessProfileId) { setError(t('account.errors.noTemplate')); return; }
+    if (editsGrants && form.grantMode === 'custom' && form.permissionCodes.length === 0) { setError(t('account.errors.noPermission')); return; }
     setBusy(true);
     try {
       const avatarMediaUrl = avatar ? (await uploadCommercialMedia('avatar', avatar)).url : form.avatarMediaUrl;
@@ -172,7 +164,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
       }
       onSaved(mode);
     } catch (failure) {
-      setError(governanceMessage(failure, 'El usuario cambió mientras lo editaba. Actualice la lista e inténtelo de nuevo.'));
+      setError(governanceMessage(failure, t('account.errors.conflict')));
     } finally {
       setBusy(false);
     }
@@ -181,11 +173,11 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
   const terminals = (options?.terminals ?? []).filter(terminal => form.stationIds.includes(terminal.stationId));
 
   return (
-    <Drawer open={open} onClose={onClose} title={TITLES[mode] ?? ''} description={DESCRIPTIONS[mode]} widthClassName="lg:w-[560px]"
+    <Drawer open={open} onClose={onClose} title={mode ? t(`account.titles.${mode}`) : ''} description={mode ? t(`account.descriptions.${mode}`) : undefined} widthClassName="lg:w-[560px]"
       footer={<div className="flex flex-wrap justify-end gap-2">
-        <button type="button" onClick={onClose} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Cancelar</button>
+        <button type="button" onClick={onClose} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">{t('common.cancel')}</button>
         <button type="submit" form="department-account-form" disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-          {busy ? 'Guardando…' : mode === 'request' ? 'Enviar a Gestión Humana' : 'Guardar'}
+          {busy ? t('common.saving') : mode === 'request' ? t('common.sendToHumanResources') : t('common.save')}
         </button>
       </div>}>
       {open && (
@@ -205,9 +197,9 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
           )}
           {(isEdit || employee) && (
             <fieldset>
-              <legend className={labelClass}>Estaciones</legend>
+              <legend className={labelClass}>{t('common.stations')}</legend>
               <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {isEdit ? 'Solo puede conceder estaciones que usted tiene asignadas.' : 'Estaciones del empleado que usted también tiene asignadas.'}
+                {isEdit ? t('account.stationsHintEdit') : t('account.stationsHintRequest')}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {grantableStations.map(station => (
@@ -216,37 +208,37 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
                     {station.code}
                   </label>
                 ))}
-                {options && grantableStations.length === 0 && <p className="text-sm text-status-danger">No hay estaciones en común para conceder.</p>}
+                {options && grantableStations.length === 0 && <p className="text-sm text-status-danger">{t('account.noCommonStations')}</p>}
               </div>
             </fieldset>
           )}
           {isRamp && !isEdit && employee && (
             <div className="space-y-3 rounded-xl border border-black/10 p-3 dark:border-white/10">
-              <p className="text-sm font-semibold">Acceso a la app móvil</p>
-              <label className={labelClass}>Supervisor<select value={form.supervisorRampAgentId} onChange={event => set({ supervisorRampAgentId: event.target.value })} className={inputClass}>
-                <option value="">Sin supervisor</option>
+              <p className="text-sm font-semibold">{t('account.mobileAccess')}</p>
+              <label className={labelClass}>{t('account.supervisor')}<select value={form.supervisorRampAgentId} onChange={event => set({ supervisorRampAgentId: event.target.value })} className={inputClass}>
+                <option value="">{t('account.noSupervisor')}</option>
                 {(options?.supervisors ?? []).map(supervisor => <option key={supervisor.id} value={supervisor.id}>{supervisor.name} · {supervisor.employeeNumber}</option>)}
               </select></label>
               <fieldset>
-                <legend className={labelClass}>Terminales</legend>
+                <legend className={labelClass}>{t('account.terminals')}</legend>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {terminals.map(terminal => (
                     <label key={terminal.id} className="flex min-h-[40px] items-center gap-2 rounded-lg border border-black/10 px-3 text-sm dark:border-white/10">
                       <input type="checkbox" checked={form.terminalIds.includes(terminal.id)} onChange={() => toggle('terminalIds', terminal.id)} />
-                      Terminal {terminal.code}
+                      {t('account.terminal', { code: terminal.code })}
                     </label>
                   ))}
-                  {terminals.length === 0 && <p className="text-xs text-text-secondary-light">Seleccione una estación para ver sus terminales.</p>}
+                  {terminals.length === 0 && <p className="text-xs text-text-secondary-light">{t('account.chooseStationForTerminals')}</p>}
                 </div>
               </fieldset>
             </div>
           )}
           {editsGrants && (isEdit || employee) && (
             <fieldset className="space-y-3">
-              <legend className={labelClass}>Permisos</legend>
-              {employee?.suggestedAccessProfileId && <p className="text-xs text-text-secondary-light">La plantilla sugerida para su puesto ya está seleccionada; puede cambiarla.</p>}
+              <legend className={labelClass}>{t('account.permissions')}</legend>
+              {employee?.suggestedAccessProfileId && <p className="text-xs text-text-secondary-light">{t('account.suggestedTemplateSelected')}</p>}
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {[['profile', 'Usar una plantilla'], ['custom', 'Permisos personalizados']].map(([value, label]) => (
+                {[['profile', t('account.useTemplate')], ['custom', t('account.customPermissions')]].map(([value, label]) => (
                   <label key={value} className={`flex min-h-[44px] items-center gap-2 rounded-lg border px-3 text-sm ${form.grantMode === value ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 dark:border-white/10'}`}>
                     <input type="radio" name="grantMode" value={value} checked={form.grantMode === value} onChange={() => set({ grantMode: value })} />
                     {label}
@@ -254,11 +246,11 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
                 ))}
               </div>
               {form.grantMode === 'profile' ? (
-                <label className={labelClass}>Plantilla<select value={form.accessProfileId} onChange={event => set({ accessProfileId: event.target.value })} className={inputClass}>
-                  <option value="">Seleccione una plantilla</option>
+                <label className={labelClass}>{t('common.template')}<select value={form.accessProfileId} onChange={event => set({ accessProfileId: event.target.value })} className={inputClass}>
+                  <option value="">{t('account.chooseTemplate')}</option>
                   {activeProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                 </select>
-                {activeProfiles.length === 0 && <span className="mt-1 block font-normal text-text-secondary-light">Aún no hay plantillas; cree una en la pestaña Plantillas o use permisos personalizados.</span>}
+                {activeProfiles.length === 0 && <span className="mt-1 block font-normal text-text-secondary-light">{t('account.noTemplates')}</span>}
                 </label>
               ) : (
                 <PermissionMatrix catalog={catalog} value={form.permissionCodes} onChange={permissionCodes => set({ permissionCodes })} idPrefix="account" />
@@ -267,8 +259,8 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
           )}
           {mode !== 'administrator' && (isEdit || employee) && (
             <div>
-              {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt="Foto actual" className="mb-2 h-16 w-16 rounded-full object-cover" />}
-              <FileDropField label="Foto de perfil (opcional)" accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint="PNG, JPG o WebP de hasta 8 MB." />
+              {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt={t('account.currentPhoto')} className="mb-2 h-16 w-16 rounded-full object-cover" />}
+              <FileDropField label={t('account.photo')} accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint={t('account.photoHint')} />
             </div>
           )}
         </form>

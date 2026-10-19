@@ -1,9 +1,11 @@
 import Link from '../../components/AppLink';
-import { OccQueueState, OccStationPicker } from '../admin-occ/OccQueueState';
+import { OccQueueState, OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccReviewQueue } from '../admin-occ/useOccReviewQueue';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { reportsMessages } from './reportsMessages';
 
-function dateTime(value, timeZone) {
-  return new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone })
+function dateTime(value, timeZone, locale) {
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone })
     .format(new Date(value));
 }
 
@@ -33,26 +35,27 @@ export function exportVisibleApprovedRows(rows) {
 }
 
 export default function CanonicalReportsRoute() {
+  const { t, locale } = useTranslation(reportsMessages);
   const queue = useOccReviewQueue();
   const rows = approvedRows(queue.data);
   const timeZone = queue.data?.ianaTimeZone ?? 'UTC';
   return <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
-      <div><h1 className="text-xl font-semibold">Reportes operativos</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Entregas aprobadas por OCC, obtenidas de la API.</p></div>
-      {queue.stationScopes.length > 0 && <OccStationPicker stationScopes={queue.stationScopes} stationId={queue.stationId} onChange={queue.setStationId} />}
+      <div><h1 className="text-xl font-semibold">{t('title')}</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p></div>
+      <OccStationBadge />
     </header>
     <OccQueueState queue={queue} />
     {queue.status === 'success' && <>
       <div role="status" className="rounded-xl border border-accent-600/25 bg-accent-600/5 p-4 text-sm">
-        Esta es una vista de las {queue.data.operations.length} entregas más recientes de la estación, no un histórico financiero ni un cálculo de SLA.
-        {queue.data.hasMore && ' Hay más entregas fuera del límite de 100 de esta consulta; los totales y la exportación son parciales.'}
+        {t('scope', { count: queue.data.operations.length })}
+        {queue.data.hasMore && t('hasMore')}
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <p className="text-sm"><strong className="text-2xl">{rows.length}</strong> entregas aprobadas visibles</p>
-        <button type="button" disabled={rows.length === 0} onClick={() => exportVisibleApprovedRows(rows)} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Exportar filas visibles (CSV)</button>
+        <p className="text-sm"><strong className="text-2xl">{rows.length}</strong>{t('approvedVisible')}</p>
+        <button type="button" disabled={rows.length === 0} onClick={() => exportVisibleApprovedRows(rows)} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('export')}</button>
       </div>
-      {rows.length === 0 ? <p className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">No hay entregas aprobadas entre las operaciones visibles de esta estación.</p> :
-        <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm"><thead className="border-b border-black/10 dark:border-white/10"><tr><th className="p-3">Operación</th><th className="p-3">Aerolínea</th><th className="p-3">Agente</th><th className="p-3">Entrega</th><th className="p-3">Servicios</th><th className="p-3">Incidencias</th><th className="p-3">Detalle</th></tr></thead><tbody>{rows.map(item => <tr key={item.operationId} className="border-b border-black/5 dark:border-white/5"><td className="p-3"><strong>{item.operationCode}</strong><br />{item.operationDate}</td><td className="p-3">{item.airlineName}</td><td className="p-3">{item.agentName}</td><td className="p-3">{dateTime(item.submittedAt, timeZone)}</td><td className="p-3">{item.serviceCount}</td><td className="p-3">{item.incidentCount}</td><td className="p-3"><Link className="font-semibold text-accent-600 underline" to={`/admin-occ/review?operationId=${item.operationId}`}>Ver evidencia</Link></td></tr>)}</tbody></table></div>}
+      {rows.length === 0 ? <p className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('empty')}</p> :
+        <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm"><thead className="border-b border-black/10 dark:border-white/10"><tr><th className="p-3">{t('columns.operation')}</th><th className="p-3">{t('columns.airline')}</th><th className="p-3">{t('columns.agent')}</th><th className="p-3">{t('columns.submission')}</th><th className="p-3">{t('columns.services')}</th><th className="p-3">{t('columns.incidents')}</th><th className="p-3">{t('columns.detail')}</th></tr></thead><tbody>{rows.map(item => <tr key={item.operationId} className="border-b border-black/5 dark:border-white/5"><td className="p-3"><strong>{item.operationCode}</strong><br />{item.operationDate}</td><td className="p-3">{item.airlineName}</td><td className="p-3">{item.agentName}</td><td className="p-3">{dateTime(item.submittedAt, timeZone, locale)}</td><td className="p-3">{item.serviceCount}</td><td className="p-3">{item.incidentCount}</td><td className="p-3"><Link className="font-semibold text-accent-600 underline" to={`/admin-occ/review?operationId=${item.operationId}`}>{t('viewEvidence')}</Link></td></tr>)}</tbody></table></div>}
     </>}
   </section>;
 }

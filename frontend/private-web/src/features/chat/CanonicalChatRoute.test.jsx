@@ -18,6 +18,8 @@ vi.mock('../../components/AppLink', () => ({
 }));
 
 import CanonicalChatRoute from './CanonicalChatRoute';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 
 function deferred() {
   let resolve;
@@ -29,7 +31,10 @@ const operationId = '70000000-0000-0000-0000-000000000001';
 const operation = { operationId, operationCode: 'DEV-CHAT-01', stationId: '20000000-0000-0000-0000-000000000003', stationCode: 'PUJ', airlineName: 'Airline', agentName: 'Ramp', lastMessage: null };
 const message = (id, content) => ({ id, senderName: 'OCC', senderRole: 'occ', sentAt: '2026-09-01T12:00:00Z', content });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  act(() => resetLanguageForTests('es'));
+});
 
 it('keeps the newest message when periodic chat reads finish out of order', async () => {
   const first = deferred();
@@ -54,4 +59,26 @@ it('keeps the newest message when periodic chat reads finish out of order', asyn
   await act(async () => first.resolve({ messages: [message('old', 'Resultado antiguo')], hasMore: false }));
   expect(screen.getByText('Nuevo resultado')).toBeInTheDocument();
   expect(screen.queryByText('Resultado antiguo')).not.toBeInTheDocument();
+});
+
+it('renders conversations and messages in English inside the OCC scope', async () => {
+  mocks.useAuth.mockReturnValue({ session: {
+    accountId: '10000000-0000-0000-0000-000000000001',
+    stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }],
+  } });
+  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+  mocks.conversations.mockReset().mockResolvedValue({ conversations: [operation], hasMore: false });
+  mocks.messages.mockReset().mockResolvedValue({ messages: [{ ...message('agent', 'Ready'), senderName: 'Ramp', senderRole: 'agent' }], hasMore: false });
+  window.history.replaceState({}, '', '/admin-occ/chat');
+  act(() => resetLanguageForTests('en'));
+
+  render(<LanguageScope><CanonicalChatRoute /></LanguageScope>);
+  expect(await screen.findByRole('heading', { name: 'Operational chat' })).toBeInTheDocument();
+  expect(screen.getByText('Airline · No messages')).toBeInTheDocument();
+  expect(screen.getByText('Select an operation to see its messages.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /DEV-CHAT-01/ }));
+  expect(await screen.findByText(/Ramp · Agent ·/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View operation' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Message')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
 });

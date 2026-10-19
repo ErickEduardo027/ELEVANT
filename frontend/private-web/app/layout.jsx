@@ -1,9 +1,15 @@
 import '../src/styles/tokens.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './globals.css';
+import '../src/styles/occ.css';
 import { Suspense } from 'react';
 import { connection } from 'next/server';
+import { Manrope, IBM_Plex_Mono } from 'next/font/google';
 import Providers from './providers';
+
+const manrope = Manrope({ subsets: ['latin'], display: 'swap', variable: '--font-manrope' });
+const plexMono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'],
+  display: 'swap', variable: '--font-plex-mono' });
 
 export const metadata = {
   title: 'AVIAM Web | ELEVANT',
@@ -14,7 +20,7 @@ export const metadata = {
 export default async function RootLayout({ children }) {
   await connection();
   return (
-    <html lang="es">
+    <html lang="es" className={`${manrope.variable} ${plexMono.variable}`}>
       <body>
         <Providers>
           <Suspense fallback={<main role="status" className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark">Cargando…</main>}>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from '../../../tests/MemoryRouter.jsx';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import DashboardRoute from './DashboardRoute';
@@ -7,6 +7,11 @@ import { getDashboardSnapshot } from '../../services/dashboardService';
 
 const observerFactory = vi.hoisted(() => vi.fn());
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
+vi.mock('../weather/useMdpcWeather', () => ({
+  useMdpcWeather: () => ({ status: 'loading', data: null, refreshFailed: false, refresh: () => {} }),
+}));
+vi.mock('../shell/useTheme', () => ({ useTheme: () => ({ theme: 'light' }) }));
+vi.mock('next/dynamic', () => ({ default: () => function MapStub() { return null; } }));
 vi.mock('../../services/dashboardService', () => ({ getDashboardSnapshot: vi.fn() }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: observerFactory,
@@ -43,15 +48,24 @@ it('delegates the current station day instead of sending the UTC browser date', 
     expect.anything()));
 });
 
-it('reads the first authorized station and switches to the selected station', async () => {
+it('always reads the PUJ scope even when it is not the first authorized station', async () => {
+  vi.mocked(useAuth).mockReturnValue({ session: { accountId: 'occ-account',
+    stationScopes: [{ stationId: secondId, stationCode: 'SDQ' },
+      { stationId: firstId, stationCode: 'PUJ' }] } });
   render(<MemoryRouter><DashboardRoute /></MemoryRouter>);
   await screen.findByText(/No hay escalas registradas/);
   expect(getDashboardSnapshot).toHaveBeenCalledWith(
     expect.objectContaining({ stationId: firstId, stationCode: 'PUJ' }),
     expect.anything());
-  fireEvent.change(screen.getByLabelText('Estación OCC'),
-    { target: { value: secondId } });
-  await waitFor(() => expect(getDashboardSnapshot).toHaveBeenCalledWith(
-    expect.objectContaining({ stationId: secondId, stationCode: 'SDQ' }),
-    expect.anything()));
+  expect(getDashboardSnapshot).not.toHaveBeenCalledWith(
+    expect.objectContaining({ stationCode: 'SDQ' }), expect.anything());
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+});
+
+it('does not read any station when the account has no PUJ scope', async () => {
+  vi.mocked(useAuth).mockReturnValue({ session: { accountId: 'occ-account',
+    stationScopes: [{ stationId: secondId, stationCode: 'SDQ' }] } });
+  render(<MemoryRouter><DashboardRoute /></MemoryRouter>);
+  expect(screen.getByRole('alert')).toHaveTextContent('estación PUJ');
+  expect(getDashboardSnapshot).not.toHaveBeenCalled();
 });

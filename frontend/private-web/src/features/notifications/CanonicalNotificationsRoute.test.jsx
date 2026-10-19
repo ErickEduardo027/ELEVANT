@@ -17,6 +17,8 @@ vi.mock('../../components/AppLink', () => ({
 }));
 
 import CanonicalNotificationsRoute from './CanonicalNotificationsRoute';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 
 function deferred() {
   let resolve;
@@ -61,4 +63,29 @@ it('does not turn an AbortError into an operational error state', async () => {
   await act(async () => {});
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Cargando notificaciones');
+});
+
+it('renders notices in English with the shared kind labels and target links inside the OCC scope', async () => {
+  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
+  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+  mocks.load.mockReset().mockResolvedValue({ notifications: [
+    notice('submitted', 'SUBMITTED'),
+    { ...notice('message', 'MESSAGE'), kind: 'agent_message', readAt: '2026-09-01T12:05:00Z' },
+  ], hasMore: true });
+  act(() => resetLanguageForTests('en'));
+  try {
+    render(<LanguageScope><CanonicalNotificationsRoute /></LanguageScope>);
+    expect(await screen.findByText('Operation submitted for review')).toBeInTheDocument();
+    expect(screen.getByText('New message from the agent')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Operational notifications' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('1 unread of 2 visible');
+    const links = screen.getAllByRole('link', { name: 'Open' });
+    expect(links[0]).toHaveAttribute('href', '/admin-occ/review?operationId=70000000-0000-0000-0000-000000000001');
+    expect(links[1]).toHaveAttribute('href', '/admin-occ/chat?operationId=70000000-0000-0000-0000-000000000001');
+    expect(screen.getByRole('button', { name: 'Mark as read' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark as unread' })).toBeInTheDocument();
+    expect(screen.getByText('Showing the 100 most recent notices; more history exists.')).toBeInTheDocument();
+  } finally {
+    act(() => resetLanguageForTests('es'));
+  }
 });

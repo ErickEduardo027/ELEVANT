@@ -33,7 +33,6 @@ function renderFilters(overrides = {}) {
     options: OPTIONS,
     stationScopes: STATION_SCOPES,
     selectedStationId: STATION_ID,
-    onStationChange: vi.fn(),
     selectedDate: '2026-08-19',
     onDateChange: vi.fn(),
     ...overrides,
@@ -44,15 +43,14 @@ function renderFilters(overrides = {}) {
 }
 
 describe('PlanningFilters', () => {
-  it('changes the API station and operational date scope explicitly', async () => {
+  it('shows PUJ as fixed context and changes only the operational date scope', () => {
     const props = renderFilters();
 
-    expect(screen.getByLabelText('Estación')).toHaveValue(STATION_ID);
+    expect(screen.getByRole('group', { name: 'Estación' })).toHaveTextContent('PUJ');
+    expect(screen.queryByRole('combobox', { name: 'Estación' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Fecha operativa')).toHaveValue('2026-08-19');
-    await userEvent.selectOptions(screen.getByLabelText('Estación'), STATION_ID);
     fireEvent.change(screen.getByLabelText('Fecha operativa'), { target: { value: '2026-08-20' } });
 
-    expect(props.onStationChange).toHaveBeenCalledWith(STATION_ID);
     expect(props.onDateChange).toHaveBeenLastCalledWith('2026-08-20');
     expect(screen.getByText('La API aplica sus permisos de estación a cada consulta.')).toBeInTheDocument();
   });
@@ -60,7 +58,7 @@ describe('PlanningFilters', () => {
   it('keeps scope controls available while loading so a slow request can be superseded', () => {
     renderFilters({ loading: true });
 
-    expect(screen.getByLabelText('Estación')).toBeEnabled();
+    expect(screen.getByRole('group', { name: 'Estación' })).toHaveTextContent('PUJ');
     expect(screen.getByLabelText('Fecha operativa')).toBeEnabled();
   });
 

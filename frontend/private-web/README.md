@@ -90,6 +90,8 @@ paginación se aplica en la vista: el endpoint sigue entregando la lista complet
 
 Aplicación interna para OCC, administración, contratos, finanzas, gestión humana y departamentos operativos. El cliente usa Next.js App Router, React 19 y Tailwind CSS. El enrutamiento y los guards viven en `app/`; las pantallas funcionales existentes permanecen en `src/features/`.
 
+En OCC, **Operación → Mis gastos** abre `/admin-occ/expenses`. El enlace se muestra en el riel lateral y su versión móvil; la API determina qué gastos y acciones puede ver cada cuenta.
+
 ## Ejecutar y validar
 
 Desde `frontend/private-web`:
@@ -168,6 +170,16 @@ a 1920 px). Para pantallas nuevas:
 Comprueba las pantallas a 360, 768, 1024 y 1920 px antes de entregar. Ejecuta
 la app en el puerto 5173 (`npm run dev -- -p 5173`) para no chocar con Public Web.
 
+## Espacio OCC (PUJ)
+
+`AdminOccLayout` monta un marco propio sobre `ShellFrame`: riel navy agrupado (`OccSidebar`), barra contextual (`OccTopbar`) y tokens `occ-*` definidos en `src/styles/occ.css` bajo `[data-department="occ"]`. Los demás departamentos siguen usando `Sidebar`/`Topbar`. Todas las rutas OCC leen el alcance `PUJ` con `useOccStation()`; sin él no consultan la API. El idioma (es/en) comparte el store del login (`src/i18n/languageStore.js`) y solo se aplica dentro de `LanguageScope`, que envuelve OCC; fuera de él la interfaz sigue en español.
+
+El dashboard (`src/features/dashboard`) deriva resumen, escalas y atención de planificación, revisión y avisos. Su superficie NOC integra una plataforma PUJ dominante, dos mapas auxiliares y una franja de cifras. La plataforma incorpora geometría OSM de pistas, rodajes y plataforma; las siluetas representan **asignaciones planificadas**, no ocupación confirmada. La vista nocturna inclina el mapa y extruye edificios solo si las teselas incluyen altura. `dashboardPositions.js` usa las 42 ubicaciones del catálogo **interno original**: 41 se muestran en el mapa y B33 se conserva como registro histórico retirado de la vista operativa por la [enmienda AIP de 2026](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf). B34–B37 siguen en el catálogo y B20–B32 mantienen sus 13 coordenadas internas originales. La [carta AIP de 2024](https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf) sirve para conciliación, pero sus coordenadas no se transcriben en la aplicación: no consta permiso de IDAC para procesarlas y la [política AIP](https://aip.sna.gob.do/Aip/CircularSerA) exige revisar ese uso. Las ubicaciones internas no están verificadas como oficiales; hay discrepancias de códigos y coordenadas, especialmente B20–B32. Los códigos planificados ausentes del catálogo activo, incluido B33, aparecen sin ubicación; no se equiparan A1 y 1 ni otros códigos parecidos. El mapa general de posiciones conserva el catálogo interno y requiere conciliación independiente.
+
+Los mapas auxiliares ampliables muestran meteorología y la región de República Dominicana. El METAR MDPC de Iowa Environmental Mesonet es una réplica no oficial: distingue hora de observación y recepción, fallos de actualización y valores derivados. GOES-East infrarrojo e [IMERG de 30 minutos](https://gibs.earthdata.nasa.gov/layer-metadata/v1.0/IMERG_Precipitation_Rate_30min.json) usan NASA GIBS; las teselas se fijan al tiempo comunicado por GIBS. Cuando solo se conoce la fecha, se muestra el día sin inventar una hora ni calcular antigüedad horaria. IMERG estima precipitación y puede retrasarse varias horas; no es radar ni observación local. La vista muestra fuente, opacidad y error. `src/config/securityHeaders.mjs` permite los orígenes cartográficos y meteorológicos existentes. Manrope e IBM Plex Mono se sirven como archivos propios mediante `next/font`.
+
+El mapa regional consume `GET /api/v1/occ/traffic/aircraft?stationId=<uuid>` mediante el cliente OpenAPI compartido. Dibuja una marca por ICAO24 con posición disponible y rumbo si existe; la ficha muestra solo telemetría recibida. La API exige personal AVIAM con `operations.planning.read` y alcance PUJ. Sin configuración privada, el panel informa que la telemetría no está disponible. Las escalas y stands de planificación siguen separados: callsign y proximidad no crean una relación verificable. El navegador nunca envía secretos ni llama directamente a OpenSky. La conexión real requiere credenciales OAuth privadas y el acuerdo escrito. La caché es por proceso, con una consulta como máximo cada 120 segundos y copia desactualizada hasta 10 minutos durante fallos. Esta rama local no ha sido desplegada.
+
 ## Planificación OCC remota
 
 Guardar o desactivar un perfil de rampa invalida la planificación OCC de sus
@@ -176,7 +188,7 @@ durable. Una desactivación también avisa a la estación cuyo scope se retira.
 
 La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
 
-- `GET /api/v1/occ/planning`, con estación tomada de los scopes de la sesión y fecha operativa controlada por el usuario;
+- `GET /api/v1/occ/planning`, con la estación PUJ tomada de los scopes de la sesión (OCC no ofrece selector de estación) y fecha operativa controlada por el usuario;
 - `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
 - `GET /api/v1/occ/planning/manual-options?stationId={stationId}&date={date}`, para elegir aerolínea con contrato vigente, aeropuertos y posición activa en la estación autorizada;
 - `POST /api/v1/occ/planning/turnarounds`, para crear una escala manual con llegada, salida y posición, usando un UUID estable para reintentos ambiguos;
@@ -378,11 +390,11 @@ docker build --file frontend/private-web/Dockerfile `
   --tag elevant-private-web:local .
 ```
 
-El runtime usa Node 24 sin privilegios, UID `101`, puerto `8080` y raíz de solo lectura con caché Next en tmpfs. `/healthz` responde `ok`, las rutas profundas se renderizan en Next y los recursos versionados `/_next/static/` usan caché inmutable. La CSP se genera con nonce por solicitud y limita conexiones al origen API certificado, su equivalente WebSocket y los proveedores cartográficos revisados.
+El runtime usa Node 24 sin privilegios, UID `101`, puerto `8080` y raíz de solo lectura con caché Next en tmpfs. `/healthz` responde `ok`, las rutas profundas se renderizan en Next y los recursos versionados `/_next/static/` usan caché inmutable. La CSP se genera con nonce por solicitud y limita conexiones al origen API certificado, su equivalente WebSocket, los proveedores cartográficos revisados, IEM y NASA GIBS.
 
 `compose.development.aviam-web.yml` exige `ELEVANT_AVIAM_WEB_IMAGE` por digest, publica únicamente `127.0.0.1:18081` y conecta solo la red externa `elevant-dev-aviam-web-runtime`. Tailscale termina HTTPS fuera del contenedor. La aplicación no comparte la red de SQL Server.
 
-CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API HTTPS certificada, su equivalente `wss://` para el hub SignalR y los dos proveedores de mapas revisados. No se permite un comodín `wss:` ni otro host de WebSocket.
+CI renderiza ese Compose y valida un modelo cerrado antes de permitir su publicación. La certificación de imagen también interpreta la CSP, rechaza directivas duplicadas y exige que `connect-src` contenga exactamente `'self'`, la API HTTPS certificada, su equivalente `wss://` para el hub SignalR, los dos proveedores de mapas revisados, IEM y NASA GIBS. No se permite un comodín `wss:` ni otro host de WebSocket.
 El certifier exige además la pantalla conectada de Gestión Humana y rechaza el antiguo rótulo permanente de datos sintéticos. El identificador histórico `dashboard-read-only` sigue delimitando las rutas HR no conectadas; no convierte el dashboard actual en un fixture.
 
 ## Promoción en Development

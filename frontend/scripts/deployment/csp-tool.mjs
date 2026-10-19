@@ -10,6 +10,8 @@ const EXPECTED_CONNECT = Object.freeze({
     "'self'",
     "https://demotiles.maplibre.org",
     "https://tiles.openfreemap.org",
+    "https://mesonet.agron.iastate.edu",
+    "https://gibs.earthdata.nasa.gov",
   ]),
   "public-web": Object.freeze(["'self'"]),
 });

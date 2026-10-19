@@ -1,9 +1,12 @@
 import { TERMINAL_FILTERS } from '../positionsMapMappers';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 export default function TerminalSelector({ active, onChange }) {
+  const { t } = useTranslation(positionsMapMessages);
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por terminal">
-      {TERMINAL_FILTERS.map(({ id, label }) => (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('terminals.filterLabel')}>
+      {TERMINAL_FILTERS.map(({ id }) => (
         <button
           key={id}
           type="button"
@@ -15,7 +18,7 @@ export default function TerminalSelector({ active, onChange }) {
               : 'border-black/10 text-text-secondary-light hover:border-accent-600/40 dark:border-white/10 dark:text-text-secondary-dark'
           }`}
         >
-          {label}
+          {t(`terminals.filters.${id}`)}
         </button>
       ))}
     </div>

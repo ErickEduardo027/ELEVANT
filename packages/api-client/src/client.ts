@@ -57,6 +57,7 @@ import {
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
   getGetOccPlanningSnapshotUrl,
+  getGetOccAircraftTrafficUrl,
   getGetManualTurnaroundOptionsUrl,
   getCreateManualTurnaroundUrl,
   getProgramOccShiftUrl,
@@ -187,6 +188,8 @@ import {
   type HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse,
   type GetOccPlanningOptionsParams,
   type GetOccPlanningSnapshotParams,
+  type GetOccAircraftTrafficParams,
+  type OccAircraftTrafficResponse,
   type GetManualTurnaroundOptionsParams,
   type CreateManualTurnaroundRequest,
   type ManualTurnaroundOptionsResponse,
@@ -329,6 +332,7 @@ export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
 >;
+export type GetOccAircraftTrafficOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccPlanningOptionsOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -613,6 +617,10 @@ export interface ElevantApiClient {
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
   ): Promise<OccPlanningSnapshotResponse>;
+  getOccAircraftTraffic(
+    parameters: GetOccAircraftTrafficParams,
+    options?: GetOccAircraftTrafficOptions,
+  ): Promise<OccAircraftTrafficResponse>;
   getOccPlanningOptions(
     turnaroundId: string,
     options?: GetOccPlanningOptionsOptions,
@@ -1311,6 +1319,34 @@ function isOccPlanningSnapshotResponse(
     Array.isArray(value.turnarounds) &&
     value.turnarounds.every(isOccTurnaroundResponse)
   );
+}
+
+function isOccAircraftTrafficResponse(value: unknown): value is OccAircraftTrafficResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["source", "providerTime", "retrievedAt", "stale", "aircraft"]) &&
+    isString(value.source) && isDateTimeOffset(value.providerTime) &&
+    isDateTimeOffset(value.retrievedAt) && typeof value.stale === "boolean" &&
+    Array.isArray(value.aircraft) && value.aircraft.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["icao24", "callsign", "originCountry", "latitude", "longitude",
+        "lastPositionAt", "lastContactAt", "barometricAltitudeMeters",
+        "geometricAltitudeMeters", "groundSpeedMetersPerSecond", "trueTrackDegrees",
+        "verticalRateMetersPerSecond", "onGround", "squawk", "positionSource", "category"]) &&
+      typeof item.icao24 === "string" && /^[0-9a-f]{6}$/.test(item.icao24) &&
+      isOptionalNullable(item.callsign, isString) &&
+      isOptionalNullable(item.originCountry, isString) &&
+      isFiniteNumber(item.latitude) && item.latitude >= 17 && item.latitude <= 21 &&
+      isFiniteNumber(item.longitude) && item.longitude >= -73 && item.longitude <= -67 &&
+      isOptionalNullable(item.lastPositionAt, isDateTimeOffset) &&
+      isOptionalNullable(item.lastContactAt, isDateTimeOffset) &&
+      isOptionalNullable(item.barometricAltitudeMeters, isFiniteNumber) &&
+      isOptionalNullable(item.geometricAltitudeMeters, isFiniteNumber) &&
+      isOptionalNullable(item.groundSpeedMetersPerSecond, isFiniteNumber) &&
+      isOptionalNullable(item.trueTrackDegrees, isFiniteNumber) &&
+      isOptionalNullable(item.verticalRateMetersPerSecond, isFiniteNumber) &&
+      typeof item.onGround === "boolean" &&
+      isOptionalNullable(item.squawk, isString) &&
+      isOptionalNullable(item.positionSource, isInt32) &&
+      isOptionalNullable(item.category, isInt32));
 }
 
 function isManualTurnaroundOptionsResponse(
@@ -5049,6 +5085,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPlanningSnapshotResponse(result.data)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getOccAircraftTraffic(
+      parameters: GetOccAircraftTrafficParams,
+      options?: GetOccAircraftTrafficOptions,
+    ) {
+      if (!isRecord(parameters) || !isUuid(parameters.stationId) ||
+          !hasOnlyKeys(parameters, ["stationId"]))
+        throw new TypeError("OCC traffic request is invalid.");
+      const result = await execute(getGetOccAircraftTrafficUrl(parameters),
+        { ...options, method: "GET" }, true);
+      if (!isOccAircraftTrafficResponse(result.data))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getManualTurnaroundOptions(

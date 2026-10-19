@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import RampProfilesPanel from './RampProfilesPanel';
+import { LanguageScope } from '../../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../../i18n/languageStore';
 import { getRampProfiles, saveRampProfile } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
@@ -11,7 +13,7 @@ vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }),
 }));
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); act(() => resetLanguageForTests('es')); });
 
 const agent = { id: 'agent-1', firstName: 'Lucia', lastName: 'Ramos', employeeNumber: 'RA-2',
   category: 'Agente', hireDate: '2025-04-01', stations: [{ id: 'station-1', code: 'PUJ' }], terminals: [],
@@ -174,4 +176,20 @@ it('keeps an unsaved edit without exposing a server exception', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(/No fue posible guardar el perfil/);
   expect(screen.queryByText(/SQL connection string/)).not.toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
+});
+
+it('follows the English choice inside a language scope', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ], availableTerminals: [] });
+  act(() => resetLanguageForTests('en'));
+  render(<LanguageScope><RampProfilesPanel canEdit /></LanguageScope>);
+  await screen.findByText('Lucia Ramos');
+  expect(screen.getByText(/IAM account active; mobile access according to permissions/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Edit operational profile' }));
+  expect(screen.getByRole('textbox', { name: 'Category' })).toHaveAttribute('title', 'Edited in the Human Resources employee record');
+  expect(screen.getByText('There are no active terminals for the selected station.')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Select at least one terminal from the authorized stations.');
+  expect(saveRampProfile).not.toHaveBeenCalled();
 });

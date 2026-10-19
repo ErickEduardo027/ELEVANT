@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '../../i18n/LanguageScope';
 import { buildDisabledToast } from './positionsMapMappers';
+import { positionsMapMessages } from './positionsMapMessages';
 
 const MAX_VISIBLE_TOASTS = 3;
 const TOAST_TTL_MS = 6000;
 
 // El frontend nunca inventa el evento de inhabilitación: solo reacciona cuando una posición que
 // no estaba inhabilitada pasa a estarlo por una configuración combinada recibida de los datos.
-function buildAlert(previous, next) {
+function buildAlert(previous, next, t) {
   if (previous.status !== 'disabled' && next.status === 'disabled' && next.combinedConfiguration) {
-    return { kind: 'disabled', ...buildDisabledToast(next) };
+    return { kind: 'disabled', ...buildDisabledToast(next, t) };
   }
   return null;
 }
 
 export function usePositionAlerts(positions, connection) {
+  const { t } = useTranslation(positionsMapMessages);
   const previousRef = useRef(new Map());
   const idCounterRef = useRef(0);
   const mountedRef = useRef(true);
@@ -43,14 +46,14 @@ export function usePositionAlerts(positions, connection) {
       const prevPosition = previous.get(position.id);
       if (!prevPosition) return;
 
-      const alert = buildAlert(prevPosition, position);
+      const alert = buildAlert(prevPosition, position, t);
       if (!alert) return;
 
       enqueueToast(`toast-${position.id}-${idCounterRef.current++}`, alert);
     });
 
     previousRef.current = next;
-  }, [positions]);
+  }, [positions, t]);
 
   useEffect(() => {
     const wasAlreadyDisconnected = previousConnectionRef.current === 'disconnected';
@@ -59,10 +62,10 @@ export function usePositionAlerts(positions, connection) {
 
     enqueueToast(`toast-connection-${idCounterRef.current++}`, {
       kind: 'error',
-      title: 'Sin conexión con el proveedor de posiciones',
-      description: 'Los datos no se están actualizando.',
+      title: t('toast.disconnectedTitle'),
+      description: t('toast.disconnectedDescription'),
     });
-  }, [connection]);
+  }, [connection, t]);
 
   function dismissToast(id) {
     setToasts(current => current.filter(toast => toast.id !== id));

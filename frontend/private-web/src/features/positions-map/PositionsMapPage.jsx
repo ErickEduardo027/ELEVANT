@@ -14,6 +14,8 @@ import { usePositionAlerts } from './usePositionAlerts';
 import { useIsTabletBreakpoint } from '../flight-monitoring/useIsTabletBreakpoint';
 import { findPositionByQuery } from './positionsMapMappers';
 import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { positionsMapMessages } from './positionsMapMessages';
 
 export default function PositionsMapPage({
   status,
@@ -26,6 +28,7 @@ export default function PositionsMapPage({
   theme = 'light',
   onNavigateToResource = () => {},
 }) {
+  const { t } = useTranslation(positionsMapMessages);
   const [selectedPositionId, setSelectedPositionId] = useState(null);
   const [viewMode, setViewMode] = useState('2d');
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -103,16 +106,16 @@ export default function PositionsMapPage({
         role="alert"
         className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
       >
-        <p className="text-sm font-semibold text-status-danger">No se pudo cargar el mapa de posiciones de la estación.</p>
+        <p className="text-sm font-semibold text-status-danger">{t('page.errorTitle')}</p>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {error?.message ?? 'Verifique la conexión e intente nuevamente.'}
+          {error?.message ?? t('page.errorFallback')}
         </p>
         <button
           type="button"
           onClick={onRetry}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90"
         >
-          Reintentar
+          {t('page.retry')}
         </button>
       </div>
     );
@@ -121,10 +124,9 @@ export default function PositionsMapPage({
   if (status === 'success' && data?.source === 'planning-no-map') {
     return <section className="mx-auto max-w-[1200px] space-y-4">
       <header className="rounded-2xl border border-black/5 bg-white/70 p-5 dark:border-white/5 dark:bg-surface-dark-card">
-        <h1 className="text-lg font-semibold">Posiciones planificadas · {data.station.code}</h1>
+        <h1 className="text-lg font-semibold">{t('page.plannedTitle', { station: data.station.code })}</h1>
         <p className="mt-2 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          No hay cartografía verificada para esta estación. Estas asignaciones provienen de
-          Planificación OCC; no confirman ocupación física ni disponibilidad.
+          {t('page.plannedDescription')}
         </p>
       </header>
       {positions.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -132,11 +134,11 @@ export default function PositionsMapPage({
           className="rounded-xl border border-black/5 bg-white/70 p-4 dark:border-white/5 dark:bg-surface-dark-card">
           <p className="font-semibold">{position.id}</p>
           {position.terminal && <p className="text-xs text-text-secondary-light">
-            Terminal {position.terminal}</p>}
-          <p className="mt-2 text-xs">Vuelos planificados: {position.plannedFlights.join(', ') || 'sin número registrado'}</p>
+            {t('page.terminal', { terminal: position.terminal })}</p>}
+          <p className="mt-2 text-xs">{t('page.plannedFlights', { flights: position.plannedFlights.join(', ') || t('page.noFlightNumber') })}</p>
         </li>)}
       </ul> : <p role="status" className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">
-        No hay posiciones asignadas en la planificación consultada para esta estación.
+        {t('page.noAssignedPositions')}
       </p>}
     </section>;
   }
@@ -186,7 +188,7 @@ export default function PositionsMapPage({
       />
 
       {data?.source === 'planning' && <p role="status" className="rounded-lg border border-accent-600/25 bg-accent-600/5 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-        Esta vista muestra asignaciones planificadas de la API. La ocupación física no está conectada: una posición sin plan visible no significa que esté libre.
+        {t('page.planningNote')}
       </p>}
 
       {displayConnection === 'disconnected' && (
@@ -194,8 +196,8 @@ export default function PositionsMapPage({
           role="status"
           className="flex items-center gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 px-3 py-1.5 text-xs font-medium text-status-danger"
         >
-          Datos desactualizados — sin conexión con el proveedor de posiciones.
-          {lastUpdatedAt && <span className="font-mono opacity-80">Última sincronización disponible.</span>}
+          {t('page.disconnected')}
+          {lastUpdatedAt && <span className="font-mono opacity-80">{t('page.lastSync')}</span>}
         </p>
       )}
 

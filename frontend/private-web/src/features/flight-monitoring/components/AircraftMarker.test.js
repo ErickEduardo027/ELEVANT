@@ -36,9 +36,14 @@ describe('createAircraftMarkerElement', () => {
     expect(getRotor(element).style.transform).toContain('scale(1.15)');
   });
 
-  it('colors the marker stroke according to the flight status', () => {
+  it('fills the top-down silhouette with the flight status color', () => {
     const delayedElement = createAircraftMarkerElement({ ...FLIGHT, status: 'delayed' }, { selected: false });
-    expect(delayedElement.querySelector('svg').getAttribute('stroke')).toBe('#D9A441');
+    expect(delayedElement.querySelector('svg path').getAttribute('fill')).toBe('#D9A441');
+  });
+
+  it('does not invent an orientation when the heading is unknown', () => {
+    const element = createAircraftMarkerElement({ ...FLIGHT, heading: null }, { selected: false });
+    expect(getRotor(element).style.transform).toContain('rotate(0deg)');
   });
 });
 
@@ -49,7 +54,7 @@ describe('updateAircraftMarkerElement', () => {
 
     expect(getRotor(element).style.transform).toContain('rotate(200deg)');
     expect(getRotor(element).style.transform).toContain('scale(1.15)');
-    expect(element.querySelector('svg').getAttribute('stroke')).toBe('#1E9E6B');
+    expect(element.querySelector('svg path').getAttribute('fill')).toBe('#1E9E6B');
   });
 
   it('never writes a transform or transition onto the root element', () => {

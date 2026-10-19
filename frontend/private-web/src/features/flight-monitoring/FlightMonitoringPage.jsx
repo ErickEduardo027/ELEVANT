@@ -11,6 +11,8 @@ import { useFlightMonitoringFilters } from './useFlightMonitoringFilters';
 import { useFlightAlerts } from './useFlightAlerts';
 import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 import { getFilterOptions } from './flightMonitoringMappers';
+import { useTranslation } from '../../i18n/LanguageScope';
+import { flightMonitoringMessages } from './flightMonitoringMessages';
 
 function MonitoringMapArea({
   stationCode,
@@ -25,6 +27,7 @@ function MonitoringMapArea({
   onClosePopover,
   onStatusChange,
 }) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const geolocatedFlights = flights.filter(flight =>
     Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
   // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
@@ -40,10 +43,10 @@ function MonitoringMapArea({
         />
         <FlightLegend />
         {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
-          Sin posición de aeronaves en vivo: el mapa muestra PUJ, no trayectorias simuladas.
+          {t('page.noLivePositions')}
         </p>}
       </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
-        La API muestra vuelos y horarios operativos. La posición en vivo no está disponible hasta conectar una fuente aeronáutica verificada.
+        {t('page.noLiveSource')}
       </div>}
       <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
     </div>
@@ -62,6 +65,7 @@ export default function FlightMonitoringPage({
   focusFlightId = null,
   onStatusChange,
 }) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
   const [popoverPosition, setPopoverPosition] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
@@ -109,17 +113,17 @@ export default function FlightMonitoringPage({
         className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
       >
         <p className="text-sm font-semibold text-status-danger">
-          No se pudo cargar el monitoreo de vuelos de la estación.
+          {t('page.errorTitle')}
         </p>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {error?.message ?? 'Verifique la conexión e intente nuevamente.'}
+          {error?.message ?? t('page.errorFallback')}
         </p>
         <button
           type="button"
           onClick={onRetry}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90"
         >
-          Reintentar
+          {t('page.retry')}
         </button>
       </div>
     );
@@ -156,6 +160,7 @@ export default function FlightMonitoringPage({
 
   return (
     <div className="mx-auto flex h-full max-w-[1440px] 3xl:max-w-[1760px] flex-col gap-4">
+      <h1 className="sr-only">{t('page.title')}</h1>
       <FlightToolbar
         stationCode={data?.station.code}
         source={data?.source}
@@ -179,7 +184,7 @@ export default function FlightMonitoringPage({
               onClick={() => setListDrawerOpen(true)}
               className="rounded-lg border border-black/10 bg-white/90 px-3 py-2 text-xs font-semibold text-ink-900 shadow-sm dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
             >
-              Ver vuelos ({filteredFlights.length})
+              {t('page.viewFlights', { count: filteredFlights.length })}
             </button>
           </div>
           {mapArea}

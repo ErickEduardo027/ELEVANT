@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
+        services.AddScoped<GetOccAircraftTrafficHandler>();
         services.AddScoped<GetOccPlanningOptionsHandler>();
         services.AddScoped<AssignOccOperationHandler>();
         services.AddScoped<CreateManualTurnaroundHandler>();

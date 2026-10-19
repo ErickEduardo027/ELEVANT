@@ -7,6 +7,8 @@ import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
 import OccShiftPanel from './OccShiftPanel';
 import OccAttendancePanel from './OccAttendancePanel';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { planningMessages } from '../planningMessages';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -30,8 +32,10 @@ function EmptyValue({ children }) {
   return <p className="text-text-secondary-light dark:text-text-secondary-dark">{children}</p>;
 }
 
-function FlightLegDetail({ label, leg, timeZone }) {
-  if (!leg) return <EmptyValue>Sin tramo de {label.toLowerCase()} registrado.</EmptyValue>;
+function FlightLegDetail({ kind, leg, timeZone }) {
+  const { t, locale } = useTranslation(planningMessages);
+  const label = t(`drawer.${kind}`);
+  if (!leg) return <EmptyValue>{t(kind === 'arrival' ? 'drawer.noArrival' : 'drawer.noDeparture')}</EmptyValue>;
   return (
     <div className="rounded-lg border border-black/5 p-3 dark:border-white/5">
       <div className="flex items-center justify-between gap-2">
@@ -40,9 +44,9 @@ function FlightLegDetail({ label, leg, timeZone }) {
       </div>
       <p className="mt-1 font-mono text-sm">{leg.origin.iataCode} → {leg.destination.iataCode}</p>
       <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
-        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Programado</dt><dd className="font-mono">{formatPlanningClock(leg.scheduledAt, timeZone)}</dd></div>
-        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Estimado</dt><dd className="font-mono">{formatPlanningClock(leg.estimatedAt, timeZone)}</dd></div>
-        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Real</dt><dd className="font-mono">{formatPlanningClock(leg.actualAt, timeZone)}</dd></div>
+        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.scheduled')}</dt><dd className="font-mono">{formatPlanningClock(leg.scheduledAt, timeZone, locale)}</dd></div>
+        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.estimated')}</dt><dd className="font-mono">{formatPlanningClock(leg.estimatedAt, timeZone, locale)}</dd></div>
+        <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.actual')}</dt><dd className="font-mono">{formatPlanningClock(leg.actualAt, timeZone, locale)}</dd></div>
       </dl>
     </div>
   );
@@ -62,6 +66,7 @@ export default function PlanningDrawer({
   onRetryOptions,
   onShiftProgrammed,
 }) {
+  const { t, language, locale } = useTranslation(planningMessages);
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
   const returnFocusRef = useRef(null);
@@ -134,7 +139,7 @@ export default function PlanningDrawer({
 
   if (!flight) return null;
 
-  const meta = getPlanningStatusMeta(flight.status);
+  const meta = getPlanningStatusMeta(flight.status, language);
   const timeZone = flight.station?.ianaTimeZone;
   const isInitialAssignmentAvailable = isInitialAssignmentCandidate(flight);
   const attendanceAgents = (flight.assignedAgents ?? []).filter(agent => agent.assignmentId);
@@ -161,47 +166,47 @@ export default function PlanningDrawer({
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <p id="planning-drawer-description" className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-secondary-light dark:text-text-secondary-dark">Escala operativa · asignación controlada</p>
+            <p id="planning-drawer-description" className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.description')}</p>
             <h2 id="planning-drawer-title" className="mt-1 font-mono text-base font-semibold text-ink-900 dark:text-text-primary-dark">{flight.operationCode}</h2>
             <div className="mt-2"><StatusBadge tone={meta.color} label={meta.label} /></div>
           </div>
-          <button ref={closeButtonRef} type="button" aria-label="Cerrar panel" onClick={onClose} disabled={isSubmitting} title={isSubmitting ? 'Espere a que termine la asignación' : undefined} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary-light hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-accent-600 disabled:cursor-wait disabled:opacity-40 dark:text-text-secondary-dark dark:hover:bg-white/5">
+          <button ref={closeButtonRef} type="button" aria-label={t('drawer.close')} onClick={onClose} disabled={isSubmitting} title={isSubmitting ? t('drawer.waitAssignment') : undefined} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary-light hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-accent-600 disabled:cursor-wait disabled:opacity-40 dark:text-text-secondary-dark dark:hover:bg-white/5">
             <XIcon className="h-4 w-4" />
           </button>
         </div>
 
         <div className="space-y-4">
-          <Section title="Contexto">
+          <Section title={t('drawer.context')}>
             <dl className="grid grid-cols-2 gap-3 text-xs">
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Fecha</dt><dd>{formatPlanningDate(flight.operationDate)}</dd></div>
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Estación</dt><dd>{flight.station ? `${flight.station.code} · ${flight.station.name}` : 'Sin estación'}</dd></div>
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Aerolínea</dt><dd>{flight.airline ? `${flight.airline.iataCode} · ${flight.airline.name}` : (flight.airlineName ?? 'Sin aerolínea')}</dd></div>
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">Operación</dt><dd>{flight.operationStatus ?? 'Sin operación creada'}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.date')}</dt><dd>{formatPlanningDate(flight.operationDate, locale)}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.station')}</dt><dd>{flight.station ? `${flight.station.code} · ${flight.station.name}` : t('drawer.noStation')}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.airline')}</dt><dd>{flight.airline ? `${flight.airline.iataCode} · ${flight.airline.name}` : (flight.airlineName ?? t('drawer.noAirline'))}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.operation')}</dt><dd>{flight.operationStatus ?? t('drawer.noOperation')}</dd></div>
             </dl>
           </Section>
 
-          <Section title="Tramos de vuelo">
+          <Section title={t('drawer.legs')}>
             <div className="space-y-2">
-              <FlightLegDetail label="Llegada" leg={flight.arrival} timeZone={timeZone} />
-              <FlightLegDetail label="Salida" leg={flight.departure} timeZone={timeZone} />
+              <FlightLegDetail kind="arrival" leg={flight.arrival} timeZone={timeZone} />
+              <FlightLegDetail kind="departure" leg={flight.departure} timeZone={timeZone} />
             </div>
           </Section>
 
-          <Section title="Aeronave y posición">
-            <p>{flight.aircraft ? `${flight.aircraft.manufacturer} ${flight.aircraft.model}${flight.aircraft.registration ? ` · ${flight.aircraft.registration}` : ''}` : 'Sin aeronave registrada'}</p>
+          <Section title={t('drawer.aircraftAndPosition')}>
+            <p>{flight.aircraft ? `${flight.aircraft.manufacturer} ${flight.aircraft.model}${flight.aircraft.registration ? ` · ${flight.aircraft.registration}` : ''}` : t('drawer.noAircraft')}</p>
             <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-              {flight.position ? `Posición ${flight.position}` : 'Sin posición asignada'} · {flight.terminal ? flight.terminal.name : 'Sin terminal'}
+              {flight.position ? t('drawer.position', { code: flight.position }) : t('drawer.noPosition')} · {flight.terminal ? flight.terminal.name : t('drawer.noTerminal')}
             </p>
           </Section>
 
-          <Section title="Agentes asignados">
-            <ResourceList items={flight.assignedAgents ?? []} emptyLabel="Sin agentes asignados.">
+          <Section title={t('drawer.agents')}>
+            <ResourceList items={flight.assignedAgents ?? []} emptyLabel={t('drawer.noAgents')}>
               {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span></li>}
             </ResourceList>
           </Section>
 
-          {flight.operation?.id && attendanceAgent && <Section title="Asistencia compartida">
-            <label className="block text-xs">Agente para asistencia
+          {flight.operation?.id && attendanceAgent && <Section title={t('drawer.attendance')}>
+            <label className="block text-xs">{t('drawer.attendanceAgent')}
               <select value={attendanceAgent.assignmentId}
                 onChange={event => setSelectedAttendanceAssignmentId(event.target.value)}
                 className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm focus-visible:ring-2 focus-visible:ring-accent-600 dark:border-slate-700 dark:bg-surface-dark-card">
@@ -219,19 +224,19 @@ export default function PlanningDrawer({
             </div>
           </Section>}
 
-          <Section title="Equipos asignados">
-            <ResourceList items={flight.assignedEquipment ?? []} emptyLabel="Sin equipos asignados.">
+          <Section title={t('drawer.equipment')}>
+            <ResourceList items={flight.assignedEquipment ?? []} emptyLabel={t('drawer.noEquipment')}>
               {equipment => <li key={equipment.assignmentId}>{equipment.assetCode} · {equipment.equipmentTypeName} <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">({equipment.status})</span></li>}
             </ResourceList>
           </Section>
 
-          <Section title="Servicios planificados">
-            <ResourceList items={flight.assignedServices ?? []} emptyLabel="Sin servicios planificados.">
+          <Section title={t('drawer.services')}>
+            <ResourceList items={flight.assignedServices ?? []} emptyLabel={t('drawer.noServices')}>
               {service => <li key={service.id}>{service.code} · {service.name} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{service.executedQuantity}/{service.contractedQuantity} {service.billingUnit}</span></li>}
             </ResourceList>
           </Section>
 
-          <Section title="Asignación OCC">
+          <Section title={t('drawer.occAssignment')}>
             <OccShiftPanel flight={flight} optionsState={optionsState}
               onProgrammed={onShiftProgrammed} />
             <OccAssignmentPanel
@@ -245,8 +250,8 @@ export default function PlanningDrawer({
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          {['Editar planificación', 'Crear Work Order'].map(label => (
-            <button key={label} type="button" disabled title="Próximamente" className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/50 dark:border-white/10 dark:text-text-secondary-dark/50">{label}</button>
+          {['editPlanning', 'workOrder'].map(key => (
+            <button key={key} type="button" disabled title={t('drawer.comingSoon')} className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/50 dark:border-white/10 dark:text-text-secondary-dark/50">{t(`drawer.${key}`)}</button>
           ))}
         </div>
       </aside>

@@ -5,6 +5,8 @@ import { PUJ_COORDINATES } from '../flightMonitoringMappers';
 import { createAircraftMarkerElement, updateAircraftMarkerElement } from './AircraftMarker';
 import { createAirportMarkerElement } from './AirportMarker';
 import { CrosshairIcon, RotateCcwIcon } from './icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { flightMonitoringMessages } from '../flightMonitoringMessages';
 
 const DEMO_STYLE_URL = 'https://demotiles.maplibre.org/style.json';
 const STYLE_URLS = {
@@ -15,6 +17,7 @@ const INITIAL_ZOOM = 6;
 const CENTER_ZOOM = 9;
 
 export default function FlightMap({ flights, selectedFlightId, onSelectFlight, theme, onPopoverPosition }) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
@@ -149,8 +152,8 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
         <button
           type="button"
           onClick={handleResetView}
-          title="Restablecer vista"
-          aria-label="Restablecer vista"
+          title={t('map.resetView')}
+          aria-label={t('map.resetView')}
           className="rounded-lg border border-black/10 bg-white/90 p-2 shadow-md backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
         >
           <RotateCcwIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
@@ -158,8 +161,8 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
         <button
           type="button"
           onClick={handleCenterPuj}
-          title="Centrar PUJ"
-          aria-label="Centrar PUJ"
+          title={t('map.centerPuj')}
+          aria-label={t('map.centerPuj')}
           className="rounded-lg border border-black/10 bg-white/90 p-2 shadow-md backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
         >
           <CrosshairIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />

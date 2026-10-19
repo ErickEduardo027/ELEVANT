@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DepartmentAccessProvider, administratorAccess } from '../access/DepartmentAccessContext';
 import { DepartmentPermissionCodes } from '../access/testAccess';
 import EmployeesPage from './EmployeesPage';
 import PositionsPage from './PositionsPage';
-import RequisitionsPage from './RequisitionsPage';
-import ActivityPanel from './ActivityPanel';
+import RequisitionsPage, { RequisitionCard } from './RequisitionsPage';
+import ActivityPanel, { actionLabel } from './ActivityPanel';
+import { LanguageScope } from '../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../i18n/languageStore';
 import {
   changeRequisitionStatus, createEmployee, getEmployee, getEmployeeOptions, governanceMessage, listEmployees,
   listPositions, listRequisitions, savePosition, terminateEmployee,
@@ -22,7 +24,7 @@ vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }),
 }));
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); act(() => resetLanguageForTests('es')); });
 
 function renderWith(ui, codes = DepartmentPermissionCodes.humanResources) {
   return render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', codes)}>{ui}</DepartmentAccessProvider>);
@@ -124,9 +126,27 @@ describe('RequisitionsPage', () => {
     expect(within(drawer).getByRole('combobox', { name: 'Departamento' })).toHaveValue('finance');
     expect(within(drawer).getByRole('combobox', { name: 'Puesto' })).toHaveValue('pos-1');
   });
+
+  it('renders the shared requisition card in English inside a language scope', () => {
+    act(() => resetLanguageForTests('en'));
+    render(<LanguageScope><RequisitionCard requisition={{ id: 'req-2', department: 'finance',
+      position: { id: 'pos-1', name: analyst.name }, quantity: 2, filled: 1, reason: 'Temporada alta', station,
+      desiredStartOn: '2026-11-01', status: 'InProgress', requestedBy: 'Sofía', requestedAt: '2026-10-01T10:00:00Z',
+      attendedBy: 'Camila', closureReason: null, employees: [] }} /></LanguageScope>);
+    expect(screen.getByText('In progress')).toBeInTheDocument();
+    expect(screen.getByText(/Finance · PUJ · from 2026-11-01/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 2 filled · requested by Sofía on 10\/1\/2026 · handled by Camila/)).toBeInTheDocument();
+  });
 });
 
 describe('ActivityPanel', () => {
+  it('preserves qualification, permit and availability labels in both languages', () => {
+    expect(actionLabel('hr.qualification.recorded')).toBe('Registró una habilitación');
+    expect(actionLabel('hr.permit.recorded', 'en')).toBe('Recorded an airport pass or permit');
+    expect(actionLabel('hr.availability.approved', 'en')).toBe('Approved an availability request');
+    expect(actionLabel('hr.availability.cancelled')).toBe('Canceló una solicitud de disponibilidad');
+  });
+
   it('pages the trail with the cursor and labels actions', async () => {
     const load = vi.fn()
       .mockResolvedValueOnce({ entries: [{ id: 'a1', occurredAt: '2026-10-09T10:00:00Z', actorName: 'Lucía Prueba',

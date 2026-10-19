@@ -18319,6 +18319,102 @@
         ]
       }
     },
+    "/api/v1/occ/traffic/aircraft": {
+      "get": {
+        "tags": [
+          "OccTraffic"
+        ],
+        "operationId": "GetOccAircraftTraffic",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAircraftTrafficResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/chat/conversations": {
       "get": {
         "tags": [
@@ -32478,6 +32574,122 @@
         },
         "additionalProperties": false
       },
+      "OccAircraftStateResponse": {
+        "required": [
+          "icao24",
+          "latitude",
+          "longitude",
+          "onGround"
+        ],
+        "type": "object",
+        "properties": {
+          "icao24": {
+            "type": "string"
+          },
+          "callsign": {
+            "type": "string",
+            "nullable": true
+          },
+          "originCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "lastPositionAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastContactAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "barometricAltitudeMeters": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "geometricAltitudeMeters": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "groundSpeedMetersPerSecond": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "trueTrackDegrees": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "verticalRateMetersPerSecond": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "onGround": {
+            "type": "boolean"
+          },
+          "squawk": {
+            "type": "string",
+            "nullable": true
+          },
+          "positionSource": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "category": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAircraftTrafficResponse": {
+        "required": [
+          "aircraft",
+          "providerTime",
+          "retrievedAt",
+          "source",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "providerTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "aircraft": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAircraftStateResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAirlineResponse": {
         "required": [
           "iataCode",
@@ -38104,6 +38316,9 @@
     },
     {
       "name": "OccReview"
+    },
+    {
+      "name": "OccTraffic"
     },
     {
       "name": "OperationalChat"

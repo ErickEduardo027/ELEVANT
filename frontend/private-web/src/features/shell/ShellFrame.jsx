@@ -8,18 +8,27 @@ import { useStackedTableLabels } from '../../components/StackedTable';
 // siguen visibles en páginas largas y los mapas pueden usar `h-full`.
 // Las tablas `table-stack` del contenido reciben sus etiquetas de columna
 // para apilarse como tarjetas en teléfono.
-export default function ShellFrame({ sidebarProps, topbarProps, mainKey, mainClassName = '', children }) {
+// Un departamento puede aportar su propio sidebar/topbar y su identidad visual
+// (`department` → `data-department`, ver styles/occ.css) sin cambiar el marco
+// que usan los demás.
+const DEFAULT_ROOT_CLASS = 'bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark';
+
+export default function ShellFrame({
+  sidebarProps, topbarProps, mainKey, mainClassName = '', department,
+  SidebarComponent = Sidebar, TopbarComponent = Topbar, rootClassName = DEFAULT_ROOT_CLASS, children,
+}) {
   const mainRef = useRef(null);
   useStackedTableLabels(mainRef, mainKey);
 
   return (
     <div
       data-shell-root=""
-      className="flex h-dvh overflow-hidden bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark"
+      data-department={department}
+      className={`flex h-dvh overflow-hidden ${rootClassName}`}
     >
-      <Sidebar {...sidebarProps} />
+      <SidebarComponent {...sidebarProps} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar {...topbarProps} />
+        <TopbarComponent {...topbarProps} />
         <main
           ref={mainRef}
           key={mainKey}

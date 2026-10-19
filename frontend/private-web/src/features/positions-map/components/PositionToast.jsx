@@ -1,5 +1,7 @@
 import { AlertTriangleIcon } from '../../dashboard/components/icons';
 import { XIcon } from '../../flight-monitoring/components/icons';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { positionsMapMessages } from '../positionsMapMessages';
 
 const KIND_META = {
   disabled: { colorClass: 'text-status-danger', icon: AlertTriangleIcon },
@@ -7,6 +9,7 @@ const KIND_META = {
 };
 
 function Toast({ toast, onDismiss }) {
+  const { t } = useTranslation(positionsMapMessages);
   const meta = KIND_META[toast.kind] ?? KIND_META.disabled;
   const Icon = meta.icon;
 
@@ -22,7 +25,7 @@ function Toast({ toast, onDismiss }) {
       </span>
       <button
         type="button"
-        aria-label="Descartar aviso"
+        aria-label={t('toast.dismiss')}
         onClick={() => onDismiss(toast.id)}
         className="ml-auto shrink-0 rounded-md p-0.5 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
       >

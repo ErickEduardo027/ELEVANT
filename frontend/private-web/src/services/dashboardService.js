@@ -31,6 +31,7 @@ export async function getDashboardSnapshot({ stationId, stationCode, date }, { s
 
   return {
     stationId, stationCode, date: operationDate,
+    station: { name: planning.station.name ?? null, ianaTimeZone: planning.station.ianaTimeZone ?? review.ianaTimeZone },
     turnarounds: planning.turnarounds,
     reviews: review.operations,
     reviewHasMore: review.hasMore,

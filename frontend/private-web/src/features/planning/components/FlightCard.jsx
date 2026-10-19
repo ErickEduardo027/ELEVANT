@@ -6,31 +6,33 @@ import { formatCountdown } from '../planningMappers';
 import { getPlanningStatusMeta } from '../planningStatus';
 import { formatPlanningClock } from '../planningTime';
 import AssignmentSummary from './AssignmentSummary';
+import { useTranslation } from '../../../i18n/LanguageScope';
+import { planningMessages } from '../planningMessages';
 
 const QUICK_ACTIONS = [
-  { id: 'edit', label: 'Editar', icon: PencilIcon, enabled: false },
-  { id: 'assign', label: 'Asignar recursos', icon: UsersIcon, enabled: false },
-  { id: 'detail', label: 'Ver detalle', icon: EyeIcon, enabled: true },
-  { id: 'workOrder', label: 'Crear Work Order', icon: ClipboardIcon, enabled: false },
+  { id: 'edit', icon: PencilIcon, enabled: false },
+  { id: 'assign', icon: UsersIcon, enabled: false },
+  { id: 'detail', icon: EyeIcon, enabled: true },
+  { id: 'workOrder', icon: ClipboardIcon, enabled: false },
 ];
 
 function LegSummary({ kind, leg, timeZone }) {
-  const isArrival = kind === 'arrival';
-  const label = isArrival ? 'Llegada' : 'Salida';
+  const { t, locale } = useTranslation(planningMessages);
+  const label = t(kind === 'arrival' ? 'card.arrival' : 'card.departure');
 
   if (!leg) {
     return (
       <div className="rounded-lg border border-dashed border-black/10 px-3 py-2 dark:border-white/10">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary-light dark:text-text-secondary-dark">{label}</p>
-        <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">Sin tramo registrado</p>
+        <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('card.noLeg')}</p>
       </div>
     );
   }
 
   const route = `${leg.origin.iataCode} → ${leg.destination.iataCode}`;
-  const scheduled = formatPlanningClock(leg.scheduledAt, timeZone);
-  const estimated = formatPlanningClock(leg.estimatedAt, timeZone);
-  const actual = formatPlanningClock(leg.actualAt, timeZone);
+  const scheduled = formatPlanningClock(leg.scheduledAt, timeZone, locale);
+  const estimated = formatPlanningClock(leg.estimatedAt, timeZone, locale);
+  const actual = formatPlanningClock(leg.actualAt, timeZone, locale);
 
   return (
     <div className="rounded-lg border border-black/5 bg-white/55 px-3 py-2 dark:border-white/5 dark:bg-white/[0.03]">
@@ -44,7 +46,7 @@ function LegSummary({ kind, leg, timeZone }) {
       </div>
       {(estimated !== '—' || actual !== '—') && (
         <p className="mt-1 text-right font-mono text-[10px] text-text-secondary-light dark:text-text-secondary-dark">
-          Programado {scheduled}
+          {t('card.scheduled', { time: scheduled })}
         </p>
       )}
     </div>
@@ -52,7 +54,8 @@ function LegSummary({ kind, leg, timeZone }) {
 }
 
 export default function FlightCard({ flight, now, onSelect }) {
-  const meta = getPlanningStatusMeta(flight.status);
+  const { t, language } = useTranslation(planningMessages);
+  const meta = getPlanningStatusMeta(flight.status, language);
   const accentColor = STATUS_COLORS[meta.color];
   const timeZone = flight.station?.ianaTimeZone;
 
@@ -70,18 +73,18 @@ export default function FlightCard({ flight, now, onSelect }) {
           {flight.airlineIata} · {flight.airlineName}
         </span>
         <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {flight.aircraftType ?? 'Aeronave sin definir'}
+          {flight.aircraftType ?? t('card.noAircraft')}
         </span>
         <span className="ml-auto font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {formatCountdown(flight.timelineTime, now)}
+          {formatCountdown(flight.timelineTime, now, language)}
         </span>
         <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
-          {QUICK_ACTIONS.map(({ id, label, icon: ActionIcon, enabled }) => (
+          {QUICK_ACTIONS.map(({ id, icon: ActionIcon, enabled }) => (
             <button
               key={id}
               type="button"
-              title={enabled ? label : 'Próximamente'}
-              aria-label={label}
+              title={enabled ? t(`card.${id}`) : t('card.comingSoon')}
+              aria-label={t(`card.${id}`)}
               disabled={!enabled}
               onClick={() => enabled && onSelect(flight.id)}
               className={`rounded-md p-1.5 transition ${enabled
@@ -97,9 +100,9 @@ export default function FlightCard({ flight, now, onSelect }) {
       <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch">
         <LegSummary kind="arrival" leg={flight.arrival} timeZone={timeZone} />
         <div className="flex min-w-[130px] flex-col items-center justify-center rounded-lg bg-ink-900/[0.035] px-3 py-2 text-center dark:bg-white/[0.04]">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary-light dark:text-text-secondary-dark">Escala</span>
-          <span className="mt-1 font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{flight.position ?? 'Sin posición'}</span>
-          <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">{flight.terminalCode ? `Terminal ${flight.terminalCode}` : 'Sin terminal'}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary-light dark:text-text-secondary-dark">{t('card.turnaround')}</span>
+          <span className="mt-1 font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{flight.position ?? t('card.noPosition')}</span>
+          <span className="text-[10px] text-text-secondary-light dark:text-text-secondary-dark">{flight.terminalCode ? t('card.terminal', { code: flight.terminalCode }) : t('card.noTerminal')}</span>
         </div>
         <LegSummary kind="departure" leg={flight.departure} timeZone={timeZone} />
       </div>
@@ -112,7 +115,7 @@ export default function FlightCard({ flight, now, onSelect }) {
           services={flight.assignedServices ?? []}
         />
         {flight.hasAssignmentGap && (
-          <span className="rounded-full bg-status-warning/10 px-2 py-0.5 text-[10px] font-semibold text-status-warning">Requiere recursos</span>
+          <span className="rounded-full bg-status-warning/10 px-2 py-0.5 text-[10px] font-semibold text-status-warning">{t('card.needsResources')}</span>
         )}
       </div>
     </article>

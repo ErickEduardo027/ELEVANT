@@ -8,7 +8,11 @@ const CLUSTERS_LAYER = 'elevant-position-clusters';
 const CLUSTER_COUNT_LAYER = 'elevant-position-cluster-count';
 const POINTS_LAYER = 'elevant-position-points';
 const LABELS_LAYER = 'elevant-position-labels';
+const PRIORITY_LABELS_LAYER = 'elevant-position-priority-labels';
+const SELECTED_LABEL_LAYER = 'elevant-position-selected-label';
 const SELECTION_LAYER = 'elevant-position-selection';
+// Los stands crecen con el zoom para seguir siendo legibles sobre la plataforma.
+const STAND_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 14, 0.65, 16, 1, 18, 1.5];
 
 // Tokens ya existentes en tailwind.config.js — ninguno nuevo.
 const TERMINAL_CLUSTER_COLOR = { A: '#145DC4', B: '#0B1F3F', FBO: '#F2661E' };
@@ -28,7 +32,7 @@ function terminalCountExpression(terminalId) {
   return ['+', ['case', ['==', ['get', 'terminal'], terminalId], 1, 0]];
 }
 
-export function attachPositionsLayers(map, { positions, selectedPositionId, onSelectPosition, onClusterExpand }) {
+export function attachPositionsLayers(map, { positions, selectedPositionId, onSelectPosition, onClusterExpand, theme = 'light', dashboardLabels = false }) {
   registerPositionIcons(map);
 
   if (!map.getSource(SOURCE_ID)) {
@@ -36,8 +40,8 @@ export function attachPositionsLayers(map, { positions, selectedPositionId, onSe
       type: 'geojson',
       data: toPositionsGeoJSON(positions),
       cluster: true,
-      clusterRadius: 50,
-      clusterMaxZoom: 14,
+      clusterRadius: dashboardLabels ? 35 : 50,
+      clusterMaxZoom: dashboardLabels ? 12 : 14,
       clusterProperties: {
         sumA: terminalCountExpression('A'),
         sumB: terminalCountExpression('B'),
@@ -106,6 +110,7 @@ export function attachPositionsLayers(map, { positions, selectedPositionId, onSe
           POSITION_ICON_KEYS.releasing,
           POSITION_ICON_KEYS.available,
         ],
+        'icon-size': STAND_ICON_SIZE,
         'icon-allow-overlap': true,
       },
     });
@@ -116,19 +121,22 @@ export function attachPositionsLayers(map, { positions, selectedPositionId, onSe
       id: LABELS_LAYER,
       type: 'symbol',
       source: SOURCE_ID,
-      filter: ['!', ['has', 'point_count']],
-      minzoom: 15,
+      filter: dashboardLabels
+        ? ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'status'], 'planned']]
+        : ['!', ['has', 'point_count']],
+      minzoom: dashboardLabels ? 12.8 : 15,
       layout: {
         'text-field': ['get', 'code'],
         'text-font': ['Noto Sans Bold'],
-        'text-size': 10,
-        'text-offset': [0, 1.3],
+        'text-size': dashboardLabels ? ['interpolate', ['linear'], ['zoom'], 14, 10, 17, 12] : 10,
+        'text-offset': [0, dashboardLabels ? 1.9 : 1.6],
         'text-allow-overlap': false,
+        'text-optional': true,
       },
       paint: {
-        'text-color': '#0B1F3F',
-        'text-halo-color': '#FFFFFF',
-        'text-halo-width': 1.2,
+        'text-color': theme === 'dark' ? '#F2F7FF' : '#09213D',
+        'text-halo-color': theme === 'dark' ? '#071827' : '#FFFFFF',
+        'text-halo-width': dashboardLabels ? 2 : 1.2,
       },
     });
   }
@@ -139,7 +147,28 @@ export function attachPositionsLayers(map, { positions, selectedPositionId, onSe
       type: 'symbol',
       source: SOURCE_ID,
       filter: ['==', ['get', 'id'], selectedPositionId ?? '__none__'],
-      layout: { 'icon-image': SELECTION_RING_ICON_KEY, 'icon-allow-overlap': true },
+      layout: { 'icon-image': SELECTION_RING_ICON_KEY, 'icon-size': STAND_ICON_SIZE, 'icon-allow-overlap': true },
+    });
+  }
+
+  if (dashboardLabels && !map.getLayer(PRIORITY_LABELS_LAYER)) {
+    map.addLayer({ id: PRIORITY_LABELS_LAYER, type: 'symbol', source: SOURCE_ID,
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'status'], 'planned']],
+      minzoom: 12.5,
+      layout: { 'text-field': ['get', 'code'], 'text-font': ['Noto Sans Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 14, 11, 17, 13],
+        'text-offset': [0, 2], 'text-allow-overlap': true, 'text-optional': false },
+      paint: { 'text-color': theme === 'dark' ? '#A8D7FF' : '#0755A8',
+        'text-halo-color': theme === 'dark' ? '#071827' : '#FFFFFF', 'text-halo-width': 2.3 },
+    });
+  }
+  if (dashboardLabels && !map.getLayer(SELECTED_LABEL_LAYER)) {
+    map.addLayer({ id: SELECTED_LABEL_LAYER, type: 'symbol', source: SOURCE_ID,
+      filter: ['==', ['get', 'id'], selectedPositionId ?? '__none__'],
+      layout: { 'text-field': ['get', 'code'], 'text-font': ['Noto Sans Bold'],
+        'text-size': 14, 'text-offset': [0, 2.1], 'text-allow-overlap': true },
+      paint: { 'text-color': theme === 'dark' ? '#FFFFFF' : '#08203C',
+        'text-halo-color': theme === 'dark' ? '#071827' : '#FFFFFF', 'text-halo-width': 2.5 },
     });
   }
 
@@ -192,5 +221,8 @@ export function updatePositionsData(map, positions) {
 export function setSelectedPositionFilter(map, selectedPositionId) {
   if (map.getLayer(SELECTION_LAYER)) {
     map.setFilter(SELECTION_LAYER, ['==', ['get', 'id'], selectedPositionId ?? '__none__']);
+  }
+  if (map.getLayer(SELECTED_LABEL_LAYER)) {
+    map.setFilter(SELECTED_LABEL_LAYER, ['==', ['get', 'id'], selectedPositionId ?? '__none__']);
   }
 }

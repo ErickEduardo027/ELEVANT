@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STATUS_COLORS, getStatusMeta } from './statusMeta';
+import { STATUS_COLORS, getStatusLabel, getStatusMeta } from './statusMeta';
 
 describe('getStatusMeta', () => {
   it('maps known flight statuses to label and color', () => {
@@ -80,5 +80,21 @@ describe('getStatusMeta', () => {
     expect(getStatusMeta('position', 'occupied')).toEqual({ label: 'Ocupada', color: 'info' });
     expect(getStatusMeta('position', 'disabled')).toEqual({ label: 'Inhabilitada', color: 'danger' });
     expect(getStatusMeta('position', 'releasing')).toEqual({ label: 'Próxima a liberarse', color: 'warning' });
+  });
+});
+describe('getStatusLabel', () => {
+  it('keeps the Spanish label by default', () => {
+    expect(getStatusLabel('flight', 'delayed')).toBe('Retrasado');
+    expect(getStatusLabel('position', 'unverified', 'es')).toBe('Sin ocupación verificada');
+  });
+
+  it('returns English labels for flight and position statuses', () => {
+    expect(getStatusLabel('flight', 'arrived', 'en')).toBe('On stand');
+    expect(getStatusLabel('position', 'planned', 'en')).toBe('Planned');
+  });
+
+  it('falls back to the Spanish label or the raw status when no English label exists', () => {
+    expect(getStatusLabel('review', 'APPROVED', 'en')).toBe('Aprobado');
+    expect(getStatusLabel('flight', 'mystery', 'en')).toBe('mystery');
   });
 });

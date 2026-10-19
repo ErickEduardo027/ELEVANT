@@ -67,7 +67,9 @@ it('combines actual scoped reads and never counts another station notification',
   expect(loadOperationalNotifications).toHaveBeenCalledWith(
     { signal: controller.signal });
   expect(result).toEqual({
-    ...scope, turnarounds: planning.turnarounds,
+    ...scope,
+    station: { name: 'Punta Cana', ianaTimeZone: 'America/Santo_Domingo' },
+    turnarounds: planning.turnarounds,
     reviews: review.operations, reviewHasMore: false,
     notifications: [notices.notifications[0]], notificationsHasMore: false,
   });
