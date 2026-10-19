@@ -15,4 +15,10 @@ public sealed class NonFiscalInvoice : AuditableEntity
     public int PaymentTermDays { get; set; }
 
     public DateOnly? DueDate { get; set; }
+    public decimal? NetTotal { get; set; }
+    public decimal? DiscountTotal { get; set; }
+    public decimal? TaxTotal { get; set; }
+    public bool TaxTreatmentsConfigured { get; set; }
+    /// <summary>Frozen issuer/customer identity, station, terms and aggregate amounts. Not proof of fiscal validity.</summary>
+    public string? CommercialSnapshotJson { get; set; }
 }

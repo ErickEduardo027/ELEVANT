@@ -58,9 +58,10 @@ public sealed record ContractRateComparisonData(Guid RateId, string ServiceCode,
 public sealed record ContractChargeComparisonData(Guid ChargeId, string ChargeCode, string ChargeName, string Method,
     bool IsExcluded, decimal? ContractValue, decimal? BaseValue);
 public sealed record ContractFinanceReviewData(string Decision, string? Reason, string DecidedBy, DateTimeOffset DecidedAt);
+public sealed record ContractPackageApprovalData(Guid Id, string Code, string Name, int VersionNumber, string Scope, decimal BasePrice, string CurrencyCode);
 public sealed record ContractApprovalDetailData(ContractApprovalSummaryData Summary, string? Terms,
     IReadOnlyList<string> Stations, IReadOnlyList<ContractRateComparisonData> Rates,
-    IReadOnlyList<ContractChargeComparisonData> Charges, IReadOnlyList<ContractFinanceReviewData> History);
+    IReadOnlyList<ContractChargeComparisonData> Charges, IReadOnlyList<ContractFinanceReviewData> History, IReadOnlyList<ContractPackageApprovalData>? Packages = null);
 public sealed record DecideContractApprovalInput(string Decision, string? Reason, string ExpectedVersion);
 
 /// <summary>

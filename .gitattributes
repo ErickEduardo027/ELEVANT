@@ -18,3 +18,6 @@
 *.apk binary
 *.aab binary
 *.pfx binary
+
+# Preserve official DGII schema bytes, including upstream whitespace; SHA256 recorded in docs/reference.
+backend/Elevant.Infrastructure/Finance/XmlSchemas/*.xsd -text -whitespace

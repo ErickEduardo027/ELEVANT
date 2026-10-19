@@ -45,6 +45,10 @@ public sealed class PreinvoiceLine : AuditableEntity
     /// <summary>Billed amount. Finance may edit it on a draft; adjustments may be negative.</summary>
     public decimal Amount { get; set; }
 
+    public bool? ComputedIsExcluded { get; set; }
+
+    public string? CalculationJson { get; set; }
+
     public bool IsExcluded { get; set; }
 
     public string? AdjustmentReason { get; set; }
@@ -55,4 +59,17 @@ public sealed class PreinvoiceLine : AuditableEntity
 
     /// <summary>Set only when a disputed preinvoice is voided; preserves its historical snapshot.</summary>
     public DateTimeOffset? ReleasedAt { get; set; }
+
+    // Null amounts distinguish legacy rows from captured, explicitly unconfigured treatments.
+    public Guid? TaxPolicyPublicId { get; set; }
+    public FinanceTaxTreatment TaxTreatment { get; set; }
+    public decimal? TaxRate { get; set; }
+    public string? TaxBasis { get; set; }
+    /// <summary>Pretax base before discount. Amount remains the gross billed amount.</summary>
+    public decimal? NetAmount { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    /// <summary>Unknown for unconfigured treatments; an explicit zero is retained as zero.</summary>
+    public decimal? TaxAmount { get; set; }
+    public decimal? GrossAmount { get; set; }
+    public DateTimeOffset? TaxCapturedAt { get; set; }
 }

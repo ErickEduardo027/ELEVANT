@@ -1,3 +1,4 @@
+using Elevant.Application.Finance;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
@@ -99,12 +100,15 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<IReadOnlyList<ContractApprovalSummaryData>?> ListContractApprovalsAsync(Guid actorId,
         bool pendingOnly, CancellationToken cancellationToken = default)
     {
-        if (await AuthorizeAsync(actorId, "finance.contract_approvals.read", cancellationToken) is null) return null;
+        var actor = await AuthorizeAsync(actorId, "finance.contract_approvals.read", cancellationToken);
+        if (actor is null) return null;
+        var scope = actor.Context.StationScopes.Select(x => x.StationId).ToArray();
         var since = timeProvider.GetUtcNow().AddDays(-90);
         var versionIds = await context.ContractVersions.AsNoTracking()
-            .Where(version => version.Status == ContractVersionStatus.PendingFinanceApproval ||
+            .Where(version => (version.Status == ContractVersionStatus.PendingFinanceApproval ||
                 !pendingOnly && context.ContractFinanceReviews.Any(review =>
-                    review.ContractVersionId == version.Id && review.DecidedAt >= since))
+                    review.ContractVersionId == version.Id && review.DecidedAt >= since)) && context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id) &&
+                !context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id && !context.Stations.Any(station => station.Id == link.StationId && scope.Contains(station.PublicId))))
             .OrderByDescending(version => version.UpdatedAt).Select(version => version.Id).Take(200)
             .ToArrayAsync(cancellationToken);
         var summaries = new List<ContractApprovalSummaryData>();
@@ -116,10 +120,11 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<ContractApprovalDetailData?> GetContractApprovalAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default)
     {
-        if (await AuthorizeAsync(actorId, "finance.contract_approvals.read", cancellationToken) is null) return null;
+        var actor = await AuthorizeAsync(actorId, "finance.contract_approvals.read", cancellationToken);
+        if (actor is null) return null;
         var id = await context.ContractVersions.AsNoTracking().Where(version => version.PublicId == versionId)
             .Select(version => (long?)version.Id).SingleOrDefaultAsync(cancellationToken);
-        return id is null ? null : await ComparisonAsync(id.Value, cancellationToken);
+        return id is null || !await ApprovalInScopeAsync(actor, id.Value, cancellationToken) ? null : await ComparisonAsync(id.Value, cancellationToken);
     }
 
     /// <summary>The contract version beside the Finance base tariff and charges that applied on its start date.</summary>
@@ -177,8 +182,12 @@ internal sealed partial class EfFinanceTariffBookStore
             row.Airline, row.version.CurrencyCode, row.version.ValidFrom, row.version.ValidTo, row.version.Status.ToString(),
             row.version.UpdatedAt, comparisons.Count(item => item.DifferencePercent < 0),
             comparisons.Count(item => item.BasePrice is null), Version(row.version.RowVersion));
+        var packages = await (from link in context.Set<ContractServicePackage>().AsNoTracking()
+            join package in context.Set<ServicePackageVersion>().AsNoTracking() on link.PackageVersionId equals package.Id
+            where link.ContractVersionId == versionId
+            select new ContractPackageApprovalData(package.PublicId, package.Code, package.Name, package.VersionNumber, package.Scope.ToString(), package.BasePrice, package.CurrencyCode)).ToArrayAsync(cancellationToken);
         return new ContractApprovalDetailData(summary, row.version.Terms,
-            stations.Select(item => item.Code).OrderBy(code => code).ToArray(), comparisons, charges, history);
+            stations.Select(item => item.Code).OrderBy(code => code).ToArray(), comparisons, charges, history, packages);
     }
 
     /// <summary>
@@ -191,6 +200,7 @@ internal sealed partial class EfFinanceTariffBookStore
         var actor = await AuthorizeAsync(actorId, "finance.contract_approvals.decide", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !Enum.TryParse<ContractFinanceDecision>(input.Decision, false, out var decision) ||
+            !Enum.IsDefined(decision) || decision is not (ContractFinanceDecision.Approved or ContractFinanceDecision.Returned) ||
             string.IsNullOrWhiteSpace(input.ExpectedVersion) || input.Reason?.Length > 1000 ||
             decision == ContractFinanceDecision.Returned && (input.Reason is null || input.Reason.Trim().Length < 3))
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
@@ -202,6 +212,7 @@ internal sealed partial class EfFinanceTariffBookStore
                              where version.PublicId == versionId
                              select new { Version = version, Contract = contract }).SingleOrDefaultAsync(cancellationToken);
             if (row is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (!await ApprovalInScopeAsync(actor, row.Version.Id, cancellationToken)) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
             if (row.Version.Status != ContractVersionStatus.PendingFinanceApproval ||
                 Version(row.Version.RowVersion) != input.ExpectedVersion)
                 return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
@@ -210,10 +221,7 @@ internal sealed partial class EfFinanceTariffBookStore
             {
                 PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id, Decision = decision,
                 Reason = input.Reason?.Trim(), DecidedByAccountId = actor.Id, DecidedAt = now,
-                ComparisonJson = JsonSerializer.Serialize(comparison.Rates.Select(rate => new
-                {
-                    rate.ServiceCode, rate.ContractPrice, rate.BasePrice, rate.DifferencePercent,
-                })),
+                ComparisonJson = JsonSerializer.Serialize(new { comparison.Rates, comparison.Charges, comparison.Packages }),
                 CreatedAt = now, UpdatedAt = now,
             });
             if (decision == ContractFinanceDecision.Returned)
@@ -223,8 +231,41 @@ internal sealed partial class EfFinanceTariffBookStore
                 Audit(actor.Id, "finance.contract.returned", "commercial.contract_versions", row.Version.PublicId,
                     input.Reason!.Trim());
             }
-            else
+            else if (decision == ContractFinanceDecision.Approved)
             {
+                var packageRows = await (from link in context.Set<ContractServicePackage>()
+                    join package in context.Set<ServicePackageVersion>() on link.PackageVersionId equals package.Id
+                    where link.ContractVersionId == row.Version.Id select package).ToArrayAsync(cancellationToken);
+                if (packageRows.Any(package => package.Status == TariffVersionStatus.Draft || package.CurrencyCode != row.Version.CurrencyCode || package.ValidFrom > row.Version.ValidFrom || package.ValidTo != null && (row.Version.ValidTo == null || package.ValidTo < row.Version.ValidTo)))
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                var packageIds = packageRows.Select(package => package.Id).ToArray();
+                var coveredServices = await context.Set<ServicePackageComponent>().Where(component => packageIds.Contains(component.PackageVersionId)).Select(component => component.ServiceDefinitionId).ToArrayAsync(cancellationToken);
+                if (coveredServices.Distinct().Count() != coveredServices.Length || await context.ContractServiceRates.Where(rate => rate.ContractVersionId == row.Version.Id).CountAsync(cancellationToken) < coveredServices.Distinct().Count() || coveredServices.Any(service => !context.ContractServiceRates.Any(rate => rate.ContractVersionId == row.Version.Id && rate.ServiceDefinitionId == service)))
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                var previousVersions = await context.ContractVersions.Where(v => v.ContractId == row.Contract.Id && v.Id != row.Version.Id && v.Status == ContractVersionStatus.Approved).ToArrayAsync(cancellationToken);
+                if (previousVersions.Any(v => v.ValidFrom >= row.Version.ValidFrom))
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                foreach (var previous in previousVersions)
+                {
+                    previous.Status = ContractVersionStatus.Superseded;
+                    previous.ValidTo = row.Version.ValidFrom.AddDays(-1);
+                    previous.UpdatedAt = now;
+                }
+                var inheritedChargeRates = await FinanceTariffLookup.ChargeRatesAsync(context, row.Version.CurrencyCode, row.Version.ValidFrom, cancellationToken);
+                var chargeDefinitions = await context.ChargeDefinitions.Where(c => c.IsActive).ToArrayAsync(cancellationToken);
+                var frozenChargeRates = await context.ContractChargeRates.Where(c => c.ContractVersionId == row.Version.Id).ToDictionaryAsync(c => c.ChargeDefinitionId, cancellationToken);
+                foreach (var definition in chargeDefinitions)
+                {
+                    if (!frozenChargeRates.TryGetValue(definition.Id, out var frozen))
+                    {
+                        if (!inheritedChargeRates.TryGetValue(definition.Id, out var inherited)) continue;
+                        frozen = new ContractChargeRate { PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id, ChargeDefinitionId = definition.Id, Value = inherited.Value, MinimumAmount = inherited.MinimumAmount, CreatedAt = now, UpdatedAt = now };
+                        context.ContractChargeRates.Add(frozen);
+                    }
+                    frozen.DefinitionSnapshotJson = JsonSerializer.Serialize(new ContractChargePolicySnapshot(definition.Code, definition.Name, definition.BillingUnit, definition.Method, definition.QuantityRule, definition.GraceMinutes, definition.RoundingIncrement));
+                    frozen.UpdatedAt = now;
+                }
+                row.Version.PricingPolicyVersion = 1;
                 var requestAccount = await context.ServiceRequests.AsNoTracking()
                     .Where(request => request.Id == row.Contract.OriginatingServiceRequestId)
                     .Select(request => request.ProvisionedAccountId).SingleOrDefaultAsync(cancellationToken);
@@ -252,6 +293,7 @@ internal sealed partial class EfFinanceTariffBookStore
                         "finance_tariffs", cancellationToken);
                 Audit(actor.Id, "finance.contract.approved", "commercial.contracts", row.Contract.PublicId, input.Reason?.Trim());
             }
+            else return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
             await NotifyAsync("contracts.drafts.read", "contract_approvals", row.Version.PublicId, now, cancellationToken);
             await NotifyAsync("finance.contract_approvals.read", "contract_approvals", row.Version.PublicId, now,
                 cancellationToken);
@@ -259,4 +301,11 @@ internal sealed partial class EfFinanceTariffBookStore
             return FinanceCatalogResult.Success(row.Version.PublicId);
         }, cancellationToken);
     }
+    private async Task<bool> ApprovalInScopeAsync(Actor actor, long versionId, CancellationToken ct)
+    {
+        var allowed = actor.Context.StationScopes.Select(x => x.StationId).ToArray();
+        return await context.Set<ContractVersionStation>().AnyAsync(link => link.ContractVersionId == versionId, ct) &&
+            !await context.Set<ContractVersionStation>().AnyAsync(link => link.ContractVersionId == versionId && !context.Stations.Any(station => station.Id == link.StationId && allowed.Contains(station.PublicId)), ct);
+    }
+
 }

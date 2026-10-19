@@ -47,6 +47,9 @@ public enum PreinvoiceLineKind
     Service,
     Charge,
     Adjustment,
+    Package,
+    Excess,
+    Minimum,
 }
 
 public enum PaymentMethod

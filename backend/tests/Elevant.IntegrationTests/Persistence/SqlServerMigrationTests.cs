@@ -132,7 +132,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(approved.Request, (await closures.RequestAsync(occId, approvedRequestId,
             service.PublicId, reason, cancellationToken)).Request);
         Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
-            contractsId, service.PublicId,
+            Guid.Parse("40000000-0000-7000-8000-000000000006"), service.PublicId,
             new ManagedServiceInput(service.Code, service.Name, service.Description!,
                 service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
                 service.DisplayOrder, true, true, approved.Request.ServiceVersion),
@@ -159,7 +159,7 @@ public sealed partial class SqlServerMigrationTests
                 item.ResourceId == service.PublicId).ToArray();
         Assert.NotEmpty(catalogHints);
 
-        var edited = await management.SaveAsync(contractsId, service.PublicId,
+        var edited = await management.SaveAsync(Guid.Parse("40000000-0000-7000-8000-000000000006"), service.PublicId,
             new ManagedServiceInput(service.Code, service.Name,
                 "Descripcion actualizada para OCC.", service.DefaultBillingUnit,
                 service.ImageUrl, service.VideoUrl, service.DisplayOrder, true, true,
@@ -1992,7 +1992,8 @@ public sealed partial class SqlServerMigrationTests
         foreach (var format in formats)
         {
             using var input = new MemoryStream(format.Content);
-            var uploaded = await media.UploadAsync(actor, format.Purpose,
+            var uploadActor = format.Purpose.StartsWith("service-", StringComparison.Ordinal) ? FinanceAccount : actor;
+            var uploaded = await media.UploadAsync(uploadActor, format.Purpose,
                 format.ContentType, input, input.Length, cancellationToken);
 
             Assert.NotNull(uploaded);
@@ -2034,7 +2035,7 @@ public sealed partial class SqlServerMigrationTests
             .BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
-        var actor = Guid.Parse("40000000-0000-7000-8000-000000000007");
+        var actor = FinanceAccount;
         var accountId = await context.Users.Where(user => user.PublicId == actor)
             .Select(user => user.Id).SingleAsync(cancellationToken);
         var assetId = Guid.CreateVersion7();
@@ -2750,7 +2751,9 @@ public sealed partial class SqlServerMigrationTests
                 catalogCreatorRole.Id!.Value, "Synthetic-Catalog!234"), cancellationToken);
         Assert.True(catalogCreator.IsSuccess);
         var managedCatalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
-        var createdService = await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
+        Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
+            new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética", "operación", null, null, 999, false, true, null), cancellationToken)).Failure);
+        var createdService = await managedCatalog.SaveAsync(FinanceAccount, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética",
                 "operación", null, null, 999, false, true, null), cancellationToken);
         Assert.Null(createdService.Failure);

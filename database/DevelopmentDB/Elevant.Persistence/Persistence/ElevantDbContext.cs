@@ -203,6 +203,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigureNonFiscalInvoices();
         builder.ConfigureNonFiscalPayments();
         builder.ConfigureFinanceTariffs();
+        builder.ConfigureFinancePackages();
         builder.ConfigureOperations();
         builder.ConfigureIntegrationAndAudit();
         builder.ApplyConfigurationsFromAssembly(typeof(ElevantDbContext).Assembly);

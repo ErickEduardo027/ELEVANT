@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Finance;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
@@ -10,6 +11,7 @@ namespace Elevant.Persistence.Finance;
 internal sealed class EfFinanceReconciliationReadStore(
     ElevantDbContext context, TimeProvider timeProvider) : IFinanceReconciliationReadStore
 {
+    private sealed record PaymentFact(Guid PublicId, long InvoiceId, string Reference, decimal Amount, DateTimeOffset CreatedAt);
     public async Task<FinanceReconciliationPageData?> ListAsync(Guid accountId,
         Guid stationId, int page, int limit, CancellationToken cancellationToken = default)
     {
@@ -63,11 +65,18 @@ internal sealed class EfFinanceReconciliationReadStore(
                 invoice.Number, invoice.Total, invoice.CreatedAt })
             .ToArrayAsync(cancellationToken);
         var invoiceIds = invoices.Select(invoice => invoice.Id).ToArray();
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var end = new DateTimeOffset(today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var payments = await context.NonFiscalPayments.AsNoTracking()
-            .Where(payment => invoiceIds.Contains(payment.InvoiceId))
-            .Select(payment => new { payment.PublicId, payment.InvoiceId,
-                payment.Reference, payment.Amount, payment.CreatedAt })
+            .Where(payment => invoiceIds.Contains(payment.InvoiceId) && payment.CreatedAt < end && (payment.PaidOn == null || payment.PaidOn <= today))
+            .Select(payment => new PaymentFact(payment.PublicId, payment.InvoiceId,
+                payment.Reference, payment.Amount, payment.CreatedAt))
             .ToArrayAsync(cancellationToken);
+        var applications = await context.Set<FinanceTreasuryMovement>().AsNoTracking()
+            .Where(m => m.InvoiceId != null && invoiceIds.Contains(m.InvoiceId.Value) && m.EffectiveOn <= today && m.CreatedAt < end &&
+                (m.Kind == FinanceTreasuryMovementKind.Application || m.Kind == FinanceTreasuryMovementKind.ApplicationReversal))
+            .Select(m => new PaymentFact(m.PublicId, m.InvoiceId!.Value, m.Reference,
+                m.Kind == FinanceTreasuryMovementKind.Application ? m.InvoiceAmount : -m.InvoiceAmount, m.CreatedAt)).ToArrayAsync(cancellationToken);
         if (!await context.AccountStationScopes.AsNoTracking().AnyAsync(grant =>
                 grant.AccountId == scope.AccountId && grant.StationId == scope.StationId &&
                 grant.GrantedAt <= now && grant.RevokedAt == null, cancellationToken))
@@ -75,7 +84,7 @@ internal sealed class EfFinanceReconciliationReadStore(
 
         var byPreinvoice = invoices.ToDictionary(invoice => invoice.PreinvoiceId);
         // Several partial payments may settle an invoice: report their sum and the latest one.
-        var byInvoice = payments.GroupBy(payment => payment.InvoiceId).ToDictionary(group => group.Key,
+        var byInvoice = payments.Concat(applications).GroupBy(payment => payment.InvoiceId).ToDictionary(group => group.Key,
             group => new { Latest = group.OrderBy(payment => payment.CreatedAt).Last(), Total = group.Sum(payment => payment.Amount) });
         var rows = selected.Select(item =>
         {

@@ -1,0 +1,55 @@
+using Elevant.Application.Finance;
+using Elevant.Contracts.Finance;
+namespace Elevant.Api.Controllers;
+
+internal static class FinancePayablesContractMapper
+{
+    internal static FinancePayablesDimensions ToData(FinancePayablesDimensionsDto x) => x is null ? null! : new(x.StationId, x.AirlineId, x.TurnaroundId, x.ServiceId);
+    internal static FinancePayablesDimensionsDto ToDto(FinancePayablesDimensions x) => x is null ? null! : new(x.StationId, x.AirlineId, x.TurnaroundId, x.ServiceId);
+    internal static FinancePayablesFx ToData(FinancePayablesFxDto x) => x is null ? null! : new(x.Currency, x.RateToDop, x.Source, x.RateDate);
+    internal static FinancePayablesFxDto ToDto(FinancePayablesFx x) => x is null ? null! : new(x.Currency, x.RateToDop, x.Source, x.RateDate);
+    internal static SupplierSave ToData(SupplierSaveDto x) => x is null ? null! : new(x.RequestId, x.ScopeStationId, x.Code, x.Name, x.TaxReference, x.ContactEmail, x.IsActive, x.ExpectedVersion);
+    internal static SupplierSaveDto ToDto(SupplierSave x) => x is null ? null! : new(x.RequestId, x.ScopeStationId, x.Code, x.Name, x.TaxReference, x.ContactEmail, x.IsActive, x.ExpectedVersion);
+    internal static SupplierView ToData(SupplierViewDto x) => x is null ? null! : new(x.Id, x.ScopeStationId, x.Code, x.Name, x.TaxReference, x.ContactEmail, x.IsActive, x.Version);
+    internal static SupplierViewDto ToDto(SupplierView x) => x is null ? null! : new(x.Id, x.ScopeStationId, x.Code, x.Name, x.TaxReference, x.ContactEmail, x.IsActive, x.Version);
+    internal static FinancePayablesLineInput ToData(FinancePayablesLineInputDto x) => x is null ? null! : new(x.Description, x.Quantity, x.UnitPrice, x.TaxAmount);
+    internal static FinancePayablesLineInputDto ToDto(FinancePayablesLineInput x) => x is null ? null! : new(x.Description, x.Quantity, x.UnitPrice, x.TaxAmount);
+    internal static FinancePayablesSave ToData(FinancePayablesSaveDto x) => x is null ? null! : new(x.RequestId, x.SupplierId, x.ScopeStationId, x.DocumentReference, x.DocumentDate, x.DueDate, ToData(x.Fx), ToData(x.Dimensions), x.Lines?.Select(ToData).ToArray()!, x.ExpectedVersion);
+    internal static FinancePayablesSaveDto ToDto(FinancePayablesSave x) => x is null ? null! : new(x.RequestId, x.SupplierId, x.ScopeStationId, x.DocumentReference, x.DocumentDate, x.DueDate, ToDto(x.Fx), ToDto(x.Dimensions), x.Lines?.Select(ToDto).ToArray()!, x.ExpectedVersion);
+    internal static FinancePayablesDecision ToData(FinancePayablesDecisionDto x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.Decision, x.Reason);
+    internal static FinancePayablesDecisionDto ToDto(FinancePayablesDecision x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.Decision, x.Reason);
+    internal static FinancePayablesLineView ToData(FinancePayablesLineViewDto x) => x is null ? null! : new(x.Id, x.Number, x.Description, x.Quantity, x.UnitPrice, x.TaxAmount, x.Total);
+    internal static FinancePayablesLineViewDto ToDto(FinancePayablesLineView x) => x is null ? null! : new(x.Id, x.Number, x.Description, x.Quantity, x.UnitPrice, x.TaxAmount, x.Total);
+    internal static FinancePayablesAttachmentView ToData(FinancePayablesAttachmentViewDto x) => x is null ? null! : new(x.Id, x.ContentType, x.Length, x.Sha256, x.UploadedAt);
+    internal static FinancePayablesAttachmentViewDto ToDto(FinancePayablesAttachmentView x) => x is null ? null! : new(x.Id, x.ContentType, x.Length, x.Sha256, x.UploadedAt);
+    internal static FinancePayablesReviewView ToData(FinancePayablesReviewViewDto x) => x is null ? null! : new(x.Stage, x.Decision, x.ActorId, x.At, x.Reason);
+    internal static FinancePayablesReviewViewDto ToDto(FinancePayablesReviewView x) => x is null ? null! : new(x.Stage, x.Decision, x.ActorId, x.At, x.Reason);
+    internal static FinancePayablesView ToData(FinancePayablesViewDto x) => x is null ? null! : new(x.Id, x.SupplierId, x.SupplierName, x.ScopeStationId, x.DocumentReference, x.DocumentDate, x.DueDate, x.Status, ToData(x.Fx), ToData(x.Dimensions), x.Total, x.TotalDop, x.Paid, x.Remaining, x.Version, x.Lines?.Select(ToData).ToArray()!, x.Attachments?.Select(ToData).ToArray()!, x.Reviews?.Select(ToData).ToArray()!);
+    internal static FinancePayablesViewDto ToDto(FinancePayablesView x) => x is null ? null! : new(x.Id, x.SupplierId, x.SupplierName, x.ScopeStationId, x.DocumentReference, x.DocumentDate, x.DueDate, x.Status, ToDto(x.Fx), ToDto(x.Dimensions), x.Total, x.TotalDop, x.Paid, x.Remaining, x.Version, x.Lines?.Select(ToDto).ToArray()!, x.Attachments?.Select(ToDto).ToArray()!, x.Reviews?.Select(ToDto).ToArray()!);
+    internal static FinancePayablesPaymentSave ToData(FinancePayablesPaymentSaveDto x) => x is null ? null! : new(x.RequestId, x.SupplierId, x.ScopeStationId, x.PaidOn, x.Reference, ToData(x.Fx), x.Amount);
+    internal static FinancePayablesPaymentSaveDto ToDto(FinancePayablesPaymentSave x) => x is null ? null! : new(x.RequestId, x.SupplierId, x.ScopeStationId, x.PaidOn, x.Reference, ToDto(x.Fx), x.Amount);
+    internal static FinancePayablesApplicationInput ToData(FinancePayablesApplicationInputDto x) => x is null ? null! : new(x.InvoiceId, x.ExpectedVersion, x.PaymentAmount, x.RateToInvoice);
+    internal static FinancePayablesApplicationInputDto ToDto(FinancePayablesApplicationInput x) => x is null ? null! : new(x.InvoiceId, x.ExpectedVersion, x.PaymentAmount, x.RateToInvoice);
+    internal static FinancePayablesApply ToData(FinancePayablesApplyDto x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.Applications?.Select(ToData).ToArray()!);
+    internal static FinancePayablesApplyDto ToDto(FinancePayablesApply x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.Applications?.Select(ToDto).ToArray()!);
+    internal static FinancePayablesApplicationView ToData(FinancePayablesApplicationViewDto x) => x is null ? null! : new(x.Id, x.InvoiceId, x.PaymentAmount, x.InvoiceAmount, x.RateToInvoice, x.AppliedAt);
+    internal static FinancePayablesApplicationViewDto ToDto(FinancePayablesApplicationView x) => x is null ? null! : new(x.Id, x.InvoiceId, x.PaymentAmount, x.InvoiceAmount, x.RateToInvoice, x.AppliedAt);
+    internal static FinancePayablesPaymentView ToData(FinancePayablesPaymentViewDto x) => x is null ? null! : new(x.Id, x.SupplierId, x.ScopeStationId, x.PaidOn, x.Reference, ToData(x.Fx), x.Amount, x.Applied, x.Remaining, x.Version, x.Applications?.Select(ToData).ToArray()!);
+    internal static FinancePayablesPaymentViewDto ToDto(FinancePayablesPaymentView x) => x is null ? null! : new(x.Id, x.SupplierId, x.ScopeStationId, x.PaidOn, x.Reference, ToDto(x.Fx), x.Amount, x.Applied, x.Remaining, x.Version, x.Applications?.Select(ToDto).ToArray()!);
+    internal static EmployeeExpenseSave ToData(EmployeeExpenseSaveDto x) => x is null ? null! : new(x.RequestId, x.ScopeStationId, x.Description, x.ExpenseDate, ToData(x.Fx), ToData(x.Dimensions), x.Lines?.Select(ToData).ToArray()!, x.ExpectedVersion);
+    internal static EmployeeExpenseSaveDto ToDto(EmployeeExpenseSave x) => x is null ? null! : new(x.RequestId, x.ScopeStationId, x.Description, x.ExpenseDate, ToDto(x.Fx), ToDto(x.Dimensions), x.Lines?.Select(ToDto).ToArray()!, x.ExpectedVersion);
+    internal static EmployeeExpensePaymentSave ToData(EmployeeExpensePaymentSaveDto x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.PaidOn, x.Reference, ToData(x.Fx), x.Amount, x.RateToExpense);
+    internal static EmployeeExpensePaymentSaveDto ToDto(EmployeeExpensePaymentSave x) => x is null ? null! : new(x.RequestId, x.ExpectedVersion, x.PaidOn, x.Reference, ToDto(x.Fx), x.Amount, x.RateToExpense);
+    internal static EmployeeExpensePaymentView ToData(EmployeeExpensePaymentViewDto x) => x is null ? null! : new(x.Id, x.PaidOn, x.Reference, ToData(x.Fx), x.Amount, x.ExpenseAmount, x.RateToExpense);
+    internal static EmployeeExpensePaymentViewDto ToDto(EmployeeExpensePaymentView x) => x is null ? null! : new(x.Id, x.PaidOn, x.Reference, ToDto(x.Fx), x.Amount, x.ExpenseAmount, x.RateToExpense);
+    internal static EmployeeExpenseView ToData(EmployeeExpenseViewDto x) => x is null ? null! : new(x.Id, x.EmployeeId, x.EmployeeNumber, x.RequesterId, x.Department, x.ScopeStationId, x.Description, x.ExpenseDate, x.Status, ToData(x.Fx), ToData(x.Dimensions), x.Total, x.TotalDop, x.Paid, x.Remaining, x.Version, x.Lines?.Select(ToData).ToArray()!, x.Receipts?.Select(ToData).ToArray()!, x.Reviews?.Select(ToData).ToArray()!, x.Reimbursements?.Select(ToData).ToArray()!);
+    internal static EmployeeExpenseViewDto ToDto(EmployeeExpenseView x) => x is null ? null! : new(x.Id, x.EmployeeId, x.EmployeeNumber, x.RequesterId, x.Department, x.ScopeStationId, x.Description, x.ExpenseDate, x.Status, ToDto(x.Fx), ToDto(x.Dimensions), x.Total, x.TotalDop, x.Paid, x.Remaining, x.Version, x.Lines?.Select(ToDto).ToArray()!, x.Receipts?.Select(ToDto).ToArray()!, x.Reviews?.Select(ToDto).ToArray()!, x.Reimbursements?.Select(ToDto).ToArray()!);
+    internal static FinancePayablesOption ToData(FinancePayablesOptionDto x) => x is null ? null! : new(x.Id, x.Code, x.Name);
+    internal static FinancePayablesOptionDto ToDto(FinancePayablesOption x) => x is null ? null! : new(x.Id, x.Code, x.Name);
+    internal static FinancePayablesOptions ToData(FinancePayablesOptionsDto x) => x is null ? null! : new(x.Stations?.Select(ToData).ToArray()!, x.Suppliers?.Select(ToData).ToArray()!, x.Airlines?.Select(ToData).ToArray()!, x.Services?.Select(ToData).ToArray()!, x.Turnarounds?.Select(ToData).ToArray()!, x.Currencies, x.EmployeeId, x.Department, x.CanCreateOwnExpense, x.CanReadOwnExpenses, x.CanReviewDepartmentExpenses, x.CanReadFinanceExpenses, x.CanApproveFinanceExpenses, x.CanPayFinanceExpenses);
+    internal static FinancePayablesOptionsDto ToDto(FinancePayablesOptions x) => x is null ? null! : new(x.Stations?.Select(ToDto).ToArray()!, x.Suppliers?.Select(ToDto).ToArray()!, x.Airlines?.Select(ToDto).ToArray()!, x.Services?.Select(ToDto).ToArray()!, x.Turnarounds?.Select(ToDto).ToArray()!, x.Currencies, x.EmployeeId, x.Department, x.CanCreateOwnExpense, x.CanReadOwnExpenses, x.CanReviewDepartmentExpenses, x.CanReadFinanceExpenses, x.CanApproveFinanceExpenses, x.CanPayFinanceExpenses);
+    internal static FinancePayablesFilter ToData(FinancePayablesFilterDto x) => x is null ? null! : new(x.ScopeStationId, x.SupplierId, x.Status, x.From, x.To, x.Search, x.Skip, x.Take, x.EmployeeId, x.OutstandingOnly, x.OwnOnly, x.DepartmentOnly);
+    internal static FinancePayablesFilterDto ToDto(FinancePayablesFilter x) => x is null ? null! : new(x.ScopeStationId, x.SupplierId, x.Status, x.From, x.To, x.Search, x.Skip, x.Take, x.EmployeeId, x.OutstandingOnly, x.OwnOnly, x.DepartmentOnly);
+    internal static FinancePayablesMutation ToData(FinancePayablesMutationDto x) => x is null ? null! : new(x.Id, x.Replayed);
+    internal static FinancePayablesMutationDto ToDto(FinancePayablesMutation x) => x is null ? null! : new(x.Id, x.Replayed);
+}

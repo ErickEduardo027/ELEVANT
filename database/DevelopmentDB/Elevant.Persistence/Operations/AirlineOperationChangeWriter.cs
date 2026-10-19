@@ -18,6 +18,11 @@ internal static class AirlineOperationChangeWriter
         => await AddForResourceAsync(context, airlineOrganizationId,
             "airline_preinvoices", preinvoiceId, occurredAt, cancellationToken);
 
+    public static async Task AddTreasuryAsync(ElevantDbContext context, long airlineOrganizationId,
+        Guid airlineId, DateTimeOffset occurredAt, CancellationToken cancellationToken)
+        => await AddForResourceAsync(context, airlineOrganizationId,
+            "airline_treasury", airlineId, occurredAt, cancellationToken);
+
     private static async Task AddForResourceAsync(ElevantDbContext context,
         long airlineOrganizationId, string resource, Guid resourceId,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)

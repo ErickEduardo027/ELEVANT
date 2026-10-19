@@ -1,4 +1,6 @@
 using Elevant.Infrastructure.Authentication;
+using Elevant.Application.Finance;
+using Elevant.Domain.Enumerations;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Infrastructure.Finance;
 using Elevant.Application.Abstractions.Identity;
@@ -20,9 +22,28 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        var modeText = configuration["FinanceFiscal:Mode"] ?? "Off";
+        if (!Enum.TryParse<FiscalMode>(modeText, false, out var fiscalMode) || !Enum.IsDefined(fiscalMode))
+            throw new InvalidOperationException("FinanceFiscal:Mode is invalid.");
+        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
+        services.AddSingleton(new FinanceFiscalOptions { Mode = fiscalMode, Environment = environment });
+        var archiveMode = configuration["FinanceFiscal:ArchiveMode"] ?? "PrivateObjectStore";
+        if (archiveMode == "LocalDirectory")
+        {
+            if (environment is not ("Development" or "Test")) throw new InvalidOperationException("Local fiscal archive requires Development or Test.");
+            var directory = configuration["FinanceFiscal:ArchiveDirectory"];
+            if (string.IsNullOrWhiteSpace(directory)) throw new InvalidOperationException("An explicit private fiscal archive directory is required.");
+            services.AddSingleton<IFiscalArtifactArchive>(new FinanceFiscalFileArchive(directory));
+        }
+        else if (archiveMode != "PrivateObjectStore") throw new InvalidOperationException("FinanceFiscal:ArchiveMode is invalid.");
+        services.AddSingleton<IOfficialEcfXmlValidator, OfficialEcfXmlValidator>();
+        services.AddSingleton<IFiscalProvider, FinanceFiscalLocalSimulator>();
+        services.AddSingleton<IFiscalCallbackAuthenticator, FinanceFiscalRejectCallbacks>();
+        services.AddSingleton<IFiscalArtifactBuilder, FinanceFiscalArtifactBuilder>();
         services.AddFlightAwareShell(configuration);
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
+        services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 

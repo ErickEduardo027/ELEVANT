@@ -67,7 +67,7 @@ Elevant.sln              solución compartida con los proyectos de DevelopmentDB
 
 La persistencia está físicamente separada en `database/DevelopmentDB`: allí viven `Elevant.Persistence`, `Elevant.DatabaseTool`, las migraciones, Compose y las operaciones SQL. Sigue existiendo una sola API y una sola cadena de migraciones compartida por los clientes.
 
-La solicitud pública, el catálogo administrado por Contratos, la provisión manual por Superadministrador y el borrador contractual se describen en [el flujo comercial](../docs/workflows/commercial-intake-and-governance.md). Los avisos internos usan el outbox y feed existente; el hub público solo invalida el catálogo. Ningún endpoint de esta rama envía correo.
+La solicitud pública, la provisión manual por Superadministrador y el borrador contractual se describen en [el flujo comercial](../docs/workflows/commercial-intake-and-governance.md). El catálogo es gobernado por Finanzas; Contratos conserva lectura compatible. La ampliación se documenta en [ADR-0018](../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md). Los avisos internos usan el outbox y feed existente; el hub público solo invalida el catálogo. Ningún endpoint de esta rama envía correo.
 
 Las cargas de fotos, videos y avatares usan `POST /api/v1/media` con Bearer,
 multipart y permisos por propósito. SQL conserva metadatos y claves; los bytes
@@ -339,115 +339,149 @@ portal vuelve a consultar el `bootstrap` tenant-scoped y la API revalida la
 autorización al leer el feed. Los replays idempotentes no crean otra pista.
 Esto aún no cubre servicios, facturación, documentos ni historial completo.
 
-La rama `feat/integrated-cycle-realtime` añade
-`GET /api/v1/finance/approved-services?stationId&from&to` para Finanzas. La
-cuenta debe conservar rol `FINANZAS`, membresía interna AVIAM y grant de la
-estación al consultar; el intervalo inclusivo máximo es de 31 días y la
-respuesta se limita a 200 líneas con `hasMore`. Sólo operaciones con última
-entrega aprobada por OCC aparecen. Cantidad y estado se contrastan con la
-evidencia inmutable de esa entrega y el importe utiliza precio y moneda
-congelados en `OperationService`, nunca la tarifa actual. Una línea bloqueada
-conserva una razón explícita y no tiene importe facturable. La aprobación
-escribe una invalidación `finance_approved_services` dirigida a Finanzas en
-la misma transacción; el feed revalida rol, membresía, estación y estado.
-La rama también añade `POST /api/v1/finance/preinvoices` y
-`GET /api/v1/finance/preinvoices/{draftId}`. Finanzas agrupa de 1 a 100
-servicios aprobados de una sola aerolínea, estación, moneda e intervalo,
-con una clave de solicitud estable. La API vuelve a verificar rol, grant,
-última aprobación OCC, evidencia y tarifa congelada antes de guardar una
-prefactura no fiscal con líneas inmutables. Una clave repetida con el mismo
-contenido devuelve el borrador existente; un servicio solo puede reservarse
-en una prefactura. La lectura de detalle revalida acceso y la escritura emite
-una invalidación durable `finance_preinvoices`. En esta rama,
-`POST /api/v1/finance/preinvoices/{draftId}/submit` cambia un borrador con
-líneas a `Submitted` una sola vez bajo transacción serializable. Una repetición
-del mismo actor y clave devuelve el resultado anterior; otra clave recibe
-conflicto. Auditoría e invalidaciones `finance_preinvoices` y
-`airline_preinvoices` se guardan con el cambio. El feed de aerolínea revalida
-membresía, tenant y estado publicado antes de entregar la pista. La factura,
-el pago manual y el recibo no fiscal se describen más abajo; no hay impuesto
-ni conciliación bancaria. Esta rama no se ha desplegado.
+## Finanzas comercial y simulación fiscal (rama de integración)
 
-`GET /api/v1/finance/tariffs` ofrece una lectura paginada de tarifas de
-versiones contractuales aprobadas o reemplazadas por estación autorizada. El
-store revalida rol Finanzas, membresía interna, estación activa y grant vigente
-antes y durante la consulta. La activación contractual guarda una pista durable
-`finance_tariffs` dirigida a Finanzas de cada estación cubierta dentro del
-mismo `SaveChanges`; el feed vuelve a comprobar alcance y estado publicado al
-entregarla. No existe comando de modificación de tarifas desde Finanzas: los
-precios de servicios e importes ya ejecutados permanecen congelados. Este
-contrato está verificado localmente, no promovido al VPS.
+El [plan aprobado](../docs/superpowers/plans/2026-10-18-finance-platform.md) amplía
+[ADR-0016](../docs/adr/0016-finance-tariffs-charges-and-receivables.md) mediante
+[ADR-0018](../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md).
+Este apartado describe código local; no acredita promoción al VPS ni emisión
+tributaria real. Los contratos compilados/OpenAPI y las pruebas son la fuente
+de detalle de las peticiones.
 
-`GET /api/v1/finance/reconciliation` es una lectura paginada de prefacturas
-`Accepted` o `Invoiced`, facturas no fiscales y pagos manuales de Development.
-Requiere rol Finanzas, membresía interna, estación activa y grant vigente,
-revalidado antes de devolver filas. El orden es estable y el límite máximo es
-50. No modifica importes ni registra una conciliación bancaria; los cambios
-de factura y pago ya publican la invalidación durable `finance_preinvoices`.
-Esta ruta está probada localmente, no promovida al VPS.
+### Precios, prefacturas y facturas
 
-El portal de aerolínea puede releer una prefactura publicada y sus líneas
-inmutables por `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}`; la API
-deriva el tenant de la sesión y no exige que el contrato siga vigente hoy.
-`POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/accept` acepta solo una
-prefactura `Submitted` del tenant autorizado. La transacción serializable
-revalida membresía, registra actor y clave estable en auditoría, y guarda
-avisos durables para aerolínea y Finanzas. Un reintento del mismo actor/clave
-no duplica la transición; una segunda intención recibe conflicto. La
-aceptación no emite factura ni registra pago.
+Finanzas gobierna catálogo, tarifas, cargos y paquetes; Contratos negocia
+versiones y enmiendas, Finanzas aprueba el contrato y OCC aprueba la ejecución.
+El agente marca cargos sin recibir precios. Cantidad, evidencia, precio,
+moneda y cálculo se congelan; falta de datos/FX o ambigüedad bloquea.
 
-La rama de integración agrega `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
-Solo una aerolínea con membresía vigente puede disputar una prefactura publicada
-`Submitted` de su tenant. La petición lleva clave idempotente, asunto, descripción
-y una selección de líneas propias. SQL conserva una disputa inmutable y sus
-líneas, cambia la prefactura a `Disputed` dentro de la misma transacción
-serializable y escribe auditoría e invalidaciones para aerolínea y Finanzas.
-Las consultas nuevas `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes`
-y `GET /api/v1/finance/preinvoices/{draftId}/disputes` muestran la objeción
-solo a su tenant o estación autorizada, sin añadir campos a las respuestas de
-detalle v1 que ya consumen clientes desplegados. Un reintento idéntico no duplica
-el historial. En esta rama local, Finanzas resuelve la objeción más reciente
-mediante `POST /api/v1/finance/preinvoices/{preinvoiceId}/resolution`, con
-`requestId`, decisión `Maintain` o `Void` y motivo obligatorio. La API revalida
-rol, membresía y estación dentro de una transacción serializable. `Maintain`
-devuelve la prefactura a `Submitted` para una nueva respuesta de la aerolínea;
-`Void` la anula, conserva el historial y libera las reservas de servicios para
-una nueva prefactura. Repetir el mismo intento devuelve la resolución ya
-registrada; una intención distinta sobre la disputa cerrada entra en conflicto.
-Las lecturas autorizadas de disputas muestran decisión y motivo con
-`includeResolutions=true`; sin ese parámetro conservan el JSON v1 anterior.
-Igualmente, el portal solo incluye anulaciones publicadas en historial con
-`includeVoided=true`; sin él mantiene los estados que aceptan los clientes ya
-desplegados. El cliente generado nuevo envía esos parámetros expresamente. No hay
-ajustes parciales ni repricing; si cambia el cargo, Finanzas debe anular y
-crear un nuevo snapshot. Esta capacidad todavía no está promocionada.
+Las rutas de `finance/approved-services`, `finance/preinvoices`,
+`finance/tariffs`, tarifarios y catálogo conservan las lecturas autorizadas.
+Se agregan `finance/packages`, paquetes del borrador contractual y enmiendas.
+El consumo se reserva con la prefactura bajo transacción serializable, por
+turnaround, tramo o período; un ámbito con otra prefactura activa sin emitir
+bloquea con `package_scope_has_unissued_preinvoice`. Anular libera reservas
+sin borrar historia. Los mínimos generan un complemento trazable solo para
+versiones modernas `PricingPolicyVersion > 0`; no se reinterpretan versiones
+heredadas ni se añade el mínimo de servicio a cobertura de paquete.
 
-Una prefactura `Accepted` puede convertirse una sola vez en factura **no fiscal**
-mediante `POST /api/v1/finance/invoices`. Finanzas confirma explícitamente y
-envía un `requestId` estable; la API revalida rol, membresía y estación, congela
-número, moneda, total y líneas en `commercial.non_fiscal_invoices` y
-`commercial.non_fiscal_invoice_lines`, cambia el estado a `Invoiced` y registra
-auditoría e invalidaciones durables para Finanzas y la aerolínea en una
-transacción serializable. El mismo actor y clave obtienen el resultado anterior;
-otra intención para la misma prefactura entra en conflicto. Finanzas consulta
-`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}` y el portal consulta
-`GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`, con alcance de
-estación o tenant derivado de la sesión. En esta rama local, Finanzas puede
-registrar **un pago manual completo de prueba** con UUID de intención y
-referencia en `POST /api/v1/finance/payments`; la API revalida rol y estación,
-solo habilita la escritura cuando el destino de base declarado es Development,
-relee el total inmutable de la factura y evita duplicación con índices únicos
-y transacción serializable. Finanzas y la aerolínea consultan el pago por
-factura mediante rutas separadas y autorizadas. Es una anotación manual de
-Development, **no** verificación bancaria, cobro externo ni comprobante fiscal.
-En el siguiente tramo local, `GET` de documento de factura o recibo materializa
-un PDF no fiscal desde el snapshot inmutable, guarda los bytes en S3 privado
-y su SHA-256/longitud en `commercial.financial_documents`. Finanzas usa rutas
-de estación y la aerolínea rutas por tenant; ambas revalidan autorización
-después de leer el objeto. Un objeto ausente o alterado produce `503`, nunca
-una descarga vacía o un archivo de otro cliente. Los PDFs indican que son
-documentos de prueba sin NCF ni validez fiscal. No hay impuesto, conciliación
-ni verificación bancaria. Este tramo sigue local y sin promoción.
+En Draft, Finanzas ajusta/excluye con motivo, versión y cálculo original.
+El recálculo es explícito. Una disputa impide emitir; su resolución conserva
+historial. La aerolínea acepta/disputa únicamente su tenant. La emisión
+desde una prefactura Accepted congela factura, líneas, jerarquía, identidad
+comercial y vencimiento. No se revalora después con tarifas actuales.
+
+`finance/tax-policies` y `finance/preinvoices/{id}/taxes` administran
+tratamientos explícitos por aerolínea, estación, moneda, concepto y vigencia.
+Las líneas congelan política, tasa/fundamento, neto, descuento, impuesto y
+bruto. `Unconfigured` conserva impuesto desconocido, no cero. El legado
+comercial sigue legible sin inferir tratamiento; una preparación fiscal sin
+snapshot emitido configurado se bloquea. El modelo aún no aporta registros
+tributarios revisados: `issuerTaxRegistration` y
+`customerTaxRegistration` quedan explícitamente null, nunca datos inventados.
+
+### Cartera y tesorería
+
+Las rutas bajo `api/v1/finance` incluyen:
+
+| Recurso | Operaciones principales |
+| --- | --- |
+| `receipts` | Listar, detalle y registrar recibo independiente |
+| `receipts/{id}/applications` | Aplicación parcial a varias facturas, con remanente |
+| `receipts/{id}/reversals`, `refunds` | Movimientos vinculados, sin borrar el recibo |
+| `invoices/{id}/adjustment-notes` | Notas de crédito/débito con líneas de origen |
+| `statements` | Estado de cuenta y aging a fecha de corte |
+
+Cobro, aplicación y devolución son hechos distintos. Una nota de crédito no
+devuelve efectivo. Saldo y disponibilidad se validan bajo concurrencia,
+moneda/FX explícitos y versiones. Los pagos/notas legacy siguen aportando una
+vez al saldo, sin copiarse como nuevos recibos. Las rutas previas de factura,
+pago y estado de cuenta conservan compatibilidad; el portal usa rutas propias
+con tenant derivado por el servidor. Ningún registro confirma fondos bancarios.
+
+### Proveedores, CxP y gastos propios
+
+- `api/v1/finance/suppliers`: alta, detalle, filtros/opciones, edición y retiro
+  lógico con motivo y versión.
+- `api/v1/finance/payables`: facturas de proveedor Draft → Submitted →
+  Approved/Rejected, referencia normalizada única por proveedor, líneas
+  congeladas al presentar y rechazo con motivo.
+- `api/v1/finance/payable-payments`: pago separado de sus applications;
+  varias facturas, pagos parciales, saldo y remanente, sin sobreaplicación.
+- `api/v1/finance/expenses`: Employee activo vinculado a la cuenta, soporte
+  privado, presentación, decisión departamental, decisión final de Finanzas y
+  reimbursements separados.
+
+Una cuenta interna AVIAM con Employee activo puede crear/presentar/leer su
+propio gasto sin un código de Finanzas. La API impide seleccionar otro
+empleado; sus opciones devuelven capacidades para la UI. El administrador
+efectivo revisa su departamento, nunca su propio gasto. Finanzas aprueba
+después y registra reembolsos con sus permisos, sin autoaprobación/pago
+propio ni una misma persona en ambas revisiones. Listas y filtros no amplían
+el ámbito. El componente reutilizable DepartmentExpensesPage sirve el
+recorrido «Mis gastos» fuera del área de Finanzas.
+
+Las dimensiones opcionales estación, aerolínea, turnaround y servicio se
+validan entre sí y frente al scope. Los soportes usan almacenamiento privado
+existente y metadatos/hash; el cliente no elige una clave de objeto o URL.
+Los PDFs comerciales de factura/recibo conservan descargas autorizadas de
+bytes privados, sin URL pública ni regeneración silenciosa de originales
+alterados. El portal no recibe soportes de empleados ni su PII.
+
+### Fiscal local y preflight XML
+
+`api/v1/finance/fiscal-documents` ofrece status, lista/detalle, creación,
+simulate y descargas de artefactos. Los estados comercial, de cartera y
+fiscal son independientes.
+
+- `FinanceFiscal:Mode` predetermina Off. LocalSimulation solo ejecuta en
+  Development/Test. ProviderSandbox está bloqueado: no hay proveedor seleccionado.
+- El ambiente se resuelve de DOTNET_ENVIRONMENT, luego
+  ASPNETCORE_ENVIRONMENT, por defecto Production.
+- Se persiste intención, se archivan JSON canónico/XML neutral/manifest,
+  se verifican bytes y después se reclama un único intento. Archivo previo
+  fallido bloquea; timeout/desconocido no permite reenvío ciego.
+- `FinanceFiscal:ArchiveMode` predetermina PrivateObjectStore (S3 privado).
+  LocalDirectory exige ArchiveDirectory privado/persistente y se rechaza al
+  arrancar fuera de Development/Test. Permite QA fiscal sin S3; no reemplaza
+  almacenamiento de soportes de gastos ni PDFs comerciales.
+- El simulador no usa red fiscal, certificados, firma ni numeración oficial.
+  Lleva SIMULATION WITHOUT FISCAL VALIDITY y mantiene e-NCF/respuesta DGII null.
+  El autenticador de callbacks registrado rechaza todos por defecto.
+
+`POST api/v1/finance/fiscal-xml/validate` es un preflight offline independiente
+para E31/E32/E33/E34 con XSD oficiales fijados. No despacha ni almacena el XML.
+XSD, presencia de firma, criptografía, reglas de negocio y aceptación son
+capas separadas: criptografía y aceptación permanecen NotPerformed.
+El XML neutral FiscalSimulation no es un e-CF. Fuentes y límites:
+[referencia DGII](../docs/reference/dgii-ecf-schema-sources.md).
+
+### Acceso, reportes y recuperación
+
+JWT identifica cuenta; el servidor deriva membresía AVIAM, departamento,
+estaciones y permisos. Las mutaciones usan intención/hash, expectedVersion
+cuando corresponde, auditoría y pistas de cambio con revalidación de acceso.
+
+Además de tarifas/cargos, contratos y prefacturas, el catálogo ofrece
+`finance.catalog.read/manage`, `finance.packages.read/manage`,
+`finance.taxes.read/manage`, `finance.receipts.read/manage/apply/reverse/refund`,
+`finance.adjustments.read/issue`, `finance.suppliers.read/manage`,
+`finance.payables.read/manage/approve/pay`,
+`finance.expenses.read/manage/approve/pay` y
+`finance.fiscal.read/manage/simulate`. La excepción de gasto propio no
+concede gestión o aprobación financiera general.
+
+Los reportes añaden tesorería, notas de débito, proveedores/CxP, gastos,
+paquetes y fiscal/simulación separados; conservan filtros de servidor,
+exportación CSV/XLSX/PDF con permiso y auditoría. Conciliación documental no es bancaria.
+Dinero usa decimal(19,4), cantidades decimal(18,4) y USD/DOP requieren FX explícito.
+
+El [runbook fiscal](../docs/runbooks/finance-fiscal-activation.md) detalla
+archivo, recuperación de SQL **y** bytes, validación y gates pendientes de
+conectividad real. La [matriz Odoo](../docs/reference/odoo-finance-adaptation.md)
+documenta referencia fijada y licencias: implementación C#/React propia y
+UI ELEVANT, sin copiar apariencia ni código Odoo. No hay emisión fiscal real,
+cobro electrónico, libro mayor ni conciliación bancaria en esta etapa.
 
 GitHub Actions construye y certifica la imagen una sola vez. El controlador
 privado de [`ops/dokploy/api-cd`](../ops/dokploy/api-cd/README.md) solo promueve

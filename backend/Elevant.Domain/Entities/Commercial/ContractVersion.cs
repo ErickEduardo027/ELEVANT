@@ -8,6 +8,8 @@ public sealed class ContractVersion : AuditableEntity
 
     public int VersionNumber { get; set; }
 
+    public int PricingPolicyVersion { get; set; }
+
     public ContractVersionStatus Status { get; set; }
 
     public DateOnly ValidFrom { get; set; }

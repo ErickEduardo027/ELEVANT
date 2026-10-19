@@ -1,0 +1,25 @@
+using Elevant.Application.Abstractions.Finance;
+using Elevant.Contracts.Finance;
+namespace Elevant.Api.Controllers;
+internal static class FinanceTreasuryResponseMapper
+{
+    public static FinanceTreasuryOptionsResponse Map(FinanceTreasuryOptionsData value) => new(value.Airlines.Select(a => new FinanceTreasuryAirlineOptionResponse(a.Id, a.Name)).ToArray(), value.Stations.Select(s => new FinanceTreasuryStationOptionResponse(s.Id, s.Code)).ToArray());
+    public static FinanceTreasuryReceiptInput Map(FinanceTreasuryReceiptRequest value) => new(value.RequestId, value.AirlineId, value.StationId, value.CurrencyCode, value.Amount, value.Reference, value.Method, value.ReceivedOn, value.Reason);
+    public static FinanceTreasuryAllocationInput Map(FinanceTreasuryAllocationRequest value) => new(value.InvoiceId, value.ExpectedInvoiceVersion, value.ReceiptAmount);
+    public static FinanceTreasuryApplyInput Map(FinanceTreasuryApplyRequest value) => new(value.RequestId, value.ExpectedVersion, value.EffectiveOn, value.Reason, value.Applications?.Select(item => item is null ? null! : Map(item)).ToArray()!);
+    public static FinanceTreasuryReverseInput Map(FinanceTreasuryReverseRequest value) => new(value.RequestId, value.ExpectedVersion, value.EffectiveOn, value.Reason, value.ApplicationId);
+    public static FinanceTreasuryRefundInput Map(FinanceTreasuryRefundRequest value) => new(value.RequestId, value.ExpectedVersion, value.EffectiveOn, value.Reason, value.Amount, value.Reference);
+    public static FinanceTreasuryAdjustmentLineInput Map(FinanceTreasuryAdjustmentLineRequest value) => new(value.InvoiceLineId, value.Quantity, value.Amount);
+    public static FinanceTreasuryAdjustmentInput Map(FinanceTreasuryAdjustmentRequest value) => new(value.RequestId, value.ExpectedVersion, value.EffectiveOn, value.Reason, value.Kind, value.Lines?.Select(item => item is null ? null! : Map(item)).ToArray()!, value.RelatedNoteId);
+    public static FinanceTreasuryMovementResponse Map(FinanceTreasuryMovementData value) => new(value.Id, value.Kind, value.InvoiceId, value.ReversesId, value.EffectiveOn, value.ReceiptAmount, value.InvoiceAmount, value.ReceiptCurrency, value.InvoiceCurrency, value.ExchangeRate, value.ExchangeRateOn, value.Reference, value.Reason, value.ActorId, value.RecordedAt);
+    public static FinanceTreasuryReceiptResponse Map(FinanceTreasuryReceiptData value) => new(value.Id, value.AirlineId, value.StationId, value.CurrencyCode, value.Amount, value.Reference, value.Method, value.ReceivedOn, value.Applied, value.Refunded, value.Available, value.Reversed, value.Reason, value.ActorId, value.RecordedAt, value.Version, value.Movements.Select(Map).ToArray());
+    public static FinanceTreasuryReceiptPageResponse Map(FinanceTreasuryReceiptPageData value) => new(value.Page, value.Limit, value.HasMore, value.Items.Select(Map).ToArray());
+    public static FinanceTreasuryAdjustmentLineResponse Map(FinanceTreasuryAdjustmentLineData value) => new(value.InvoiceLineId, value.Quantity, value.Amount);
+    public static FinanceTreasuryAdjustmentResponse Map(FinanceTreasuryAdjustmentData value) => new(value.Id, value.Number, value.InvoiceId, value.RelatedNoteId, value.Kind, value.CurrencyCode, value.Amount, value.EffectiveOn, value.Reason, value.ActorId, value.RecordedAt, value.Lines.Select(Map).ToArray());
+    public static FinanceTreasuryLineLimitResponse Map(FinanceTreasuryLineLimitData value) => new(value.InvoiceLineId, value.LineNumber, value.Quantity, value.Amount, value.CreditQuantityRemaining, value.CreditAmountRemaining, value.DebitQuantityRemaining, value.DebitAmountRemaining);
+    public static FinanceTreasuryAdjustmentsResponse Map(FinanceTreasuryAdjustmentsData value) => new(value.InvoiceId, value.Version, value.LegacyCredited, value.Lines.Select(Map).ToArray(), value.Notes.Select(Map).ToArray());
+    public static FinanceTreasuryStatementInvoiceResponse Map(FinanceTreasuryStatementInvoiceData value) => new(value.Id, value.Number, value.AirlineId, value.StationId, value.CurrencyCode, value.Total, value.LegacyPaid, value.LegacyCredited, value.Applied, value.Credited, value.Debited, value.Balance, value.DueDate, value.DaysOverdue, value.AgingBucket, value.Version);
+    public static FinanceTreasuryStatementMovementResponse Map(FinanceTreasuryStatementMovementData value) => new(value.Id, value.ReceiptId, value.InvoiceId, value.Kind, value.CurrencyCode, value.Amount, value.EffectiveOn, value.RecordedAt, value.ReversesId, value.Reference);
+    public static FinanceTreasuryAgingResponse Map(FinanceTreasuryAgingData value) => new(value.CurrencyCode, value.Balance, value.Current, value.Days1To30, value.Days31To60, value.Days61To90, value.Days91Plus, value.Unallocated, value.CreditBalance);
+    public static FinanceTreasuryStatementResponse Map(FinanceTreasuryStatementData value) => new(value.AsOf, value.Invoices.Select(Map).ToArray(), value.Receipts.Select(Map).ToArray(), value.Movements.Select(Map).ToArray(), value.Aging.Select(Map).ToArray());
+}

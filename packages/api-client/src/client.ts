@@ -3361,7 +3361,7 @@ function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceRe
     typeof value.replayed === "boolean";
 }
 
-const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment"];
+const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment", "Package", "Excess", "Minimum"];
 const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
 const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other"];
 

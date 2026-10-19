@@ -247,7 +247,7 @@ internal sealed class EfOccPlanningCommandStore(
                       contract.Status == ContractStatus.Active &&
                       (contract.SignedOn == null || contract.SignedOn <= scope.OperationDate) &&
                       (contract.TerminatedOn == null || contract.TerminatedOn >= scope.OperationDate) &&
-                      version.Status == ContractVersionStatus.Approved &&
+                      (version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded) &&
                       version.ValidFrom <= scope.OperationDate &&
                       (version.ValidTo == null || version.ValidTo >= scope.OperationDate) &&
                       context.Set<ContractVersionStation>().AsNoTracking().Any(link =>

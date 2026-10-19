@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Finance;
 
 /// <summary>Finance reports restricted to the stations the actor holds.</summary>
-internal sealed class EfFinanceReportStore(
+internal sealed partial class EfFinanceReportStore(
     ElevantDbContext context,
     IActorContextResolver actors,
     TimeProvider timeProvider) : IFinanceReportStore
@@ -21,7 +21,7 @@ internal sealed class EfFinanceReportStore(
         CancellationToken cancellationToken = default)
     {
         var definition = FinanceReports.All.SingleOrDefault(item => item.Key == reportKey);
-        if (definition is null || filter is null || filter.To < filter.From || filter.To.DayNumber - filter.From.DayNumber > 731 ||
+        if (definition is null || filter is null || filter.To == DateOnly.MaxValue || filter.To < filter.From || filter.To.DayNumber - filter.From.DayNumber > 731 ||
             filter.CurrencyCode is not (null or "USD" or "DOP"))
             return null;
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
@@ -43,12 +43,19 @@ internal sealed class EfFinanceReportStore(
         {
             "revenue" => await RevenueAsync(scope, cancellationToken),
             "receivables" => await ReceivablesAsync(scope, cancellationToken),
-            "collections" => await CollectionsAsync(scope, cancellationToken),
+            "collections" => await TreasuryCollectionsAsync(scope, cancellationToken),
             "pipeline" => await PipelineAsync(scope, cancellationToken),
             "charges" => await ChargesAsync(scope, cancellationToken),
             "disputes" => await DisputesAsync(scope, cancellationToken),
             "tariffs" => await TariffsAsync(scope, cancellationToken),
-            _ => await CreditNotesAsync(scope, cancellationToken),
+            "credit-notes" => await AdjustmentNotesAsync(scope, false, cancellationToken),
+            "debit-notes" => await AdjustmentNotesAsync(scope, true, cancellationToken),
+            "treasury" => await TreasuryReportAsync(scope, cancellationToken),
+            "payables" => await PayablesReportAsync(scope, false, cancellationToken),
+            "suppliers" => await PayablesReportAsync(scope, true, cancellationToken),
+            "expenses" => await ExpensesReportAsync(scope, cancellationToken),
+            "packages" => await PackagesReportAsync(scope, cancellationToken),
+            _ => await FiscalReportAsync(scope, reportKey == "fiscal-simulation", cancellationToken),
         };
         return new FinanceReportData(definition.Key, definition.Title, definition.Description, filter.From, filter.To,
             reportKey is "revenue" or "receivables" or "collections" ? Consolidation : null, summary, columns, rows, notes);
@@ -103,7 +110,7 @@ internal sealed class EfFinanceReportStore(
         var invoices = await InvoicesAsync(scope, true, cancellationToken);
         var ids = invoices.Select(invoice => invoice.Id).ToArray();
         var lines = (await context.NonFiscalInvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId))
-                .Select(line => new { line.InvoiceId, line.Kind, line.Amount }).ToArrayAsync(cancellationToken))
+                .Select(line => new { line.InvoiceId, line.Kind, line.Amount, line.TaxAmount }).ToArrayAsync(cancellationToken))
             .ToLookup(line => line.InvoiceId);
         var rows = new List<IReadOnlyList<string?>>();
         decimal consolidated = 0;
@@ -122,7 +129,11 @@ internal sealed class EfFinanceReportStore(
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Service).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Charge).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Adjustment).Sum(line => line.Amount)),
-                Money(total), usd is null ? null : Money(usd.Value)]);
+                Money(total), usd is null ? null : Money(usd.Value),
+                Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Package).Sum(line => line.Amount)),
+                Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Excess).Sum(line => line.Amount)),
+                Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Minimum).Sum(line => line.Amount)),
+                groupLines.Any(line => line.TaxAmount == null) ? null : Money(groupLines.Sum(line => line.TaxAmount ?? 0m))]);
         }
         var summary = invoices.GroupBy(invoice => invoice.CurrencyCode)
             .Select(group => new FinanceReportMetric($"Facturado {group.Key}", Money(group.Sum(invoice => invoice.Total)),
@@ -132,7 +143,8 @@ internal sealed class EfFinanceReportStore(
         return (summary,
             [Col("month", "Mes"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("invoices", "Facturas", "number"),
                 Col("services", "Servicios", "money"), Col("charges", "Cargos", "money"), Col("adjustments", "Ajustes", "money"),
-                Col("total", "Total", "money"), Col("usd", "Total USD", "money")],
+                Col("total", "Total", "money"), Col("usd", "Total USD", "money"), Col("packages", "Paquetes", "money"),
+                Col("excess", "Excedentes", "money"), Col("minimum", "Mínimos", "money"), Col("tax", "Impuesto incluido", "money")],
             rows, missingRate ? ["Algunas facturas en DOP no tienen tasa registrada y no se consolidan en USD."] : []);
     }
 
@@ -141,16 +153,20 @@ internal sealed class EfFinanceReportStore(
     {
         var invoices = await InvoicesAsync(scope, false, cancellationToken);
         var ids = invoices.Select(invoice => invoice.Id).ToArray();
-        var paid = await context.NonFiscalPayments.AsNoTracking().Where(item => ids.Contains(item.InvoiceId))
-            .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
-            .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
-        var credited = await context.NonFiscalCreditNotes.AsNoTracking().Where(item => ids.Contains(item.InvoiceId))
-            .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
-            .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
         var asOf = scope.Filter.To;
+        var end = EndOf(asOf);
+        var paid = await context.NonFiscalPayments.AsNoTracking().Where(item => ids.Contains(item.InvoiceId) && item.CreatedAt < end &&
+                (item.PaidOn == null || item.PaidOn <= asOf))
+            .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
+            .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
+        var credited = await context.NonFiscalCreditNotes.AsNoTracking().Where(item => ids.Contains(item.InvoiceId) && item.CreatedAt < end)
+            .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
+            .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
+        var treasury = await FinanceTreasuryBalances.TotalsAsync(context, ids, cancellationToken, asOf);
         var open = invoices.Select(invoice => new
         {
-            invoice, Balance = invoice.Total - paid.GetValueOrDefault(invoice.Id) - credited.GetValueOrDefault(invoice.Id),
+            invoice, Balance = invoice.Total - paid.GetValueOrDefault(invoice.Id) - credited.GetValueOrDefault(invoice.Id)
+                - treasury[invoice.Id].Applied - treasury[invoice.Id].Credited + treasury[invoice.Id].Debited,
             Days = invoice.DueDate is { } due ? asOf.DayNumber - due.DayNumber : 0,
         }).Where(item => item.Balance > 0 && DateOf(item.invoice.IssuedAt) <= asOf).ToArray();
         var rows = open.GroupBy(item => (item.invoice.Airline, item.invoice.CurrencyCode))
@@ -176,47 +192,9 @@ internal sealed class EfFinanceReportStore(
             [Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("invoices", "Facturas abiertas", "number"),
                 Col("current", "Por vencer", "money"), Col("d30", "1-30 días", "money"), Col("d60", "31-60 días", "money"),
                 Col("d90", "61-90 días", "money"), Col("d90plus", "+90 días", "money"), Col("balance", "Saldo", "money")],
-            rows, [$"Antigüedad calculada al {asOf:yyyy-MM-dd} sobre la fecha de vencimiento."]);
+            rows, [$"Antigüedad al {asOf:yyyy-MM-dd}; solo movimientos efectivos y registrados hasta ese corte. Incluye pagos heredados, aplicaciones netas y notas comerciales; los recibos sin aplicar no reducen facturas."]);
     }
 
-    private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
-        CollectionsAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var invoices = (await InvoicesAsync(scope, false, cancellationToken)).ToDictionary(invoice => invoice.Id);
-        var ids = invoices.Keys.ToArray();
-        var payments = (await context.NonFiscalPayments.AsNoTracking().Where(item => ids.Contains(item.InvoiceId))
-                .Select(item => new { item.InvoiceId, item.Amount, item.Method, item.PaidOn, item.CreatedAt })
-                .ToArrayAsync(cancellationToken))
-            .Select(item => new { item.InvoiceId, item.Amount, item.Method, Date = item.PaidOn ?? DateOf(item.CreatedAt) })
-            .Where(item => item.Date >= scope.Filter.From && item.Date <= scope.Filter.To).ToArray();
-        var rows = payments.GroupBy(item => (Month: Month(item.Date), invoices[item.InvoiceId].Airline,
-                invoices[item.InvoiceId].CurrencyCode, item.Method))
-            .OrderBy(group => group.Key.Month).ThenBy(group => group.Key.Airline)
-            .Select(group => (IReadOnlyList<string?>)
-            [
-                group.Key.Month, group.Key.Airline, group.Key.CurrencyCode, group.Key.Method.ToString(),
-                group.Count().ToString(CultureInfo.InvariantCulture), Money(group.Sum(item => item.Amount)),
-            ]).ToArray();
-        var billed = invoices.Values.Where(invoice => DateOf(invoice.IssuedAt) >= scope.Filter.From &&
-            DateOf(invoice.IssuedAt) <= scope.Filter.To).ToArray();
-        var summary = billed.Select(invoice => invoice.CurrencyCode).Concat(payments.Select(item => invoices[item.InvoiceId].CurrencyCode))
-            .Distinct().SelectMany(currency =>
-            {
-                var invoiced = billed.Where(invoice => invoice.CurrencyCode == currency).Sum(invoice => invoice.Total);
-                var collected = payments.Where(item => invoices[item.InvoiceId].CurrencyCode == currency).Sum(item => item.Amount);
-                return new[]
-                {
-                    new FinanceReportMetric($"Facturado {currency}", Money(invoiced), "money", currency),
-                    new FinanceReportMetric($"Cobrado {currency}", Money(collected), "money", currency),
-                    new FinanceReportMetric($"Cobro sobre facturado {currency}",
-                        invoiced == 0 ? "0" : Number(decimal.Round(collected / invoiced * 100m, 1)), "percent"),
-                };
-            }).ToArray();
-        return (summary,
-            [Col("month", "Mes"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("method", "Método"),
-                Col("payments", "Pagos", "number"), Col("amount", "Cobrado", "money")],
-            rows, ["Pagos manuales registrados por Finanzas; no son confirmaciones bancarias."]);
-    }
 
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
         PipelineAsync(Scope scope, CancellationToken cancellationToken)
@@ -241,7 +219,7 @@ internal sealed class EfFinanceReportStore(
                                     service.CurrencyCodeSnapshot != null &&
                                     (scope.Filter.CurrencyCode == null || service.CurrencyCodeSnapshot == scope.Filter.CurrencyCode) &&
                                     !context.PreinvoiceLines.Any(line => line.OperationServiceId == service.Id &&
-                                        line.Kind == PreinvoiceLineKind.Service && line.ReleasedAt == null)
+                                        (line.Kind == PreinvoiceLineKind.Service || line.Kind == PreinvoiceLineKind.Package || line.Kind == PreinvoiceLineKind.Excess) && line.ReleasedAt == null)
                               select new
                               {
                                   airline.Name, Currency = service.CurrencyCodeSnapshot!,
@@ -296,12 +274,12 @@ internal sealed class EfFinanceReportStore(
                                line.Amount, line.IsExcluded, line.EditedAt, line.AdjustmentReason,
                            }).ToArrayAsync(cancellationToken);
         var rows = new List<IReadOnlyList<string?>>();
-        foreach (var group in lines.Where(line => line.Kind == PreinvoiceLineKind.Charge)
-                     .GroupBy(line => (line.ServiceCode, line.ServiceName, line.CurrencyCode)).OrderBy(group => group.Key.ServiceCode))
+        foreach (var group in lines.Where(line => line.Kind != PreinvoiceLineKind.Adjustment)
+                     .GroupBy(line => (line.Kind, line.ServiceCode, line.ServiceName, line.CurrencyCode)).OrderBy(group => group.Key.ServiceCode))
         {
             var computed = group.Sum(line => line.ComputedAmount ?? line.Amount);
             var billed = group.Sum(line => line.Amount);
-            rows.Add(["Cargo", $"{group.Key.ServiceCode} · {group.Key.ServiceName}", group.Key.CurrencyCode,
+            rows.Add([LineKind(group.Key.Kind), $"{group.Key.ServiceCode} · {group.Key.ServiceName}", group.Key.CurrencyCode,
                 group.Count().ToString(CultureInfo.InvariantCulture),
                 group.Count(line => line.EditedAt != null).ToString(CultureInfo.InvariantCulture),
                 Money(computed), Money(billed), Money(billed - computed), null]);
@@ -403,26 +381,5 @@ internal sealed class EfFinanceReportStore(
             rows, ["La tarifa base es la publicada al cierre del período."]);
     }
 
-    private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
-        CreditNotesAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var invoices = (await InvoicesAsync(scope, false, cancellationToken)).ToDictionary(invoice => invoice.Id);
-        var ids = invoices.Keys.ToArray();
-        var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var to = new DateTimeOffset(scope.Filter.To.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var notes = await context.NonFiscalCreditNotes.AsNoTracking()
-            .Where(note => ids.Contains(note.InvoiceId) && note.CreatedAt >= from && note.CreatedAt < to)
-            .OrderBy(note => note.CreatedAt).ToArrayAsync(cancellationToken);
-        var rows = notes.Select(note => (IReadOnlyList<string?>)
-        [
-            DateOf(note.CreatedAt).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), note.Number,
-            invoices[note.InvoiceId].Number, invoices[note.InvoiceId].Airline, note.CurrencyCode, Money(note.Amount), note.Reason,
-        ]).ToArray();
-        return (notes.GroupBy(note => note.CurrencyCode)
-                .Select(group => new FinanceReportMetric($"Notas de crédito {group.Key}", Money(group.Sum(note => note.Amount)),
-                    "money", group.Key)).ToArray(),
-            [Col("date", "Fecha", "date"), Col("number", "Nota"), Col("invoice", "Factura"), Col("airline", "Aerolínea"),
-                Col("currency", "Moneda"), Col("amount", "Importe", "money"), Col("reason", "Motivo")],
-            rows, []);
-    }
+
 }

@@ -67,11 +67,13 @@ internal sealed class EfFinanceInvoiceLedgerStore(
         var credited = await context.NonFiscalCreditNotes.AsNoTracking().Where(item => ids.Contains(item.InvoiceId))
             .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
             .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
+        var treasury = await FinanceTreasuryBalances.TotalsAsync(context, ids, cancellationToken);
         var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
         return rows.Select(row =>
         {
-            var paidAmount = paid.GetValueOrDefault(row.Id);
-            var creditedAmount = credited.GetValueOrDefault(row.Id);
+            var movements = treasury[row.Id];
+            var paidAmount = paid.GetValueOrDefault(row.Id) + movements.Applied;
+            var creditedAmount = credited.GetValueOrDefault(row.Id) + movements.Credited - movements.Debited;
             var balance = row.Total - paidAmount - creditedAmount;
             var overdueDays = balance > 0 && row.DueDate is { } due && due < today ? today.DayNumber - due.DayNumber : 0;
             var status = balance <= 0 ? "Paid" : overdueDays > 0 ? "Overdue" : paidAmount + creditedAmount > 0
@@ -189,6 +191,10 @@ internal sealed class EfFinanceInvoiceLedgerStore(
                     cancellationToken);
                 var row = await Invoices(stations).SingleOrDefaultAsync(item => item.PublicId == invoiceId, cancellationToken);
                 if (row is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                // Both correction writers serialize on the same immutable invoice.
+                _ = await context.NonFiscalInvoices.FromSqlInterpolated(
+                    $"SELECT * FROM [commercial].[non_fiscal_invoices] WITH (UPDLOCK, HOLDLOCK) WHERE [id] = {row.Id}")
+                    .AsNoTracking().SingleAsync(cancellationToken);
                 var accountId = await context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id)
                     .SingleAsync(cancellationToken);
                 var prior = await context.NonFiscalCreditNotes.AsNoTracking()
@@ -198,7 +204,14 @@ internal sealed class EfFinanceInvoiceLedgerStore(
                         ? FinanceCatalogResult.Success(prior.PublicId)
                         : FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
                 var balance = (await SummariesAsync([row], cancellationToken))[0].Balance;
-                if (input.Amount > balance) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                var legacyCredited = await context.NonFiscalCreditNotes.AsNoTracking().Where(n => n.InvoiceId == row.Id)
+                    .SumAsync(n => (decimal?)n.Amount, cancellationToken) ?? 0m;
+                var allocatedCredited = await context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking()
+                    .Where(n => n.InvoiceId == row.Id && n.Kind == FinanceTreasuryAdjustmentKind.Credit)
+                    .SumAsync(n => (decimal?)n.Amount, cancellationToken) ?? 0m;
+                // Debits change the receivable balance, never the original credit ceiling.
+                if (input.Amount > balance || input.Amount > row.Total - legacyCredited - allocatedCredited)
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
                 var now = timeProvider.GetUtcNow();
                 var id = Guid.CreateVersion7();
                 context.NonFiscalCreditNotes.Add(new NonFiscalCreditNote

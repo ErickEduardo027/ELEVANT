@@ -23,4 +23,13 @@ public sealed class NonFiscalInvoiceLine : AuditableEntity
     public decimal UnitPrice { get; set; }
     public string CurrencyCode { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public Guid? TaxPolicyPublicId { get; set; }
+    public FinanceTaxTreatment TaxTreatment { get; set; }
+    public decimal? TaxRate { get; set; }
+    public string? TaxBasis { get; set; }
+    public decimal? NetAmount { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public decimal? GrossAmount { get; set; }
+    public DateTimeOffset? TaxCapturedAt { get; set; }
 }

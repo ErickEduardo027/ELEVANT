@@ -160,6 +160,53 @@ impuestos, NCF ni comprobación bancaria. La prueba local de migración cubre
 concurrencia y bytes alterados. Su disponibilidad remota depende de la
 promoción certificada de la base y de la API, además del almacén privado.
 
+### Ampliación comercial de Finanzas (rama de integración)
+
+Estas migraciones locales amplían la historia anterior; su presencia en el
+repositorio no acredita aplicación remota. Los apartados previos describen
+el alcance de cada migración original, no una prohibición de las capacidades
+aditivas posteriores.
+
+| Migración ordenada | Modelo que incorpora |
+| --- | --- |
+| `20261019033625_AddFinanceCommercialPlatform` | Paquetes versionados/componentes/vínculos contractuales, consumo y entradas; recibos, movimientos, cuentas de factura, notas/líneas e intenciones de tesorería; proveedores, facturas/líneas/revisiones, pagos/aplicaciones; gastos/líneas/revisiones/reembolsos, adjuntos privados e intenciones idempotentes; documentos/intenciones/eventos/artefactos fiscales. Amplía snapshots de precio/cálculo y tipos de línea. |
+| `20261019041554_AddFinanceTaxSnapshotsAndCorrections` | Políticas tributarias e intenciones, tratamiento/tasa/fundamento y neto/descuento/impuesto/bruto por línea; totales y snapshot comercial emitido. Conserva Unconfigured como estado inicial explícito y ajustes monetarios trazables. |
+
+Fuentes: [migración comercial](Elevant.Persistence/Persistence/Migrations/20261019033625_AddFinanceCommercialPlatform.cs)
+y [migración tributaria](Elevant.Persistence/Persistence/Migrations/20261019041554_AddFinanceTaxSnapshotsAndCorrections.cs).
+No contienen DML de negocio, seed fiscal, RNC, certificados ni secuencias
+oficiales. No se reparan documentos antiguos con una política tributaria
+actual. La compatibilidad comercial conserva el legado; una preparación
+fiscal sin snapshot emitido completo queda bloqueada.
+
+Las tablas usan claves internas, UUID públicos, FKs NO ACTION y precisión
+explícita: dinero decimal(19,4), cantidades decimal(18,4); tasas tienen sus
+propias precisiones de mapping. Índices únicos protegen referencia documental
+por proveedor, intenciones y relaciones naturales. Rowversion,
+transacciones serializables y locks del store completan la protección:
+un índice por sí solo no prueba que un saldo no se sobreaplique.
+
+El Down comercial rechaza historia detectada en consumos de paquete,
+recibos/notas de tesorería, documentos fiscales, facturas de proveedor o
+gastos de empleado (error 51080). El Down tributario rechaza políticas,
+capturas tributarias de prefactura o snapshot comercial de factura
+(error 51081). No fuerce la reversión ni elimine filas para sortear esas
+guardas. La recuperación exige backup verificado y compatibilidad de API.
+
+SQL conserva metadata, hashes y relaciones de los soportes/artefactos;
+los bytes no están dentro del backup SQL. Fiscal usa por defecto el
+almacén privado existente; LocalDirectory es opción explícita de
+Development/Test, nunca Production. Restaurar requiere SQL y el archivo
+privado correspondientes, sin regenerar los originales desde datos actuales.
+Véase [runbook fiscal y recuperación](../../docs/runbooks/finance-fiscal-activation.md).
+
+Antes de promover, el responsable valida cadena limpia y upgrade,
+ausencia de modelo pendiente, SQL idempotente revisado, constraints,
+carreras, persistencia/restore y API compatible. No suprima
+PendingModelChangesWarning ni sustituya migraciones por DDL manual en los
+fixtures. La API no aplica migraciones ni seed al arrancar. El orden sigue
+base → API → clientes; Production requiere aprobación independiente.
+
 Desde cualquier directorio:
 
 ```powershell
