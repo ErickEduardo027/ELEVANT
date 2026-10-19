@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-19"
-verified_commit: "0585b47850578642265d59865dba4e03fbc7a25a"
+verified_commit: "cc4bdeb12b66f74c957e810f9b84fdf543f5e3e4"
 sources:
   - frontend/private-web/src/features/auth/components/LoginIntro.jsx
   - frontend/private-web/src/features/auth/components/AirportShowcase.jsx
@@ -75,6 +75,11 @@ idiomas, y tres preferencias: sistema sin emulación, `no-preference` y `reduce`
 En todas exige una sola fila, proporciones originales y desplazamiento real;
 una cuadrícula estática hace fallar la certificación. Comprueba asimismo que
 la pausa detenga el movimiento y se conserve al cambiar tema o idioma.
+La medición espera a que el motor confirme la pausa mediante `Animation.ready`;
+después exige tiempo y transformación inmutables durante varios fotogramas.
+Una comprobación negativa rechaza un carrusel reanudado. La prueba del límite
+del bucle conserva el control CSS de la reproducción para no interferir con
+las comprobaciones posteriores del botón.
 No necesita credenciales ni una API disponible y no permite peticiones a
 servicios externos.
 
