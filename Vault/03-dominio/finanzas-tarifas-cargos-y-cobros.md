@@ -1,202 +1,165 @@
 ---
 id: dominio-finanzas-tarifas-cargos-y-cobros
-title: "Finanzas: tarifarios, cargos de rampa y cuentas por cobrar"
+title: "Finanzas: precios, cartera, proveedores, gastos y simulación fiscal"
 type: architecture
 area: domain
-status: verified
+status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-10-08"
 verified_commit: "26f6e4c954d081f3190f4d4f5add4040832c977a"
 sources:
+  - docs/superpowers/plans/2026-10-18-finance-platform.md
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
-  - backend/Elevant.Domain/Entities/Commercial/FinanceTariffs.cs
-  - backend/Elevant.Domain/Entities/Operations/OperationServiceCharge.cs
-  - backend/Elevant.Domain/Enumerations/FinanceEnums.cs
+  - docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md
+  - docs/reference/odoo-finance-adaptation.md
+  - docs/reference/dgii-ecf-schema-sources.md
+  - docs/runbooks/finance-fiscal-activation.md
   - backend/Elevant.Application/Finance/FinanceChargePricingPolicy.cs
-  - backend/Elevant.Application/Operations/RampServiceCharges.cs
-  - backend/Elevant.Api/Controllers/FinanceTariffBookController.cs
-  - backend/Elevant.Api/Controllers/FinancePreinvoiceLinesController.cs
-  - backend/Elevant.Api/Controllers/FinanceInvoiceLedgerController.cs
-  - backend/Elevant.Api/Controllers/FinanceReportsController.cs
-  - backend/Elevant.Api/Controllers/RampServiceChargesController.cs
-  - backend/Elevant.Api/Controllers/AirlinePortalController.cs
-  - database/DevelopmentDB/Elevant.Persistence/Finance/FinanceChargeValuation.cs
-  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceTariffBookStore.cs
-  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceInvoiceLedgerStore.cs
-  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceReportStore.cs
-  - frontend/private-web/src/features/finance/shell/modules.js
-  - frontend/mobile-agent/src/components/ramp-operation-charges-card.tsx
-  - frontend/public-web/src/components/portal/AirlineFinancePage.tsx
+  - backend/Elevant.Application/Finance/FinancePackagePricingPolicy.cs
+  - backend/Elevant.Application/Finance/FinanceMinimumPricingPolicy.cs
+  - backend/Elevant.Application/Finance/FinanceTaxCalculator.cs
+  - backend/Elevant.Application/Finance/FinancePayablesPolicy.cs
+  - backend/Elevant.Application/Finance/FinanceFiscalPolicy.cs
+  - backend/Elevant.Application/Abstractions/Finance/IFinanceReportStore.cs
+  - backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs
+  - backend/Elevant.Infrastructure/DependencyInjection.cs
+  - backend/Elevant.Infrastructure/Finance/FinanceFiscalFileArchive.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfPreinvoiceDraftStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceInvoiceIssueStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinanceTreasuryBalances.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinancePayablesStore.Expenses.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinanceFiscalStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinanceFiscalStore.Dispatch.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261019033625_AddFinanceCommercialPlatform.cs
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261019041554_AddFinanceTaxSnapshotsAndCorrections.cs
+  - backend/README.md
+  - database/DevelopmentDB/README.md
 tags:
   - finanzas
   - tarifas
   - facturacion
-  - contratos
+  - cartera
+  - gastos
+  - fiscal
 ---
 
-# Finanzas: tarifarios, cargos de rampa y cuentas por cobrar
+# Finanzas: precios, cartera, proveedores, gastos y simulación fiscal
 
-> [!note] Estado
-> Esta nota describe la rama de integración `feat/finance-refinement`, que está
-> verificada con pruebas locales. No acredita fusión a Development, despliegue
-> al VPS ni facturación tributaria. La decisión de diseño está en
-> [ADR-0016](../../docs/adr/0016-finance-tariffs-charges-and-receivables.md).
+> [!NOTE] Alcance editorial y de entrega
+> Esta ampliación describe el código local de integración del plan aprobado el 2026-10-18. No acredita merge, promoción, despliegue ni emisión fiscal real. La nota queda `documented`; `last_verified` y `verified_commit` conservan la verificación integral anterior hasta que el responsable cierre QA y compruebe el commit fuente. Véanse [ADR-0018](../../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md) y el [runbook fiscal](../../docs/runbooks/finance-fiscal-activation.md).
 
-Finanzas gobierna los precios, valora los cargos que marcan los agentes de
-rampa, corrige la prefactura y lleva la cartera no fiscal en USD y DOP.
+Finanzas gobierna catálogo, precios y paquetes; Contratos negocia y propone versiones; Finanzas aprueba el contrato y OCC valida la ejecución. El agente registra hechos y tipos de cargo. La API compartida valora, congela documentos y calcula saldos desde persistencia.
+
+## Recorrido comercial
 
 ```mermaid
 flowchart LR
-    TB[Tarifa base Finanzas] --> CV[Borrador de contrato]
-    CV -->|Enviar a Finanzas| FA{Aprobación Finanzas}
-    FA -->|Aprueba| AC[Versión aprobada]
-    FA -->|Devuelve con motivo| CV
-    AC --> OCC[OCC planifica]
-    OCC --> RA[Agente ejecuta y marca cargos]
-    RA --> EV[Entrega aprobada por OCC]
-    EV --> PF[Prefactura con cargos]
-    CT[Tarifario de cargos] --> PF
-    FX[Tasa USD→DOP] --> PF
-    PF -->|Finanzas edita o ajusta| PF
-    PF --> PA[Aerolínea acepta o disputa líneas]
-    PA --> FC[Factura no fiscal]
-    FC --> CO[Pagos parciales y notas de crédito]
+    TB[Tarifas y paquetes Finanzas] --> CV[Versión contractual]
+    CV --> FA[Aprobación Finanzas]
+    FA --> OP[Ejecución y entrega aprobada OCC]
+    OP --> PF[Prefactura y reservas]
+    PF --> PA[Aceptación o disputa aerolínea]
+    PA --> FC[Factura comercial inmutable]
+    FC --> NT[Notas vinculadas]
+    RC[Recibo registrado] --> AP[Aplicación parcial o múltiple]
+    AP --> SA[Saldo]
+    FC --> SA
+    NT --> SA
+    FC --> FS[Documento fiscal separado]
 ```
 
-## Tarifarios
+La factura comercial, el cobro y el resultado fiscal tienen estados independientes. Un recibo no prueba aceptación DGII ni confirmación bancaria. Una nota de crédito no devuelve efectivo.
 
-### Tarifa base de servicios
+## Tarifas, contratos y paquetes
 
-- Hay una versión por moneda, con el ciclo `Draft → Published → Superseded`.
-- Cada tarifa indica servicio, estación opcional, unidad del catálogo
-  `ref.billing_units`, precio y mínimo.
-- Una tarifa de estación gana a la general.
-- Publicar cierra la versión anterior. Las versiones publicadas no se editan.
+- Tarifas base y de cargos se publican por versiones y moneda USD/DOP; las publicadas conservan su historia. La tarifa de estación prevalece sobre la general.
+- Cargos admiten importe fijo, porcentaje, hora, minuto o unidad; sus reglas de cantidad, gracia, redondeo y mínimo se aplican en el servidor.
+- Contratos puede negociar excepciones; la revisión de Finanzas conserva la comparación. Una enmienda crea otra versión y no cambia ejecución o facturas anteriores.
+- Los paquetes congelan base, componentes incluidos y bloques de excedente por turnaround, tramo o período. El consumo se reserva bajo transacción serializable y no vuelve a cobrar el mismo bloque comenzado.
+- Ejemplo sintético GPU: base 500, 60 minutos incluidos, bloque de 15 a 20; 60/61/75/76/83 minutos producen 500/520/520/540/540.
+- Un ámbito con prefactura activa sin emitir bloquea otra con `package_scope_has_unissued_preinvoice`. Anular conserva historia y libera reservas; el consumo facturado permanece.
+- Los mínimos de cantidad generan un complemento trazable solo en versiones modernas con `PricingPolicyVersion > 0`. La cobertura de paquete no recibe otro mínimo de servicio. El legado conserva su semántica.
+- Falta de tarifa/FX, cobertura ambigua o base porcentual de paquete sin definir bloquea; no se convierte en precio cero.
 
-### Catálogo de cargos
+La evidencia OCC y las marcas de cargo deben coincidir con la entrega aprobada. Una marca posterior que altere esa evidencia bloquea la valoración. El móvil sigue enviando marcas mediante su endpoint e idempotencia de instalación, sin recibir precios.
 
-CRUD de cargos y recargos. Cada cargo declara:
-- categoría;
-- método: importe fijo, % del servicio, por hora, por minuto o por unidad;
-- regla de cantidad: una vez, duración del servicio, exceso sobre el fin
-  planificado, demora de la llegada o cantidad del servicio;
-- gracia, redondeo, alcance, si admite varias aplicaciones y si es visible para
-  los agentes.
+## Prefactura, impuesto explícito y emisión comercial
 
-### Tarifario de cargos
+En borrador, Finanzas puede ajustar o excluir con motivo y versión, conservando cálculo original. Recalcular es una acción explícita; la disputa bloquea facturar. La factura congela líneas de servicio, cargo, ajuste, mínimo, paquete y excedente, con jerarquía y razones.
 
-Importe o porcentaje de cada cargo, con mínimo, en versiones por moneda.
+Los tratamientos tributarios son políticas publicadas por aerolínea, estación, moneda, concepto y vigencia. Se conserva por línea política, tasa o fundamento, neto, descuento, impuesto, bruto y captura. `Unconfigured` significa desconocido: el impuesto permanece null, no cero. Exención o no sujeción requieren fundamento; la ambigüedad bloquea.
 
-### Tasas de cambio
+La compatibilidad comercial mantiene documentos históricos sin completarles impuestos desde políticas actuales. La preparación fiscal exige el snapshot emitido configurado. La identidad comercial de emisor/cliente se congela al emitir; sus registros tributarios permanecen `null` si no hay fuente revisada. No se inventan RNC, domicilios o secuencias.
 
-- Tasa diaria USD→DOP registrada a mano por Finanzas, con su fuente.
-- Corregir una tasa crea una fila nueva que reemplaza a la anterior. La
-  historia se conserva.
+## Cartera y tesorería
 
-## Contratos y aprobación de Finanzas
+- Recibo, aplicación, reverso, devolución y nota son registros separados.
+- Un recibo puede ser anticipo, aplicarse parcialmente a varias facturas y conservar remanente; cada aplicación comprueba saldo, moneda/FX y versión.
+- Las notas de crédito/débito vinculan factura y líneas originales; una devolución de dinero requiere su propio movimiento y permiso.
+- Pagos y créditos heredados se incluyen una vez, sin copiarlos al modelo nuevo ni sumar un pago nuevamente como efectivo y como aplicación.
+- Estado de cuenta y aging se calculan a fecha de corte desde hechos persistentes; los saldos no se obtienen del navegador.
+- USD/DOP no se suman sin conversión explícita. Dinero usa decimal(19,4), cantidades decimal(18,4).
 
-- El borrador hereda de la tarifa base, en su moneda, el precio y la unidad de
-  cada servicio.
-- Contratos puede negociar precios y excluir o negociar cargos.
-- «Enviar a Finanzas» deja la versión en `PendingFinanceApproval`.
-- Finanzas ve cada precio frente a la base, con la diferencia porcentual y los
-  cargos negociados, y decide:
-  - **Aprobar:** activa el contrato.
-  - **Devolver:** exige un motivo y la versión vuelve a `Draft`.
-- La comparación queda guardada con la decisión. OCC solo opera versiones
-  aprobadas.
+El portal deriva tenant/estación de membresías del servidor. Las nuevas lecturas de cartera no publican cuentas, soportes o PII de empleados.
 
-## Cargos en rampa
+## Proveedores y cuentas por pagar
 
-- **Qué marca el agente:** en Mobile Agent («Cargos aplicados») marca solo el
-  tipo de cargo de un servicio en curso, completado o en excepción. Nunca ve
-  precios ni escribe cantidades.
-- **Cómo se protege el envío:** cada marca o retirada usa una clave
-  idempotente estable por servicio, cargo y acción, y la instalación del
-  dispositivo. La lista se guarda como caché para consultarla sin conexión.
-- **Qué pasa al aprobar:** las marcas viajan en la evidencia de entrega
-  (versión 2). Si cambian después de la aprobación, Finanzas no puede valorar
-  la entrega (`approved_evidence_mismatch`).
+Proveedor tiene alta, edición y retiro lógico con motivo/versionado. Su factura pasa de Draft a Submitted y después Approved o Rejected; el rechazo exige razón y las líneas dejan de editarse al presentar. La referencia normalizada del documento es única por proveedor mediante índice SQL.
 
-## Valoración y prefactura
+Pago CxP y aplicaciones son distintos: admiten varias facturas, parcialidad y remanente, sin sobreaplicación bajo carrera SQL. Soportes privados guardan metadatos y hash; las dimensiones opcionales estación, aerolínea, turnaround y servicio deben relacionarse correctamente con el ámbito autorizado.
 
-### Cálculo del importe de un cargo
+## Gastos propios y revisiones
 
-1. La cantidad se mide con los tiempos registrados, menos la gracia, y se
-   redondea hacia arriba.
-2. El importe sale de la tarifa negociada del contrato; si no la hay, del
-   tarifario de cargos.
-3. Si falta tarifa en la moneda, se convierte con la tasa del día.
-4. Se aplica el mínimo.
-5. Si falta la tarifa o la tasa, la línea queda bloqueada con motivo.
+La cuenta con Employee activo y membresía AVIAM/InternalStaff puede crear, presentar y leer sus propios gastos **sin permisos de Finanzas**. El empleado se deriva de la cuenta; la petición no elige a quién representar. Las opciones API devuelven capacidades de gasto propio, revisión departamental y acciones finales.
 
-### Edición en borrador
+1. El empleado crea borrador y agrega soportes privados.
+2. Presenta el gasto con versión e intención estable.
+3. El administrador efectivo revisa solo su departamento, sin autoaprobación.
+4. Finanzas aprueba o rechaza después; la persona no puede aprobar su propio gasto ni actuar como ambas revisoras.
+5. Finanzas registra reembolso separado, parcial o total, sin pagarse a sí misma.
 
-- Las líneas son de servicio, cargo o ajuste. Los cargos y ajustes cuelgan de
-  su servicio.
-- En `Draft`, Finanzas puede cambiar importes, excluir cargos o añadir ajustes
-  (también negativos).
-- Cada cambio exige motivo y versión esperada, y queda auditado. Se conserva
-  el valor calculado.
+Lecturas propias se filtran por Employee; la cola departamental, por departamento del actor; los filtros recibidos solo restringen. El componente reutilizable [DepartmentExpensesPage](../../frontend/private-web/src/features/finance/payables/DepartmentExpensesPage.jsx) consume estas capacidades para el recorrido «Mis gastos». El soporte se descarga por la API privada, sin URL pública o clave de objeto elegida por el navegador.
 
-### Lo que ve la aerolínea
+## Fiscal: estado implementado y pendiente
 
-- Cada cargo y ajuste aparece como una línea propia, con su motivo.
-- Puede disputar cada línea por separado.
-- Las líneas excluidas no se muestran.
+| Capacidad | Estado local |
+| --- | --- |
+| Off | Modo predeterminado; sin creación/ejecución de trabajos |
+| LocalSimulation | Solo Development/Test; resultados sintéticos sin red fiscal |
+| ProviderSandbox | Bloqueado, proveedor sin seleccionar |
+| Canónico e intención | Persistidos desde datos emitidos, sin revalorar historia |
+| Archivo | Originales/manifest antes del intento; hash y lectura de verificación |
+| Timeout/Unknown | Conserva incertidumbre y no reenvía a ciegas |
+| Callbacks | Puerto e historial idempotente; autenticador runtime actual rechaza todos |
+| XSD E31/E32/E33/E34 | Preflight offline con fuentes oficiales fijadas; separado del simulador |
+| Firma criptográfica / aceptación | NotPerformed; sin certificado, firma o QR oficial |
 
-## Cuentas por cobrar no fiscales
+El archivo predeterminado es S3 privado (`PrivateObjectStore`). La opción explícita `LocalDirectory` requiere directorio privado persistente, solo Development/Test, y se rechaza al arrancar en Production. Permite QA fiscal sin S3; no reemplaza el almacenamiento de soportes de gastos o PDFs comerciales. El ambiente fiscal se resuelve desde DOTNET_ENVIRONMENT, luego ASPNETCORE_ENVIRONMENT, por defecto Production.
 
-- La factura tiene vencimiento según el plazo del perfil de facturación de la
-  aerolínea (30 días por defecto).
-- Admite varios pagos (método y fecha) y notas de crédito idempotentes.
-- El saldo es total − pagos − notas y nunca queda negativo.
-- El estado (`Pending`, `PartiallyPaid`, `Paid`, `Overdue`) se calcula; no se
-  guarda.
-- La aerolínea consulta su estado de cuenta en el portal.
-- Ningún documento es fiscal ni confirma fondos bancarios.
+Los documentos llevan `SIMULATION WITHOUT FISCAL VALIDITY`; el XML neutral FiscalSimulation no es un e-CF. e-NCF y respuesta DGII permanecen null. El [preflight DGII](../../docs/reference/dgii-ecf-schema-sources.md) separa XSD, presencia de firma, criptografía, reglas de negocio y aceptación. Un XSD válido no acredita las otras capas.
 
-## Reportes
+Una conexión real requiere autorización posterior, proveedor/contrato versionado, identidad y datos fiscales revisados, idempotencia/consulta tras timeout, autenticación de callbacks, secuencias autorizadas, certificados/firma, validación por tipo y backup/restore de SQL y bytes. Los detalles y bloqueos están en el [runbook](../../docs/runbooks/finance-fiscal-activation.md).
 
-- **Disponibles:** ingresos, cuentas por cobrar y antigüedad, cobranza,
-  pipeline, cargos y ajustes, disputas, uso de tarifas y notas de crédito.
-- **Cálculo:** se hacen en el servidor, sobre las estaciones del actor. Los
-  consolidados en USD usan la tasa registrada.
-- **Exportación:** CSV o PDF no fiscal, con permiso y auditoría.
+## Permisos, auditoría y reportes
 
-## Permisos
+La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs) conserva tarifas/cargos/tasas, contratos, prefacturas y conciliación; agrega catálogo, paquetes, impuestos, recibos, ajustes, proveedores, CxP, gastos y fiscal. Códigos de rol o departamento enviados por el cliente no autorizan nada. La excepción de gasto propio no concede lectura general ni decisión final de Finanzas.
 
-| Módulo | Lectura | Gestión |
-| --- | --- | --- |
-| Tarifario de servicios | `finance.tariffs.read` | `finance.tariffs.manage` |
-| Tarifario de cargos | `finance.charges.read` | `finance.charges.manage` |
-| Tasas de cambio | `finance.exchange_rates.read` | `finance.exchange_rates.manage` |
-| Aprobación de contratos | `finance.contract_approvals.read` | `finance.contract_approvals.decide` |
-| Prefacturas | `finance.preinvoices.read` | `finance.preinvoices.manage` |
-| Facturas y cobros | `finance.reconciliation.read` | `finance.reconciliation.record` |
-| Reportes | `finance.reports.read` | `finance.reports.export` |
+Las mutaciones usan intención/hash, expectedVersion donde corresponde y transacción con auditoría e invalidaciones dirigidas. El feed revalida destinatario y ámbito; los replays no duplican el hecho de negocio.
 
-## Fuera de alcance
+Los [reportes](../../backend/Elevant.Application/Abstractions/Finance/IFinanceReportStore.cs) incluyen cartera, cobranza, pipeline, cargos, disputas, tarifas, notas de crédito/débito, tesorería, proveedores/CxP, gastos, paquetes, estado fiscal y simulación. Los dos últimos están separados. Exportaciones CSV/XLSX/PDF requieren permiso/auditoría; conciliación documental no equivale a conciliación bancaria.
 
-- Facturación fiscal (ITBIS, NCF).
-- Conciliación bancaria.
-- Obtención automática de tasas.
-- Cobro electrónico.
+## Límites y referencias
 
-## Relacionados
+No hay conectividad fiscal real, aceptación DGII, cobro electrónico, conciliación bancaria, libro mayor, obtención automática de FX ni despliegue acreditado por esta nota. Odoo es referencia de negocio fijada y revisada; ELEVANT conserva implementación C#/React y su UI.
 
+- [Plan aprobado](../../docs/superpowers/plans/2026-10-18-finance-platform.md)
+- [ADR-0018](../../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md)
+- [Matriz Odoo y licencias](../../docs/reference/odoo-finance-adaptation.md)
+- [Runbook fiscal y recuperación](../../docs/runbooks/finance-fiscal-activation.md)
+- [Backend y contratos actuales](../../backend/README.md)
+- [Migraciones de DevelopmentDB](../../database/DevelopmentDB/README.md)
+- [Gobernanza por departamento](gobernanza-por-departamento.md)
 - [Solicitudes, contratos y servicios](solicitudes-contratos-y-servicios.md)
-- [Gobernanza de usuarios por departamento](gobernanza-por-departamento.md)
-- [Brechas y preguntas abiertas](brechas-y-preguntas-abiertas.md)
-
-## Fuentes
-
-- [ADR-0016](../../docs/adr/0016-finance-tariffs-charges-and-receivables.md)
-- [Política de valoración de cargos](../../backend/Elevant.Application/Finance/FinanceChargePricingPolicy.cs)
-- [Valoración en persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinanceChargeValuation.cs)
-- [API de tarifarios](../../backend/Elevant.Api/Controllers/FinanceTariffBookController.cs)
-- [API de cargos de rampa](../../backend/Elevant.Api/Controllers/RampServiceChargesController.cs)
-- [Cartera no fiscal](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceInvoiceLedgerStore.cs)
-- [Reportes](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceReportStore.cs)

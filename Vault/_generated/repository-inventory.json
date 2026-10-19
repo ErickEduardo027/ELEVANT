@@ -248,10 +248,10 @@
       {
         "path": "Vault/03-dominio/finanzas-tarifas-cargos-y-cobros.md",
         "id": "dominio-finanzas-tarifas-cargos-y-cobros",
-        "title": "Finanzas: tarifarios, cargos de rampa y cuentas por cobrar",
+        "title": "Finanzas: precios, cartera, proveedores, gastos y simulación fiscal",
         "type": "architecture",
         "area": "domain",
-        "status": "verified",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -522,6 +522,16 @@
         "type": "index",
         "area": "applications",
         "status": "verified",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
+        "path": "Vault/05-aplicaciones/tesoreria-cobros-y-portal.md",
+        "id": "tesoreria-cobros-y-portal",
+        "title": "Cobros, aplicaciones y consulta de aerolínea",
+        "type": "capability",
+        "area": "applications",
+        "status": "documented",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -1125,13 +1135,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "06b652760ab26f45e3525818d832e6e94d4f4a1053fc96d178f786f1705ab077",
+        "sha256": "321fe7783e6ed3d031ffaf6fa7d64fd3a7243bca0980df522ff8533aaf26baea",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "fd4f803f0eb919392814110233d879ba8c09ff637f71d522a9827e1fd0fb15e7",
+        "sha256": "227d37c7540683b65fa8c10d79997c119ba9d47f5d33170dfde48d5fc36921cd",
         "title": null,
         "version": null
       }
@@ -1328,6 +1338,18 @@
         "name": "AddEmployeesPositionsRequisitions",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261009172055_AddEmployeesPositionsRequisitions.cs",
         "sha256": "e0847bdc6e92b7ede0159a515d65880f7c048028e18ff1869779ac345708852a"
+      },
+      {
+        "id": "20261019033625",
+        "name": "AddFinanceCommercialPlatform",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261019033625_AddFinanceCommercialPlatform.cs",
+        "sha256": "f2fbccbc5c1598ce9604d1104d5ca219799d8d5e92751bd4ccf3c22d6f0db051"
+      },
+      {
+        "id": "20261019041554",
+        "name": "AddFinanceTaxSnapshotsAndCorrections",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261019041554_AddFinanceTaxSnapshotsAndCorrections.cs",
+        "sha256": "b0b5559abcf5a7148b30b32bfd9e7e46063536cd566f3dea51ed8639887af084"
       }
     ],
     "manifestContracts": [

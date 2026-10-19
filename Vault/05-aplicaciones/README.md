@@ -97,6 +97,10 @@ En el commit verificado, las piezas técnicas de los pasos 2 a 4 existen por sep
 | ¿Mobile Agent se despliega como web en el VPS? | No. Su destino es una app nativa instalada; la primera distribución firmada sigue pendiente. |
 | ¿Una tabla existente prueba que la capacidad está lista? | No. Prueba estructura persistente, no endpoint, autorización ni recorrido de usuario. |
 
+## Extensiones de la rama de trabajo
+
+- [Cobros, aplicaciones y consulta de aerolínea](tesoreria-cobros-y-portal.md): implementación local de Tesorería y consultas financieras del portal.
+
 ## Fuentes verificadas
 
 - [Guía raíz](../../AGENTS.md) y [guía de frontends](../../frontend/AGENTS.md): límites normativos de clientes, API y datos.
