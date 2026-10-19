@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -30,9 +31,12 @@ internal sealed class EfPreinvoiceLineEditStore(
             if (line is null) return FinanceCatalogFailure.NotFound;
             // A service is removed by voiding the draft, never by silently excluding its line.
             if (input.Exclude && line.Kind == PreinvoiceLineKind.Service) return FinanceCatalogFailure.Invalid;
+            // Check ambiguity without replacing an already captured explicit treatment with today's policy.
+            await FinanceTaxSnapshotWriter.ResolveAsync(context, draft, line, cancellationToken);
+            FinanceTaxCalculator.Capture(line, null, now);
             var before = line.IsExcluded ? "excluded" : line.Amount.ToString(CultureInfo.InvariantCulture);
             line.IsExcluded = input.Exclude;
-            line.Amount = input.Exclude ? 0m : decimal.Round(input.Amount!.Value, 4, MidpointRounding.AwayFromZero);
+            FinanceTaxCalculator.RepriceGross(line, input.Exclude ? 0m : input.Amount!.Value);
             line.AdjustmentReason = input.Reason.Trim();
             line.EditedByAccountId = actor;
             line.EditedAt = now;
@@ -73,6 +77,10 @@ internal sealed class EfPreinvoiceLineEditStore(
                 ComputedQuantity = null, ComputedAmount = null, AdjustmentReason = input.Reason.Trim(),
                 EditedByAccountId = actor, EditedAt = now, CreatedAt = now, UpdatedAt = now,
             };
+            var policy = await FinanceTaxSnapshotWriter.ResolveAsync(context, draft, line, cancellationToken);
+            FinanceTaxCalculator.Capture(line, policy, now);
+            FinanceTaxCalculator.RepriceGross(line, amount);
+            line.UnitPrice = Math.Abs(line.NetAmount!.Value);
             context.PreinvoiceLines.Add(line);
             CommercialAuditWriter.Add(context, actor, "finance.preinvoice.adjustment_added", "commercial.preinvoice_lines",
                 line.PublicId, line.AdjustmentReason,
@@ -125,6 +133,11 @@ internal sealed class EfPreinvoiceLineEditStore(
                 await transaction.CommitAsync(cancellationToken);
                 return FinanceCatalogResult.Success(draft.PublicId);
             });
+        }
+        catch (FinanceTaxRuleException)
+        {
+            context.ChangeTracker.Clear();
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
         }
         catch (DbUpdateException)
         {

@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Audit;
@@ -134,6 +135,24 @@ internal sealed class EfFinanceInvoiceIssueStore(
             lines.Sum(line => line.Amount) != scope.Total)
             return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
 
+        // A historical line without a snapshot stays explicitly unknown. Issuance never applies a current policy.
+        foreach (var line in lines) FinanceTaxCalculator.Capture(line, null, now);
+        if (lines.Any(line => line.GrossAmount != line.Amount ||
+            line.NetAmount - line.DiscountAmount + (line.TaxAmount ?? 0) != line.Amount))
+            return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
+
+        var issuerIds = actor.Memberships.Where(m => m.OrganizationType == OrganizationType.AviamOperator &&
+            m.Kind == MembershipKind.InternalStaff).Select(m => m.OrganizationId).Distinct().ToArray();
+        if (issuerIds.Length != 1) return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict);
+        var issuer = await context.Organizations.AsNoTracking().Where(o => o.PublicId == issuerIds[0])
+            .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleOrDefaultAsync(cancellationToken);
+        var customer = await context.Organizations.AsNoTracking().Where(o => o.Id == scope.AirlineOrganizationId)
+            .Select(o => new { o.PublicId, o.Code, o.LegalName, o.DisplayName }).SingleAsync(cancellationToken);
+        var airlineIdentity = await context.Airlines.AsNoTracking().Where(a => a.Id == scope.AirlineId)
+            .Select(a => new { a.PublicId, a.Name, a.IataCode, a.IcaoCode }).SingleAsync(cancellationToken);
+        var stationIdentity = await context.Stations.AsNoTracking().Where(s => s.Id == scope.StationId)
+            .Select(s => new { s.PublicId, s.Code, s.Name }).SingleAsync(cancellationToken);
+
         var updated = await context.Preinvoices
             .Where(item => item.Id == scope.Id && item.Status == PreinvoiceStatus.Accepted)
             .ExecuteUpdateAsync(setters => setters
@@ -155,6 +174,19 @@ internal sealed class EfFinanceInvoiceIssueStore(
             PaymentTermDays = terms, DueDate = DateOnly.FromDateTime(now.UtcDateTime).AddDays(terms),
             CreatedAt = now, UpdatedAt = now,
         };
+        invoice.NetTotal = lines.Sum(l => l.NetAmount ?? l.Amount);
+        invoice.DiscountTotal = lines.Sum(l => l.DiscountAmount ?? 0);
+        invoice.TaxTreatmentsConfigured = lines.All(FinanceTaxCalculator.IsConfigured);
+        invoice.TaxTotal = invoice.TaxTreatmentsConfigured ? lines.Sum(l => l.TaxAmount ?? 0) : null;
+        invoice.CommercialSnapshotJson = JsonSerializer.Serialize(new
+        {
+            version = 1, capturedAt = now, issuer, customer, airline = airlineIdentity, station = stationIdentity,
+            invoice.CurrencyCode, invoice.PaymentTermDays, invoice.DueDate,
+            net = invoice.NetTotal, discount = invoice.DiscountTotal, tax = invoice.TaxTotal, gross = invoice.Total,
+            treatmentsConfigured = invoice.TaxTreatmentsConfigured,
+            // The shared commercial model has no reviewed tax-registration/address source.
+            issuerTaxRegistration = (string?)null, customerTaxRegistration = (string?)null,
+        });
         context.NonFiscalInvoices.Add(invoice);
         await context.SaveChangesAsync(cancellationToken);
         foreach (var line in lines)
@@ -167,6 +199,10 @@ internal sealed class EfFinanceInvoiceIssueStore(
                 ExecutedQuantity = line.ExecutedQuantity, BillingUnit = line.BillingUnit,
                 UnitPrice = line.UnitPrice, CurrencyCode = line.CurrencyCode,
                 Amount = line.Amount, Kind = line.Kind,
+                TaxPolicyPublicId = line.TaxPolicyPublicId, TaxTreatment = line.TaxTreatment,
+                TaxRate = line.TaxRate, TaxBasis = line.TaxBasis, NetAmount = line.NetAmount,
+                DiscountAmount = line.DiscountAmount, TaxAmount = line.TaxAmount,
+                GrossAmount = line.GrossAmount, TaxCapturedAt = line.TaxCapturedAt,
                 ParentLineNumber = line.ParentLineId is { } parent ? lineNumbers[parent] : null,
                 Reason = line.Kind == Elevant.Domain.Enumerations.PreinvoiceLineKind.Service ? null : line.AdjustmentReason,
                 CreatedAt = now, UpdatedAt = now,

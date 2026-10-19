@@ -20,6 +20,7 @@ namespace Elevant.Api.Controllers;
 public sealed class FinanceReportsController(
     IFinanceReportStore store,
     IFinancialDocumentPdfRenderer renderer,
+    IFinanceReportXlsxRenderer xlsx,
     IActorContextResolver actors,
     IFinanceReportExportAudit audit) : ControllerBase
 {
@@ -55,7 +56,7 @@ public sealed class FinanceReportsController(
         [FromQuery] Guid? airlineId, [FromQuery] string? currency, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        if (format is not ("csv" or "pdf") || FinanceReports.All.All(item => item.Key != reportKey))
+        if (format is not ("csv" or "pdf" or "xlsx") || FinanceReports.All.All(item => item.Key != reportKey))
             return Problem(statusCode: 400, title: "Unknown report or export format.");
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (actor is null || !actor.HasPermission("finance.reports.export"))
@@ -69,6 +70,7 @@ public sealed class FinanceReportsController(
             (currency is null ? string.Empty : $" · Moneda {currency}") +
             (stationId is null ? " · Todas las estaciones autorizadas" : " · Estación filtrada") +
             (airlineId is null ? string.Empty : " · Aerolínea filtrada");
+        if (format == "xlsx") return File(xlsx.Render(report, filters), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{name}.xlsx");
         return format == "csv"
             ? File(FinanceReportCsv.Render(report), "text/csv; charset=utf-8", $"{name}.csv")
             : File(renderer.RenderReport(report, filters), "application/pdf", $"{name}.pdf");

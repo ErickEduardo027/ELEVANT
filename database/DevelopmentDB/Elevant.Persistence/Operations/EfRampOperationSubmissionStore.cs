@@ -209,7 +209,7 @@ internal sealed class EfRampOperationSubmissionStore(
             SubmittedAt = now,
             AgentNote = request.AgentNote,
             EvidenceJson = (await OperationSubmissionEvidence.CaptureAsync(
-                context, scope.Operation.Id, cancellationToken)).ToJson(),
+                context, scope.Operation.Id, cancellationToken, now)).ToJson(),
             CreatedAt = now,
             UpdatedAt = now,
         };

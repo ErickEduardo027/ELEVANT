@@ -133,6 +133,7 @@ export default function ContractApprovalsPage() {
                   ))}
                 </ul>
               </div>
+              {detail.packages?.length > 0 && <section><h3 className="text-sm font-semibold">Paquetes contractuales</h3><ul className="mt-2 space-y-2">{detail.packages.map(item => <li key={item.id ?? item.packageVersionId ?? item.code} className="rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5"><strong>{item.code} · {item.name}</strong> · versión {item.versionNumber} · {item.scope} · base {formatMoney(item.basePrice, item.currencyCode)}</li>)}</ul><p className="mt-2 text-xs text-text-secondary-light">Los servicios cubiertos no se cobrarán individualmente. Las inclusiones y excedentes conservan la versión aprobada del paquete.</p></section>}
               {detail.history.length > 0 && (
                 <div className="text-xs text-text-secondary-light">
                   {detail.history.map(item => <p key={item.decidedAt}>{item.decision === 'Approved' ? 'Aprobado' : 'Devuelto'} por {item.decidedBy} · {new Date(item.decidedAt).toLocaleString('es-DO')}{item.reason ? ` · ${item.reason}` : ''}</p>)}

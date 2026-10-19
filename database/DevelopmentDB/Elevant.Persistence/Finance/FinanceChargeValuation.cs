@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Elevant.Application.Finance;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -8,7 +9,7 @@ namespace Elevant.Persistence.Finance;
 
 /// <summary>An approved service with the charges its delivery evidence froze.</summary>
 internal sealed record ChargeableService(long ServiceId, long OperationId, long TurnaroundId, long? ContractServiceRateId,
-    DateOnly OperationDate, decimal ExecutedQuantity, decimal ServiceAmount, IReadOnlyList<ServiceChargeEvidence> Charges);
+    DateOnly OperationDate, decimal ExecutedQuantity, decimal ServiceAmount, IReadOnlyList<ServiceChargeEvidence> Charges, DateTimeOffset? SubmittedAt = null, ServiceTimingEvidence? Timing = null, bool HasPackageCoverage = false);
 
 internal sealed record ValuedCharge(long ServiceId, long ChargeDefinitionId, string Code, string Name, string? BillingUnit,
     decimal Quantity, decimal UnitPrice, decimal Amount, bool IsExcluded);
@@ -38,6 +39,7 @@ internal static class FinanceChargeValuation
         var versionByRate = await context.ContractServiceRates.AsNoTracking().Where(rate => rateIds.Contains(rate.Id))
             .ToDictionaryAsync(rate => rate.Id, rate => rate.ContractVersionId, cancellationToken);
         var versionIds = versionByRate.Values.Distinct().ToArray();
+        var pricingVersions = await context.ContractVersions.AsNoTracking().Where(v => versionIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id, v => v.PricingPolicyVersion, cancellationToken);
         var negotiated = (await context.ContractChargeRates.AsNoTracking()
                 .Where(rate => versionIds.Contains(rate.ContractVersionId)).ToArrayAsync(cancellationToken))
             .ToDictionary(rate => (rate.ContractVersionId, rate.ChargeDefinitionId));
@@ -56,6 +58,8 @@ internal static class FinanceChargeValuation
         foreach (var (service, mark) in marks)
         {
             var definition = definitions[mark.ChargeId];
+            var policy = new ContractChargePolicySnapshot(definition.Code, definition.Name, definition.BillingUnit, definition.Method, definition.QuantityRule, definition.GraceMinutes, definition.RoundingIncrement);
+            var modern = service.ContractServiceRateId is { } sourceRate && versionByRate.TryGetValue(sourceRate, out var sourceVersion) && pricingVersions.GetValueOrDefault(sourceVersion) > 0;
             decimal? value = null;
             var minimum = 0m;
             var excluded = false;
@@ -65,10 +69,17 @@ internal static class FinanceChargeValuation
                 excluded = contractRate.IsExcluded;
                 value = contractRate.Value;
                 minimum = contractRate.MinimumAmount ?? 0m;
+                if (modern)
+                {
+                    if (contractRate.DefinitionSnapshotJson is null) return new([], "contract_charge_policy_missing");
+                    try { var frozen = JsonSerializer.Deserialize<ContractChargePolicySnapshot>(contractRate.DefinitionSnapshotJson); if (frozen is null) return new([], "contract_charge_policy_invalid"); policy = frozen; }
+                    catch (JsonException) { return new([], "contract_charge_policy_invalid"); }
+                }
             }
+            if (modern && !excluded && value is null) return new([], "contract_charge_rate_missing");
             if (!excluded && value is null)
             {
-                var percent = definition.Method == ChargeCalculationMethod.PercentOfService;
+                var percent = policy.Method == ChargeCalculationMethod.PercentOfService;
                 if ((await BaseAsync(currency, service.OperationDate)).TryGetValue(definition.Id, out var own))
                 {
                     value = own.Value;
@@ -85,17 +96,21 @@ internal static class FinanceChargeValuation
             }
             if (excluded)
             {
-                valued.Add(new ValuedCharge(service.ServiceId, definition.Id, definition.Code, definition.Name,
-                    definition.BillingUnit, 0m, 0m, 0m, true));
+                valued.Add(new ValuedCharge(service.ServiceId, definition.Id, policy.Code, policy.Name,
+                    policy.BillingUnit, 0m, 0m, 0m, true));
                 continue;
             }
-            var pricing = FinanceChargePricingPolicy.Price(new ChargePricingInput(definition.Method, definition.QuantityRule,
-                definition.GraceMinutes, definition.RoundingIncrement,
-                measurements.GetValueOrDefault((service.ServiceId, definition.QuantityRule)),
+            // A package has no allocated per-service percentage basis. Use the approved contract policy,
+            // after exclusions, so catalog edits cannot change eligibility or silently price against zero.
+            if (service.HasPackageCoverage && policy.Method == ChargeCalculationMethod.PercentOfService)
+                return new([], "package_percentage_basis_required");
+            var pricing = FinanceChargePricingPolicy.Price(new ChargePricingInput(policy.Method, policy.QuantityRule,
+                policy.GraceMinutes, policy.RoundingIncrement,
+                measurements.GetValueOrDefault((service.ServiceId, policy.QuantityRule)),
                 service.ExecutedQuantity, service.ServiceAmount, value, minimum));
             if (!pricing.Ready) return new ChargeValuationResult([], pricing.BlockingReason);
-            valued.Add(new ValuedCharge(service.ServiceId, definition.Id, definition.Code, definition.Name,
-                definition.BillingUnit, pricing.Quantity, pricing.UnitPrice, pricing.Amount, false));
+            valued.Add(new ValuedCharge(service.ServiceId, definition.Id, policy.Code, policy.Name,
+                policy.BillingUnit, pricing.Quantity, pricing.UnitPrice, pricing.Amount, false));
         }
         return new ChargeValuationResult(valued, null);
     }
@@ -124,7 +139,14 @@ internal static class FinanceChargeValuation
         var result = new Dictionary<(long, ChargeQuantityRule), decimal?>();
         foreach (var service in services)
         {
-            var serviceEvents = events[service.ServiceId].ToArray();
+            if (service.Timing is { } frozen)
+            {
+                result[(service.ServiceId, ChargeQuantityRule.ServiceDuration)] = frozen.ServiceMinutes;
+                result[(service.ServiceId, ChargeQuantityRule.OperationOverrun)] = frozen.OperationOverrunMinutes;
+                result[(service.ServiceId, ChargeQuantityRule.ArrivalDelay)] = frozen.ArrivalDelayMinutes;
+                continue;
+            }
+            var serviceEvents = events[service.ServiceId].Where(item => service.SubmittedAt == null || item.OccurredAt <= service.SubmittedAt).ToArray();
             var started = serviceEvents.LastOrDefault(item => item.ToStatus == ServiceExecutionStatus.InProgress)?.OccurredAt;
             var finished = serviceEvents.LastOrDefault(item => item.ToStatus is ServiceExecutionStatus.Completed or
                 ServiceExecutionStatus.Exception && item.OccurredAt >= started)?.OccurredAt;

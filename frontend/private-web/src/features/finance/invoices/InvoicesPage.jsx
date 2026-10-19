@@ -1,8 +1,9 @@
+'use client';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
 import EmptyState from '../../../components/EmptyState';
 import FilterBar from '../../../components/FilterBar';
-import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
 import StackedTable from '../../../components/StackedTable';
 import StatusBadge from '../../../components/StatusBadge';
@@ -10,135 +11,70 @@ import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { ReconciliationIcon } from '../components/icons';
-import {
-  formatMoney, getFinanceInvoice, issueCreditNote, listFinanceInvoices, newRequestId, recordPartialPayment,
-} from '../../../services/financeBookService';
+import AdjustmentNotesPanel from '../treasury/AdjustmentNotesPanel';
+import TreasuryPage from '../treasury/TreasuryPage';
+import { formatMoney, getFinanceInvoice, listFinanceInvoices } from '../../../services/financeBookService';
+import { formatTreasuryMoney, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const INVOICE_STATUS = {
-  Pending: { label: 'Pendiente', tone: 'info' },
-  PartiallyPaid: { label: 'Pago parcial', tone: 'warning' },
-  Paid: { label: 'Pagada', tone: 'success' },
-  Overdue: { label: 'Vencida', tone: 'danger' },
+  Pending: { label: 'Pendiente', tone: 'info' }, PartiallyPaid: { label: 'Pago parcial', tone: 'warning' },
+  Paid: { label: 'Pagada', tone: 'success' }, Overdue: { label: 'Vencida', tone: 'danger' },
 };
-const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste' };
+const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste', Package: 'Paquete', Excess: 'Exceso', Minimum: 'Mínimo' };
 const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro' };
 
-function InvoiceDetail({ invoiceId, canRecord, onChanged }) {
-  const [detail, setDetail] = useState(null);
-  const [error, setError] = useState('');
-  const [action, setAction] = useState(null);
-  const [form, setForm] = useState({});
-  const [busy, setBusy] = useState(false);
-  const intent = useRef(null);
-
-  const load = useCallback(async () => {
-    try { setDetail(await getFinanceInvoice(invoiceId)); setError(''); } catch (failure) { setError(failure.message); }
-  }, [invoiceId]);
-  useEffect(() => { void load(); }, [load]);
-
-  function open(kind) {
-    intent.current = newRequestId();
-    setForm(kind === 'payment'
-      ? { amount: detail.summary.balance, method: 'Transfer', paidOn: new Date().toISOString().slice(0, 10), reference: '' }
-      : { amount: '', reason: '' });
-    setAction(kind);
-    setError('');
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
+function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
+  const { access } = useDepartmentAccess();
+  const canReadReceipts = Boolean(access?.can('finance.receipts.read'));
+  const [detail, setDetail] = useState(null); const [treasury, setTreasury] = useState(null);
+  const [error, setError] = useState(''); const [receiptError, setReceiptError] = useState('');
+  const load = useCallback(signal => getFinanceInvoice(invoiceId).then(async value => {
+    if (signal?.aborted) return; setDetail(value); setError('');
+    if (!canReadReceipts) return;
     try {
-      if (action === 'payment') {
-        await recordPartialPayment({ invoiceId, requestId: intent.current, reference: form.reference.trim(),
-          amount: Number(form.amount), method: form.method, paidOn: form.paidOn });
-      } else {
-        await issueCreditNote(invoiceId, { requestId: intent.current, amount: Number(form.amount), reason: form.reason.trim() });
-      }
-      setAction(null);
-      await load();
-      onChanged(action === 'payment' ? 'Pago registrado.' : 'Nota de crédito emitida.');
-    } catch (failure) {
-      setError(failure.status === 409 ? 'El importe supera el saldo, la referencia ya existe o la factura cambió.' : failure.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+      const statement = await getTreasuryStatement({ asOf: treasuryToday(), stationId: value.summary.stationId, airlineId: value.summary.airlineId }, { signal });
+      if (!signal?.aborted) { setTreasury(statement); setReceiptError(''); }
+    } catch (failure) { if (!signal?.aborted) { setTreasury(null); setReceiptError(treasuryError(failure)); } }
+  }, failure => { if (!signal?.aborted) { setDetail(null); setError(treasuryError(failure)); } }), [invoiceId, canReadReceipts]);
+  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load, revision]);
   if (!detail) return error ? <p role="alert" className="text-sm text-status-danger">{error}</p> : <p role="status" className="text-sm">Cargando factura…</p>;
-  const { summary } = detail;
+  const { summary } = detail; const current = treasury?.invoices?.find(i => i.id === invoiceId);
   const status = INVOICE_STATUS[summary.status] ?? { label: summary.status, tone: 'info' };
-  return (
-    <div className="space-y-4">
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[['Total', summary.total], ['Pagado', summary.paid], ['Notas de crédito', summary.credited], ['Saldo', summary.balance]].map(([label, value]) => (
-          <div key={label} className="rounded-lg bg-black/[.03] p-3 dark:bg-white/[.04]"><dt className="text-[11px] font-semibold uppercase text-text-secondary-light">{label}</dt>
-            <dd className="mt-0.5 font-bold tabular-nums">{formatMoney(value, summary.currencyCode)}</dd></div>
-        ))}
-      </dl>
-      <p className="flex flex-wrap items-center gap-2 text-xs text-text-secondary-light">
-        <StatusBadge tone={status.tone} label={status.label} /> Emitida {new Date(summary.issuedAt).toLocaleDateString('es-DO')}
-        {summary.dueDate && ` · Vence ${summary.dueDate}`}{summary.daysOverdue > 0 && ` · ${summary.daysOverdue} días vencida`}
-      </p>
-      {canRecord && summary.balance > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => open('payment')} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Registrar pago</button>
-          <button type="button" onClick={() => open('credit')} className="min-h-[40px] rounded-lg border border-accent-600 px-4 text-sm font-semibold text-accent-600">Emitir nota de crédito</button>
-        </div>
-      )}
-      <section>
-        <h3 className="text-sm font-semibold">Líneas</h3>
-        <ul className="mt-2 divide-y divide-black/5 text-sm dark:divide-white/5">
-          {detail.lines.map(line => (
-            <li key={line.lineNumber} className={`flex flex-wrap justify-between gap-2 py-2 ${line.parentLineNumber ? 'pl-4' : ''}`}>
-              <span className="min-w-0"><span className="text-xs text-text-secondary-light">{KIND_LABELS[line.kind]} · </span>{line.serviceCode} · {line.serviceName}
-                {line.reason && <span className="block text-xs text-text-secondary-light">{line.reason}</span>}</span>
-              <span className="tabular-nums">{formatMoney(line.amount, summary.currencyCode)}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-      {(detail.payments.length > 0 || detail.creditNotes.length > 0) && (
-        <section>
-          <h3 className="text-sm font-semibold">Pagos y notas de crédito</h3>
-          <ul className="mt-2 space-y-1 text-xs">
-            {detail.payments.map(payment => <li key={payment.id}>Pago {METHODS[payment.method] ?? payment.method} {payment.reference} · {payment.paidOn ?? ''} · <strong>{formatMoney(payment.amount, summary.currencyCode)}</strong> · {payment.recordedBy}</li>)}
-            {detail.creditNotes.map(note => <li key={note.id}>Nota {note.number} · <strong>{formatMoney(note.amount, summary.currencyCode)}</strong> · {note.reason}</li>)}
-          </ul>
-        </section>
-      )}
-      <Modal open={Boolean(action)} onClose={() => setAction(null)} title={action === 'payment' ? 'Registrar pago' : 'Emitir nota de crédito'}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setAction(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
-          <button type="submit" form="invoice-action-form" disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{busy ? 'Guardando…' : 'Confirmar'}</button></div>}>
-        <form id="invoice-action-form" onSubmit={submit} className="space-y-3">
-          {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-          <label className="block text-xs font-semibold">Importe ({summary.currencyCode}) · saldo {formatMoney(summary.balance, summary.currencyCode)}
-            <input required type="number" min="0.01" max={summary.balance} step="0.01" value={form.amount ?? ''} onChange={event => setForm(current => ({ ...current, amount: event.target.value }))} className={fieldClass} /></label>
-          {action === 'payment' ? (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="text-xs font-semibold">Método<select value={form.method} onChange={event => setForm(current => ({ ...current, method: event.target.value }))} className={fieldClass}>
-                  {Object.entries(METHODS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                <label className="text-xs font-semibold">Fecha de pago<input required type="date" value={form.paidOn} onChange={event => setForm(current => ({ ...current, paidOn: event.target.value }))} className={fieldClass} /></label>
-              </div>
-              <label className="block text-xs font-semibold">Referencia<input required minLength={8} maxLength={80} pattern="[A-Za-z0-9\-]+" title="8 a 80 letras, números o guiones" value={form.reference} onChange={event => setForm(current => ({ ...current, reference: event.target.value }))} className={fieldClass} /></label>
-              <p className="text-xs text-text-secondary-light">Registro manual; no es una confirmación bancaria.</p>
-            </>
-          ) : (
-            <label className="block text-xs font-semibold">Motivo<textarea required minLength={3} maxLength={1000} rows={3} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} className={fieldClass} /></label>
-          )}
-        </form>
-      </Modal>
-    </div>
-  );
+  const context = { invoiceId, airlineId: summary.airlineId, stationId: summary.stationId, currencyCode: summary.currencyCode };
+  const amounts = current ? [['Total', summary.total], ['Pagos históricos', current.legacyPaid], ['Créditos históricos', current.legacyCredited], ['Aplicaciones', current.applied],
+    ['Notas de crédito', current.credited], ['Notas de débito', current.debited], ['Saldo', current.balance]] :
+    [['Total', summary.total], ['Pagado y aplicado', summary.paid], ['Notas netas', summary.credited], ['Saldo', summary.balance]];
+  return <div className="space-y-4">
+    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">{amounts.map(([label, value]) => <div key={label} className="rounded-lg bg-black/[.03] p-3 dark:bg-white/[.04]">
+      <dt className="text-[11px] font-semibold uppercase text-text-secondary-light">{label}</dt><dd className="mt-0.5 font-bold tabular-nums">{formatTreasuryMoney(value, summary.currencyCode)}</dd></div>)}</dl>
+    <p className="flex flex-wrap items-center gap-2 text-xs text-text-secondary-light"><StatusBadge tone={status.tone} label={status.label} />
+      Emitida {new Date(summary.issuedAt).toLocaleDateString('es-DO')}{summary.dueDate && ' · Vence ' + summary.dueDate}{summary.daysOverdue > 0 && ' · ' + summary.daysOverdue + ' días vencida'}</p>
+    {canReadReceipts && <button type="button" onClick={() => onOpenReceipt(null, context)} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Gestionar cobros y aplicaciones</button>}
+    {receiptError && <p role="alert" className="text-sm text-status-danger">{receiptError} <button type="button" className="font-semibold" onClick={() => void load()}>Reintentar aplicaciones</button></p>}
+    {treasury && <section className="space-y-2" aria-label="Aplicaciones de cobros"><h3 className="text-sm font-semibold">Aplicaciones de cobros</h3>
+      {(treasury.receipts ?? []).flatMap(r => r.movements.filter(m => m.invoiceId === invoiceId).map(m => <article key={m.id} className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+        <p>{m.kind === 'ApplicationReversal' ? 'Reverso de aplicación' : 'Aplicación'} · {formatTreasuryMoney(m.invoiceAmount, m.invoiceCurrency)} · {m.effectiveOn}</p>
+        <p className="text-xs">Cobro {formatTreasuryMoney(m.receiptAmount, m.receiptCurrency)} · Tasa registrada {m.exchangeRate}</p>
+        <button type="button" aria-label={'Ver cobro ' + r.reference} onClick={() => onOpenReceipt(r.id, context)} className="min-h-[36px] font-semibold text-accent-600">Ver cobro {r.reference}</button>
+      </article>))}
+    </section>}
+    <section><h3 className="text-sm font-semibold">Líneas</h3><ul className="mt-2 divide-y divide-black/5 text-sm dark:divide-white/5">{detail.lines.map(line => <li key={line.lineNumber} className={'flex flex-wrap justify-between gap-2 py-2 ' + (line.parentLineNumber ? 'pl-4' : '')}>
+      <span className="min-w-0"><span className="text-xs text-text-secondary-light">{KIND_LABELS[line.kind] ?? line.kind} · </span>{line.serviceCode} · {line.serviceName}{line.reason && <span className="block text-xs text-text-secondary-light">{line.reason}</span>}</span>
+      <span className="tabular-nums">{formatTreasuryMoney(line.amount, summary.currencyCode)}</span></li>)}</ul></section>
+    {((detail.payments?.length ?? 0) > 0 || (detail.creditNotes?.length ?? 0) > 0) && <section><h3 className="text-sm font-semibold">Pagos y notas históricos</h3><ul className="mt-2 space-y-1 text-xs">
+      {detail.payments.map(payment => <li key={payment.id}>Pago {METHODS[payment.method] ?? payment.method} {payment.reference} · {payment.paidOn ?? ''} · <strong>{formatTreasuryMoney(payment.amount, summary.currencyCode)}</strong> · {payment.recordedBy}</li>)}
+      {detail.creditNotes.map(note => <li key={note.id}>Nota {note.number} · <strong>{formatTreasuryMoney(note.amount, summary.currencyCode)}</strong> · {note.reason}</li>)}</ul></section>}
+    {access?.can('finance.adjustments.read') && <AdjustmentNotesPanel invoiceId={invoiceId} invoiceNumber={summary.number} currencyCode={summary.currencyCode}
+      onChanged={() => { void load(); onChanged('Nota de ajuste registrada.'); }} />}
+  </div>;
 }
 
 /** Non-fiscal invoices with balance, aging, partial payments and credit notes. */
-export default function InvoicesPage({ initialStationId }) {
+export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
   const { access } = useDepartmentAccess();
-  const canRecord = Boolean(access?.can('finance.reconciliation.record'));
+  const [treasuryScope, setTreasuryScope] = useState(null);
+  const [revision, setRevision] = useState(0);
   const stations = (readSession()?.stationScopes ?? []).filter(scope => scope?.stationId);
   const [filters, setFilters] = useState({ stationId: initialStationId ?? '', status: '' });
   const [page, setPage] = useState(null);
@@ -146,20 +82,35 @@ export default function InvoicesPage({ initialStationId }) {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
+  const listRequest = useRef(0);
   const load = useCallback(async () => {
-    try { setPage(await listFinanceInvoices({ ...filters, limit: 50 })); setError(''); }
-    catch (failure) { setPage({ invoices: [] }); setError(failure.message); }
+    const request = ++listRequest.current;
+    setPage(null); setError('');
+    try {
+      const value = await listFinanceInvoices({ ...filters, limit: 50 });
+      if (request === listRequest.current) { setPage(value); setError(''); }
+    } catch (failure) {
+      if (request === listRequest.current) { setPage({ invoices: [] }); setError(treasuryError(failure)); }
+    }
   }, [filters]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { ++listRequest.current; }; }, [load, revision]);
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_preinvoices')) void load();
+      if (resources.includes('finance_preinvoices') || resources.includes('finance_receipts')) setRevision(value => value + 1);
     });
     void observer.start().catch(() => {});
     return () => { void observer.stop(); };
-  }, [load]);
+  }, []);
 
+  function openReceipt(receiptId, context) {
+    setSelected(null);
+    if (onOpenReceipt) onOpenReceipt(receiptId, context);
+    else setTreasuryScope({ ...context, receiptId });
+  }
+  if (treasuryScope) return <div className="space-y-4"><button type="button" className="min-h-[40px] text-sm font-semibold text-accent-600" onClick={() => { setTreasuryScope(null); setRevision(value => value + 1); }}>Volver a facturas</button>
+    <TreasuryPage initialStationId={treasuryScope.stationId} initialAirlineId={treasuryScope.airlineId} initialInvoiceId={treasuryScope.invoiceId} initialReceiptId={treasuryScope.receiptId} />
+  </div>;
   const invoices = page?.invoices ?? [];
   const current = invoices.find(invoice => invoice.id === selected);
   return (
@@ -198,7 +149,7 @@ export default function InvoicesPage({ initialStationId }) {
       )}
       <Drawer open={Boolean(current)} onClose={() => setSelected(null)} title={current ? `Factura ${current.airline}` : ''}
         description={current?.number} widthClassName="lg:w-[560px]">
-        {current && <InvoiceDetail invoiceId={current.id} canRecord={canRecord} onChanged={message => { setNotice(message); void load(); }} />}
+        {current && <InvoiceDetail key={current.id} invoiceId={current.id} revision={revision} onOpenReceipt={openReceipt} onChanged={message => { setNotice(message); setRevision(value => value + 1); }} />}
       </Drawer>
     </div>
   );

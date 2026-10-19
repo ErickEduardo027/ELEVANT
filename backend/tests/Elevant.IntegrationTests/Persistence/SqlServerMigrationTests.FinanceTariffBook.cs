@@ -135,6 +135,10 @@ public sealed partial class SqlServerMigrationTests
         });
         await context.SaveChangesAsync(cancellationToken);
 
+        Assert.Null(await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken));
+        var stationId = await context.Stations.Where(station => station.Code == "PUJ").Select(station => station.Id).SingleAsync(cancellationToken);
+        context.Set<ContractVersionStation>().Add(new() { ContractVersionId = version.Id, StationId = stationId });
+        await context.SaveChangesAsync(cancellationToken);
         Assert.Null(await book.ListContractApprovalsAsync(ContractsAccount, true, cancellationToken));
         var detail = (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!;
         var rate = Assert.Single(detail.Rates);
@@ -162,12 +166,7 @@ public sealed partial class SqlServerMigrationTests
             returned.ValidFrom, null, "USD", "QA revisado",
             returned.Rates.Select(item => new UpdateDraftRateInput(item.Id, item.BillingUnit, 125m, 1m, true)).ToArray(),
             [new UpdateDraftChargeInput(night.ChargeId, false, 20m)]), cancellationToken)).IsSuccess);
-        Assert.Equal(ContractDraftFailure.Conflict,
-            (await drafts.ActivateAsync(ContractsAccount, version.PublicId, cancellationToken)).Failure);
-        // The synthetic draft has no covered station, so it cannot be submitted; mark it pending directly.
-        await context.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE [commercial].[contract_versions] SET [status] = N'PendingFinanceApproval' WHERE [id] = {version.Id}",
-            cancellationToken);
+        Assert.True((await drafts.ActivateAsync(ContractsAccount, version.PublicId, cancellationToken)).IsSuccess);
         var pending = (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!;
         Assert.Equal(20m, Assert.Single(pending.Charges, item => item.ChargeCode == "NIGHT").ContractValue);
         Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,

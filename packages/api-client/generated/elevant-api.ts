@@ -425,6 +425,153 @@ export interface AirlinePreinvoicePageResponse {
   preinvoices: AirlinePreinvoiceResponse[];
 }
 
+export interface AirlineTreasuryAdjustmentLineResponse {
+  invoiceLineId: string;
+  quantity: number;
+  amount: number;
+}
+
+export interface AirlineTreasuryAdjustmentResponse {
+  id: string;
+  number: string;
+  invoiceId: string;
+  /** @nullable */
+  relatedNoteId?: string | null;
+  kind: string;
+  currencyCode: string;
+  amount: number;
+  effectiveOn: string;
+  reason: string;
+  recordedAt: string;
+  lines: AirlineTreasuryAdjustmentLineResponse[];
+}
+
+export interface AirlineTreasuryAdjustmentsResponse {
+  invoiceId: string;
+  number: string;
+  currencyCode: string;
+  legacyCredited: number;
+  notes: AirlineTreasuryAdjustmentResponse[];
+}
+
+export interface AirlineTreasuryAgingResponse {
+  currencyCode: string;
+  balance: number;
+  current: number;
+  days1To30: number;
+  days31To60: number;
+  days61To90: number;
+  days91Plus: number;
+  unallocated: number;
+  creditBalance: number;
+}
+
+export interface AirlineTreasuryInvoiceResponse {
+  id: string;
+  preinvoiceId: string;
+  number: string;
+  stationId: string;
+  stationCode: string;
+  currencyCode: string;
+  total: number;
+  legacyPaid: number;
+  legacyCredited: number;
+  applied: number;
+  credited: number;
+  debited: number;
+  balance: number;
+  /** @nullable */
+  dueDate?: string | null;
+  daysOverdue: number;
+  agingBucket: string;
+}
+
+export interface AirlineTreasuryInvoiceLineResponse {
+  id: string;
+  lineNumber: number;
+  kind: string;
+  /** @nullable */
+  parentLineNumber?: number | null;
+  operationCode: string;
+  operationDate: string;
+  serviceCode: string;
+  serviceName: string;
+  quantity: number;
+  billingUnit: string;
+  unitPrice: number;
+  amount: number;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface AirlineTreasuryMovementResponse {
+  id: string;
+  /** @nullable */
+  receiptId?: string | null;
+  /** @nullable */
+  invoiceId?: string | null;
+  kind: string;
+  currencyCode: string;
+  amount: number;
+  effectiveOn: string;
+  recordedAt: string;
+  /** @nullable */
+  reversesId?: string | null;
+  reference: string;
+}
+
+export interface AirlineTreasuryInvoiceDetailResponse {
+  invoice: AirlineTreasuryInvoiceResponse;
+  lines: AirlineTreasuryInvoiceLineResponse[];
+  movements: AirlineTreasuryMovementResponse[];
+  notes: AirlineTreasuryAdjustmentResponse[];
+}
+
+export interface AirlineTreasuryReceiptMovementResponse {
+  id: string;
+  kind: string;
+  /** @nullable */
+  invoiceId?: string | null;
+  /** @nullable */
+  reversesId?: string | null;
+  effectiveOn: string;
+  receiptAmount: number;
+  invoiceAmount: number;
+  receiptCurrency: string;
+  /** @nullable */
+  invoiceCurrency?: string | null;
+  exchangeRate: number;
+  exchangeRateOn: string;
+  reference: string;
+  reason: string;
+  recordedAt: string;
+}
+
+export interface AirlineTreasuryReceiptResponse {
+  id: string;
+  stationId: string;
+  stationCode: string;
+  reference: string;
+  currencyCode: string;
+  amount: number;
+  applied: number;
+  refunded: number;
+  available: number;
+  reversed: boolean;
+  method: string;
+  receivedOn: string;
+  movements: AirlineTreasuryReceiptMovementResponse[];
+}
+
+export interface AirlineTreasuryStatementResponse {
+  airlineId: string;
+  asOf: string;
+  invoices: AirlineTreasuryInvoiceResponse[];
+  receipts: AirlineTreasuryReceiptResponse[];
+  movements: AirlineTreasuryMovementResponse[];
+  aging: AirlineTreasuryAgingResponse[];
+}
+
 export interface ApplyRampServiceChargeRequest {
   chargeId: string;
   action: string;
@@ -721,6 +868,16 @@ export interface ContractFinanceReviewData {
   decidedAt: string;
 }
 
+export interface ContractPackageApprovalData {
+  id: string;
+  code: string;
+  name: string;
+  versionNumber: number;
+  scope: string;
+  basePrice: number;
+  currencyCode: string;
+}
+
 export interface ContractApprovalDetailData {
   summary: ContractApprovalSummaryData;
   /** @nullable */
@@ -729,6 +886,8 @@ export interface ContractApprovalDetailData {
   rates: ContractRateComparisonData[];
   charges: ContractChargeComparisonData[];
   history: ContractFinanceReviewData[];
+  /** @nullable */
+  packages?: ContractPackageApprovalData[] | null;
 }
 
 export interface ContractDraftChargeData {
@@ -790,6 +949,7 @@ export interface ContractDraftData {
   financeReason?: string | null;
   /** @nullable */
   charges?: ContractDraftChargeData[] | null;
+  version: string;
 }
 
 export interface ContractDraftOverviewItemData {
@@ -1178,6 +1338,116 @@ export interface EmployeeDetailData {
   assignments: EmployeeAssignmentData[];
 }
 
+export interface FinancePayablesFxDto {
+  currency: string;
+  /** @nullable */
+  rateToDop?: number | null;
+  source: string;
+  /** @nullable */
+  rateDate?: string | null;
+}
+
+export interface EmployeeExpensePaymentSaveDto {
+  requestId: string;
+  expectedVersion: string;
+  paidOn: string;
+  reference: string;
+  fx: FinancePayablesFxDto;
+  amount: number;
+  /** @nullable */
+  rateToExpense?: number | null;
+}
+
+export interface EmployeeExpensePaymentViewDto {
+  id: string;
+  paidOn: string;
+  reference: string;
+  fx: FinancePayablesFxDto;
+  amount: number;
+  expenseAmount: number;
+  rateToExpense: number;
+}
+
+export interface FinancePayablesDimensionsDto {
+  /** @nullable */
+  stationId?: string | null;
+  /** @nullable */
+  airlineId?: string | null;
+  /** @nullable */
+  turnaroundId?: string | null;
+  /** @nullable */
+  serviceId?: string | null;
+}
+
+export interface FinancePayablesLineInputDto {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  taxAmount: number;
+}
+
+export interface EmployeeExpenseSaveDto {
+  requestId: string;
+  scopeStationId: string;
+  description: string;
+  expenseDate: string;
+  fx: FinancePayablesFxDto;
+  dimensions: FinancePayablesDimensionsDto;
+  lines: FinancePayablesLineInputDto[];
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface FinancePayablesLineViewDto {
+  id: string;
+  number: number;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface FinancePayablesAttachmentViewDto {
+  id: string;
+  contentType: string;
+  length: number;
+  sha256: string;
+  uploadedAt: string;
+}
+
+export interface FinancePayablesReviewViewDto {
+  stage: string;
+  decision: string;
+  actorId: string;
+  at: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface EmployeeExpenseViewDto {
+  id: string;
+  employeeId: string;
+  employeeNumber: string;
+  requesterId: string;
+  department: string;
+  scopeStationId: string;
+  description: string;
+  expenseDate: string;
+  status: string;
+  fx: FinancePayablesFxDto;
+  dimensions: FinancePayablesDimensionsDto;
+  total: number;
+  totalDop: number;
+  paid: number;
+  remaining: number;
+  version: string;
+  lines: FinancePayablesLineViewDto[];
+  receipts: FinancePayablesAttachmentViewDto[];
+  reviews: FinancePayablesReviewViewDto[];
+  reimbursements: EmployeeExpensePaymentViewDto[];
+}
+
 export interface JobPositionData {
   id: string;
   department: string;
@@ -1298,6 +1568,15 @@ export interface FinanceApprovedServicesResponse {
   hasMore: boolean;
 }
 
+export interface FinanceCalculationStepResponse {
+  label: string;
+  value: number;
+  /** @nullable */
+  unit?: string | null;
+  /** @nullable */
+  currency?: string | null;
+}
+
 export interface FinanceCreditNoteData {
   id: string;
   number: string;
@@ -1309,6 +1588,111 @@ export interface FinanceCreditNoteData {
 
 export interface FinanceExpectedVersionInput {
   expectedVersion: string;
+}
+
+export interface FinanceFiscalArtifactResponse {
+  id: string;
+  kind: string;
+  fileName: string;
+  contentType: string;
+  sha256: string;
+  length: number;
+}
+
+export interface FinanceFiscalCreateRequest {
+  requestId: string;
+  invoiceId: string;
+  outcome: string;
+}
+
+export interface FinanceFiscalEventResponse {
+  id: string;
+  kind: string;
+  state: string;
+  /** @nullable */
+  providerSequence?: number | null;
+  applied: boolean;
+  detail: string;
+  occurredAt: string;
+}
+
+export interface FinanceFiscalDocumentResponse {
+  id: string;
+  invoiceId: string;
+  stationId: string;
+  mode: string;
+  environment: string;
+  state: string;
+  artifactCompletion: string;
+  snapshotHash: string;
+  canonicalSnapshot: string;
+  total: number;
+  currencyCode: string;
+  /** @nullable */
+  providerDocumentId?: string | null;
+  /** @nullable */
+  dgiiResponseId?: string | null;
+  /** @nullable */
+  encf?: string | null;
+  version: string;
+  createdAt: string;
+  artifacts: FinanceFiscalArtifactResponse[];
+  history: FinanceFiscalEventResponse[];
+  disclaimer: string;
+  officialXsdValidation: string;
+  signed: boolean;
+  officialQr: boolean;
+}
+
+export interface FinanceFiscalMutationResponse {
+  /** @nullable */
+  documentId?: string | null;
+  /** @nullable */
+  version?: string | null;
+  replayed: boolean;
+  /** @nullable */
+  failure?: string | null;
+}
+
+export interface FinanceFiscalSimulateRequest {
+  requestId: string;
+  expectedVersion: string;
+}
+
+export interface FinanceFiscalStatusResponse {
+  mode: string;
+  environment: string;
+  canSimulate: boolean;
+  disclaimer: string;
+  officialXsdValidation: string;
+  providerStatus: string;
+}
+
+export interface FinanceFiscalXmlValidationErrorResponse {
+  code: string;
+  message: string;
+  lineNumber: number;
+  linePosition: number;
+}
+
+export interface FinanceFiscalXmlValidationRequest {
+  documentType: string;
+  /** @nullable */
+  xmlUtf8?: string | null;
+  /** @nullable */
+  xmlBase64?: string | null;
+}
+
+export interface FinanceFiscalXmlValidationResponse {
+  schemaId: string;
+  schemaVersion: string;
+  schemaSha256: string;
+  schemaValidation: string;
+  isStructurallyValid: boolean;
+  structuralErrors: FinanceFiscalXmlValidationErrorResponse[];
+  signatureElementPresent: boolean;
+  cryptographicValidation: string;
+  fiscalAcceptance: string;
 }
 
 export interface FinanceIdResponse {
@@ -1377,6 +1761,184 @@ export interface FinanceInvoicePageData {
   invoices: FinanceInvoiceSummaryData[];
 }
 
+export interface FinanceLineCalculationResponse {
+  lineId: string;
+  kind: string;
+  description: string;
+  /** @nullable */
+  operationServiceId?: string | null;
+  /** @nullable */
+  submissionId?: string | null;
+  steps: FinanceCalculationStepResponse[];
+}
+
+export interface FinancePackageCommandRequest {
+  requestId: string;
+  expectedVersion: string;
+}
+
+export interface FinancePackageComponentRequest {
+  serviceId: string;
+  billingUnit: string;
+  includedQuantity: number;
+  excessBlockSize: number;
+  excessBlockPrice: number;
+}
+
+export interface FinancePackageComponentResponse {
+  serviceId: string;
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  includedQuantity: number;
+  excessBlockSize: number;
+  excessBlockPrice: number;
+}
+
+export interface FinancePackageIdResponse {
+  id: string;
+}
+
+export interface FinancePackageResponse {
+  id: string;
+  code: string;
+  name: string;
+  versionNumber: number;
+  status: string;
+  currencyCode: string;
+  basePrice: number;
+  scope: string;
+  /** @nullable */
+  flightDirection?: string | null;
+  /** @nullable */
+  periodDays?: number | null;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  version: string;
+  components: FinancePackageComponentResponse[];
+}
+
+export interface FinancePayablesApplicationInputDto {
+  invoiceId: string;
+  expectedVersion: string;
+  paymentAmount: number;
+  /** @nullable */
+  rateToInvoice?: number | null;
+}
+
+export interface FinancePayablesApplicationViewDto {
+  id: string;
+  invoiceId: string;
+  paymentAmount: number;
+  invoiceAmount: number;
+  rateToInvoice: number;
+  appliedAt: string;
+}
+
+export interface FinancePayablesApplyDto {
+  requestId: string;
+  expectedVersion: string;
+  applications: FinancePayablesApplicationInputDto[];
+}
+
+export interface FinancePayablesDecisionDto {
+  requestId: string;
+  expectedVersion: string;
+  decision: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface FinancePayablesMutationDto {
+  id: string;
+  replayed: boolean;
+}
+
+export interface FinancePayablesOptionDto {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface FinancePayablesOptionsDto {
+  stations: FinancePayablesOptionDto[];
+  suppliers: FinancePayablesOptionDto[];
+  airlines: FinancePayablesOptionDto[];
+  services: FinancePayablesOptionDto[];
+  turnarounds: FinancePayablesOptionDto[];
+  currencies: string[];
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  department?: string | null;
+  canCreateOwnExpense: boolean;
+  canReadOwnExpenses: boolean;
+  canReviewDepartmentExpenses: boolean;
+  canReadFinanceExpenses: boolean;
+  canApproveFinanceExpenses: boolean;
+  canPayFinanceExpenses: boolean;
+}
+
+export interface FinancePayablesPaymentSaveDto {
+  requestId: string;
+  supplierId: string;
+  scopeStationId: string;
+  paidOn: string;
+  reference: string;
+  fx: FinancePayablesFxDto;
+  amount: number;
+}
+
+export interface FinancePayablesPaymentViewDto {
+  id: string;
+  supplierId: string;
+  scopeStationId: string;
+  paidOn: string;
+  reference: string;
+  fx: FinancePayablesFxDto;
+  amount: number;
+  applied: number;
+  remaining: number;
+  version: string;
+  applications: FinancePayablesApplicationViewDto[];
+}
+
+export interface FinancePayablesSaveDto {
+  requestId: string;
+  supplierId: string;
+  scopeStationId: string;
+  documentReference: string;
+  documentDate: string;
+  dueDate: string;
+  fx: FinancePayablesFxDto;
+  dimensions: FinancePayablesDimensionsDto;
+  lines: FinancePayablesLineInputDto[];
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface FinancePayablesViewDto {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  scopeStationId: string;
+  documentReference: string;
+  documentDate: string;
+  dueDate: string;
+  status: string;
+  fx: FinancePayablesFxDto;
+  dimensions: FinancePayablesDimensionsDto;
+  total: number;
+  totalDop: number;
+  paid: number;
+  remaining: number;
+  version: string;
+  lines: FinancePayablesLineViewDto[];
+  attachments: FinancePayablesAttachmentViewDto[];
+  reviews: FinancePayablesReviewViewDto[];
+}
+
 export interface FinancePreinvoiceListItem {
   id: string;
   airlineId: string;
@@ -1396,6 +1958,12 @@ export interface FinancePreinvoicePageData {
   limit: number;
   hasMore: boolean;
   preinvoices: FinancePreinvoiceListItem[];
+}
+
+export interface FinancePreinvoiceReviewRequest {
+  requestId: string;
+  expectedVersion: string;
+  reason: string;
 }
 
 export interface FinanceReconciliationData {
@@ -1500,6 +2068,332 @@ export interface FinanceTariffPageData {
   limit: number;
   hasMore: boolean;
   tariffs: FinanceTariffData[];
+}
+
+export interface FinanceTaxCommandRequest {
+  requestId: string;
+  expectedVersion: string;
+}
+
+export interface FinanceTaxOptionResponse {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface FinanceTaxContextResponse {
+  airlines: FinanceTaxOptionResponse[];
+  stations: FinanceTaxOptionResponse[];
+}
+
+export interface FinanceTaxLineResponse {
+  id: string;
+  lineNumber: number;
+  conceptKind: string;
+  conceptCode: string;
+  description: string;
+  treatment: string;
+  /** @nullable */
+  policyId?: string | null;
+  /** @nullable */
+  rate?: number | null;
+  /** @nullable */
+  basis?: string | null;
+  net: number;
+  discount: number;
+  /** @nullable */
+  tax?: number | null;
+  gross: number;
+  configured: boolean;
+  excluded: boolean;
+}
+
+export interface FinanceTaxDetailResponse {
+  id: string;
+  version: string;
+  currencyCode: string;
+  net: number;
+  discount: number;
+  /** @nullable */
+  tax?: number | null;
+  gross: number;
+  treatmentsConfigured: boolean;
+  lines: FinanceTaxLineResponse[];
+}
+
+export interface FinanceTaxIdResponse {
+  id: string;
+}
+
+export interface FinanceTaxPolicyRequest {
+  requestId: string;
+  airlineId: string;
+  stationId: string;
+  currencyCode: string;
+  conceptKind: string;
+  conceptCode: string;
+  treatment: string;
+  /** @nullable */
+  rate?: number | null;
+  /** @nullable */
+  basis?: string | null;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  /** @nullable */
+  replacesPolicyId?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface FinanceTaxPolicyResponse {
+  id: string;
+  airlineId: string;
+  airlineName: string;
+  stationId: string;
+  stationCode: string;
+  currencyCode: string;
+  conceptKind: string;
+  conceptCode: string;
+  treatment: string;
+  /** @nullable */
+  rate?: number | null;
+  /** @nullable */
+  basis?: string | null;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  status: string;
+  /** @nullable */
+  replacesPolicyId?: string | null;
+  version: string;
+}
+
+export interface FinanceTreasuryAdjustmentLineRequest {
+  invoiceLineId: string;
+  quantity: number;
+  amount: number;
+}
+
+export interface FinanceTreasuryAdjustmentLineResponse {
+  invoiceLineId: string;
+  quantity: number;
+  amount: number;
+}
+
+export interface FinanceTreasuryAdjustmentRequest {
+  requestId: string;
+  expectedVersion: string;
+  effectiveOn: string;
+  reason: string;
+  kind: string;
+  lines: FinanceTreasuryAdjustmentLineRequest[];
+  /** @nullable */
+  relatedNoteId?: string | null;
+}
+
+export interface FinanceTreasuryAdjustmentResponse {
+  id: string;
+  number: string;
+  invoiceId: string;
+  /** @nullable */
+  relatedNoteId?: string | null;
+  kind: string;
+  currencyCode: string;
+  amount: number;
+  effectiveOn: string;
+  reason: string;
+  actorId: string;
+  recordedAt: string;
+  lines: FinanceTreasuryAdjustmentLineResponse[];
+}
+
+export interface FinanceTreasuryLineLimitResponse {
+  invoiceLineId: string;
+  lineNumber: number;
+  quantity: number;
+  amount: number;
+  creditQuantityRemaining: number;
+  creditAmountRemaining: number;
+  debitQuantityRemaining: number;
+  debitAmountRemaining: number;
+}
+
+export interface FinanceTreasuryAdjustmentsResponse {
+  invoiceId: string;
+  version: string;
+  legacyCredited: number;
+  lines: FinanceTreasuryLineLimitResponse[];
+  notes: FinanceTreasuryAdjustmentResponse[];
+}
+
+export interface FinanceTreasuryAgingResponse {
+  currencyCode: string;
+  balance: number;
+  current: number;
+  days1To30: number;
+  days31To60: number;
+  days61To90: number;
+  days91Plus: number;
+  unallocated: number;
+  creditBalance: number;
+}
+
+export interface FinanceTreasuryAirlineOptionResponse {
+  id: string;
+  name: string;
+}
+
+export interface FinanceTreasuryAllocationRequest {
+  invoiceId: string;
+  expectedInvoiceVersion: string;
+  receiptAmount: number;
+}
+
+export interface FinanceTreasuryApplyRequest {
+  requestId: string;
+  expectedVersion: string;
+  effectiveOn: string;
+  reason: string;
+  applications: FinanceTreasuryAllocationRequest[];
+}
+
+export interface FinanceTreasuryMovementResponse {
+  id: string;
+  kind: string;
+  /** @nullable */
+  invoiceId?: string | null;
+  /** @nullable */
+  reversesId?: string | null;
+  effectiveOn: string;
+  receiptAmount: number;
+  invoiceAmount: number;
+  receiptCurrency: string;
+  /** @nullable */
+  invoiceCurrency?: string | null;
+  exchangeRate: number;
+  exchangeRateOn: string;
+  reference: string;
+  reason: string;
+  actorId: string;
+  recordedAt: string;
+}
+
+export interface FinanceTreasuryMutationResponse {
+  id: string;
+  version: string;
+  replayed: boolean;
+}
+
+export interface FinanceTreasuryStationOptionResponse {
+  id: string;
+  code: string;
+}
+
+export interface FinanceTreasuryOptionsResponse {
+  airlines: FinanceTreasuryAirlineOptionResponse[];
+  stations: FinanceTreasuryStationOptionResponse[];
+}
+
+export interface FinanceTreasuryReceiptResponse {
+  id: string;
+  airlineId: string;
+  stationId: string;
+  currencyCode: string;
+  amount: number;
+  reference: string;
+  method: string;
+  receivedOn: string;
+  applied: number;
+  refunded: number;
+  available: number;
+  reversed: boolean;
+  reason: string;
+  actorId: string;
+  recordedAt: string;
+  version: string;
+  movements: FinanceTreasuryMovementResponse[];
+}
+
+export interface FinanceTreasuryReceiptPageResponse {
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  items: FinanceTreasuryReceiptResponse[];
+}
+
+export interface FinanceTreasuryReceiptRequest {
+  requestId: string;
+  airlineId: string;
+  stationId: string;
+  currencyCode: string;
+  amount: number;
+  reference: string;
+  method: string;
+  receivedOn: string;
+  reason: string;
+}
+
+export interface FinanceTreasuryRefundRequest {
+  requestId: string;
+  expectedVersion: string;
+  effectiveOn: string;
+  reason: string;
+  amount: number;
+  reference: string;
+}
+
+export interface FinanceTreasuryReverseRequest {
+  requestId: string;
+  expectedVersion: string;
+  effectiveOn: string;
+  reason: string;
+  /** @nullable */
+  applicationId?: string | null;
+}
+
+export interface FinanceTreasuryStatementInvoiceResponse {
+  id: string;
+  number: string;
+  airlineId: string;
+  stationId: string;
+  currencyCode: string;
+  total: number;
+  legacyPaid: number;
+  legacyCredited: number;
+  applied: number;
+  credited: number;
+  debited: number;
+  balance: number;
+  /** @nullable */
+  dueDate?: string | null;
+  daysOverdue: number;
+  agingBucket: string;
+  version: string;
+}
+
+export interface FinanceTreasuryStatementMovementResponse {
+  id: string;
+  /** @nullable */
+  receiptId?: string | null;
+  /** @nullable */
+  invoiceId?: string | null;
+  kind: string;
+  currencyCode: string;
+  amount: number;
+  effectiveOn: string;
+  recordedAt: string;
+  /** @nullable */
+  reversesId?: string | null;
+  reference: string;
+}
+
+export interface FinanceTreasuryStatementResponse {
+  asOf: string;
+  invoices: FinanceTreasuryStatementInvoiceResponse[];
+  receipts: FinanceTreasuryReceiptResponse[];
+  movements: FinanceTreasuryStatementMovementResponse[];
+  aging: FinanceTreasuryAgingResponse[];
 }
 
 export interface RampIncidentResponse {
@@ -3309,6 +4203,25 @@ export interface SaveEmployeeInput {
   expectedVersion?: string | null;
 }
 
+export interface SaveFinancePackageRequest {
+  requestId: string;
+  code: string;
+  name: string;
+  currencyCode: string;
+  basePrice: number;
+  scope: string;
+  /** @nullable */
+  flightDirection?: string | null;
+  /** @nullable */
+  periodDays?: number | null;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  components: FinancePackageComponentRequest[];
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface SaveGovernanceRoleInput {
   name: string;
   /** @nullable */
@@ -3421,6 +4334,12 @@ export interface SessionResponse {
   actor: SessionActorResponse;
 }
 
+export interface SetContractPackagesRequest {
+  requestId: string;
+  expectedVersion: string;
+  packageVersionIds: string[];
+}
+
 export interface SetDepartmentUserStatusInput {
   isActive: boolean;
   expectedVersion: string;
@@ -3491,6 +4410,33 @@ export interface SubmitRampOperationRequest {
      * @nullable
      */
   agentNote?: string | null;
+}
+
+export interface SupplierSaveDto {
+  requestId: string;
+  scopeStationId: string;
+  code: string;
+  name: string;
+  /** @nullable */
+  taxReference?: string | null;
+  /** @nullable */
+  contactEmail?: string | null;
+  isActive: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface SupplierViewDto {
+  id: string;
+  scopeStationId: string;
+  code: string;
+  name: string;
+  /** @nullable */
+  taxReference?: string | null;
+  /** @nullable */
+  contactEmail?: string | null;
+  isActive: boolean;
+  version: string;
 }
 
 export interface SystemPingResponse {
@@ -3651,6 +4597,11 @@ page?: number;
 limit?: number;
 };
 
+export type GetAirlineTreasuryStatementParams = {
+asOf?: string;
+stationId?: string;
+};
+
 export type ArchiveManagedAirlineParams = {
 version?: string;
 };
@@ -3698,10 +4649,40 @@ page?: number;
 limit?: number;
 };
 
+export type ListEmployeeExpensesParams = {
+ScopeStationId?: string;
+SupplierId?: string;
+Status?: string;
+From?: string;
+To?: string;
+Search?: string;
+Skip?: number;
+Take?: number;
+EmployeeId?: string;
+OutstandingOnly?: boolean;
+OwnOnly?: boolean;
+DepartmentOnly?: boolean;
+};
+
+export type GetEmployeeExpenseOptionsParams = {
+scopeStationId?: string;
+};
+
+export type UploadEmployeeExpenseReceiptBody = {
+  requestId?: string;
+  expectedVersion?: string;
+  file?: Blob;
+};
+
 export type GetFinanceApprovedServicesParams = {
 stationId?: string;
 from?: string;
 to?: string;
+};
+
+export type GetApiV1FinanceFiscalDocumentsParams = {
+stationId?: string;
+take?: number;
 };
 
 export type ListFinanceInvoicesParams = {
@@ -3710,6 +4691,46 @@ airlineId?: string;
 status?: string;
 page?: number;
 limit?: number;
+};
+
+export type ListFinancePayablesParams = {
+ScopeStationId?: string;
+SupplierId?: string;
+Status?: string;
+From?: string;
+To?: string;
+Search?: string;
+Skip?: number;
+Take?: number;
+EmployeeId?: string;
+OutstandingOnly?: boolean;
+OwnOnly?: boolean;
+DepartmentOnly?: boolean;
+};
+
+export type GetFinancePayablesOptionsParams = {
+scopeStationId?: string;
+};
+
+export type UploadFinancePayableAttachmentBody = {
+  requestId?: string;
+  expectedVersion?: string;
+  file?: Blob;
+};
+
+export type ListFinancePayablePaymentsParams = {
+ScopeStationId?: string;
+SupplierId?: string;
+Status?: string;
+From?: string;
+To?: string;
+Search?: string;
+Skip?: number;
+Take?: number;
+EmployeeId?: string;
+OutstandingOnly?: boolean;
+OwnOnly?: boolean;
+DepartmentOnly?: boolean;
 };
 
 export type ListFinancePreinvoicesParams = {
@@ -3771,6 +4792,19 @@ export type ListFinanceTariffsParams = {
 stationId: string;
 page?: number;
 limit?: number;
+};
+
+export type ListFinanceTreasuryReceiptsParams = {
+stationId?: string;
+airlineId?: string;
+page?: number;
+limit?: number;
+};
+
+export type GetFinanceTreasuryStatementParams = {
+asOf?: string;
+stationId?: string;
+airlineId?: string;
 };
 
 export type GetGovernanceAuditParams = {
@@ -3956,6 +4990,25 @@ export type ListServiceClosuresParams = {
 status?: string;
 page?: number;
 limit?: number;
+};
+
+export type ListFinanceSuppliersParams = {
+ScopeStationId?: string;
+SupplierId?: string;
+Status?: string;
+From?: string;
+To?: string;
+Search?: string;
+Skip?: number;
+Take?: number;
+EmployeeId?: string;
+OutstandingOnly?: boolean;
+OwnOnly?: boolean;
+DepartmentOnly?: boolean;
+};
+
+export type GetFinanceSupplierOptionsParams = {
+scopeStationId?: string;
 };
 
 export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
@@ -4522,6 +5575,125 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineTreasuryStatementUrl = (params?: GetAirlineTreasuryStatementParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/airline/portal/treasury/statements?${stringifiedParams}` : `/api/v1/airline/portal/treasury/statements`
+}
+
+export const getAirlineTreasuryStatement = async (params?: GetAirlineTreasuryStatementParams, options?: RequestInit): Promise<AirlineTreasuryStatementResponse> => {
+
+  const res = await fetch(getGetAirlineTreasuryStatementUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineTreasuryStatementResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineTreasuryInvoiceUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/treasury/invoices/${invoiceId}`
+}
+
+export const getAirlineTreasuryInvoice = async (invoiceId: string, options?: RequestInit): Promise<AirlineTreasuryInvoiceDetailResponse> => {
+
+  const res = await fetch(getGetAirlineTreasuryInvoiceUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineTreasuryInvoiceDetailResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineTreasuryReceiptUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/treasury/receipts/${receiptId}`
+}
+
+export const getAirlineTreasuryReceipt = async (receiptId: string, options?: RequestInit): Promise<AirlineTreasuryReceiptResponse> => {
+
+  const res = await fetch(getGetAirlineTreasuryReceiptUrl(receiptId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineTreasuryReceiptResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineTreasuryAdjustmentNotesUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/treasury/invoices/${invoiceId}/adjustment-notes`
+}
+
+export const getAirlineTreasuryAdjustmentNotes = async (invoiceId: string, options?: RequestInit): Promise<AirlineTreasuryAdjustmentsResponse> => {
+
+  const res = await fetch(getGetAirlineTreasuryAdjustmentNotesUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineTreasuryAdjustmentsResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -6622,6 +7794,311 @@ export const convertLegacyRole = async (id: string, options?: RequestInit): Prom
 
 
 
+export const getListEmployeeExpensesUrl = (params?: ListEmployeeExpensesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/expenses?${stringifiedParams}` : `/api/v1/finance/expenses`
+}
+
+export const listEmployeeExpenses = async (params?: ListEmployeeExpensesParams, options?: RequestInit): Promise<EmployeeExpenseViewDto[]> => {
+
+  const res = await fetch(getListEmployeeExpensesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmployeeExpenseViewDto[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateEmployeeExpenseUrl = () => {
+
+
+
+
+  return `/api/v1/finance/expenses`
+}
+
+export const createEmployeeExpense = async (employeeExpenseSaveDto?: EmployeeExpenseSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateEmployeeExpenseUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(employeeExpenseSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetEmployeeExpenseUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}`
+}
+
+export const getEmployeeExpense = async (id: string, options?: RequestInit): Promise<EmployeeExpenseViewDto> => {
+
+  const res = await fetch(getGetEmployeeExpenseUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmployeeExpenseViewDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUpdateEmployeeExpenseDraftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}`
+}
+
+export const updateEmployeeExpenseDraft = async (id: string,
+    employeeExpenseSaveDto?: EmployeeExpenseSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateEmployeeExpenseDraftUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(employeeExpenseSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getDecideEmployeeExpenseUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}/decisions`
+}
+
+export const decideEmployeeExpense = async (id: string,
+    financePayablesDecisionDto?: FinancePayablesDecisionDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideEmployeeExpenseUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesDecisionDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getReimburseEmployeeExpenseUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}/reimbursements`
+}
+
+export const reimburseEmployeeExpense = async (id: string,
+    employeeExpensePaymentSaveDto?: EmployeeExpensePaymentSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReimburseEmployeeExpenseUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(employeeExpensePaymentSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetEmployeeExpenseOptionsUrl = (params?: GetEmployeeExpenseOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/expenses/options?${stringifiedParams}` : `/api/v1/finance/expenses/options`
+}
+
+export const getEmployeeExpenseOptions = async (params?: GetEmployeeExpenseOptionsParams, options?: RequestInit): Promise<FinancePayablesOptionsDto> => {
+
+  const res = await fetch(getGetEmployeeExpenseOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesOptionsDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUploadEmployeeExpenseReceiptUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}/attachments`
+}
+
+export const uploadEmployeeExpenseReceipt = async (id: string,
+    uploadEmployeeExpenseReceiptBody?: UploadEmployeeExpenseReceiptBody, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+    const formData = new FormData();
+if(uploadEmployeeExpenseReceiptBody?.requestId !== undefined) {
+ formData.append(`requestId`, uploadEmployeeExpenseReceiptBody.requestId);
+ }
+if(uploadEmployeeExpenseReceiptBody?.expectedVersion !== undefined) {
+ formData.append(`expectedVersion`, uploadEmployeeExpenseReceiptBody.expectedVersion);
+ }
+if(uploadEmployeeExpenseReceiptBody?.file !== undefined) {
+ formData.append(`file`, uploadEmployeeExpenseReceiptBody.file);
+ }
+
+  const res = await fetch(getUploadEmployeeExpenseReceiptUrl(id),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getDownloadEmployeeExpenseReceiptUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}/attachments/${attachmentId}`
+}
+
+export const downloadEmployeeExpenseReceipt = async (id: string,
+    attachmentId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getDownloadEmployeeExpenseReceiptUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getGetFinanceApprovedServicesUrl = (params?: GetFinanceApprovedServicesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -6741,6 +8218,286 @@ export const getFinancePaymentReceipt = async (invoiceId: string, options?: Requ
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsStatusUrl = () => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/status`
+}
+
+export const getApiV1FinanceFiscalDocumentsStatus = async ( options?: RequestInit): Promise<FinanceFiscalStatusResponse> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalStatusResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsUrl = (params?: GetApiV1FinanceFiscalDocumentsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/fiscal-documents?${stringifiedParams}` : `/api/v1/finance/fiscal-documents`
+}
+
+export const getApiV1FinanceFiscalDocuments = async (params?: GetApiV1FinanceFiscalDocumentsParams, options?: RequestInit): Promise<FinanceFiscalDocumentResponse[]> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalDocumentResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getPostApiV1FinanceFiscalDocumentsUrl = () => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents`
+}
+
+export const postApiV1FinanceFiscalDocuments = async (financeFiscalCreateRequest?: FinanceFiscalCreateRequest, options?: RequestInit): Promise<FinanceFiscalMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPostApiV1FinanceFiscalDocumentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeFiscalCreateRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsDocumentIdUrl = (documentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/${documentId}`
+}
+
+export const getApiV1FinanceFiscalDocumentsDocumentId = async (documentId: string, options?: RequestInit): Promise<FinanceFiscalDocumentResponse> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsDocumentIdUrl(documentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalDocumentResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsDocumentIdStatusUrl = (documentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/${documentId}/status`
+}
+
+export const getApiV1FinanceFiscalDocumentsDocumentIdStatus = async (documentId: string, options?: RequestInit): Promise<FinanceFiscalDocumentResponse> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsDocumentIdStatusUrl(documentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalDocumentResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsDocumentIdArtifactsUrl = (documentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/${documentId}/artifacts`
+}
+
+export const getApiV1FinanceFiscalDocumentsDocumentIdArtifacts = async (documentId: string, options?: RequestInit): Promise<FinanceFiscalArtifactResponse[]> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsDocumentIdArtifactsUrl(documentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalArtifactResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetApiV1FinanceFiscalDocumentsDocumentIdArtifactsArtifactIdUrl = (documentId: string,
+    artifactId: string,) => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/${documentId}/artifacts/${artifactId}`
+}
+
+export const getApiV1FinanceFiscalDocumentsDocumentIdArtifactsArtifactId = async (documentId: string,
+    artifactId: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getGetApiV1FinanceFiscalDocumentsDocumentIdArtifactsArtifactIdUrl(documentId,artifactId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getPostApiV1FinanceFiscalDocumentsDocumentIdSimulateUrl = (documentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/fiscal-documents/${documentId}/simulate`
+}
+
+export const postApiV1FinanceFiscalDocumentsDocumentIdSimulate = async (documentId: string,
+    financeFiscalSimulateRequest?: FinanceFiscalSimulateRequest, options?: RequestInit): Promise<FinanceFiscalMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPostApiV1FinanceFiscalDocumentsDocumentIdSimulateUrl(documentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeFiscalSimulateRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getPostApiV1FinanceFiscalXmlValidateUrl = () => {
+
+
+
+
+  return `/api/v1/finance/fiscal-xml/validate`
+}
+
+export const postApiV1FinanceFiscalXmlValidate = async (financeFiscalXmlValidationRequest?: FinanceFiscalXmlValidationRequest, options?: RequestInit): Promise<FinanceFiscalXmlValidationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPostApiV1FinanceFiscalXmlValidateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeFiscalXmlValidationRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceFiscalXmlValidationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -6901,6 +8658,638 @@ export const getFinanceInvoiceByPreinvoice = async (preinvoiceId: string, option
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinancePackagesUrl = () => {
+
+
+
+
+  return `/api/v1/finance/packages`
+}
+
+export const listFinancePackages = async ( options?: RequestInit): Promise<FinancePackageResponse[]> => {
+
+  const res = await fetch(getListFinancePackagesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateFinancePackageUrl = () => {
+
+
+
+
+  return `/api/v1/finance/packages`
+}
+
+export const createFinancePackage = async (saveFinancePackageRequest?: SaveFinancePackageRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateFinancePackageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveFinancePackageRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListContractPackagesUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/packages`
+}
+
+export const listContractPackages = async (versionId: string, options?: RequestInit): Promise<FinancePackageResponse[]> => {
+
+  const res = await fetch(getListContractPackagesUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getSetContractPackagesUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/packages`
+}
+
+export const setContractPackages = async (versionId: string,
+    setContractPackagesRequest?: SetContractPackagesRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetContractPackagesUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setContractPackagesRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUpdateFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}`
+}
+
+export const updateFinancePackage = async (id: string,
+    saveFinancePackageRequest?: SaveFinancePackageRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(saveFinancePackageRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getPublishFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}/publish`
+}
+
+export const publishFinancePackage = async (id: string,
+    financePackageCommandRequest?: FinancePackageCommandRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPublishFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageCommandRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateContractAmendmentUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/versions/${versionId}/amendments`
+}
+
+export const createContractAmendment = async (versionId: string,
+    financePackageCommandRequest?: FinancePackageCommandRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateContractAmendmentUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageCommandRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListFinancePayablesUrl = (params?: ListFinancePayablesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/payables?${stringifiedParams}` : `/api/v1/finance/payables`
+}
+
+export const listFinancePayables = async (params?: ListFinancePayablesParams, options?: RequestInit): Promise<FinancePayablesViewDto[]> => {
+
+  const res = await fetch(getListFinancePayablesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesViewDto[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateFinancePayableUrl = () => {
+
+
+
+
+  return `/api/v1/finance/payables`
+}
+
+export const createFinancePayable = async (financePayablesSaveDto?: FinancePayablesSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateFinancePayableUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePayableUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}`
+}
+
+export const getFinancePayable = async (id: string, options?: RequestInit): Promise<FinancePayablesViewDto> => {
+
+  const res = await fetch(getGetFinancePayableUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesViewDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUpdateFinancePayableDraftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}`
+}
+
+export const updateFinancePayableDraft = async (id: string,
+    financePayablesSaveDto?: FinancePayablesSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateFinancePayableDraftUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getDecideFinancePayableUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}/decisions`
+}
+
+export const decideFinancePayable = async (id: string,
+    financePayablesDecisionDto?: FinancePayablesDecisionDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDecideFinancePayableUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesDecisionDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePayablesOptionsUrl = (params?: GetFinancePayablesOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/payables/options?${stringifiedParams}` : `/api/v1/finance/payables/options`
+}
+
+export const getFinancePayablesOptions = async (params?: GetFinancePayablesOptionsParams, options?: RequestInit): Promise<FinancePayablesOptionsDto> => {
+
+  const res = await fetch(getGetFinancePayablesOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesOptionsDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUploadFinancePayableAttachmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}/attachments`
+}
+
+export const uploadFinancePayableAttachment = async (id: string,
+    uploadFinancePayableAttachmentBody?: UploadFinancePayableAttachmentBody, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+    const formData = new FormData();
+if(uploadFinancePayableAttachmentBody?.requestId !== undefined) {
+ formData.append(`requestId`, uploadFinancePayableAttachmentBody.requestId);
+ }
+if(uploadFinancePayableAttachmentBody?.expectedVersion !== undefined) {
+ formData.append(`expectedVersion`, uploadFinancePayableAttachmentBody.expectedVersion);
+ }
+if(uploadFinancePayableAttachmentBody?.file !== undefined) {
+ formData.append(`file`, uploadFinancePayableAttachmentBody.file);
+ }
+
+  const res = await fetch(getUploadFinancePayableAttachmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getDownloadFinancePayableAttachmentUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}/attachments/${attachmentId}`
+}
+
+export const downloadFinancePayableAttachment = async (id: string,
+    attachmentId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getDownloadFinancePayableAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getListFinancePayablePaymentsUrl = (params?: ListFinancePayablePaymentsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/payable-payments?${stringifiedParams}` : `/api/v1/finance/payable-payments`
+}
+
+export const listFinancePayablePayments = async (params?: ListFinancePayablePaymentsParams, options?: RequestInit): Promise<FinancePayablesPaymentViewDto[]> => {
+
+  const res = await fetch(getListFinancePayablePaymentsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesPaymentViewDto[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getRecordFinancePayablePaymentUrl = () => {
+
+
+
+
+  return `/api/v1/finance/payable-payments`
+}
+
+export const recordFinancePayablePayment = async (financePayablesPaymentSaveDto?: FinancePayablesPaymentSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordFinancePayablePaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesPaymentSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePayablePaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payable-payments/${id}`
+}
+
+export const getFinancePayablePayment = async (id: string, options?: RequestInit): Promise<FinancePayablesPaymentViewDto> => {
+
+  const res = await fetch(getGetFinancePayablePaymentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesPaymentViewDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getApplyFinancePayablePaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payable-payments/${id}/applications`
+}
+
+export const applyFinancePayablePayment = async (id: string,
+    financePayablesApplyDto?: FinancePayablesApplyDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyFinancePayablePaymentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesApplyDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -7104,6 +9493,104 @@ const res = await fetch(getCreatePreinvoiceDraftUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CreatePreinvoiceDraftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePreinvoiceCalculationsUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${id}/calculations`
+}
+
+export const getFinancePreinvoiceCalculations = async (id: string, options?: RequestInit): Promise<FinanceLineCalculationResponse[]> => {
+
+  const res = await fetch(getGetFinancePreinvoiceCalculationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceLineCalculationResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCancelFinancePreinvoiceDraftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${id}/cancel`
+}
+
+export const cancelFinancePreinvoiceDraft = async (id: string,
+    financePreinvoiceReviewRequest?: FinancePreinvoiceReviewRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelFinancePreinvoiceDraftUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePreinvoiceReviewRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getRestoreFinancePreinvoiceCalculationUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${id}/restore-calculation`
+}
+
+export const restoreFinancePreinvoiceCalculation = async (id: string,
+    financePreinvoiceReviewRequest?: FinancePreinvoiceReviewRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRestoreFinancePreinvoiceCalculationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePreinvoiceReviewRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -8110,6 +10597,522 @@ export const listFinanceTariffs = async (params: ListFinanceTariffsParams, optio
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceTariffPageData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceTaxPoliciesUrl = () => {
+
+
+
+
+  return `/api/v1/finance/tax-policies`
+}
+
+export const listFinanceTaxPolicies = async ( options?: RequestInit): Promise<FinanceTaxPolicyResponse[]> => {
+
+  const res = await fetch(getListFinanceTaxPoliciesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxPolicyResponse[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateFinanceTaxPolicyUrl = () => {
+
+
+
+
+  return `/api/v1/finance/tax-policies`
+}
+
+export const createFinanceTaxPolicy = async (financeTaxPolicyRequest?: FinanceTaxPolicyRequest, options?: RequestInit): Promise<FinanceTaxIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateFinanceTaxPolicyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTaxPolicyRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceTaxContextUrl = () => {
+
+
+
+
+  return `/api/v1/finance/tax-policies/context`
+}
+
+export const getFinanceTaxContext = async ( options?: RequestInit): Promise<FinanceTaxContextResponse> => {
+
+  const res = await fetch(getGetFinanceTaxContextUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxContextResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getPublishFinanceTaxPolicyUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/tax-policies/${id}/publish`
+}
+
+export const publishFinanceTaxPolicy = async (id: string,
+    financeTaxCommandRequest?: FinanceTaxCommandRequest, options?: RequestInit): Promise<FinanceTaxIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPublishFinanceTaxPolicyUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTaxCommandRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePreinvoiceTaxesUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${id}/taxes`
+}
+
+export const getFinancePreinvoiceTaxes = async (id: string, options?: RequestInit): Promise<FinanceTaxDetailResponse> => {
+
+  const res = await fetch(getGetFinancePreinvoiceTaxesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxDetailResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getApplyFinancePreinvoiceTaxesUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/preinvoices/${id}/taxes`
+}
+
+export const applyFinancePreinvoiceTaxes = async (id: string,
+    financeTaxCommandRequest?: FinanceTaxCommandRequest, options?: RequestInit): Promise<FinanceTaxIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyFinancePreinvoiceTaxesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTaxCommandRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTaxIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceTreasuryOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/finance/receipts/options`
+}
+
+export const getFinanceTreasuryOptions = async ( options?: RequestInit): Promise<FinanceTreasuryOptionsResponse> => {
+
+  const res = await fetch(getGetFinanceTreasuryOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryOptionsResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getListFinanceTreasuryReceiptsUrl = (params?: ListFinanceTreasuryReceiptsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/receipts?${stringifiedParams}` : `/api/v1/finance/receipts`
+}
+
+export const listFinanceTreasuryReceipts = async (params?: ListFinanceTreasuryReceiptsParams, options?: RequestInit): Promise<FinanceTreasuryReceiptPageResponse> => {
+
+  const res = await fetch(getListFinanceTreasuryReceiptsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryReceiptPageResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getRecordFinanceTreasuryReceiptUrl = () => {
+
+
+
+
+  return `/api/v1/finance/receipts`
+}
+
+export const recordFinanceTreasuryReceipt = async (financeTreasuryReceiptRequest?: FinanceTreasuryReceiptRequest, options?: RequestInit): Promise<FinanceTreasuryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordFinanceTreasuryReceiptUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTreasuryReceiptRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceTreasuryReceiptUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/finance/receipts/${receiptId}`
+}
+
+export const getFinanceTreasuryReceipt = async (receiptId: string, options?: RequestInit): Promise<FinanceTreasuryReceiptResponse> => {
+
+  const res = await fetch(getGetFinanceTreasuryReceiptUrl(receiptId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryReceiptResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getApplyFinanceTreasuryReceiptUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/finance/receipts/${receiptId}/applications`
+}
+
+export const applyFinanceTreasuryReceipt = async (receiptId: string,
+    financeTreasuryApplyRequest?: FinanceTreasuryApplyRequest, options?: RequestInit): Promise<FinanceTreasuryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyFinanceTreasuryReceiptUrl(receiptId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTreasuryApplyRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getReverseFinanceTreasuryReceiptUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/finance/receipts/${receiptId}/reversals`
+}
+
+export const reverseFinanceTreasuryReceipt = async (receiptId: string,
+    financeTreasuryReverseRequest?: FinanceTreasuryReverseRequest, options?: RequestInit): Promise<FinanceTreasuryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReverseFinanceTreasuryReceiptUrl(receiptId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTreasuryReverseRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getRefundFinanceTreasuryReceiptUrl = (receiptId: string,) => {
+
+
+
+
+  return `/api/v1/finance/receipts/${receiptId}/refunds`
+}
+
+export const refundFinanceTreasuryReceipt = async (receiptId: string,
+    financeTreasuryRefundRequest?: FinanceTreasuryRefundRequest, options?: RequestInit): Promise<FinanceTreasuryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRefundFinanceTreasuryReceiptUrl(receiptId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTreasuryRefundRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceTreasuryAdjustmentsUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/adjustment-notes`
+}
+
+export const getFinanceTreasuryAdjustments = async (invoiceId: string, options?: RequestInit): Promise<FinanceTreasuryAdjustmentsResponse> => {
+
+  const res = await fetch(getGetFinanceTreasuryAdjustmentsUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryAdjustmentsResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getIssueFinanceTreasuryAdjustmentUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/adjustment-notes`
+}
+
+export const issueFinanceTreasuryAdjustment = async (invoiceId: string,
+    financeTreasuryAdjustmentRequest?: FinanceTreasuryAdjustmentRequest, options?: RequestInit): Promise<FinanceTreasuryMutationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getIssueFinanceTreasuryAdjustmentUrl(invoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financeTreasuryAdjustmentRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceTreasuryStatementUrl = (params?: GetFinanceTreasuryStatementParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/statements?${stringifiedParams}` : `/api/v1/finance/statements`
+}
+
+export const getFinanceTreasuryStatement = async (params?: GetFinanceTreasuryStatementParams, options?: RequestInit): Promise<FinanceTreasuryStatementResponse> => {
+
+  const res = await fetch(getGetFinanceTreasuryStatementUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceTreasuryStatementResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -11303,6 +14306,211 @@ const res = await fetch(getReopenServiceUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListFinanceSuppliersUrl = (params?: ListFinanceSuppliersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/suppliers?${stringifiedParams}` : `/api/v1/finance/suppliers`
+}
+
+export const listFinanceSuppliers = async (params?: ListFinanceSuppliersParams, options?: RequestInit): Promise<SupplierViewDto[]> => {
+
+  const res = await fetch(getListFinanceSuppliersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SupplierViewDto[] = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getCreateFinanceSupplierUrl = () => {
+
+
+
+
+  return `/api/v1/finance/suppliers`
+}
+
+export const createFinanceSupplier = async (supplierSaveDto?: SupplierSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateFinanceSupplierUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(supplierSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceSupplierUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/suppliers/${id}`
+}
+
+export const getFinanceSupplier = async (id: string, options?: RequestInit): Promise<SupplierViewDto> => {
+
+  const res = await fetch(getGetFinanceSupplierUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SupplierViewDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getUpdateFinanceSupplierUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/suppliers/${id}`
+}
+
+export const updateFinanceSupplier = async (id: string,
+    supplierSaveDto?: SupplierSaveDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateFinanceSupplierUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(supplierSaveDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getRetireFinanceSupplierUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/suppliers/${id}`
+}
+
+/**
+ * @summary Retires a supplier while preserving its invoices and payment history.
+ */
+export const retireFinanceSupplier = async (id: string,
+    financePayablesDecisionDto?: FinancePayablesDecisionDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireFinanceSupplierUrl(id),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesDecisionDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceSupplierOptionsUrl = (params?: GetFinanceSupplierOptionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/suppliers/options?${stringifiedParams}` : `/api/v1/finance/suppliers/options`
+}
+
+export const getFinanceSupplierOptions = async (params?: GetFinanceSupplierOptionsParams, options?: RequestInit): Promise<FinancePayablesOptionsDto> => {
+
+  const res = await fetch(getGetFinanceSupplierOptionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesOptionsDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 

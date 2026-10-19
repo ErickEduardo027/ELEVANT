@@ -107,28 +107,22 @@ internal sealed class EfPreinvoiceDraftStore(
         ArgumentNullException.ThrowIfNull(request);
         var payloadHash = HashRequest(request);
         var strategy = context.Database.CreateExecutionStrategy();
-        PreinvoiceDraftResult? attempt = null;
         try
         {
-            return await strategy.ExecuteInTransactionAsync(
-                async token =>
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+                var attempt = await CreateInsideTransactionAsync(request, payloadHash, cancellationToken);
+                if (!attempt.IsSuccess)
                 {
+                    await transaction.RollbackAsync(cancellationToken);
                     context.ChangeTracker.Clear();
-                    attempt = await CreateInsideTransactionAsync(request, payloadHash, token);
-                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
                     return attempt;
-                },
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    if (attempt is null || !attempt.IsSuccess) return attempt is not null;
-                    return await context.Preinvoices.AsNoTracking().AnyAsync(
-                        item => item.RequestId == request.RequestId &&
-                            item.PayloadHash == payloadHash &&
-                            item.PublicId == attempt.DraftId, token);
-                },
-                IsolationLevel.Serializable,
-                cancellationToken);
+                }
+                await transaction.CommitAsync(cancellationToken);
+                return attempt;
+            });
         }
         catch (DbUpdateException exception) when (IsConflict(exception.GetBaseException()))
         {
@@ -235,7 +229,7 @@ internal sealed class EfPreinvoiceDraftStore(
             {
                 ServiceId = service.Id, ServicePublicId = service.PublicId,
                 OperationId = operation.Id, TurnaroundId = turnaround.Id, service.ContractServiceRateId,
-                SubmissionId = submission.Id, submission.EvidenceJson,
+                SubmissionId = submission.Id, submission.EvidenceJson, SubmittedAt = submission.SubmittedAt, DefinitionId = definition.Id,
                 AirlineId = airline.Id, AirlinePublicId = airline.PublicId,
                 turnaround.OperationDate, turnaround.OperationCode,
                 definition.Code, definition.Name,
@@ -261,6 +255,7 @@ internal sealed class EfPreinvoiceDraftStore(
         {
             OccReviewServiceData? evidence = null;
             IReadOnlyList<ServiceChargeEvidence> frozenCharges = [];
+            ServiceTimingEvidence? frozenTiming = null;
             try
             {
                 if (row.EvidenceJson is not null)
@@ -268,6 +263,7 @@ internal sealed class EfPreinvoiceDraftStore(
                     var snapshot = OperationSubmissionEvidence.Parse(row.EvidenceJson);
                     evidence = snapshot.Services.SingleOrDefault(item => item.Id == row.ServicePublicId);
                     frozenCharges = snapshot.ChargesOf(row.ServicePublicId);
+                    frozenTiming = snapshot.TimingOf(row.ServicePublicId);
                 }
             }
             catch (JsonException) { }
@@ -290,7 +286,7 @@ internal sealed class EfPreinvoiceDraftStore(
                     row.CurrencyCodeSnapshot, valuation.Ready, valuation.Amount),
                 Code = evidence?.Code ?? row.Code,
                 Name = evidence?.Name ?? row.Name,
-                Charges = frozenCharges,
+                Charges = frozenCharges, Timing = frozenTiming,
             };
         }).ToArray();
         var evaluated = PreinvoiceDraftPolicy.Evaluate(
@@ -299,14 +295,28 @@ internal sealed class EfPreinvoiceDraftStore(
         if (!evaluated.Ready)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable,
                 evaluated.Failure);
+        var packageValuation = await FinancePackageValuation.ReserveAsync(context, scope.StationId, evaluated.Currency!,
+            rows.Select((row, index) => new PackageChargeableService(row.ServiceId, row.DefinitionId, row.ContractServiceRateId, row.TurnaroundId, row.SubmissionId, row.SubmittedAt, row.OperationDate, row.ExecutedQuantity, row.BillingUnitSnapshot, approvedRows[index].Timing)).ToArray(), now, cancellationToken);
+        if (packageValuation.BlockingReason is not null)
+            return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, packageValuation.BlockingReason);
+        var packageTotal = packageValuation.Services.Values.Sum(item => item.Price.Amount);
+        var serviceTotal = evaluated.Lines.Where(item => !packageValuation.Services.ContainsKey(rows.Single(row => row.ServicePublicId == item.ServiceId).ServiceId)).Sum(item => item.Amount);
+        var sourceRateKeys = rows.Where(r => r.ContractServiceRateId.HasValue).Select(r => r.ContractServiceRateId!.Value).Distinct().ToArray();
+        var minimumRates = await (from rate in context.ContractServiceRates.AsNoTracking()
+            join version in context.ContractVersions.AsNoTracking() on rate.ContractVersionId equals version.Id
+            where sourceRateKeys.Contains(rate.Id) && version.PricingPolicyVersion > 0
+            select new { rate.Id, rate.MinimumQuantity }).ToDictionaryAsync(x => x.Id, x => x.MinimumQuantity, cancellationToken);
+        var minimums = rows.ToDictionary(row => row.ServiceId, row => packageValuation.Services.ContainsKey(row.ServiceId) ? 0m : FinanceMinimumPricingPolicy.TopUp(row.ExecutedQuantity, row.ContractServiceRateId is { } key ? minimumRates.GetValueOrDefault(key) : 0, row.UnitPriceSnapshot!.Value));
+        if (minimums.Values.Any(x => x is null)) return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, "invalid_amount");
+        var minimumTotal = minimums.Values.Sum(x => x!.Value);
         var chargeValuation = await FinanceChargeValuation.ValueAsync(context, evaluated.Currency!,
             rows.Select((row, index) => new ChargeableService(row.ServiceId, row.OperationId, row.TurnaroundId,
-                row.ContractServiceRateId, row.OperationDate, row.ExecutedQuantity, evaluated.Lines[index].Amount,
-                approvedRows[index].Charges)).ToArray(), cancellationToken);
+                row.ContractServiceRateId, row.OperationDate, row.ExecutedQuantity, evaluated.Lines[index].Amount + minimums[row.ServiceId]!.Value,
+                approvedRows[index].Charges, row.SubmittedAt, approvedRows[index].Timing, packageValuation.Services.ContainsKey(row.ServiceId))).ToArray(), cancellationToken);
         if (chargeValuation.BlockingReason is not null)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, chargeValuation.BlockingReason);
         var chargesTotal = chargeValuation.Charges.Sum(charge => charge.Amount);
-        if (evaluated.Total!.Value + chargesTotal > 900_000_000_000m)
+        if (serviceTotal + packageTotal + minimumTotal + chargesTotal > 900_000_000_000m)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, "invalid_amount");
 
         var draft = new Preinvoice
@@ -315,7 +325,7 @@ internal sealed class EfPreinvoiceDraftStore(
             StationId = scope.StationId, CreatedByAccountId = scope.AccountId,
             RequestId = request.RequestId, PayloadHash = payloadHash,
             From = request.From, To = request.To, CurrencyCode = evaluated.Currency!,
-            Total = evaluated.Total!.Value + chargesTotal, Status = PreinvoiceStatus.Draft,
+            Total = serviceTotal + packageTotal + minimumTotal + chargesTotal, Status = PreinvoiceStatus.Draft,
             CreatedAt = now, UpdatedAt = now,
         };
         context.Preinvoices.Add(draft);
@@ -325,6 +335,8 @@ internal sealed class EfPreinvoiceDraftStore(
         for (var index = 0; index < rows.Length; index++)
         {
             var row = rows[index];
+            var package = packageValuation.Services.GetValueOrDefault(row.ServiceId);
+            var serviceAmount = package is null ? evaluated.Lines[index].Amount : 0m;
             var serviceLine = new PreinvoiceLine
             {
                 PublicId = Guid.CreateVersion7(), PreinvoiceId = draft.Id,
@@ -335,15 +347,46 @@ internal sealed class EfPreinvoiceDraftStore(
                 ServiceName = approvedRows[index].Name,
                 ExecutedQuantity = row.ExecutedQuantity,
                 BillingUnit = row.BillingUnitSnapshot,
-                UnitPrice = row.UnitPriceSnapshot!.Value,
+                UnitPrice = package is null ? row.UnitPriceSnapshot!.Value : 0m,
                 CurrencyCode = row.CurrencyCodeSnapshot!,
-                Amount = evaluated.Lines[index].Amount,
-                ComputedQuantity = row.ExecutedQuantity, ComputedAmount = evaluated.Lines[index].Amount,
+                Amount = serviceAmount,
+                ComputedQuantity = row.ExecutedQuantity, ComputedAmount = serviceAmount,
+                AdjustmentReason = package is null ? null : "Cubierto por paquete " + package.Code,
+                CalculationJson = package?.CalculationJson ?? JsonSerializer.Serialize(new { row.ServicePublicId, row.ContractServiceRateId, row.ExecutedQuantity, row.BillingUnitSnapshot, row.UnitPriceSnapshot, row.CurrencyCodeSnapshot, amount = serviceAmount }),
                 CreatedAt = now, UpdatedAt = now,
             };
             serviceLine.LineNumber = ++lineNumber;
             context.PreinvoiceLines.Add(serviceLine);
             await context.SaveChangesAsync(cancellationToken);
+            if (minimums[row.ServiceId] is > 0)
+            {
+                var quantity = minimumRates[row.ContractServiceRateId!.Value] - row.ExecutedQuantity;
+                context.PreinvoiceLines.Add(new PreinvoiceLine
+                {
+                    PublicId = Guid.CreateVersion7(), PreinvoiceId = draft.Id, Kind = PreinvoiceLineKind.Minimum, OperationServiceId = row.ServiceId, ApprovedSubmissionId = row.SubmissionId, ParentLineId = serviceLine.Id,
+                    LineNumber = ++lineNumber, OperationCode = row.OperationCode, OperationDate = row.OperationDate, ServiceCode = row.Code, ServiceName = "Mínimo contractual · " + row.Name,
+                    ExecutedQuantity = quantity, BillingUnit = row.BillingUnitSnapshot, UnitPrice = row.UnitPriceSnapshot!.Value, CurrencyCode = row.CurrencyCodeSnapshot!, Amount = minimums[row.ServiceId]!.Value,
+                    ComputedQuantity = quantity, ComputedAmount = minimums[row.ServiceId]!.Value, AdjustmentReason = "Complemento hasta el mínimo contractual aprobado", CreatedAt = now, UpdatedAt = now,
+                });
+            }
+            if (package is not null)
+            {
+                context.Set<PackageConsumptionEntry>().Add(new()
+                {
+                    PublicId = Guid.CreateVersion7(), ConsumptionId = package.ConsumptionId, ComponentId = package.ComponentId,
+                    OperationServiceId = row.ServiceId, ApprovedSubmissionId = row.SubmissionId, PreinvoiceLineId = serviceLine.Id,
+                    Quantity = package.Quantity, IncludedQuantity = package.Price.IncludedQuantity, ExcessQuantity = package.Price.ExcessQuantity,
+                    BaseAmount = package.Price.BaseAmount, ExcessAmount = package.Price.ExcessAmount, CalculationJson = package.CalculationJson, CreatedAt = now, UpdatedAt = now,
+                });
+                foreach (var part in new[] { (Kind: PreinvoiceLineKind.Package, Amount: package.Price.BaseAmount, Quantity: 1m, Unit: "package", Label: "Paquete " + package.Name), (Kind: PreinvoiceLineKind.Excess, Amount: package.Price.ExcessAmount, Quantity: package.ExcessBlockPrice > 0 ? package.Price.ExcessAmount / package.ExcessBlockPrice : 0m, Unit: "block", Label: "Excedente " + package.Name) }.Where(part => part.Amount > 0))
+                    context.PreinvoiceLines.Add(new PreinvoiceLine
+                    {
+                        PublicId = Guid.CreateVersion7(), PreinvoiceId = draft.Id, Kind = part.Kind, OperationServiceId = row.ServiceId, ApprovedSubmissionId = row.SubmissionId, ParentLineId = serviceLine.Id,
+                        LineNumber = ++lineNumber, OperationCode = row.OperationCode, OperationDate = row.OperationDate, ServiceCode = package.Code, ServiceName = part.Label, ExecutedQuantity = part.Quantity,
+                        BillingUnit = part.Unit, UnitPrice = part.Amount / Math.Max(1m, part.Quantity), CurrencyCode = row.CurrencyCodeSnapshot!, Amount = part.Amount, ComputedQuantity = part.Quantity, ComputedAmount = part.Amount,
+                        CalculationJson = package.CalculationJson, AdjustmentReason = "Cálculo contractual por ámbito", CreatedAt = now, UpdatedAt = now,
+                    });
+            }
             foreach (var charge in chargeValuation.Charges.Where(charge => charge.ServiceId == row.ServiceId))
                 context.PreinvoiceLines.Add(new PreinvoiceLine
                 {
@@ -354,10 +397,15 @@ internal sealed class EfPreinvoiceDraftStore(
                     ServiceCode = charge.Code, ServiceName = charge.Name, ExecutedQuantity = charge.Quantity,
                     BillingUnit = charge.BillingUnit ?? row.BillingUnitSnapshot, UnitPrice = charge.UnitPrice,
                     CurrencyCode = row.CurrencyCodeSnapshot!, Amount = charge.Amount, ComputedQuantity = charge.Quantity,
-                    ComputedAmount = charge.Amount, IsExcluded = charge.IsExcluded,
+                    ComputedAmount = charge.Amount, IsExcluded = charge.IsExcluded, ComputedIsExcluded = charge.IsExcluded,
                     CreatedAt = now, UpdatedAt = now,
                 });
         }
+        var pricedLines = await context.PreinvoiceLines.Where(line => line.PreinvoiceId == draft.Id).ToListAsync(cancellationToken);
+        pricedLines.AddRange(context.ChangeTracker.Entries<PreinvoiceLine>().Where(entry => entry.State == EntityState.Added && entry.Entity.PreinvoiceId == draft.Id).Select(entry => entry.Entity).Where(line => !pricedLines.Contains(line)));
+        try { await FinanceTaxSnapshotWriter.ApplyOnceAsync(context, draft, pricedLines, now, cancellationToken); }
+        catch (FinanceTaxRuleException failure) { return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, failure.Code); }
+        if (draft.Total is < 0 or > 900_000_000_000m) return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, "invalid_amount");
         context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(), OccurredAt = now,

@@ -115,7 +115,7 @@ describe('ApprovedServicesPage', () => {
     render(<ApprovedServicesPage />);
     await screen.findByText('Baggage');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Baggage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura de prueba' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura' }));
     await waitFor(() => expect(createPreinvoiceDraft).toHaveBeenCalledWith(
       expect.objectContaining({ stationId: STATION_ID,
         serviceIds: [SERVICES[0].id], requestId: expect.any(String) })));
@@ -131,9 +131,9 @@ describe('ApprovedServicesPage', () => {
     render(<ApprovedServicesPage />);
     await screen.findByText('Baggage');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Baggage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura de prueba' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura' }));
     await screen.findByText(/No se pudo confirmar la creación/);
-    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura de prueba' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura' }));
     await waitFor(() => expect(createPreinvoiceDraft).toHaveBeenCalledTimes(2));
     expect(vi.mocked(createPreinvoiceDraft).mock.calls[0][0].requestId)
       .toBe(vi.mocked(createPreinvoiceDraft).mock.calls[1][0].requestId);
@@ -159,14 +159,14 @@ describe('ApprovedServicesPage', () => {
     render(<ApprovedServicesPage />);
     await screen.findByText('Baggage');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Baggage' }));
-    expect(screen.getByRole('button', { name: 'Crear prefactura de prueba' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Crear prefactura' })).toBeEnabled();
     vi.mocked(getApprovedServices).mockResolvedValue({
       services: [{ ...SERVICES[0], preinvoiceId: crypto.randomUUID() }], hasMore: false,
     });
     act(() => observer.factory.mock.calls[0][0](['finance_preinvoices']));
     expect(await screen.findByRole('button', { name: 'Ver prefactura guardada' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button',
-      { name: 'Crear prefactura de prueba' })).toBeDisabled());
+      { name: 'Crear prefactura' })).toBeDisabled());
     expect(createPreinvoiceDraft).not.toHaveBeenCalled();
   });
 
@@ -183,7 +183,7 @@ describe('ApprovedServicesPage', () => {
     render(<ApprovedServicesPage />);
     await screen.findByText('Baggage');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Baggage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura de prueba' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear prefactura' }));
     fireEvent.change(screen.getByLabelText('Estación de servicios'),
       { target: { value: otherStationId } });
     await act(async () => completeCreation({ id: crypto.randomUUID(), replayed: false }));

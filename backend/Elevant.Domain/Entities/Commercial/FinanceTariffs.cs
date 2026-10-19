@@ -127,6 +127,8 @@ public sealed class ChargeRate : AuditableEntity
 /// <summary>Contract-specific treatment of a charge: excluded or negotiated.</summary>
 public sealed class ContractChargeRate : AuditableEntity
 {
+    public string? DefinitionSnapshotJson { get; set; }
+
     public long ContractVersionId { get; set; }
 
     public long ChargeDefinitionId { get; set; }

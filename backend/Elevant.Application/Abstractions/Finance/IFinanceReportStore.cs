@@ -37,6 +37,14 @@ public static class FinanceReports
         new("disputes", "Disputas", "Disputas por aerolínea, importe disputado y resolución."),
         new("tariffs", "Uso de tarifas", "Servicios facturados frente a la tarifa base: precio medio, desviación y volumen."),
         new("credit-notes", "Notas de crédito", "Notas de crédito emitidas en el período con su motivo."),
+        new("debit-notes", "Notas de débito", "Ajustes comerciales por factura y líneas de origen, sin crear cobros."),
+        new("treasury", "Movimientos de tesorería", "Recibos, aplicaciones, reversos y devoluciones; efectivo separado de aplicación a facturas."),
+        new("payables", "Cuentas por pagar", "Facturas de proveedores aprobadas, aplicaciones y saldo a la fecha de corte."),
+        new("suppliers", "Estado de proveedores", "Obligaciones aprobadas y pagos sin aplicar por proveedor y moneda a la fecha de corte."),
+        new("expenses", "Gastos de empleados", "Solicitudes, aprobación por etapa y reembolsos con sus dimensiones operativas."),
+        new("packages", "Paquetes facturados", "Paquetes y excedentes según las líneas inmutables de las facturas."),
+        new("fiscal", "Estado fiscal", "Estado documental fiscal separado de la factura comercial; excluye simulaciones locales."),
+        new("fiscal-simulation", "Simulación fiscal", "Documentos de simulación local, sin validez fiscal y separados de los totales comerciales."),
     ];
 }
 

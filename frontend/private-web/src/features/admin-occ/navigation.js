@@ -22,9 +22,11 @@ export const ADMIN_OCC_MODULE_IDS = {
   NOTIFICATIONS: 'notifications',
   CHAT: 'chat',
   DEPARTMENT_USERS: 'users',
+  EXPENSES: 'expenses',
 };
 
 export const ADMIN_OCC_NAVIGATION = [
+  { id: ADMIN_OCC_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: ADMIN_OCC_BASE_PATH + '/expenses', icon: BarChartIcon, description: 'Gastos propios y revisiones del departamento.' },
   { id: ADMIN_OCC_MODULE_IDS.DASHBOARD, permission: 'operations.dashboard.read', label: 'Dashboard', path: `${ADMIN_OCC_BASE_PATH}/dashboard`, icon: LayoutGridIcon, description: 'Vista general en tiempo real de vuelos, servicios, agentes y aprobaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.PLANNING, permission: 'operations.planning.read', label: 'Planificación operativa', path: `${ADMIN_OCC_BASE_PATH}/planning`, icon: CalendarIcon, description: 'Consulta de itinerarios y asignación de agentes y posiciones para las operaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, permission: 'operations.flight_monitoring.read', label: 'Monitoreo de vuelos', path: `${ADMIN_OCC_BASE_PATH}/flight-monitoring`, icon: RadarIcon, description: 'Mapa interactivo en vivo con el estado de cada vuelo en tránsito hacia o desde la estación.' },

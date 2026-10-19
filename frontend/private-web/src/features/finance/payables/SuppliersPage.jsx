@@ -1,0 +1,30 @@
+'use client';
+import { useState } from 'react';
+import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { getSupplier, listSuppliers, retireSupplier, saveSupplier } from '../../../services/financePayablesService';
+import { usePayablesMutation, usePayablesWorkspace } from './usePayablesWorkspace';
+import { buttonClass, EmptyState, Field, fieldClass, panelClass, primaryClass, StackedTable, WorkspaceFrame } from './PayablesUi';
+function SupplierForm({ detail, scope, mutation, onClose }) {
+  const [values, setValues] = useState(() => ({ code: detail?.code ?? '', name: detail?.name ?? '', taxReference: detail?.taxReference ?? '', contactEmail: detail?.contactEmail ?? '', isActive: detail?.isActive ?? true }));
+  return <form aria-label="Proveedor" className={panelClass + ' space-y-4'} onSubmit={async e => { e.preventDefault(); const saved = await mutation.run('supplier:save:' + (detail?.id ?? 'new'), { ...values, scopeStationId: scope, taxReference: values.taxReference.trim() || null, contactEmail: values.contactEmail.trim() || null, expectedVersion: detail?.version ?? null }, body => saveSupplier(detail?.id, body)); if (saved) onClose(); }}>
+    <h2 className="text-lg font-bold">{detail ? 'Editar proveedor' : 'Nuevo proveedor'}</h2><fieldset disabled={mutation.busy} className="grid gap-3 sm:grid-cols-2">
+      {[['code', 'Código', 40], ['name', 'Nombre del proveedor', 200], ['taxReference', 'Identificación fiscal', 80], ['contactEmail', 'Correo de contacto', 254]].map(([key, label, max]) => <Field key={key} label={label}><input className={fieldClass} type={key === 'contactEmail' ? 'email' : 'text'} required={key === 'code' || key === 'name'} maxLength={max} value={values[key]} onChange={e => setValues(v => ({ ...v, [key]: e.target.value }))} /></Field>)}
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={values.isActive} onChange={e => setValues(v => ({ ...v, isActive: e.target.checked }))} />Proveedor activo</label>
+      <div className="flex flex-wrap gap-2 sm:col-span-2"><button className={primaryClass} type="submit">Guardar proveedor</button><button className={buttonClass} type="button" onClick={onClose}>Cancelar edición</button></div>
+    </fieldset>
+  </form>;
+}
+export default function SuppliersPage() {
+  const { access } = useDepartmentAccess(); const canRead = Boolean(access?.can('finance.suppliers.read')); const canManage = Boolean(access?.can('finance.suppliers.manage'));
+  const w = usePayablesWorkspace('suppliers', listSuppliers, getSupplier, canRead); const mutation = usePayablesMutation(w.refresh);
+  const [editing, setEditing] = useState(false); const [retiring, setRetiring] = useState(false); const [reason, setReason] = useState('');
+  if (!canRead) return <EmptyState title="No tiene permiso para consultar proveedores." />;
+  return <WorkspaceFrame dateFilters={false} title="Proveedores" description="Datos del proveedor, facturas y pagos por estación." workspace={w} mutation={mutation} actions={canManage && <button className={primaryClass} type="button" disabled={mutation.busy || !w.options} onClick={() => { w.setDetail(null); setEditing(true); setRetiring(false); }}>Nuevo proveedor</button>} statuses={[{ value: 'Active', label: 'Activos' }, { value: 'Inactive', label: 'Inactivos' }]}>
+    {w.rows.length === 0 ? <EmptyState title="Sin proveedores para estos filtros." /> : <div className={panelClass}><StackedTable><table className="table-stack w-full text-left text-sm"><thead><tr><th className="p-2">Proveedor</th><th className="p-2">Código</th><th className="p-2">Estado</th></tr></thead><tbody>{w.rows.map(row => <tr key={row.id} className="border-t border-black/5 dark:border-white/5"><td className="p-2"><button className="font-semibold text-accent-600 underline-offset-4 hover:underline" type="button" onClick={() => { void w.open(row.id); setEditing(false); setRetiring(false); }}>{row.name}</button></td><td className="p-2">{row.code}</td><td className="p-2">{row.isActive ? 'Activo' : 'Inactivo'}</td></tr>)}</tbody></table></StackedTable></div>}
+    {w.detailLoading && <p role="status">Cargando proveedor…</p>}
+    {w.detail && !editing && <section className={panelClass + ' space-y-3'} aria-label="Detalle del proveedor"><h2 className="text-lg font-bold">{w.detail.name}</h2><dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt>Identificación fiscal</dt><dd>{w.detail.taxReference || 'Sin registrar'}</dd></div><div><dt>Correo</dt><dd>{w.detail.contactEmail || 'Sin registrar'}</dd></div></dl>{canManage && <div className="flex gap-2"><button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => setEditing(true)}>Editar proveedor</button>{w.detail.isActive && <button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => setRetiring(true)}>Retirar proveedor</button>}</div>}
+      {retiring && <form onSubmit={async e => { e.preventDefault(); if (await mutation.run('supplier:retire:' + w.detail.id, { expectedVersion: w.detail.version, decision: 'Retired', reason: reason.trim() }, body => retireSupplier(w.detail.id, body))) setRetiring(false); }} className="space-y-3"><p className="text-sm">Se conserva todo el historial de facturas y pagos.</p><Field label="Motivo del retiro"><textarea className={fieldClass} required maxLength={500} value={reason} onChange={e => setReason(e.target.value)} /></Field><button className={primaryClass} disabled={mutation.busy} type="submit">Confirmar retiro</button></form>}
+    </section>}
+    {editing && canManage && w.options && <SupplierForm key={(w.detail?.id ?? 'new') + (w.detail?.version ?? '') + w.scope} detail={w.detail} scope={w.scope} mutation={mutation} onClose={() => setEditing(false)} />}
+  </WorkspaceFrame>;
+}

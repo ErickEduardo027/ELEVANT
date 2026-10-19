@@ -23,6 +23,7 @@ export default function HumanResourcesLayout({
         .filter(item => !dashboardReadOnlyDemo ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.DASHBOARD ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.EMPLOYEES ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.EXPENSES ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.POSITIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.REQUISITIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.AUDIT ||

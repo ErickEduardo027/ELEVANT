@@ -117,7 +117,9 @@ internal sealed class EfNonFiscalPaymentStore(
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
         var credited = await context.NonFiscalCreditNotes.AsNoTracking().Where(item => item.InvoiceId == scope.Id)
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-        var balance = scope.Total - settled - credited;
+        var treasury = (await FinanceTreasuryBalances.TotalsAsync(context, [scope.Id], cancellationToken))[scope.Id];
+        var balance = FinanceTreasuryRules.Balance(scope.Total, settled, credited,
+            treasury.Applied, treasury.Credited, treasury.Debited);
 
         var accountId = await context.Users.AsNoTracking()
             .Where(account => account.PublicId == command.AccountId)
@@ -140,6 +142,9 @@ internal sealed class EfNonFiscalPaymentStore(
                 : RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);
         }
 
+        // A treasury receipt represents this cash already; historical entry must not record it a second time.
+        if (await context.Set<FinanceTreasuryReceipt>().AnyAsync(item => item.Reference == command.Reference, cancellationToken))
+            return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);
         var amount = command.Amount ?? balance;
         if (balance <= 0 || amount <= 0 || amount > balance)
             return RecordNonFiscalPaymentResult.Failed(RecordNonFiscalPaymentFailure.Conflict);

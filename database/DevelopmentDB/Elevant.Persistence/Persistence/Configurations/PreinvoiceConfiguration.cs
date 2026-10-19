@@ -47,6 +47,7 @@ internal static class PreinvoiceConfiguration
                 table.HasCheckConstraint("ck_preinvoice_line_kind",
                     "([kind] = N'Service' AND [operation_service_id] IS NOT NULL AND [approved_submission_id] IS NOT NULL AND [charge_definition_id] IS NULL) OR " +
                     "([kind] = N'Charge' AND [operation_service_id] IS NOT NULL AND [approved_submission_id] IS NOT NULL AND [charge_definition_id] IS NOT NULL AND [parent_line_id] IS NOT NULL) OR " +
+                    "([kind] IN (N'Package', N'Excess', N'Minimum') AND [operation_service_id] IS NOT NULL AND [approved_submission_id] IS NOT NULL AND [charge_definition_id] IS NULL AND [parent_line_id] IS NOT NULL) OR " +
                     "([kind] = N'Adjustment' AND [charge_definition_id] IS NULL AND LEN([adjustment_reason]) >= 3)");
                 table.HasCheckConstraint("ck_preinvoice_line_excluded", "[is_excluded] = 0 OR [amount] = 0");
                 table.HasCheckConstraint("ck_preinvoice_line_currency", "LEN([currency_code]) = 3");
@@ -60,6 +61,7 @@ internal static class PreinvoiceConfiguration
             builder.Property(item => item.UnitPrice).HasPrecision(19, 4);
             builder.Property(item => item.CurrencyCode).HasColumnType("char(3)").IsRequired();
             builder.Property(item => item.Amount).HasPrecision(19, 4);
+            builder.Property(item => item.CalculationJson).HasColumnType("nvarchar(max)");
             builder.Property(item => item.ReleasedAt).HasPrecision(3);
             builder.Property(item => item.Kind).HasConversion<string>().HasMaxLength(16)
                 .HasDefaultValue(Elevant.Domain.Enumerations.PreinvoiceLineKind.Service);

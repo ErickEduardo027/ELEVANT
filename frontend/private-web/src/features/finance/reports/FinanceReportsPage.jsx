@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import FilterBar from '../../../components/FilterBar';
 import PageHeader from '../../../components/PageHeader';
@@ -19,6 +19,14 @@ export const FINANCE_REPORTS = [
   { key: 'disputes', label: 'Disputas' },
   { key: 'tariffs', label: 'Uso de tarifas' },
   { key: 'credit-notes', label: 'Notas de crédito' },
+  { key: 'debit-notes', label: 'Notas de débito' },
+  { key: 'treasury', label: 'Movimientos de tesorería' },
+  { key: 'payables', label: 'Cuentas por pagar' },
+  { key: 'suppliers', label: 'Estado de proveedores' },
+  { key: 'expenses', label: 'Gastos de empleados' },
+  { key: 'packages', label: 'Paquetes facturados' },
+  { key: 'fiscal', label: 'Estado fiscal' },
+  { key: 'fiscal-simulation', label: 'Simulación fiscal' },
 ];
 
 const isoDate = date => date.toISOString().slice(0, 10);
@@ -27,8 +35,8 @@ const isoDate = date => date.toISOString().slice(0, 10);
 export function formatCell(value, column, row, columns) {
   if (value === null || value === undefined || value === '') return '—';
   if (column.type === 'money') {
-    const currencyIndex = columns.findIndex(item => item.key === 'currency');
-    const currency = column.key === 'usd' ? 'USD' : currencyIndex >= 0 ? row[currencyIndex] : '';
+    const currencyIndex = columns.findIndex(item => item.key === (column.key === 'invoiceAmount' ? 'invoiceCurrency' : 'currency'));
+    const currency = column.key === 'usd' ? 'USD' : column.key === 'dop' ? 'DOP' : currencyIndex >= 0 ? row[currencyIndex] : '';
     return formatMoney(value, currency);
   }
   if (column.type === 'percent') return `${Number(value).toLocaleString('es-DO')} %`;
@@ -49,31 +57,34 @@ export default function FinanceReportsPage({ initialStationId }) {
   const [state, setState] = useState({ status: 'loading', report: null, error: '' });
   const [exporting, setExporting] = useState('');
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    let active = true;
     setState(current => ({ ...current, status: 'loading' }));
-    try {
-      setState({ status: 'ready', report: await getFinanceReport(reportKey, filters), error: '' });
-    } catch (failure) {
-      setState({ status: 'error', report: null, error: failure.status === 403
-        ? 'No tiene acceso a este reporte o los filtros no son válidos.' : failure.message });
-    }
+    getFinanceReport(reportKey, filters).then(report => {
+      if (active) setState({ status: 'ready', report, error: '' });
+    }).catch(failure => {
+      if (active) setState({ status: 'error', report: null, error: failure.status === 403
+        ? 'No tiene acceso a este reporte o los filtros no son válidos.' : 'No se pudo calcular el reporte. Intente de nuevo.' });
+    });
+    return () => { active = false; };
   }, [reportKey, filters]);
-  useEffect(() => { void load(); }, [load]);
 
   async function exportAs(format) {
+    if (state.status !== 'ready' || state.report?.key !== reportKey || exporting) return;
     setExporting(format);
     try { await downloadFinanceReport(reportKey, format, filters); }
     catch (failure) { setState(current => ({ ...current, error: failure.message })); }
     finally { setExporting(''); }
   }
 
-  const report = state.report;
+  const report = state.status === 'ready' && state.report?.key === reportKey ? state.report : null;
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Reportes financieros" description={report?.description ?? 'Reportes calculados en el servidor sobre sus estaciones.'}
         actions={canExport && (
           <>
             <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('csv')} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">{exporting === 'csv' ? 'Generando…' : 'Exportar CSV'}</button>
+            <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('xlsx')} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold disabled:opacity-60 dark:border-white/10">{exporting === 'xlsx' ? 'Generando…' : 'Exportar Excel'}</button>
             <button type="button" disabled={Boolean(exporting) || !report} onClick={() => void exportAs('pdf')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{exporting === 'pdf' ? 'Generando…' : 'Exportar PDF'}</button>
           </>
         )} />

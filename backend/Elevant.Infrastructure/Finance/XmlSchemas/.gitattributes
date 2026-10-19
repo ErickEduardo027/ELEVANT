@@ -1,0 +1,2 @@
+# Preserve exact official DGII download bytes and pinned SHA-256 hashes.
+*.xsd -text

@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Elevant.Persistence;
@@ -100,6 +101,19 @@ public static class DependencyInjection
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
+        services.AddScoped<IFinancePackageStore, EfFinancePackageStore>();
+        services.AddScoped<IFinanceTaxStore, FinanceTaxStore>();
+        // The persistence-only host has no fiscal transport. Resolve the optional sidecar ports
+        // when the fiscal feature is used, as with the private financial document renderer below.
+        services.AddScoped<IFinanceFiscalStore>(provider => new FinanceFiscalStore(
+            provider.GetRequiredService<ElevantDbContext>(), provider.GetRequiredService<IActorContextResolver>(),
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<Elevant.Application.Finance.FinanceFiscalOptions>(),
+            provider.GetRequiredService<IFiscalArtifactArchive>(), provider.GetRequiredService<IFiscalProvider>(),
+            provider.GetRequiredService<IFiscalCallbackAuthenticator>(), provider.GetRequiredService<IFiscalArtifactBuilder>()));
+        services.TryAddScoped<IFiscalArtifactArchive, FinanceFiscalPrivateArchive>();
+        services.AddScoped<IFinancePayablesStore, FinancePayablesStore>();
+        services.AddScoped<IFinanceTreasuryStore, FinanceTreasuryStore>();
+        services.AddScoped<IFinancePreinvoiceReviewStore, EfFinancePreinvoiceReviewStore>();
         services.AddScoped<IPreinvoiceLineEditStore, EfPreinvoiceLineEditStore>();
         services.AddScoped<IFinanceInvoiceLedgerStore, EfFinanceInvoiceLedgerStore>();
         services.AddScoped<IFinanceReportStore, EfFinanceReportStore>();

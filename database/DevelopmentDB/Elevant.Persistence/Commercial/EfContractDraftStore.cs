@@ -28,7 +28,7 @@ internal sealed class EfContractDraftStore(
             join airline in context.Airlines.AsNoTracking()
                 on contract.AirlineId equals airline.Id
             where version.Status == ContractVersionStatus.Draft &&
-                contract.Status == ContractStatus.Draft
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
             orderby version.Id descending
             select new { version.PublicId, contract.ContractCode, Airline = airline.Name })
             .Take(100).ToArrayAsync(cancellationToken);
@@ -62,7 +62,7 @@ internal sealed class EfContractDraftStore(
                 on contract.AirlineId equals airline.Id
             where (version.Status == ContractVersionStatus.Draft ||
                     version.Status == ContractVersionStatus.PendingFinanceApproval) &&
-                contract.Status == ContractStatus.Draft &&
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active) &&
                 (airlineIds == null || airlineIds.Contains(airline.Id))
             orderby version.Id descending
             select new { version, contract, airline.Name }).Take(100)
@@ -139,7 +139,7 @@ internal sealed class EfContractDraftStore(
                 return new ContractDraftChargeData(charge.PublicId, charge.Code, charge.Name, charge.Method.ToString(),
                     baseCharges[item.version.Id].GetValueOrDefault(charge.Id)?.Value, negotiated?.IsExcluded == true,
                     negotiated?.Value);
-            }).ToArray()))
+            }).ToArray(), Convert.ToBase64String(item.version.RowVersion)))
             .ToArray();
     }
 
@@ -154,7 +154,7 @@ internal sealed class EfContractDraftStore(
             join contract in context.Contracts on version.ContractId equals contract.Id
             where version.PublicId == versionId &&
                 version.Status == ContractVersionStatus.Draft &&
-                contract.Status == ContractStatus.Draft &&
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active) &&
                 airlineIds.Contains(contract.AirlineId)
             select new { Version = version, Contract = contract })
             .SingleOrDefaultAsync(cancellationToken);
@@ -198,7 +198,7 @@ internal sealed class EfContractDraftStore(
             join contract in context.Contracts on version.ContractId equals contract.Id
             where version.PublicId == versionId &&
                 version.Status == ContractVersionStatus.Draft &&
-                contract.Status == ContractStatus.Draft
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
             select new { Version = version, Contract = contract })
             .SingleOrDefaultAsync(cancellationToken);
         if (row is null) return ContractDraftResult.Failed(ContractDraftFailure.NotFound);
@@ -274,7 +274,7 @@ internal sealed class EfContractDraftStore(
             join request in context.ServiceRequests on contract.OriginatingServiceRequestId equals request.Id
             where version.PublicId == versionId &&
                 version.Status == ContractVersionStatus.Draft &&
-                contract.Status == ContractStatus.Draft
+                (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
             select new { Version = version, Contract = contract, Request = request })
             .SingleOrDefaultAsync(cancellationToken);
         if (row is null) return ContractDraftResult.Failed(ContractDraftFailure.NotFound);

@@ -33,13 +33,13 @@ export default function ApprovedServicesPage({ initialStationId }) {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Finanzas</p>
           <h1 className="mt-1 text-2xl font-bold">Servicios aprobados</h1>
           <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-            Evidencia de servicios de operaciones aprobadas por OCC. Los importes usan la tarifa congelada en la operación.
+            Evidencia de servicios de operaciones aprobadas por OCC. La estimación individual usa la tarifa congelada; la prefactura aplica paquetes, mínimos, cargos e impuestos configurados.
           </p>
         </div>
         <button type="button" onClick={data.createDraft}
           disabled={!data.selectedCount || data.draftStatus === 'creating' || data.status !== 'success'}
           className="rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
-          {data.draftStatus === 'creating' ? 'Guardando prefactura…' : 'Crear prefactura de prueba'}
+          {data.draftStatus === 'creating' ? 'Guardando prefactura…' : 'Crear prefactura'}
         </button>
       </header>
 
@@ -85,7 +85,7 @@ export default function ApprovedServicesPage({ initialStationId }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-xs text-text-secondary-light">Importes de prueba sin impuestos; se muestran hasta cuatro decimales del snapshot guardado.</p>
+        <p className="mt-2 text-xs text-text-secondary-light">Estimación individual antes de paquetes, cargos e impuestos. El detalle de prefactura muestra la valoración final y sus fuentes, con cuatro decimales.</p>
       </section>}
 
       <section className="rounded-2xl border border-black/5 bg-white/70 p-4 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">

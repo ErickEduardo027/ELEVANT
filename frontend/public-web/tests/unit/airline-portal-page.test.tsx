@@ -104,8 +104,14 @@ const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type
 const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
+const getTreasuryStatement = vi.fn(async (asOf: string) => ({ airlineId: bootstrap.airlineId, asOf, invoices: [], receipts: [], movements: [], aging: [] }));
+const getTreasuryInvoice = vi.fn(async (id: string) => ({ invoice: { id, preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
+  number: "NF-74000000000070008000000000000009", stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD",
+  total: 125.5, legacyPaid: 50, legacyCredited: 0, applied: 0, credited: 0, debited: 0, balance: 75.5, dueDate: null, daysOverdue: 0, agingBucket: "Current" }, lines: [], movements: [], notes: [] }));
+const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
+
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -364,7 +370,7 @@ it("shows the real non-fiscal invoice only for an invoiced airline preinvoice", 
   expect(getPreinvoiceInvoice).toHaveBeenCalledExactlyOnceWith(
     '74000000-0000-7000-8000-000000000001');
   expect(getInvoiceStatement).toHaveBeenCalledWith('74000000-0000-7000-8000-000000000009');
-  expect(screen.getByText('Sin pago registrado.')).toBeInTheDocument();
+  expect(screen.getByText('Sin pagos históricos registrados.')).toBeInTheDocument();
   expect(screen.getByText(/vence el 2026-10-28/)).toBeInTheDocument();
   expect(screen.getByText(/Cargo · Recargo nocturno/)).toBeInTheDocument();
   financeRevision = 1;
@@ -647,4 +653,28 @@ it("lists each agent charge under its service as a separate disputable line", as
   expect(charge).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
   expect(screen.getByRole("checkbox", { name: "Disputar Recargo nocturno" })).toBeInTheDocument();
+});
+
+it.each([
+  ["Package", "Paquete"],
+  ["Excess", "Exceso"],
+  ["Minimum", "Mínimo"],
+])("translates %s lines in both published preinvoice and invoice", async (kind, label) => {
+  const id = initialPreinvoicePage.preinvoices[0].id;
+  const base = await getPreinvoice(id);
+  getPreinvoice.mockClear();
+  const serviceName = "Concepto de tarifa";
+  const pricedPreinvoice = { ...base, status: "Invoiced",
+    lines: [{ ...base.lines[0], kind, serviceName }] };
+  getPreinvoice.mockResolvedValueOnce(pricedPreinvoice);
+  const statement = statementOf("74000000-0000-7000-8000-000000000009", 50);
+  getInvoiceStatement.mockResolvedValueOnce({ ...statement,
+    lines: [{ ...statement.lines[0], kind, serviceName }] });
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
+  const preinvoiceLines = await screen.findByLabelText("Líneas de prefactura " + id);
+  expect(within(preinvoiceLines).getByText(label + " · " + serviceName)).toBeInTheDocument();
+  const invoice = await screen.findByRole("region", { name: "Factura no fiscal" });
+  expect(within(invoice).getByText(new RegExp(label + " · " + serviceName))).toBeInTheDocument();
+  expect(within(invoice).queryByText(new RegExp(kind + " · "))).not.toBeInTheDocument();
 });

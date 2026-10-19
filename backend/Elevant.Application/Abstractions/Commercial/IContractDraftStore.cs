@@ -14,7 +14,7 @@ public sealed record ContractDraftData(Guid Id, Guid ContractId,
     IReadOnlyList<ContractDraftRateData> Rates,
     IReadOnlyList<ContractDraftCommentData> Comments,
     string VersionStatus = "Draft", string? FinanceDecision = null, string? FinanceReason = null,
-    IReadOnlyList<ContractDraftChargeData>? Charges = null);
+    IReadOnlyList<ContractDraftChargeData>? Charges = null, string Version = "");
 public sealed record ContractDraftOverviewItemData(Guid Id, string ContractCode, string Airline);
 public sealed record ContractDraftOverviewData(int Count,
     IReadOnlyList<ContractDraftOverviewItemData> Recent);

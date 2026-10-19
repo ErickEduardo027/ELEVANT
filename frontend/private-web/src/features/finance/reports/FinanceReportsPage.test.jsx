@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FinanceReportsPage, { formatCell } from './FinanceReportsPage';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
@@ -54,5 +54,47 @@ describe('FinanceReportsPage', () => {
     renderPage(['finance.reports.read']);
     expect(await screen.findByRole('alert')).toHaveTextContent(/No tiene acceso/);
     expect(screen.queryByRole('button', { name: 'Exportar CSV' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['debit-notes', 'Notas de débito'], ['treasury', 'Movimientos de tesorería'], ['payables', 'Cuentas por pagar'],
+    ['suppliers', 'Estado de proveedores'], ['expenses', 'Gastos de empleados'], ['packages', 'Paquetes facturados'],
+    ['fiscal', 'Estado fiscal'], ['fiscal-simulation', 'Simulación fiscal'],
+  ])('loads and exports %s through the existing CSV, Excel and PDF pipeline', async (key, label) => {
+    getFinanceReport.mockImplementation(async selected => ({ ...revenue, key: selected }));
+    renderPage(); await screen.findByText('Nota de prueba.');
+    await userEvent.click(screen.getByRole('tab', { name: label }));
+    await waitFor(() => expect(getFinanceReport).toHaveBeenLastCalledWith(key, expect.objectContaining({ stationId: 'st-1' })));
+    await screen.findByText('Nota de prueba.');
+    for (const [format, button] of [['csv', 'Exportar CSV'], ['xlsx', 'Exportar Excel'], ['pdf', 'Exportar PDF']]) {
+      await userEvent.click(screen.getByRole('button', { name: button }));
+      expect(downloadFinanceReport).toHaveBeenLastCalledWith(key, format, expect.objectContaining({ stationId: 'st-1' }));
+    }
+  });
+
+  it('formats invoice applications in invoice currency and frozen payable totals in DOP', () => {
+    const columns = [{ key: 'currency', type: 'text' }, { key: 'invoiceCurrency', type: 'text' },
+      { key: 'invoiceAmount', type: 'money' }, { key: 'dop', type: 'money' }];
+    const row = ['USD', 'DOP', '6000', '30000'];
+    expect(formatCell(row[2], columns[2], row, columns)).toMatch(/^DOP 6[.,]000/);
+    expect(formatCell(row[3], columns[3], row, columns)).toMatch(/^DOP 30[.,]000/);
+  });
+
+  it('disables export while a report is loading and ignores stale responses', async () => {
+    let resolveOld;
+    let resolveLatest;
+    getFinanceReport.mockImplementation(key => key === 'revenue' ? Promise.resolve(revenue)
+      : key === 'payables' ? new Promise(resolve => { resolveOld = resolve; })
+        : new Promise(resolve => { resolveLatest = resolve; }));
+    renderPage(); await screen.findByText('Nota de prueba.');
+    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por pagar' }));
+    expect(screen.getByRole('button', { name: 'Exportar Excel' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('tab', { name: 'Estado fiscal' }));
+    resolveOld({ ...revenue, key: 'payables', notes: ['Stale payable response'] });
+    resolveLatest({ ...revenue, key: 'fiscal', notes: ['Fiscal separate'] });
+    await screen.findByText('Fiscal separate');
+    expect(screen.queryByText('Stale payable response')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+    expect(downloadFinanceReport).toHaveBeenLastCalledWith('fiscal', 'xlsx', expect.any(Object));
   });
 });

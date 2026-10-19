@@ -59,10 +59,14 @@ internal sealed class EfAccountChangeReadStore(
             access.Has("operations.planning.read");
         var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
-        var hasCatalogAccess = access?.Has("contracts.catalog.read") == true;
+        var hasCatalogAccess = access?.Has("contracts.catalog.read") == true || access?.Has("finance.catalog.read") == true;
         var hasRequestsAccess = access?.Has("contracts.requests.read") == true;
         var hasClosureAccess = access?.Has("contracts.service_closures.read") == true ||
             access?.Has("operations.service_closures.read") == true;
+        var hasReceiptsAccess = access?.Has("finance.receipts.read") == true;
+        var hasPayablesAccess = access?.Has("finance.payables.read") == true || access?.Has("finance.suppliers.read") == true;
+        var hasExpensesAccess = access?.Has("finance.expenses.read") == true || access?.Kind == DepartmentAssignmentKind.Administrator;
+        var hasFiscalAccess = access?.Has("finance.fiscal.read") == true;
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -114,6 +118,10 @@ internal sealed class EfAccountChangeReadStore(
                          context.Turnarounds.Any(turnaround =>
                              turnaround.Id == operation.TurnaroundId &&
                              turnaround.StationId == change.StationId)))) &&
+                (change.Resource != "finance_receipts" || hasReceiptsAccess) &&
+                (change.Resource != "finance_payables" || hasPayablesAccess) &&
+                (change.Resource != "finance_expenses" || hasExpensesAccess) &&
+                (change.Resource != "finance_fiscal" || hasFiscalAccess) &&
                 (change.Resource != "finance_preinvoices" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.Preinvoices.Any(draft =>
@@ -147,6 +155,10 @@ internal sealed class EfAccountChangeReadStore(
                             context.Organizations.Any(organization =>
                                 organization.Id == airline.OrganizationId &&
                                 airlineOrganizationIds.Contains(organization.PublicId)))))) &&
+                (change.Resource != "airline_treasury" ||
+                    (hasAirlinePortalRole && context.Airlines.Any(airline => airline.PublicId == change.ResourceId &&
+                        airline.IsActive && context.Organizations.Any(organization => organization.Id == airline.OrganizationId &&
+                            organization.Status == OrganizationStatus.Active && airlineOrganizationIds.Contains(organization.PublicId))))) &&
                 (change.Resource != "commercial_catalog" ||
                     ((hasCatalogAccess || hasClosureAccess) && context.ServiceDefinitions.Any(service =>
                         service.PublicId == change.ResourceId))) &&
