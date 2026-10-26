@@ -87,6 +87,13 @@ export {
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
+  DOMINICAN_AREA_CODES,
+  identityDocumentExample,
+  normalizeIdentityDocument,
+  normalizePhone,
+  type IdentityDocumentKind,
+} from "./validation";
+export {
   type AccountChangeResponse,
   type AccountChangeListResponse,
   type GetAccountChangesParams,

@@ -1,5 +1,7 @@
 using System.Net.Mail;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Domain.Reference;
+using Elevant.Domain.Validation;
 
 namespace Elevant.Application.Commercial;
 
@@ -13,7 +15,8 @@ public sealed record SubmitCommercialRequestCommand(
     string? RepresentativeProvince = null,
     string? RepresentativeMunicipality = null,
     string? RepresentativeDocumentType = null,
-    string? RepresentativeDocumentNumber = null);
+    string? RepresentativeDocumentNumber = null,
+    string? RepresentativeDistrict = null);
 
 public enum CommercialSubmissionFailure
 {
@@ -42,11 +45,12 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!IsValid(command))
+        var canonical = Canonical(command);
+        if (canonical is null)
             return Task.FromResult(CommercialSubmissionResult.Failed(
                 CommercialSubmissionFailure.InvalidRequest));
 
-        return store.SubmitAsync(command, cancellationToken);
+        return store.SubmitAsync(canonical, cancellationToken);
     }
 
     public async Task<CommercialSubmissionResult> LookupReceiptAsync(
@@ -55,12 +59,55 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!IsValid(command))
+        var canonical = Canonical(command);
+        if (canonical is null)
             return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.InvalidRequest);
-        var reference = await store.LookupReceiptAsync(command, cancellationToken);
+        var reference = await store.LookupReceiptAsync(canonical, cancellationToken);
         return reference is null
             ? CommercialSubmissionResult.Failed(CommercialSubmissionFailure.ReceiptNotFound)
             : CommercialSubmissionResult.Success(reference, true);
+    }
+
+    /// <summary>
+    /// Validates the request and returns it with the phone in E.164 and the document number
+    /// in its canonical form, so equal submissions typed differently are stored the same way.
+    /// </summary>
+    private static SubmitCommercialRequestCommand? Canonical(SubmitCommercialRequestCommand command)
+    {
+        if (!IsValid(command)) return null;
+        var phone = PhoneNumbers.Normalize(command.RepresentativePhone);
+        if (phone is null) return null;
+        var document = CanonicalDocument(command.RepresentativeDocumentType,
+            command.RepresentativeDocumentNumber, command.RepresentativeNationalityCode);
+        if (document is { Valid: false }) return null;
+        return command with
+        {
+            RepresentativePhone = phone,
+            RepresentativeDocumentNumber = document?.Number,
+        };
+    }
+
+    private static (bool Valid, string? Number)? CanonicalDocument(string? type, string? number,
+        string? nationality)
+    {
+        if (string.IsNullOrWhiteSpace(type) && string.IsNullOrWhiteSpace(number)) return null;
+        if (string.IsNullOrWhiteSpace(number)) return (false, null);
+        var canonical = type switch
+        {
+            "NationalId" => IdentityDocuments.Normalize(IdentityDocumentKind.Cedula, number),
+            "Passport" => IdentityDocuments.Normalize(IdentityDocumentKind.Passport, number, nationality),
+            "Other" => OtherDocument(number),
+            _ => null,
+        };
+        return (canonical is not null, canonical);
+    }
+
+    private static string? OtherDocument(string number)
+    {
+        var value = number.Trim();
+        return value.Length is >= 3 and <= 40 &&
+            value.All(character => char.IsAsciiLetterOrDigit(character) ||
+                character is ' ' or '-' or '/') ? value : null;
     }
 
     private static bool IsValid(SubmitCommercialRequestCommand command) =>
@@ -75,14 +122,20 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
             !ValidText(command.RepresentativePhone, 32) ||
             !ValidText(command.RepresentativeEmail, 256) ||
             !ValidEmail(command.RepresentativeEmail) ||
-            !ValidPhone(command.RepresentativePhone) ||
             !ValidNationality(command.RepresentativeNationalityCode) ||
             !OptionalText(command.RepresentativeAddress, 250) ||
             !OptionalText(command.RepresentativeCountry, 80) ||
             !OptionalText(command.RepresentativeProvince, 80) ||
             !OptionalText(command.RepresentativeMunicipality, 80) ||
-            !ValidDocument(command.RepresentativeDocumentType,
-                command.RepresentativeDocumentNumber));
+            !OptionalText(command.RepresentativeDistrict, 80) ||
+            !ValidLocation(command));
+
+    /// <summary>Dominican addresses must name a real province, municipality and municipal district.</summary>
+    private static bool ValidLocation(SubmitCommercialRequestCommand command) =>
+        !DominicanTerritory.IsDominicanRepublic(command.RepresentativeCountry)
+            ? string.IsNullOrWhiteSpace(command.RepresentativeDistrict)
+            : DominicanTerritory.IsValidLocation(command.RepresentativeProvince,
+                command.RepresentativeMunicipality, command.RepresentativeDistrict);
 
     private static bool ValidText(string? value, int maxLength) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= maxLength;
@@ -93,29 +146,6 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     private static bool ValidNationality(string? value) =>
         string.IsNullOrWhiteSpace(value) ||
         value.Length == 2 && value.All(char.IsAsciiLetterUpper);
-
-    private static bool ValidPhone(string value)
-    {
-        var phone = value.Trim();
-        if (!phone.StartsWith('+') ||
-            phone.Skip(1).Any(character => !char.IsAsciiDigit(character) &&
-                character is not (' ' or '-' or '(' or ')')))
-            return false;
-        var digits = phone.Count(char.IsAsciiDigit);
-        return digits is >= 8 and <= 15 && phone.Length <= 32;
-    }
-
-    private static bool ValidDocument(string? type, string? number)
-    {
-        if (string.IsNullOrWhiteSpace(type) && string.IsNullOrWhiteSpace(number))
-            return true;
-        if (type is not ("NationalId" or "Passport" or "Other") ||
-            string.IsNullOrWhiteSpace(number)) return false;
-        var value = number.Trim();
-        return value.Length is >= 3 and <= 40 &&
-            value.All(character => char.IsAsciiLetterOrDigit(character) ||
-                character is ' ' or '-' or '/');
-    }
 
     private static bool ValidEmail(string email) =>
         MailAddress.TryCreate(email.Trim(), out var address) &&

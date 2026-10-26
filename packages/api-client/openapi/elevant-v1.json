@@ -24278,6 +24278,10 @@
             "items": {
               "$ref": "#/components/schemas/CommercialRequestItemData"
             }
+          },
+          "representativeDistrict": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -37543,6 +37547,10 @@
             "nullable": true
           },
           "representativeDocumentNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDistrict": {
             "type": "string",
             "nullable": true
           }

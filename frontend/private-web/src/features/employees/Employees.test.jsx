@@ -51,7 +51,7 @@ describe('EmployeesPage', () => {
     const drawer = screen.getByRole('dialog', { name: 'Registrar empleado' });
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Nombre' }), 'Valeria');
     await userEvent.type(within(drawer).getByRole('textbox', { name: 'Apellido' }), 'Nueva');
-    await userEvent.type(within(drawer).getByRole('textbox', { name: 'Número de documento' }), '001-0000001-1');
+    await userEvent.type(within(drawer).getByRole('textbox', { name: 'Número de documento' }), '001-0000001-7');
     await userEvent.type(within(drawer).getByRole('textbox', { name: /Número de empleado/ }), 'fin-020');
     await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Departamento' }), 'finance');
     await userEvent.selectOptions(within(drawer).getByRole('combobox', { name: 'Puesto' }), 'pos-1');
@@ -164,5 +164,16 @@ describe('ActivityPanel', () => {
   it('maps rule codes to explanations', () => {
     expect(governanceMessage({ status: 409, code: 'employee_terminated' })).toMatch(/dado de baja/);
     expect(governanceMessage({ status: 409 })).toMatch(/cambiaron/);
+  });
+});
+
+describe('employee identification and phone rules', () => {
+  it('explains a cédula with a wrong check digit and a phone without area code', async () => {
+    const { identificationProblem, phoneProblem } = await import('./EmployeeForms');
+    expect(identificationProblem('CEDULA', '001-0000001-1')).toMatch(/dígito verificador/);
+    expect(identificationProblem('CEDULA', '001-0000001-7')).toBe('');
+    expect(identificationProblem('PASAPORTE', '1111111')).toMatch(/pasaporte/i);
+    expect(phoneProblem('849-246-3371')).toBe('');
+    expect(phoneProblem('555-0100')).toMatch(/10 dígitos/);
   });
 });

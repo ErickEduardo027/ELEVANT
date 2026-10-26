@@ -2122,9 +2122,9 @@ public sealed partial class SqlServerMigrationTests
             item.IataCode == "AF" && item.IcaoCode == "AFR");
         var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
             catalog.Airlines[0].Id, [catalog.Services[0].Id],
-            "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,
+            "María Pérez", "Representante legal", "maria@example.test", "849-246-3371", true,
             "DO", "Avenida Principal 10", "República Dominicana", "Santo Domingo",
-            "Boca Chica", "Passport", "AB123456");
+            "Boca Chica", "Passport", "rd 123 4567");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
         Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
@@ -2147,7 +2147,25 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(catalog.Airlines[0].Name, request.RequestedAirlineName);
         Assert.True(request.AuthorityDeclared);
         Assert.Equal("DO", request.ContactNationalityCode);
-        Assert.Equal("AB123456", request.ContactDocumentNumber);
+        Assert.Equal("RD1234567", request.ContactDocumentNumber);
+        Assert.Equal("+18492463371", request.ContactPhone);
+        Assert.Null(request.ContactDistrict);
+
+        // Dominican addresses follow the official division down to the municipal district.
+        var seibo = command with
+        {
+            RequestId = Guid.NewGuid(), RepresentativeEmail = "seibo@example.test",
+            RepresentativeProvince = "El Seibo", RepresentativeMunicipality = "El Seibo",
+            RepresentativeDistrict = "Pedro Sánchez",
+        };
+        Assert.True((await handler.HandleAsync(seibo, cancellationToken)).IsSuccess);
+        Assert.Equal("Pedro Sánchez", await context.ServiceRequests.AsNoTracking()
+            .Where(item => item.PublicId == seibo.RequestId).Select(item => item.ContactDistrict)
+            .SingleAsync(cancellationToken));
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, (await handler.HandleAsync(seibo with
+        {
+            RequestId = Guid.NewGuid(), RepresentativeMunicipality = "Pedro Sánchez", RepresentativeDistrict = null,
+        }, cancellationToken)).Failure);
         Assert.Equal(1, await context.Set<ServiceRequestItem>().CountAsync(
             item => item.ServiceRequestId == request.Id, cancellationToken));
 

@@ -809,6 +809,8 @@ export interface CommercialRequestData {
   /** @nullable */
   contractId?: string | null;
   services: CommercialRequestItemData[];
+  /** @nullable */
+  representativeDistrict?: string | null;
 }
 
 export interface CommercialStationData {
@@ -4417,6 +4419,8 @@ export interface SubmitCommercialRequestRequest {
   representativeDocumentType?: string | null;
   /** @nullable */
   representativeDocumentNumber?: string | null;
+  /** @nullable */
+  representativeDistrict?: string | null;
 }
 
 export interface SubmitCommercialRequestResponse {

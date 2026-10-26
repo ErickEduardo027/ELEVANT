@@ -15,6 +15,7 @@ public sealed record SubmitCommercialRequestRequest(
     string? RepresentativeProvince = null,
     string? RepresentativeMunicipality = null,
     string? RepresentativeDocumentType = null,
-    string? RepresentativeDocumentNumber = null);
+    string? RepresentativeDocumentNumber = null,
+    string? RepresentativeDistrict = null);
 
 public sealed record SubmitCommercialRequestResponse(string Reference, bool Replayed);

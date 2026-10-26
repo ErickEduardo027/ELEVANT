@@ -234,6 +234,7 @@ import {
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
 import { ElevantApiError } from "./errors";
+import { normalizeIdentityDocument, normalizePhone } from "./validation";
 
 type AccessToken = string | null | undefined;
 type FetchImplementation = typeof globalThis.fetch;
@@ -2713,7 +2714,7 @@ function validatedCommercialRequest(
     "representativeEmail", "representativePhone", "authorityDeclared",
     "representativeNationalityCode", "representativeAddress", "representativeCountry",
     "representativeProvince", "representativeMunicipality",
-    "representativeDocumentType", "representativeDocumentNumber"]) ||
+    "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict"]) ||
     !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
     !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
     request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
@@ -2723,9 +2724,7 @@ function validatedCommercialRequest(
     !isNonEmptyString(request.representativeEmail) || request.representativeEmail.length > 256 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.representativeEmail) ||
     !isNonEmptyString(request.representativePhone) || request.representativePhone.length > 32 ||
-    !/^\+[0-9 ()-]{7,31}$/.test(request.representativePhone) ||
-    request.representativePhone.replace(/\D/g, "").length < 8 ||
-    request.representativePhone.replace(/\D/g, "").length > 15 ||
+    normalizePhone(request.representativePhone) === null ||
     !isOptionalNullable(request.representativeNationalityCode,
       value => typeof value === "string" && /^[A-Z]{2}$/.test(value)) ||
     !isOptionalNullable(request.representativeAddress,
@@ -2736,10 +2735,17 @@ function validatedCommercialRequest(
       value => typeof value === "string" && value.trim().length <= 80) ||
     !isOptionalNullable(request.representativeMunicipality,
       value => typeof value === "string" && value.trim().length <= 80) ||
+    !isOptionalNullable(request.representativeDistrict,
+      value => typeof value === "string" && value.trim().length <= 80) ||
     !isOptionalNullable(request.representativeDocumentType,
       value => value === "NationalId" || value === "Passport" || value === "Other") ||
     !isOptionalNullable(request.representativeDocumentNumber,
-      value => typeof value === "string" && /^[A-Za-z0-9 /-]{3,40}$/.test(value)) ||
+      value => typeof value === "string" && (
+        request.representativeDocumentType === "NationalId"
+          ? normalizeIdentityDocument("Cedula", value) !== null
+          : request.representativeDocumentType === "Passport"
+            ? normalizeIdentityDocument("Passport", value, request.representativeNationalityCode) !== null
+            : /^[A-Za-z0-9 /-]{3,40}$/.test(value))) ||
     Boolean(request.representativeDocumentType) !== Boolean(request.representativeDocumentNumber) ||
     request.authorityDeclared !== true)
     throw new TypeError("Commercial application is invalid.");

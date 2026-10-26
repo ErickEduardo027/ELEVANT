@@ -1,3 +1,8 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Inline validation messages that replace the browser bubbles (src/components/formValidation.js). */
+.form-validation-message { margin: 0.35rem 0 0; color: #b42318; font-size: 0.75rem; font-weight: 500; line-height: 1.35; }
+.dark .form-validation-message { color: #fda29b; }
+[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]) { border-color: #d92d20; }

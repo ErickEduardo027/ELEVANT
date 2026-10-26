@@ -37,7 +37,8 @@ public sealed class PublicCommercialRequestsController(
             request.AuthorityDeclared, request.RepresentativeNationalityCode,
             request.RepresentativeAddress, request.RepresentativeCountry,
             request.RepresentativeProvince, request.RepresentativeMunicipality,
-            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber),
+            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber,
+            request.RepresentativeDistrict),
             cancellationToken);
         if (!result.IsSuccess)
         {
@@ -80,7 +81,8 @@ public sealed class PublicCommercialRequestsController(
             request.AuthorityDeclared, request.RepresentativeNationalityCode,
             request.RepresentativeAddress, request.RepresentativeCountry,
             request.RepresentativeProvince, request.RepresentativeMunicipality,
-            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber),
+            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber,
+            request.RepresentativeDistrict),
             cancellationToken);
         if (result.IsSuccess)
             return Ok(new SubmitCommercialRequestResponse(result.Reference!, true));
