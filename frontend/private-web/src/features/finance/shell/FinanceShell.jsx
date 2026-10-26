@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import ShellFrame from '../../shell/ShellFrame';
+import { useDepartmentNotificationCenter } from '../../notifications/DepartmentNotificationCenter';
 import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import FinanceHomePage from '../home/FinanceHomePage';
@@ -44,6 +45,10 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const home = useFinanceHomeData(activeModule?.id === FINANCE_MODULE_IDS.HOME);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notificationCenter = useDepartmentNotificationCenter({
+    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('finance.notifications.read')),
+    onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
+  });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -82,9 +87,10 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
     <ShellFrame
       mainKey={activeModule?.id ?? 'none'}
       sidebarProps={{ modules: navigation, activeModuleId: activeModule?.id, onSelectModule: handleSelectModule, badgeCounts: {}, user, onLogout, breakpoint: sidebar.breakpoint, railVisible: sidebar.railVisible, railExpanded: sidebar.railExpanded, overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay }}
-      topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
+      topbarProps={{ station: stationSnapshot(), notificationsEnabled: notificationCenter.ui !== null, notificationsCount: notificationCenter.count, onOpenNotifications: notificationCenter.openPanel, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
     >
       {!activeModule ? <NoModulesNotice /> : pages[activeModule.id] ?? <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+      {notificationCenter.ui}
     </ShellFrame>
   );
 }

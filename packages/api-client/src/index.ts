@@ -214,6 +214,8 @@ export {
   type OperationMessageListResponse,
   type OperationalNotificationResponse,
   type OperationalNotificationListResponse,
+  type DepartmentNotificationResponse,
+  type DepartmentNotificationListResponse,
   type SendOperationMessageRequest,
   type OccReviewServiceResponse,
   type OccReviewChecklistAnswerResponse,

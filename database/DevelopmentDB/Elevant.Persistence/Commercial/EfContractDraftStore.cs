@@ -1,3 +1,4 @@
+using Elevant.Persistence.Identity;
 using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
@@ -143,6 +144,10 @@ internal sealed class EfContractDraftStore(
             .ToArray();
     }
 
+    private Task<string?> AirlineNameAsync(long airlineId, CancellationToken cancellationToken) =>
+        context.Airlines.AsNoTracking().Where(airline => airline.Id == airlineId)
+            .Select(airline => (string?)airline.Name).SingleOrDefaultAsync(cancellationToken);
+
     public async Task<ContractDraftResult> AddAirlineCommentAsync(Guid actorId,
         Guid versionId, string body, CancellationToken cancellationToken = default)
     {
@@ -173,6 +178,9 @@ internal sealed class EfContractDraftStore(
             "commercial.contract_versions", row.Version.PublicId);
         await NotifyReadersAsync("contract_draft_comments", row.Version.PublicId,
             now, cancellationToken);
+        await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts,
+            "contracts.drafts.read", "draft_comment", row.Version.PublicId,
+            await AirlineNameAsync(row.Contract.AirlineId, cancellationToken), now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return ContractDraftResult.Success(comment.PublicId);
     }
@@ -295,6 +303,9 @@ internal sealed class EfContractDraftStore(
         foreach (var recipient in await CommercialNotificationRecipients.WithPermissionAsync(context,
                      "finance.contract_approvals.read", cancellationToken))
             AccountChangeOutboxWriter.Add(context, recipient, null, "contract_approvals", row.Version.PublicId, now);
+        await DepartmentNotificationWriter.NotifyAsync(context, Department.Finance,
+            "finance.contract_approvals.read", "contract_approval", row.Version.PublicId,
+            await AirlineNameAsync(row.Contract.AirlineId, cancellationToken), now, cancellationToken);
         await NotifyReadersAsync("contract_approvals", row.Version.PublicId, now, cancellationToken);
         CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.contract.submitted_to_finance",
             "commercial.contract_versions", row.Version.PublicId);

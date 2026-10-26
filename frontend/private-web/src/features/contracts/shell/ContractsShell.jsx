@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ShellFrame from '../../shell/ShellFrame';
+import { useDepartmentNotificationCenter } from '../../notifications/DepartmentNotificationCenter';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
@@ -45,6 +46,10 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   useCommercialRevalidation(revalidateClosures);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notificationCenter = useDepartmentNotificationCenter({
+    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('contracts.notifications.read')),
+    onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
+  });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -87,7 +92,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         onToggle: sidebar.toggle,
         onCloseOverlay: sidebar.closeOverlay,
       }}
-      topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
+      topbarProps={{ station: stationSnapshot(), notificationsEnabled: notificationCenter.ui !== null, notificationsCount: notificationCenter.count, onOpenNotifications: notificationCenter.openPanel, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
     >
           {!activeModule ? (
             <NoModulesNotice />
@@ -112,6 +117,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}
+      {notificationCenter.ui}
     </ShellFrame>
   );
 }

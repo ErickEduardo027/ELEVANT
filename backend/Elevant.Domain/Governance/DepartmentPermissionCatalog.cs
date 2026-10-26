@@ -99,6 +99,7 @@ public static class DepartmentPermissionCatalog
                 Module("contracts", "service_closures", "Solicitudes de clausura", "Oferta", "catalog",
                     Read(), Other("decide", "Aprobar o denegar"), Other("reopen", "Republicar")),
                 Module("contracts", "reports", "Reportes", "Análisis", null, Read()),
+                Module("contracts", "notifications", "Notificaciones", "Análisis", null, Read()),
             ],
             [Department.Finance] =
             [
@@ -140,6 +141,7 @@ public static class DepartmentPermissionCatalog
                 Module("finance", "fiscal", "Documentos fiscales", "Fiscal", null,
                     Read(), Create("Preparar documentos"), Other("simulate", "Ejecutar simulación")),
                 Module("finance", "reports", "Reportes", "Análisis", null, Read(), Other("export", "Exportar")),
+                Module("finance", "notifications", "Notificaciones", "Análisis", null, Read()),
             ],
         };
 

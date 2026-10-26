@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import AppShell from '../shell/AppShell';
-import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_BASE_PATH, HUMAN_RESOURCES_MODULE_IDS } from './navigation';
+import { HUMAN_RESOURCES_NAVIGATION, HUMAN_RESOURCES_MODULE_IDS } from './navigation';
 import { CURRENT_USER_MOCK } from './mockData';
-import { useUnreadNotificationsCount } from './notifications/useUnreadNotificationsCount';
 import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
 import { allowedNavigation, useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useNavigationGuard } from '../access/useNavigationGuard';
@@ -15,7 +14,8 @@ export default function HumanResourcesLayout({
   children,
 }) {
   const { access } = useDepartmentAccess();
-  const unreadNotificationsCount = useUnreadNotificationsCount({ enabled: !dashboardReadOnlyDemo });
+  // Department alerts are real data (ADR-0018), so the read-only demo keeps them.
+  const notificationsEnabled = Boolean(access?.can('human_resources.notifications.read'));
 
   const navigation = useMemo(
     () =>
@@ -34,6 +34,7 @@ export default function HumanResourcesLayout({
           item.id === HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS ||
+          item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.DEPARTMENT_USERS)
         .map(item =>
         dashboardReadOnlyDemo && (item.id === HUMAN_RESOURCES_MODULE_IDS.CERTIFICATIONS ||
@@ -41,14 +42,9 @@ export default function HumanResourcesLayout({
           item.id === HUMAN_RESOURCES_MODULE_IDS.SCHEDULES ||
           item.id === HUMAN_RESOURCES_MODULE_IDS.REPORTS)
           ? { ...item, badge: null }
-          : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS
-          ? {
-              ...item,
-              badge: unreadNotificationsCount > 0 ? { count: unreadNotificationsCount, tone: 'default' } : null,
-            }
-          : item
+          : item.id === HUMAN_RESOURCES_MODULE_IDS.NOTIFICATIONS ? { ...item, badge: null } : item
       ),
-    [access, dashboardReadOnlyDemo, unreadNotificationsCount]
+    [access, dashboardReadOnlyDemo]
   );
 
   const { permitted, empty } = useNavigationGuard(HUMAN_RESOURCES_NAVIGATION, navigation);
@@ -59,8 +55,8 @@ export default function HumanResourcesLayout({
       roleLabel="Gestión Humana"
       user={user}
       onLogout={onLogout}
-      notificationsPath={dashboardReadOnlyDemo ? undefined : `${HUMAN_RESOURCES_BASE_PATH}/notifications`}
-      notificationsEnabled={!dashboardReadOnlyDemo}
+      notificationsSource="department"
+      notificationsEnabled={notificationsEnabled}
       profileActionsEnabled={!dashboardReadOnlyDemo}
     >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
   );
