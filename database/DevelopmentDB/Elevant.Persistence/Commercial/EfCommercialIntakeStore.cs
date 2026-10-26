@@ -1,3 +1,4 @@
+using Elevant.Persistence.Identity;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -106,6 +107,9 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     foreach (var recipient in recipients)
                         AccountChangeOutboxWriter.Add(context, recipient, null,
                             "commercial_requests", request.PublicId, request.SubmittedAt);
+                    await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts,
+                        "contracts.requests.read", "commercial_request", request.PublicId,
+                        request.RequestedAirlineName, request.SubmittedAt, cancellationToken);
 
                     await context.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);

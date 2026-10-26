@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Infrastructure.Persistence;
@@ -64,6 +65,8 @@ public sealed partial class SqlServerMigrationTests
                     RepresentativeMunicipality: "Miches", RepresentativeDistrict: "La Gina"), ct);
             Assert.True(submitted.IsSuccess);
         }
+        // The request also raised Contracts alerts; clear them so only the district history blocks the rollback.
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM iam.department_notifications", ct);
         var chain = context.Database.GetMigrations().ToArray();
         var previous = chain[Array.IndexOf(chain, IdentityRulesMigration) - 1];
         var failure = await Assert.ThrowsAsync<SqlException>(() =>
@@ -121,5 +124,59 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(CatalogMutationFailure.Forbidden,
             (await catalog.DeleteAsync(FinanceAccount, saved.Service.Id, published.Service.Version, ct)).Failure);
         Assert.Null((await catalog.DeleteAsync(ContractsAccount, saved.Service.Id, published.Service.Version, ct)).Failure);
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    private const string DepartmentNotificationsMigration = "20261026192634_AddDepartmentNotifications";
+
+    [Fact]
+    public async Task CommercialRequestsRaiseOnScreenAlertsOnlyForContractsAndHistoryBlocksRollback()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var notifications = scope.ServiceProvider.GetRequiredService<IDepartmentNotificationStore>();
+        var before = await notifications.ListAsync(ContractsAccount, ct);
+        Assert.True(before.IsSuccess);
+
+        var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct);
+        var submitted = await new SubmitCommercialRequestHandler(
+            scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>()).HandleAsync(
+            new SubmitCommercialRequestCommand(Guid.NewGuid(), catalog.Airlines[0].Id, [catalog.Services[0].Id],
+                "Rosa Díaz", "Representante legal", "rosa@example.test", "809-555-0100", true,
+                RepresentativeCountry: "República Dominicana", RepresentativeProvince: "El Seibo",
+                RepresentativeMunicipality: "Miches"), ct);
+        Assert.True(submitted.IsSuccess);
+
+        var after = (await notifications.ListAsync(ContractsAccount, ct)).Value!;
+        var alert = Assert.Single(after.Notifications, item => item.Kind == "commercial_request");
+        Assert.Equal("Contracts", alert.Department);
+        Assert.Equal(catalog.Airlines[0].Name, alert.Subject);
+        Assert.Null(alert.ReadAt);
+        Assert.Equal(before.Value!.UnreadCount + 1, after.UnreadCount);
+        // Finance reads its own feed and never sees the Contracts alert.
+        var finance = await notifications.ListAsync(FinanceAccount, ct);
+        Assert.True(finance.IsSuccess);
+        Assert.DoesNotContain(finance.Value!.Notifications, item => item.Id == alert.Id);
+        Assert.Equal(DepartmentNotificationFailure.NotFound,
+            (await notifications.SetReadAsync(FinanceAccount, alert.Id, true, ct)).Failure);
+
+        var read = await notifications.SetReadAsync(ContractsAccount, alert.Id, true, ct);
+        Assert.NotNull(read.Value!.ReadAt);
+        Assert.Equal(after.UnreadCount - 1, (await notifications.ListAsync(ContractsAccount, ct)).Value!.UnreadCount);
+
+        await using var context = CreateContext(database.ConnectionString);
+        // The bell and the toast learn about it through the account change feed.
+        var signals = await context.OutboxMessages.AsNoTracking().Select(message => message.PayloadJson).ToArrayAsync(ct);
+        Assert.Contains(signals, payload => payload.Contains("\"notifications\"") && payload.Contains(alert.Id.ToString("D")));
+        var chain = context.Database.GetMigrations().ToArray();
+        var previous = chain[Array.IndexOf(chain, DepartmentNotificationsMigration) - 1];
+        var failure = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous, ct));
+        Assert.Equal(52310, failure.Number);
     }
 }

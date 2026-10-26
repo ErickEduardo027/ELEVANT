@@ -31,6 +31,15 @@ export default function Toast({ toasts, onDismiss }) {
           >
             <Icon className="mt-0.5 h-4 w-4 shrink-0" />
             <p className="flex-1 text-sm text-ink-900 dark:text-text-primary-dark">{toast.message}</p>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => { toast.action.onClick(); onDismiss(toast.id); }}
+                className="shrink-0 rounded-lg border border-current px-2 py-0.5 text-xs font-semibold"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onDismiss(toast.id)}

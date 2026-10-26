@@ -18,9 +18,10 @@ export function useToast() {
   }, []);
 
   const showToast = useCallback(
-    (message, tone = 'success', durationMs = 4000) => {
+    // `action` ({ label, onClick }) adds a button such as «Abrir»; the toast never takes focus.
+    (message, tone = 'success', durationMs = 4000, action = null) => {
       const id = `toast-${(toastSequence += 1)}`;
-      setToasts(current => [...current, { id, message, tone }]);
+      setToasts(current => [...current, { id, message, tone, action }]);
       timers.current.set(
         id,
         setTimeout(() => dismissToast(id), durationMs)

@@ -1211,6 +1211,26 @@ export interface DepartmentCatalogData {
   modules: PermissionModuleData[];
 }
 
+export interface DepartmentNotificationResponse {
+  id: string;
+  department: string;
+  kind: string;
+  sourceId: string;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  stationCode?: string | null;
+  occurredAt: string;
+  /** @nullable */
+  readAt?: string | null;
+}
+
+export interface DepartmentNotificationListResponse {
+  notifications: DepartmentNotificationResponse[];
+  unreadCount: number;
+  hasMore: boolean;
+}
+
 export interface GovernanceSupervisorData {
   id: string;
   name: string;
@@ -4383,6 +4403,10 @@ export interface SetContractPackagesRequest {
   requestId: string;
   expectedVersion: string;
   packageVersionIds: string[];
+}
+
+export interface SetDepartmentNotificationReadRequest {
+  read: boolean;
 }
 
 export interface SetDepartmentUserStatusInput {
@@ -7840,6 +7864,69 @@ export const convertLegacyRole = async (id: string, options?: RequestInit): Prom
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentNotificationsUrl = () => {
+
+
+
+
+  return `/api/v1/department-notifications`
+}
+
+export const getDepartmentNotifications = async ( options?: RequestInit): Promise<DepartmentNotificationListResponse> => {
+
+  const res = await fetch(getGetDepartmentNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentNotificationListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetDepartmentNotificationReadUrl = (notificationId: string,) => {
+
+
+
+
+  return `/api/v1/department-notifications/${notificationId}/read`
+}
+
+export const setDepartmentNotificationRead = async (notificationId: string,
+    setDepartmentNotificationReadRequest: SetDepartmentNotificationReadRequest, options?: RequestInit): Promise<DepartmentNotificationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetDepartmentNotificationReadUrl(notificationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setDepartmentNotificationReadRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentNotificationResponse = body ? JSON.parse(body) : {}
   return data
 }
 

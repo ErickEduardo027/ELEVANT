@@ -165,6 +165,11 @@ internal sealed class EfAirlinePreinvoiceDisputeStore(
         });
         await FinanceApprovedServiceChangeWriter.AddAsync(context,
             scope.StationId, scope.PublicId, now, "finance_preinvoices", cancellationToken);
+        await DepartmentNotificationWriter.NotifyAsync(context, Department.Finance,
+            "finance.preinvoices.read", "preinvoice_disputed", scope.PublicId,
+            await context.Organizations.AsNoTracking().Where(organization => organization.Id == scope.OrganizationId)
+                .Select(organization => (string?)organization.DisplayName).SingleOrDefaultAsync(cancellationToken),
+            now, cancellationToken, stationId: scope.StationId);
         await AirlineOperationChangeWriter.AddPreinvoiceAsync(context,
             scope.OrganizationId, scope.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);

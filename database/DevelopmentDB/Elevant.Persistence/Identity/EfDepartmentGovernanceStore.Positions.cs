@@ -278,6 +278,9 @@ internal sealed partial class EfDepartmentGovernanceStore
                 new AuditFieldChangeData("requisition.position", null, position.Name),
                 new AuditFieldChangeData("requisition.quantity", null, input.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             await NotifyRequisitionsAsync(parsed, requisition.PublicId, requisition.RequestedByAccountId, now, cancellationToken);
+            await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources,
+                "human_resources.requisitions.read", "requisition", requisition.PublicId,
+                $"{position.Name} × {input.Quantity}", now, cancellationToken, exceptAccountId: actor.Id);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(requisition.PublicId);
         }, cancellationToken);

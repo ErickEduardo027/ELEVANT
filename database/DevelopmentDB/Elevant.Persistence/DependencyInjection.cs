@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<EfDepartmentGovernanceStore>();
         services.AddScoped<IDepartmentGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
         services.AddScoped<IEmployeeGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
+        services.AddScoped<IDepartmentNotificationStore, EfDepartmentNotificationStore>();
         services.AddScoped<IRampProfileStore, EfRampProfileStore>();
         services.AddScoped<IRampMobileAccessRequestStore, EfRampMobileAccessRequestStore>();
         services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();

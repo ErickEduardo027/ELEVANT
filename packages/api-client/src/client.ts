@@ -69,6 +69,8 @@ import {
   getGetOperationalMessagesUrl,
   getSendOperationalMessageUrl,
   getGetOperationalNotificationsUrl,
+  getGetDepartmentNotificationsUrl,
+  getSetDepartmentNotificationReadUrl,
   getSetOperationalNotificationReadUrl,
   getDecideOccReviewUrl,
   getGetRampOperationChecklistUrl,
@@ -204,6 +206,8 @@ import {
   type OperationMessageListResponse,
   type OperationMessageResponse,
   type OperationalNotificationListResponse,
+  type DepartmentNotificationListResponse,
+  type DepartmentNotificationResponse,
   type OperationalNotificationResponse,
   type SendOperationMessageRequest,
   type DecideOccReviewRequest,
@@ -683,6 +687,14 @@ export interface ElevantApiClient {
     read: boolean,
     options?: GetOperationalCommunicationOptions,
   ): Promise<OperationalNotificationResponse>;
+  getDepartmentNotifications(
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<DepartmentNotificationListResponse>;
+  setDepartmentNotificationRead(
+    notificationId: string,
+    read: boolean,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<DepartmentNotificationResponse>;
   decideOccReview(
     operationId: string,
     request: DecideOccReviewRequest,
@@ -2120,6 +2132,24 @@ function isOperationalNotificationResponse(value: unknown): value is Operational
     isNonEmptyString(value.operationCode) && isNonEmptyString(value.stationCode) &&
     isNonEmptyString(value.kind) && isUuid(value.sourceId) &&
     isDateTimeOffset(value.occurredAt) && isOptionalNullable(value.readAt, isDateTimeOffset);
+}
+
+const DEPARTMENT_NOTIFICATION_DEPARTMENTS = new Set(["HumanResources", "Contracts", "Operations", "Finance"]);
+
+function isDepartmentNotificationResponse(value: unknown): value is DepartmentNotificationResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["id", "department", "kind", "sourceId", "subject", "stationCode", "occurredAt", "readAt"]) &&
+    isUuid(value.id) && typeof value.department === "string" && DEPARTMENT_NOTIFICATION_DEPARTMENTS.has(value.department) &&
+    isNonEmptyString(value.kind) && isUuid(value.sourceId) &&
+    isOptionalNullable(value.subject, isNonEmptyString) && isOptionalNullable(value.stationCode, isNonEmptyString) &&
+    isDateTimeOffset(value.occurredAt) && isOptionalNullable(value.readAt, isDateTimeOffset);
+}
+
+function isDepartmentNotificationListResponse(value: unknown): value is DepartmentNotificationListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["notifications", "unreadCount", "hasMore"]) &&
+    typeof value.hasMore === "boolean" && Number.isInteger(value.unreadCount) && (value.unreadCount as number) >= 0 &&
+    Array.isArray(value.notifications) && value.notifications.length <= 50 &&
+    value.notifications.every(isDepartmentNotificationResponse);
 }
 
 function isOperationalNotificationListResponse(value: unknown): value is OperationalNotificationListResponse {
@@ -5291,6 +5321,26 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getSetOperationalNotificationReadUrl(notification),
         { ...options, method: "PUT", headers, body: JSON.stringify({ read }) }, true);
       if (!isOperationalNotificationResponse(result.data) || result.data.id.toLowerCase() !== notification ||
+          (read && result.data.readAt == null) || (!read && result.data.readAt != null))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getDepartmentNotifications(options?: GetOperationalCommunicationOptions) {
+      const result = await execute(getGetDepartmentNotificationsUrl(), { ...options, method: "GET" }, true);
+      if (!isDepartmentNotificationListResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setDepartmentNotificationRead(
+      notificationId: string, read: boolean,
+      options?: GetOperationalCommunicationOptions,
+    ) {
+      const notification = validatedUuid(notificationId, "notificationId");
+      if (typeof read !== "boolean") throw new TypeError("read must be a boolean.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSetDepartmentNotificationReadUrl(notification),
+        { ...options, method: "PUT", headers, body: JSON.stringify({ read }) }, true);
+      if (!isDepartmentNotificationResponse(result.data) || result.data.id.toLowerCase() !== notification ||
           (read && result.data.readAt == null) || (!read && result.data.readAt != null))
         throw malformedResponse(result.status);
       return result.data;

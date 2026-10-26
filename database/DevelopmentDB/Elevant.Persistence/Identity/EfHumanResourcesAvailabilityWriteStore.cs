@@ -73,6 +73,9 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
                 });
                 AddAudit(actorKey.Value, requestId, "hr.availability.recorded", now);
                 await AddHumanResourcesHintsAsync(requestId, now, cancellationToken);
+                await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources,
+                    "human_resources.availability.decide", "availability_request", requestId, null, now,
+                    cancellationToken, exceptAccountId: actorKey.Value);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return HumanResourcesAvailabilityWriteResult.Success(requestId, "Pending");
