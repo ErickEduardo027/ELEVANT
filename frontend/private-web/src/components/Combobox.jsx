@@ -10,17 +10,18 @@ const fold = text => String(text ?? '').normalize('NFD').replace(/\p{Diacritic}/
 // permite elegir opciones existentes o «Otro»; el texto escrito filtra y nunca
 // se guarda por sí solo.
 export default function Combobox({ id, label, value, options, onChange, placeholder, hint, error,
-  required = false, otherLabel = 'Otro', otherHint }) {
+  required = false, otherLabel = 'Otro', otherHint, allowOther = true }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = `${id}-listbox`;
   const messageId = `${id}-message`;
   const other = { value: OTHER_OPTION, label: otherLabel, hint: otherHint };
-  const selected = [...options, other].find(option => option.value === value) ?? null;
+  const extras = allowOther ? [other] : [];
+  const selected = [...options, ...extras].find(option => option.value === value) ?? null;
   const filtered = query ? options.filter(option =>
     [option.label, option.value, option.hint].some(field => fold(field).includes(fold(query)))) : options;
-  const visible = [...filtered, other];
+  const visible = [...filtered, ...extras];
   const optionId = index => `${id}-option-${index}`;
 
   useEffect(() => {

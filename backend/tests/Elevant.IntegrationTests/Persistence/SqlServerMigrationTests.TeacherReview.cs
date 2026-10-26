@@ -72,3 +72,54 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(IdentityRulesMigration, (await context.Database.GetAppliedMigrationsAsync(ct)).Last());
     }
 }
+
+public sealed partial class SqlServerMigrationTests
+{
+    [Fact]
+    public async Task ContractsOwnsTheCatalogAndPublishingNeedsARealPhotoDescriptionAndName()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var hidden = new ManagedServiceInput("RAMP-CATERING", "Catering de aeronaves",
+            "Comidas y bebidas a bordo para tripulación y pasajeros", "operación", null, null, 900, false, true, null);
+
+        // Finance prices services but no longer edits the catalog; it can still read it.
+        Assert.Equal(CatalogMutationFailure.Forbidden, (await catalog.SaveAsync(FinanceAccount, null, hidden, ct)).Failure);
+        Assert.NotNull(await catalog.ListAsync(FinanceAccount, ct));
+
+        var unknownUnit = await catalog.SaveAsync(ContractsAccount, null, hidden with { BillingUnit = "galón" }, ct);
+        Assert.Equal(("billing_unit_unknown", CatalogMutationFailure.Invalid), (unknownUnit.Code, unknownUnit.Failure!.Value));
+        var withoutPhoto = await catalog.SaveAsync(ContractsAccount, null, hidden with { IsPublic = true }, ct);
+        Assert.Equal("image_required", withoutPhoto.Code);
+        var placeholder = await catalog.SaveAsync(ContractsAccount, null, hidden with
+        {
+            Code = "RAMP-PRUEBA", Name = "Servicio de prueba", IsPublic = true,
+            ImageUrl = "/assets/services/cargo-loading.webp",
+        }, ct);
+        Assert.Equal("placeholder_name", placeholder.Code);
+        var shortText = await catalog.SaveAsync(ContractsAccount, null, hidden with
+        {
+            Description = "Comidas", IsPublic = true, ImageUrl = "/assets/services/cargo-loading.webp",
+        }, ct);
+        Assert.Equal("description_too_short", shortText.Code);
+
+        // Hidden it can be saved with a unit Finance maintains (any casing), then published with a photo.
+        var saved = await catalog.SaveAsync(ContractsAccount, null, hidden with { BillingUnit = "Operación" }, ct);
+        Assert.Null(saved.Failure);
+        var published = await catalog.SaveAsync(ContractsAccount, saved.Service!.Id, hidden with
+        {
+            BillingUnit = "Operación", IsPublic = true, ImageUrl = "/assets/services/cargo-loading.webp",
+            Version = saved.Service.Version,
+        }, ct);
+        Assert.Null(published.Failure);
+        Assert.True(published.Service!.IsPublic);
+        Assert.Equal(CatalogMutationFailure.Forbidden,
+            (await catalog.DeleteAsync(FinanceAccount, saved.Service.Id, published.Service.Version, ct)).Failure);
+        Assert.Null((await catalog.DeleteAsync(ContractsAccount, saved.Service.Id, published.Service.Version, ct)).Failure);
+    }
+}

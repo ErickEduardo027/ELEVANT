@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { OTHER_OPTION } from '../../../components/Combobox';
-import { BILLING_UNITS, MAX_DISPLAY_ORDER, REFERENCE_SERVICES, billingUnitOptions, buildServiceCatalog,
-  buildServicePayload, nextDisplayOrder, sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
+import { MAX_DISPLAY_ORDER, REFERENCE_SERVICES, billingUnitOptions, buildServiceCatalog,
+  buildServicePayload, nextDisplayOrder, publicationProblem, sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
 
 const service = (id, code, name, extra = {}) => ({ id, code, name, displayOrder: 1, billingUnit: 'operación', ...extra });
 const form = overrides => ({ serviceChoice: 'RAMP-CARGO', name: 'Carga y descarga', code: 'RAMP-CARGO',
-  unitChoice: 'operación', customUnit: '', description: 'Carga', imageUrl: '', videoUrl: '',
+  unitChoice: 'operación', description: 'Carga y descarga de aeronaves', imageUrl: '/assets/services/cargo-loading.webp', videoUrl: '',
   displayOrder: 3, isPublic: true, isActive: true, version: null, ...overrides });
 
 describe('nextDisplayOrder', () => {
@@ -42,11 +42,22 @@ describe('buildServiceCatalog', () => {
   });
 });
 
-it('offers the base billing units plus units already used in the catalog', () => {
-  const options = billingUnitOptions([service('a', 'A', 'A', { billingUnit: 'operation' }),
-    service('b', 'B', 'B', { billingUnit: 'Operación' })]);
-  expect(options.slice(0, BILLING_UNITS.length)).toEqual(BILLING_UNITS);
-  expect(options.slice(BILLING_UNITS.length).map(option => option.value)).toEqual(['operation']);
+it('offers the active units Finance maintains and keeps a legacy unit only for its own service', () => {
+  const units = [{ code: 'operation', name: 'Operación', isActive: true }, { code: 'hour', name: 'Hora', isActive: true },
+    { code: 'old', name: 'Antigua', isActive: false }];
+  expect(billingUnitOptions(units).map(option => option.label)).toEqual(['Por hora', 'Por operación']);
+  expect(billingUnitOptions(units, 'operación')).toHaveLength(2);
+  expect(billingUnitOptions(units, 'turno').at(-1)).toMatchObject({ value: 'turno', hint: expect.stringMatching(/heredada/) });
+  expect(billingUnitOptions(null)).toEqual([]);
+});
+
+it('explains what a service needs before it can be public', () => {
+  expect(publicationProblem(form())).toBe('');
+  expect(publicationProblem(form({ imageUrl: '' }))).toMatch(/foto real/);
+  expect(publicationProblem(form({ imageUrl: '' }), { hasNewImage: true })).toBe('');
+  expect(publicationProblem(form({ description: 'Corta' }))).toMatch(/20 caracteres/);
+  expect(publicationProblem(form({ name: 'Servicio de prueba' }))).toMatch(/prueba/);
+  expect(publicationProblem(form({ name: 'prueba', isPublic: false }))).toBe('');
 });
 
 describe('validateServiceForm', () => {
@@ -85,10 +96,6 @@ describe('validateServiceForm', () => {
     expect(validateServiceForm({ ...edited, name: '' }, { catalog, editingId: 'existing' }).name).toBe('Escribe el nombre del servicio.');
   });
 
-  it('requires the custom billing unit when «Otro» is selected', () => {
-    expect(validateServiceForm(form({ unitChoice: OTHER_OPTION, customUnit: ' ' }), { catalog }).customUnit)
-      .toBe('Escribe la unidad de cobro personalizada.');
-  });
 
   it('reports an exhausted order range', () => {
     expect(validateServiceForm(form({ displayOrder: null }), { catalog }).displayOrder).toMatch(/orden/);
@@ -97,8 +104,8 @@ describe('validateServiceForm', () => {
 
 it('builds the API payload with normalized values and never «Otro»', () => {
   expect(buildServicePayload(form({ serviceChoice: OTHER_OPTION, name: '  Asistencia   especial ', code: ' sa ',
-    unitChoice: OTHER_OPTION, customUnit: ' turno ', description: ' Interior ' }))).toEqual({
-    code: 'SA', name: 'Asistencia especial', description: 'Interior', billingUnit: 'turno',
-    imageUrl: '', videoUrl: '', displayOrder: 3, isPublic: true, isActive: true, version: null,
+    unitChoice: ' hora ', description: ' Interior ' }))).toEqual({
+    code: 'SA', name: 'Asistencia especial', description: 'Interior', billingUnit: 'hora',
+    imageUrl: '/assets/services/cargo-loading.webp', videoUrl: '', displayOrder: 3, isPublic: true, isActive: true, version: null,
   });
 });

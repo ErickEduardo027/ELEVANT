@@ -37,7 +37,7 @@ public sealed class CommercialCatalogManagementController(
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.SaveAsync(actorId, null, input, cancellationToken);
-        if (result.Failure is not null) return Failure(result.Failure.Value);
+        if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await PublicCatalogInvalidation.TrySendAsync(
             token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return StatusCode(201, result.Service);
@@ -51,7 +51,7 @@ public sealed class CommercialCatalogManagementController(
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.SaveAsync(actorId, id, input, cancellationToken);
-        if (result.Failure is not null) return Failure(result.Failure.Value);
+        if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await PublicCatalogInvalidation.TrySendAsync(
             token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return Ok(result.Service);
@@ -64,7 +64,7 @@ public sealed class CommercialCatalogManagementController(
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.DeleteAsync(actorId, id, version, cancellationToken);
-        if (result.Failure is not null) return Failure(result.Failure.Value);
+        if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await PublicCatalogInvalidation.TrySendAsync(
             token => hub.Clients.All.SendAsync("CatalogChangedV1", token), logger);
         return Ok(result.Service);
@@ -74,9 +74,13 @@ public sealed class CommercialCatalogManagementController(
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
-    private IActionResult Failure(CatalogMutationFailure failure) => failure switch
+    private IActionResult Failure(CatalogMutationFailure failure, string? code = null) => failure switch
     {
         CatalogMutationFailure.Forbidden => Forbid(),
+        CatalogMutationFailure.Invalid when code is not null => new ObjectResult(new ProblemDetails
+        {
+            Status = 400, Title = "Invalid service data.", Extensions = { ["code"] = code },
+        }) { StatusCode = 400, ContentTypes = { "application/problem+json" } },
         CatalogMutationFailure.Invalid => Problem(statusCode: 400, title: "Invalid service data."),
         CatalogMutationFailure.NotFound => Problem(statusCode: 404, title: "Service not found."),
         CatalogMutationFailure.Conflict => Problem(statusCode: 409, title: "Service changed; reload and retry."),

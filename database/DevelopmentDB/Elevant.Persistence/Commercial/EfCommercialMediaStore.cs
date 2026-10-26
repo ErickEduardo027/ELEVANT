@@ -34,7 +34,7 @@ internal sealed class EfCommercialMediaStore(
         var authorized = purpose switch
         {
             "service-image" or "service-video" =>
-                await permissions.HasAsync(actorId, "finance.catalog.manage", cancellationToken),
+                await permissions.HasAnyAsync(actorId, ["contracts.catalog.create", "contracts.catalog.edit"], cancellationToken),
             "airline-logo" => await permissions.IsSuperAdministratorAsync(actorId, cancellationToken),
             "avatar" => await CanManageAvatarsAsync(actorId, cancellationToken),
             _ => false,
@@ -118,11 +118,11 @@ internal sealed class EfCommercialMediaStore(
         {
             "service-image" => await context.ServiceDefinitions.AsNoTracking()
                 .AnyAsync(item => item.IsActive && item.IsPublic && item.ImageUrl == url, cancellationToken) ||
-                actorId.HasValue && await permissions.HasAnyAsync(actorId.Value, ["contracts.catalog.read", "finance.catalog.read"], cancellationToken) &&
+                actorId.HasValue && await permissions.HasAnyAsync(actorId.Value, EfCommercialCatalogManagementStore.CatalogReaders, cancellationToken) &&
                 await context.ServiceDefinitions.AsNoTracking().AnyAsync(item => item.ImageUrl == url, cancellationToken),
             "service-video" => await context.ServiceDefinitions.AsNoTracking()
                 .AnyAsync(item => item.IsActive && item.IsPublic && item.VideoUrl == url, cancellationToken) ||
-                actorId.HasValue && await permissions.HasAnyAsync(actorId.Value, ["contracts.catalog.read", "finance.catalog.read"], cancellationToken) &&
+                actorId.HasValue && await permissions.HasAnyAsync(actorId.Value, EfCommercialCatalogManagementStore.CatalogReaders, cancellationToken) &&
                 await context.ServiceDefinitions.AsNoTracking().AnyAsync(item => item.VideoUrl == url, cancellationToken),
             "airline-logo" => await context.CommercialAirlineProfiles.AsNoTracking()
                 .AnyAsync(item => item.IsPublished && item.LogoObjectKey == url, cancellationToken) ||

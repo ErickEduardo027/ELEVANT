@@ -6,7 +6,6 @@ describe('finance modules', () => {
     const ids = selectableModules(FINANCE_MODULES).map(module => module.id);
     expect(ids).toEqual([
       FINANCE_MODULE_IDS.HOME,
-      FINANCE_MODULE_IDS.CATALOG,
       FINANCE_MODULE_IDS.PACKAGES,
       FINANCE_MODULE_IDS.CONTRACT_APPROVALS,
       FINANCE_MODULE_IDS.APPROVED_SERVICES,
@@ -15,6 +14,7 @@ describe('finance modules', () => {
       FINANCE_MODULE_IDS.TARIFFS,
       FINANCE_MODULE_IDS.CHARGES,
       FINANCE_MODULE_IDS.EXCHANGE_RATES,
+      FINANCE_MODULE_IDS.BILLING_UNITS,
       FINANCE_MODULE_IDS.TREASURY,
       FINANCE_MODULE_IDS.STATEMENTS,
       FINANCE_MODULE_IDS.SUPPLIERS,
@@ -33,5 +33,11 @@ describe('finance modules', () => {
     expect(onlyCharges).toHaveLength(1);
     expect(onlyCharges[0].children.map(child => child.id)).toEqual([FINANCE_MODULE_IDS.CHARGES]);
     expect(financeNavigation(() => false)).toEqual([]);
+  });
+
+  it("no longer manages the commercial catalog: Contracts owns it", () => {
+    const labels = selectableModules(FINANCE_MODULES).map(module => module.label);
+    expect(labels).not.toContain("Catálogo comercial");
+    expect(labels).toContain("Unidades de cobro");
   });
 });
