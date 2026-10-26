@@ -13,7 +13,7 @@ import ChargesPage from '../charges/ChargesPage';
 import ExchangeRatesPage from '../exchange-rates/ExchangeRatesPage';
 import ContractApprovalsPage from '../contract-approvals/ContractApprovalsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
-import CommercialCatalogPage from '../../contracts/catalog/CommercialCatalogPage';
+import BillingUnitsPage from '../billing-units/BillingUnitsPage';
 import PackagesPage from '../packages/PackagesPage';
 import TreasuryPage from '../treasury/TreasuryPage';
 import StatementPage from '../treasury/StatementPage';
@@ -59,7 +59,6 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const pages = {
     [FINANCE_MODULE_IDS.USERS]: <DepartmentUsersPage department={DEPARTMENTS.FINANCE} />,
     [FINANCE_MODULE_IDS.HOME]: <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} />,
-    [FINANCE_MODULE_IDS.CATALOG]: <CommercialCatalogPage canCreate={Boolean(access?.can('finance.catalog.manage'))} canEdit={Boolean(access?.can('finance.catalog.manage'))} canRetire={Boolean(access?.can('finance.catalog.manage'))} canSeeClosures={false} />,
     [FINANCE_MODULE_IDS.APPROVED_SERVICES]: <ApprovedServicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.PREINVOICES]: <PreinvoicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.RECONCILIATION]: <InvoicesPage {...stationProps} />,
@@ -67,6 +66,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
     [FINANCE_MODULE_IDS.PACKAGES]: <PackagesPage />,
     [FINANCE_MODULE_IDS.CHARGES]: <ChargesPage />,
     [FINANCE_MODULE_IDS.EXCHANGE_RATES]: <ExchangeRatesPage />,
+    [FINANCE_MODULE_IDS.BILLING_UNITS]: <BillingUnitsPage canManage={Boolean(access?.can('finance.tariffs.manage'))} />,
     [FINANCE_MODULE_IDS.CONTRACT_APPROVALS]: <ContractApprovalsPage />,
     [FINANCE_MODULE_IDS.TREASURY]: <TreasuryPage {...stationProps} />,
     [FINANCE_MODULE_IDS.STATEMENTS]: <StatementPage {...stationProps} />,

@@ -13,6 +13,7 @@ import {
 } from "@/lib/access-request";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
+import { serviceImageFallback } from "@/lib/serviceImages";
 
 type Catalog = PublicCommercialCatalog;
 type Representative = RepresentativeDraft;
@@ -21,6 +22,7 @@ const emptyRepresentative: Representative = {
   nationalityCode: "", address: "", country: "", province: "",
   municipality: "", district: "", documentType: "", documentNumber: "",
 };
+const SERVICES_PER_PAGE = 6;
 const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte", Other: "Otro" };
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
@@ -48,13 +50,17 @@ export function AccessRequestWizard() {
   const reconcileAfterSubmit = useRef(false);
   const reconciling = useRef(false);
   const carousel = useRef<HTMLDivElement>(null);
-  const scrollCarousel = (direction: 1 | -1) => {
-    const track = carousel.current;
-    if (!track) return;
-    const card = track.firstElementChild as HTMLElement | null;
-    const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
-    const step = card ? card.getBoundingClientRect().width + gap : track.clientWidth * 0.8;
-    track.scrollBy?.({ left: direction * step, behavior: "smooth" });
+  const [servicePage, setServicePage] = useState(1);
+  // Same order as the internal catalog: display order, then name.
+  const orderedServices = [...(catalog?.services ?? [])].sort((left, right) =>
+    (left.displayOrder ?? 0) - (right.displayOrder ?? 0) || left.name.localeCompare(right.name, "es"));
+  const servicePages = Math.max(1, Math.ceil(orderedServices.length / SERVICES_PER_PAGE));
+  const currentServicePage = Math.min(servicePage, servicePages);
+  const visibleServices = orderedServices.slice((currentServicePage - 1) * SERVICES_PER_PAGE,
+    currentServicePage * SERVICES_PER_PAGE);
+  const changeServicePage = (direction: 1 | -1) => {
+    setServicePage((current) => Math.min(servicePages, Math.max(1, current + direction)));
+    carousel.current?.scrollTo?.({ left: 0, behavior: "smooth" });
   };
   const [divisions, setDivisions] = useState<DivisionsState>([]);
   const [divisionsError, setDivisionsError] = useState(false);
@@ -300,18 +306,18 @@ export function AccessRequestWizard() {
         disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
         <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione uno o varios servicios de rampa.</span></div>
-        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => scrollCarousel(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => scrollCarousel(1)}>→</button></div></div>
+        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS · PÁGINA {currentServicePage} DE {servicePages}</span><div><button type="button" aria-label="Ver servicios anteriores" disabled={currentServicePage === 1} onClick={() => changeServicePage(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" disabled={currentServicePage === servicePages} onClick={() => changeServicePage(1)}>→</button></div></div>
         <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
-          {catalog?.services.map((service, index) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
+          {visibleServices.map((service, offset) => { const index = (currentServicePage - 1) * SERVICES_PER_PAGE + offset; return <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">
               {service.videoUrl ? <video controls playsInline poster={mediaUrl(service.imageUrl)} src={mediaUrl(service.videoUrl)} aria-label={`Video de ${service.name}`} /> :
-                service.imageUrl ? <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl)})` }} role="img" aria-label={service.name} /> : <div className="access-service__placeholder" />}
-              <span>0{index + 1} / AVIAM</span>
+                <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl) ?? serviceImageFallback(service)}), url(${serviceImageFallback(service)})` }} role="img" aria-label={service.name} />}
+              <span>{String(index + 1).padStart(2, "0")} / AVIAM</span>
             </div>
             <div className="access-service__body"><h3>{service.name}</h3><p>{service.description}</p>
               <button type="button" onClick={() => toggleService(service.id)} aria-pressed={selected.includes(service.id)}>{selected.includes(service.id) ? "Seleccionado ✓" : "Añadir servicio +"}</button>
             </div>
-          </article>)}
+          </article>; })}
           {catalog?.services.length === 0 && <p>No hay servicios publicados por el momento.</p>}
         </div>
       </> : step === 2 ? <>

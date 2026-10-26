@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Ilustración: Servicio en rampa">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B2A5B"/><stop offset="1" stop-color="#123F86"/></linearGradient></defs>
+  <rect width="640" height="360" fill="url(#g)"/>
+  <path d="M0 300C160 250 320 330 640 270V360H0z" fill="#F26B1D" opacity=".18"/>
+  <circle cx="520" cy="70" r="140" fill="#FFFFFF" opacity=".05"/>
+  <g transform="translate(220 50) scale(1)"><path d="M100 25c8 0 12 10 12 22v35l58 30v18l-58-15v35l18 14v14l-30-9-30 9v-14l18-14v-35l-58 15v-18l58-30V47c0-12 4-22 12-22z" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text x="320" y="315" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF" letter-spacing="1">SERVICIO EN RAMPA</text>
+</svg>
