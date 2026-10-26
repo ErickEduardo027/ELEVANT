@@ -1,5 +1,16 @@
 # ELEVANT Public Web
 
+## Contratos nuevos (rama local)
+
+La afiliación pública y el portal autenticado permiten elegir servicios y
+paquetes publicados; la API deriva la aerolínea de la sesión para solicitudes
+adicionales y muestra el historial propio. El representante verificado revisa
+el PDF individual emitido y confirma su aceptación sobre ese hash después de
+AVIAM. Puede visualizar, descargar e imprimir el PDF formalizado. La API
+mantiene el alcance por aerolínea. En Development/Test, ambas aceptaciones
+registradas y la conservación verificada habilitan los servicios; Adobe
+permanece disponible como integración posterior. Esta rama no está desplegada.
+
 El login ofrece el enlace «¿No tienes credenciales? Solicita acceso aquí»;
 la solicitud permanece en `/solicitar-acceso`. Las fotos de servicios y los
 logos del catálogo se sirven como recursos locales o por la API cuando fueron

@@ -10,6 +10,9 @@ public sealed class Contract : AuditableEntity
 
     public string ContractCode { get; set; } = string.Empty;
 
+    // Existing contracts predate electronic signing. Only new contracts opt in.
+    public bool RequiresElectronicSigning { get; set; }
+
     public ContractStatus Status { get; set; }
 
     public DateOnly? SignedOn { get; set; }

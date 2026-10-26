@@ -1,5 +1,13 @@
 # Cliente API compartido
 
+## Expediente contractual (rama local)
+
+El OpenAPI y el cliente incluyen solicitud comercial autenticada, estado de
+firma por tenant, enlace de Adobe para el representante, previsualización y
+emisión interna, y lecturas PDF autenticadas. Los PDF se validan como bytes
+`application/pdf` antes de entregarse a las webs. Las claves de objeto, tokens
+Adobe y credenciales no forman parte de los DTO.
+
 ## Asistencia compartida OCC y agente
 
 `getOperationAttendanceDraft(operationId, assignmentId, { installationId? })`
@@ -49,6 +57,9 @@ precisa qué cambia para nuevas solicitudes públicas.
 El cliente valida la forma y los identificadores únicos del catálogo, pero no
 impone un máximo de filas ausente del contrato HTTP; la paginación del catálogo
 deberá añadirse de forma coordinada si el volumen lo requiere.
+Durante la actualización de Development, una API anterior puede omitir
+`packages`: el cliente conserva `services` y `airlines` y devuelve una lista
+de paquetes vacía. Las respuestas con paquetes mal formados siguen rechazadas.
 
 `getAccountChanges({ after?, limit? })` consulta el feed recuperable por
 cursor de la cuenta autenticada. El cursor es opaco: los clientes lo conservan
@@ -360,3 +371,8 @@ huella. Los checks también rechazan claves adicionales, una versión desconocid
 y cualquier huella que no coincida exactamente con `openapi/elevant-v1.json`.
 El descriptor identifica el contrato compartido; la procedencia de una release
 concreta se mantiene en sus manifiestos inmutables de entrega.
+
+Durante la publicación coordinada de firma contractual, las lecturas de
+contratos aceptan una página íntegramente anterior sin campos de firma y la
+normalizan como `requiresElectronicSigning: false` y `signingStatus: "Legacy"`.
+Una respuesta parcial o mixta sigue siendo inválida.

@@ -103,6 +103,9 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<Contract> Contracts => Set<Contract>();
 
+    public DbSet<ContractSigningEnvelope> ContractSigningEnvelopes => Set<ContractSigningEnvelope>();
+    public DbSet<ContractSigningEvent> ContractSigningEvents => Set<ContractSigningEvent>();
+
     public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
     public DbSet<ContractDraftComment> ContractDraftComments => Set<ContractDraftComment>();
 

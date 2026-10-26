@@ -9,6 +9,7 @@ import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
 import CommercialIntakePage from '../requests/CommercialIntakePage';
 import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
 import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
+import ContractSigningPage from '../signing/ContractSigningPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
@@ -97,6 +98,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
             <ManagedAgreementsPage mode="contracts" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
             <ManagedDraftsPage canEdit={can('contracts.drafts.edit')} canActivate={can('contracts.drafts.activate')} />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.SIGNING ? (
+            <ContractSigningPage canPreview={can('contracts.signing.preview')} canIssue={can('contracts.signing.issue')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
             <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (

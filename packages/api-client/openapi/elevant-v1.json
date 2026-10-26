@@ -107,6 +107,140 @@
         }
       }
     },
+    "/api/v1/airline/portal/commercial-requests": {
+      "get": {
+        "tags": [
+          "AirlineCommercialRequests"
+        ],
+        "operationId": "ListAirlineCommercialRequests",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AirlineCommercialRequestData"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "AirlineCommercialRequests"
+        ],
+        "operationId": "SubmitAirlineAdditionalServiceRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitAdditionalServiceRequestRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitCommercialRequestResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitCommercialRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice/document": {
       "get": {
         "tags": [
@@ -3467,6 +3601,629 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/aviam-signers": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "ListAviamContractSigners",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContractSignerOptionResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "ListManagedContractSigning",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContractSigningResponse"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetManagedContractSigning",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/signers": {
+      "put": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "SetContractSigners",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractSignersRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractSignersRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractSignersRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/preview": {
+      "post": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "PreviewContractSigningPdf",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/draft-document": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetManagedContractDraftPdf",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/issue": {
+      "post": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "IssueContractSigning",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/accept-aviam": {
+      "post": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "AcceptAviamContract",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/contracts/{contractId}/signing": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetAirlineContractSigning",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/contracts/{contractId}/signing-link": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetAirlineContractSigningLink",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningLinkResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/contracts/{contractId}/draft-document": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetAirlineContractDraftPdf",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/contracts/{contractId}/accept": {
+      "post": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "AcceptAirlineContract",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AcceptContractRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractSigningResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/contracts/{contractId}/document": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetAirlineSignedContractPdf",
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/document": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetManagedSignedContractPdf",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/signing/{versionId}/audit": {
+      "get": {
+        "tags": [
+          "ContractSigning"
+        ],
+        "operationId": "GetManagedContractAuditPdf",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
                 }
               }
             }
@@ -21558,6 +22315,23 @@
         },
         "additionalProperties": false
       },
+      "AcceptContractRequest": {
+        "required": [
+          "expectedDraftSha256",
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedDraftSha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AccessCandidateData": {
         "required": [
           "employeeId",
@@ -22124,6 +22898,55 @@
         },
         "additionalProperties": false
       },
+      "AirlineCommercialRequestData": {
+        "required": [
+          "id",
+          "packages",
+          "reference",
+          "services",
+          "status",
+          "submittedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestItemData"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestPackageData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlineContractPageResponse": {
         "required": [
           "contracts",
@@ -22193,6 +23016,8 @@
           "approvedVersions",
           "code",
           "id",
+          "requiresElectronicSigning",
+          "signingStatus",
           "status"
         ],
         "type": "object",
@@ -22222,6 +23047,12 @@
             "items": {
               "$ref": "#/components/schemas/AirlineContractVersionResponse"
             }
+          },
+          "requiresElectronicSigning": {
+            "type": "boolean"
+          },
+          "signingStatus": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -24162,6 +24993,7 @@
           "airlineVerified",
           "authorityDeclared",
           "id",
+          "packages",
           "reference",
           "representativeEmail",
           "representativeName",
@@ -24278,6 +25110,12 @@
             "items": {
               "$ref": "#/components/schemas/CommercialRequestItemData"
             }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestPackageData"
+            }
           }
         },
         "additionalProperties": false
@@ -24299,6 +25137,69 @@
           },
           "unit": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRequestPackageComponentData": {
+        "required": [
+          "includedQuantity",
+          "name",
+          "serviceId",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "includedQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRequestPackageData": {
+        "required": [
+          "code",
+          "components",
+          "currencyCode",
+          "id",
+          "name",
+          "versionNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestPackageComponentData"
+            }
           }
         },
         "additionalProperties": false
@@ -24849,6 +25750,142 @@
           "differencePercent": {
             "type": "number",
             "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractSignerOptionResponse": {
+        "required": [
+          "accountId",
+          "email",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractSigningLinkResponse": {
+        "required": [
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractSigningResponse": {
+        "required": [
+          "airlineName",
+          "contractCode",
+          "contractId",
+          "requiresElectronicSigning",
+          "signingStatus",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractCode": {
+            "type": "string"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "signingStatus": {
+            "type": "string"
+          },
+          "requiresElectronicSigning": {
+            "type": "boolean"
+          },
+          "aviamSignerAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aviamSignerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "airlineSignerAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "airlineSignerEmail": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "formalizedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "draftSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "signedSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "auditSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastCheckedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "nextCheckAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "signingMethod": {
+            "type": "string",
+            "nullable": true
+          },
+          "aviamAcceptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "airlineAcceptedAt": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },
@@ -31900,6 +32937,8 @@
           "approvedVersions",
           "code",
           "id",
+          "requiresElectronicSigning",
+          "signingStatus",
           "status"
         ],
         "type": "object",
@@ -31935,6 +32974,12 @@
             "items": {
               "$ref": "#/components/schemas/ManagedContractVersionData"
             }
+          },
+          "requiresElectronicSigning": {
+            "type": "boolean"
+          },
+          "signingStatus": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -34417,6 +35462,7 @@
       "PublicCommercialCatalog": {
         "required": [
           "airlines",
+          "packages",
           "services"
         ],
         "type": "object",
@@ -34431,6 +35477,79 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PublicAirlineData"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPackageData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublicPackageComponentData": {
+        "required": [
+          "billingUnit",
+          "code",
+          "includedQuantity",
+          "name",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "includedQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublicPackageData": {
+        "required": [
+          "code",
+          "components",
+          "currencyCode",
+          "id",
+          "name",
+          "versionNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPackageComponentData"
             }
           }
         },
@@ -37430,6 +38549,19 @@
         },
         "additionalProperties": false
       },
+      "SetContractSignersRequest": {
+        "required": [
+          "aviamSignerAccountId"
+        ],
+        "type": "object",
+        "properties": {
+          "aviamSignerAccountId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "SetDepartmentUserStatusInput": {
         "required": [
           "expectedVersion",
@@ -37471,6 +38603,55 @@
           },
           "expectedVersion": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubmitAdditionalServiceRequestRequest": {
+        "required": [
+          "authorityDeclared",
+          "representativeEmail",
+          "representativeName",
+          "representativePhone",
+          "representativeTitle",
+          "requestId",
+          "serviceIds"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "representativeName": {
+            "type": "string"
+          },
+          "representativeTitle": {
+            "type": "string"
+          },
+          "representativeEmail": {
+            "type": "string"
+          },
+          "representativePhone": {
+            "type": "string"
+          },
+          "authorityDeclared": {
+            "type": "boolean"
+          },
+          "packageVersionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -37544,6 +38725,14 @@
           },
           "representativeDocumentNumber": {
             "type": "string",
+            "nullable": true
+          },
+          "packageVersionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
             "nullable": true
           }
         },
@@ -38177,6 +39366,9 @@
       "name": "Affiliations"
     },
     {
+      "name": "AirlineCommercialRequests"
+    },
+    {
       "name": "AirlineFinancialDocuments"
     },
     {
@@ -38208,6 +39400,9 @@
     },
     {
       "name": "ContractDrafts"
+    },
+    {
+      "name": "ContractSigning"
     },
     {
       "name": "DepartmentGovernance"

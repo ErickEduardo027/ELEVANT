@@ -8,6 +8,8 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Abstractions.Commercial;
+using Elevant.Infrastructure.Commercial;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,6 +54,17 @@ public static class DependencyInjection
                 provider.GetRequiredService<TimeProvider>()));
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
+        services.AddSingleton<IContractDocumentGenerator>(_ =>
+            new AdobeContractDocumentGenerator(configuration));
+        services.AddSingleton<IRecordedContractPdfRenderer, RecordedContractPdfRenderer>();
+        if (string.Equals(configuration["ContractSigning:Mode"], "AcademicLocal",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IContractObjectStore>(_ =>
+                new LocalContractObjectStore(configuration["ContractSigning:LocalArchiveDirectory"]!));
+        }
+        services.AddSingleton<IContractSignGateway>(_ =>
+            new AdobeContractSignGateway(configuration));
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();

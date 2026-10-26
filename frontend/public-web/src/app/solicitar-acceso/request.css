@@ -46,6 +46,18 @@
 .access-service p { color: #61758a; font-size: .84rem; line-height: 1.5; margin: 0 0 22px; }
 .access-service button { margin-top: auto; border: 1px solid #0a2846; color: #092746; background: transparent; padding: 11px 15px; text-align: left; font-weight: 650; cursor: pointer; }
 .access-service[data-selected="true"] button { background: #0a2846; color: #fff; }
+.access-packages { margin-top: 30px; }
+.access-packages > h3 { margin: 0 0 6px; font: 400 1.6rem var(--font-display); color: #112c46; }
+.access-packages > p { margin: 0 0 16px; color: #61758a; font-size: .85rem; }
+.access-packages__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.access-package { display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid #d6dfe7; background: #fff; }
+.access-package[data-selected="true"] { border-color: #ff641f; box-shadow: inset 0 0 0 1px #ff641f; }
+.access-package strong { color: #112c46; }
+.access-package small { color: #61758a; }
+.access-package ul { margin: 4px 0 12px; padding-left: 19px; color: #35516c; font-size: .83rem; }
+.access-package button { margin-top: auto; border: 1px solid #0a2846; background: transparent; color: #092746; padding: 10px 12px; text-align: left; font-weight: 650; cursor: pointer; }
+.access-package[data-selected="true"] button { background: #0a2846; color: #fff; }
+.access-package button:focus-visible { outline: 3px solid #ff641f; outline-offset: 2px; }
 .access-label, .access-airline__fields label, .access-representative label { display: block; font-size: .76rem; font-weight: 650; color: #35516c; margin-bottom: 10px; }
 .access-select, .access-airline__fields input, .access-representative input:not([type="checkbox"]) { width: 100%; border: 1px solid #c1ceda; background: #fff; color: #112c46; font: inherit; padding: 13px 15px; min-height: 50px; border-radius: 2px; }
 .access-select:focus-visible, .access-representative input:focus-visible, .access-service button:focus-visible, .access-next:focus-visible { outline: 3px solid #ff641f; outline-offset: 2px; }

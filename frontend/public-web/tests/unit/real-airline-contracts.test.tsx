@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { AirlineContractPageResponse, AirlinePortalBootstrapResponse,
+  ContractSigningResponse,
   SessionResponse } from "@elevant/api-client";
 import { AIRLINE_SESSION_STORAGE_KEY,
   AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
@@ -33,6 +35,7 @@ const contracts: AirlineContractPageResponse = {
   contracts: [{
     id: "60000000-0000-7000-8000-000000000002", code: "DEV-CONTRACT-0001",
     status: "Expired", signedOn: "2026-01-01", terminatedOn: null,
+    requiresElectronicSigning: false, signingStatus: "Legacy",
     approvedVersions: [{
       id: "60000000-0000-7000-8000-000000000003", versionNumber: 1,
       validFrom: "2026-01-01", validTo: "2026-08-31", currencyCode: "USD",
@@ -45,7 +48,8 @@ const contracts: AirlineContractPageResponse = {
   }],
 };
 
-function mount(page: AirlineContractPageResponse, drafts: unknown = []) {
+function mount(page: AirlineContractPageResponse, drafts: unknown = [],
+  signing?: ContractSigningResponse, signingUrl?: string) {
   sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
     accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z",
   }));
@@ -54,7 +58,9 @@ function mount(page: AirlineContractPageResponse, drafts: unknown = []) {
     const path = new URL(String(input)).pathname;
     paths.push(path);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
-    const body = path.endsWith("/bootstrap") ? bootstrap
+    const body = path.endsWith("/signing-link") ? { url: signingUrl }
+      : path.endsWith("/signing") ? signing
+      : path.endsWith("/bootstrap") ? bootstrap
       : path.endsWith("/contracts") ? page
         : path.endsWith("/contract-drafts") ? drafts : { actor };
     return new Response(JSON.stringify(body), { status: 200,
@@ -90,6 +96,28 @@ it("shows the airline's real approved contract history and rates", async () => {
   expect(screen.getByText(/125/)).toBeInTheDocument();
   expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
   expect(paths).toContain("/api/v1/airline/portal/contracts");
+});
+
+it("offers Adobe only to the designated representative after AVIAM's turn", async () => {
+  const page: AirlineContractPageResponse = { ...contracts, contracts: [{
+    ...contracts.contracts[0]!, status: "Draft", signedOn: null,
+    requiresElectronicSigning: true, signingStatus: "AwaitingAirline",
+  }] };
+  const signing: ContractSigningResponse = {
+    contractId: page.contracts[0]!.id, versionId: page.contracts[0]!.approvedVersions[0]!.id,
+    contractCode: page.contracts[0]!.code, airlineName: "Demo Airlines",
+    versionStatus: "Approved", signingStatus: "AwaitingAirline",
+    requiresElectronicSigning: true, airlineSignerAccountId: actor.accountId,
+    signingMethod: "Adobe",
+  };
+  const url = "https://secure.na1.echosign.com/public/apiesign?pid=synthetic";
+  const tab = { opener: null, location: { href: "" }, close: vi.fn() };
+  vi.stubGlobal("open", vi.fn(() => tab));
+  mount(page, [], signing, url);
+  await userEvent.click(await screen.findByRole("button", { name: "Abrir firma en Adobe" },
+    { timeout: 5000 }));
+  expect(tab.location.href).toBe(url);
+  expect(screen.queryByRole("button", { name: /Ver, descargar o imprimir contrato/ })).not.toBeInTheDocument();
 });
 
 it("shows an honest empty state with no fabricated contract", async () => {

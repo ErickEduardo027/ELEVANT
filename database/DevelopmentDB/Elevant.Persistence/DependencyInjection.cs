@@ -97,6 +97,10 @@ public static class DependencyInjection
         services.AddScoped<ICommercialWorkflowStore, EfCommercialWorkflowStore>();
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
+        services.AddScoped<IContractSigningStore, EfContractSigningStore>();
+        services.TryAddScoped<IContractObjectStore>(provider =>
+            new FinancialContractObjectStore(
+                provider.GetRequiredService<IPrivateFinancialObjectStore>()));
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();

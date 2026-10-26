@@ -90,6 +90,8 @@ const contracts: AirlineContractPageResponse = {
     id: "60000000-0000-7000-8000-000000000002",
     code: "DEV-CONTRACT-0001",
     status: "Active",
+    requiresElectronicSigning: false,
+    signingStatus: "Legacy",
     signedOn: "2026-01-01",
     terminatedOn: null,
     approvedVersions: [{
@@ -107,6 +109,17 @@ const contracts: AirlineContractPageResponse = {
 };
 
 describe("airline contract client", () => {
+  it("reads an older airline contract response without signing fields as legacy", async () => {
+    const { requiresElectronicSigning: _required, signingStatus: _signing,
+      ...legacyContract } = contracts.contracts[0]!;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...contracts,
+        contracts: [legacyContract] }),
+      { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getAirlineContracts()).resolves.toEqual(contracts);
+  });
+
   it("uses the authenticated tenant and bounded paging only", async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const client = createElevantApiClient({

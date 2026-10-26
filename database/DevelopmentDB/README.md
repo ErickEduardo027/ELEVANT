@@ -1,5 +1,13 @@
 # Elevant DevelopmentDB
 
+La migración aditiva `20261020000446_AddContractSigningEnvelope` incorpora
+expedientes de firma por versión, eventos y firmantes. La marca de firma
+electrónica de contratos existentes queda en `false`; no convierte contratos
+legados en acuerdos Adobe. La aprobación financiera de contratos nuevos no los
+activa: el backend espera ambas firmas y PDF/auditoría verificados. La emisión
+está deshabilitada por defecto y esta migración no se ha aplicado al VPS desde
+esta rama.
+
 Fuente ejecutable del esquema y operaciones de la base compartida de Development.
 
 ```text

@@ -82,6 +82,11 @@
 .draftCommentForm { display: grid; gap: .55rem; margin-top: 1rem; }
 .draftCommentForm label { font-size: .8rem; font-weight: 700; }
 .draftCommentForm textarea { width: 100%; resize: vertical; border: 1px solid #b8c9db; border-radius: .45rem; padding: .7rem; font: inherit; }
+.draftCommentForm fieldset { display: flex; flex-wrap: wrap; gap: .5rem 1rem; border: 1px solid #dce6f0; border-radius: .5rem; padding: .8rem; }
+.draftCommentForm legend { padding-inline: .3rem; font-size: .8rem; font-weight: 700; }
+.draftCommentForm label:has(input:not([type="checkbox"])) { display: grid; gap: .3rem; }
+.draftCommentForm input:not([type="checkbox"]) { width: min(100%, 30rem); border: 1px solid #b8c9db; border-radius: .45rem; padding: .65rem; font: inherit; }
+.draftCommentForm input:focus-visible, .draftCommentForm textarea:focus-visible { outline: 2px solid #1757d8; outline-offset: 2px; }
 .draftCommentForm button { justify-self: start; border: 0; border-radius: .4rem; background: #1757d8; color: white; padding: .7rem 1rem; font-weight: 700; cursor: pointer; }
 .draftCommentForm button:disabled { opacity: .5; cursor: wait; }
 .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

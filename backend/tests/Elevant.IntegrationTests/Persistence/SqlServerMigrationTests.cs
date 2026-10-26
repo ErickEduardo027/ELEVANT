@@ -2193,7 +2193,9 @@ public sealed partial class SqlServerMigrationTests
         var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
             catalog.Airlines[0].Id, [serviceId], "María Pérez", "Representante legal",
             "maria@example.test", "+1 809 555 0100", true);
-        var submission = new EfCommercialIntakeStore(intakeContext)
+        var submission = new EfCommercialIntakeStore(intakeContext,
+            new Elevant.Persistence.Identity.EfActorContextResolver(intakeContext,
+                TimeProvider.System))
             .SubmitAsync(command, cancellationToken);
         await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
 
@@ -2345,13 +2347,9 @@ public sealed partial class SqlServerMigrationTests
                 InitialPasswords.Contracts, InitialPasswords.Finance,
                 "Synthetic-SuperAdmin!234"), cancellationToken);
 
-        await using var provider = new ServiceCollection()
-            .AddLogging().AddSingleton<TimeProvider>(TimeProvider.System)
-            .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:ElevantDatabase"] = database.ConnectionString,
-                }).Build()).BuildServiceProvider();
+        var signingFixture = await CreateSyntheticSigningProviderAsync(
+            database.ConnectionString, cancellationToken);
+        await using var provider = signingFixture.Provider;
         await using var scope = provider.CreateAsyncScope();
         var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>()
             .GetPublicAsync(cancellationToken);
@@ -2399,6 +2397,7 @@ public sealed partial class SqlServerMigrationTests
         var contract = await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.PublicId == decided.ResourceId, cancellationToken);
         Assert.Equal(ContractStatus.Draft, contract.Status);
+        Assert.True(contract.RequiresElectronicSigning);
         var version = await context.ContractVersions.AsNoTracking()
             .SingleAsync(item => item.ContractId == contract.Id, cancellationToken);
         Assert.Equal(ContractVersionStatus.Draft, version.Status);
@@ -2412,7 +2411,7 @@ public sealed partial class SqlServerMigrationTests
         var provisioning = scope.ServiceProvider.GetRequiredService<ICommercialProvisioningStore>();
         Assert.Single((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
         var provisioned = await provisioning.ProvisionAsync(superAdminId, requestId,
-            new ProvisionAirlineInput("representative@example.test", "Synthetic-AirlineNew!234"),
+            new ProvisionAirlineInput("maria@example.test", "Synthetic-AirlineNew!234"),
             cancellationToken);
         Assert.True(provisioned.IsSuccess, provisioned.Failure?.ToString());
         Assert.Empty((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
@@ -2477,6 +2476,19 @@ public sealed partial class SqlServerMigrationTests
                 airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
                     rate.Id, rate.BillingUnit, 0, 0, true)).ToArray()),
             cancellationToken)).IsSuccess);
+        var signerAccount = await context.Users.SingleAsync(item =>
+            item.PublicId == provisioned.AccountId, cancellationToken);
+        signerAccount.MustChangePassword = false;
+        var aviamSignerAccount = await context.Users.SingleAsync(item =>
+            item.PublicId == contractsAccountId, cancellationToken);
+        aviamSignerAccount.MustChangePassword = false;
+        await context.SaveChangesAsync(cancellationToken);
+        var signing = scope.ServiceProvider.GetRequiredService<IContractSigningStore>();
+        Assert.Equal(ContractSigningFailure.Forbidden,
+            (await signing.SetSignersAsync(provisioned.AccountId.Value,
+                airlineDraft.Id, contractsAccountId, cancellationToken)).Failure);
+        Assert.True((await signing.SetSignersAsync(contractsAccountId,
+            airlineDraft.Id, contractsAccountId, cancellationToken)).IsSuccess);
         var agreements = scope.ServiceProvider.GetRequiredService<IManagedContractReadStore>();
         Assert.DoesNotContain((await agreements.ListAsync(contractsAccountId, 1, 20,
             cancellationToken))!.Contracts, item => item.Code == contract.ContractCode);
@@ -2521,8 +2533,10 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!);
         Assert.Equal(0, (await drafts.GetOverviewForContractsAsync(
             contractsAccountId, cancellationToken))!.Count);
-        Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
-            .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
+        var approvedContract = await context.Contracts.AsNoTracking()
+            .SingleAsync(item => item.Id == contract.Id, cancellationToken);
+        Assert.Equal(ContractStatus.Draft, approvedContract.Status);
+        Assert.Null(approvedContract.SignedOn);
         var agreementPage = (await agreements.ListAsync(contractsAccountId, 1, 20,
             cancellationToken))!;
         var published = Assert.Single(agreementPage.Contracts,
@@ -2530,7 +2544,61 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((await context.Airlines.AsNoTracking().SingleAsync(item =>
             item.Id == contract.AirlineId, cancellationToken)).Name, published.Airline);
         Assert.Equal("Approved", Assert.Single(published.ApprovedVersions).Status);
+        Assert.Equal("AwaitingEmission", published.SigningStatus);
         Assert.Single(Assert.Single(published.ApprovedVersions).Rates);
+        Assert.Equal(ContractSigningFailure.NotFound,
+            (await signing.GetAirlineAsync(Guid.Parse("40000000-0000-7000-8000-000000000003"),
+                contract.PublicId, cancellationToken)).Failure);
+        Assert.Equal(ContractSigningFailure.Forbidden,
+            (await signing.GetFinalPdfAsync(provisioned.AccountId.Value,
+                contract.PublicId, cancellationToken)).Failure);
+        var preview = await signing.PreviewAsync(contractsAccountId, version.PublicId,
+            cancellationToken);
+        Assert.True(preview.IsSuccess, preview.Failure?.ToString());
+        Assert.Contains(contract.ContractCode, signingFixture.Generator.LastMergeJson);
+        Assert.True((await signing.IssueAsync(contractsAccountId, version.PublicId,
+            cancellationToken)).IsSuccess);
+        Assert.True((await signing.IssueAsync(contractsAccountId, version.PublicId,
+            cancellationToken)).IsSuccess);
+        Assert.Equal(1, signingFixture.Gateway.CreateCount);
+        Assert.Equal(ContractSigningFailure.Conflict,
+            (await signing.GetAirlineSigningUrlAsync(provisioned.AccountId.Value,
+                contract.PublicId, cancellationToken)).Failure);
+        var signingEnvelope = await context.ContractSigningEnvelopes.SingleAsync(item =>
+            item.ContractVersionId == version.Id, cancellationToken);
+        signingEnvelope.NextCheckAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await context.SaveChangesAsync(cancellationToken);
+        await signing.ReconcileDueAsync(cancellationToken);
+        Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
+            .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
+        signingFixture.Gateway.AirlineTurn = true;
+        signingEnvelope.NextCheckAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await context.SaveChangesAsync(cancellationToken);
+        await signing.ReconcileDueAsync(cancellationToken);
+        Assert.True((await signing.GetAirlineSigningUrlAsync(provisioned.AccountId.Value,
+            contract.PublicId, cancellationToken)).IsSuccess);
+        signingFixture.Gateway.Status = "SIGNED";
+        signingEnvelope.NextCheckAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await context.SaveChangesAsync(cancellationToken);
+        await signing.ReconcileDueAsync(cancellationToken);
+        var formalizedContract = await context.Contracts.AsNoTracking().SingleAsync(item =>
+            item.Id == contract.Id, cancellationToken);
+        Assert.Equal(ContractStatus.Active, formalizedContract.Status);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.UtcNow), formalizedContract.SignedOn);
+        Assert.True((await signing.GetFinalPdfAsync(provisioned.AccountId.Value,
+            contract.PublicId, cancellationToken)).IsSuccess);
+        Assert.True((await signing.GetManagedEvidenceAsync(contractsAccountId,
+            version.PublicId, true, cancellationToken)).IsSuccess);
+        var finalizedEnvelope = await context.ContractSigningEnvelopes.AsNoTracking()
+            .SingleAsync(item => item.Id == signingEnvelope.Id, cancellationToken);
+        Assert.Equal("Formalized", finalizedEnvelope.Status);
+        Assert.True(finalizedEnvelope.FormalizedAt.HasValue);
+        Assert.True(formalizedContract.SignedOn >
+            DateOnly.FromDateTime(finalizedEnvelope.FormalizedAt.Value.UtcDateTime).AddDays(-1));
+        signingFixture.Objects.Corrupt(finalizedEnvelope.AuditObjectKey!);
+        Assert.Equal(ContractSigningFailure.Corrupt,
+            (await signing.GetFinalPdfAsync(provisioned.AccountId.Value,
+                contract.PublicId, cancellationToken)).Failure);
         var historicalVersion = await context.ContractVersions.SingleAsync(item =>
             item.Id == version.Id, cancellationToken);
         var historicalRate = await context.ContractServiceRates.SingleAsync(item =>
@@ -10069,6 +10137,7 @@ public sealed partial class SqlServerMigrationTests
             await using var master = new SqlConnection(masterConnectionString);
             await master.OpenAsync();
             await using var drop = master.CreateCommand();
+            drop.CommandTimeout = 120;
             var quotedName = QuoteIdentifier(databaseName);
             drop.CommandText = $"IF DB_ID(@databaseName) IS NOT NULL BEGIN ALTER DATABASE {quotedName} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE {quotedName}; END";
             drop.Parameters.AddWithValue("@databaseName", databaseName);

@@ -13,6 +13,10 @@
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="PDFsharp" />
     <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="Adobe.PDFServicesSDK" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="log4net" />
+    <PackageReference Include="RestSharp" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +24,7 @@
     <EmbeddedResource Include="Finance/XmlSchemas/*.xsd">
       <LogicalName>Elevant.Infrastructure.Finance.XmlSchemas.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Commercial/Templates/contract-clauses-v1.json" />
   </ItemGroup>
 
   <ItemGroup>

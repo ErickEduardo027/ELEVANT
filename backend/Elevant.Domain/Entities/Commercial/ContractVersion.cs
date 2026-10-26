@@ -23,4 +23,8 @@ public sealed class ContractVersion : AuditableEntity
     public DateTimeOffset? ApprovedAt { get; set; }
 
     public long? ApprovedByAccountId { get; set; }
+
+    public long? AviamSignerAccountId { get; set; }
+
+    public long? AirlineSignerAccountId { get; set; }
 }

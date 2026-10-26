@@ -25,6 +25,7 @@ internal sealed class EfManagedContractReadStore(
             orderby contract.ContractCode, contract.Id
             select new { contract.Id, contract.PublicId, contract.ContractCode,
                 contract.Status, contract.SignedOn, contract.TerminatedOn,
+                contract.RequiresElectronicSigning,
                 Airline = airline.Name, AirlineCode = airline.IataCode })
             .Skip((page - 1) * limit).Take(limit + 1).ToArrayAsync(cancellationToken);
         var selected = rows.Take(limit).ToArray();
@@ -39,6 +40,11 @@ internal sealed class EfManagedContractReadStore(
                 version.CurrencyCode, version.Terms })
             .ToArrayAsync(cancellationToken);
         var versionIds = versions.Select(version => version.Id).ToArray();
+        var signingStates = await context.ContractSigningEnvelopes.AsNoTracking()
+            .Where(envelope => versionIds.Contains(envelope.ContractVersionId))
+            .Select(envelope => new { envelope.ContractVersionId, envelope.Status })
+            .ToDictionaryAsync(envelope => envelope.ContractVersionId,
+                envelope => envelope.Status, cancellationToken);
         var stations = await (from link in context.Set<ContractVersionStation>().AsNoTracking()
             join station in context.Stations.AsNoTracking() on link.StationId equals station.Id
             where versionIds.Contains(link.ContractVersionId)
@@ -70,6 +76,11 @@ internal sealed class EfManagedContractReadStore(
                             .Select(rate => new ManagedContractRateData(rate.PublicId,
                                 rate.Code, rate.Name, rate.BillingUnit,
                                 rate.UnitPrice, rate.MinimumQuantity)).ToArray()))
-                    .ToArray())).ToArray());
+                    .ToArray(), contract.RequiresElectronicSigning,
+                contract.RequiresElectronicSigning
+                    ? versions.Where(version => version.ContractId == contract.Id)
+                        .Select(version => signingStates.GetValueOrDefault(version.Id))
+                        .FirstOrDefault(status => status is not null) ?? "AwaitingEmission"
+                    : "Legacy")).ToArray());
     }
 }

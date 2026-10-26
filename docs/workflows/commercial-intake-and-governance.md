@@ -1,5 +1,62 @@
 # Solicitud comercial, contrato y gobernanza
 
+## Selección de paquetes en la rama local
+
+`GET /api/v1/public/commercial-catalog` incluye las versiones de paquetes
+publicadas y vigentes cuyos componentes siguen visibles al público. Expone
+nombre, código, versión, moneda y componentes, sin tarifas. La afiliación pública y
+la solicitud adicional autenticada aceptan `packageVersionIds` opcional junto
+con `serviceIds`; al menos una de las dos selecciones debe estar presente.
+La API valida hasta diez paquetes y veinte servicios directos, expande los
+componentes en SQL y conserva una sola línea por servicio. Permite elegir un
+servicio directo también incluido en un paquete, pero rechaza dos paquetes
+que cubran el mismo servicio o tengan monedas distintas para evitar cobros
+ambiguos. La selección de
+versiones se persiste con la solicitud y forma parte de su comprobante
+idempotente.
+
+Contratos ve paquetes, componentes y servicios expandidos al revisar la
+solicitud. La lectura histórica compone los componentes desde la versión de
+paquete elegida y los nombres guardados en la solicitud, aunque esa versión
+deje de aparecer en el catálogo público. Al
+aprobarla, la API crea un único contrato de origen en la moneda del paquete
+(USD si no hay paquete) y asocia las versiones elegidas a su versión inicial;
+un reintento de aprobación devuelve el contrato
+existente. La aerolínea autenticada consulta sus propias solicitudes en
+`GET /api/v1/airline/portal/commercial-requests`; la API deriva la aerolínea
+de la membresía activa, nunca de un parámetro del cliente. Esta rama aún no
+está desplegada.
+
+## Generación y firma electrónica (rama local)
+
+La afiliación pública conserva su recorrido. Una cuenta `AIRLINE_CLIENT` puede
+enviar servicios adicionales desde el portal mediante
+`POST /api/v1/airline/portal/commercial-requests`; la API deriva la aerolínea de
+su única membresía activa, exige correo confirmado y coincidencia con el
+representante, y reutiliza la bandeja de Contratos. Contratos verifica datos
+legales, estaciones, tarifas y cuenta representante, y designa un firmante
+AVIAM elegible para cada versión antes de la aprobación financiera.
+
+Los contratos nuevos llevan `RequiresElectronicSigning=true`. Finanzas congela
+la versión `Approved`, pero deja el contrato `Draft` y `SignedOn=null`. En el
+modo `AcademicLocal` de Development/Test, la previsualización toma la versión
+SQL congelada, genera un PDF individual con plantilla editorial versionada y
+guarda los bytes y SHA-256 en un directorio privado fuera del repositorio.
+Contratos emite esa versión explícitamente. El firmante AVIAM asignado acepta
+primero y el representante verificado de la aerolínea después, cada uno contra
+el hash del borrador. El backend conserva el PDF final y la evidencia de
+aceptación, identificada como no certificada externamente, y comprueba ambos
+hashes antes de formalizar. La cobertura operacional compara `SignedOn` con la
+fecha de operación, además de la vigencia de la versión. Contratos legados
+conservan `RequiresElectronicSigning=false` y no reciben una firma atribuida.
+
+El adaptador Adobe sigue separado y deshabilitado por defecto. Requiere DOCX
+aprobado por AVIAM Legal y Contratos, políticas, licencia y permisos OAuth,
+almacenamiento privado y firmantes autorizados. Su worker consulta acuerdos
+pendientes con backoff e ignora expedientes locales. El retorno del navegador
+no formaliza ningún acuerdo. Esta rama no modifica Development en el VPS ni
+Production.
+
 Este recorrido está integrado en `Development` por el merge #114. La integración en el repositorio no demuestra una publicación ni una aceptación operativa en el VPS. La API y la base compartida siguen siendo la autoridad para los tres clientes.
 
 El acceso heredado a `/login?mode=register` redirige al formulario canónico `/solicitar-acceso`; no debe abrir una segunda alta con contraseña. Si una edición del catálogo o una verificación de aerolínea se confirmó en la API pero falla el aviso SignalR, la respuesta conserva el resultado persistido. El Public Web relee el catálogo por HTTP al reconectar y cada 25 segundos como respaldo; el aviso en vivo no es la fuente de verdad. Un fallo transitorio de esa relectura conserva la última selección y ofrece un reintento explícito; el servidor vuelve a verificar la visibilidad al recibir la solicitud.
@@ -12,7 +69,7 @@ El acceso heredado a `/login?mode=register` redirige al formulario canónico `/s
 3. El representante indica nombre, cargo, correo, teléfono y declara su autoridad. Puede añadir nacionalidad, dirección, país, provincia, municipio y documento. El par tipo/número de documento se valida junto; teléfono y demás campos se validan en cliente y servidor. Un cuarto paso muestra el resumen editable de servicios, aerolínea y representante. Sólo la confirmación final envía la petición con un UUID estable. Repetir el mismo cuerpo y UUID devuelve la misma referencia; reutilizarlo con otros datos da conflicto. El formulario público nunca recibe ni elige una contraseña.
 4. **Contratos → Solicitudes** recibe un aviso interno y revisa la petición. **Inicio** resume hasta 200 solicitudes recientes y usa `GET /api/v1/contracts/drafts/overview` para contar hasta 100 borradores y mostrar cinco; esa proyección no carga términos, tarifas ni comentarios. El detalle completo se consulta solo al abrir **Borradores**, y el catálogo al abrir **Servicios**. La aprobación exige identidad legal verificada y estaciones activas; crea aerolínea canónica, contrato y versión en borrador con los servicios seleccionados. El rechazo exige motivo. Ninguna de las dos decisiones emite credenciales automáticamente.
 5. **Superadministrador → Inicio** recibe la tarea de acceso aprobada. Introduce un correo y una contraseña temporal que cumple la política de Identity. La cuenta queda vinculada a la aerolínea y obliga a cambiar la contraseña antes de emitir un JWT. El operador entrega las credenciales por un canal manual autorizado; no se envían correos desde ELEVANT.
-6. La aerolínea entra en el portal, consulta la propuesta y envía observaciones. Contratos ajusta condiciones, vigencia, moneda y tarifas en **Borradores**. Cada tarifa comienza pendiente y se muestra **por definir** en el portal. Contratos confirma cada una explícitamente, incluso una tarifa cero de cortesía. La activación exige todas las tarifas confirmadas, cuenta creada, términos, servicios y estaciones; solo entonces el contrato aparece como aprobado y activo para el portal y la cobertura operativa.
+6. La aerolínea entra en el portal, consulta la propuesta y envía observaciones. Contratos ajusta condiciones, vigencia, moneda y tarifas en **Borradores**. Cada tarifa comienza pendiente y se muestra **por definir** en el portal. Contratos confirma cada una explícitamente, incluso una tarifa cero de cortesía. El envío a Finanzas exige todas las tarifas confirmadas, cuenta creada, términos, servicios, estaciones y firmantes. Finanzas aprueba la versión; en contratos nuevos, la cobertura operativa espera la formalización con ambas firmas y evidencia verificada. Los contratos legados conservan su vigencia.
 
 ## Roles y avisos
 

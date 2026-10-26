@@ -6,11 +6,65 @@ namespace Elevant.UnitTests.Application;
 public sealed class SubmitCommercialRequestHandlerTests
 {
     [Fact]
+    public async Task AdditionalRequestRequiresActorAndValidServices()
+    {
+        var store = new RecordingStore();
+        var command = new SubmitAdditionalServiceRequestCommand(Guid.NewGuid(),
+            [Guid.NewGuid()], "María Pérez", "Representante legal",
+            "maria@example.test", "+1 809 555 0100", true);
+        var handler = new SubmitCommercialRequestHandler(store);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest,
+            (await handler.HandleAdditionalAsync(Guid.Empty, command,
+                TestContext.Current.CancellationToken)).Failure);
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest,
+            (await handler.HandleAdditionalAsync(Guid.NewGuid(),
+                command with { ServiceIds = [] },
+                TestContext.Current.CancellationToken)).Failure);
+        Assert.True((await handler.HandleAdditionalAsync(Guid.NewGuid(), command,
+            TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.True((await handler.HandleAdditionalAsync(Guid.NewGuid(), command with
+        {
+            ServiceIds = [], PackageVersionIds = [Guid.NewGuid()],
+        }, TestContext.Current.CancellationToken)).IsSuccess);
+    }
+    [Fact]
     public async Task RejectsDuplicateServicesBeforeWriting()
     {
         var serviceId = Guid.NewGuid();
         var store = new RecordingStore();
         var command = ValidCommand() with { ServiceIds = [serviceId, serviceId] };
+
+        var result = await new SubmitCommercialRequestHandler(store)
+            .HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+        Assert.Null(store.Written);
+    }
+
+    [Fact]
+    public async Task AcceptsPackageOnlyRequestAndForwardsVersionIds()
+    {
+        var store = new RecordingStore();
+        var packageId = Guid.NewGuid();
+        var command = ValidCommand() with
+        {
+            ServiceIds = [], PackageVersionIds = [packageId],
+        };
+
+        var result = await new SubmitCommercialRequestHandler(store)
+            .HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(command, store.Written);
+    }
+
+    [Fact]
+    public async Task RejectsDuplicatePackageVersionsBeforeWriting()
+    {
+        var store = new RecordingStore();
+        var packageId = Guid.NewGuid();
+        var command = ValidCommand() with { PackageVersionIds = [packageId, packageId] };
 
         var result = await new SubmitCommercialRequestHandler(store)
             .HandleAsync(command, TestContext.Current.CancellationToken);
@@ -119,6 +173,15 @@ public sealed class SubmitCommercialRequestHandlerTests
             Written = command;
             return Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0001", false));
         }
+
+        public Task<CommercialSubmissionResult> SubmitAdditionalAsync(Guid actorId,
+            SubmitAdditionalServiceRequestCommand command,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0002", false));
+
+        public Task<IReadOnlyList<AirlineCommercialRequestData>?> ListOwnAsync(Guid actorId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AirlineCommercialRequestData>?>([]);
 
         public Task<string?> LookupReceiptAsync(SubmitCommercialRequestCommand command,
             CancellationToken cancellationToken = default)

@@ -4,6 +4,7 @@ import { BarChartIcon, UsersIcon } from '../../shell/components/icons';
 export const CONTRACT_MODULE_IDS = {
   HOME: 'contracts-home',
   CONTRACTS: 'contracts-list',
+  SIGNING: 'contracts-signing',
   DRAFTS: 'contracts-drafts',
   REQUESTS: 'contracts-requests',
   SERVICES: 'contracts-services',
@@ -25,6 +26,11 @@ export const CONTRACT_MODULES = [
     label: 'Contratos',
     icon: ContractIcon,
     description: 'Registro, consulta y actualización de contratos por aerolínea.',
+  },
+  {
+    id: CONTRACT_MODULE_IDS.SIGNING, permission: 'contracts.signing.read',
+    label: 'Firma electrónica', icon: ContractIcon,
+    description: 'Emisión, firmantes y evidencia de contratos nuevos.',
   },
   {
     id: CONTRACT_MODULE_IDS.DRAFTS, permission: 'contracts.drafts.read',

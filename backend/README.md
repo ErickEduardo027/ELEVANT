@@ -1,5 +1,22 @@
 # Backend de ELEVANT
 
+## Firma de contratos (rama local)
+
+`ContractSigning:Enabled` permanece `false` en configuración versionada. En
+Development/Test, el modo explícito `AcademicLocal` genera un PDF individual a
+partir de la versión comercial congelada, lo guarda en un directorio privado
+fuera del repositorio y registra primero la aceptación AVIAM y luego la del
+representante verificado. Conserva PDF final y evidencia con hashes verificados
+antes de activar el contrato. Esta evidencia declara que no hay certificación
+externa. Los paquetes elegidos en la solicitud se expanden sin volver a cobrar
+sus servicios componentes. El modo Adobe permanece separado y exige plantilla
+DOCX aprobada, políticas, almacenamiento privado y credenciales externas; su
+worker ignora expedientes locales. Los contratos anteriores conservan su
+estado sin firma electrónica atribuida. Véase el
+[recorrido comercial](../docs/workflows/commercial-intake-and-governance.md).
+Para preparar los requisitos externos y validar el entorno sin emitir acuerdos
+reales, seguir el [runbook de activación](../docs/runbooks/contract-signing-activation.md).
+
 ## Alertas preliminares de programación de G.H. (rama local)
 
 `GET /api/v1/human-resources/schedule-warnings?stationId=&from=&to=&page=&limit=`

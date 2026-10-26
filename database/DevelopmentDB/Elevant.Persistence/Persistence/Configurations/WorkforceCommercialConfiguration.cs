@@ -336,6 +336,17 @@ internal static class WorkforceCommercialConfiguration
             AddNoActionReference<ServiceDefinition, ServiceRequestItem>(builder, item => item.ServiceDefinitionId);
         });
 
+        modelBuilder.Entity<ServiceRequestPackageSelection>(builder =>
+        {
+            builder.ToTable("service_request_package_selections", "commercial");
+            builder.HasKey(selection => new { selection.ServiceRequestId, selection.PackageVersionId });
+            builder.HasOne(selection => selection.ServiceRequest)
+                .WithMany()
+                .HasForeignKey(selection => selection.ServiceRequestId)
+                .OnDelete(DeleteBehavior.NoAction);
+            AddNoActionReference<ServicePackageVersion, ServiceRequestPackageSelection>(builder, selection => selection.PackageVersionId);
+        });
+
         modelBuilder.Entity<ServiceRequestStatusEvent>(builder =>
         {
             builder.ToTable("service_request_status_events", "commercial");
@@ -357,7 +368,10 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(contract => contract.Status).HasConversion<string>().HasMaxLength(16);
             builder.Property(contract => contract.SignedOn).HasColumnType("date");
             builder.Property(contract => contract.TerminatedOn).HasColumnType("date");
+            builder.Property(contract => contract.RequiresElectronicSigning).HasDefaultValue(false);
             builder.HasIndex(contract => contract.ContractCode).IsUnique();
+            builder.HasIndex(contract => contract.OriginatingServiceRequestId).IsUnique()
+                .HasFilter("[originating_service_request_id] IS NOT NULL");
             builder.HasIndex(contract => new { contract.AirlineId, contract.Status });
             AddNoActionReference<Airline, Contract>(builder, contract => contract.AirlineId);
             AddNoActionReference<ServiceRequest, Contract>(builder, contract => contract.OriginatingServiceRequestId);
@@ -381,6 +395,64 @@ internal static class WorkforceCommercialConfiguration
             builder.HasIndex(version => new { version.ContractId, version.Status, version.ValidFrom });
             AddNoActionReference<Contract, ContractVersion>(builder, version => version.ContractId);
             AddNoActionReference<ApplicationUser, ContractVersion>(builder, version => version.ApprovedByAccountId);
+            AddNoActionReference<ApplicationUser, ContractVersion>(builder, version => version.AviamSignerAccountId);
+            AddNoActionReference<ApplicationUser, ContractVersion>(builder, version => version.AirlineSignerAccountId);
+        });
+
+        modelBuilder.Entity<ContractSigningEnvelope>(builder =>
+        {
+            builder.ToTable("contract_signing_envelopes", "commercial", table =>
+            {
+                table.HasCheckConstraint("ck_contract_signing_template_hash", "LEN([template_sha256]) = 64");
+                table.HasCheckConstraint("ck_contract_signing_draft_hash", "LEN([draft_sha256]) = 64");
+                table.HasCheckConstraint("ck_contract_signing_signed_hash", "[signed_sha256] IS NULL OR LEN([signed_sha256]) = 64");
+                table.HasCheckConstraint("ck_contract_signing_audit_hash", "[audit_sha256] IS NULL OR LEN([audit_sha256]) = 64");
+                table.HasCheckConstraint("ck_contract_signing_attempts", "[check_attempts] >= 0");
+            });
+            builder.Property(item => item.SigningMethod).HasMaxLength(32).IsRequired().HasDefaultValue("Adobe");
+            builder.Property(item => item.Status).HasMaxLength(32).IsRequired();
+            builder.Property(item => item.AviamSignerEmail).HasMaxLength(256).IsRequired();
+            builder.Property(item => item.AirlineSignerEmail).HasMaxLength(256).IsRequired();
+            builder.Property(item => item.TemplateVersion).HasMaxLength(80).IsRequired();
+            builder.Property(item => item.TemplateSha256).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.DraftObjectKey).HasMaxLength(240).IsRequired();
+            builder.Property(item => item.DraftSha256).HasMaxLength(64).IsRequired();
+            builder.Property(item => item.AdobeAgreementId).HasMaxLength(160);
+            builder.Property(item => item.SignedObjectKey).HasMaxLength(240);
+            builder.Property(item => item.SignedSha256).HasMaxLength(64);
+            builder.Property(item => item.AuditObjectKey).HasMaxLength(240);
+            builder.Property(item => item.AuditSha256).HasMaxLength(64);
+            builder.Property(item => item.IssuedAt).HasPrecision(3);
+            builder.Property(item => item.FormalizedAt).HasPrecision(3);
+            builder.Property(item => item.AviamAcceptedAt).HasPrecision(3);
+            builder.Property(item => item.AirlineAcceptedAt).HasPrecision(3);
+            builder.Property(item => item.SnapshotJson).HasColumnType("nvarchar(max)");
+            builder.Property(item => item.LastCheckedAt).HasPrecision(3);
+            builder.Property(item => item.NextCheckAt).HasPrecision(3);
+            builder.HasIndex(item => item.ContractVersionId).IsUnique();
+            builder.HasIndex(item => item.AdobeAgreementId).IsUnique()
+                .HasFilter("[adobe_agreement_id] IS NOT NULL");
+            builder.HasIndex(item => new { item.Status, item.NextCheckAt });
+            AddNoActionReference<ContractVersion, ContractSigningEnvelope>(builder, item => item.ContractVersionId);
+            AddNoActionReference<ApplicationUser, ContractSigningEnvelope>(builder, item => item.AviamSignerAccountId);
+            AddNoActionReference<ApplicationUser, ContractSigningEnvelope>(builder, item => item.AirlineSignerAccountId);
+        });
+
+        modelBuilder.Entity<ContractSigningEvent>(builder =>
+        {
+            builder.ToTable("contract_signing_events", "commercial");
+            builder.Property(item => item.Id).UseIdentityColumn();
+            builder.Property(item => item.Kind).HasMaxLength(48).IsRequired();
+            builder.Property(item => item.OccurredAt).HasPrecision(3);
+            builder.Property(item => item.DocumentSha256).HasMaxLength(64);
+            builder.Property(item => item.ProviderEventId).HasMaxLength(160);
+            builder.HasIndex(item => new { item.EnvelopeId, item.OccurredAt });
+            builder.HasIndex(item => new { item.EnvelopeId, item.ProviderEventId }).IsUnique()
+                .HasFilter("[provider_event_id] IS NOT NULL");
+            builder.HasIndex(item => new { item.EnvelopeId, item.RequestId }).IsUnique()
+                .HasFilter("[request_id] IS NOT NULL");
+            AddNoActionReference<ContractSigningEnvelope, ContractSigningEvent>(builder, item => item.EnvelopeId);
+            AddNoActionReference<ApplicationUser, ContractSigningEvent>(builder, item => item.ActorAccountId);
         });
 
         modelBuilder.Entity<ContractVersionStation>(builder =>

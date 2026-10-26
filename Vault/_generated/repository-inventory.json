@@ -1145,13 +1145,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "16863c1983e0a8769db3860397902e64f45b2642c176318f4ae1db2d6d2c2e08",
+        "sha256": "acfd2fa71c1dfc98ff4ba82969530c55c67a45e7d9ff0aba0831b0f3235903e2",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "b88b810785d0d7f4a8acb7fa80ea64824feb80cc7c97234e8b7ea303080ec190",
+        "sha256": "7b8832a041ec2dc225eac1900dddab16c67c7cf19b7977c26802598283fb2a96",
         "title": null,
         "version": null
       }
@@ -1360,6 +1360,18 @@
         "name": "AddFinanceTaxSnapshotsAndCorrections",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261019041554_AddFinanceTaxSnapshotsAndCorrections.cs",
         "sha256": "b0b5559abcf5a7148b30b32bfd9e7e46063536cd566f3dea51ed8639887af084"
+      },
+      {
+        "id": "20261020000446",
+        "name": "AddContractSigningEnvelope",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261020000446_AddContractSigningEnvelope.cs",
+        "sha256": "8c5b0d1558dc13be796b9c7f604bd9feb3d6f9ec6a9cd70c31cb7b06a38ad3f1"
+      },
+      {
+        "id": "20261022025008",
+        "name": "AddRequestPackagesAndRecordedAcceptance",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261022025008_AddRequestPackagesAndRecordedAcceptance.cs",
+        "sha256": "e1d88995bab55ab4417ed8b0fcb99d752b2104c3f2df1ef6f7474537b0f76563"
       }
     ],
     "manifestContracts": [

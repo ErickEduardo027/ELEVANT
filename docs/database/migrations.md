@@ -8,6 +8,13 @@ aditivas para el [flujo comercial](../workflows/commercial-intake-and-governance
 El seed sintético de Development es un paso separado; las migraciones no
 insertan servicios, aerolíneas ni cuentas.
 
+`AddContractSigningEnvelope` conserva los contratos existentes con firma no
+requerida. `AddRequestPackagesAndRecordedAcceptance` añade selecciones de
+paquete por solicitud, unicidad filtrada de contrato por solicitud de origen y
+campos de método, snapshot, actor, hash, UUID y fecha de aceptación al
+expediente. Se generó con `scripts/add-migration.ps1` y pasó
+`has-pending-model-changes`; no se aplicó a una base de datos en esta tarea.
+
 `AddServiceClosureRequests` agrega `commercial.service_closure_requests` de forma
 aditiva: expediente, actor solicitante y decisor, motivos, instantes, UUID,
 `rowversion` e índice único filtrado para una sola petición pendiente por

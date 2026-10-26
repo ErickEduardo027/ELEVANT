@@ -1,6 +1,11 @@
 namespace Elevant.Application.Abstractions.Commercial;
 
 public sealed record CommercialRequestItemData(Guid ServiceId, string Name, string Unit);
+public sealed record CommercialRequestPackageComponentData(Guid ServiceId,
+    string Name, string Unit, decimal IncludedQuantity);
+public sealed record CommercialRequestPackageData(Guid Id, string Code,
+    string Name, int VersionNumber, string CurrencyCode,
+    IReadOnlyList<CommercialRequestPackageComponentData> Components);
 public sealed record CommercialStationData(Guid Id, string Code, string Name);
 public sealed record CommercialRequestData(
     Guid Id, string Reference, string Airline, Guid AirlineProfileId,
@@ -14,7 +19,8 @@ public sealed record CommercialRequestData(
     string? RepresentativeDocumentNumber,
     bool AuthorityDeclared, string Status, DateTimeOffset SubmittedAt,
     string? DecisionReason, Guid? ContractId,
-    IReadOnlyList<CommercialRequestItemData> Services);
+    IReadOnlyList<CommercialRequestItemData> Services,
+    IReadOnlyList<CommercialRequestPackageData> Packages);
 
 public sealed record VerifyAirlineInput(string LegalName, string CountryCode,
     string IataCode, string IcaoCode, string VerificationSourceUrl, string? LogoUrl);

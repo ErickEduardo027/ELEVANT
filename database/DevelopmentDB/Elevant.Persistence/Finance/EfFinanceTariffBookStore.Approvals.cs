@@ -191,8 +191,8 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     /// <summary>
-    /// Finance approval activates the contract (previously done by Contracts on its
-    /// own); returning it sends the draft back to Contracts with the reason.
+    /// Finance approval freezes the commercial version. New contracts await both
+    /// signatures before activation; legacy contracts retain their prior path.
     /// </summary>
     public async Task<FinanceCatalogResult> DecideContractApprovalAsync(Guid actorId, Guid versionId,
         DecideContractApprovalInput input, CancellationToken cancellationToken = default)
@@ -233,6 +233,10 @@ internal sealed partial class EfFinanceTariffBookStore
             }
             else if (decision == ContractFinanceDecision.Approved)
             {
+                if (row.Contract.RequiresElectronicSigning &&
+                    (row.Version.AviamSignerAccountId is null ||
+                     row.Version.AirlineSignerAccountId is null))
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
                 var packageRows = await (from link in context.Set<ContractServicePackage>()
                     join package in context.Set<ServicePackageVersion>() on link.PackageVersionId equals package.Id
                     where link.ContractVersionId == row.Version.Id select package).ToArrayAsync(cancellationToken);
@@ -273,7 +277,7 @@ internal sealed partial class EfFinanceTariffBookStore
                 row.Version.ApprovedAt = now;
                 row.Version.ApprovedByAccountId = actor.Id;
                 row.Version.UpdatedAt = now;
-                if (row.Contract.Status == ContractStatus.Draft)
+                if (row.Contract.Status == ContractStatus.Draft && !row.Contract.RequiresElectronicSigning)
                 {
                     row.Contract.Status = ContractStatus.Active;
                     row.Contract.SignedOn = DateOnly.FromDateTime(now.UtcDateTime);

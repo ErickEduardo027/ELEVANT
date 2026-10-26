@@ -26,6 +26,7 @@ it('shows only published agreements and no unsupported write action', async () =
   expect(await screen.findByText('CTR-2026-1')).toBeInTheDocument();
   expect(screen.getByText('Synthetic Air')).toBeInTheDocument();
   expect(screen.getByText('PUJ')).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /modelo/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /registrar contrato|actualizar/i })).not.toBeInTheDocument();
   expect(getManagedContracts).toHaveBeenCalledWith(1);
 });
@@ -66,5 +67,16 @@ it('distinguishes permission denial from a recoverable transport failure', async
   getManagedContracts.mockRejectedValueOnce(new Error('network'));
   render(<ManagedAgreementsPage mode="reports" />);
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron consultar');
+  expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+});
+
+it.each([
+  [{ kind: 'malformed-response', status: 200 }, 'formato incompatible'],
+  [{ kind: 'http', status: 500 }, 'El servidor no pudo consultar'],
+  [new TypeError('Failed to fetch'), 'No hay conexión con la API'],
+])('explains the agreement loading failure without exposing raw errors', async (failure, message) => {
+  getManagedContracts.mockRejectedValueOnce(failure);
+  render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(message);
   expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
 });

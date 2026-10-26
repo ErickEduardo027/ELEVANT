@@ -8,6 +8,7 @@ using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 using Elevant.Persistence.Finance;
@@ -43,6 +44,22 @@ internal sealed class EfCommercialWorkflowStore(
         var items = await context.Set<ServiceRequestItem>().AsNoTracking()
             .Where(item => requestIds.Contains(item.ServiceRequestId))
             .ToArrayAsync(cancellationToken);
+        var packageSelections = await (from link in context.Set<ServiceRequestPackageSelection>().AsNoTracking()
+            join package in context.Set<ServicePackageVersion>().AsNoTracking()
+                on link.PackageVersionId equals package.Id
+            where requestIds.Contains(link.ServiceRequestId)
+            select new { link.ServiceRequestId, link.PackageVersionId,
+                package.PublicId, package.Code, package.Name,
+                package.VersionNumber, package.CurrencyCode })
+            .ToArrayAsync(cancellationToken);
+        var selectedPackageIds = packageSelections.Select(selection => selection.PackageVersionId)
+            .Distinct().ToArray();
+        var packageComponents = await context.Set<ServicePackageComponent>().AsNoTracking()
+            .Where(component => selectedPackageIds.Contains(component.PackageVersionId))
+            .Select(component => new { component.PackageVersionId,
+                component.ServiceDefinitionId, component.BillingUnit,
+                component.IncludedQuantity })
+            .ToArrayAsync(cancellationToken);
         var contracts = await context.Contracts.AsNoTracking()
             .Where(contract => contract.OriginatingServiceRequestId != null &&
                 requestIds.Contains(contract.OriginatingServiceRequestId.Value))
@@ -75,7 +92,24 @@ internal sealed class EfCommercialWorkflowStore(
                     service.ServiceDefinitionId is long id && servicePublicIds.TryGetValue(id, out var publicId)
                         ? publicId : Guid.Empty,
                     service.RequestedServiceName, service.RequestedUnit ?? string.Empty))
-                .ToArray())).ToArray();
+                .ToArray(),
+            packageSelections.Where(package => package.ServiceRequestId == item.request.Id)
+                .Select(package => new CommercialRequestPackageData(package.PublicId,
+                    package.Code, package.Name, package.VersionNumber,
+                    package.CurrencyCode,
+                    packageComponents.Where(component =>
+                            component.PackageVersionId == package.PackageVersionId)
+                        .Select(component =>
+                        {
+                            var requestedItem = items.First(requestItem =>
+                                requestItem.ServiceRequestId == item.request.Id &&
+                                requestItem.ServiceDefinitionId == component.ServiceDefinitionId);
+                            return new CommercialRequestPackageComponentData(
+                                servicePublicIds.GetValueOrDefault(component.ServiceDefinitionId),
+                                requestedItem.RequestedServiceName,
+                                component.BillingUnit,
+                                component.IncludedQuantity);
+                        }).ToArray())).ToArray())).ToArray();
     }
 
     public async Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId,
@@ -146,7 +180,9 @@ internal sealed class EfCommercialWorkflowStore(
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid);
 
         var strategy = context.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
@@ -154,6 +190,14 @@ internal sealed class EfCommercialWorkflowStore(
                 item => item.PublicId == requestId, cancellationToken);
             if (request is null)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound);
+            if (input.Approve && request.Status == CommercialRequestStatus.Approved)
+            {
+                var existingContractId = await context.Contracts.AsNoTracking()
+                    .Where(item => item.OriginatingServiceRequestId == request.Id)
+                    .Select(item => item.PublicId).SingleOrDefaultAsync(cancellationToken);
+                if (existingContractId != Guid.Empty)
+                    return CommercialWorkflowResult.Success(existingContractId);
+            }
             if (request.Status is not (CommercialRequestStatus.Pending or CommercialRequestStatus.InReview))
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict);
             var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
@@ -189,6 +233,26 @@ internal sealed class EfCommercialWorkflowStore(
                 .ToArrayAsync(cancellationToken);
             if (stations.Length != input.StationIds.Count)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid);
+            var selectedPackageIds = await context.Set<ServiceRequestPackageSelection>()
+                .Where(item => item.ServiceRequestId == request.Id)
+                .Select(item => item.PackageVersionId).ToArrayAsync(cancellationToken);
+            var contractCurrency = "USD";
+            if (selectedPackageIds.Length > 0)
+            {
+                var selectedPackages = await context.Set<ServicePackageVersion>().AsNoTracking()
+                    .Where(item => selectedPackageIds.Contains(item.Id))
+                    .ToArrayAsync(cancellationToken);
+                var approvalDate = DateOnly.FromDateTime(now.UtcDateTime);
+                var currencies = selectedPackages.Select(item => item.CurrencyCode)
+                    .Distinct(StringComparer.Ordinal).ToArray();
+                if (selectedPackages.Length != selectedPackageIds.Length ||
+                    currencies.Length != 1 ||
+                    selectedPackages.Any(item => item.Status == TariffVersionStatus.Draft ||
+                        item.ValidFrom > approvalDate ||
+                        item.ValidTo < approvalDate))
+                    return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict);
+                contractCurrency = currencies[0];
+            }
 
             long airlineId;
             if (profile.CanonicalAirlineId is long existingId)
@@ -238,6 +302,7 @@ internal sealed class EfCommercialWorkflowStore(
                 OriginatingServiceRequestId = request.Id,
                 ContractCode = $"DRAFT-{request.PublicId:N}"[..38],
                 Status = ContractStatus.Draft,
+                RequiresElectronicSigning = true,
             };
             context.Contracts.Add(contract);
             await context.SaveChangesAsync(cancellationToken);
@@ -245,7 +310,8 @@ internal sealed class EfCommercialWorkflowStore(
             {
                 PublicId = Guid.CreateVersion7(), ContractId = contract.Id,
                 VersionNumber = 1, Status = ContractVersionStatus.Draft,
-                ValidFrom = DateOnly.FromDateTime(now.UtcDateTime), CurrencyCode = "USD",
+                ValidFrom = DateOnly.FromDateTime(now.UtcDateTime),
+                CurrencyCode = contractCurrency,
             };
             context.ContractVersions.Add(version);
             await context.SaveChangesAsync(cancellationToken);
@@ -274,23 +340,47 @@ internal sealed class EfCommercialWorkflowStore(
                     IsConfirmed = false,
                 });
             }
+            foreach (var packageId in selectedPackageIds)
+                context.Set<ContractServicePackage>().Add(new ContractServicePackage
+                {
+                    PublicId = Guid.CreateVersion7(), ContractVersionId = version.Id,
+                    PackageVersionId = packageId, CreatedAt = now, UpdatedAt = now,
+                });
             AddStatusEvent(request.Id, oldStatus, request.Status, actorDatabaseId, now, null);
             CommercialAuditWriter.Add(context, actorDatabaseId,
                 "commercial.request.approved", "commercial.service_requests", request.PublicId);
             await NotifyRequestReadersAsync(request.PublicId, cancellationToken);
-            var superAdminIds = await (from assignment in context.Set<IdentityUserRole<long>>()
-                join role in context.Roles on assignment.RoleId equals role.Id
-                join user in context.Users on assignment.UserId equals user.Id
-                where role.NormalizedName == "SUPERADMIN" && role.IsActive &&
-                    user.Status == AccountLifecycleStatus.Active
-                select user.Id).Distinct().ToArrayAsync(cancellationToken);
-            foreach (var recipientId in superAdminIds)
-                AccountChangeOutboxWriter.Add(context, recipientId, null,
-                    "account_provisioning", request.PublicId, now);
+            if (request.ProvisionedAccountId is null)
+            {
+                var superAdminIds = await (from assignment in context.Set<IdentityUserRole<long>>()
+                    join role in context.Roles on assignment.RoleId equals role.Id
+                    join user in context.Users on assignment.UserId equals user.Id
+                    where role.NormalizedName == "SUPERADMIN" && role.IsActive &&
+                        user.Status == AccountLifecycleStatus.Active
+                    select user.Id).Distinct().ToArrayAsync(cancellationToken);
+                foreach (var recipientId in superAdminIds)
+                    AccountChangeOutboxWriter.Add(context, recipientId, null,
+                        "account_provisioning", request.PublicId, now);
+            }
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return CommercialWorkflowResult.Success(contract.PublicId);
-        });
+            });
+        }
+        catch (DbUpdateException exception) when (
+            input.Approve && exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            context.ChangeTracker.Clear();
+            var existing = await (from request in context.ServiceRequests.AsNoTracking()
+                join contract in context.Contracts.AsNoTracking()
+                    on request.Id equals contract.OriginatingServiceRequestId
+                where request.PublicId == requestId &&
+                    request.Status == CommercialRequestStatus.Approved
+                select contract.PublicId).SingleOrDefaultAsync(cancellationToken);
+            return existing == Guid.Empty
+                ? CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict)
+                : CommercialWorkflowResult.Success(existing);
+        }
     }
 
     private void AddStatusEvent(long requestId, CommercialRequestStatus from,

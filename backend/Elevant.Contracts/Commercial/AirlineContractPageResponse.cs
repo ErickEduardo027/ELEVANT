@@ -6,7 +6,8 @@ public sealed record AirlineContractPageResponse(
 
 public sealed record AirlineContractResponse(
     Guid Id, string Code, string Status, DateOnly? SignedOn, DateOnly? TerminatedOn,
-    IReadOnlyList<AirlineContractVersionResponse> ApprovedVersions);
+    IReadOnlyList<AirlineContractVersionResponse> ApprovedVersions,
+    bool RequiresElectronicSigning = false, string SigningStatus = "Legacy");
 
 public sealed record AirlineContractVersionResponse(
     Guid Id, int VersionNumber, DateOnly ValidFrom, DateOnly? ValidTo,

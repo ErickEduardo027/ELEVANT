@@ -10,6 +10,7 @@ const catalog = {
   airlines: [{ id: airlineProfileId, name: "Synthetic Airways", region: "Caribbean",
     legalName: null, countryCode: null, iataCode: null, icaoCode: null,
     logoUrl: null, isVerified: false }],
+  packages: [],
 };
 const request: SubmitCommercialRequestRequest = {
   requestId, airlineProfileId, serviceIds: [serviceId],
@@ -57,6 +58,37 @@ describe("canonical public commercial intake client", () => {
     await expect(client.getPublicCommercialCatalog()).resolves.toEqual(largeCatalog);
   });
 
+  it("keeps services available when an older API omits packages", async () => {
+    const olderCatalog = { services: catalog.services, airlines: catalog.airlines };
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify(olderCatalog),
+        { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getPublicCommercialCatalog()).resolves.toEqual(catalog);
+  });
+
+  it("reads published package components without exposing a package price", async () => {
+    const published = { ...catalog, packages: [{
+      id: "30000000-0000-7000-8000-000000000001", code: "RAMP-BASIC",
+      name: "Rampa básica", versionNumber: 2, currencyCode: "USD",
+      components: [{ serviceId, code: "BAG", name: "Baggage handling",
+        billingUnit: "Flight", includedQuantity: 1 }],
+    }] };
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify(published),
+        { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getPublicCommercialCatalog()).resolves.toEqual(published);
+    const unsafe = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...published,
+        packages: [{ ...published.packages[0], price: 100 }] }),
+      { headers: { "content-type": "application/json" } }),
+    });
+    await expect(unsafe.getPublicCommercialCatalog()).rejects.toMatchObject({
+      kind: "malformed-response",
+    });
+  });
+
   it("posts a stable request id without credentials and accepts a new or replayed receipt", async () => {
     const calls: Array<{ body: unknown; auth: string | null }> = [];
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
@@ -77,6 +109,25 @@ describe("canonical public commercial intake client", () => {
       reference: "REQ-SYNTHETIC-001", replayed: true,
     });
     expect(calls).toEqual([{ body: request, auth: null }, { body: request, auth: null }]);
+  });
+
+  it("accepts package-only requests and rejects duplicate package versions", async () => {
+    const packageId = "30000000-0000-7000-8000-000000000001";
+    let sent: unknown;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ reference: "REQ-PACKAGE-1", replayed: false }),
+          { status: 201, headers: { "content-type": "application/json" } });
+      },
+    });
+    const packageOnly = { ...request, serviceIds: [], packageVersionIds: [packageId] };
+    await expect(client.submitCommercialRequest(packageOnly)).resolves.toEqual({
+      reference: "REQ-PACKAGE-1", replayed: false,
+    });
+    expect(sent).toEqual(packageOnly);
+    await expect(client.submitCommercialRequest({ ...packageOnly,
+      packageVersionIds: [packageId, packageId] })).rejects.toBeInstanceOf(TypeError);
   });
 
   it("looks up an existing receipt without repeating the submission", async () => {

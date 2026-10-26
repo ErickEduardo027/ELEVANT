@@ -55,6 +55,8 @@ public static class DepartmentPermissionCatalog
             [
                 Module("contracts", "home", "Inicio", ("read", "Ver")),
                 Module("contracts", "agreements", "Contratos y servicios pactados", ("read", "Ver")),
+                Module("contracts", "signing", "Firma contractual", ("read", "Consultar expedientes"),
+                    ("preview", "Previsualizar documento"), ("issue", "Emitir para firma")),
                 Module("contracts", "drafts", "Borradores", ("read", "Ver"), ("edit", "Editar"), ("activate", "Activar contrato")),
                 Module("contracts", "requests", "Solicitudes", ("read", "Ver"), ("verify", "Verificar aerolínea"),
                     ("approve", "Aprobar"), ("reject", "Rechazar")),

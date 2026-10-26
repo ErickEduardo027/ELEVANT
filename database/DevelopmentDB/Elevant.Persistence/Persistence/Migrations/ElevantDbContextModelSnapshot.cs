@@ -766,6 +766,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<bool>("RequiresElectronicSigning")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_electronic_signing");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -799,7 +805,9 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("ContractCode")
                         .IsUnique();
 
-                    b.HasIndex("OriginatingServiceRequestId");
+                    b.HasIndex("OriginatingServiceRequestId")
+                        .IsUnique()
+                        .HasFilter("[originating_service_request_id] IS NOT NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -1171,6 +1179,266 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractSigningEnvelope", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AdobeAgreementId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("adobe_agreement_id");
+
+                    b.Property<Guid?>("AirlineAcceptanceRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("airline_acceptance_request_id");
+
+                    b.Property<DateTimeOffset?>("AirlineAcceptedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("airline_accepted_at");
+
+                    b.Property<long>("AirlineSignerAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_signer_account_id");
+
+                    b.Property<string>("AirlineSignerEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("airline_signer_email");
+
+                    b.Property<string>("AuditObjectKey")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("audit_object_key");
+
+                    b.Property<string>("AuditSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("audit_sha256");
+
+                    b.Property<Guid?>("AviamAcceptanceRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("aviam_acceptance_request_id");
+
+                    b.Property<DateTimeOffset?>("AviamAcceptedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("aviam_accepted_at");
+
+                    b.Property<long>("AviamSignerAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("aviam_signer_account_id");
+
+                    b.Property<string>("AviamSignerEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .HasColumnName("aviam_signer_email");
+
+                    b.Property<int>("CheckAttempts")
+                        .HasColumnType("int")
+                        .HasColumnName("check_attempts");
+
+                    b.Property<long>("ContractVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_version_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DraftObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("draft_object_key");
+
+                    b.Property<string>("DraftSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("draft_sha256");
+
+                    b.Property<DateTimeOffset?>("FormalizedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("formalized_at");
+
+                    b.Property<DateTimeOffset?>("IssuedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("issued_at");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("last_checked_at");
+
+                    b.Property<DateTimeOffset?>("NextCheckAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("next_check_at");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("SignedObjectKey")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .HasColumnName("signed_object_key");
+
+                    b.Property<string>("SignedSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("signed_sha256");
+
+                    b.Property<string>("SigningMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Adobe")
+                        .HasColumnName("signing_method");
+
+                    b.Property<string>("SnapshotJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("snapshot_json");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TemplateSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("template_sha256");
+
+                    b.Property<string>("TemplateVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("template_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdobeAgreementId")
+                        .IsUnique()
+                        .HasFilter("[adobe_agreement_id] IS NOT NULL");
+
+                    b.HasIndex("AirlineSignerAccountId");
+
+                    b.HasIndex("AviamSignerAccountId");
+
+                    b.HasIndex("ContractVersionId")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "NextCheckAt");
+
+                    b.ToTable("contract_signing_envelopes", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_contract_signing_attempts", "[check_attempts] >= 0");
+
+                            t.HasCheckConstraint("ck_contract_signing_audit_hash", "[audit_sha256] IS NULL OR LEN([audit_sha256]) = 64");
+
+                            t.HasCheckConstraint("ck_contract_signing_draft_hash", "LEN([draft_sha256]) = 64");
+
+                            t.HasCheckConstraint("ck_contract_signing_signed_hash", "[signed_sha256] IS NULL OR LEN([signed_sha256]) = 64");
+
+                            t.HasCheckConstraint("ck_contract_signing_template_hash", "LEN([template_sha256]) = 64");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractSigningEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("ActorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("actor_account_id");
+
+                    b.Property<string>("DocumentSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("document_sha256");
+
+                    b.Property<long>("EnvelopeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("envelope_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("ProviderEventId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("provider_event_id");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorAccountId");
+
+                    b.HasIndex("EnvelopeId", "OccurredAt");
+
+                    b.HasIndex("EnvelopeId", "ProviderEventId")
+                        .IsUnique()
+                        .HasFilter("[provider_event_id] IS NOT NULL");
+
+                    b.HasIndex("EnvelopeId", "RequestId")
+                        .IsUnique()
+                        .HasFilter("[request_id] IS NOT NULL");
+
+                    b.ToTable("contract_signing_events", "commercial");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractStatusEvent", b =>
                 {
                     b.Property<long>("Id")
@@ -1227,6 +1495,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<long?>("AirlineSignerAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_signer_account_id");
+
                     b.Property<DateTimeOffset?>("ApprovedAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
@@ -1235,6 +1507,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.Property<long?>("ApprovedByAccountId")
                         .HasColumnType("bigint")
                         .HasColumnName("approved_by_account_id");
+
+                    b.Property<long?>("AviamSignerAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("aviam_signer_account_id");
 
                     b.Property<long>("ContractId")
                         .HasColumnType("bigint")
@@ -1300,7 +1576,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AirlineSignerAccountId");
+
                     b.HasIndex("ApprovedByAccountId");
+
+                    b.HasIndex("AviamSignerAccountId");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -5349,6 +5629,23 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_service_request_item_quantity", "[estimated_quantity] IS NULL OR [estimated_quantity] > 0");
                         });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequestPackageSelection", b =>
+                {
+                    b.Property<long>("ServiceRequestId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("service_request_id");
+
+                    b.Property<long>("PackageVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("package_version_id");
+
+                    b.HasKey("ServiceRequestId", "PackageVersionId");
+
+                    b.HasIndex("PackageVersionId");
+
+                    b.ToTable("service_request_package_selections", "commercial");
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequestStation", b =>
@@ -11733,6 +12030,41 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractSigningEnvelope", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineSignerAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AviamSignerAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ContractVersion", null)
+                        .WithMany()
+                        .HasForeignKey("ContractVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractSigningEvent", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ContractSigningEnvelope", null)
+                        .WithMany()
+                        .HasForeignKey("EnvelopeId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractStatusEvent", b =>
                 {
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
@@ -11751,7 +12083,17 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
+                        .HasForeignKey("AirlineSignerAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
                         .HasForeignKey("ApprovedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AviamSignerAccountId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Commercial.Contract", null)
@@ -12461,6 +12803,23 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ServiceDefinitionId")
                         .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ServiceRequest", "ServiceRequest")
+                        .WithMany()
+                        .HasForeignKey("ServiceRequestId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("ServiceRequest");
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ServiceRequestPackageSelection", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ServicePackageVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PackageVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
 
                     b.HasOne("Elevant.Domain.Entities.Commercial.ServiceRequest", "ServiceRequest")
                         .WithMany()

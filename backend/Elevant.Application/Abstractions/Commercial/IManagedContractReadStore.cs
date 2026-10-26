@@ -12,7 +12,8 @@ public sealed record ManagedContractVersionData(Guid Id, int VersionNumber, stri
 
 public sealed record ManagedContractData(Guid Id, string Code, string Airline,
     string AirlineCode, string Status, DateOnly? SignedOn, DateOnly? TerminatedOn,
-    IReadOnlyList<ManagedContractVersionData> ApprovedVersions);
+    IReadOnlyList<ManagedContractVersionData> ApprovedVersions,
+    bool RequiresElectronicSigning = false, string SigningStatus = "Legacy");
 
 public sealed record ManagedContractPageData(
     int Page, int Limit, bool HasMore, IReadOnlyList<ManagedContractData> Contracts);

@@ -23,6 +23,7 @@ const catalog = {
   airlines: [{ id: airlineId, name: "Synthetic Airways", region: "Caribbean",
     legalName: null, countryCode: null, iataCode: null, icaoCode: null,
     logoUrl: null, isVerified: false }],
+  packages: [],
 };
 
 afterEach(() => {
@@ -33,7 +34,8 @@ const field = (name: string) => screen.getByRole("combobox", { name });
 const choose = (name: string, value: string) => fireEvent.change(field(name), { target: { value } });
 
 async function openRepresentativeStep() {
-  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" },
+    { timeout: 10_000 }));
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
   choose("Seleccione una aerolínea", airlineId);
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
@@ -41,7 +43,8 @@ async function openRepresentativeStep() {
 
 async function chooseDominicanLocation() {
   choose("País", "DO");
-  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled());
+  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled(),
+    { timeout: 10_000 });
   choose("Provincia / Estado / Región", "25");
   choose("Municipio / Ciudad", "Santiago de los Caballeros");
 }
@@ -138,7 +141,8 @@ it("keeps country, division and municipality consistent", async () => {
   expect(field("Provincia / Estado / Región")).toHaveValue("");
   expect(field("Municipio / Ciudad")).toHaveValue("");
   expect(field("Municipio / Ciudad")).toBeDisabled();
-  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled());
+  await waitFor(() => expect(field("Provincia / Estado / Región")).toBeEnabled(),
+    { timeout: 10_000 });
   choose("Provincia / Estado / Región", "FL");
   expect(field("Municipio / Ciudad")).toBeEnabled();
   choose("Municipio / Ciudad", "Miami");

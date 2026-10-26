@@ -1,6 +1,23 @@
 import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
+  getGetAirlineContractSigningUrl,
+  getGetAirlineContractSigningLinkUrl,
+  getGetAirlineSignedContractPdfUrl,
+  getGetAirlineContractDraftPdfUrl,
+  getAcceptAirlineContractUrl,
+  getListAirlineCommercialRequestsUrl,
+  getSubmitAirlineAdditionalServiceRequestUrl,
+  getListAviamContractSignersUrl,
+  getListManagedContractSigningUrl,
+  getGetManagedContractSigningUrl,
+  getSetContractSignersUrl,
+  getPreviewContractSigningPdfUrl,
+  getIssueContractSigningUrl,
+  getGetManagedSignedContractPdfUrl,
+  getGetManagedContractAuditPdfUrl,
+  getGetManagedContractDraftPdfUrl,
+  getAcceptAviamContractUrl,
   getGetAirlineOperationsUrl,
   getGetAirlineOperationUrl,
   getGetAirlineApprovedOperationEvidenceUrl,
@@ -98,6 +115,13 @@ import {
   type AssignOccOperationRequest,
   type AccountChangeListResponse,
   type AirlineContractPageResponse,
+  type AirlineCommercialRequestData,
+  type AcceptContractRequest,
+  type ContractSigningResponse,
+  type ContractSigningLinkResponse,
+  type ContractSignerOptionResponse,
+  type SetContractSignersRequest,
+  type SubmitAdditionalServiceRequestRequest,
   type AirlineOperationPageResponse,
   type AirlinePortalOperationResponse,
   type AirlineApprovedOperationEvidenceResponse,
@@ -398,6 +422,23 @@ export interface OccAssignmentWithMetadata {
 }
 
 export interface ElevantApiClient {
+  submitAirlineAdditionalServiceRequest(request: SubmitAdditionalServiceRequestRequest, options?: ElevantRequestInit): Promise<SubmitCommercialRequestResponse>;
+  getAirlineContractSigning(contractId: string, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
+  getAirlineContractSigningLink(contractId: string, options?: ElevantRequestInit): Promise<ContractSigningLinkResponse>;
+  getAirlineSignedContractPdf(contractId: string, options?: ElevantRequestInit): Promise<Blob>;
+  getAirlineContractDraftPdf(contractId: string, options?: ElevantRequestInit): Promise<Blob>;
+  acceptAirlineContract(contractId: string, request: AcceptContractRequest, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
+  listAirlineCommercialRequests(options?: ElevantRequestInit): Promise<AirlineCommercialRequestData[]>;
+  listAviamContractSigners(options?: ElevantRequestInit): Promise<ContractSignerOptionResponse[]>;
+  listManagedContractSigning(options?: ElevantRequestInit): Promise<ContractSigningResponse[]>;
+  getManagedContractSigning(versionId: string, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
+  setContractSigners(versionId: string, request: SetContractSignersRequest, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
+  previewContractSigningPdf(versionId: string, options?: ElevantRequestInit): Promise<Blob>;
+  issueContractSigning(versionId: string, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
+  getManagedSignedContractPdf(versionId: string, options?: ElevantRequestInit): Promise<Blob>;
+  getManagedContractAuditPdf(versionId: string, options?: ElevantRequestInit): Promise<Blob>;
+  getManagedContractDraftPdf(versionId: string, options?: ElevantRequestInit): Promise<Blob>;
+  acceptAviamContract(versionId: string, request: AcceptContractRequest, options?: ElevantRequestInit): Promise<ContractSigningResponse>;
   getAccountChanges(
     parameters?: GetAccountChangesParams,
     options?: GetAccountChangesOptions,
@@ -2348,6 +2389,37 @@ function isAirlinePortalBootstrapResponse(
       isOptionalNullable(operation.plannedEndAt, isDateTimeOffset));
 }
 
+function isContractSigningResponse(value: unknown): value is ContractSigningResponse {
+  return isRecord(value) && typeof value.contractId === "string" &&
+    typeof value.versionId === "string" && typeof value.contractCode === "string" &&
+    typeof value.signingStatus === "string" &&
+    typeof value.requiresElectronicSigning === "boolean";
+}
+
+function validatedContractAcceptance(request: AcceptContractRequest): AcceptContractRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["requestId", "expectedDraftSha256"]) ||
+      !isUuid(request.requestId) ||
+      typeof request.expectedDraftSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/i.test(request.expectedDraftSha256))
+    throw new TypeError("Contract acceptance request is invalid.");
+  return request as AcceptContractRequest;
+}
+
+// During a staggered Development rollout, the previous API has no signing fields.
+// Only an entirely legacy page may receive defaults; mixed or partial payloads
+// remain malformed so a new agreement cannot be mistaken for a legacy one.
+function normalizeLegacyContractPage(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.contracts) ||
+      !value.contracts.length || !value.contracts.every(contract =>
+        isRecord(contract) &&
+        !Object.hasOwn(contract, "requiresElectronicSigning") &&
+        !Object.hasOwn(contract, "signingStatus"))) return value;
+  return { ...value, contracts: value.contracts.map(contract => ({
+    ...(contract as Record<string, unknown>),
+    requiresElectronicSigning: false, signingStatus: "Legacy",
+  })) };
+}
+
 function isAirlineContractPageResponse(value: unknown): value is AirlineContractPageResponse {
   return isRecord(value) &&
     hasOnlyKeys(value, ["page", "limit", "hasMore", "contracts"]) &&
@@ -2356,8 +2428,11 @@ function isAirlineContractPageResponse(value: unknown): value is AirlineContract
     typeof value.hasMore === "boolean" &&
     Array.isArray(value.contracts) && value.contracts.length <= value.limit &&
     value.contracts.every((contract) => isRecord(contract) &&
-      hasOnlyKeys(contract, ["id", "code", "status", "signedOn", "terminatedOn", "approvedVersions"]) &&
+      hasOnlyKeys(contract, ["id", "code", "status", "signedOn", "terminatedOn", "approvedVersions",
+        "requiresElectronicSigning", "signingStatus"]) &&
       isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      typeof contract.requiresElectronicSigning === "boolean" &&
+      isNonEmptyString(contract.signingStatus) &&
       ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
       isOptionalNullable(contract.signedOn, isDateOnly) &&
       isOptionalNullable(contract.terminatedOn, isDateOnly) &&
@@ -2388,8 +2463,11 @@ function isManagedContractPageData(value: unknown): value is ManagedContractPage
     (!value.hasMore || value.contracts.length === value.limit) &&
     value.contracts.every(contract => isRecord(contract) &&
       hasOnlyKeys(contract, ["id", "code", "airline", "airlineCode", "status",
-        "signedOn", "terminatedOn", "approvedVersions"]) &&
+        "signedOn", "terminatedOn", "approvedVersions", "requiresElectronicSigning",
+        "signingStatus"]) &&
       isUuid(contract.id) && isNonEmptyString(contract.code) &&
+      typeof contract.requiresElectronicSigning === "boolean" &&
+      isNonEmptyString(contract.signingStatus) &&
       isNonEmptyString(contract.airline) && isString(contract.airlineCode) &&
       ["Draft", "Active", "Suspended", "Terminated", "Expired"].includes(String(contract.status)) &&
       isOptionalNullable(contract.signedOn, isDateOnly) &&
@@ -2684,8 +2762,9 @@ function isDisputeAirlinePreinvoiceResponse(value: unknown): value is DisputeAir
 }
 
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines"]) ||
-      !Array.isArray(value.services) || !Array.isArray(value.airlines)) return false;
+  if (!isRecord(value) || !hasOnlyKeys(value, ["services", "airlines", "packages"]) ||
+      !Array.isArray(value.services) || !Array.isArray(value.airlines) ||
+      !Array.isArray(value.packages)) return false;
   const services = value.services.every((item: unknown) => isRecord(item) &&
     hasOnlyKeys(item, ["id", "name", "description", "imageUrl", "videoUrl", "displayOrder"]) &&
     isUuid(item.id) && isNonEmptyString(item.name) && isString(item.description) &&
@@ -2700,24 +2779,41 @@ function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCat
     isOptionalNullable(item.iataCode, isString) &&
     isOptionalNullable(item.icaoCode, isString) &&
     isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean");
-  return services && airlines &&
+  const packages = value.packages.every((item: unknown) => isRecord(item) &&
+    hasOnlyKeys(item, ["id", "code", "name", "versionNumber", "currencyCode", "components"]) &&
+    isUuid(item.id) && isNonEmptyString(item.code) && isNonEmptyString(item.name) &&
+    isInt32(item.versionNumber) && item.versionNumber > 0 &&
+    isNonEmptyString(item.currencyCode) && Array.isArray(item.components) &&
+    item.components.length > 0 && item.components.every((component: unknown) =>
+      isRecord(component) && hasOnlyKeys(component,
+        ["serviceId", "code", "name", "billingUnit", "includedQuantity"]) &&
+      isUuid(component.serviceId) && isNonEmptyString(component.code) &&
+      isNonEmptyString(component.name) && isNonEmptyString(component.billingUnit) &&
+      isFiniteNumber(component.includedQuantity) && component.includedQuantity >= 0));
+  return services && airlines && packages &&
     new Set(value.services.map(item => item.id.toLowerCase())).size === value.services.length &&
-    new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length;
+    new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length &&
+    new Set(value.packages.map(item => item.id.toLowerCase())).size === value.packages.length;
 }
 
 function validatedCommercialRequest(
   request: SubmitCommercialRequestRequest,
 ): SubmitCommercialRequestRequest {
   if (!isRecord(request) || !hasOnlyKeys(request, ["requestId", "airlineProfileId",
-    "serviceIds", "representativeName", "representativeTitle",
+    "serviceIds", "packageVersionIds", "representativeName", "representativeTitle",
     "representativeEmail", "representativePhone", "authorityDeclared",
     "representativeNationalityCode", "representativeAddress", "representativeCountry",
     "representativeProvince", "representativeMunicipality",
     "representativeDocumentType", "representativeDocumentNumber"]) ||
     !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
-    !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
+    !Array.isArray(request.serviceIds) ||
     request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
     new Set(request.serviceIds.map(id => id.toLowerCase())).size !== request.serviceIds.length ||
+    !isOptionalNullable(request.packageVersionIds,
+      value => Array.isArray(value) && value.length <= 10 && value.every(isUuid) &&
+        new Set(value.map(id => id.toLowerCase())).size === value.length) ||
+    (request.serviceIds.length === 0 &&
+      (!Array.isArray(request.packageVersionIds) || request.packageVersionIds.length === 0)) ||
     !isNonEmptyString(request.representativeName) || request.representativeName.length > 160 ||
     !isNonEmptyString(request.representativeTitle) || request.representativeTitle.length > 120 ||
     !isNonEmptyString(request.representativeEmail) || request.representativeEmail.length > 256 ||
@@ -4249,8 +4345,8 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     };
   };
 
-  const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
-    const response = await send(path, { ...init, method: "GET" }, true);
+  const executePdf = async (path: string, init: ElevantRequestInit = {}, method = "GET"): Promise<Blob> => {
+    const response = await send(path, { ...init, method }, true);
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
         "application/pdf") throw malformedResponse(response.status);
     const declaredLength = response.headers.get("content-length");
@@ -4325,6 +4421,102 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   return Object.freeze({
+    async submitAirlineAdditionalServiceRequest(request: SubmitAdditionalServiceRequestRequest, options?: ElevantRequestInit) {
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSubmitAirlineAdditionalServiceRequestUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
+      if (!isRecord(result.data) || typeof result.data.reference !== "string" ||
+          typeof result.data.replayed !== "boolean") throw malformedResponse(result.status);
+      return result.data as unknown as SubmitCommercialRequestResponse;
+    },
+    async getAirlineContractSigning(contractId: string, options?: ElevantRequestInit) {
+      const result = await execute(getGetAirlineContractSigningUrl(validatedUuid(contractId, "contractId")),
+        { ...options, method: "GET" }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getAirlineContractSigningLink(contractId: string, options?: ElevantRequestInit) {
+      const result = await execute(getGetAirlineContractSigningLinkUrl(validatedUuid(contractId, "contractId")),
+        { ...options, method: "GET" }, true);
+      if (!isRecord(result.data) || typeof result.data.url !== "string" ||
+          !/^https:\/\//i.test(result.data.url)) throw malformedResponse(result.status);
+      return result.data as unknown as ContractSigningLinkResponse;
+    },
+    getAirlineSignedContractPdf(contractId: string, options?: ElevantRequestInit) {
+      return executePdf(getGetAirlineSignedContractPdfUrl(validatedUuid(contractId, "contractId")), options);
+    },
+    getAirlineContractDraftPdf(contractId: string, options?: ElevantRequestInit) {
+      return executePdf(getGetAirlineContractDraftPdfUrl(validatedUuid(contractId, "contractId")), options);
+    },
+    async acceptAirlineContract(contractId: string, request: AcceptContractRequest, options?: ElevantRequestInit) {
+      const body = validatedContractAcceptance(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getAcceptAirlineContractUrl(validatedUuid(contractId, "contractId")),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async listAirlineCommercialRequests(options?: ElevantRequestInit) {
+      const result = await execute(getListAirlineCommercialRequestsUrl(),
+        { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data) || !result.data.every(item =>
+        isRecord(item) && typeof item.id === "string" && typeof item.status === "string"))
+        throw malformedResponse(result.status);
+      return result.data as AirlineCommercialRequestData[];
+    },
+    async listAviamContractSigners(options?: ElevantRequestInit) {
+      const result = await execute(getListAviamContractSignersUrl(), { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data)) throw malformedResponse(result.status);
+      return result.data as ContractSignerOptionResponse[];
+    },
+    async listManagedContractSigning(options?: ElevantRequestInit) {
+      const result = await execute(getListManagedContractSigningUrl(), { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data) || !result.data.every(isContractSigningResponse)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getManagedContractSigning(versionId: string, options?: ElevantRequestInit) {
+      const result = await execute(getGetManagedContractSigningUrl(validatedUuid(versionId, "versionId")),
+        { ...options, method: "GET" }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setContractSigners(versionId: string, request: SetContractSignersRequest, options?: ElevantRequestInit) {
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSetContractSignersUrl(validatedUuid(versionId, "versionId")),
+        { ...options, method: "PUT", headers, body: JSON.stringify(request) }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    previewContractSigningPdf(versionId: string, options?: ElevantRequestInit) {
+      return executePdf(getPreviewContractSigningPdfUrl(validatedUuid(versionId, "versionId")), options, "POST");
+    },
+    async issueContractSigning(versionId: string, options?: ElevantRequestInit) {
+      const result = await execute(getIssueContractSigningUrl(validatedUuid(versionId, "versionId")),
+        { ...options, method: "POST" }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    getManagedSignedContractPdf(versionId: string, options?: ElevantRequestInit) {
+      return executePdf(getGetManagedSignedContractPdfUrl(validatedUuid(versionId, "versionId")), options);
+    },
+    getManagedContractAuditPdf(versionId: string, options?: ElevantRequestInit) {
+      return executePdf(getGetManagedContractAuditPdfUrl(validatedUuid(versionId, "versionId")), options);
+    },
+    getManagedContractDraftPdf(versionId: string, options?: ElevantRequestInit) {
+      return executePdf(getGetManagedContractDraftPdfUrl(validatedUuid(versionId, "versionId")), options);
+    },
+    async acceptAviamContract(versionId: string, request: AcceptContractRequest, options?: ElevantRequestInit) {
+      const body = validatedContractAcceptance(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getAcceptAviamContractUrl(validatedUuid(versionId, "versionId")),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isContractSigningResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     async getAccountChanges(
       parameters?: GetAccountChangesParams,
       options?: GetAccountChangesOptions,
@@ -4418,11 +4610,12 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(
         getGetAirlineContractsUrl(paging), { ...options, method: "GET" }, true,
       );
-      if (!isAirlineContractPageResponse(result.data) ||
-        result.data.page !== (paging.page ?? 1) ||
-        result.data.limit !== (paging.limit ?? 20))
+      const page = normalizeLegacyContractPage(result.data);
+      if (!isAirlineContractPageResponse(page) ||
+        page.page !== (paging.page ?? 1) ||
+        page.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);
-      return result.data;
+      return page;
     },
     async getAirlineOperations(
       parameters: GetAirlineOperationsParams = {}, options?: GetAirlineOperationsOptions,
@@ -4553,17 +4746,21 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const paging = validatedManagedContractParams(parameters);
       const result = await execute(getListManagedContractsUrl(paging),
         { ...options, method: "GET" }, true);
-      if (!isManagedContractPageData(result.data) ||
-          result.data.page !== (paging.page ?? 1) ||
-          result.data.limit !== (paging.limit ?? 20))
+      const page = normalizeLegacyContractPage(result.data);
+      if (!isManagedContractPageData(page) ||
+          page.page !== (paging.page ?? 1) ||
+          page.limit !== (paging.limit ?? 20))
         throw malformedResponse(result.status);
-      return result.data;
+      return page;
     },
     async getPublicCommercialCatalog(options?: GetPublicCommercialCatalogOptions) {
       const result = await execute(getGetPublicCommercialCatalogUrl(),
         { ...options, method: "GET" });
-      if (!isPublicCommercialCatalog(result.data)) throw malformedResponse(result.status);
-      return result.data;
+      // Older API releases expose services and airlines before package selection.
+      const catalog = isRecord(result.data) && !("packages" in result.data)
+        ? { ...result.data, packages: [] } : result.data;
+      if (!isPublicCommercialCatalog(catalog)) throw malformedResponse(result.status);
+      return catalog;
     },
     async submitCommercialRequest(
       request: SubmitCommercialRequestRequest,

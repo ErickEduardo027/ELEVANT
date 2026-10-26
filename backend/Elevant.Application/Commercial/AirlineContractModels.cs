@@ -13,7 +13,8 @@ public sealed record AirlineContractVersionData(
 
 public sealed record AirlineContractData(
     Guid Id, string Code, string Status, DateOnly? SignedOn, DateOnly? TerminatedOn,
-    IReadOnlyList<AirlineContractVersionData> ApprovedVersions);
+    IReadOnlyList<AirlineContractVersionData> ApprovedVersions,
+    bool RequiresElectronicSigning = false, string SigningStatus = "Legacy");
 
 public sealed record AirlineContractPageData(
     IReadOnlyList<AirlineContractData> Contracts, bool HasMore);

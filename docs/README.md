@@ -23,6 +23,9 @@ Para orientarse por pregunta, evidencia y estado, usar el [Vault ELEVANT](../Vau
 - `workflows`: Git, desarrollo local y flujos por plataforma.
   La [solicitud comercial y gobernanza](workflows/commercial-intake-and-governance.md)
   documenta el recorrido de acceso, contrato y avisos internos de esta rama.
+- `runbooks`: preparación operativa y pruebas antes de activar integraciones.
+  La [firma contractual](runbooks/contract-signing-activation.md) enumera las
+  aprobaciones, credenciales y evidencias necesarias para habilitar emisión.
 - `security`: acceso SQL, secretos y línea base.
 - `onboarding`: recorridos por rol.
 - `adr`: decisiones aceptadas/propuestas.

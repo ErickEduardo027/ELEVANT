@@ -484,7 +484,8 @@ public sealed class AirlinePortalController(
                                 station.Id, station.Code, station.Name)).ToArray(),
                         version.Rates.Select(rate => new AirlineContractRateResponse(
                             rate.Id, rate.ServiceCode, rate.ServiceName, rate.BillingUnit,
-                            rate.UnitPrice, rate.MinimumQuantity)).ToArray())).ToArray()))
+                            rate.UnitPrice, rate.MinimumQuantity)).ToArray())).ToArray(),
+                contract.RequiresElectronicSigning, contract.SigningStatus))
                 .ToArray()));
     }
 

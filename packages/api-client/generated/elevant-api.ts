@@ -15,6 +15,11 @@ export interface AcceptAirlinePreinvoiceResponse {
   replayed: boolean;
 }
 
+export interface AcceptContractRequest {
+  requestId: string;
+  expectedDraftSha256: string;
+}
+
 export interface JobPositionRefData {
   id: string;
   name: string;
@@ -199,6 +204,41 @@ export interface AirlineApprovedOperationEvidenceResponse {
   services: AirlineApprovedServiceResponse[];
 }
 
+export interface CommercialRequestItemData {
+  serviceId: string;
+  name: string;
+  unit: string;
+}
+
+export interface CommercialRequestPackageComponentData {
+  serviceId: string;
+  name: string;
+  unit: string;
+  includedQuantity: number;
+}
+
+export interface CommercialRequestPackageData {
+  id: string;
+  code: string;
+  name: string;
+  versionNumber: number;
+  currencyCode: string;
+  components: CommercialRequestPackageComponentData[];
+}
+
+export interface AirlineCommercialRequestData {
+  id: string;
+  reference: string;
+  status: string;
+  submittedAt: string;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  contractId?: string | null;
+  services: CommercialRequestItemData[];
+  packages: CommercialRequestPackageData[];
+}
+
 export interface AirlineContractStationResponse {
   id: string;
   code: string;
@@ -234,6 +274,8 @@ export interface AirlineContractResponse {
   /** @nullable */
   terminatedOn?: string | null;
   approvedVersions: AirlineContractVersionResponse[];
+  requiresElectronicSigning: boolean;
+  signingStatus: string;
 }
 
 export interface AirlineContractPageResponse {
@@ -759,12 +801,6 @@ export interface CommercialIdResponse {
   id: string;
 }
 
-export interface CommercialRequestItemData {
-  serviceId: string;
-  name: string;
-  unit: string;
-}
-
 export interface CommercialRequestData {
   id: string;
   reference: string;
@@ -809,6 +845,7 @@ export interface CommercialRequestData {
   /** @nullable */
   contractId?: string | null;
   services: CommercialRequestItemData[];
+  packages: CommercialRequestPackageData[];
 }
 
 export interface CommercialStationData {
@@ -961,6 +998,54 @@ export interface ContractDraftOverviewItemData {
 export interface ContractDraftOverviewData {
   count: number;
   recent: ContractDraftOverviewItemData[];
+}
+
+export interface ContractSignerOptionResponse {
+  accountId: string;
+  name: string;
+  email: string;
+}
+
+export interface ContractSigningLinkResponse {
+  url: string;
+}
+
+export interface ContractSigningResponse {
+  contractId: string;
+  versionId: string;
+  contractCode: string;
+  airlineName: string;
+  versionStatus: string;
+  signingStatus: string;
+  requiresElectronicSigning: boolean;
+  /** @nullable */
+  aviamSignerAccountId?: string | null;
+  /** @nullable */
+  aviamSignerEmail?: string | null;
+  /** @nullable */
+  airlineSignerAccountId?: string | null;
+  /** @nullable */
+  airlineSignerEmail?: string | null;
+  /** @nullable */
+  issuedAt?: string | null;
+  /** @nullable */
+  formalizedAt?: string | null;
+  /** @nullable */
+  draftSha256?: string | null;
+  /** @nullable */
+  signedSha256?: string | null;
+  /** @nullable */
+  auditSha256?: string | null;
+  /** @nullable */
+  lastCheckedAt?: string | null;
+  /** @nullable */
+  nextCheckAt?: string | null;
+  /** @nullable */
+  signingMethod?: string | null;
+  /** @nullable */
+  aviamAcceptedAt?: string | null;
+  /** @nullable */
+  airlineAcceptedAt?: string | null;
 }
 
 export interface CorrectExchangeRateInput {
@@ -3007,6 +3092,8 @@ export interface ManagedContractData {
   /** @nullable */
   terminatedOn?: string | null;
   approvedVersions: ManagedContractVersionData[];
+  requiresElectronicSigning: boolean;
+  signingStatus: string;
 }
 
 export interface ManagedContractPageData {
@@ -3638,9 +3725,27 @@ export interface PublicServiceData {
   displayOrder: number;
 }
 
+export interface PublicPackageComponentData {
+  serviceId: string;
+  code: string;
+  name: string;
+  billingUnit: string;
+  includedQuantity: number;
+}
+
+export interface PublicPackageData {
+  id: string;
+  code: string;
+  name: string;
+  versionNumber: number;
+  currencyCode: string;
+  components: PublicPackageComponentData[];
+}
+
 export interface PublicCommercialCatalog {
   services: PublicServiceData[];
   airlines: PublicAirlineData[];
+  packages: PublicPackageData[];
 }
 
 export interface RampOperationalPositionResponse {
@@ -4379,6 +4484,10 @@ export interface SetContractPackagesRequest {
   packageVersionIds: string[];
 }
 
+export interface SetContractSignersRequest {
+  aviamSignerAccountId: string;
+}
+
 export interface SetDepartmentUserStatusInput {
   isActive: boolean;
   expectedVersion: string;
@@ -4392,6 +4501,18 @@ export interface SetSuggestedProfileInput {
   /** @nullable */
   accessProfileId?: string | null;
   expectedVersion: string;
+}
+
+export interface SubmitAdditionalServiceRequestRequest {
+  requestId: string;
+  serviceIds: string[];
+  representativeName: string;
+  representativeTitle: string;
+  representativeEmail: string;
+  representativePhone: string;
+  authorityDeclared: boolean;
+  /** @nullable */
+  packageVersionIds?: string[] | null;
 }
 
 export interface SubmitCommercialRequestRequest {
@@ -4417,6 +4538,8 @@ export interface SubmitCommercialRequestRequest {
   representativeDocumentType?: string | null;
   /** @nullable */
   representativeDocumentNumber?: string | null;
+  /** @nullable */
+  packageVersionIds?: string[] | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -5112,6 +5235,68 @@ export const getAffiliationOptions = async ( options?: RequestInit): Promise<Aff
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AffiliationOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListAirlineCommercialRequestsUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/commercial-requests`
+}
+
+export const listAirlineCommercialRequests = async ( options?: RequestInit): Promise<AirlineCommercialRequestData[]> => {
+
+  const res = await fetch(getListAirlineCommercialRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineCommercialRequestData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitAirlineAdditionalServiceRequestUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/commercial-requests`
+}
+
+export const submitAirlineAdditionalServiceRequest = async (submitAdditionalServiceRequestRequest?: SubmitAdditionalServiceRequestRequest, options?: RequestInit): Promise<SubmitCommercialRequestResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitAirlineAdditionalServiceRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitAdditionalServiceRequestRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -6685,6 +6870,441 @@ export const activateManagedContractDraft = async (versionId: string, options?: 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListAviamContractSignersUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/signing/aviam-signers`
+}
+
+export const listAviamContractSigners = async ( options?: RequestInit): Promise<ContractSignerOptionResponse[]> => {
+
+  const res = await fetch(getListAviamContractSignersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSignerOptionResponse[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListManagedContractSigningUrl = () => {
+
+
+
+
+  return `/api/v1/contracts/signing`
+}
+
+export const listManagedContractSigning = async ( options?: RequestInit): Promise<ContractSigningResponse[]> => {
+
+  const res = await fetch(getListManagedContractSigningUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractSigningUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}`
+}
+
+export const getManagedContractSigning = async (versionId: string, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+  const res = await fetch(getGetManagedContractSigningUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetContractSignersUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/signers`
+}
+
+export const setContractSigners = async (versionId: string,
+    setContractSignersRequest?: SetContractSignersRequest, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetContractSignersUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setContractSignersRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getPreviewContractSigningPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/preview`
+}
+
+export const previewContractSigningPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getPreviewContractSigningPdfUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetManagedContractDraftPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/draft-document`
+}
+
+export const getManagedContractDraftPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetManagedContractDraftPdfUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getIssueContractSigningUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/issue`
+}
+
+export const issueContractSigning = async (versionId: string, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+  const res = await fetch(getIssueContractSigningUrl(versionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAcceptAviamContractUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/accept-aviam`
+}
+
+export const acceptAviamContract = async (versionId: string,
+    acceptContractRequest?: AcceptContractRequest, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAcceptAviamContractUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(acceptContractRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractSigningUrl = (contractId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/contracts/${contractId}/signing`
+}
+
+export const getAirlineContractSigning = async (contractId: string, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+  const res = await fetch(getGetAirlineContractSigningUrl(contractId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractSigningLinkUrl = (contractId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/contracts/${contractId}/signing-link`
+}
+
+export const getAirlineContractSigningLink = async (contractId: string, options?: RequestInit): Promise<ContractSigningLinkResponse> => {
+
+  const res = await fetch(getGetAirlineContractSigningLinkUrl(contractId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningLinkResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineContractDraftPdfUrl = (contractId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/contracts/${contractId}/draft-document`
+}
+
+export const getAirlineContractDraftPdf = async (contractId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineContractDraftPdfUrl(contractId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getAcceptAirlineContractUrl = (contractId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/contracts/${contractId}/accept`
+}
+
+export const acceptAirlineContract = async (contractId: string,
+    acceptContractRequest?: AcceptContractRequest, options?: RequestInit): Promise<ContractSigningResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAcceptAirlineContractUrl(contractId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(acceptContractRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractSigningResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineSignedContractPdfUrl = (contractId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/contracts/${contractId}/document`
+}
+
+export const getAirlineSignedContractPdf = async (contractId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineSignedContractPdfUrl(contractId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetManagedSignedContractPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/document`
+}
+
+export const getManagedSignedContractPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetManagedSignedContractPdfUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetManagedContractAuditPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/signing/${versionId}/audit`
+}
+
+export const getManagedContractAuditPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetManagedContractAuditPdfUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

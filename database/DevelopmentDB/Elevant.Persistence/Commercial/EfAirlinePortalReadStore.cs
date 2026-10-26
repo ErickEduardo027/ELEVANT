@@ -431,6 +431,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
             {
                 contract.Id, contract.PublicId, contract.ContractCode,
                 contract.Status, contract.SignedOn, contract.TerminatedOn,
+                contract.RequiresElectronicSigning,
             }).ToArrayAsync(cancellationToken);
         var selected = rows.Take(limit).ToArray();
         var contractIds = selected.Select(contract => contract.Id).ToArray();
@@ -445,6 +446,11 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                 version.ValidFrom, version.ValidTo, version.CurrencyCode,
             }).ToArrayAsync(cancellationToken);
         var versionIds = versions.Select(version => version.Id).ToArray();
+        var signingStates = await context.ContractSigningEnvelopes.AsNoTracking()
+            .Where(envelope => versionIds.Contains(envelope.ContractVersionId))
+            .Select(envelope => new { envelope.ContractVersionId, envelope.Status })
+            .ToDictionaryAsync(envelope => envelope.ContractVersionId,
+                envelope => envelope.Status, cancellationToken);
         var stations = await (
             from link in context.Set<ContractVersionStation>().AsNoTracking()
             join station in context.Stations.AsNoTracking()
@@ -482,7 +488,12 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                             .Select(rate => new AirlineContractRateData(
                                 rate.PublicId, rate.Code, rate.Name, rate.BillingUnit,
                                 rate.UnitPrice, rate.MinimumQuantity)).ToArray()))
-                    .ToArray())).ToArray(),
+                    .ToArray(), contract.RequiresElectronicSigning,
+                contract.RequiresElectronicSigning
+                    ? versions.Where(version => version.ContractId == contract.Id)
+                        .Select(version => signingStates.GetValueOrDefault(version.Id))
+                        .FirstOrDefault(status => status is not null) ?? "AwaitingEmission"
+                    : "Legacy")).ToArray(),
             rows.Length > limit);
     }
 
@@ -523,6 +534,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                 on link.StationId equals station.Id
             where contract.AirlineId == airline.Id &&
                   contract.Status == ContractStatus.Active &&
+                  (contract.SignedOn == null || contract.SignedOn <= onDate) &&
                   version.Status == ContractVersionStatus.Approved &&
                   version.ValidFrom <= onDate &&
                   (version.ValidTo == null || version.ValidTo >= onDate) &&

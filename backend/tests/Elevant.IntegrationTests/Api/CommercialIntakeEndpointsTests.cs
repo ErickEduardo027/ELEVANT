@@ -14,6 +14,18 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
     : IClassFixture<ElevantApiFactory>
 {
     [Fact]
+    public async Task AdditionalRequestRejectsAnonymousCall()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            "/api/v1/airline/portal/commercial-requests",
+            new { requestId = Guid.NewGuid(), serviceIds = new[] { Guid.NewGuid() },
+                representativeName = "Ana López", representativeTitle = "Representante legal",
+                representativeEmail = "ana@example.test", representativePhone = "+1 809 555 0100",
+                authorityDeclared = true }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+    [Fact]
     public async Task AnonymousApplicantReceivesAReferenceWithoutAnAccount()
     {
         var stub = new IntakeStub();
@@ -91,6 +103,15 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
             Written = command;
             return Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0001", false));
         }
+
+        public Task<CommercialSubmissionResult> SubmitAdditionalAsync(Guid actorId,
+            SubmitAdditionalServiceRequestCommand command,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(CommercialSubmissionResult.Success("REQ-2026-0002", false));
+
+        public Task<IReadOnlyList<AirlineCommercialRequestData>?> ListOwnAsync(Guid actorId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AirlineCommercialRequestData>?>([]);
 
         public Task<string?> LookupReceiptAsync(SubmitCommercialRequestCommand command,
             CancellationToken cancellationToken = default)

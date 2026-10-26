@@ -1,4 +1,5 @@
 using Elevant.Api.Extensions;
+using Elevant.Api.Configuration;
 using Elevant.Api.HealthChecks;
 using Elevant.Application;
 using Elevant.Infrastructure;
@@ -17,6 +18,7 @@ if (ContainerHealthProbe.IsSmokeRequested(args))
 }
 
 var builder = WebApplication.CreateBuilder(args);
+ContractSigningModeGuard.Validate(builder.Configuration, builder.Environment);
 
 builder.Services
     .AddApplication()

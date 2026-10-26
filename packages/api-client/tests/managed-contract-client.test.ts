@@ -4,6 +4,7 @@ import { createElevantApiClient, type ManagedContractPageData } from "../src";
 const page: ManagedContractPageData = { page: 1, limit: 20, hasMore: false,
   contracts: [{ id: "60000000-0000-7000-8000-000000000001", code: "CTR-1",
     airline: "Synthetic Air", airlineCode: "SY", status: "Active",
+    requiresElectronicSigning: false, signingStatus: "Legacy",
     signedOn: null, terminatedOn: null,
     approvedVersions: [{ id: "61000000-0000-7000-8000-000000000001",
       versionNumber: 1, status: "Approved", validFrom: "2026-09-01", validTo: null,
@@ -28,6 +29,27 @@ it("reads approved internal agreements with a bounded authenticated request", as
   await expect(client.getManagedContracts({ page: 1, limit: 20 })).resolves.toEqual(page);
   expect(urls).toEqual(["https://api.example.test/api/v1/contracts/agreements?page=1&limit=20"]);
   await expect(client.getManagedContracts({ limit: 51 })).rejects.toBeInstanceOf(TypeError);
+});
+
+it("reads an older agreements response without signing fields as legacy", async () => {
+  const { requiresElectronicSigning: _required, signingStatus: _signing,
+    ...legacyContract } = page.contracts[0]!;
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ ...page,
+      contracts: [legacyContract] }),
+    { headers: { "content-type": "application/json" } }),
+  });
+  await expect(client.getManagedContracts()).resolves.toEqual(page);
+});
+
+it("rejects a partially upgraded agreements response", async () => {
+  const { signingStatus: _signing, ...partialContract } = page.contracts[0]!;
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ ...page,
+      contracts: [partialContract] }),
+    { headers: { "content-type": "application/json" } }),
+  });
+  await expect(client.getManagedContracts()).rejects.toMatchObject({ kind: "malformed-response" });
 });
 
 it("rejects draft versions and malformed agreement payloads", async () => {

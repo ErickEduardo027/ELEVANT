@@ -57,6 +57,9 @@ internal sealed class EfCommercialProvisioningStore(
             if (request.Status != CommercialRequestStatus.Approved ||
                 request.ProvisionedAccountId is not null || request.AirlineId is null)
                 return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+            if (!string.Equals(email, request.ContactEmail,
+                    StringComparison.OrdinalIgnoreCase))
+                return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
             var airline = await context.Airlines.SingleOrDefaultAsync(
                 item => item.Id == request.AirlineId && item.IsActive, cancellationToken);
             var organization = airline is null ? null : await context.Organizations.SingleOrDefaultAsync(

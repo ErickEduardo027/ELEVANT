@@ -13,6 +13,15 @@ function date(value) {
     .format(new Date(`${value}T12:00:00Z`)) : 'Sin vencimiento';
 }
 
+function agreementLoadError(error) {
+  if (error?.status === 401) return 'La sesión expiró. Vuelva a iniciar sesión.';
+  if (error?.status === 403) return 'No tiene permiso para consultar acuerdos.';
+  if (error?.kind === 'malformed-response') return 'La API devolvió acuerdos en un formato incompatible con esta versión de la web.';
+  if (error?.status >= 500) return 'El servidor no pudo consultar los acuerdos. Intente de nuevo más tarde.';
+  if (error instanceof TypeError) return 'No hay conexión con la API de ELEVANT. Verifique la conexión e intente de nuevo.';
+  return 'No se pudieron consultar los acuerdos. Intente de nuevo.';
+}
+
 export default function ManagedAgreementsPage({ mode = 'contracts' }) {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
@@ -28,9 +37,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
     }).catch(error => {
       if (active) setState({ status: error?.status === 401 ? 'unauthorized' :
         error?.status === 403 ? 'forbidden' : 'error', result: null,
-        error: error?.status === 401 ? 'La sesión expiró. Vuelva a iniciar sesión.' :
-          error?.status === 403 ? 'No tiene permiso para consultar acuerdos.' :
-            'No se pudieron consultar los acuerdos. Intente de nuevo.' });
+        error: agreementLoadError(error) });
     });
     return () => { active = false; };
   }, [page, revision]);
@@ -57,6 +64,9 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
             <h2 className="mt-1 font-semibold">{contract.airline}</h2>
             <p className="text-xs text-text-secondary-light">{contract.airlineCode} · {contract.status}</p>
           </div><span className="text-xs text-text-secondary-light">{contract.approvedVersions.length} versiones publicadas</span></div>
+          {contract.requiresElectronicSigning === false && <p className="mt-3 text-sm text-text-secondary-light">Contrato anterior: este expediente no tiene un PDF de firma digital almacenado.</p>}
+          {contract.requiresElectronicSigning && contract.signingStatus !== 'Formalized' && <p className="mt-3 text-sm text-text-secondary-light">El PDF definitivo estará disponible después de la emisión y ambas firmas. Consulte el avance en Firma electrónica.</p>}
+          {contract.signingStatus === 'Formalized' && <p className="mt-3 text-sm text-text-secondary-light">El PDF definitivo se puede abrir, descargar e imprimir en Firma electrónica.</p>}
           {contract.approvedVersions.map(version => <div key={version.id} className="mt-3 border-t border-black/5 pt-3 text-sm dark:border-white/10">
             <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {date(version.validFrom)} — {date(version.validTo)} · {version.currencyCode}</p>
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>

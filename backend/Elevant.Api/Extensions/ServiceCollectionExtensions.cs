@@ -10,6 +10,7 @@ using Elevant.Api.Hubs;
 using Elevant.Api.Media;
 using Elevant.Api.OpenApi;
 using Elevant.Api.Realtime;
+using Elevant.Api.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -62,6 +63,10 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<AccountChangeDispatchWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
             services.AddHostedService<CommercialMediaCleanupWorker>();
+        if (configuration.GetValue<bool>("ContractSigning:Enabled") &&
+            !string.Equals(configuration["ContractSigning:Mode"], "AcademicLocal",
+                StringComparison.OrdinalIgnoreCase))
+            services.AddHostedService<ContractSigningReconciliationWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails(options =>
         {

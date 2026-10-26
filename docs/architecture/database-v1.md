@@ -1,5 +1,32 @@
 # Base de datos ELEVANT v1
 
+## Expedientes de firma contractual (rama local)
+
+La migración `20261020000446_AddContractSigningEnvelope` agrega a `commercial.contracts`
+`requires_electronic_signing` con valor predeterminado `false` para preservar
+contratos existentes; las nuevas solicitudes crean contratos con valor `true`.
+`commercial.contract_versions` referencia las dos cuentas firmantes. Cada
+versión tiene como máximo un `commercial.contract_signing_envelopes` con estado,
+acuerdo Adobe, versión y SHA-256 de plantilla, claves de objetos privados,
+hashes de borrador, PDF definitivo y auditoría, y fechas UTC de emisión,
+consulta y formalización. `commercial.contract_signing_events` registra las
+transiciones. Las claves de objeto y credenciales nunca forman parte de OpenAPI.
+
+La migración `20261022025008_AddRequestPackagesAndRecordedAcceptance` agrega
+`commercial.service_request_package_selections` para vincular cada solicitud
+con las versiones de paquete elegidas, un índice único filtrado sobre la
+solicitud de origen del contrato y los campos `signing_method`, snapshot SQL,
+actores, UUID idempotentes y fechas de aceptación al expediente y sus eventos.
+El modo `AcademicLocal` conserva PDF y evidencia en archivo privado local de
+Development/Test, mientras Adobe conserva su identificador y conciliación.
+
+Finanzas aprueba la versión comercial sin activar un contrato nuevo. En Adobe,
+el worker concilia y formaliza; en el modo local, la segunda aceptación inicia
+la formalización. Ambos caminos verifican PDF final y evidencia y fijan
+`SignedOn` dentro de la transacción de activación. `SignedOn` es fecha civil
+UTC y la selección operativa la compara con la fecha de operación; el instante
+exacto queda en `FormalizedAt` del expediente.
+
 ## Validación aditiva de asistencia en la rama local
 
 La migración `20261005164319_OperationAttendanceValidation`, posterior a la

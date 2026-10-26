@@ -138,7 +138,8 @@ npm run dev -- -p 5173
 
 El build ejecuta `validate:development-env`: exige los dos orígenes HTTPS DNS,
 sin ruta ni slash final, idénticos y no loopback, además del modo de
-demostración de Gestión Humana. El puerto 5173 evita chocar con Public Web en
+demostración de Gestión Humana. El script compila con Webpack y verifica los
+recursos de MapLibre al terminar. El puerto 5173 evita chocar con Public Web en
 el 3000 y es uno de los orígenes locales permitidos por CORS en la API.
 
 Para una prueba Vitest enfocada:

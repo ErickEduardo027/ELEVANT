@@ -13,7 +13,14 @@ public sealed record SubmitCommercialRequestCommand(
     string? RepresentativeProvince = null,
     string? RepresentativeMunicipality = null,
     string? RepresentativeDocumentType = null,
-    string? RepresentativeDocumentNumber = null);
+    string? RepresentativeDocumentNumber = null,
+    IReadOnlyList<Guid>? PackageVersionIds = null);
+
+public sealed record SubmitAdditionalServiceRequestCommand(
+    Guid RequestId, IReadOnlyList<Guid> ServiceIds,
+    string RepresentativeName, string RepresentativeTitle,
+    string RepresentativeEmail, string RepresentativePhone, bool AuthorityDeclared,
+    IReadOnlyList<Guid>? PackageVersionIds = null);
 
 public enum CommercialSubmissionFailure
 {
@@ -22,6 +29,7 @@ public enum CommercialSubmissionFailure
     ServiceUnavailable,
     Conflict,
     ReceiptNotFound,
+    Forbidden,
 }
 
 public sealed record CommercialSubmissionResult(
@@ -36,6 +44,20 @@ public sealed record CommercialSubmissionResult(
 
 public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
 {
+    public Task<CommercialSubmissionResult> HandleAdditionalAsync(Guid actorId,
+        SubmitAdditionalServiceRequestCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (actorId == Guid.Empty || !IsValid(new SubmitCommercialRequestCommand(
+                command.RequestId, new Guid("00000000-0000-0000-0000-000000000001"),
+                command.ServiceIds, command.RepresentativeName, command.RepresentativeTitle,
+                command.RepresentativeEmail, command.RepresentativePhone,
+                command.AuthorityDeclared, PackageVersionIds: command.PackageVersionIds)))
+            return Task.FromResult(CommercialSubmissionResult.Failed(
+                CommercialSubmissionFailure.InvalidRequest));
+        return store.SubmitAdditionalAsync(actorId, command, cancellationToken);
+    }
     public Task<CommercialSubmissionResult> HandleAsync(
         SubmitCommercialRequestCommand command,
         CancellationToken cancellationToken = default)
@@ -66,9 +88,13 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     private static bool IsValid(SubmitCommercialRequestCommand command) =>
         command.RequestId != Guid.Empty && command.AirlineProfileId != Guid.Empty &&
         !(
-            command.ServiceIds is null or { Count: < 1 or > 20 } ||
+            command.ServiceIds is null or { Count: > 20 } ||
             command.ServiceIds.Any(id => id == Guid.Empty) ||
             command.ServiceIds.Distinct().Count() != command.ServiceIds.Count ||
+            command.PackageVersionIds is { Count: > 10 } ||
+            command.PackageVersionIds?.Any(id => id == Guid.Empty) == true ||
+            command.PackageVersionIds?.Distinct().Count() != command.PackageVersionIds?.Count ||
+            (command.ServiceIds.Count == 0 && (command.PackageVersionIds?.Count ?? 0) == 0) ||
             !command.AuthorityDeclared ||
             !ValidText(command.RepresentativeName, 160) ||
             !ValidText(command.RepresentativeTitle, 120) ||

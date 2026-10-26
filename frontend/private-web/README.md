@@ -1,5 +1,15 @@
 # ELEVANT AVIAM Web
 
+## Firma contractual (rama local)
+
+Contratos permite revisar la solicitud de origen, los servicios y paquetes,
+asignar al firmante AVIAM, previsualizar y emitir el PDF individual de una
+versión aprobada. La cuenta asignada confirma su aceptación sobre el hash del
+PDF; el módulo muestra después la aceptación de la aerolínea, el PDF final y
+la evidencia. Cada lectura y acción vuelve a autorizarse en la API. El modo
+local requiere configuración explícita de Development/Test y archivo privado;
+Adobe conserva sus requisitos externos. Esta rama no está desplegada.
+
 ## Introducción y carrusel del acceso
 
 El acceso conserva la marca ELEVANT en ambas paletas. La introducción se
@@ -112,6 +122,8 @@ npm run build
 ```
 
 Next sirve localmente en `http://localhost:3000`. Las rutas canónicas son `/admin-occ/*`, `/gestion-humana/*`, `/contratos`, `/finanzas`, `/superadmin` y `/admin-occ/users`. El servidor Next redirige las URL históricas `index.html`, `dashboard.html`, `contracts.html` y `finance.html` a sus rutas equivalentes.
+
+`npm run build` usa Webpack para compilar el CSS/PostCSS de esta aplicación y después comprueba los recursos de MapLibre. El comando sigue validando el entorno de Development antes de compilar.
 
 Las variables del navegador llevan el prefijo `NEXT_PUBLIC_` y nunca deben contener tokens, contraseñas ni cadenas SQL. Las dos URL de API y el modo de demostración son obligatorios para el build de Development. El build valida HTTPS, orígenes idénticos y `NEXT_PUBLIC_HR_DEMO_MODE=dashboard-read-only`. `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente OpenAPI compartido; `NEXT_PUBLIC_PROTOTYPE_API_URL` mantiene los adaptadores heredados conectados al mismo origen real de Development.
 

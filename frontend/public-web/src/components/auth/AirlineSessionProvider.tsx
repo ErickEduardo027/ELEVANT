@@ -2,6 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ElevantApiError, type AirlineContractPageResponse,
+  type ContractSigningResponse, type ContractSigningLinkResponse,
+  type SubmitAdditionalServiceRequestRequest, type SubmitCommercialRequestResponse,
+  type PublicCommercialCatalog,
   type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationalRequestPageResponse, type AirlineOperationPageResponse,
   type AirlinePreinvoicePageResponse,
@@ -33,6 +36,14 @@ export interface AirlineDraftData {
   comments: { id: string; author: string; body: string; at: string; isAirline: boolean }[];
 }
 
+export interface AirlineCommercialRequestData {
+  id: string; reference: string; status: string; submittedAt: string;
+  decisionReason?: string | null; contractId?: string | null;
+  services: { serviceId: string; name: string; unit: string }[];
+  packages: { id: string; code: string; name: string; versionNumber: number;
+    components: { serviceId: string; name: string; unit: string; includedQuantity: number }[] }[];
+}
+
 export type AirlineSessionStatus = "loading" | "anonymous" | "ready" | "unavailable";
 export type AirlineSignInResult =
   | { ok: true }
@@ -47,6 +58,14 @@ interface AirlineSessionContextValue {
   signOut(): void;
   retry(): Promise<void>;
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
+  getContractSigning(contractId: string): Promise<ContractSigningResponse>;
+  getContractSigningLink(contractId: string): Promise<ContractSigningLinkResponse>;
+  getContractDocument(contractId: string): Promise<Blob>;
+  getContractDraftDocument(contractId: string): Promise<Blob>;
+  acceptContract(contractId: string, expectedDraftSha256: string, requestId: string): Promise<ContractSigningResponse>;
+  getCommercialCatalog(): Promise<PublicCommercialCatalog>;
+  submitAdditionalServiceRequest(request: SubmitAdditionalServiceRequestRequest): Promise<SubmitCommercialRequestResponse>;
+  getCommercialRequests(): Promise<AirlineCommercialRequestData[]>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
   getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
   getApprovedEvidence(operationId: string): Promise<AirlineApprovedOperationEvidenceResponse>;
@@ -300,6 +319,36 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       throw error;
     }
   }, [baseUrl, clear]);
+
+  const contractRequest = useCallback(async <T,>(run: (client: ReturnType<typeof createPublicWebApiClient>) => Promise<T>): Promise<T> => {
+    const record = stored.current;
+    if (!record) throw new AirlineAccessDenied();
+    const request = generation.current;
+    try {
+      const result = await run(createPublicWebApiClient({ baseUrl, getAccessToken: () => record.accessToken }));
+      if (request !== generation.current) throw new AirlineAccessDenied();
+      return result;
+    } catch (error) {
+      if (request === generation.current && error instanceof ElevantApiError && error.status === 401) clear();
+      throw error;
+    }
+  }, [baseUrl, clear]);
+  const getContractSigning = useCallback((contractId: string) => contractRequest(client =>
+    client.getAirlineContractSigning(contractId, { cache: "no-store" })), [contractRequest]);
+  const getContractSigningLink = useCallback((contractId: string) => contractRequest(client =>
+    client.getAirlineContractSigningLink(contractId, { cache: "no-store" })), [contractRequest]);
+  const getContractDocument = useCallback((contractId: string) => contractRequest(client =>
+    client.getAirlineSignedContractPdf(contractId, { cache: "no-store" })), [contractRequest]);
+  const getContractDraftDocument = useCallback((contractId: string) => contractRequest(client =>
+    client.getAirlineContractDraftPdf(contractId, { cache: "no-store" })), [contractRequest]);
+  const acceptContract = useCallback((contractId: string, expectedDraftSha256: string, requestId: string) => contractRequest(client =>
+    client.acceptAirlineContract(contractId, { expectedDraftSha256, requestId })), [contractRequest]);
+  const getCommercialCatalog = useCallback(() => contractRequest(client =>
+    client.getPublicCommercialCatalog({ cache: "no-store" })), [contractRequest]);
+  const submitAdditionalServiceRequest = useCallback((body: SubmitAdditionalServiceRequestRequest) => contractRequest(client =>
+    client.submitAirlineAdditionalServiceRequest(body)), [contractRequest]);
+  const getCommercialRequests = useCallback(() => contractRequest(client =>
+    client.listAirlineCommercialRequests({ cache: "no-store" }) as Promise<AirlineCommercialRequestData[]>), [contractRequest]);
 
   const getOperations = useCallback(async (page = 1): Promise<AirlineOperationPageResponse> => {
     const record = stored.current;
@@ -599,7 +648,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getContractSigning, getContractSigningLink, getContractDocument, getContractDraftDocument, acceptContract, getCommercialCatalog, submitAdditionalServiceRequest, getCommercialRequests, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

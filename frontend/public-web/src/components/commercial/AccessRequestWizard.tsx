@@ -14,7 +14,9 @@ import {
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
 
-type Catalog = PublicCommercialCatalog;
+type CatalogPackage = { id: string; code: string; name: string; versionNumber: number; currencyCode: string;
+  components: { serviceId: string; code: string; name: string; billingUnit: string; includedQuantity: number }[] };
+type Catalog = PublicCommercialCatalog & { packages: CatalogPackage[] };
 type Representative = RepresentativeDraft;
 const emptyRepresentative: Representative = {
   name: "", titleOption: "", titleCustom: "", email: "", phone: "", authorityDeclared: false,
@@ -32,6 +34,8 @@ export function AccessRequestWizard() {
   const [step, setStep] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
   const selectedRef = useRef<string[]>([]);
+  const [selectedPackages, setSelectedPackages] = useState<string[]>([]);
+  const selectedPackagesRef = useRef<string[]>([]);
   const [withdrawnNotice, setWithdrawnNotice] = useState("");
   const [requiresServiceReview, setRequiresServiceReview] = useState(false);
   const [airlineId, setAirlineId] = useState("");
@@ -80,6 +84,7 @@ export function AccessRequestWizard() {
     municipality: representative.municipality,
   };
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { selectedPackagesRef.current = selectedPackages; }, [selectedPackages]);
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
 
   const reconcilePending = useCallback(async () => {
@@ -112,7 +117,7 @@ export function AccessRequestWizard() {
   const reload = useCallback(async () => {
     if (!apiOrigin) { setCatalogError("El catálogo comercial aún no está configurado."); setLoading(false); return; }
     try {
-      const data = await createPublicWebApiClient().getPublicCommercialCatalog({ cache: "no-store" });
+      const data = await createPublicWebApiClient().getPublicCommercialCatalog({ cache: "no-store" }) as Catalog;
       setCatalog(data);
       const retained = selectedRef.current.filter((id) => data.services.some((service) => service.id === id));
       if (retained.length !== selectedRef.current.length) {
@@ -129,6 +134,17 @@ export function AccessRequestWizard() {
           if (submissionInFlight.current) reconcileAfterSubmit.current = true;
           else void reconcilePending();
         }
+      }
+      const retainedPackages = selectedPackagesRef.current.filter(id => data.packages?.some(item => item.id === id));
+      if (retainedPackages.length !== selectedPackagesRef.current.length) {
+        const removed = selectedPackagesRef.current.filter(id => !retainedPackages.includes(id));
+        const names = removed.map(id => catalogRef.current?.packages?.find(item => item.id === id)?.name ?? id);
+        setSelectedPackages(retainedPackages);
+        selectedPackagesRef.current = retainedPackages;
+        if (!pendingSubmission.current) requestId.current = null;
+        setStep(1);
+        setRequiresServiceReview(true);
+        setWithdrawnNotice(`Dejó de estar disponible: ${names.join(", ")}. Revise la oferta y confirme de nuevo su selección antes de continuar.`);
       }
       setAirlineId((current) => {
         if (!current || data.airlines.some((item) => item.id === current)) return current;
@@ -187,11 +203,22 @@ export function AccessRequestWizard() {
     requestId.current = null;
     setError("");
   };
+  const togglePackage = (id: string) => {
+    const chosen = catalog?.packages?.find(item => item.id === id);
+    const currentCurrency = catalog?.packages?.find(item => selectedPackages.includes(item.id))?.currencyCode;
+    if (chosen && currentCurrency && currentCurrency !== chosen.currencyCode && !selectedPackages.includes(id)) {
+      setError(`Seleccione paquetes de una misma moneda (${currentCurrency}).`);
+      return;
+    }
+    setSelectedPackages(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+    requestId.current = null;
+    setError("");
+  };
   const next = () => {
     if (pendingSubmission.current) {
       setError("Verifique primero si el envío anterior fue recibido."); return;
     }
-    if (step === 1 && selected.length === 0) { setError("Seleccione al menos un servicio para continuar."); return; }
+    if (step === 1 && selected.length === 0 && selectedPackages.length === 0) { setError("Seleccione al menos un servicio o paquete para continuar."); return; }
     if (step === 1 && requiresServiceReview) {
       setRequiresServiceReview(false);
       setWithdrawnNotice("");
@@ -207,9 +234,10 @@ export function AccessRequestWizard() {
   };
   const submit = async () => {
     if (pendingSubmission.current) { await reconcilePending(); return; }
-    if (!apiOrigin || !airline || !selected.length || requiresServiceReview ||
-      selected.some((id) => !catalog?.services.some((service) => service.id === id))) {
-      setError("Revise los servicios disponibles antes de enviar la solicitud.");
+    if (!apiOrigin || !airline || (!selected.length && !selectedPackages.length) || requiresServiceReview ||
+      selected.some((id) => !catalog?.services.some((service) => service.id === id)) ||
+      selectedPackages.some((id) => !catalog?.packages?.some((item) => item.id === id))) {
+      setError("Revise los servicios y paquetes disponibles antes de enviar la solicitud.");
       setStep(1);
       return;
     }
@@ -221,9 +249,9 @@ export function AccessRequestWizard() {
     }
     setBusy(true); setError("");
     requestId.current ??= crypto.randomUUID();
-    const payload: SubmitCommercialRequestRequest = {
+    const payload: SubmitCommercialRequestRequest & { packageVersionIds: string[] } = {
       requestId: requestId.current, airlineProfileId: airlineId,
-      serviceIds: selected, representativeName: representative.name.trim(),
+      serviceIds: selected, packageVersionIds: selectedPackages, representativeName: representative.name.trim(),
       representativeTitle: effectiveTitle(representative), representativeEmail: representative.email.trim(),
       representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared,
       representativeNationalityCode: representative.nationalityCode || null,
@@ -292,8 +320,8 @@ export function AccessRequestWizard() {
       {step === 1 && hasPendingSubmission && <button type="button" className="access-back"
         disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
-        <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione uno o varios servicios de rampa.</span></div>
-        <div className="access-carousel__controls"><span>{selected.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => scrollCarousel(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => scrollCarousel(1)}>→</button></div></div>
+        <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione servicios individuales, paquetes o ambos.</span></div>
+        <div className="access-carousel__controls"><span>{selected.length + selectedPackages.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => scrollCarousel(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => scrollCarousel(1)}>→</button></div></div>
         <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
           {catalog?.services.map((service, index) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">
@@ -307,6 +335,14 @@ export function AccessRequestWizard() {
           </article>)}
           {catalog?.services.length === 0 && <p>No hay servicios publicados por el momento.</p>}
         </div>
+        {Boolean(catalog?.packages?.length) && <section className="access-packages" aria-label="Paquetes publicados">
+          <h3>Paquetes disponibles</h3><p>Los servicios incluidos se mostrarán en la propuesta contractual.</p>
+          <div className="access-packages__grid">{catalog?.packages.map(item => <article className="access-package" data-selected={selectedPackages.includes(item.id)} key={item.id}>
+            <strong>{item.name}</strong><small>{item.code} · versión {item.versionNumber} · {item.currencyCode}</small>
+            <ul>{item.components.map(component => <li key={component.serviceId}>{component.name} · {component.includedQuantity} {component.billingUnit}</li>)}</ul>
+            <button type="button" aria-pressed={selectedPackages.includes(item.id)} onClick={() => togglePackage(item.id)}>{selectedPackages.includes(item.id) ? "Paquete seleccionado ✓" : "Añadir paquete +"}</button>
+          </article>)}</div>
+        </section>}
       </> : step === 2 ? <>
         <div className="access-panel__heading"><p>02 / AEROLÍNEA</p><h2>¿A cuál aerolínea representa?</h2><span>La ficha se carga desde el catálogo de AVIAM y se revisará antes de aprobar el contrato.</span></div>
         <label className="access-label" htmlFor="airline-select">Seleccione una aerolínea</label>
@@ -382,12 +418,13 @@ export function AccessRequestWizard() {
             <label className="access-authority"><input {...control("authorityDeclared")} required type="checkbox" checked={representative.authorityDeclared} onChange={(event) => changeRepresentative({ authorityDeclared: event.target.checked })} /><span>Declaro que estoy autorizado para presentar esta solicitud en nombre de {airline?.name}.</span></label>
             {fieldError("authorityDeclared") && <p className="access-field-error" id={`${fieldId("authorityDeclared")}-error`}>{fieldError("authorityDeclared")}</p>}
           </div>
-          <p className="access-representative__note">Servicios solicitados: {catalog?.services.filter((service) => selected.includes(service.id)).map((service) => service.name).join(" · ")}</p>
+          <p className="access-representative__note">Selección: {[...(catalog?.services.filter(service => selected.includes(service.id)).map(service => service.name) ?? []), ...(catalog?.packages?.filter(item => selectedPackages.includes(item.id)).map(item => item.name) ?? [])].join(" · ")}</p>
         </form>
       </> : <>
         <div className="access-panel__heading"><p>04 / CONFIRMACIÓN</p><h2>Revise su solicitud.</h2><span>Contratos recibirá exactamente estos datos al confirmar el envío.</span></div>
         <div className="access-summary">
-          <section><div className="access-summary__header"><h3>Servicios solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar servicios</button></div><ul>{catalog?.services.filter((service) => selected.includes(service.id)).map((service) => <li key={service.id}>{service.name}</li>)}</ul></section>
+          {Boolean(selected.length) && <section><div className="access-summary__header"><h3>Servicios solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar servicios</button></div><ul>{catalog?.services.filter((service) => selected.includes(service.id)).map((service) => <li key={service.id}>{service.name}</li>)}</ul></section>}
+          {Boolean(selectedPackages.length) && <section><div className="access-summary__header"><h3>Paquetes solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar paquetes</button></div><ul>{catalog?.packages?.filter(item => selectedPackages.includes(item.id)).map(item => <li key={item.id}>{item.name} · versión {item.versionNumber}<ul>{item.components.map(component => <li key={component.serviceId}>{component.name}</li>)}</ul></li>)}</ul></section>}
           <section><div className="access-summary__header"><h3>Aerolínea</h3><button type="button" onClick={() => setStep(2)}>Editar aerolínea</button></div><p>{airline?.name}</p><small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small></section>
           <section><div className="access-summary__header"><h3>Representante</h3><button type="button" onClick={() => setStep(3)}>Editar representante</button></div><dl>
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>

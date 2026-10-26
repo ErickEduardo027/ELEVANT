@@ -33,6 +33,44 @@ tags:
 
 # Solicitudes, contratos y servicios
 
+## Paquetes elegidos en la solicitud (rama local)
+
+El catálogo público incluye versiones de paquetes publicadas, vigentes y con
+componentes visibles, sin exponer precios. Afiliación y solicitud adicional
+aceptan versiones de paquetes; la API conserva la elección, expande sus
+componentes y deduplica los servicios. Dos paquetes que cubran el mismo
+servicio se rechazan. La revisión de Contratos muestra paquetes, componentes y servicios,
+y la aprobación enlaza las versiones elegidas con el borrador contractual.
+La relación solicitud–contrato tiene índice único filtrado para impedir dos
+contratos de una misma solicitud y preservar los contratos legados sin origen.
+`GET /api/v1/airline/portal/commercial-requests` lista solo las solicitudes
+de la aerolínea derivada de la cuenta autenticada. La migración se generó con
+el script EF y el modelo no tiene cambios pendientes; no se ha desplegado.
+
+## Firma electrónica contractual en esta rama
+
+La solicitud adicional autenticada deriva la aerolínea de la sesión y sigue la
+revisión de Contratos. Finanzas congela una versión nueva sin activarla. En el
+modo `AcademicLocal`, limitado por configuración a Development/Test, el backend
+genera el PDF individual con partes, servicios, paquetes, tarifas, estaciones,
+vigencia y términos; conserva el borrador exacto y su SHA-256 en un directorio
+privado. Contratos emite esa versión explícitamente. La cuenta AVIAM asignada
+acepta primero y el representante verificado acepta después, ambos sobre el
+hash del PDF revisado. PDF final y evidencia inmutables se verifican antes de
+formalizar. La evidencia identifica la aceptación registrada y la ausencia de
+certificación externa. La fecha de formalización evita habilitación retroactiva.
+
+El mismo expediente por versión conserva método, hashes, plantilla, eventos,
+actores y fechas. Adobe usa su propio adaptador y conciliación; sigue
+deshabilitado hasta contar con plantilla aprobada, políticas, credenciales y
+almacenamiento privado. Los contratos legados mantienen su estado sin firma
+atribuida. Durante una publicación escalonada, el cliente solo interpreta como
+legadas las páginas anteriores cuyos contratos carecen todos de campos de
+firma. Véanse el [flujo comercial](../../docs/workflows/commercial-intake-and-governance.md),
+la [migración inicial](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261020000446_AddContractSigningEnvelope.cs),
+la [migración de paquetes y aceptación](../../database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261022025008_AddRequestPackagesAndRecordedAcceptance.cs)
+y el [runbook](../../docs/runbooks/contract-signing-activation.md).
+
 ELEVANT modela dos tipos de solicitud con propósitos distintos. La solicitud comercial inicia o amplía una relación de servicio; la solicitud operativa pide resolver una necesidad dentro de una estación y, opcionalmente, una escala concreta.
 
 > El commit verificado del frontmatter describe la base anterior. Esta rama de
