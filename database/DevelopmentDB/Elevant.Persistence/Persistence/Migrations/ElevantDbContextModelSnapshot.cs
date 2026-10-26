@@ -719,6 +719,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CanonicalAirlineId");
 
+                    b.HasIndex("IataCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_airline_profiles_verified_iata")
+                        .HasFilter("[iata_code] IS NOT NULL AND [verified_at] IS NOT NULL");
+
+                    b.HasIndex("IcaoCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_airline_profiles_verified_icao")
+                        .HasFilter("[icao_code] IS NOT NULL AND [verified_at] IS NOT NULL");
+
                     b.HasIndex("PublicId")
                         .IsUnique();
 
@@ -5115,6 +5125,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)")
                         .HasColumnName("contact_country");
+
+                    b.Property<string>("ContactDistrict")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("contact_district");
 
                     b.Property<string>("ContactDocumentNumber")
                         .HasMaxLength(40)

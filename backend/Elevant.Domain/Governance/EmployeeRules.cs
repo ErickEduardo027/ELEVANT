@@ -1,5 +1,6 @@
 using System.Text;
 using Elevant.Domain.Enumerations;
+using Elevant.Domain.Validation;
 
 namespace Elevant.Domain.Governance;
 
@@ -17,6 +18,18 @@ public static class IdentificationTypes
         new(["GOVERNANCE_ACCOUNT", "RAMP_EMPLOYEE", "Synthetic"], StringComparer.Ordinal);
 
     public static bool IsValid(string? type) => type is not null && All.Contains(type);
+
+    /// <summary>
+    /// Canonical number when it has the real format of its type: a cédula or residence card
+    /// with its check digit, or a passport number (ICAO 9303). Null when the format is wrong.
+    /// </summary>
+    public static string? Normalize(string? type, string? number) => type switch
+    {
+        Cedula => IdentityDocuments.Normalize(IdentityDocumentKind.Cedula, number),
+        Residencia => IdentityDocuments.Normalize(IdentityDocumentKind.Residence, number),
+        Pasaporte => IdentityDocuments.Normalize(IdentityDocumentKind.Passport, number),
+        _ => null,
+    };
 
     public static bool IsSynthetic(string? type) => type is not null && Synthetic.Contains(type);
 

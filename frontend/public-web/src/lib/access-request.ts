@@ -1,3 +1,4 @@
+import { identityDocumentExample, normalizeIdentityDocument, normalizePhone } from "@elevant/api-client";
 import { type GeoDivision, isCountryCode } from "./geo/catalog";
 
 export const TITLE_OTHER = "Otro";
@@ -25,7 +26,7 @@ export const REPRESENTATIVE_TITLES = [
 export const REPRESENTATIVE_FIELDS = [
   "name", "titleOption", "titleCustom", "email", "phone", "nationalityCode",
   "documentType", "documentNumber", "address", "country", "province",
-  "municipality", "authorityDeclared",
+  "municipality", "district", "authorityDeclared",
 ] as const;
 
 export type RepresentativeField = (typeof REPRESENTATIVE_FIELDS)[number];
@@ -38,6 +39,8 @@ export type RepresentativeDraft = {
   /** Division code within the country. */
   province: string;
   municipality: string;
+  /** Municipal district (D. M.), only for countries that publish them. */
+  district: string;
   documentType: string; documentNumber: string;
 };
 
@@ -56,7 +59,6 @@ const LETTER = /\p{L}/gu;
 // Mirrors what the API accepts through .NET MailAddress: a dotted local part
 // and a domain made of valid labels ending in an alphabetic TLD.
 const EMAIL_PATTERN = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
-const PHONE_PATTERN = /^\+[0-9 ()-]+$/;
 const DOCUMENT_PATTERN = /^[A-Za-z0-9 /-]{3,40}$/;
 
 export function effectiveTitle(draft: Pick<RepresentativeDraft, "titleOption" | "titleCustom">): string {
@@ -95,10 +97,9 @@ export function validateRepresentative(
   else if (email.length > 256 || !EMAIL_PATTERN.test(email)) errors.email = "Ingrese un correo electrónico válido.";
 
   const phone = draft.phone.trim();
-  const digits = phone.replace(/\D/g, "").length;
   if (!phone) errors.phone = "Ingrese su teléfono.";
-  else if (phone.length > 32 || !PHONE_PATTERN.test(phone) || digits < 8 || digits > 15)
-    errors.phone = "Ingrese un teléfono internacional con prefijo (+) y entre 8 y 15 dígitos.";
+  else if (normalizePhone(phone) === null)
+    errors.phone = "Ingrese un teléfono dominicano de 10 dígitos (809, 829 o 849, p. ej. 849-246-3371) o uno extranjero con su prefijo (+ o 00).";
 
   if (draft.nationalityCode && !isCountryCode(draft.nationalityCode))
     errors.nationalityCode = "Seleccione una nacionalidad de la lista.";
@@ -110,7 +111,13 @@ export function validateRepresentative(
     errors.documentNumber = "Ingrese el número del documento indicado.";
   else if (!draft.documentType && documentNumber)
     errors.documentType = "Seleccione el tipo del documento indicado.";
-  else if (documentNumber && !DOCUMENT_PATTERN.test(documentNumber))
+  else if (documentNumber && draft.documentType === "NationalId" &&
+    normalizeIdentityDocument("Cedula", documentNumber) === null)
+    errors.documentNumber = `La cédula no es válida: revise los 11 dígitos y el dígito verificador. Formato: ${identityDocumentExample("Cedula")}.`;
+  else if (documentNumber && draft.documentType === "Passport" &&
+    normalizeIdentityDocument("Passport", documentNumber, draft.nationalityCode) === null)
+    errors.documentNumber = `El número de pasaporte no tiene el formato esperado: ${identityDocumentExample("Passport", draft.nationalityCode)}.`;
+  else if (documentNumber && draft.documentType === "Other" && !DOCUMENT_PATTERN.test(documentNumber))
     errors.documentNumber = "El número de documento debe tener entre 3 y 40 letras, dígitos, espacios, / o -.";
 
   if (draft.address.trim().length > 250) errors.address = "La dirección admite un máximo de 250 caracteres.";
@@ -126,6 +133,8 @@ export function validateRepresentative(
       if (!draft.municipality) errors.municipality = "Seleccione el municipio o ciudad.";
       else if (!division.cities.includes(draft.municipality))
         errors.municipality = "Seleccione un municipio o ciudad de la provincia indicada.";
+      else if (draft.district && !(division.districts?.[draft.municipality] ?? []).includes(draft.district))
+        errors.district = "Seleccione un distrito municipal del municipio indicado.";
     }
   }
 

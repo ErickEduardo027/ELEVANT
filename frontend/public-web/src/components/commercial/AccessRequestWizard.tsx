@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import { ElevantApiError, type PublicCommercialCatalog,
+import { ElevantApiError, identityDocumentExample, type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest } from "@elevant/api-client";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -19,8 +19,9 @@ type Representative = RepresentativeDraft;
 const emptyRepresentative: Representative = {
   name: "", titleOption: "", titleCustom: "", email: "", phone: "", authorityDeclared: false,
   nationalityCode: "", address: "", country: "", province: "",
-  municipality: "", documentType: "", documentNumber: "",
+  municipality: "", district: "", documentType: "", documentNumber: "",
 };
+const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte", Other: "Otro" };
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
 const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
@@ -78,7 +79,12 @@ export function AccessRequestWizard() {
     country: representative.country ? countryName(representative.country) : "",
     province: division?.name ?? "",
     municipality: representative.municipality,
+    district: representative.district,
   };
+  const districts = division?.districts?.[representative.municipality] ?? [];
+  const documentPlaceholder = representative.documentType === "NationalId" ? identityDocumentExample("Cedula")
+    : representative.documentType === "Passport" ? identityDocumentExample("Passport", representative.nationalityCode)
+      : undefined;
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
 
@@ -178,10 +184,10 @@ export function AccessRequestWizard() {
     });
   };
   const changeCountry = (country: string) => {
-    changeRepresentative({ country, province: "", municipality: "" });
+    changeRepresentative({ country, province: "", municipality: "", district: "" });
     fetchDivisions(country);
   };
-  const changeProvince = (province: string) => changeRepresentative({ province, municipality: "" });
+  const changeProvince = (province: string) => changeRepresentative({ province, municipality: "", district: "" });
   const toggleService = (id: string) => {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
     requestId.current = null;
@@ -231,6 +237,7 @@ export function AccessRequestWizard() {
       representativeCountry: location.country || null,
       representativeProvince: location.province || null,
       representativeMunicipality: location.municipality || null,
+      representativeDistrict: location.district || null,
       representativeDocumentType: representative.documentType || null,
       representativeDocumentNumber: representative.documentNumber.trim() || null,
     };
@@ -345,16 +352,17 @@ export function AccessRequestWizard() {
             <input {...control("email")} required type="email" maxLength={256} autoComplete="email" value={representative.email} onChange={(event) => changeRepresentative({ email: event.target.value })} />
           </FormField>
           <FormField field="phone" label="Teléfono" error={fieldError("phone")}>
-            <input {...control("phone")} required type="tel" maxLength={32} autoComplete="tel" inputMode="tel" placeholder="+1 809 555 0100" value={representative.phone} onChange={(event) => changeRepresentative({ phone: event.target.value.replace(/[^+\d ()-]/g, "") })} />
+            <input {...control("phone")} required type="tel" maxLength={32} autoComplete="tel" inputMode="tel" placeholder="809-555-0100" value={representative.phone} onChange={(event) => changeRepresentative({ phone: event.target.value.replace(/[^+\d ().-]/g, "") })} />
+            <small className="access-field-hint">República Dominicana: 10 dígitos (809, 829 o 849). Otros países: con su prefijo, p. ej. +34.</small>
           </FormField>
           <FormField field="nationalityCode" label="Nacionalidad (opcional)" error={fieldError("nationalityCode")}>
             <select {...control("nationalityCode")} className="access-select" value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">Seleccione si desea indicarla</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
           </FormField>
           <FormField field="documentType" label="Tipo de documento (opcional)" error={fieldError("documentType")}>
-            <select {...control("documentType")} className="access-select" value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value })}><option value="">Seleccione</option><option value="NationalId">Documento nacional</option><option value="Passport">Pasaporte</option><option value="Other">Otro</option></select>
+            <select {...control("documentType")} className="access-select" value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option><option value="Other">Otro</option></select>
           </FormField>
           <FormField field="documentNumber" label="Número de documento (opcional)" error={fieldError("documentNumber")}>
-            <input {...control("documentNumber")} maxLength={40} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: event.target.value.replace(/[^A-Za-z0-9 /-]/g, "") })} />
+            <input {...control("documentNumber")} maxLength={40} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: event.target.value.replace(/[^A-Za-z0-9 /-]/g, "") })} />
           </FormField>
           <FormField field="address" label="Dirección (opcional)" error={fieldError("address")} wide>
             <input {...control("address")} maxLength={250} autoComplete="street-address" value={representative.address} onChange={(event) => changeRepresentative({ address: event.target.value })} />
@@ -373,11 +381,17 @@ export function AccessRequestWizard() {
             {divisionsError && <span className="access-field-error" role="alert">No se pudieron cargar las divisiones de este país. <button type="button" onClick={() => fetchDivisions(representative.country)}>Reintentar</button></span>}
           </FormField>
           <FormField field="municipality" label="Municipio / Ciudad" error={fieldError("municipality")}>
-            <select {...control("municipality")} className="access-select" required={Boolean(division?.cities.length)} disabled={!division?.cities.length} value={representative.municipality} onChange={(event) => changeRepresentative({ municipality: event.target.value })}>
+            <select {...control("municipality")} className="access-select" required={Boolean(division?.cities.length)} disabled={!division?.cities.length} value={representative.municipality} onChange={(event) => changeRepresentative({ municipality: event.target.value, district: "" })}>
               <option value="">{!division ? "Seleccione primero la provincia" : division.cities.length === 0 ? "No aplica" : "Seleccione una opción"}</option>
               {division?.cities.map((city) => <option key={city} value={city}>{city}</option>)}
             </select>
           </FormField>
+          {districts.length > 0 && <FormField field="district" label="Distrito municipal (opcional)" error={fieldError("district")}>
+            <select {...control("district")} className="access-select" value={representative.district} onChange={(event) => changeRepresentative({ district: event.target.value })}>
+              <option value="">Cabecera del municipio</option>
+              {districts.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </FormField>}
           <div className="access-authority-field">
             <label className="access-authority"><input {...control("authorityDeclared")} required type="checkbox" checked={representative.authorityDeclared} onChange={(event) => changeRepresentative({ authorityDeclared: event.target.checked })} /><span>Declaro que estoy autorizado para presentar esta solicitud en nombre de {airline?.name}.</span></label>
             {fieldError("authorityDeclared") && <p className="access-field-error" id={`${fieldId("authorityDeclared")}-error`}>{fieldError("authorityDeclared")}</p>}
@@ -393,8 +407,8 @@ export function AccessRequestWizard() {
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
             <div><dt>Contacto</dt><dd>{representative.email} · {representative.phone}</dd></div>
             {representative.nationalityCode && <div><dt>Nacionalidad</dt><dd>{countryName(representative.nationalityCode)}</dd></div>}
-            {representative.documentType && <div><dt>Documento</dt><dd>{representative.documentType} · {representative.documentNumber}</dd></div>}
-            {[representative.address, location.municipality, location.province, location.country].some(Boolean) && <div><dt>Dirección</dt><dd>{[representative.address, location.municipality, location.province, location.country].filter(Boolean).join(", ")}</dd></div>}
+            {representative.documentType && <div><dt>Documento</dt><dd>{DOCUMENT_LABELS[representative.documentType] ?? representative.documentType} · {representative.documentNumber}</dd></div>}
+            {[representative.address, location.district, location.municipality, location.province, location.country].some(Boolean) && <div><dt>Dirección</dt><dd>{[representative.address, location.district && `D. M. ${location.district}`, location.municipality, location.province, location.country].filter(Boolean).join(", ")}</dd></div>}
           </dl><small>Declaración de representación aceptada</small></section>
         </div>
       </>}

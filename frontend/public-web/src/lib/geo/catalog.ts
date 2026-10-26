@@ -2,6 +2,8 @@ export type GeoDivision = {
   code: string;
   name: string;
   cities: readonly string[];
+  /** Municipal districts of each city, when the country publishes them (Dominican Republic). */
+  districts?: Readonly<Record<string, readonly string[]>>;
 };
 
 const regionNames = new Intl.DisplayNames(["es"], { type: "region" });

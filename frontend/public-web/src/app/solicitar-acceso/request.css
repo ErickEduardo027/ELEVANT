@@ -67,6 +67,7 @@
 .access-representative .access-authority-field { grid-column: 1 / -1; }
 .access-representative :is(input, select)[aria-invalid="true"] { border-color: #9c2f13; }
 .access-select:disabled { background: #e9eef3; color: #71859b; cursor: not-allowed; }
+.access-field-hint { display: block; margin: 6px 0 0; color: #5d6577; font-size: .74rem; line-height: 1.4; }
 .access-field-error { margin: 7px 0 0; color: #9c2f13; font-size: .76rem; line-height: 1.45; }
 .access-field-error button { border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .access-representative__note { grid-column: 1 / -1; padding: 14px 18px; border-left: 3px solid #ff641f; background: #e9eef3; color: #425e79; font-size: .82rem; line-height: 1.5; }
