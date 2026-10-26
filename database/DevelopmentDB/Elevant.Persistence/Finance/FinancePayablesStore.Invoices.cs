@@ -30,9 +30,9 @@ internal sealed partial class FinancePayablesStore
             var result = new List<FinancePayablesView>(); foreach (var row in rows) result.Add(await InvoiceViewAsync(row, ct)); return result;
         }, ct);
     public Task<FinancePayablesResult<FinancePayablesMutation>> SaveInvoiceAsync(Guid actorId, Guid? id, FinancePayablesSave input, CancellationToken ct = default) =>
-        WriteAsync(actorId, input.RequestId, "payable.save", id, input, "finance.payables.manage", async a =>
+        WriteAsync(actorId, input.RequestId, "payable.save", id, input, id is null ? "finance.payables.create" : "finance.payables.update", async a =>
         {
-            Require(Finance(a, "finance.payables.manage"), "forbidden");
+            Require(Finance(a, id is null ? "finance.payables.create" : "finance.payables.update"), "forbidden");
             Require(Text(input.DocumentReference, 100) && input.DueDate >= input.DocumentDate);
             var total = ValidateLines(input.Lines); var dop = ValidateFx(input.Fx, total, input.DocumentDate);
             var station = await StationAsync(a, input.ScopeStationId, ct); var supplier = await SupplierAsync(a, input.SupplierId, ct);
@@ -54,9 +54,9 @@ internal sealed partial class FinancePayablesStore
             Audit(a, id is null ? "finance.payable.created" : "finance.payable.draft_updated", "commercial.supplier_invoices", row.PublicId); return row.PublicId;
         }, ct);
     public Task<FinancePayablesResult<FinancePayablesMutation>> DecideInvoiceAsync(Guid actorId, Guid id, FinancePayablesDecision input, CancellationToken ct = default) =>
-        WriteAsync(actorId, input.RequestId, "payable.decide", id, input, input.Decision == "Submitted" ? "finance.payables.manage" : "finance.payables.approve", async a =>
+        WriteAsync(actorId, input.RequestId, "payable.decide", id, input, input.Decision == "Submitted" ? "finance.payables.update" : "finance.payables.approve", async a =>
         {
-            Require(Finance(a, input.Decision == "Submitted" ? "finance.payables.manage" : "finance.payables.approve"), "forbidden");
+            Require(Finance(a, input.Decision == "Submitted" ? "finance.payables.update" : "finance.payables.approve"), "forbidden");
             var row = await InvoiceAsync(a, id, ct); Match(row.RowVersion, input.ExpectedVersion);
             Require(OptionalText(input.Reason, 500) && FinancePayablesPolicy.CanTransitionInvoice(row.Status.ToString(), input.Decision, input.Reason), "conflict");
             Require(await context.Set<Supplier>().AnyAsync(s => s.Id == row.SupplierId && s.IsActive, ct), "conflict");

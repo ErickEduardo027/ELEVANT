@@ -21,7 +21,9 @@ internal sealed class EfHumanResourcesPermitWriteStore(
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.HasPermission("human_resources.permits.manage") != true ||
+        // The first cycle is «Crear»; a renewal (it names the current cycle) is «Modificar».
+        if (actor?.HasPermission(input?.ExpectedCurrentId is null
+                ? "human_resources.permits.create" : "human_resources.permits.update") != true ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

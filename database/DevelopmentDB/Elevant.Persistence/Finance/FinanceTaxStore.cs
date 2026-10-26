@@ -135,7 +135,7 @@ public sealed class FinanceTaxStore(ElevantDbContext context, IActorContextResol
     private async Task<FinanceTaxWriteResult> WriteAsync(Guid actorId, string action, Guid? id, Guid requestId, object payload,
         Func<ActorContext, long, DateTimeOffset, Task<FinanceTaxWriteResult>> write, CancellationToken ct)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.taxes.manage", ct); if (actor is null) return FinanceTaxWriteResult.Fail("forbidden");
+        var actor = await AuthorizeAsync(actorId, action == "create" ? "finance.taxes.create" : "finance.taxes.update", ct); if (actor is null) return FinanceTaxWriteResult.Fail("forbidden");
         if (requestId == Guid.Empty) return FinanceTaxWriteResult.Fail("invalid_request");
         var account = await context.Users.Where(u => u.PublicId == actorId).Select(u => u.Id).SingleAsync(ct);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { action, id, payload }))));

@@ -143,6 +143,15 @@ export const departmentUsersMessages = {
     },
     matrix: {
       loading: 'Cargando catálogo de permisos…',
+      option: 'Opción del menú',
+      read: 'Ver',
+      create: 'Crear',
+      update: 'Modificar',
+      delete: 'Eliminar',
+      other: 'Otras acciones',
+      inside: 'dentro de {parent}',
+      none: 'No aplica',
+      hint: 'Cada opción del menú se concede por separado. Marcar cualquier acción concede también «Ver».',
     },
     account: {
       titles: {
@@ -410,6 +419,15 @@ export const departmentUsersMessages = {
     },
     matrix: {
       loading: 'Loading permission catalog…',
+      option: 'Menu option',
+      read: 'View',
+      create: 'Create',
+      update: 'Modify',
+      delete: 'Delete',
+      other: 'Other actions',
+      inside: 'inside {parent}',
+      none: 'Not applicable',
+      hint: 'Each menu option is granted separately. Choosing any action also grants «View».',
     },
     account: {
       titles: {

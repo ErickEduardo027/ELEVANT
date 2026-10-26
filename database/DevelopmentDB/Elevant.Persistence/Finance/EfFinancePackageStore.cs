@@ -56,7 +56,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
 
     public async Task<PackageWriteResult> SaveAsync(Guid actorId, Guid? id, SavePackageInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await ActorAsync(actorId, "finance.packages.manage", cancellationToken);
+        var actor = await ActorAsync(actorId, id is null ? "finance.packages.create" : "finance.packages.update", cancellationToken);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
         if (input is null || !Enum.TryParse<PackageConsumptionScope>(input.Scope, out var scope) || !Enum.IsDefined(scope) ||
             input.CurrencyCode is not ("USD" or "DOP") || input.Code is null || input.Code.Length is < 2 or > 32 ||
@@ -106,7 +106,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
 
     public async Task<PackageWriteResult> PublishAsync(Guid actorId, Guid id, PackageCommandInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await ActorAsync(actorId, "finance.packages.manage", cancellationToken);
+        var actor = await ActorAsync(actorId, "finance.packages.publish", cancellationToken);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
         return await CommandAsync(actor, input.RequestId, "package.publish", new { id, input }, async () =>
         {
@@ -133,7 +133,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
 
     public async Task<PackageWriteResult> SetContractPackagesAsync(Guid actorId, Guid versionId, SetContractPackagesInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await ActorAsync(actorId, "contracts.drafts.edit", cancellationToken);
+        var actor = await ActorAsync(actorId, "contracts.drafts.update", cancellationToken);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
         if (input.PackageVersionIds is null || input.PackageVersionIds.Count > 50 || input.PackageVersionIds.Distinct().Count() != input.PackageVersionIds.Count) return PackageWriteResult.Fail("invalid_selection");
         return await CommandAsync(actor, input.RequestId, "contract.packages", new { versionId, input }, async () =>
@@ -173,7 +173,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
 
     public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, PackageCommandInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await ActorAsync(actorId, "contracts.drafts.edit", cancellationToken);
+        var actor = await ActorAsync(actorId, "contracts.drafts.update", cancellationToken);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
         return await CommandAsync(actor, input.RequestId, "contract.amendment", new { versionId, input }, async () =>
         {

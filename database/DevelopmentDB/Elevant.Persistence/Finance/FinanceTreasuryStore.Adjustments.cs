@@ -47,7 +47,7 @@ internal sealed partial class FinanceTreasuryStore
             input.Lines.Select(l => l.InvoiceLineId).Distinct().Count() != input.Lines.Count)
             return Task.FromResult(Fail(FinanceTreasuryFailure.Invalid));
         var ct = cancellationToken; var hash = Hash(input);
-        return ExecuteAsync(actorId, input.RequestId, "finance.adjustments.issue", async (actor, accountId) =>
+        return ExecuteAsync(actorId, input.RequestId, "finance.adjustments.create", async (actor, accountId) =>
         {
             var scope = await Invoices(actor).SingleOrDefaultAsync(i => i.Invoice.PublicId == invoiceId, ct);
             if (scope is null) return Fail(FinanceTreasuryFailure.NotFound);

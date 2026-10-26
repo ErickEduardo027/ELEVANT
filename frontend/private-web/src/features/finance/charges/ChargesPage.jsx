@@ -122,7 +122,7 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
   );
 }
 
-function Catalog({ canManage }) {
+function Catalog({ perms }) {
   const [charges, setCharges] = useState(null);
   const [services, setServices] = useState([]);
   const [units, setUnits] = useState([]);
@@ -142,7 +142,7 @@ function Catalog({ canManage }) {
   }, [load]);
   return (
     <section className="space-y-3">
-      {canManage && <div className="flex justify-end"><button type="button" onClick={() => { setEditing(null); setOpen(true); }} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo cargo</button></div>}
+      {perms.create && <div className="flex justify-end"><button type="button" onClick={() => { setEditing(null); setOpen(true); }} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo cargo</button></div>}
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
       {!charges ? !error && <p role="status" className="text-sm">Cargando cargos…</p> : charges.length === 0 ? (
@@ -150,7 +150,7 @@ function Catalog({ canManage }) {
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Cargo</th><th className="p-3">Categoría</th><th className="p-3">Cálculo</th><th className="p-3">Alcance</th><th className="p-3">Estado</th>{canManage && <th className="p-3">Acción</th>}</tr></thead>
+            <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Cargo</th><th className="p-3">Categoría</th><th className="p-3">Cálculo</th><th className="p-3">Alcance</th><th className="p-3">Estado</th>{perms.update && <th className="p-3">Acción</th>}</tr></thead>
             <tbody>{charges.map(charge => (
               <tr key={charge.id} className="border-t border-black/5 dark:border-white/5">
                 <td className="p-3"><strong>{charge.code}</strong><span className="block text-xs text-text-secondary-light">{charge.name}</span></td>
@@ -158,7 +158,7 @@ function Catalog({ canManage }) {
                 <td className="p-3 text-xs">{METHOD_LABELS[charge.method]} · {RULE_LABELS[charge.quantityRule]}{charge.graceMinutes ? ` · gracia ${charge.graceMinutes} min` : ''}</td>
                 <td className="p-3 text-xs">{charge.appliesToAllServices ? 'Todos los servicios' : `${charge.serviceIds.length} servicio(s)`}{charge.visibleToAgents ? '' : ' · oculto en rampa'}</td>
                 <td className="p-3"><StatusBadge tone={charge.isActive ? 'success' : 'neutral'} label={charge.isActive ? 'Activo' : 'Inactivo'} /></td>
-                {canManage && <td className="p-3"><button type="button" onClick={() => { setEditing(charge); setOpen(true); }} className="min-h-[32px] text-xs font-semibold text-accent-600">Editar</button></td>}
+                {perms.update && <td className="p-3"><button type="button" onClick={() => { setEditing(charge); setOpen(true); }} className="min-h-[32px] text-xs font-semibold text-accent-600">Editar</button></td>}
               </tr>
             ))}</tbody>
           </table>
@@ -170,7 +170,7 @@ function Catalog({ canManage }) {
   );
 }
 
-function ChargeTariff({ canManage }) {
+function ChargeTariff({ perms }) {
   const [currency, setCurrency] = useState('USD');
   const [versions, setVersions] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -210,7 +210,8 @@ function ChargeTariff({ canManage }) {
     return () => { active = false; };
   }, [selectedId, reloads]);
 
-  const editable = canManage && detail?.summary.status === 'Draft';
+  const editable = perms.update && detail?.summary.status === 'Draft';
+  const draftActions = (perms.update || perms.delete || perms.publish) && detail?.summary.status === 'Draft';
   async function run(action, success, conflict = 'La tarifa cambió. Se actualizó la vista.') {
     setBusy(true);
     setMessage({ tone: '', text: '' });
@@ -238,7 +239,7 @@ function ChargeTariff({ canManage }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Moneda<select value={currency} onChange={event => setCurrency(event.target.value)} className={fieldClass}>{FINANCE_CURRENCIES.map(code => <option key={code}>{code}</option>)}</select></label>
-        {canManage && !versions?.some(version => version.status === 'Draft') && (
+        {perms.create && !versions?.some(version => version.status === 'Draft') && (
           <button type="button" disabled={busy} onClick={() => run(() => createChargeTariffDraft({ currencyCode: currency,
             validFrom: new Date().toISOString().slice(0, 10), note: null,
             copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null }), 'Borrador creado.')}
@@ -269,15 +270,15 @@ function ChargeTariff({ canManage }) {
                   ))}</tbody>
                 </table>
               </StackedTable>
-              {editable && (
+              {draftActions && (
                 <div className="flex flex-wrap justify-end gap-2">
-                  <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>
-                  <button type="button" disabled={busy} onClick={() => run(() => saveChargeTariffDraft(detail.summary.id, {
+                  {perms.delete && <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>}
+                  {perms.update && <button type="button" disabled={busy} onClick={() => run(() => saveChargeTariffDraft(detail.summary.id, {
                     validFrom, validTo: null, note: detail.summary.note, expectedVersion: detail.summary.version,
                     rates: rates.filter(rate => rate.value !== '' && rate.value !== null).map(rate => ({ chargeId: rate.chargeId,
                       value: Number(rate.value), minimumAmount: Number(rate.minimumAmount || 0) })),
-                  }), 'Borrador guardado.')} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>
-                  <button type="button" disabled={busy} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Publicar</button>
+                  }), 'Borrador guardado.')} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
+                  {perms.publish && <button type="button" disabled={busy} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Publicar</button>}
                 </div>
               )}
             </section>
@@ -305,14 +306,16 @@ function ChargeTariff({ canManage }) {
 
 export default function ChargesPage() {
   const { access } = useDepartmentAccess();
-  const canManage = Boolean(access?.can('finance.charges.manage'));
+  // «Crear» opens drafts, «Modificar» edits them, «Eliminar» discards them and «Publicar» makes them current.
+  const perms = { create: Boolean(access?.can('finance.charges.create')), update: Boolean(access?.can('finance.charges.update')),
+    delete: Boolean(access?.can('finance.charges.delete')), publish: Boolean(access?.can('finance.charges.publish')) };
   const [tab, setTab] = useState('catalog');
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Tarifario de cargos"
         description="Recargos y cargos que los agentes de rampa aplican a los servicios, y sus importes por moneda." />
       <Tabs activeId={tab} onChange={setTab} tabs={[{ id: 'catalog', label: 'Catálogo de cargos' }, { id: 'tariff', label: 'Importes' }]} />
-      {tab === 'catalog' ? <Catalog canManage={canManage} /> : <ChargeTariff canManage={canManage} />}
+      {tab === 'catalog' ? <Catalog perms={perms} /> : <ChargeTariff perms={perms} />}
     </div>
   );
 }

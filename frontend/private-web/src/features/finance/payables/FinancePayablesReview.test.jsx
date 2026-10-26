@@ -172,7 +172,7 @@ describe('AP source-review regressions', () => {
       }
       throw new Error('Unexpected HTTP path: ' + path);
     });
-    mount(<SuppliersPage />, ['finance.suppliers.read', 'finance.suppliers.manage']);
+    mount(<SuppliersPage />, ['finance.suppliers.read', 'finance.suppliers.create', 'finance.suppliers.update', 'finance.suppliers.delete']);
     await userEvent.click(await screen.findByRole('button', { name: 'Nuevo proveedor' }));
     await userEvent.type(screen.getByLabelText('Código'), 'RETRY-A');
     await userEvent.type(screen.getByLabelText('Nombre del proveedor'), 'Original station A command');

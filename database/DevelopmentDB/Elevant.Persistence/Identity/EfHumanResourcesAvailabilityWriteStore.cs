@@ -20,7 +20,7 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         Guid actorId, Guid requestId, RecordHumanResourcesAvailabilityInput input,
         CancellationToken cancellationToken = default)
     {
-        var actorKey = await AuthorizedActorKeyAsync(actorId, cancellationToken);
+        var actorKey = await AuthorizedActorKeyAsync(actorId, "human_resources.availability.create", cancellationToken);
         if (actorKey is null) return Fail(HumanResourcesAvailabilityWriteFailure.Forbidden);
         if (requestId == Guid.Empty || input is null ||
             input.RampProfileId == Guid.Empty || input.StartsOn == default ||
@@ -100,7 +100,7 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         Guid actorId, Guid requestId, ResolveHumanResourcesAvailabilityInput input,
         CancellationToken cancellationToken = default)
     {
-        var actorKey = await AuthorizedActorKeyAsync(actorId, cancellationToken);
+        var actorKey = await AuthorizedActorKeyAsync(actorId, "human_resources.availability.decide", cancellationToken);
         if (actorKey is null) return Fail(HumanResourcesAvailabilityWriteFailure.Forbidden);
         var targetStatus = input?.Decision switch
         {
@@ -189,11 +189,11 @@ internal sealed class EfHumanResourcesAvailabilityWriteStore(
         }
     }
 
-    private async Task<long?> AuthorizedActorKeyAsync(Guid actorId,
+    private async Task<long?> AuthorizedActorKeyAsync(Guid actorId, string permission,
         CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor?.HasPermission("human_resources.availability.decide") != true ||
+        if (actor?.HasPermission(permission) != true ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;

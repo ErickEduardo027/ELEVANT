@@ -53,11 +53,13 @@ public sealed class EmployeeRulesTests
     public void HumanResourcesCatalogOffersEmployeePositionAndRequisitionActions()
     {
         var codes = DepartmentPermissionCatalog.CodesOf(Department.HumanResources);
-        Assert.Contains("human_resources.employees.terminate", codes);
-        Assert.Contains("human_resources.positions.manage", codes);
+        Assert.Contains("human_resources.employees.delete", codes);
+        Assert.Contains("human_resources.positions.create", codes);
+        Assert.Contains("human_resources.positions.update", codes);
         Assert.Contains("human_resources.requisitions.attend", codes);
-        Assert.Contains("human_resources.ramp_profiles.manage", codes);
-        Assert.Equal(["human_resources.employees.read", "human_resources.employees.terminate"],
+        Assert.Contains("human_resources.ramp_profiles.update", codes);
+        // A grant stored before ADR-0018 keeps working.
+        Assert.Equal(["human_resources.employees.delete", "human_resources.employees.read"],
             DepartmentPermissionCatalog.Normalize(["human_resources.employees.terminate"]));
     }
 }

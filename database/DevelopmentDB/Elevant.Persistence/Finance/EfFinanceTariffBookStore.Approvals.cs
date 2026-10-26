@@ -34,7 +34,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input,
         CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.FromCurrency) || !ValidCurrency(input.ToCurrency) ||
             input.FromCurrency == input.ToCurrency || input.Rate is <= 0 or > 1_000_000m || input.RateDate == default ||
@@ -67,7 +67,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId,
         CorrectExchangeRateInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || input.Rate is <= 0 or > 1_000_000m || string.IsNullOrWhiteSpace(input.Source) ||
             input.Source.Trim().Length > 120 || string.IsNullOrWhiteSpace(input.ExpectedVersion))

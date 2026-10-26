@@ -13,7 +13,8 @@ import { fieldClass } from './EmployeeForms';
 /** Organisational positions per department; Human Resources owns the organigram. */
 export default function PositionsPage() {
   const access = useOptionalDepartmentAccess();
-  const canManage = Boolean(access?.can('human_resources.positions.manage'));
+  const canCreate = Boolean(access?.can('human_resources.positions.create'));
+  const canManage = Boolean(access?.can('human_resources.positions.update'));
   const [department, setDepartment] = useState('');
   const [positions, setPositions] = useState(null);
   const [form, setForm] = useState(null);
@@ -45,7 +46,7 @@ export default function PositionsPage() {
     <div className="mx-auto max-w-[1200px] space-y-5">
       <PageHeader eyebrow="Gestión Humana" title="Puestos"
         description="Cargos del organigrama de cada departamento. Cada departamento decide qué perfil de acceso sugiere para sus puestos."
-        actions={canManage && <button type="button" onClick={() => { setError(''); setForm({ department: department || DEPARTMENTS.OPERATIONS, name: '', description: '', isRampPosition: false, isActive: true }); }}
+        actions={canCreate && <button type="button" onClick={() => { setError(''); setForm({ department: department || DEPARTMENTS.OPERATIONS, name: '', description: '', isRampPosition: false, isActive: true }); }}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo puesto</button>} />
       <label className="block max-w-xs text-xs font-semibold">Departamento<select value={department} onChange={event => setDepartment(event.target.value)} className={fieldClass}>
         <option value="">Todos</option>{Object.values(DEPARTMENTS).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>

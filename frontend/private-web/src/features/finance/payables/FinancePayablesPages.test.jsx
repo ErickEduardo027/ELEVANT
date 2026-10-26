@@ -33,7 +33,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe('Finance supplier, payable and expense pages', () => {
   it('creates a station-scoped supplier and retries the same command after a lost response', async () => {
-    mount(<SuppliersPage />, ['finance.suppliers.read', 'finance.suppliers.manage']);
+    mount(<SuppliersPage />, ['finance.suppliers.read', 'finance.suppliers.create', 'finance.suppliers.update', 'finance.suppliers.delete']);
     await userEvent.click(await screen.findByRole('button', { name: 'Nuevo proveedor' }));
     await userEvent.type(screen.getByLabelText('Código'), 'RAMP');
     await userEvent.type(screen.getByLabelText('Nombre del proveedor'), 'Servicios de rampa');
@@ -85,7 +85,7 @@ describe('Finance supplier, payable and expense pages', () => {
     expect(screen.queryByText('Private SQL exception')).not.toBeInTheDocument(); invoice.status = 'Approved';
   });
   it('requires explicit FX before saving a bill and sends decimal line inputs with scope', async () => {
-    mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.manage']);
+    mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.create', 'finance.payables.update']);
     await userEvent.click(await screen.findByRole('button', { name: 'Nueva factura de proveedor' }));
     await userEvent.selectOptions(screen.getByLabelText('Proveedor'), 'supplier');
     await userEvent.type(screen.getByLabelText('Referencia del proveedor'), 'SUP-NEW');

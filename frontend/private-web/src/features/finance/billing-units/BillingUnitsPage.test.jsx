@@ -26,7 +26,7 @@ it('creates and edits units with optimistic concurrency', async () => {
   listBillingUnits.mockResolvedValue(units);
   saveBillingUnit.mockResolvedValue({ id: 'u3' });
   const user = userEvent.setup();
-  render(<BillingUnitsPage canManage />);
+  render(<BillingUnitsPage canCreate canUpdate />);
   await user.click(await screen.findByRole('button', { name: 'Nueva unidad' }));
   const dialog = screen.getByRole('dialog', { name: 'Nueva unidad de cobro' });
   await user.type(within(dialog).getByRole('textbox', { name: /Nombre/ }), 'Galón');

@@ -236,7 +236,7 @@ public sealed partial class SqlServerMigrationTests
             Task.FromResult<ActorContext?>(id != FinanceAccount ? null : new ActorContext(id, "synthetic@test.invalid", "Synthetic Finance", [],
                 [new(Guid.NewGuid(), Guid.NewGuid(), "QA", "QA", OrganizationType.AviamOperator, MembershipKind.InternalStaff)],
                 [new(stationId, "PUJ")], new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Finance,
-                    new HashSet<string>(["finance.receipts.read", "finance.receipts.manage", "finance.receipts.apply",
-                        "finance.receipts.reverse", "finance.receipts.refund", "finance.adjustments.read", "finance.adjustments.issue"]))));
+                    new HashSet<string>(["finance.receipts.read", "finance.receipts.create", "finance.receipts.apply",
+                        "finance.receipts.reverse", "finance.receipts.refund", "finance.adjustments.read", "finance.adjustments.create"]))));
     }
 }

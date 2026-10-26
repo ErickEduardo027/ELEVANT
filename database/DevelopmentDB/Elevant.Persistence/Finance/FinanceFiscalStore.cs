@@ -69,7 +69,7 @@ internal sealed partial class FinanceFiscalStore(ElevantDbContext context, IActo
             {
                 context.ChangeTracker.Clear();
                 await using var tx = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-                var actor = await ActorAsync(account, ["finance.fiscal.manage", "finance.fiscal.simulate"], ct);
+                var actor = await ActorAsync(account, ["finance.fiscal.create", "finance.fiscal.simulate"], ct);
                 if (actor is null) return Fail(FinanceFiscalFailure.Forbidden);
                 var key = await context.Users.Where(u => u.PublicId == account).Select(u => (long?)u.Id).SingleOrDefaultAsync(ct);
                 if (key is null) return Fail(FinanceFiscalFailure.Forbidden);

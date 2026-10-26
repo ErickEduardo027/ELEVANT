@@ -15,8 +15,9 @@ namespace Elevant.Persistence.Identity;
 internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceStore
 {
     private const string EmployeesRead = "human_resources.employees.read";
-    private const string EmployeesManage = "human_resources.employees.manage";
-    private const string EmployeesTerminate = "human_resources.employees.terminate";
+    private const string EmployeesCreate = "human_resources.employees.create";
+    private const string EmployeesUpdate = "human_resources.employees.update";
+    private const string EmployeesTerminate = "human_resources.employees.delete";
     private static readonly Regex EmployeeNumberPattern = new("^[A-Z0-9-]{2,32}$", RegexOptions.CultureInvariant);
 
     private sealed record EmployeeFacts(Employee Employee, Person Person, JobPosition Position);
@@ -222,7 +223,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.Can(EmployeesManage)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (actor is null || !actor.Can(EmployeesCreate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         var (shape, failure) = await ShapeAsync(actor, input, cancellationToken);
         if (failure is not null) return failure;
 
@@ -276,7 +277,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.Can(EmployeesManage)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (actor is null || !actor.Can(EmployeesUpdate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         if (string.IsNullOrWhiteSpace(input?.ExpectedVersion)) return GovernanceResult.Failed(GovernanceFailure.Invalid);
         var (shape, failure) = await ShapeAsync(actor, input, cancellationToken);
         if (failure is not null) return failure;
@@ -605,7 +606,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.Can(EmployeesManage)) return null;
+        if (actor is null || !actor.Can(EmployeesCreate)) return null;
         var users = await DepartmentUsersAsync(null, cancellationToken);
         var personIds = await context.Users.AsNoTracking().Where(user => users.Select(row => row.Id).Contains(user.Id))
             .ToDictionaryAsync(user => user.Id, user => user.PersonId, cancellationToken);
@@ -646,7 +647,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.Can(EmployeesManage)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (actor is null || !actor.Can(EmployeesCreate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         // An account wins over its ramp agent: both point to the same person.
         if (input is null || input.AccountId is null && input.RampAgentId is null)
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
