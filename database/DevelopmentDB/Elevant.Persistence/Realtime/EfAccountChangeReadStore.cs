@@ -59,7 +59,7 @@ internal sealed class EfAccountChangeReadStore(
             access.Has("operations.planning.read");
         var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
-        var hasCatalogAccess = access?.Has("contracts.catalog.read") == true || access?.Has("finance.catalog.read") == true;
+        var hasCatalogAccess = access?.Has("contracts.catalog.read") == true || access?.Has("finance.tariffs.read") == true;
         var hasRequestsAccess = access?.Has("contracts.requests.read") == true;
         var hasClosureAccess = access?.Has("contracts.service_closures.read") == true ||
             access?.Has("operations.service_closures.read") == true;

@@ -77,7 +77,6 @@ public static class DepartmentPermissionCatalog
                 Module("finance", "contract_approvals", "Aprobación de contratos", ("read", "Ver"),
                     ("decide", "Aprobar o devolver contratos")),
                 Module("finance", "taxes", "Tratamientos tributarios", ("read", "Consultar"), ("manage", "Configurar")),
-            Module("finance", "catalog", "Catálogo comercial", ("read", "Ver"), ("manage", "Gestionar servicios")),
                 Module("finance", "packages", "Paquetes", ("read", "Ver"), ("manage", "Crear y publicar paquetes")),
                 Module("finance", "receipts", "Cobros y aplicaciones", ("read", "Ver"), ("manage", "Registrar cobros"), ("apply", "Aplicar cobros"), ("reverse", "Revertir movimientos"), ("refund", "Registrar devoluciones")),
                 Module("finance", "adjustments", "Notas de ajuste", ("read", "Ver"), ("issue", "Emitir notas de crédito y débito")),
