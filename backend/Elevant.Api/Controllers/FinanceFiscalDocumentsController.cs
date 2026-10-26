@@ -31,7 +31,7 @@ public sealed class FinanceFiscalDocumentsController(IFinanceFiscalStore store, 
             m.OrganizationType == OrganizationType.AviamOperator && m.Kind == MembershipKind.InternalStaff))
             return Failure(403, "Fiscal access is forbidden.");
         return Ok(new FinanceFiscalStatusResponse(options.Mode.ToString(), options.Environment,
-            FinanceFiscalPolicy.ExecutionFailure(options) is null && actor.HasPermission("finance.fiscal.manage") &&
+            FinanceFiscalPolicy.ExecutionFailure(options) is null && actor.HasPermission("finance.fiscal.create") &&
             actor.HasPermission("finance.fiscal.simulate"), FinanceFiscalPolicy.Disclaimer, "NotPerformed",
             "ProviderSandbox blocked pending selected provider and approved configuration"));
     }

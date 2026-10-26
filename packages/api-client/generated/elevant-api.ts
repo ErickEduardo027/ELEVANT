@@ -1193,11 +1193,15 @@ export interface PermissionActionData {
   code: string;
   action: string;
   label: string;
+  kind: string;
 }
 
 export interface PermissionModuleData {
   key: string;
   label: string;
+  section: string;
+  /** @nullable */
+  parent?: string | null;
   actions: PermissionActionData[];
 }
 

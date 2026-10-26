@@ -34,7 +34,7 @@ internal sealed class EfCommercialMediaStore(
         var authorized = purpose switch
         {
             "service-image" or "service-video" =>
-                await permissions.HasAnyAsync(actorId, ["contracts.catalog.create", "contracts.catalog.edit"], cancellationToken),
+                await permissions.HasAnyAsync(actorId, ["contracts.catalog.create", "contracts.catalog.update"], cancellationToken),
             "airline-logo" => await permissions.IsSuperAdministratorAsync(actorId, cancellationToken),
             "avatar" => await CanManageAvatarsAsync(actorId, cancellationToken),
             _ => false,

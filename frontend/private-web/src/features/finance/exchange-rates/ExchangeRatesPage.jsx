@@ -13,7 +13,8 @@ const isoDate = date => date.toISOString().slice(0, 10);
 /** Daily USD→DOP rates Finance records by hand. Corrections never overwrite: they supersede. */
 export default function ExchangeRatesPage() {
   const { access } = useDepartmentAccess();
-  const canManage = Boolean(access?.can('finance.exchange_rates.manage'));
+  const canCreate = Boolean(access?.can('finance.exchange_rates.create'));
+  const canManage = Boolean(access?.can('finance.exchange_rates.update'));
   const today = new Date();
   const [range, setRange] = useState({ from: isoDate(new Date(today.getTime() - 30 * 86400000)), to: isoDate(today) });
   const [history, setHistory] = useState(false);
@@ -46,7 +47,7 @@ export default function ExchangeRatesPage() {
     <div className="mx-auto max-w-[1100px] space-y-5">
       <PageHeader eyebrow="Finanzas" title="Tasas de cambio"
         description="Tasa diaria USD → DOP registrada por Finanzas. Se usa para consolidar reportes y convertir cargos entre monedas."
-        actions={canManage && <button type="button" onClick={() => setForm({ rateDate: isoDate(today), rate: '', source: 'Banco Central RD' })}
+        actions={canCreate && <button type="button" onClick={() => setForm({ rateDate: isoDate(today), rate: '', source: 'Banco Central RD' })}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Registrar tasa</button>} />
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Desde<input type="date" value={range.from} onChange={event => setRange(current => ({ ...current, from: event.target.value }))} className={fieldClass} /></label>

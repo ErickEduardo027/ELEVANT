@@ -52,7 +52,10 @@ export function latestPublishedStart(versions) {
 
 function BaseTariff() {
   const { access } = useDepartmentAccess();
-  const canManage = Boolean(access?.can('finance.tariffs.manage'));
+  // «Crear» opens drafts, «Modificar» edits them, «Eliminar» discards them and «Publicar» makes them current.
+  const perms = { create: Boolean(access?.can('finance.tariffs.create')), update: Boolean(access?.can('finance.tariffs.update')),
+    delete: Boolean(access?.can('finance.tariffs.delete')), publish: Boolean(access?.can('finance.tariffs.publish')) };
+  const canManage = perms.update;
   const [currency, setCurrency] = useState('USD');
   const [versions, setVersions] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -107,7 +110,8 @@ function BaseTariff() {
   }, [selectedId, reloads]);
 
   const isDraft = detail?.summary.status === 'Draft';
-  const editable = canManage && isDraft;
+  const editable = perms.update && isDraft;
+  const draftActions = (perms.update || perms.delete || perms.publish) && isDraft;
   const visibleRates = useMemo(() => rates.filter(rate =>
     `${rate.serviceCode} ${rate.serviceName}`.toLowerCase().includes(search.trim().toLowerCase())), [rates, search]);
   const missingServices = services.filter(service => !rates.some(rate => rate.serviceId === service.id && !rate.stationId));
@@ -155,7 +159,7 @@ function BaseTariff() {
             {FINANCE_CURRENCIES.map(code => <option key={code}>{code}</option>)}
           </select>
         </label>
-        {canManage && !versions?.some(version => version.status === 'Draft') && (
+        {perms.create && !versions?.some(version => version.status === 'Draft') && (
           <button type="button" disabled={busy} onClick={() => run(() => createServiceTariffDraft({
             currencyCode: currency, validFrom: new Date().toISOString().slice(0, 10), note: null,
             copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null,
@@ -211,11 +215,11 @@ function BaseTariff() {
                   </select>
                 </label>
               )}
-              {editable && (
+              {draftActions && (
                 <div className="flex flex-wrap justify-end gap-2">
-                  <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>
-                  <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>
-                  <button type="button" disabled={busy || rates.length === 0} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Publicar</button>
+                  {perms.delete && <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>}
+                  {perms.update && <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
+                  {perms.publish && <button type="button" disabled={busy || rates.length === 0} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Publicar</button>}
                 </div>
               )}
             </section>

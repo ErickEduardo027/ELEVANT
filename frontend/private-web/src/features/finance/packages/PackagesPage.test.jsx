@@ -18,7 +18,7 @@ const services = [{ id: 'gpu', code: 'GPU', name: 'Energía', defaultBillingUnit
   { id: 'bags', code: 'BAGS', name: 'Equipaje', defaultBillingUnit: 'operation', isActive: true },
   { id: 'old', code: 'OLD', name: 'Inactivo', isActive: false }];
 const units = [{ code: 'minute', name: 'Minuto', isActive: true }, { code: 'operation', name: 'Operación', isActive: true }];
-const permissions = ['finance.packages.read', 'finance.packages.manage'];
+const permissions = ['finance.packages.read', 'finance.packages.create', 'finance.packages.update', 'finance.packages.publish'];
 let packages;
 let writeFailures;
 let revision;

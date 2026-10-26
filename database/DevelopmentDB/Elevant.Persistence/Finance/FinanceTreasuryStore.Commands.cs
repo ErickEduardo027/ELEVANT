@@ -12,7 +12,7 @@ internal sealed partial class FinanceTreasuryStore
             !Enum.TryParse<PaymentMethod>(input.Method, false, out var method) || !Enum.IsDefined(method))
             return Task.FromResult(Fail(FinanceTreasuryFailure.Invalid));
         var hash = Hash(input); var ct = cancellationToken;
-        return ExecuteAsync(actorId, input.RequestId, "finance.receipts.manage", async (actor, accountId) =>
+        return ExecuteAsync(actorId, input.RequestId, "finance.receipts.create", async (actor, accountId) =>
         {
             var stations = actor.StationScopes.Select(s => s.StationId).ToArray();
             var scope = await (from a in context.Airlines join o in context.Organizations on a.OrganizationId equals o.Id

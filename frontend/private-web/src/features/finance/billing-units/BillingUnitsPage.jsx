@@ -20,7 +20,7 @@ function saveError(failure) {
  * Units in which services and charges are measured and priced (per operation, hour, passenger…).
  * Units are never deleted: deactivating one hides it from new prices and services.
  */
-export default function BillingUnitsPage({ canManage = false }) {
+export default function BillingUnitsPage({ canCreate = false, canUpdate = false }) {
   const [units, setUnits] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -56,7 +56,7 @@ export default function BillingUnitsPage({ canManage = false }) {
     <div className="mx-auto max-w-[1000px] space-y-5">
       <PageHeader eyebrow="Finanzas · Tarifarios" title="Unidades de cobro"
         description="Cómo se mide lo que se cobra: por operación, por hora, por pasajero… Las usan el catálogo de servicios, el tarifario de servicios y el de cargos."
-        actions={canManage && <button type="button" onClick={() => { setNotice(''); setError(''); setForm({ code: '', name: '', quantityScale: 0, isActive: true }); }}
+        actions={canCreate && <button type="button" onClick={() => { setNotice(''); setError(''); setForm({ code: '', name: '', quantityScale: 0, isActive: true }); }}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nueva unidad</button>} />
       <p className="rounded-lg border border-black/5 bg-white p-3 text-xs text-text-secondary-light dark:border-white/5 dark:bg-surface-dark-card">
         La unidad solo indica cómo se mide. Una espera por demora del vuelo no es una unidad: se cobra con el cargo <strong>DELAY</strong> («Demora de la llegada»), que se mide por hora y tiene minutos de gracia en el tarifario de cargos.
@@ -69,7 +69,7 @@ export default function BillingUnitsPage({ canManage = false }) {
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[560px] text-left text-sm">
             <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]">
-              <tr><th className="p-3">Nombre</th><th className="p-3">Código</th><th className="p-3">Cantidades</th><th className="p-3">Estado</th>{canManage && <th className="p-3">Acción</th>}</tr>
+              <tr><th className="p-3">Nombre</th><th className="p-3">Código</th><th className="p-3">Cantidades</th><th className="p-3">Estado</th>{canUpdate && <th className="p-3">Acción</th>}</tr>
             </thead>
             <tbody>{units.map(unit => (
               <tr key={unit.id} className={`border-t border-black/5 dark:border-white/5 ${unit.isActive ? '' : 'opacity-60'}`}>
@@ -77,7 +77,7 @@ export default function BillingUnitsPage({ canManage = false }) {
                 <td className="p-3 font-mono text-xs">{unit.code}</td>
                 <td className="p-3 text-xs">{SCALE_LABELS[unit.quantityScale] ?? unit.quantityScale}</td>
                 <td className="p-3 text-xs">{unit.isActive ? 'Activa' : 'Inactiva'}</td>
-                {canManage && <td className="p-3"><button type="button" onClick={() => { setNotice(''); setError(''); setForm({ ...unit }); }}
+                {canUpdate && <td className="p-3"><button type="button" onClick={() => { setNotice(''); setError(''); setForm({ ...unit }); }}
                   className="min-h-[32px] text-xs font-semibold text-accent-600">Editar</button></td>}
               </tr>
             ))}</tbody>

@@ -91,7 +91,8 @@ internal sealed partial class EfFinanceTariffBookStore(
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor is null || !(actor.HasPermission("finance.tariffs.read") || actor.HasPermission("contracts.catalog.read") ||
+        if (actor is null || !(actor.HasPermission("finance.billing_units.read") || actor.HasPermission("finance.tariffs.read") ||
+                actor.HasPermission("contracts.catalog.read") ||
                 actor.HasPermission("contracts.drafts.read")))
             return null;
         return (await context.BillingUnits.AsNoTracking().OrderBy(unit => unit.Code).ToArrayAsync(cancellationToken))
@@ -102,7 +103,8 @@ internal sealed partial class EfFinanceTariffBookStore(
     public async Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input,
         CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.tariffs.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, unitId is null ? "finance.billing_units.create" : "finance.billing_units.update",
+            cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         var code = input?.Code?.Trim().ToLowerInvariant();
         if (input is null || code is null || code.Length is < 2 or > 32 ||
@@ -135,7 +137,7 @@ internal sealed partial class EfFinanceTariffBookStore(
             unit.UpdatedAt = now;
             Audit(actor.Id, unitId is null ? "finance.billing_unit.created" : "finance.billing_unit.updated",
                 "ref.billing_units", unit.PublicId, null, new AuditFieldChangeData("unit", null, $"{code}:{unit.Name}"));
-            await NotifyAsync("finance.tariffs.read", "finance_tariff_book", unit.PublicId, now, cancellationToken);
+            await NotifyAsync("finance.billing_units.read", "finance_tariff_book", unit.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return FinanceCatalogResult.Success(unit.PublicId);
         }, cancellationToken);

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PreinvoicesPage from './PreinvoicesPage';
+import { administratorAccess, DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+
+const withAccess = ui => <DepartmentAccessProvider observe={false}
+  initialAccess={administratorAccess('finance', ['finance.preinvoices.read', 'finance.preinvoices.issue'])}>{ui}</DepartmentAccessProvider>;
 import { getFinancePreinvoices, submitFinancePreinvoice, issueFinanceInvoice,
   getFinanceInvoiceByPreinvoice, getFinancePaymentByInvoice,
   getFinanceInvoiceDocument, getFinancePaymentReceipt,
@@ -39,7 +43,7 @@ beforeEach(() => getFinancePaymentByInvoice.mockResolvedValue({ invoiceId: 'invo
 it('opens the station selected in the Finance summary', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20,
     hasMore: false, preinvoices: [] });
-  render(<PreinvoicesPage initialStationId="station-two" />);
+  render(withAccess(<PreinvoicesPage initialStationId="station-two" />));
   await waitFor(() => expect(getFinancePreinvoices).toHaveBeenCalledWith(
     { stationId: 'station-two', page: 1, limit: 20 }, expect.any(Object)));
   expect(screen.getByLabelText('Estación de prefacturas')).toHaveValue('station-two');
@@ -49,7 +53,7 @@ it('shows the persisted station-scoped list and read-only detail', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false, preinvoices: [item] });
   getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   expect(await screen.findByText('Synthetic Air')).toBeInTheDocument();
   expect(screen.getByText('USD 42.0001')).toBeInTheDocument();
   expect(getFinancePreinvoices).toHaveBeenCalledWith({ stationId: 'station-one', page: 1, limit: 20 }, expect.any(Object));
@@ -70,7 +74,7 @@ it('shows the airline dispute and its selected priced lines to scoped Finance', 
     disputes: [{ id: 'dispute-one', subject: 'Cantidad incorrecta',
       description: 'La cantidad de GPU no coincide.', lineIds: ['line-one'],
       createdAt: '2026-08-20T12:00:00Z' }] });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   expect(await screen.findByText('Cantidad incorrecta')).toBeInTheDocument();
@@ -92,7 +96,7 @@ it('requires a reason and explicit confirmation to maintain disputed charges', a
       createdAt: '2026-08-20T12:00:00Z', resolution: null }] });
   resolveFinancePreinvoiceDispute.mockResolvedValue({ id: 'resolution-one',
     preinvoiceId: item.id, status: 'Submitted', replayed: false });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText('Cantidad incorrecta');
@@ -127,7 +131,7 @@ it('retries an uncertain void decision with the same key and reason', async () =
   resolveFinancePreinvoiceDispute.mockRejectedValueOnce(new Error('private details'))
     .mockResolvedValueOnce({ id: 'resolution-one', preinvoiceId: item.id,
       status: 'Voided', replayed: true });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText('Cantidad incorrecta');
@@ -159,7 +163,7 @@ it('keeps a dispute resolution reason and retry key across focus refreshes', asy
     .mockResolvedValueOnce({ id: 'resolution-one', preinvoiceId: item.id,
       status: 'Submitted', replayed: true });
 
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText('Cantidad incorrecta');
@@ -186,7 +190,7 @@ it('paginates and renders honest empty, forbidden and retry states', async () =>
     id: `preinvoice-${index}`, airlineName: index === 0 ? 'Synthetic Air' : `Airline ${index}` }));
   getFinancePreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: true, preinvoices: firstPage })
     .mockResolvedValueOnce({ page: 2, limit: 20, hasMore: false, preinvoices: [] });
-  const view = render(<PreinvoicesPage />);
+  const view = render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Siguiente página' }));
   expect(await screen.findByText('No hay prefacturas en esta página.')).toBeInTheDocument();
@@ -194,12 +198,12 @@ it('paginates and renders honest empty, forbidden and retry states', async () =>
   view.unmount();
 
   getFinancePreinvoices.mockRejectedValueOnce({ status: 403 });
-  const denied = render(<PreinvoicesPage />);
+  const denied = render(withAccess(<PreinvoicesPage />));
   expect(await screen.findByRole('alert')).toHaveTextContent('No tiene acceso');
   denied.unmount();
 
   getFinancePreinvoices.mockRejectedValueOnce(new Error('network'));
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar');
   expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
 });
@@ -209,7 +213,7 @@ it('does not show stale detail after switching stations', async () => {
   getFinancePreinvoices.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
     preinvoices: [item] });
   getPreinvoiceDraft.mockReturnValue(new Promise(resolve => { finishDetail = resolve; }));
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await userEvent.selectOptions(screen.getByLabelText('Estación de prefacturas'), 'station-two');
@@ -225,7 +229,7 @@ it('hides open detail when a fresh authorization check denies access', async () 
     preinvoices: [item] }).mockRejectedValueOnce({ status: 403 });
   getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   expect(await screen.findByText(/Ground power/)).toBeInTheDocument();
@@ -241,7 +245,7 @@ it('requires confirmation before sending a persisted draft and refreshes the aut
   getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
   submitFinancePreinvoice.mockResolvedValue({ id: item.id, status: 'Submitted', replayed: false });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Ground power/);
@@ -260,7 +264,7 @@ it('offers a safe retry after an uncertain network response without exposing ser
   getPreinvoiceDraft.mockResolvedValue({ ...item, lines: [{ id: 'line-one',
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
   submitFinancePreinvoice.mockRejectedValueOnce(new Error('internal connection details'));
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Ground power/);
@@ -280,7 +284,7 @@ it('confirms invoice issuance once for an accepted preinvoice and refreshes the 
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
   issueFinanceInvoice.mockResolvedValue({ id: 'invoice-one', preinvoiceId: item.id,
     number: 'NF-123', kind: 'NonFiscal', replayed: false });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Ground power/);
@@ -302,7 +306,7 @@ it('reads the frozen invoice for an already invoiced preinvoice without issuing 
   getFinanceInvoiceByPreinvoice.mockResolvedValue({ number: 'NF-123', kind: 'NonFiscal',
     currencyCode: 'USD', total: 42.0001, lines: [{ id: 'invoice-line', lineNumber: 1,
       operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
@@ -327,7 +331,7 @@ it('lets Finance download the frozen invoice and registered receipt', async () =
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   try {
-    render(<PreinvoicesPage />);
+    render(withAccess(<PreinvoicesPage />));
     await screen.findByText('Synthetic Air');
     await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
     await screen.findByText(/NF-123/);
@@ -357,7 +361,7 @@ it('records a manual non-fiscal payment only after confirmation and rereads it',
     .mockResolvedValueOnce({ invoiceId: 'invoice-one', payment: { id: 'payment-one',
       reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 42.0001 } });
   recordNonFiscalPayment.mockResolvedValue({ id: 'payment-one' });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   expect(await screen.findByText(/NF-123/)).toBeInTheDocument();
@@ -387,7 +391,7 @@ it('retries an uncertain manual payment with the same key and reference', async 
       currencyCode: 'USD' } });
   recordNonFiscalPayment.mockRejectedValueOnce(new Error('private network detail'))
     .mockResolvedValueOnce({ id: 'payment-one', replayed: true });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Sin pago registrado/);
@@ -412,7 +416,7 @@ it('revalidates an open invoice when the durable finance feed changes', async ()
     .mockResolvedValue({ invoiceId: 'invoice-one', payment: {
       id: 'payment-one', reference: 'BANK-TEST-123', amount: 42.0001,
       currencyCode: 'USD' } });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Sin pago registrado/);
@@ -430,7 +434,7 @@ it('retries an uncertain invoice response with the same idempotency key', async 
   issueFinanceInvoice.mockRejectedValueOnce(new Error('network details'))
     .mockResolvedValueOnce({ id: 'invoice-one', preinvoiceId: item.id,
       number: 'NF-123', kind: 'NonFiscal', replayed: true });
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Ground power/);
@@ -452,7 +456,7 @@ it('keeps the confirmed invoice result when a durable refresh arrives before HTT
     operationCode: 'DEV-TAT-1', serviceName: 'Ground power', amount: 42.0001 }] });
   let finishIssue;
   issueFinanceInvoice.mockReturnValue(new Promise(resolve => { finishIssue = resolve; }));
-  render(<PreinvoicesPage />);
+  render(withAccess(<PreinvoicesPage />));
   await screen.findByText('Synthetic Air');
   await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
   await screen.findByText(/Ground power/);

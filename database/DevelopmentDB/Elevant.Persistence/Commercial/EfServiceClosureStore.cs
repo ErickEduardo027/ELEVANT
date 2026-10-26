@@ -255,7 +255,7 @@ internal sealed class EfServiceClosureStore(ElevantDbContext context,
             membership.OrganizationType == OrganizationType.AviamOperator) == true &&
             await permissions.HasAnyAsync(actorId, action switch
             {
-                "request" => ["operations.service_closures.request"],
+                "request" => ["operations.service_closures.create"],
                 "read" => ["contracts.service_closures.read", "operations.service_closures.read"],
                 _ => ["contracts.service_closures." + action],
             }, cancellationToken);

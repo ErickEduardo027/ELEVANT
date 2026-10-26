@@ -2776,9 +2776,10 @@ public sealed partial class SqlServerMigrationTests
                 catalogCreatorRole.Id!.Value, "Synthetic-Catalog!234"), cancellationToken);
         Assert.True(catalogCreator.IsSuccess);
         var managedCatalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
-        Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
+        // Contracts owns the catalog: Finance cannot create services, a legacy role with «create» can.
+        Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(FinanceAccount, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética", "operación", null, null, 999, false, true, null), cancellationToken)).Failure);
-        var createdService = await managedCatalog.SaveAsync(FinanceAccount, null,
+        var createdService = await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética",
                 "operación", null, null, 999, false, true, null), cancellationToken);
         Assert.Null(createdService.Failure);

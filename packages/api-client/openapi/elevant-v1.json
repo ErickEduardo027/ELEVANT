@@ -33958,6 +33958,7 @@
         "required": [
           "action",
           "code",
+          "kind",
           "label"
         ],
         "type": "object",
@@ -33970,6 +33971,9 @@
           },
           "label": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -33978,7 +33982,8 @@
         "required": [
           "actions",
           "key",
-          "label"
+          "label",
+          "section"
         ],
         "type": "object",
         "properties": {
@@ -33987,6 +33992,13 @@
           },
           "label": {
             "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string",
+            "nullable": true
           },
           "actions": {
             "type": "array",

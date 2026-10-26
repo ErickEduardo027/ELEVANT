@@ -26,7 +26,10 @@ const newPackage = () => ({ code: '', name: '', currencyCode: 'USD', basePrice: 
 export default function PackagesPage() {
   const { access } = useDepartmentAccess();
   const canRead = access?.can('finance.packages.read') ?? false;
-  const canManage = access?.can('finance.packages.manage') ?? false;
+  const canCreate = access?.can('finance.packages.create') ?? false;
+  const canUpdate = access?.can('finance.packages.update') ?? false;
+  const canPublish = access?.can('finance.packages.publish') ?? false;
+  const canManage = canCreate || canUpdate;
   const [data, setData] = useState({ status: 'loading', packages: [], services: [], units: [] });
   const [selection, setSelection] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +54,7 @@ export default function PackagesPage() {
     <PageHeader eyebrow="Finanzas" title="Paquetes de servicios"
       description="Defina coberturas, cantidades incluidas y bloques de excedente. Cada publicación conserva su historial."
       actions={<><button type="button" disabled={busy || data.status === 'loading'} onClick={() => void load(selection?.item?.id)} className={buttonClass}>Actualizar</button>
-        {canManage && <button type="button" disabled={busy || data.status !== 'ready'} onClick={() => { setNotice(''); setSelection({ item: newPackage() }); }} className={`${buttonClass} bg-accent-600 text-white`}>Nuevo paquete</button>}</>} />
+        {canCreate && <button type="button" disabled={busy || data.status !== 'ready'} onClick={() => { setNotice(''); setSelection({ item: newPackage() }); }} className={`${buttonClass} bg-accent-600 text-white`}>Nuevo paquete</button>}</>} />
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {data.status === 'loading' ? <p role="status" className="text-sm">Cargando paquetes…</p>
       : data.status === 'error' ? <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{data.error}</p>
@@ -66,14 +69,14 @@ export default function PackagesPage() {
             </button>)}
           </section>
           {selection?.item && <PackageEditor key={JSON.stringify(selection)} item={selection.item} copy={selection.copy}
-            canManage={canManage} services={data.services} units={data.units} onBusy={setBusy}
+            canManage={canUpdate} canCreate={canCreate} canPublish={canPublish} services={data.services} units={data.units} onBusy={setBusy}
             onCopy={() => setSelection({ item: { ...selection.item, id: null, version: null, status: 'Draft' }, copy: true })}
             onSaved={async (id, text) => { setNotice(text); await load(id); }} />}
         </div>}
   </div>;
 }
 
-function PackageEditor({ item, copy, canManage, services, units, onBusy, onCopy, onSaved }) {
+function PackageEditor({ item, copy, canManage, canCreate = canManage, canPublish = canManage, services, units, onBusy, onCopy, onSaved }) {
   const [values, setValues] = useState({ ...item, validTo: item.validTo ?? '' });
   const [dirty, setDirty] = useState(!item.id);
   const [busy, setBusy] = useState(false);
@@ -117,7 +120,7 @@ function PackageEditor({ item, copy, canManage, services, units, onBusy, onCopy,
   return <section className="min-w-0 space-y-4 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-bold">{item.id ? `${item.code} · versión ${item.versionNumber}` : copy ? `Nueva versión de ${item.code} (origen v${item.versionNumber})` : 'Nuevo paquete'}</h2>
       <p className="mt-1 text-xs text-text-secondary-light">{item.id && item.status !== 'Draft' ? 'Versión inmutable. Cree una nueva versión para cambiar su definición.' : 'Guarde los cambios antes de publicar.'}</p></div>
-      {canManage && item.id && item.status !== 'Draft' && <button type="button" disabled={busy} onClick={onCopy} className={buttonClass}>Nueva versión</button>}</div>
+      {canCreate && item.id && item.status !== 'Draft' && <button type="button" disabled={busy} onClick={onCopy} className={buttonClass}>Nueva versión</button>}</div>
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <form onSubmit={save} className="space-y-4">
       <fieldset disabled={!editable || busy} className="min-w-0 space-y-4">
@@ -153,7 +156,7 @@ function PackageEditor({ item, copy, canManage, services, units, onBusy, onCopy,
         </div>
       </fieldset>
       {editable && <div className="flex flex-wrap justify-end gap-2"><button type="submit" disabled={busy || !dirty} className={buttonClass}>Guardar borrador</button>
-        {item.id && <button type="button" disabled={busy || dirty || !item.version || !values.components.length} onClick={() => setConfirm(true)} className={`${buttonClass} bg-accent-600 text-white`}>Publicar</button>}</div>}
+        {item.id && canPublish && <button type="button" disabled={busy || dirty || !item.version || !values.components.length} onClick={() => setConfirm(true)} className={`${buttonClass} bg-accent-600 text-white`}>Publicar</button>}</div>}
     </form>
     <ConfirmDialog open={confirm} title="Publicar paquete" description="La definición quedará inmutable y disponible para Contratos. La publicación anterior se conservará como histórica."
       confirmLabel="Publicar" busy={busy} onClose={() => setConfirm(false)} onConfirm={() => {

@@ -111,6 +111,6 @@ public sealed class FinanceFiscalEndpointsTests(ElevantApiFactory factory) : ICl
         public Task<ActorContext?> ResolveAsync(Guid accountId, CancellationToken cancellationToken = default) => Task.FromResult<ActorContext?>(new(accountId,
             "synthetic@test.invalid", "Synthetic Finance", [], [new(Guid.NewGuid(), Guid.NewGuid(), "QA", "QA", OrganizationType.AviamOperator,
                 Internal ? MembershipKind.InternalStaff : MembershipKind.AirlineClient)], [], new DepartmentAccess(DepartmentAssignmentKind.Member,
-                Department.Finance, new HashSet<string>(["finance.fiscal.read", "finance.fiscal.manage", "finance.fiscal.simulate"]))));
+                Department.Finance, new HashSet<string>(["finance.fiscal.read", "finance.fiscal.create", "finance.fiscal.simulate"]))));
     }
 }

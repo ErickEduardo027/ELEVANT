@@ -49,7 +49,7 @@ export default function RequisitionsPage() {
   const { t } = useTranslation(requisitionsMessages);
   const access = useOptionalDepartmentAccess();
   const canAttend = Boolean(access?.can('human_resources.requisitions.attend'));
-  const canHire = Boolean(access?.can('human_resources.employees.manage'));
+  const canHire = Boolean(access?.can('human_resources.employees.create'));
   const [filters, setFilters] = useState({ department: '', status: '' });
   const [items, setItems] = useState(null);
   const [closing, setClosing] = useState(null);

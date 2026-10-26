@@ -27,7 +27,9 @@ function money(value, currency) {
 
 export default function PreinvoicesPage({ initialStationId }) {
   const access = useOptionalDepartmentAccess();
-  const canManage = Boolean(access?.can('finance.preinvoices.manage'));
+  // Editing lines, adjustments and disputes is «Modificar»; sending to the airline and invoicing is «Publicar y facturar».
+  const canManage = Boolean(access?.can('finance.preinvoices.update'));
+  const canIssue = Boolean(access?.can('finance.preinvoices.issue'));
   const [lineNotice, setLineNotice] = useState('');
   const session = useMemo(() => readSession(), []);
   const scopes = useMemo(() => (session?.stationScopes ?? [])
@@ -505,7 +507,7 @@ export default function PreinvoicesPage({ initialStationId }) {
         {paymentAttempt.id === detail.value.id && paymentAttempt.status === 'pending' &&
           <p role="status" className="mt-3 text-sm">Registrando pago manual…</p>}
       </section>}
-      {detail.value.status === 'Accepted' && invoiceIssue.status === 'idle' &&
+      {canIssue && detail.value.status === 'Accepted' && invoiceIssue.status === 'idle' &&
         <button type="button" onClick={() => setInvoiceIssue({ status: 'confirm', id: detail.value.id,
           requestId: crypto.randomUUID(), number: null })}
           className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">
@@ -523,7 +525,7 @@ export default function PreinvoicesPage({ initialStationId }) {
         </div>}
       {invoiceIssue.id === detail.value.id && invoiceIssue.status === 'pending' &&
         <p role="status" className="mt-4 text-sm">Emitiendo factura no fiscal…</p>}
-      {detail.value.status === 'Draft' && submission.status === 'idle' &&
+      {canIssue && detail.value.status === 'Draft' && submission.status === 'idle' &&
         <button type="button" onClick={() => setSubmission({ status: 'confirm', id: detail.value.id })}
           className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">
           Enviar a aerolínea

@@ -30,7 +30,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     {
         // Contracts owns what is sold; Finance only prices it (ADR-0016, catalog section).
         if (!await permissions.HasAsync(actorId,
-                serviceId is null ? "contracts.catalog.create" : "contracts.catalog.edit", cancellationToken))
+                serviceId is null ? "contracts.catalog.create" : "contracts.catalog.update", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         if (!Valid(input) || (serviceId is not null &&
             !TryVersion(input.Version, out _)))
@@ -106,7 +106,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> DeleteAsync(Guid actorId, Guid serviceId,
         string version, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "contracts.catalog.retire", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.catalog.delete", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         var service = await context.ServiceDefinitions.SingleOrDefaultAsync(
             item => item.PublicId == serviceId, cancellationToken);

@@ -180,7 +180,7 @@ internal sealed class EfContractDraftStore(
     public async Task<ContractDraftResult> UpdateAsync(Guid actorId, Guid versionId,
         UpdateContractDraftInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "contracts.drafts.edit", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.drafts.update", cancellationToken))
             return ContractDraftResult.Failed(ContractDraftFailure.Forbidden);
         if (input is null || string.IsNullOrWhiteSpace(input.Terms) ||
             input.Terms.Trim().Length > 10000 || input.CurrencyCode is not ("USD" or "DOP") ||

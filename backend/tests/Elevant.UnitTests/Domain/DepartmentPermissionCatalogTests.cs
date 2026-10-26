@@ -33,7 +33,7 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("contracts.requests.read", Department.Contracts)]
     [InlineData("operations.review.decide", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
-    [InlineData("finance.preinvoices.manage", Department.Finance)]
+    [InlineData("finance.preinvoices.issue", Department.Finance)]
     public void KnowsWhichDepartmentOwnsACode(string code, Department department)
     {
         Assert.Equal(department, DepartmentPermissionCatalog.DepartmentOf(code));
@@ -49,6 +49,47 @@ public sealed class DepartmentPermissionCatalogTests
         Assert.False(DepartmentPermissionCatalog.IsKnown("human_resources.schedules.manage"));
         Assert.DoesNotContain("human_resources.schedules.manage",
             DepartmentPermissionCatalog.Normalize(["human_resources.schedules.manage"]));
+    }
+
+    [Fact]
+    public void EveryMenuOptionHasASectionAndActionsInAMatrixColumn()
+    {
+        string[] kinds = [PermissionKinds.Read, PermissionKinds.Create, PermissionKinds.Update, PermissionKinds.Delete, PermissionKinds.Other];
+        foreach (var department in DepartmentPermissionCatalog.Departments)
+        {
+            var modules = DepartmentPermissionCatalog.ModulesOf(department);
+            Assert.All(modules, module =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(module.Section));
+                Assert.All(module.Actions, action => Assert.Contains(action.Kind, kinds));
+                Assert.Equal(1, module.Actions.Count(action => action.Kind == PermissionKinds.Read));
+                Assert.True(module.Parent is null || modules.Any(other => other.Key == module.Parent && other.Parent is null),
+                    $"{module.Key} must live inside a top-level option");
+            });
+        }
+    }
+
+    [Theory]
+    [InlineData("finance.tariffs.manage", new[] { "finance.billing_units.create", "finance.billing_units.read", "finance.billing_units.update",
+        "finance.tariffs.create", "finance.tariffs.delete", "finance.tariffs.publish", "finance.tariffs.read", "finance.tariffs.update" })]
+    [InlineData("human_resources.employees.manage", new[] { "human_resources.employees.create", "human_resources.employees.read",
+        "human_resources.employees.update" })]
+    [InlineData("contracts.catalog.retire", new[] { "contracts.catalog.delete", "contracts.catalog.read" })]
+    [InlineData("contracts.agreements.read", new[] { "contracts.agreed_services.read", "contracts.agreements.read" })]
+    [InlineData("finance.receipts.read", new[] { "finance.receipts.read", "finance.statements.read" })]
+    public void LegacyGrantsKeepTheirAccessAsCrudActions(string legacy, string[] expected)
+    {
+        Assert.False(DepartmentPermissionCatalog.IsKnown(legacy) && legacy.EndsWith(".manage", StringComparison.Ordinal));
+        Assert.Equal(expected, DepartmentPermissionCatalog.Normalize([legacy]));
+        Assert.True(DepartmentPermissionCatalog.Belongs(legacy, DepartmentPermissionCatalog.DepartmentOf(expected[0])!.Value));
+    }
+
+    [Fact]
+    public void NoOptionStillOffersTheCombinedManageAction()
+    {
+        var codes = DepartmentPermissionCatalog.Departments.SelectMany(DepartmentPermissionCatalog.CodesOf);
+        Assert.DoesNotContain(codes, code => code.EndsWith(".manage", StringComparison.Ordinal) ||
+            code.EndsWith(".edit", StringComparison.Ordinal) || code.EndsWith(".retire", StringComparison.Ordinal));
     }
 
     [Fact]

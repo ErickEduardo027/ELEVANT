@@ -75,7 +75,7 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 input.StationIds.Any(id => actor.StationScopes.All(scope => scope.StationId != id))))
             return RampProfileResult.Failed(profileId is null ? RampProfileFailure.Forbidden : RampProfileFailure.Invalid);
         // Reading ramp profiles never authorised writing them.
-        if (!operations && !actor.HasPermission("human_resources.ramp_profiles.manage"))
+        if (!operations && !actor.HasPermission("human_resources.ramp_profiles.update"))
             return RampProfileResult.Failed(RampProfileFailure.Forbidden);
         var requestedStations = await context.Stations.Where(item =>
             input.StationIds.Contains(item.PublicId) && item.IsActive)

@@ -93,7 +93,7 @@ internal sealed class EfPreinvoiceLineEditStore(
         Func<Preinvoice, long, DateTimeOffset, Task<FinanceCatalogFailure?>> edit, CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (actor is null || !actor.HasPermission("finance.preinvoices.manage") || !actor.Memberships.Any(membership =>
+        if (actor is null || !actor.HasPermission("finance.preinvoices.update") || !actor.Memberships.Any(membership =>
                 membership.Kind == MembershipKind.InternalStaff &&
                 membership.OrganizationType == OrganizationType.AviamOperator))
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);

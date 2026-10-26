@@ -212,7 +212,7 @@ internal sealed class EfAttendanceDraftStore(
         if (!internalMember) return (null, AttendanceDraftFailure.Forbidden);
 
         var occ = actor.HasPermission(writeLane == AttendanceDraftLane.Occ
-            ? "operations.attendance.record" : "operations.attendance.read");
+            ? "operations.attendance.create" : "operations.attendance.read");
         var hr = actor.HasPermission("human_resources.attendance.read");
         var ramp = RampOperationsAccess.IsAuthorized(actor);
         if (writeLane == AttendanceDraftLane.Occ && !occ ||

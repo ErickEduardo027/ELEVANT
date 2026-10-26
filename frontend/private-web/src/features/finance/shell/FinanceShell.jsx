@@ -66,7 +66,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
     [FINANCE_MODULE_IDS.PACKAGES]: <PackagesPage />,
     [FINANCE_MODULE_IDS.CHARGES]: <ChargesPage />,
     [FINANCE_MODULE_IDS.EXCHANGE_RATES]: <ExchangeRatesPage />,
-    [FINANCE_MODULE_IDS.BILLING_UNITS]: <BillingUnitsPage canManage={Boolean(access?.can('finance.tariffs.manage'))} />,
+    [FINANCE_MODULE_IDS.BILLING_UNITS]: <BillingUnitsPage canCreate={Boolean(access?.can('finance.billing_units.create'))} canUpdate={Boolean(access?.can('finance.billing_units.update'))} />,
     [FINANCE_MODULE_IDS.CONTRACT_APPROVALS]: <ContractApprovalsPage />,
     [FINANCE_MODULE_IDS.TREASURY]: <TreasuryPage {...stationProps} />,
     [FINANCE_MODULE_IDS.STATEMENTS]: <StatementPage {...stationProps} />,
