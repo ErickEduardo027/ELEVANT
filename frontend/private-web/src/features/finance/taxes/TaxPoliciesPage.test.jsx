@@ -11,7 +11,7 @@ const policy = { id: 'p1', airlineId: 'a1', airlineName: 'Synthetic Airline', st
   currencyCode: 'USD', conceptKind: 'Service', conceptCode: 'GPU', treatment: 'Taxable', rate: 0,
   basis: null, validFrom: '2026-10-01', validTo: null, status: 'Published', version: 'rv1' };
 let rows;
-function mount(child = <TaxPoliciesPage />, permissions = ['finance.taxes.read', 'finance.taxes.manage']) {
+function mount(child = <TaxPoliciesPage />, permissions = ['finance.taxes.read', 'finance.taxes.create', 'finance.taxes.update']) {
   return render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Employee', department: 'finance', permissions }}>{child}</DepartmentAccessProvider>);
 }
 const writes = () => commercialApi.mock.calls.filter(([, options]) => options?.method);

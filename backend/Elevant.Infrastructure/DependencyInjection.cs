@@ -5,11 +5,12 @@ using Elevant.Application.Abstractions.Finance;
 using Elevant.Infrastructure.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Identity;
+using Elevant.Infrastructure.Operations;
+using Elevant.Infrastructure.Commercial;
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
-using Elevant.Application.Abstractions.Commercial;
-using Elevant.Infrastructure.Commercial;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -67,6 +68,8 @@ public static class DependencyInjection
             new AdobeContractSignGateway(configuration));
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
+        services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
+        services.AddSingleton<IContractPdfRenderer, ContractPdfRenderer>();
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;

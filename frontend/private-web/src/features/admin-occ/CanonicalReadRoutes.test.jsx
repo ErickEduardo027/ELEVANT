@@ -18,7 +18,6 @@ vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: mocks.observe,
 }));
 
-import CanonicalReportsRoute from '../reports/CanonicalReportsRoute';
 import CanonicalNotificationsRoute from '../notifications/CanonicalNotificationsRoute';
 import CanonicalChatRoute from '../chat/CanonicalChatRoute';
 
@@ -69,14 +68,6 @@ describe('OCC canonical read surfaces', () => {
     expect(mocks.observe).toHaveBeenCalledOnce();
     mocks.observe.mock.calls[0][0](['notifications']);
     await waitFor(() => expect(mocks.loadNotifications).toHaveBeenCalledTimes(2));
-  });
-
-  it('reports only approved DB-backed submissions and links to their evidence', async () => {
-    render(<MemoryRouter><CanonicalReportsRoute /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByText('OP-101')).toBeInTheDocument());
-    expect(screen.queryByText('OP-102')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Ver evidencia' })).toHaveAttribute('href', `/admin-occ/review?operationId=${operationId}`);
-    expect(mocks.loadQueue).toHaveBeenCalledWith(stationId, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it('shows durable account notifications and stores the read receipt', async () => {

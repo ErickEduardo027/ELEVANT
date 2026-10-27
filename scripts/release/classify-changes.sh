@@ -22,6 +22,7 @@ while IFS= read -r -d '' path; do
     packages/typescript-config/README.md | packages/eslint-config/README.md | \
     ops/dokploy/* | ops/AGENTS.md | \
     scripts/release/* | scripts/repository/* | scripts/vault/* | \
+    scripts/geo/* | scripts/assets/* | \
     scripts/setup/verify-prerequisites.ps1 | scripts/README.md | \
     docs/* | Vault/* | .obsidian/* | .github/ISSUE_TEMPLATE/* | \
     .github/BRANCH_PROTECTION.md | .github/CODEOWNERS.template | \
@@ -66,6 +67,11 @@ while IFS= read -r -d '' path; do
     public_validate=true
   fi
   if elevant_is_web_application_input_path aviam-web "$path"; then aviam_validate=true; fi
+  # Generators whose output is committed into the clients (and, for geography, the API).
+  case "$path" in
+    scripts/geo/*) backend_validate=true; aviam_validate=true; public_validate=true ;;
+    scripts/assets/*) aviam_validate=true; public_validate=true ;;
+  esac
   if elevant_is_web_application_input_path public-web "$path"; then public_validate=true; fi
   if elevant_is_web_release_input_path aviam-web "$path"; then aviam_release=true; fi
   if elevant_is_web_release_input_path public-web "$path"; then public_release=true; fi

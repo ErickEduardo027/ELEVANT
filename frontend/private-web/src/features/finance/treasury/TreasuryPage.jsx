@@ -169,7 +169,7 @@ export default function TreasuryPage({ initialStationId, initialAirlineId = '', 
   if (!canRead) return <p role="alert">No tiene permiso para consultar cobros.</p>;
   return <div className="mx-auto max-w-[1440px] space-y-5">
     <PageHeader eyebrow="Finanzas" title="Tesorería y cobros" description="Registre cobros, distribuya aplicaciones entre facturas y gestione anticipos y remanentes."
-      actions={access?.can('finance.receipts.manage') && options?.stations?.length > 0 && <button type="button" className={primary} onClick={openCreate}>Registrar cobro</button>} />
+      actions={access?.can('finance.receipts.create') && options?.stations?.length > 0 && <button type="button" className={primary} onClick={openCreate}>Registrar cobro</button>} />
     <div className="flex flex-wrap items-end gap-3">
       <label className="text-xs font-semibold">Estación<select className={field} value={filters.stationId} onChange={event => { setPage(null); setSelected(null); setFilters(current => ({ ...current, stationId: event.target.value, page: 1 })); }}>
         <option value="">Todas mis estaciones</option>{options?.stations?.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></label>

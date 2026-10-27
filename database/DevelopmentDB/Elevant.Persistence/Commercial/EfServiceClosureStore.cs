@@ -1,3 +1,4 @@
+using Elevant.Persistence.Identity;
 using System.Data;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
@@ -102,6 +103,9 @@ internal sealed class EfServiceClosureStore(ElevantDbContext context,
                 CommercialAuditWriter.Add(context, actorKey, "commercial.service_closure.requested",
                     "commercial.service_closure_requests", requestId, normalized);
                 await NotifyAsync(requestId, serviceId, false, cancellationToken);
+                await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts,
+                    "contracts.service_closures.decide", "service_closure", requestId, service.Name, now,
+                    cancellationToken, exceptAccountId: actorKey);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 await context.Entry(request).ReloadAsync(cancellationToken);
@@ -255,7 +259,7 @@ internal sealed class EfServiceClosureStore(ElevantDbContext context,
             membership.OrganizationType == OrganizationType.AviamOperator) == true &&
             await permissions.HasAnyAsync(actorId, action switch
             {
-                "request" => ["operations.service_closures.request"],
+                "request" => ["operations.service_closures.create"],
                 "read" => ["contracts.service_closures.read", "operations.service_closures.read"],
                 _ => ["contracts.service_closures." + action],
             }, cancellationToken);

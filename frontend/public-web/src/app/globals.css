@@ -2497,3 +2497,7 @@ h2 {
     color: #fff;
   }
 }
+
+/* Inline validation messages that replace the browser bubbles (src/lib/forms/formValidation.ts). */
+.form-validation-message { margin: 0.35rem 0 0; color: #9c2f13; font-size: 0.76rem; line-height: 1.45; }
+[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]) { border-color: #c2410c; }

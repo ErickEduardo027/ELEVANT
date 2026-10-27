@@ -13,7 +13,7 @@ function safeError(error) {
       handleUnauthorizedResponse({ status: 401 });
       return new Error('La sesión expiró. Inicia sesión nuevamente.');
     }
-    if (error.status === 403) return new Error('No tienes acceso a esta conversación o notificación.');
+    if (error.status === 403) return Object.assign(new Error('No tienes acceso a esta conversación o notificación.'), { status: 403 });
     if (error.status === 404) return new Error('La operación ya no está disponible para tu cuenta.');
     if (error.status === 409) return new Error('El mensaje entró en conflicto. Actualiza la conversación.');
   }
@@ -38,3 +38,10 @@ export const loadOperationalNotifications = ({ signal } = {}) =>
 
 export const setOperationalNotificationRead = (notificationId, read, { signal } = {}) =>
   guarded(() => client().setOperationalNotificationRead(notificationId, read, { signal }));
+
+// On-screen alerts of Human Resources, Contracts and Finance (ADR-0019).
+export const loadDepartmentNotifications = ({ signal } = {}) =>
+  guarded(() => client().getDepartmentNotifications({ signal }));
+
+export const setDepartmentNotificationRead = (notificationId, read, { signal } = {}) =>
+  guarded(() => client().setDepartmentNotificationRead(notificationId, read, { signal }));

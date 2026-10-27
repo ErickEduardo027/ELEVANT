@@ -119,3 +119,49 @@ export function mapTurnaroundsToRampPositions(rampPositions, turnarounds = [], n
     };
   });
 }
+
+/** Stand codes in the database pad the number (A01); the map uses A1. */
+export function mapStandCode(code) {
+  const match = /^([A-Z]+)0*(\d+)$/.exec(String(code ?? '').toUpperCase());
+  return match ? `${match[1]}${match[2]}` : String(code ?? '').toUpperCase();
+}
+
+function occupancyTurnaround(item) {
+  return {
+    id: item.turnaroundId, operationCode: item.operationCode, status: item.status, airline: item.airlineName,
+    arrivalFlight: item.arrivalFlightNumber, departureFlight: item.departureFlightNumber,
+    aircraftRegistration: item.aircraftRegistration, arrivalScheduledAt: item.arrivalScheduledAt,
+    arrivedAt: item.arrivedAt, departureScheduledAt: item.departureScheduledAt, agents: [],
+  };
+}
+
+// Real occupancy (teacher review, Phase 7): `occupied` means the aircraft arrived and is parked,
+// `planned` an assignment whose aircraft has not arrived, `available` a registered free stand and
+// `unverified` a map position with no stand registered for the station.
+export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new Date().toISOString()) {
+  const byCode = new Map((board?.positions ?? []).map(position => [mapStandCode(position.code), position]));
+  return rampPositions.map(coords => {
+    const stand = byCode.get(coords.id);
+    const parked = stand?.turnarounds ?? [];
+    const current = parked.find(item => item.arrivedAt) ?? parked[0];
+    return {
+      id: coords.id, terminal: coords.terminal, latitude: coords.lat, longitude: coords.lon,
+      standId: stand?.standId ?? null,
+      status: stand ? stand.status : 'unverified',
+      // Monitoring is keyed by flight leg, which the occupancy board does not carry.
+      flightId: null,
+      flightNumber: current?.arrivalFlightNumber ?? current?.departureFlightNumber ?? null,
+      airline: current?.airlineName ?? null,
+      aircraftRegistration: current?.aircraftRegistration ?? null,
+      aircraftType: null,
+      assignedAgent: null,
+      arrivedAt: current?.arrivedAt ?? null,
+      turnarounds: parked,
+      plannedTurnarounds: parked.map(occupancyTurnaround),
+      estimatedReleaseTime: current?.departureScheduledAt ?? null,
+      updatedAt: board?.asOf ?? nowIso,
+      combinedConfiguration: null,
+      linkedPositionId: null,
+    };
+  });
+}

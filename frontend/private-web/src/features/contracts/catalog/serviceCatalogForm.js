@@ -13,25 +13,16 @@ export const REFERENCE_SERVICES = [
   { code: 'RAMP-STAIRS', name: 'Escaleras móviles' },
 ];
 
-// Catálogo inicial de unidades habituales en tarifas de ground handling. El valor
-// se guarda como sustantivo porque las tarifas lo muestran como «Precio por …».
-export const BILLING_UNITS = [
-  { value: 'operación', label: 'Por operación', hint: 'Turnaround o vuelo atendido' },
-  { value: 'aeronave', label: 'Por aeronave', hint: 'Cada aeronave atendida' },
-  { value: 'pasajero', label: 'Por pasajero', hint: 'Volumen de pasajeros' },
-  { value: 'tonelada', label: 'Por tonelada', hint: 'Peso de carga' },
-  { value: 'hora', label: 'Por hora', hint: 'Uso de equipo o personal' },
-  { value: 'unidad', label: 'Por unidad', hint: 'Elementos contados uno a uno' },
-  { value: 'servicio', label: 'Por servicio', hint: 'Prestación individual' },
-  { value: 'día', label: 'Por día', hint: 'Duración diaria' },
-];
+// Lo que exige el API para mostrar un servicio en el catálogo público
+// (CommercialCatalogPublication.cs): foto real, descripción útil y nombre que no sea de prueba.
+export const MIN_PUBLIC_DESCRIPTION = 20;
+const PLACEHOLDER_NAME = /(^|[^\p{L}\d])(prueba|pruebas|test|testing|demo|ejemplo|dummy|asdf|xxx+)(?=$|[^\p{L}\d])/iu;
 
 // Límites que aplica el API al guardar un servicio.
 export const MAX_DISPLAY_ORDER = 10000;
 const CODE_PATTERN = /^[A-Z0-9-]{1,40}$/;
 const NAME_MAX = 160;
 const DESCRIPTION_MAX = 500;
-const BILLING_UNIT_MAX = 32;
 
 const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
 const sameText = (left, right) => collator.compare(left, right) === 0;
@@ -62,20 +53,37 @@ export function buildServiceCatalog(services) {
   return [...byCode.values()].sort((left, right) => collator.compare(left.name, right.name));
 }
 
-// Unidades del catálogo inicial más las que ya usan servicios existentes.
-export function billingUnitOptions(services) {
-  const extra = [...new Set(services.map(service => normalizeText(service.billingUnit)))]
-    .filter(unit => unit && !BILLING_UNITS.some(option => sameText(option.value, unit)))
-    .sort(collator.compare)
-    .map(unit => ({ value: unit, label: unit, hint: 'En uso en el catálogo' }));
-  return [...BILLING_UNITS, ...extra];
+/** Spanish noun the catalog stores for a billing unit, e.g. «operación» for the unit «Operación». */
+export const unitValue = unit => normalizeText(unit.name).toLocaleLowerCase('es');
+
+// Unidades activas que mantiene Finanzas en «Unidades de cobro». Un servicio antiguo
+// con una unidad escrita a mano la conserva como «heredada» hasta que se cambie.
+export function billingUnitOptions(units, currentUnit = '') {
+  const options = (units ?? []).filter(unit => unit.isActive)
+    .map(unit => ({ value: unitValue(unit), label: `Por ${unitValue(unit)}`, hint: unit.code }))
+    .sort((left, right) => collator.compare(left.label, right.label));
+  const current = normalizeText(currentUnit);
+  if (current && !options.some(option => sameText(option.value, current)))
+    options.push({ value: current, label: `Por ${current}`, hint: 'Unidad heredada: elija una de la lista para cambiarla' });
+  return options;
+}
+
+/** Text that explains why the service cannot be public yet, or ''. */
+export function publicationProblem(form, { hasNewImage = false } = {}) {
+  if (!form.isPublic || !form.isActive) return '';
+  if (!form.imageUrl && !hasNewImage) return 'Para publicarlo agregue una foto real del servicio.';
+  if (form.description.trim().length < MIN_PUBLIC_DESCRIPTION)
+    return `Para publicarlo la descripción debe tener al menos ${MIN_PUBLIC_DESCRIPTION} caracteres.`;
+  if (PLACEHOLDER_NAME.test(form.name) || PLACEHOLDER_NAME.test(form.code))
+    return 'Un servicio con nombre o código de prueba no puede publicarse. Use el nombre comercial real.';
+  return '';
 }
 
 function resolveBillingUnit(form) {
-  return normalizeText(form.unitChoice === OTHER_OPTION ? form.customUnit : form.unitChoice);
+  return normalizeText(form.unitChoice);
 }
 
-export function validateServiceForm(form, { catalog = [], editingId = null } = {}) {
+export function validateServiceForm(form, { catalog = [], editingId = null, hasNewImage = false } = {}) {
   const errors = {};
   const name = normalizeText(form.name);
   const code = normalizeCode(form.code);
@@ -102,16 +110,14 @@ export function validateServiceForm(form, { catalog = [], editingId = null } = {
     }
   }
 
-  const billingUnit = resolveBillingUnit(form);
-  if (!form.unitChoice) errors.unitChoice = 'Selecciona cómo se cobra el servicio.';
-  else if (form.unitChoice === OTHER_OPTION && !billingUnit) errors.customUnit = 'Escribe la unidad de cobro personalizada.';
-  else if (billingUnit.length > BILLING_UNIT_MAX) {
-    errors[form.unitChoice === OTHER_OPTION ? 'customUnit' : 'unitChoice'] = `La unidad de cobro no puede superar ${BILLING_UNIT_MAX} caracteres.`;
-  }
+  if (!resolveBillingUnit(form)) errors.unitChoice = 'Selecciona cómo se cobra el servicio.';
 
   const description = form.description.trim();
   if (!description) errors.description = 'Escribe una descripción breve del servicio.';
   else if (description.length > DESCRIPTION_MAX) errors.description = `La descripción no puede superar ${DESCRIPTION_MAX} caracteres.`;
+
+  const publication = publicationProblem(form, { hasNewImage });
+  if (publication) errors.isPublic = publication;
 
   if (form.displayOrder === null) {
     errors.displayOrder = `No hay números de orden disponibles (máximo ${MAX_DISPLAY_ORDER}). Contacta a soporte.`;

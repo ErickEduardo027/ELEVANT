@@ -13,7 +13,7 @@ internal sealed partial class FinanceFiscalStore
         if (FinanceFiscalPolicy.ExecutionFailure(options) is { } disabled) return Fail(disabled);
         if (input.OriginalBytes is null || input.OriginalBytes.Length is < 1 or > 1048576 ||
             string.IsNullOrWhiteSpace(input.Credential) || input.Credential.Length > 4096) return Fail(FinanceFiscalFailure.Invalid);
-        var actor = await ActorAsync(accountId, ["finance.fiscal.manage", "finance.fiscal.simulate"], cancellationToken);
+        var actor = await ActorAsync(accountId, ["finance.fiscal.create", "finance.fiscal.simulate"], cancellationToken);
         if (actor is null) return Fail(FinanceFiscalFailure.Forbidden);
         // The authenticator parses the original bytes only after authentication. Default implementation always denies.
         var callback = await callbacks.AuthenticateAsync(options.Environment, input.Credential, input.OriginalBytes, cancellationToken);

@@ -10,7 +10,7 @@ const valid: RepresentativeDraft = {
   name: "María José Núñez-O'Connor", titleOption: "Gerente de estación", titleCustom: "",
   email: "maria@aerolinea.com", phone: "+1 (809) 555-0100", authorityDeclared: true,
   nationalityCode: "", address: "", country: "DO", province: "25",
-  municipality: "Santiago de los Caballeros", documentType: "", documentNumber: "",
+  municipality: "Santiago de los Caballeros", district: "", documentType: "", documentNumber: "",
 };
 
 const errorsFor = (changes: Partial<RepresentativeDraft>, divisions: DivisionsState = DOMINICAN_REPUBLIC_DIVISIONS) => {
@@ -59,9 +59,14 @@ describe("validateRepresentative", () => {
       expect(errorsFor({ email }).email).toBe("Ingrese un correo electrónico válido.");
     });
 
-  it.each(["123", "8095550100", "+1 809", "+1 809 555 0100 1234 5678", "+1 809-555-ABCD"])(
+  it.each(["849-246-3371", "8492463371", "1 (849) 246-3371", "+34 600 123 456"])(
+    "accepts the phone %s without forcing the + prefix", (phone) => {
+      expect(errorsFor({ phone }).phone).toBeUndefined();
+    });
+
+  it.each(["123", "305-555-0100", "+1 809", "+1 809 555 0100 1234 5678", "+1 809-555-ABCD"])(
     "rejects the phone %s", (phone) => {
-      expect(errorsFor({ phone }).phone).toMatch(/teléfono internacional/);
+      expect(errorsFor({ phone }).phone).toMatch(/teléfono dominicano de 10 dígitos/);
     });
 
   it("requires a valid custom title only when Otro is selected", () => {
@@ -93,6 +98,23 @@ describe("validateRepresentative", () => {
     expect(errorsFor({ documentType: "Passport" }).documentNumber).toBeDefined();
     expect(errorsFor({ documentNumber: "AB123" }).documentType).toBeDefined();
     expect(errorsFor({ documentType: "Passport", documentNumber: "A1" }).documentNumber).toBeDefined();
-    expect(errorsFor({ documentType: "Passport", documentNumber: "AB123456" })).toEqual({});
+    expect(errorsFor({ documentType: "Passport", documentNumber: "X1234567", nationalityCode: "ES" })).toEqual({});
+  });
+
+  it("validates each document by its real format", () => {
+    expect(errorsFor({ documentType: "Passport", documentNumber: "RD1234567", nationalityCode: "DO" })).toEqual({});
+    expect(errorsFor({ documentType: "Passport", documentNumber: "5050505050RD", nationalityCode: "DO" }).documentNumber)
+      .toMatch(/RD1234567 \(2 letras y 7 dígitos\)/);
+    expect(errorsFor({ documentType: "NationalId", documentNumber: "001-1234567-3" })).toEqual({});
+    expect(errorsFor({ documentType: "NationalId", documentNumber: "001-1234567-8" }).documentNumber)
+      .toMatch(/dígito verificador/);
+  });
+
+  it("accepts only municipal districts of the chosen municipality", async () => {
+    const { DOMINICAN_REPUBLIC_DIVISIONS } = await import("../../src/lib/geo/dominican-republic");
+    const base = { country: "DO", province: "08", municipality: "El Seibo" };
+    expect(errorsFor({ ...base, district: "Pedro Sánchez" }, DOMINICAN_REPUBLIC_DIVISIONS)).toEqual({});
+    expect(errorsFor({ ...base, district: "La Gina" }, DOMINICAN_REPUBLIC_DIVISIONS).district).toBeDefined();
+    expect(DOMINICAN_REPUBLIC_DIVISIONS.find(item => item.code === "08")?.cities).toEqual(["El Seibo", "Miches"]);
   });
 });

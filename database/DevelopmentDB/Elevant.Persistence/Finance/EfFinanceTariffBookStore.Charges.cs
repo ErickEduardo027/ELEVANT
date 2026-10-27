@@ -43,7 +43,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input,
         CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.charges.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, chargeId is null ? "finance.charges.create" : "finance.charges.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         var code = input?.Code?.Trim().ToUpperInvariant();
         if (input is null || code is null || code.Length is < 2 or > 32 ||
@@ -159,7 +159,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input,
         CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.charges.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.charges.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.CurrencyCode) || input.ValidFrom == default || input.Note?.Length > 500)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
@@ -211,7 +211,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId,
         SaveChargeTariffDraftInput input, CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.charges.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.charges.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || input.ValidFrom == default || input.ValidTo < input.ValidFrom || input.Note?.Length > 500 ||
             string.IsNullOrWhiteSpace(input.ExpectedVersion) || input.Rates is null or { Count: > 300 } ||
@@ -257,7 +257,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId,
         string expectedVersion, CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.charges.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.charges.publish", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (string.IsNullOrWhiteSpace(expectedVersion)) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
         return await InTransactionAsync(async () =>
@@ -295,7 +295,7 @@ internal sealed partial class EfFinanceTariffBookStore
     public async Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId,
         string expectedVersion, CancellationToken cancellationToken = default)
     {
-        var actor = await AuthorizeAsync(actorId, "finance.charges.manage", cancellationToken);
+        var actor = await AuthorizeAsync(actorId, "finance.charges.delete", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         return await InTransactionAsync(async () =>
         {

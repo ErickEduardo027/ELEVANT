@@ -623,6 +623,12 @@ export interface AssignOccOperationRequest {
   agentId: string;
 }
 
+export interface AssignOccStandRequest {
+  standId: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface AttendanceDraftContributionResponse {
   revision: number;
   authorAccountId: string;
@@ -846,6 +852,8 @@ export interface CommercialRequestData {
   contractId?: string | null;
   services: CommercialRequestItemData[];
   packages: CommercialRequestPackageData[];
+  /** @nullable */
+  representativeDistrict?: string | null;
 }
 
 export interface CommercialStationData {
@@ -925,6 +933,49 @@ export interface ContractApprovalDetailData {
   history: ContractFinanceReviewData[];
   /** @nullable */
   packages?: ContractPackageApprovalData[] | null;
+}
+
+export interface ContractDocumentRateResponse {
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
+export interface ContractDocumentSignatureResponse {
+  party: string;
+  signerName: string;
+  signerTitle: string;
+  signedAt: string;
+  documentSha256: string;
+}
+
+export interface ContractDocumentResponse {
+  contractId: string;
+  versionId: string;
+  contractCode: string;
+  contractStatus: string;
+  airlineName: string;
+  airlineCode: string;
+  /** @nullable */
+  airlineLegalName?: string | null;
+  versionNumber: number;
+  versionStatus: string;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  currencyCode: string;
+  stations: string[];
+  rates: ContractDocumentRateResponse[];
+  /** @nullable */
+  terms?: string | null;
+  /** @nullable */
+  signedOn?: string | null;
+  signatures: ContractDocumentSignatureResponse[];
+  contentSha256: string;
+  /** @nullable */
+  signableBy?: string | null;
 }
 
 export interface ContractDraftChargeData {
@@ -1276,11 +1327,15 @@ export interface PermissionActionData {
   code: string;
   action: string;
   label: string;
+  kind: string;
 }
 
 export interface PermissionModuleData {
   key: string;
   label: string;
+  section: string;
+  /** @nullable */
+  parent?: string | null;
   actions: PermissionActionData[];
 }
 
@@ -1288,6 +1343,26 @@ export interface DepartmentCatalogData {
   department: string;
   label: string;
   modules: PermissionModuleData[];
+}
+
+export interface DepartmentNotificationResponse {
+  id: string;
+  department: string;
+  kind: string;
+  sourceId: string;
+  /** @nullable */
+  subject?: string | null;
+  /** @nullable */
+  stationCode?: string | null;
+  occurredAt: string;
+  /** @nullable */
+  readAt?: string | null;
+}
+
+export interface DepartmentNotificationListResponse {
+  notifications: DepartmentNotificationResponse[];
+  unreadCount: number;
+  hasMore: boolean;
 }
 
 export interface GovernanceSupervisorData {
@@ -3434,6 +3509,80 @@ export interface OccPlanningSnapshotResponse {
   turnarounds: OccTurnaroundResponse[];
 }
 
+export interface OccPositionTurnaroundResponse {
+  turnaroundId: string;
+  operationCode: string;
+  airlineName: string;
+  /** @nullable */
+  aircraftRegistration?: string | null;
+  /** @nullable */
+  arrivalFlightNumber?: string | null;
+  /** @nullable */
+  departureFlightNumber?: string | null;
+  /** @nullable */
+  arrivalScheduledAt?: string | null;
+  /** @nullable */
+  arrivedAt?: string | null;
+  /** @nullable */
+  departureScheduledAt?: string | null;
+  /** @nullable */
+  assignedFrom?: string | null;
+  status: string;
+}
+
+export interface OccPositionResponse {
+  standId: string;
+  code: string;
+  /** @nullable */
+  terminalCode?: string | null;
+  /** @nullable */
+  standType?: string | null;
+  status: string;
+  turnarounds: OccPositionTurnaroundResponse[];
+}
+
+export interface OccPositionBoardResponse {
+  stationId: string;
+  stationCode: string;
+  operationDate: string;
+  asOf: string;
+  positions: OccPositionResponse[];
+  unassigned: OccPositionTurnaroundResponse[];
+  canAssign: boolean;
+}
+
+export interface OccReportDefinitionResponse {
+  key: string;
+  title: string;
+  description: string;
+  columns: string[];
+}
+
+export interface OccReportCatalogResponse {
+  reports: OccReportDefinitionResponse[];
+  maxRangeDays: number;
+}
+
+export interface OccReportCellResponse {
+  value: string;
+  type: string;
+}
+
+export interface OccReportPageResponse {
+  key: string;
+  title: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  asOf: string;
+  columns: string[];
+  rows: OccReportCellResponse[][];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export interface OccReviewChecklistAnswerResponse {
   section: string;
   code: string;
@@ -4124,6 +4273,12 @@ export interface RecordNonFiscalPaymentResponse {
   replayed: boolean;
 }
 
+export interface RecordOccArrivalRequest {
+  aircraftRegistration: string;
+  /** @nullable */
+  arrivedAt?: string | null;
+}
+
 export interface RegisterEmployeeInput {
   identificationType: string;
   identificationNumber: string;
@@ -4488,6 +4643,10 @@ export interface SetContractSignersRequest {
   aviamSignerAccountId: string;
 }
 
+export interface SetDepartmentNotificationReadRequest {
+  read: boolean;
+}
+
 export interface SetDepartmentUserStatusInput {
   isActive: boolean;
   expectedVersion: string;
@@ -4501,6 +4660,13 @@ export interface SetSuggestedProfileInput {
   /** @nullable */
   accessProfileId?: string | null;
   expectedVersion: string;
+}
+
+export interface SignContractRequest {
+  signerName: string;
+  signerTitle: string;
+  documentSha256: string;
+  accepted: boolean;
 }
 
 export interface SubmitAdditionalServiceRequestRequest {
@@ -4540,6 +4706,8 @@ export interface SubmitCommercialRequestRequest {
   representativeDocumentNumber?: string | null;
   /** @nullable */
   packageVersionIds?: string[] | null;
+  /** @nullable */
+  representativeDistrict?: string | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -5134,6 +5302,26 @@ turnaroundId: string;
 export type GetManualTurnaroundOptionsParams = {
 stationId: string;
 date: string;
+};
+
+export type GetOccPositionsParams = {
+stationId: string;
+date: string;
+};
+
+export type GetOccReportParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportOccReportParams = {
+stationId: string;
+from: string;
+to: string;
+format: string;
 };
 
 export type GetOccReviewQueueParams = {
@@ -6688,6 +6876,96 @@ const res = await fetch(getDecideCommercialRequestUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractDocumentUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/document`
+}
+
+export const getContractDocument = async (versionId: string, options?: RequestInit): Promise<ContractDocumentResponse> => {
+
+  const res = await fetch(getGetContractDocumentUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDocumentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDownloadContractDocumentUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/document/pdf`
+}
+
+export const downloadContractDocument = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getDownloadContractDocumentUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getSignContractVersionUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/signatures`
+}
+
+export const signContractVersion = async (versionId: string,
+    signContractRequest: SignContractRequest, options?: RequestInit): Promise<ContractDocumentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSignContractVersionUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(signContractRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDocumentResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -8452,6 +8730,69 @@ export const convertLegacyRole = async (id: string, options?: RequestInit): Prom
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetDepartmentNotificationsUrl = () => {
+
+
+
+
+  return `/api/v1/department-notifications`
+}
+
+export const getDepartmentNotifications = async ( options?: RequestInit): Promise<DepartmentNotificationListResponse> => {
+
+  const res = await fetch(getGetDepartmentNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentNotificationListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetDepartmentNotificationReadUrl = (notificationId: string,) => {
+
+
+
+
+  return `/api/v1/department-notifications/${notificationId}/read`
+}
+
+export const setDepartmentNotificationRead = async (notificationId: string,
+    setDepartmentNotificationReadRequest: SetDepartmentNotificationReadRequest, options?: RequestInit): Promise<DepartmentNotificationResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetDepartmentNotificationReadUrl(notificationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setDepartmentNotificationReadRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DepartmentNotificationResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -13765,6 +14106,240 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccPositionsUrl = (params: GetOccPositionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/positions?${stringifiedParams}` : `/api/v1/occ/positions`
+}
+
+export const getOccPositions = async (params: GetOccPositionsParams, options?: RequestInit): Promise<OccPositionBoardResponse> => {
+
+  const res = await fetch(getGetOccPositionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordOccArrivalUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/turnarounds/${turnaroundId}/arrival`
+}
+
+export const recordOccArrival = async (turnaroundId: string,
+    recordOccArrivalRequest: RecordOccArrivalRequest, options?: RequestInit): Promise<OccPositionBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordOccArrivalUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordOccArrivalRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAssignOccStandUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/turnarounds/${turnaroundId}/stand`
+}
+
+export const assignOccStand = async (turnaroundId: string,
+    assignOccStandRequest: AssignOccStandRequest, options?: RequestInit): Promise<OccPositionBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAssignOccStandUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assignOccStandRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReleaseOccStandUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/turnarounds/${turnaroundId}/stand/release`
+}
+
+export const releaseOccStand = async (turnaroundId: string, options?: RequestInit): Promise<OccPositionBoardResponse> => {
+
+  const res = await fetch(getReleaseOccStandUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListOccReportsUrl = () => {
+
+
+
+
+  return `/api/v1/occ/reports`
+}
+
+export const listOccReports = async ( options?: RequestInit): Promise<OccReportCatalogResponse> => {
+
+  const res = await fetch(getListOccReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccReportUrl = (key: string,
+    params: GetOccReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/reports/${key}?${stringifiedParams}` : `/api/v1/occ/reports/${key}`
+}
+
+export const getOccReport = async (key: string,
+    params: GetOccReportParams, options?: RequestInit): Promise<OccReportPageResponse> => {
+
+  const res = await fetch(getGetOccReportUrl(key,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReportPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getExportOccReportUrl = (key: string,
+    params: ExportOccReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/reports/${key}/export?${stringifiedParams}` : `/api/v1/occ/reports/${key}/export`
+}
+
+export const exportOccReport = async (key: string,
+    params: ExportOccReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportOccReportUrl(key,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

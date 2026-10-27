@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
+import ContractDetailDrawer from './ContractDetailDrawer';
 
 const TITLES = {
   contracts: ['Contratos', 'Versiones aprobadas y cobertura registrada.'],
@@ -22,7 +23,8 @@ function agreementLoadError(error) {
   return 'No se pudieron consultar los acuerdos. Intente de nuevo.';
 }
 
-export default function ManagedAgreementsPage({ mode = 'contracts' }) {
+export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, onNewContract }) {
+  const [detailId, setDetailId] = useState(null);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState({ status: 'loading', result: null, error: '' });
@@ -52,8 +54,16 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
       <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión contractual</p>
         <h1 className="mt-1 text-2xl font-bold">{title}</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{description}</p></div>
-      <button type="button" onClick={refresh} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Recargar</button>
+      <div className="flex flex-wrap gap-2">
+        {mode === 'contracts' && onNewContract && <button type="button" onClick={onNewContract}
+          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo contrato desde solicitud</button>}
+        <button type="button" onClick={refresh} className="rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/10">Recargar</button>
+      </div>
     </header>
+    {mode === 'contracts' && <p className="rounded-xl border border-accent-600/20 bg-accent-600/5 p-4 text-sm">
+      Todo contrato nace de una solicitud comercial aprobada: <strong>Solicitudes</strong> → <strong>Borradores</strong> (términos y tarifas)
+      → aprobación de precios de <strong>Finanzas</strong> → contrato aprobado. Desde el detalle se descarga el PDF y firman AVIAM y la aerolínea.
+    </p>}
     {['error', 'forbidden', 'unauthorized'].includes(state.status) ? <div role="alert" className="rounded-xl border border-status-danger/30 p-5">
       <p>{state.error}</p>{state.status === 'error' && <button type="button" onClick={refresh} className="mt-3 text-accent-600">Reintentar</button>}
     </div> : state.status === 'loading' ? <p role="status" className="rounded-xl border p-5">Cargando acuerdos…</p> : <>
@@ -70,7 +80,9 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
           {contract.approvedVersions.map(version => <div key={version.id} className="mt-3 border-t border-black/5 pt-3 text-sm dark:border-white/10">
             <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {date(version.validFrom)} — {date(version.validTo)} · {version.currencyCode}</p>
             <p className="mt-1 text-xs text-text-secondary-light">Estaciones: {version.stations.map(station => <span key={station.id} className="mr-2">{station.code}</span>)}</p>
-            <p className="mt-1 text-xs text-text-secondary-light">{version.rates.length} tarifas pactadas</p>
+            <div className="mt-1 flex flex-wrap items-center gap-3"><p className="text-xs text-text-secondary-light">{version.rates.length} tarifas pactadas</p>
+              <button type="button" onClick={() => setDetailId(version.id)} className="text-xs font-semibold text-accent-600 underline">
+                Ver detalle, PDF y firmas · versión {version.versionNumber}</button></div>
           </div>)}</article>)}</div> : <p className="rounded-xl border p-8 text-center">No hay contratos aprobados en esta página.</p>)}
       {mode === 'services' && (rates.length ? <div className="overflow-x-auto rounded-xl border border-black/5 bg-white dark:border-white/10 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm">
         <thead className="bg-black/[.03] text-xs uppercase dark:bg-white/[.03]"><tr><th className="p-3">Servicio</th><th className="p-3">Contrato</th><th className="p-3">Tarifa</th><th className="p-3">Estaciones</th><th className="p-3">Versión</th><th className="p-3">Vigencia</th></tr></thead>
@@ -95,5 +107,6 @@ export default function ManagedAgreementsPage({ mode = 'contracts' }) {
         <button type="button" disabled={!state.result?.hasMore} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Siguiente página</button>
       </nav>
     </>}
+    <ContractDetailDrawer versionId={detailId} canSign={canSign} onClose={() => setDetailId(null)} onSigned={refresh} />
   </div>;
 }

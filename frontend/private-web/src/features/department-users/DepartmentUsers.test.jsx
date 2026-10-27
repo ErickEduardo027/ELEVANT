@@ -84,7 +84,7 @@ describe('DepartmentUsersPage', () => {
     await userEvent.click(await within(form).findByRole('button', { name: /Luis Pérez/ }));
     expect(within(form).getByRole('checkbox', { name: 'PUJ' })).toBeChecked();
     await userEvent.click(within(form).getByRole('radio', { name: 'Permisos personalizados' }));
-    await userEvent.click(within(form).getByRole('checkbox', { name: 'Aprobar' }));
+    await userEvent.click(within(form).getByRole('checkbox', { name: 'Solicitudes: Aprobar' }));
     await userEvent.click(screen.getByRole('button', { name: 'Enviar a Gestión Humana' }));
     expect(requestDepartmentUserAccess).toHaveBeenCalledWith('contracts', expect.objectContaining({
       employeeId: 'emp-1', stationIds: ['st-1'], accessProfileId: null,

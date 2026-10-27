@@ -1,31 +1,16 @@
 import { useRouter } from 'next/navigation';
-import NotificationsPage from './NotificationsPage';
-import { useNotificationsData } from './useNotificationsData';
+import PageHeader from '../../../components/PageHeader';
+import { NotificationList } from '../../notifications/DepartmentNotificationCenter';
+import useDepartmentNotifications from '../../notifications/useDepartmentNotifications';
 
+// Real department feed (ADR-0019); new alerts also pop up on screen from the shell.
 export default function NotificationsRoute() {
-  const notifications = useNotificationsData('PUJ');
+  const notifications = useDepartmentNotifications();
   const router = useRouter();
-
   return (
-    <NotificationsPage
-      status={notifications.status}
-      data={notifications.data}
-      error={notifications.error}
-      onRetry={notifications.refresh}
-      onMarkAsRead={notifications.markAsRead}
-      onMarkAsUnread={notifications.markAsUnread}
-      onMarkManyAsRead={notifications.markManyAsRead}
-      onMarkManyAsUnread={notifications.markManyAsUnread}
-      onMarkAllAsRead={notifications.markAllAsRead}
-      preferences={notifications.preferences}
-      onUpdatePreferences={notifications.updatePreferences}
-      onNavigateToResource={(moduleId, resourceId) => {
-        if (moduleId === 'certifications') router.push(`/gestion-humana/certifications${resourceId ? `?agentId=${resourceId}` : ''}`);
-        if (moduleId === 'permits') router.push(`/gestion-humana/permits${resourceId ? `?agentId=${resourceId}` : ''}`);
-        if (moduleId === 'users') router.push('/gestion-humana/users');
-        if (moduleId === 'schedules') router.push('/gestion-humana/schedules');
-        if (moduleId === 'reports') router.push('/gestion-humana/reports');
-      }}
-    />
+    <section className="space-y-4">
+      <PageHeader title="Notificaciones" description="Solicitudes de acceso, requisiciones y disponibilidad por atender." />
+      <NotificationList state={notifications} onOpen={target => target.path && router.push(target.path)} />
+    </section>
   );
 }

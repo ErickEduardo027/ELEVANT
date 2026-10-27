@@ -82,7 +82,11 @@ VALUES
     (N'20261009172055_AddEmployeesPositionsRequisitions'),
     (N'20261019033625_AddFinanceCommercialPlatform'),
     (N'20261019041554_AddFinanceTaxSnapshotsAndCorrections'),
-    (N'20261020000446_AddContractSigningEnvelope');
+    (N'20261020000446_AddContractSigningEnvelope'),
+    (N'20261022025008_AddRequestPackagesAndRecordedAcceptance'),
+    (N'20261026143722_AddRepresentativeDistrictAndAirlineCodeUniqueness'),
+    (N'20261026192634_AddDepartmentNotifications'),
+    (N'20261027000905_AddContractSignatures');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

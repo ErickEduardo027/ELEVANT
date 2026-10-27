@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AirlineContractPageResponse, ContractSigningResponse, PublicServiceData } from "@elevant/api-client";
 import type { AirlineCommercialRequestData, AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { AirlineContractSignature } from "./AirlineContractSignature";
 import styles from "./AirlinePortalPage.module.css";
 
 const STATUS: Record<string, string> = {
@@ -24,7 +25,7 @@ function money(amount: number, currency: string) {
 
 export function AirlineContractPage() {
   const { session, getContracts, getDrafts, commentDraft, draftRevision,
-    getContractSigning, getContractSigningLink, getContractDocument, getContractDraftDocument, acceptContract,
+    getContractSigning, getContractSigningLink, getFinalContractPdf, getContractDraftDocument, acceptContract,
     getCommercialCatalog, submitAdditionalServiceRequest, getCommercialRequests } = useAirlineSession();
   const accountId = session?.actor.accountId;
   const [pages, setPages] = useState<AirlineContractPageResponse[]>([]);
@@ -208,7 +209,7 @@ export function AirlineContractPage() {
         {contract.requiresElectronicSigning && <AirlineSigningActions contractId={contract.id}
           accountId={accountId ?? ""} getSigning={getContractSigning}
           getLink={getContractSigningLink} getDraftDocument={getContractDraftDocument}
-          acceptContract={acceptContract} getDocument={getContractDocument} />}
+          acceptContract={acceptContract} getDocument={getFinalContractPdf} />}
         {contract.approvedVersions.map(version => <section key={version.id} className={styles.contractVersion}>
           <h3>Versión aprobada {version.versionNumber}</h3>
           <p>Vigencia: {version.validFrom} — {version.validTo ?? "sin fecha de fin"} · {version.currencyCode}</p>
@@ -219,6 +220,7 @@ export function AirlineContractPage() {
               <span>Precio por {rate.billingUnit}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
+          <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
         </section>)}
       </article>)}
     </div>}

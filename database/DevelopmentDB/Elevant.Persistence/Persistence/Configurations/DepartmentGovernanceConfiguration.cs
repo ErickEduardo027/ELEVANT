@@ -25,6 +25,23 @@ internal static class DepartmentGovernanceConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
+        modelBuilder.Entity<DepartmentNotification>(builder =>
+        {
+            builder.ToTable("department_notifications", "iam");
+            builder.Property(notification => notification.Department).HasConversion<string>().HasMaxLength(32);
+            builder.Property(notification => notification.Kind).HasMaxLength(40).IsRequired();
+            builder.Property(notification => notification.Subject).HasMaxLength(160);
+            builder.Property(notification => notification.OccurredAt).HasPrecision(3);
+            builder.Property(notification => notification.ReadAt).HasPrecision(3);
+            builder.HasIndex(notification => notification.PublicId).IsUnique();
+            builder.HasIndex(notification => new { notification.RecipientAccountId, notification.OccurredAt });
+            builder.HasIndex(notification => new { notification.RecipientAccountId, notification.Kind, notification.SourceId }).IsUnique();
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(notification => notification.RecipientAccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<Station>().WithMany().HasForeignKey(notification => notification.StationId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<AccessProfileGrant>(builder =>
         {
             builder.ToTable("access_profile_grants", "iam");

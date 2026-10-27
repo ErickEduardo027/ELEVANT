@@ -120,7 +120,7 @@ public sealed partial class SqlServerMigrationTests
     {
         public Task<ActorContext?> ResolveAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<ActorContext?>(id != FinanceAccount ? null :
             new(id, "synthetic@test.invalid", "Finance", [], [new(Guid.NewGuid(), Guid.NewGuid(), "QA", "QA", OrganizationType.AviamOperator, MembershipKind.InternalStaff)],
-                [new(station, "PUJ")], new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Finance, new HashSet<string>(["finance.taxes.read", "finance.taxes.manage"]))));
+                [new(station, "PUJ")], new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Finance, new HashSet<string>(["finance.taxes.read", "finance.taxes.create", "finance.taxes.update"]))));
     }
 
 }

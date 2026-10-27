@@ -56,7 +56,7 @@ public sealed class SubmitCommercialRequestHandlerTests
             .HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(command, store.Written);
+        Assert.Equal(command with { RepresentativePhone = "+18095550100" }, store.Written);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class SubmitCommercialRequestHandlerTests
             .HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(command, store.Written);
+        Assert.Equal(command with { RepresentativePhone = "+18095550100" }, store.Written);
         Assert.Equal("REQ-2026-0001", result.Reference);
     }
 
@@ -110,11 +110,11 @@ public sealed class SubmitCommercialRequestHandlerTests
         Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
             (await handler.LookupReceiptAsync(command, TestContext.Current.CancellationToken)).Failure);
         Assert.Null(store.Written);
-        Assert.Equal(command, store.LookedUp);
+        Assert.Equal(command with { RepresentativePhone = "+18095550100" }, store.LookedUp);
         Assert.Equal(CommercialSubmissionFailure.InvalidRequest,
             (await handler.LookupReceiptAsync(command with { AuthorityDeclared = false },
                 TestContext.Current.CancellationToken)).Failure);
-        Assert.Equal(command, store.LookedUp);
+        Assert.Equal(command with { RepresentativePhone = "+18095550100" }, store.LookedUp);
     }
 
     [Theory]
@@ -148,14 +148,52 @@ public sealed class SubmitCommercialRequestHandlerTests
             RepresentativeProvince = "Santo Domingo",
             RepresentativeMunicipality = "Boca Chica",
             RepresentativeDocumentType = "Passport",
-            RepresentativeDocumentNumber = "AB123456",
+            RepresentativeDocumentNumber = "rd 123 4567",
         };
 
         var result = await new SubmitCommercialRequestHandler(store)
             .HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(command, store.Written);
+        Assert.Equal(command with
+        {
+            RepresentativePhone = "+18095550100",
+            RepresentativeDocumentNumber = "RD1234567",
+        }, store.Written);
+    }
+
+    [Theory]
+    [InlineData("849-246-3371", "+18492463371")]
+    [InlineData("8492463371", "+18492463371")]
+    [InlineData("1 (849) 246-3371", "+18492463371")]
+    [InlineData("+34 600 123 456", "+34600123456")]
+    public async Task AcceptsDominicanPhonesWithoutThePlusSignAndStoresThemInternationally(string phone, string stored)
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store)
+            .HandleAsync(ValidCommand() with { RepresentativePhone = phone }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(stored, store.Written!.RepresentativePhone);
+    }
+
+    [Theory]
+    [InlineData("Passport", "5050505050RD", "DO")]
+    [InlineData("Passport", "AAAAAA", "ES")]
+    [InlineData("NationalId", "001-1234567-8", null)]
+    [InlineData("NationalId", "ABC123", null)]
+    public async Task RejectsDocumentsThatDoNotMatchTheirRealFormat(string type, string number, string? nationality)
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with
+        {
+            RepresentativeDocumentType = type,
+            RepresentativeDocumentNumber = number,
+            RepresentativeNationalityCode = nationality,
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+        Assert.Null(store.Written);
     }
 
     private static SubmitCommercialRequestCommand ValidCommand() => new(

@@ -44,7 +44,7 @@ function PackageDefinition({ item }) {
 
 export default function ContractPackagesPanel({ draft, canEdit = true, disabled = false, onSaved, onBusyChange, onDirtyChange }) {
   const access = useOptionalDepartmentAccess();
-  const editable = canEdit && (access?.can('contracts.drafts.edit') ?? canEdit) && (draft.versionStatus ?? 'Draft') === 'Draft';
+  const editable = canEdit && (access?.can('contracts.drafts.update') ?? canEdit) && (draft.versionStatus ?? 'Draft') === 'Draft';
   const [state, setState] = useState({ status: 'loading', bound: [], catalog: [], error: '', catalogError: '' });
   const [selectedIds, setSelectedIds] = useState([]);
   const [reload, setReload] = useState(0);

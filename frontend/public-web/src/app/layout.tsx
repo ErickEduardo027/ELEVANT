@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "@fontsource-variable/geist";
 
 import { AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
+import { FormValidationMessages } from "@/components/FormValidationMessages";
 
 import "./globals.css";
 
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="es" data-scroll-behavior="smooth">
       <body>
+        <FormValidationMessages />
         <AirlineSessionProvider>{children}</AirlineSessionProvider>
       </body>
     </html>

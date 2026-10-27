@@ -39,6 +39,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<DepartmentAssignment> DepartmentAssignments => Set<DepartmentAssignment>();
 
+    public DbSet<DepartmentNotification> DepartmentNotifications => Set<DepartmentNotification>();
+
     public DbSet<AccountPermissionGrant> AccountPermissionGrants => Set<AccountPermissionGrant>();
 
     public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();
@@ -110,6 +112,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
     public DbSet<ContractDraftComment> ContractDraftComments => Set<ContractDraftComment>();
 
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
+
+    public DbSet<ContractSignature> ContractSignatures => Set<ContractSignature>();
 
     public DbSet<Preinvoice> Preinvoices => Set<Preinvoice>();
 

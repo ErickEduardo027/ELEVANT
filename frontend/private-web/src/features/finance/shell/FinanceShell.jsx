@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import ShellFrame from '../../shell/ShellFrame';
+import { useDepartmentNotificationCenter } from '../../notifications/DepartmentNotificationCenter';
 import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import FinanceHomePage from '../home/FinanceHomePage';
@@ -13,7 +14,7 @@ import ChargesPage from '../charges/ChargesPage';
 import ExchangeRatesPage from '../exchange-rates/ExchangeRatesPage';
 import ContractApprovalsPage from '../contract-approvals/ContractApprovalsPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
-import CommercialCatalogPage from '../../contracts/catalog/CommercialCatalogPage';
+import BillingUnitsPage from '../billing-units/BillingUnitsPage';
 import PackagesPage from '../packages/PackagesPage';
 import TreasuryPage from '../treasury/TreasuryPage';
 import StatementPage from '../treasury/StatementPage';
@@ -44,6 +45,10 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const home = useFinanceHomeData(activeModule?.id === FINANCE_MODULE_IDS.HOME);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notificationCenter = useDepartmentNotificationCenter({
+    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('finance.notifications.read')),
+    onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
+  });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -59,7 +64,6 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const pages = {
     [FINANCE_MODULE_IDS.USERS]: <DepartmentUsersPage department={DEPARTMENTS.FINANCE} />,
     [FINANCE_MODULE_IDS.HOME]: <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} />,
-    [FINANCE_MODULE_IDS.CATALOG]: <CommercialCatalogPage canCreate={Boolean(access?.can('finance.catalog.manage'))} canEdit={Boolean(access?.can('finance.catalog.manage'))} canRetire={Boolean(access?.can('finance.catalog.manage'))} canSeeClosures={false} />,
     [FINANCE_MODULE_IDS.APPROVED_SERVICES]: <ApprovedServicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.PREINVOICES]: <PreinvoicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.RECONCILIATION]: <InvoicesPage {...stationProps} />,
@@ -67,6 +71,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
     [FINANCE_MODULE_IDS.PACKAGES]: <PackagesPage />,
     [FINANCE_MODULE_IDS.CHARGES]: <ChargesPage />,
     [FINANCE_MODULE_IDS.EXCHANGE_RATES]: <ExchangeRatesPage />,
+    [FINANCE_MODULE_IDS.BILLING_UNITS]: <BillingUnitsPage canCreate={Boolean(access?.can('finance.billing_units.create'))} canUpdate={Boolean(access?.can('finance.billing_units.update'))} />,
     [FINANCE_MODULE_IDS.CONTRACT_APPROVALS]: <ContractApprovalsPage />,
     [FINANCE_MODULE_IDS.TREASURY]: <TreasuryPage {...stationProps} />,
     [FINANCE_MODULE_IDS.STATEMENTS]: <StatementPage {...stationProps} />,
@@ -82,9 +87,10 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
     <ShellFrame
       mainKey={activeModule?.id ?? 'none'}
       sidebarProps={{ modules: navigation, activeModuleId: activeModule?.id, onSelectModule: handleSelectModule, badgeCounts: {}, user, onLogout, breakpoint: sidebar.breakpoint, railVisible: sidebar.railVisible, railExpanded: sidebar.railExpanded, overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay }}
-      topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
+      topbarProps={{ station: stationSnapshot(), notificationsEnabled: notificationCenter.ui !== null, notificationsCount: notificationCenter.count, onOpenNotifications: notificationCenter.openPanel, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
     >
       {!activeModule ? <NoModulesNotice /> : pages[activeModule.id] ?? <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />}
+      {notificationCenter.ui}
     </ShellFrame>
   );
 }

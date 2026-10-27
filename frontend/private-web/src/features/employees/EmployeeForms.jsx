@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { identityDocumentExample, normalizeIdentityDocument, normalizePhone } from '@elevant/api-client';
 import Drawer from '../../components/Drawer';
 import Modal from '../../components/Modal';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGovernanceService';
@@ -9,6 +10,26 @@ import {
 
 export const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const today = () => new Date().toISOString().slice(0, 10);
+
+const DOCUMENT_KINDS = { CEDULA: 'Cedula', RESIDENCIA: 'Residence', PASAPORTE: 'Passport' };
+
+/** Message for an identification that does not have the real format of its type, or ''. */
+export function identificationProblem(type, number) {
+  const kind = DOCUMENT_KINDS[type];
+  if (!kind || !number.trim() || normalizeIdentityDocument(kind, number)) return '';
+  return kind === 'Passport'
+    ? `El pasaporte no tiene un formato válido: ${identityDocumentExample(kind)}.`
+    : `El número no es válido: revise los 11 dígitos y el dígito verificador (${identityDocumentExample(kind)}).`;
+}
+
+/** Message for a phone that is neither a Dominican number nor an international one, or ''. */
+export function phoneProblem(phone) {
+  return phone.trim() && !normalizePhone(phone)
+    ? 'Use un teléfono dominicano de 10 dígitos (809, 829 o 849) o uno extranjero con su prefijo (+ o 00).' : '';
+}
+
+/** Keeps the browser's constraint validation in sync with a rule the form computes itself. */
+const withRule = (problem) => (element) => element?.setCustomValidity(problem);
 
 function StationChecks({ stations, value, onChange }) {
   return (
@@ -96,16 +117,19 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
             <label className="text-xs font-semibold">Documento<select value={form.identificationType} onChange={event => set({ identificationType: event.target.value })} className={fieldClass}>
               {(options?.identificationTypes ?? Object.keys(IDENTIFICATION_LABELS)).map(type => <option key={type} value={type}>{IDENTIFICATION_LABELS[type] ?? type}</option>)}</select></label>
-            <label className="text-xs font-semibold">Número de documento<input required minLength={4} maxLength={40} value={form.identificationNumber} onChange={event => set({ identificationNumber: event.target.value })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Número de documento<input required maxLength={40}
+              ref={withRule(identificationProblem(form.identificationType, form.identificationNumber))}
+              placeholder={identityDocumentExample(DOCUMENT_KINDS[form.identificationType] ?? 'Cedula')} value={form.identificationNumber} onChange={event => set({ identificationNumber: event.target.value })} className={fieldClass} /></label>
           </div>
           {employee?.identificationIsPlaceholder && <p className="text-xs text-status-warning">Este expediente tiene una identificación provisional: registre la real.</p>}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold">Correo corporativo{emailLocked ? ' (bloqueado: tiene cuenta)' : ' (necesario para dar acceso)'}
               <input type="email" maxLength={256} disabled={emailLocked} value={form.corporateEmail} onChange={event => set({ corporateEmail: event.target.value })} className={fieldClass} /></label>
-            <label className="text-xs font-semibold">Teléfono<input maxLength={32} value={form.phoneNumber} onChange={event => set({ phoneNumber: event.target.value })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Teléfono<input type="tel" maxLength={32} placeholder="809-555-0100"
+              ref={withRule(phoneProblem(form.phoneNumber))} value={form.phoneNumber} onChange={event => set({ phoneNumber: event.target.value })} className={fieldClass} /></label>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <label className="text-xs font-semibold">Número de empleado<input required pattern="[A-Za-z0-9\-]{2,32}" value={form.employeeNumber} onChange={event => set({ employeeNumber: event.target.value.toUpperCase() })} className={fieldClass} /></label>
+            <label className="text-xs font-semibold">Número de empleado<input required pattern="[A-Za-z0-9\-]{2,32}" data-error="Use de 2 a 32 letras, dígitos o guiones, p. ej. QA-FIN-010." value={form.employeeNumber} onChange={event => set({ employeeNumber: event.target.value.toUpperCase() })} className={fieldClass} /></label>
             <label className="text-xs font-semibold">Fecha de ingreso<input required type="date" value={form.hireDate} onChange={event => set({ hireDate: event.target.value })} className={fieldClass} /></label>
             <label className="text-xs font-semibold">Departamento<select disabled={Boolean(employee)} value={form.department} onChange={event => set({ department: event.target.value, positionId: '', requisitionId: '' })} className={fieldClass}>
               {Object.values(DEPARTMENTS).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>

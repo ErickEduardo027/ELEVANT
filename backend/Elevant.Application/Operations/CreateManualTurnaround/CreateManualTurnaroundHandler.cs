@@ -37,7 +37,7 @@ public sealed class CreateManualTurnaroundHandler(
         var actor = await actorContextResolver.ResolveAsync(command.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return CreateManualTurnaroundResult.Failed(OccPlanningFailure.Unauthorized);
-        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.manage"))
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.create"))
             return CreateManualTurnaroundResult.Failed(OccPlanningFailure.Forbidden);
 
         var stationScope = actor!.StationScopes.SingleOrDefault(scope => scope.StationId == command.StationId);

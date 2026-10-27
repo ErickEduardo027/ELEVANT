@@ -1,3 +1,4 @@
+using Elevant.Persistence.Identity;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -252,6 +253,7 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context,
                         ContactCountry = Optional(command.RepresentativeCountry),
                         ContactProvince = Optional(command.RepresentativeProvince),
                         ContactMunicipality = Optional(command.RepresentativeMunicipality),
+                        ContactDistrict = Optional(command.RepresentativeDistrict),
                         ContactDocumentType = Optional(command.RepresentativeDocumentType),
                         ContactDocumentNumber = Optional(command.RepresentativeDocumentNumber),
                         AuthorityDeclared = command.AuthorityDeclared,
@@ -284,6 +286,9 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context,
                     foreach (var recipient in recipients)
                         AccountChangeOutboxWriter.Add(context, recipient, null,
                             "commercial_requests", request.PublicId, request.SubmittedAt);
+                    await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts,
+                        "contracts.requests.read", "commercial_request", request.PublicId,
+                        request.RequestedAirlineName, request.SubmittedAt, cancellationToken);
 
                     await context.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
@@ -324,6 +329,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context,
             Optional(command.RepresentativeMunicipality) ?? string.Empty,
             Optional(command.RepresentativeDocumentType) ?? string.Empty,
             Optional(command.RepresentativeDocumentNumber) ?? string.Empty);
+        // Preserve the hash of pre-district requests so their receipts remain replayable.
+        if (Optional(command.RepresentativeDistrict) is { } district) canonical += "\n" + district;
         // Preserve the hash of pre-package requests so a receipt remains replayable.
         if (command.PackageVersionIds is { Count: > 0 } packages)
             canonical += "\npackages:" + string.Join(',', packages.OrderBy(id => id)

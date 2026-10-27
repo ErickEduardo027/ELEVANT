@@ -30,14 +30,15 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
     render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('human-resources', DepartmentPermissionCodes.humanResources)}><HumanResourcesLayout dashboardReadOnlyDemo /></DepartmentAccessProvider>);
 
     expect(shellProps.navigation.map(item => item.id)).toEqual(['expenses', 'dashboard', 'employees', 'positions', 'requisitions',
-      'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', 'audit', 'access-requests',
-      'department-users']);
+      'users', 'certifications', 'permits', 'schedules', 'attendance', 'reports', 'audit', 'notifications',
+      'access-requests', 'department-users']);
     expect(shellProps.navigation.find(item => item.id === 'certifications').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'permits').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'schedules').badge).toBeNull();
     expect(shellProps.navigation.find(item => item.id === 'reports').badge).toBeNull();
-    expect(shellProps.notificationsPath).toBeUndefined();
-    expect(shellProps.notificationsEnabled).toBe(false);
+    // Department alerts are real data, so the read-only demo keeps the bell.
+    expect(shellProps.notificationsSource).toBe('department');
+    expect(shellProps.notificationsEnabled).toBe(true);
     expect(shellProps.profileActionsEnabled).toBe(false);
     expect(getHumanResourcesUnreadNotificationsCount).not.toHaveBeenCalled();
   });
@@ -62,13 +63,12 @@ describe('HumanResourcesLayout dashboard-only demo', () => {
       'access-requests',
       'department-users',
     ]);
-    expect(shellProps.notificationsPath).toBe('/gestion-humana/notifications');
+    expect(shellProps.notificationsSource).toBe('department');
     expect(shellProps.notificationsEnabled).toBe(true);
     expect(shellProps.profileActionsEnabled).toBe(true);
-    await waitFor(() => expect(getHumanResourcesUnreadNotificationsCount).toHaveBeenCalledTimes(1));
-    await waitFor(() => {
-      expect(shellProps.navigation.find(item => item.id === 'notifications').badge.count).toBe(2);
-    });
+    // The prototype feed is no longer read; the bell shows the real department count.
+    expect(getHumanResourcesUnreadNotificationsCount).not.toHaveBeenCalled();
+    expect(shellProps.navigation.find(item => item.id === 'notifications').badge).toBeNull();
   });
 
   it('shows a member only the modules its permissions open', () => {

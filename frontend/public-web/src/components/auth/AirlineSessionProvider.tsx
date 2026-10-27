@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { ElevantApiError, type AirlineContractPageResponse,
   type ContractSigningResponse, type ContractSigningLinkResponse,
   type SubmitAdditionalServiceRequestRequest, type SubmitCommercialRequestResponse,
-  type PublicCommercialCatalog,
+  type PublicCommercialCatalog, type ContractDocumentResponse,
   type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationalRequestPageResponse, type AirlineOperationPageResponse,
   type AirlinePreinvoicePageResponse,
@@ -60,12 +60,16 @@ interface AirlineSessionContextValue {
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
   getContractSigning(contractId: string): Promise<ContractSigningResponse>;
   getContractSigningLink(contractId: string): Promise<ContractSigningLinkResponse>;
-  getContractDocument(contractId: string): Promise<Blob>;
+  getFinalContractPdf(contractId: string): Promise<Blob>;
   getContractDraftDocument(contractId: string): Promise<Blob>;
   acceptContract(contractId: string, expectedDraftSha256: string, requestId: string): Promise<ContractSigningResponse>;
   getCommercialCatalog(): Promise<PublicCommercialCatalog>;
   submitAdditionalServiceRequest(request: SubmitAdditionalServiceRequestRequest): Promise<SubmitCommercialRequestResponse>;
   getCommercialRequests(): Promise<AirlineCommercialRequestData[]>;
+  getContractDocument(versionId: string): Promise<ContractDocumentResponse>;
+  downloadContractDocument(versionId: string): Promise<Blob>;
+  signContract(versionId: string, signerName: string, signerTitle: string, documentSha256: string,
+    idempotencyKey: string): Promise<ContractDocumentResponse>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
   getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
   getApprovedEvidence(operationId: string): Promise<AirlineApprovedOperationEvidenceResponse>;
@@ -320,12 +324,13 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
-  const contractRequest = useCallback(async <T,>(run: (client: ReturnType<typeof createPublicWebApiClient>) => Promise<T>): Promise<T> => {
+  // Formal contract document and the airline signature (teacher review, Phase 6).
+  const withContractClient = useCallback(async <T,>(call: (client: ReturnType<typeof createPublicWebApiClient>) => Promise<T>) => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
     const request = generation.current;
     try {
-      const result = await run(createPublicWebApiClient({ baseUrl, getAccessToken: () => record.accessToken }));
+      const result = await call(createPublicWebApiClient({ baseUrl, getAccessToken: () => record.accessToken }));
       if (request !== generation.current) throw new AirlineAccessDenied();
       return result;
     } catch (error) {
@@ -333,22 +338,31 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       throw error;
     }
   }, [baseUrl, clear]);
-  const getContractSigning = useCallback((contractId: string) => contractRequest(client =>
-    client.getAirlineContractSigning(contractId, { cache: "no-store" })), [contractRequest]);
-  const getContractSigningLink = useCallback((contractId: string) => contractRequest(client =>
-    client.getAirlineContractSigningLink(contractId, { cache: "no-store" })), [contractRequest]);
-  const getContractDocument = useCallback((contractId: string) => contractRequest(client =>
-    client.getAirlineSignedContractPdf(contractId, { cache: "no-store" })), [contractRequest]);
-  const getContractDraftDocument = useCallback((contractId: string) => contractRequest(client =>
-    client.getAirlineContractDraftPdf(contractId, { cache: "no-store" })), [contractRequest]);
-  const acceptContract = useCallback((contractId: string, expectedDraftSha256: string, requestId: string) => contractRequest(client =>
-    client.acceptAirlineContract(contractId, { expectedDraftSha256, requestId })), [contractRequest]);
-  const getCommercialCatalog = useCallback(() => contractRequest(client =>
-    client.getPublicCommercialCatalog({ cache: "no-store" })), [contractRequest]);
-  const submitAdditionalServiceRequest = useCallback((body: SubmitAdditionalServiceRequestRequest) => contractRequest(client =>
-    client.submitAirlineAdditionalServiceRequest(body)), [contractRequest]);
-  const getCommercialRequests = useCallback(() => contractRequest(client =>
-    client.listAirlineCommercialRequests({ cache: "no-store" }) as Promise<AirlineCommercialRequestData[]>), [contractRequest]);
+  const getContractSigning = useCallback((contractId: string) => withContractClient(client =>
+    client.getAirlineContractSigning(contractId, { cache: "no-store" })), [withContractClient]);
+  const getContractSigningLink = useCallback((contractId: string) => withContractClient(client =>
+    client.getAirlineContractSigningLink(contractId, { cache: "no-store" })), [withContractClient]);
+  const getFinalContractPdf = useCallback((contractId: string) => withContractClient(client =>
+    client.getAirlineSignedContractPdf(contractId, { cache: "no-store" })), [withContractClient]);
+  const getContractDraftDocument = useCallback((contractId: string) => withContractClient(client =>
+    client.getAirlineContractDraftPdf(contractId, { cache: "no-store" })), [withContractClient]);
+  const acceptContract = useCallback((contractId: string, expectedDraftSha256: string, requestId: string) => withContractClient(client =>
+    client.acceptAirlineContract(contractId, { expectedDraftSha256, requestId })), [withContractClient]);
+  const getCommercialCatalog = useCallback(() => withContractClient(client =>
+    client.getPublicCommercialCatalog({ cache: "no-store" })), [withContractClient]);
+  const submitAdditionalServiceRequest = useCallback((body: SubmitAdditionalServiceRequestRequest) => withContractClient(client =>
+    client.submitAirlineAdditionalServiceRequest(body)), [withContractClient]);
+  const getCommercialRequests = useCallback(() => withContractClient(client =>
+    client.listAirlineCommercialRequests({ cache: "no-store" }) as Promise<AirlineCommercialRequestData[]>), [withContractClient]);
+  const getContractDocument = useCallback((versionId: string) =>
+    withContractClient(client => client.getContractDocument(versionId, { cache: "no-store" })), [withContractClient]);
+
+  const downloadContractDocument = useCallback((versionId: string) =>
+    withContractClient(client => client.downloadContractDocument(versionId, { cache: "no-store" })), [withContractClient]);
+
+  const signContract = useCallback((versionId: string, signerName: string, signerTitle: string,
+    documentSha256: string, idempotencyKey: string) => withContractClient(client => client.signContractVersion(versionId,
+    { signerName, signerTitle, documentSha256, accepted: true }, idempotencyKey)), [withContractClient]);
 
   const getOperations = useCallback(async (page = 1): Promise<AirlineOperationPageResponse> => {
     const record = stored.current;
@@ -648,7 +662,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getContractSigning, getContractSigningLink, getContractDocument, getContractDraftDocument, acceptContract, getCommercialCatalog, submitAdditionalServiceRequest, getCommercialRequests, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getContractSigning, getContractSigningLink, getFinalContractPdf, getContractDraftDocument, acceptContract, getCommercialCatalog, submitAdditionalServiceRequest, getCommercialRequests, getContractDocument, downloadContractDocument, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

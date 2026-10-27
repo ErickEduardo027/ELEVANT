@@ -22,7 +22,7 @@ internal sealed partial class FinancePayablesStore
         var sha = Convert.ToHexString(SHA256.HashData(bytes)); var attachmentId = Guid.CreateVersion7();
         var key = "finance-payables/" + attachmentId.ToString("N"); var stored = false;
         var result = await WriteAsync(actorId, requestId, expense ? "expense.receipt.upload" : "payable.attachment.upload", id,
-            new { expectedVersion, contentType, sha, bytes.Length }, expense ? "" : "finance.payables.manage", async a =>
+            new { expectedVersion, contentType, sha, bytes.Length }, expense ? "" : "finance.payables.update", async a =>
             {
                 long? invoice = null, claim = null;
                 if (expense)
@@ -34,7 +34,7 @@ internal sealed partial class FinancePayablesStore
                 }
                 else
                 {
-                    Require(Finance(a, "finance.payables.manage"), "forbidden"); var row = await InvoiceAsync(a, id, ct); Match(row.RowVersion, expectedVersion);
+                    Require(Finance(a, "finance.payables.update"), "forbidden"); var row = await InvoiceAsync(a, id, ct); Match(row.RowVersion, expectedVersion);
                     Require(row.Status == SupplierInvoiceStatus.Draft, "conflict"); invoice = row.Id;
                     row.UpdatedAt = clock.GetUtcNow(); context.Entry(row).Property(x => x.UpdatedAt).IsModified = true;
                 }

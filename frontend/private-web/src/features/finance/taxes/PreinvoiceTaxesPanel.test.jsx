@@ -14,7 +14,7 @@ it('does not reopen an old preinvoice after its tax mutation completes in the ba
     getPreinvoiceTaxes.mockImplementation(async id => ({ id, version: 'v1', treatmentsConfigured: false, currencyCode: 'USD', lines: [], net: 0, discount: 0, tax: null, gross: 0 }));
     applyPreinvoiceTaxes.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     const onChanged = vi.fn();
-    const view = id => <DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', ['finance.taxes.read','finance.taxes.manage'])}>
+    const view = id => <DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', ['finance.taxes.read','finance.taxes.create', 'finance.taxes.update'])}>
         <PreinvoiceTaxesPanel key={id} preinvoiceId={id} status="Draft" onChanged={onChanged} /></DepartmentAccessProvider>;
     const { rerender } = render(view('pre-a'));
     await userEvent.click(await screen.findByRole('button', { name: 'Aplicar tratamientos pendientes' }));

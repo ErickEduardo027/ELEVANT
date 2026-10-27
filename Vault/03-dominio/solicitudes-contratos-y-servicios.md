@@ -33,6 +33,9 @@ tags:
 
 # Solicitudes, contratos y servicios
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](../05-aplicaciones/correcciones-revision-docente-2026-10.md).
+
 ## Paquetes elegidos en la solicitud (rama local)
 
 El catálogo público incluye versiones de paquetes publicadas, vigentes y con

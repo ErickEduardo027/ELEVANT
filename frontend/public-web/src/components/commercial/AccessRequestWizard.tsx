@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import { ElevantApiError, type PublicCommercialCatalog,
+import { ElevantApiError, identityDocumentExample, type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest } from "@elevant/api-client";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/access-request";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
+import { serviceImageFallback } from "@/lib/serviceImages";
 
 type CatalogPackage = { id: string; code: string; name: string; versionNumber: number; currencyCode: string;
   components: { serviceId: string; code: string; name: string; billingUnit: string; includedQuantity: number }[] };
@@ -21,8 +22,10 @@ type Representative = RepresentativeDraft;
 const emptyRepresentative: Representative = {
   name: "", titleOption: "", titleCustom: "", email: "", phone: "", authorityDeclared: false,
   nationalityCode: "", address: "", country: "", province: "",
-  municipality: "", documentType: "", documentNumber: "",
+  municipality: "", district: "", documentType: "", documentNumber: "",
 };
+const SERVICES_PER_PAGE = 6;
+const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte", Other: "Otro" };
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
 const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
@@ -51,13 +54,17 @@ export function AccessRequestWizard() {
   const reconcileAfterSubmit = useRef(false);
   const reconciling = useRef(false);
   const carousel = useRef<HTMLDivElement>(null);
-  const scrollCarousel = (direction: 1 | -1) => {
-    const track = carousel.current;
-    if (!track) return;
-    const card = track.firstElementChild as HTMLElement | null;
-    const gap = Number.parseFloat(getComputedStyle(track).columnGap) || 0;
-    const step = card ? card.getBoundingClientRect().width + gap : track.clientWidth * 0.8;
-    track.scrollBy?.({ left: direction * step, behavior: "smooth" });
+  const [servicePage, setServicePage] = useState(1);
+  // Same order as the internal catalog: display order, then name.
+  const orderedServices = [...(catalog?.services ?? [])].sort((left, right) =>
+    (left.displayOrder ?? 0) - (right.displayOrder ?? 0) || left.name.localeCompare(right.name, "es"));
+  const servicePages = Math.max(1, Math.ceil(orderedServices.length / SERVICES_PER_PAGE));
+  const currentServicePage = Math.min(servicePage, servicePages);
+  const visibleServices = orderedServices.slice((currentServicePage - 1) * SERVICES_PER_PAGE,
+    currentServicePage * SERVICES_PER_PAGE);
+  const changeServicePage = (direction: 1 | -1) => {
+    setServicePage((current) => Math.min(servicePages, Math.max(1, current + direction)));
+    carousel.current?.scrollTo?.({ left: 0, behavior: "smooth" });
   };
   const [divisions, setDivisions] = useState<DivisionsState>([]);
   const [divisionsError, setDivisionsError] = useState(false);
@@ -82,7 +89,12 @@ export function AccessRequestWizard() {
     country: representative.country ? countryName(representative.country) : "",
     province: division?.name ?? "",
     municipality: representative.municipality,
+    district: representative.district,
   };
+  const districts = division?.districts?.[representative.municipality] ?? [];
+  const documentPlaceholder = representative.documentType === "NationalId" ? identityDocumentExample("Cedula")
+    : representative.documentType === "Passport" ? identityDocumentExample("Passport", representative.nationalityCode)
+      : undefined;
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { selectedPackagesRef.current = selectedPackages; }, [selectedPackages]);
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
@@ -194,10 +206,10 @@ export function AccessRequestWizard() {
     });
   };
   const changeCountry = (country: string) => {
-    changeRepresentative({ country, province: "", municipality: "" });
+    changeRepresentative({ country, province: "", municipality: "", district: "" });
     fetchDivisions(country);
   };
-  const changeProvince = (province: string) => changeRepresentative({ province, municipality: "" });
+  const changeProvince = (province: string) => changeRepresentative({ province, municipality: "", district: "" });
   const toggleService = (id: string) => {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
     requestId.current = null;
@@ -259,6 +271,7 @@ export function AccessRequestWizard() {
       representativeCountry: location.country || null,
       representativeProvince: location.province || null,
       representativeMunicipality: location.municipality || null,
+      representativeDistrict: location.district || null,
       representativeDocumentType: representative.documentType || null,
       representativeDocumentNumber: representative.documentNumber.trim() || null,
     };
@@ -321,18 +334,18 @@ export function AccessRequestWizard() {
         disabled={busy} onClick={() => { void reconcilePending(); }}>Verificar envío anterior</button>}
       {loading ? <p className="access-loading">Cargando servicios y aerolíneas…</p> : step === 1 ? <>
         <div className="access-panel__heading"><p>01 / SERVICIOS</p><h2>¿Qué necesita su operación?</h2><span>Seleccione servicios individuales, paquetes o ambos.</span></div>
-        <div className="access-carousel__controls"><span>{selected.length + selectedPackages.length} SELECCIONADOS</span><div><button type="button" aria-label="Ver servicios anteriores" onClick={() => scrollCarousel(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" onClick={() => scrollCarousel(1)}>→</button></div></div>
+        <div className="access-carousel__controls"><span>{selected.length + selectedPackages.length} SELECCIONADOS · PÁGINA {currentServicePage} DE {servicePages}</span><div><button type="button" aria-label="Ver servicios anteriores" disabled={currentServicePage === 1} onClick={() => changeServicePage(-1)}>←</button><button type="button" aria-label="Ver servicios siguientes" disabled={currentServicePage === servicePages} onClick={() => changeServicePage(1)}>→</button></div></div>
         <div className="access-carousel" ref={carousel} aria-label="Servicios disponibles">
-          {catalog?.services.map((service, index) => <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
+          {visibleServices.map((service, offset) => { const index = (currentServicePage - 1) * SERVICES_PER_PAGE + offset; return <article className="access-service" key={service.id} data-selected={selected.includes(service.id)}>
             <div className="access-service__media">
               {service.videoUrl ? <video controls playsInline poster={mediaUrl(service.imageUrl)} src={mediaUrl(service.videoUrl)} aria-label={`Video de ${service.name}`} /> :
-                service.imageUrl ? <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl)})` }} role="img" aria-label={service.name} /> : <div className="access-service__placeholder" />}
-              <span>0{index + 1} / AVIAM</span>
+                <div className="access-service__image" style={{ backgroundImage: `url(${mediaUrl(service.imageUrl) ?? serviceImageFallback(service)}), url(${serviceImageFallback(service)})` }} role="img" aria-label={service.name} />}
+              <span>{String(index + 1).padStart(2, "0")} / AVIAM</span>
             </div>
             <div className="access-service__body"><h3>{service.name}</h3><p>{service.description}</p>
               <button type="button" onClick={() => toggleService(service.id)} aria-pressed={selected.includes(service.id)}>{selected.includes(service.id) ? "Seleccionado ✓" : "Añadir servicio +"}</button>
             </div>
-          </article>)}
+          </article>; })}
           {catalog?.services.length === 0 && <p>No hay servicios publicados por el momento.</p>}
         </div>
         {Boolean(catalog?.packages?.length) && <section className="access-packages" aria-label="Paquetes publicados">
@@ -381,16 +394,17 @@ export function AccessRequestWizard() {
             <input {...control("email")} required type="email" maxLength={256} autoComplete="email" value={representative.email} onChange={(event) => changeRepresentative({ email: event.target.value })} />
           </FormField>
           <FormField field="phone" label="Teléfono" error={fieldError("phone")}>
-            <input {...control("phone")} required type="tel" maxLength={32} autoComplete="tel" inputMode="tel" placeholder="+1 809 555 0100" value={representative.phone} onChange={(event) => changeRepresentative({ phone: event.target.value.replace(/[^+\d ()-]/g, "") })} />
+            <input {...control("phone")} required type="tel" maxLength={32} autoComplete="tel" inputMode="tel" placeholder="809-555-0100" value={representative.phone} onChange={(event) => changeRepresentative({ phone: event.target.value.replace(/[^+\d ().-]/g, "") })} />
+            <small className="access-field-hint">República Dominicana: 10 dígitos (809, 829 o 849). Otros países: con su prefijo, p. ej. +34.</small>
           </FormField>
           <FormField field="nationalityCode" label="Nacionalidad (opcional)" error={fieldError("nationalityCode")}>
             <select {...control("nationalityCode")} className="access-select" value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">Seleccione si desea indicarla</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
           </FormField>
           <FormField field="documentType" label="Tipo de documento (opcional)" error={fieldError("documentType")}>
-            <select {...control("documentType")} className="access-select" value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value })}><option value="">Seleccione</option><option value="NationalId">Documento nacional</option><option value="Passport">Pasaporte</option><option value="Other">Otro</option></select>
+            <select {...control("documentType")} className="access-select" value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option><option value="Other">Otro</option></select>
           </FormField>
           <FormField field="documentNumber" label="Número de documento (opcional)" error={fieldError("documentNumber")}>
-            <input {...control("documentNumber")} maxLength={40} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: event.target.value.replace(/[^A-Za-z0-9 /-]/g, "") })} />
+            <input {...control("documentNumber")} maxLength={40} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: event.target.value.replace(/[^A-Za-z0-9 /-]/g, "") })} />
           </FormField>
           <FormField field="address" label="Dirección (opcional)" error={fieldError("address")} wide>
             <input {...control("address")} maxLength={250} autoComplete="street-address" value={representative.address} onChange={(event) => changeRepresentative({ address: event.target.value })} />
@@ -409,11 +423,17 @@ export function AccessRequestWizard() {
             {divisionsError && <span className="access-field-error" role="alert">No se pudieron cargar las divisiones de este país. <button type="button" onClick={() => fetchDivisions(representative.country)}>Reintentar</button></span>}
           </FormField>
           <FormField field="municipality" label="Municipio / Ciudad" error={fieldError("municipality")}>
-            <select {...control("municipality")} className="access-select" required={Boolean(division?.cities.length)} disabled={!division?.cities.length} value={representative.municipality} onChange={(event) => changeRepresentative({ municipality: event.target.value })}>
+            <select {...control("municipality")} className="access-select" required={Boolean(division?.cities.length)} disabled={!division?.cities.length} value={representative.municipality} onChange={(event) => changeRepresentative({ municipality: event.target.value, district: "" })}>
               <option value="">{!division ? "Seleccione primero la provincia" : division.cities.length === 0 ? "No aplica" : "Seleccione una opción"}</option>
               {division?.cities.map((city) => <option key={city} value={city}>{city}</option>)}
             </select>
           </FormField>
+          {districts.length > 0 && <FormField field="district" label="Distrito municipal (opcional)" error={fieldError("district")}>
+            <select {...control("district")} className="access-select" value={representative.district} onChange={(event) => changeRepresentative({ district: event.target.value })}>
+              <option value="">Cabecera del municipio</option>
+              {districts.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </FormField>}
           <div className="access-authority-field">
             <label className="access-authority"><input {...control("authorityDeclared")} required type="checkbox" checked={representative.authorityDeclared} onChange={(event) => changeRepresentative({ authorityDeclared: event.target.checked })} /><span>Declaro que estoy autorizado para presentar esta solicitud en nombre de {airline?.name}.</span></label>
             {fieldError("authorityDeclared") && <p className="access-field-error" id={`${fieldId("authorityDeclared")}-error`}>{fieldError("authorityDeclared")}</p>}
@@ -430,8 +450,8 @@ export function AccessRequestWizard() {
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
             <div><dt>Contacto</dt><dd>{representative.email} · {representative.phone}</dd></div>
             {representative.nationalityCode && <div><dt>Nacionalidad</dt><dd>{countryName(representative.nationalityCode)}</dd></div>}
-            {representative.documentType && <div><dt>Documento</dt><dd>{representative.documentType} · {representative.documentNumber}</dd></div>}
-            {[representative.address, location.municipality, location.province, location.country].some(Boolean) && <div><dt>Dirección</dt><dd>{[representative.address, location.municipality, location.province, location.country].filter(Boolean).join(", ")}</dd></div>}
+            {representative.documentType && <div><dt>Documento</dt><dd>{DOCUMENT_LABELS[representative.documentType] ?? representative.documentType} · {representative.documentNumber}</dd></div>}
+            {[representative.address, location.district, location.municipality, location.province, location.country].some(Boolean) && <div><dt>Dirección</dt><dd>{[representative.address, location.district && `D. M. ${location.district}`, location.municipality, location.province, location.country].filter(Boolean).join(", ")}</dd></div>}
           </dl><small>Declaración de representación aceptada</small></section>
         </div>
       </>}

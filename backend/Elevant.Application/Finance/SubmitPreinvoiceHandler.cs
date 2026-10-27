@@ -40,7 +40,7 @@ public sealed class SubmitPreinvoiceHandler(
         var actor = await actors.ResolveAsync(command.AccountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return SubmitPreinvoiceResult.Failed(SubmitPreinvoiceFailure.Unauthorized);
-        if (!actor!.HasPermission("finance.preinvoices.manage") ||
+        if (!actor!.HasPermission("finance.preinvoices.issue") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

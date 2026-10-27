@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
@@ -17,7 +18,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<IReadOnlyList<ManagedServiceData>?> ListAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAnyAsync(actorId, ["contracts.catalog.read", "finance.catalog.read"], cancellationToken))
+        if (!await permissions.HasAnyAsync(actorId, CatalogReaders, cancellationToken))
             return null;
         return (await context.ServiceDefinitions.AsNoTracking()
             .OrderBy(service => service.DisplayOrder).ThenBy(service => service.Name)
@@ -27,7 +28,9 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> SaveAsync(Guid actorId, Guid? serviceId,
         ManagedServiceInput input, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "finance.catalog.manage", cancellationToken))
+        // Contracts owns what is sold; Finance only prices it (ADR-0016, catalog section).
+        if (!await permissions.HasAsync(actorId,
+                serviceId is null ? "contracts.catalog.create" : "contracts.catalog.update", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         if (!Valid(input) || (serviceId is not null &&
             !TryVersion(input.Version, out _)))
@@ -54,6 +57,11 @@ internal sealed class EfCommercialCatalogManagementStore(
                     item.ReopenedAt == null, cancellationToken))
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Conflict);
         }
+        if (!await ValidBillingUnitAsync(input.BillingUnit, service.DefaultBillingUnit, cancellationToken))
+            return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid, "billing_unit_unknown");
+        if (input.IsPublic && input.IsActive && CommercialCatalogPublication.Problem(input.Code, input.Name,
+                input.Description, input.ImageUrl) is { } problem)
+            return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid, problem);
         if (!await ValidAssetAsync(input.ImageUrl, "service-image", service.ImageUrl, cancellationToken) ||
             !await ValidAssetAsync(input.VideoUrl, "service-video", service.VideoUrl, cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid);
@@ -98,7 +106,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     public async Task<CatalogMutationResult> DeleteAsync(Guid actorId, Guid serviceId,
         string version, CancellationToken cancellationToken = default)
     {
-        if (!await permissions.HasAsync(actorId, "finance.catalog.manage", cancellationToken))
+        if (!await permissions.HasAsync(actorId, "contracts.catalog.delete", cancellationToken))
             return CatalogMutationResult.Failed(CatalogMutationFailure.Forbidden);
         var service = await context.ServiceDefinitions.SingleOrDefaultAsync(
             item => item.PublicId == serviceId, cancellationToken);
@@ -126,6 +134,21 @@ internal sealed class EfCommercialCatalogManagementStore(
         }
     }
 
+    /// <summary>Contracts manages the catalog; Finance reads it to price the services.</summary>
+    internal static readonly string[] CatalogReaders = ["contracts.catalog.read", "finance.tariffs.read"];
+
+    /// <summary>A new or changed unit must be an active billing unit; an unchanged legacy text is kept.</summary>
+    private async Task<bool> ValidBillingUnitAsync(string? requested, string? current,
+        CancellationToken cancellationToken)
+    {
+        var unit = requested?.Trim();
+        if (string.IsNullOrEmpty(unit)) return false;
+        if (current is not null && string.Equals(unit, current.Trim(), StringComparison.Ordinal)) return true;
+        var names = await context.BillingUnits.AsNoTracking().Where(item => item.IsActive)
+            .Select(item => item.Name).ToArrayAsync(cancellationToken);
+        return names.Any(name => string.Equals(name.Trim(), unit, StringComparison.CurrentCultureIgnoreCase));
+    }
+
     private static ManagedServiceData Map(ServiceDefinition item) => new(
         item.PublicId, item.Code, item.Name, item.Description ?? string.Empty,
         item.DefaultBillingUnit, CommercialServiceMediaDefaults.Resolve(item.Code, item.ImageUrl), item.VideoUrl, item.DisplayOrder,
@@ -134,7 +157,7 @@ internal sealed class EfCommercialCatalogManagementStore(
     private async Task NotifyInternalAsync(Guid serviceId, CancellationToken cancellationToken)
     {
         var recipients = await CommercialNotificationRecipients.WithAnyPermissionAsync(context,
-            ["contracts.catalog.read", "finance.catalog.read"], cancellationToken);
+            CatalogReaders, cancellationToken);
         var closureRecipients = await CommercialNotificationRecipients.WithAnyPermissionAsync(context,
             ["contracts.service_closures.read", "operations.service_closures.read"], cancellationToken);
         foreach (var recipient in recipients.Concat(closureRecipients).Distinct())

@@ -16,7 +16,8 @@ public sealed record SubmitCommercialRequestRequest(
     string? RepresentativeMunicipality = null,
     string? RepresentativeDocumentType = null,
     string? RepresentativeDocumentNumber = null,
-    IReadOnlyList<Guid>? PackageVersionIds = null);
+    IReadOnlyList<Guid>? PackageVersionIds = null,
+    string? RepresentativeDistrict = null);
 
 public sealed record SubmitCommercialRequestResponse(string Reference, bool Replayed);
 

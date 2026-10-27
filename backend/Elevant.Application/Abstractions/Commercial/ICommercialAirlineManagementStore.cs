@@ -17,6 +17,8 @@ public sealed record ManagedAirlineInput(
         Optional(LegalName, 200) && Required(Region, 64) &&
         Code(CountryCode, 2, lettersOnly: true) &&
         Code(IataCode, 2) && Code(IcaoCode, 3, lettersOnly: true) &&
+        (string.IsNullOrWhiteSpace(IataCode) || Elevant.Domain.Validation.AirlineCodes.IsIata(IataCode.Trim().ToUpperInvariant())) &&
+        (string.IsNullOrWhiteSpace(IcaoCode) || Elevant.Domain.Validation.AirlineCodes.IsIcao(IcaoCode.Trim().ToUpperInvariant())) &&
         Url(SourceUrl, required: true) && Url(VerificationSourceUrl) &&
         (string.IsNullOrWhiteSpace(LogoUrl) ||
             LogoUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal) &&

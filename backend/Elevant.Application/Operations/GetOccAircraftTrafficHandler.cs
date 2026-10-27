@@ -20,7 +20,9 @@ public sealed class GetOccAircraftTrafficHandler(
         var actor = await actorResolver.ResolveAsync(accountId, cancellationToken);
         if (!ActorContextValidator.IsValid(actor, accountId))
             return OccAircraftTrafficResult.Failed(OccAircraftTrafficFailure.Unauthorized);
-        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.planning.read"))
+        // Live traffic is shown on the Dashboard and in «Monitoreo de vuelos»; each option grants it.
+        if (!OccPlanningAccess.IsAuthorized(actor!, "operations.flight_monitoring.read") &&
+            !OccPlanningAccess.IsAuthorized(actor!, "operations.dashboard.read"))
             return OccAircraftTrafficResult.Failed(OccAircraftTrafficFailure.Forbidden);
 
         if (!actor!.StationScopes.Any(scope => scope.StationId == stationId &&

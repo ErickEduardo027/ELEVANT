@@ -53,7 +53,7 @@ public sealed class ResolvePreinvoiceDisputeHandler(
         if (!ActorContextValidator.IsValid(actor, command.AccountId))
             return ResolvePreinvoiceDisputeResult.Failed(
                 ResolvePreinvoiceDisputeFailure.Unauthorized);
-        if (!actor!.HasPermission("finance.preinvoices.manage") ||
+        if (!actor!.HasPermission("finance.preinvoices.update") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))

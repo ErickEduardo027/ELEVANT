@@ -466,6 +466,16 @@
         "evidence": "repo-verified"
       },
       {
+        "path": "Vault/05-aplicaciones/correcciones-revision-docente-2026-10.md",
+        "id": "aplicaciones-correcciones-revision-docente-2026-10",
+        "title": "Correcciones de la revisión docente de octubre de 2026",
+        "type": "status",
+        "area": "applications",
+        "status": "documented",
+        "maturity": "evolving",
+        "evidence": "repo-verified"
+      },
+      {
         "path": "Vault/05-aplicaciones/developmentdb-compartida.md",
         "id": "aplicaciones-developmentdb-compartida",
         "title": "DevelopmentDB como dependencia compartida",
@@ -1145,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "acfd2fa71c1dfc98ff4ba82969530c55c67a45e7d9ff0aba0831b0f3235903e2",
+        "sha256": "8e78884caefea16e08ddc3588c9d870930981dd7ef8c3fa4831f5c229c9d8571",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "7b8832a041ec2dc225eac1900dddab16c67c7cf19b7977c26802598283fb2a96",
+        "sha256": "24164a23bb1512b9ef8a7810ce799dfb49a11afc6870f4836f4be9dd712e716e",
         "title": null,
         "version": null
       }
@@ -1372,6 +1382,24 @@
         "name": "AddRequestPackagesAndRecordedAcceptance",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261022025008_AddRequestPackagesAndRecordedAcceptance.cs",
         "sha256": "e1d88995bab55ab4417ed8b0fcb99d752b2104c3f2df1ef6f7474537b0f76563"
+      },
+      {
+        "id": "20261026143722",
+        "name": "AddRepresentativeDistrictAndAirlineCodeUniqueness",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261026143722_AddRepresentativeDistrictAndAirlineCodeUniqueness.cs",
+        "sha256": "6ca0ff072520a4cadaa13c9a775cd94aaa43947cd0bbff82255d9f310e4fdee6"
+      },
+      {
+        "id": "20261026192634",
+        "name": "AddDepartmentNotifications",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261026192634_AddDepartmentNotifications.cs",
+        "sha256": "e19107e1b4f7f063dc9792a7f44af18cd37426fdaa38e296d859095ad68f7713"
+      },
+      {
+        "id": "20261027000905",
+        "name": "AddContractSignatures",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261027000905_AddContractSignatures.cs",
+        "sha256": "ce9279b44b656dbf3d38fdb277268b6ff5b10829ce191b1723cc7bb3803155d2"
       }
     ],
     "manifestContracts": [

@@ -73,7 +73,7 @@ internal sealed class EfManualTurnaroundStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.ActorAccountId, cancellationToken);
         if (actor is null ||
-            !actor.HasPermission("operations.planning.manage") ||
+            !actor.HasPermission("operations.planning.create") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||

@@ -1,7 +1,11 @@
 namespace Elevant.Application.Abstractions.Identity;
 
-public sealed record PermissionActionData(string Code, string Action, string Label);
-public sealed record PermissionModuleData(string Key, string Label, IReadOnlyList<PermissionActionData> Actions);
+/// <param name="Kind">Matrix column: read, create, update, delete or other (workflow actions).</param>
+public sealed record PermissionActionData(string Code, string Action, string Label, string Kind);
+/// <param name="Section">Sidebar group of the menu option.</param>
+/// <param name="Parent">Key of the menu option this function lives in, when it is not an option itself.</param>
+public sealed record PermissionModuleData(string Key, string Label, string Section, string? Parent,
+    IReadOnlyList<PermissionActionData> Actions);
 public sealed record DepartmentCatalogData(string Department, string Label, IReadOnlyList<PermissionModuleData> Modules);
 
 public sealed record GovernanceStationData(Guid Id, string Code);

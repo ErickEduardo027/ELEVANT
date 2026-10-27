@@ -9,6 +9,14 @@ vi.mock('../../../services/commercialGovernanceApi', () => ({
   commercialMediaUrl: path => path,
   deleteManagedService: vi.fn(),
 }));
+vi.mock('../../../services/financeBookService', () => ({
+  listBillingUnits: vi.fn().mockResolvedValue([
+    { id: 'u1', code: 'operation', name: 'Operación', quantityScale: 0, isActive: true, version: 'v1' },
+    { id: 'u2', code: 'hour', name: 'Hora', quantityScale: 2, isActive: true, version: 'v2' },
+    { id: 'u3', code: 'ton', name: 'Tonelada', quantityScale: 3, isActive: true, version: 'v3' },
+    { id: 'u4', code: 'old', name: 'Antigua', quantityScale: 0, isActive: false, version: 'v4' },
+  ]),
+}));
 vi.mock('../../../hooks/useCommercialRevalidation', () => ({ useCommercialRevalidation: vi.fn() }));
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: vi.fn(), stop: vi.fn() }),
@@ -137,19 +145,20 @@ it('creates a catalog service with its own code at the end of the order', async 
   expect(screen.getByLabelText(/^Código/)).toHaveValue('RAMP-CARGO');
   await pick(user, /Unidad de cobro/, /Por tonelada/);
   await fill(user, screen.getByLabelText(/Descripción/), '  Atención de carga  ');
+  await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
     code: 'RAMP-CARGO', name: 'Carga y descarga', description: 'Atención de carga',
-    billingUnit: 'tonelada', displayOrder: 41,
+    billingUnit: 'tonelada', displayOrder: 41, isPublic: false,
   })));
-  expect(await screen.findByText('Servicio publicado en el catálogo.')).toBeInTheDocument();
+  expect(await screen.findByText(/Servicio guardado como oculto/)).toBeInTheDocument();
   expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
   expect(cardNames()).toEqual(['Carga y descarga']);
   expect(orderBadges()).toEqual(['Número de orden N.º 13']);
 });
 
-it('creates a new service with «Otro» without saving the option itself', async () => {
+it('creates a new service with «Otro» as its name and a unit maintained by Finance', async () => {
   const user = userEvent.setup();
   getManagedServices.mockResolvedValue([makeService(1)]);
   saveManagedService.mockResolvedValue({ id: 'service-2' });
@@ -161,13 +170,13 @@ it('creates a new service with «Otro» without saving the option itself', async
   await pick(user, /Nombre del servicio/, /^Otro/);
   await fill(user, screen.getByLabelText(/Nombre personalizado/), '  Asistencia   especial ');
   await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'sa');
-  await pick(user, /Unidad de cobro/, /^Otro/);
-  await fill(user, screen.getByLabelText(/Unidad de cobro personalizada/), 'turno');
+  await pick(user, /Unidad de cobro/, /Por hora/);
   await fill(user, screen.getByLabelText(/Descripción/), 'Acompañamiento');
+  await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
-    code: 'SA', name: 'Asistencia especial', billingUnit: 'turno', displayOrder: 2,
+    code: 'SA', name: 'Asistencia especial', billingUnit: 'hora', displayOrder: 2,
   })));
 });
 
@@ -184,7 +193,10 @@ it('offers services created earlier with their own code and billing unit', async
   expect(within(screen.getByRole('dialog', { name: 'Nuevo servicio' })).getByRole('status'))
     .toHaveTextContent('Asistencia especial ya está en el catálogo con el número de orden 2');
   await user.click(screen.getByRole('combobox', { name: /Unidad de cobro/ }));
-  expect(screen.getByRole('option', { name: /turno/ })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /Por hora/ })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /turno/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /antigua/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: /^Otro/ })).not.toBeInTheDocument();
 });
 
 it('blocks duplicates and opens the existing service for editing instead', async () => {
@@ -221,12 +233,12 @@ it('explains missing and invalid fields without calling the API', async () => {
   expect(screen.getByRole('combobox', { name: /Nombre del servicio/ })).toHaveAttribute('aria-invalid', 'true');
 
   await pick(user, /Nombre del servicio/, /^Otro/);
-  await pick(user, /Unidad de cobro/, /^Otro/);
+  await pick(user, /Unidad de cobro/, /Por hora/);
   await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'ramp tow');
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   expect(screen.getByText('Escribe el nombre del servicio personalizado.')).toBeInTheDocument();
   expect(screen.getByText(/Usa solo letras de la A a la Z/)).toBeInTheDocument();
-  expect(screen.getByText('Escribe la unidad de cobro personalizada.')).toBeInTheDocument();
+  expect(screen.getByText(/Para publicarlo agregue una foto real del servicio/)).toBeInTheDocument();
 
   await fill(user, screen.getByLabelText(/Nombre personalizado/), 'Remolque');
   await user.clear(screen.getByLabelText(/Código del nuevo servicio/));
@@ -247,6 +259,7 @@ it('shows a clear message when the API rejects a duplicate code', async () => {
   await pick(user, /Nombre del servicio/, /Escaleras móviles/);
   await pick(user, /Unidad de cobro/, /Por operación/);
   await fill(user, screen.getByLabelText(/Descripción/), 'Escaleras');
+  await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   expect(await screen.findByText(/ya existe un servicio con ese código o el catálogo cambió/)).toBeInTheDocument();
@@ -256,7 +269,8 @@ it('shows a clear message when the API rejects a duplicate code', async () => {
 it('edits name and billing unit while keeping code and order', async () => {
   const user = userEvent.setup();
   const services = Array.from({ length: 3 }, (_, index) => makeService(index + 1));
-  services[1].billingUnit = 'operation';
+  services[1] = { ...services[1], billingUnit: 'turno', imageUrl: '/assets/services/aircraft-towing.webp',
+    description: 'Remolque de aeronaves entre posiciones y hangar' };
   getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([
     services[0], { ...services[1], name: 'Remolque' }, services[2],
   ]);
@@ -268,14 +282,14 @@ it('edits name and billing unit while keeping code and order', async () => {
   const dialog = screen.getByRole('dialog', { name: 'Editar servicio' });
   expect(within(dialog).getByText('N.º 2')).toBeInTheDocument();
   expect(screen.getByLabelText(/^Código/)).toHaveAttribute('readonly');
-  expect(screen.getByRole('combobox', { name: /Unidad de cobro/ })).toHaveValue('operation');
+  expect(screen.getByRole('combobox', { name: /Unidad de cobro/ })).toHaveValue('Por turno');
   await user.clear(screen.getByLabelText(/Nombre del servicio/));
   await fill(user, screen.getByLabelText(/Nombre del servicio/), 'Remolque');
-  await pick(user, /Unidad de cobro/, /Por aeronave/);
+  await pick(user, /Unidad de cobro/, /Por hora/);
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith('service-2', expect.objectContaining({
-    code: 'SERVICE-2', name: 'Remolque', billingUnit: 'aeronave', displayOrder: 2, version: 'version-2',
+    code: 'SERVICE-2', name: 'Remolque', billingUnit: 'hora', displayOrder: 2, version: 'version-2',
   })));
   await screen.findByText('Servicio actualizado. El catálogo público se refrescará.');
   expect(cardNames()).toEqual(['Servicio 1', 'Remolque', 'Servicio 3']);
@@ -284,7 +298,7 @@ it('edits name and billing unit while keeping code and order', async () => {
 it('edits a service in a right drawer and uploads its selected image before saving', async () => {
   const user = userEvent.setup();
   const service = { id: 'service-1', code: 'RAMP-CARGO', name: 'Carga y descarga',
-    description: 'Atención de carga', billingUnit: 'operación',
+    description: 'Atención de carga y descarga de aeronaves', billingUnit: 'operación',
     imageUrl: '/assets/services/cargo-loading.webp', videoUrl: null,
     displayOrder: 1, isPublic: true, isActive: true, version: 'one' };
   getManagedServices.mockResolvedValue([service]);
@@ -313,4 +327,20 @@ it('keeps closure decisions out of a custom catalog-only workspace', async () =>
   render(<CommercialCatalogPage canSeeClosures={false} />);
   await waitFor(() => expect(getManagedServices).toHaveBeenCalled());
   expect(screen.queryByRole('button', { name: 'Solicitudes de clausura' })).not.toBeInTheDocument();
+});
+
+it('shows an illustration for services without a photo and maps server publication rules', async () => {
+  const user = userEvent.setup();
+  getManagedServices.mockResolvedValue([{ ...makeService(1), code: 'RAMP-CATERING', name: 'Servicio de catering',
+    description: 'Comidas y bebidas a bordo para la tripulación y pasajeros', isPublic: false }]);
+  saveManagedService.mockRejectedValue(Object.assign(new Error('Invalid service data.'), { status: 400, code: 'placeholder_name' }));
+
+  render(<CommercialCatalogPage />);
+  const card = await screen.findByRole('article');
+  expect(within(card).getByText('Sin foto · ilustración')).toBeInTheDocument();
+  expect(card.querySelector('img')).toHaveAttribute('src', '/assets/services/illustrations/catering.svg');
+
+  await user.click(screen.getByRole('button', { name: 'Editar' }));
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  expect(await screen.findByText('Un servicio con nombre o código de prueba no puede publicarse.')).toBeInTheDocument();
 });

@@ -160,7 +160,8 @@ describe("canonical public commercial intake client", () => {
     const application = { ...request, representativeNationalityCode: "DO",
       representativeAddress: "Avenida Principal 10", representativeCountry: "República Dominicana",
       representativeProvince: "Santo Domingo", representativeMunicipality: "Boca Chica",
-      representativeDocumentType: "Passport", representativeDocumentNumber: "AB123456" };
+      representativeDocumentType: "Passport", representativeDocumentNumber: "RD1234567",
+      representativeDistrict: null, representativePhone: "849-246-3371" };
 
     await expect(client.submitCommercialRequest(application)).resolves.toEqual({
       reference: "REQ-2", replayed: false,

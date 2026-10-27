@@ -1121,8 +1121,9 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             cancellationToken);
         foreach (var code in new[]
                  {
-                     "finance.home.read", "finance.approved_services.read", "finance.approved_services.preinvoice",
-                     "finance.preinvoices.read", "finance.preinvoices.manage", "finance.reconciliation.read",
+                     "finance.home.read", "finance.approved_services.read", "finance.approved_services.create",
+                     "finance.preinvoices.read", "finance.preinvoices.update", "finance.preinvoices.issue",
+                     "finance.reconciliation.read",
                  })
         {
             await GetOrAddAsync(context.AccessProfileGrants,
