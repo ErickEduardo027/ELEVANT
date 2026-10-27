@@ -42,6 +42,9 @@ tags:
 
 # Private Web / AVIAM
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](correcciones-revision-docente-2026-10.md).
+
 ## Revisión de asistencia en la rama local posterior
 
 La ruta `/gestion-humana/attendance` consume el

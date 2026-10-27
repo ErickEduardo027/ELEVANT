@@ -48,6 +48,9 @@ tags:
 
 # Finanzas: precios, cartera, proveedores, gastos y simulación fiscal
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](../05-aplicaciones/correcciones-revision-docente-2026-10.md).
+
 > [!NOTE] Alcance editorial y de entrega
 > Esta ampliación describe el código local de integración del plan aprobado el 2026-10-18. No acredita merge, promoción, despliegue ni emisión fiscal real. La nota queda `documented`; `last_verified` y `verified_commit` conservan la verificación integral anterior hasta que el responsable cierre QA y compruebe el commit fuente. Véanse [ADR-0018](../../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md) y el [runbook fiscal](../../docs/runbooks/finance-fiscal-activation.md).
 

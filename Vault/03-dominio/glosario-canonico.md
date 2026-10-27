@@ -68,7 +68,10 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Estación | Unidad operativa de AVIAM en un aeropuerto, con código y zona IANA. | Enmarca scopes, turnos, equipos y operaciones. |
 | Terminal | Subdivisión de una estación. | Agrupa stands y scopes laborales. |
 | Stand o posición física | Lugar donde se atiende la aeronave; puede pertenecer a una terminal. | No es `OperationalPosition`, que es un puesto/función. |
-| Definición de servicio | Catálogo de servicios y unidad de cobro predeterminada. | No es una línea solicitada, contratada ni ejecutada. |
+| Ocupación de posición | Proyección: «ocupada» si la aeronave de la asignación activa ya llegó (hora real de llegada); «planificada» si aún no llegó; «libre» sin asignación activa. | El color del mapa del prototipo. |
+| Distrito municipal | Subdivisión de un municipio según la DGII y la ONE (p. ej. Pedro Sánchez, en El Seibo). | Un municipio o una sección. |
+| Definición de servicio | Catálogo de servicios y unidad de cobro predeterminada; lo gestiona Contratos. | No es una línea solicitada, contratada ni ejecutada. |
+| Unidad de cobro | Cómo se mide un servicio o cargo (operación, hora, kilogramo…); catálogo `ref.billing_units` que mantiene Finanzas. | Un precio o un recargo. |
 | Tipo de equipo | Clase de recurso; puede exigir habilitación. | No es un activo físico. |
 | Activo de equipo | Unidad identificada y ubicada en una estación. | Se asigna temporalmente a una operación. |
 | Tipo de aeronave | Catálogo de fabricante/modelo con código ICAO. | La matrícula pertenece al turnaround concreto. |
@@ -111,6 +114,9 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Tarifa de servicio | Precio/unidad/mínimo de un servicio en una versión. | El snapshot guardado en una ejecución. |
 | Tarifa base | Precio de referencia de Finanzas por servicio, moneda y estación opcional; versión publicada e inmutable. | La tarifa negociada de un contrato. |
 | Cargo | Recargo o cargo adicional del catálogo de Finanzas (nocturno, tiempo extra…) con método y regla de cantidad. | Un ajuste manual de Finanzas. |
+| Cargo de demora | Cargo DELAY por la demora de la llegada, cobrado por hora con minutos de gracia (regla `ArrivalDelay`). No existe una «tabla de tiempo de mora». | La unidad «hora», que solo dice cómo se mide. |
+| Huella del contrato | SHA-256 del contenido canónico de una versión (partes, vigencia, estaciones, tarifas y términos); cada firma registra la huella que aceptó. | Un hash del archivo PDF. |
+| Firma de contrato | Aceptación de una parte (AVIAM o la aerolínea) sobre una versión aprobada, con nombre, cargo, fecha y huella; solo de inserción. | Una firma electrónica certificada. |
 | Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la prefactura. |
 | Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
 | Aprobación de Finanzas | Revisión que activa una versión de contrato enviada por Contratos o la devuelve con motivo. | La aprobación de una entrega por OCC. |
