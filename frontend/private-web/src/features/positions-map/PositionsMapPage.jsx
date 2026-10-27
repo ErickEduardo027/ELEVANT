@@ -17,6 +17,13 @@ import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
 
+// Flights that can be brought to a stand: the unassigned ones and those parked elsewhere.
+export function assignCandidates(data) {
+  const elsewhere = (data?.stands ?? []).flatMap(stand =>
+    (stand.turnarounds ?? []).map(item => ({ ...item, standCode: stand.code })));
+  return [...(data?.unassigned ?? []), ...elsewhere];
+}
+
 export default function PositionsMapPage({
   status,
   data,
@@ -221,6 +228,9 @@ export default function PositionsMapPage({
         position={selectedPosition}
         onClose={() => setSelectedPositionId(null)}
         onViewFlightInMonitoring={handleViewFlightInMonitoring}
+        canAssign={Boolean(data?.canAssign)}
+        candidates={assignCandidates(data)}
+        onChanged={onRetry}
       />
 
       <PositionToastStack toasts={toasts} onDismiss={dismissToast} />

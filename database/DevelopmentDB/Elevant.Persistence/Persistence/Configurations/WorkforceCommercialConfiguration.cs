@@ -399,6 +399,22 @@ internal static class WorkforceCommercialConfiguration
             AddNoActionReference<Station, ContractVersionStation>(builder, station => station.StationId);
         });
 
+        modelBuilder.Entity<ContractSignature>(builder =>
+        {
+            builder.ToTable("contract_signatures", "commercial", table =>
+                table.HasCheckConstraint("ck_contract_signatures_sha256", "LEN([document_sha256]) = 64"));
+            builder.Property(signature => signature.Party).HasConversion<string>().HasMaxLength(16);
+            builder.Property(signature => signature.SignerName).HasMaxLength(160).IsRequired();
+            builder.Property(signature => signature.SignerTitle).HasMaxLength(120).IsRequired();
+            builder.Property(signature => signature.DocumentSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+            builder.Property(signature => signature.SignedAt).HasPrecision(3);
+            // One acceptance per party and version; the request id makes a retry idempotent.
+            builder.HasIndex(signature => new { signature.ContractVersionId, signature.Party }).IsUnique();
+            builder.HasIndex(signature => signature.RequestId).IsUnique();
+            AddNoActionReference<ContractVersion, ContractSignature>(builder, signature => signature.ContractVersionId);
+            AddNoActionReference<ApplicationUser, ContractSignature>(builder, signature => signature.SignerAccountId);
+        });
+
         modelBuilder.Entity<ContractDraftComment>(builder =>
         {
             builder.ToTable("contract_draft_comments", "commercial");

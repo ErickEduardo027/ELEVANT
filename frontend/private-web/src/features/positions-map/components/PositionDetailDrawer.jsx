@@ -5,6 +5,7 @@ import { formatClockTime } from '../../dashboard/mappers';
 import { XIcon } from '../../flight-monitoring/components/icons';
 import { TERMINAL_LABELS } from '../positionsMapMappers';
 import CombinedPositionBanner from './CombinedPositionBanner';
+import PositionActions from './PositionActions';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { positionsMapMessages } from '../positionsMapMessages';
 
@@ -17,7 +18,7 @@ function Field({ label, children }) {
   );
 }
 
-export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring }) {
+export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged }) {
   const { t, language, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
@@ -30,7 +31,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
 
   if (!position) return null;
 
-  const hasFlight = Boolean(position.flightId);
+  const hasFlight = Boolean(position.flightId || position.flightNumber);
   const meta = getStatusMeta('position', position.status);
 
   return (
@@ -83,12 +84,14 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
             <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? t('detail.unverifiedNote') : t('detail.noFlight')}</p>
           )}
 
+          {canAssign && position.standId && <PositionActions position={position} candidates={candidates} onChanged={onChanged} />}
+
           <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
             {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}
           </p>
         </div>
 
-        {hasFlight && (
+        {position.flightId && (
           <div className="border-t border-black/5 px-5 py-3 dark:border-white/5">
             <button
               type="button"

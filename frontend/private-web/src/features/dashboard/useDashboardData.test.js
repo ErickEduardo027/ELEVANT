@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { useDashboardData } from './useDashboardData';
+import { DASHBOARD_TIMEOUT_MS, useDashboardData } from './useDashboardData';
 import { getDashboardSnapshot } from '../../services/dashboardService';
 
 const observerFactory = vi.hoisted(() => vi.fn());
@@ -98,4 +98,33 @@ it('does not expose an AbortError as a dashboard failure', async () => {
   await act(async () => {});
   expect(result.current.status).toBe('loading');
   expect(result.current.data).toBeNull();
+});
+
+it('reports a read that never answers instead of loading forever', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getDashboardSnapshot).mockImplementation((_, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+    const { result } = renderHook(() => useDashboardData(scope));
+    expect(result.current.status).toBe('loading');
+    await act(async () => { await vi.advanceTimersByTimeAsync(DASHBOARD_TIMEOUT_MS + 1); });
+    expect(result.current.status).toBe('timeout');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('lets a slow read finish when feed or focus signals arrive meanwhile, then reads once more', async () => {
+  let resolveFirst;
+  vi.mocked(getDashboardSnapshot)
+    .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+    .mockResolvedValue(snapshot);
+  const { result } = renderHook(() => useDashboardData(scope));
+  const notify = observerFactory.mock.calls[0][0];
+  act(() => { notify(['notifications']); window.dispatchEvent(new Event('focus')); notify(['occ_planning']); });
+  expect(getDashboardSnapshot).toHaveBeenCalledTimes(1);
+  await act(async () => { resolveFirst(snapshot); });
+  await waitFor(() => expect(result.current.status).toBe('success'));
+  await waitFor(() => expect(getDashboardSnapshot).toHaveBeenCalledTimes(2));
 });

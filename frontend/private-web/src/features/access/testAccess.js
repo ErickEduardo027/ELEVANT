@@ -17,9 +17,9 @@ export const DepartmentPermissionCodes = {
     access_requests: ['read', 'validate'],
   }),
   contracts: codes('contracts', {
-    home: ['read'], agreements: ['read'], agreed_services: ['read'], drafts: ['read', 'update', 'activate'],
+    home: ['read'], agreements: ['read', 'sign'], agreed_services: ['read'], drafts: ['read', 'update', 'activate'],
     requests: ['read', 'verify', 'approve', 'reject'], catalog: ['read', 'create', 'update', 'delete'],
-    service_closures: ['read', 'decide', 'reopen'], reports: ['read'],
+    service_closures: ['read', 'decide', 'reopen'], reports: ['read'], notifications: ['read'],
   }),
   finance: codes('finance', {
     home: ['read'], packages: ['read', 'create', 'update', 'publish'], contract_approvals: ['read', 'decide'],
@@ -29,6 +29,6 @@ export const DepartmentPermissionCodes = {
     billing_units: ['read', 'create', 'update'], receipts: ['read', 'create', 'apply', 'reverse', 'refund'],
     statements: ['read'], suppliers: ['read', 'create', 'update', 'delete'],
     payables: ['read', 'create', 'update', 'approve', 'pay'], expenses: ['read', 'create', 'update', 'approve', 'pay'],
-    taxes: ['read', 'create', 'update'], fiscal: ['read', 'create', 'simulate'], reports: ['read', 'export'],
+    taxes: ['read', 'create', 'update'], fiscal: ['read', 'create', 'simulate'], reports: ['read', 'export'], notifications: ['read'],
   }),
 };

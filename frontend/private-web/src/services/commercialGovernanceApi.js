@@ -115,3 +115,32 @@ export const updateManagedDraft = (id, values) => commercialApi(`/contracts/draf
 export const activateManagedDraft = id => commercialApi(`/contracts/drafts/${id}/activate`, {
   method: 'POST',
 });
+
+function contractClient() {
+  return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
+}
+
+async function contractCall(request) {
+  try {
+    return await request();
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+/** Formal document of an approved contract version, with its signatures and content hash. */
+export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));
+
+export async function downloadContractDocument(versionId, fileName) {
+  const blob = await contractCall(() => contractClient().downloadContractDocument(versionId));
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+export const signContractVersion = (versionId, request, idempotencyKey) =>
+  contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));

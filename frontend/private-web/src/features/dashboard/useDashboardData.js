@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { getDashboardSnapshot } from '../../services/dashboardService';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 
 const DENIED = new Set([401, 403, 404]);
+// A read that takes longer than this is abandoned and reported, never left loading.
+export const DASHBOARD_TIMEOUT_MS = 20_000;
 
 function statusForError(error) {
+  if (error?.code === 'timeout') return 'timeout';
   if (error?.status === 401) return 'unauthorized';
   return error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error';
 }
@@ -17,6 +20,10 @@ export function useDashboardData({ accountId, stationId, stationCode, date,
   refreshToken = 0 }) {
   const scopeKey = `${accountId ?? ''}|${stationId ?? ''}|${stationCode ?? ''}|${date ?? ''}`;
   const [revision, setRevision] = useState(0);
+  // Feed, focus and polling signals that arrive mid-read wait for it instead of restarting it;
+  // restarting on every signal kept the panorama loading forever.
+  const inFlight = useRef(false);
+  const pending = useRef(false);
   const [state, setState] = useState({
     status: stationId ? 'loading' : 'forbidden', data: null, scopeKey,
     refreshing: false, refreshFailed: false, fetchedAt: null,
@@ -28,6 +35,14 @@ export function useDashboardData({ accountId, stationId, stationCode, date,
       return undefined;
     }
     const controller = new AbortController();
+    let timedOut = false;
+    const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, DASHBOARD_TIMEOUT_MS);
+    inFlight.current = true;
+    const settle = () => {
+      window.clearTimeout(timer);
+      inFlight.current = false;
+      if (pending.current) { pending.current = false; setRevision(value => value + 1); }
+    };
     setState(previous => (previous.scopeKey === scopeKey && previous.data
       ? { ...previous, refreshing: true }
       : { status: 'loading', data: null, scopeKey, refreshing: false, refreshFailed: false, fetchedAt: null }));
@@ -35,21 +50,33 @@ export function useDashboardData({ accountId, stationId, stationCode, date,
       { signal: controller.signal })
       .then(data => {
         if (controller.signal.aborted) return;
+        settle();
         setState({ status: 'success', data, scopeKey, refreshing: false, refreshFailed: false,
           fetchedAt: new Date().toISOString() });
       })
       .catch(error => {
-        if (controller.signal.aborted || isAbortError(error)) return;
+        if (timedOut) {
+          settle();
+          error = Object.assign(new Error('timeout'), { code: 'timeout' });
+        } else if (controller.signal.aborted || isAbortError(error)) return;
+        else settle();
         setState(previous => (!DENIED.has(error?.status) && previous.scopeKey === scopeKey && previous.data
           ? { ...previous, refreshing: false, refreshFailed: true }
           : { status: statusForError(error), data: null, scopeKey, refreshing: false, refreshFailed: false, fetchedAt: null }));
       });
-    return () => abortForEffectCleanup(controller);
+    return () => {
+      window.clearTimeout(timer);
+      inFlight.current = false;
+      abortForEffectCleanup(controller);
+    };
   }, [accountId, stationId, stationCode, date, scopeKey, refreshToken, revision]);
 
   useEffect(() => {
     if (!accountId || !stationId) return undefined;
-    const refresh = () => setRevision(value => value + 1);
+    const refresh = () => {
+      if (inFlight.current) { pending.current = true; return; }
+      setRevision(value => value + 1);
+    };
     const observer = createPrivateWebAccountChangeObserver(resources => {
       if (resources.includes('notifications') || resources.includes('occ_planning')) refresh();
     });
